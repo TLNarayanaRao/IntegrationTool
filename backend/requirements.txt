@@ -1,7 +1,8 @@
 fastapi==0.115.12
 uvicorn[standard]==0.34.0
-pydantic==2.10.6
+pydantic>=2.12,<3
 httpx==0.28.1
 python-multipart==0.0.20
 aiofiles==24.1.0
+paramiko==3.5.1
 # Optional: install confluent-kafka to enable a real Kafka producer

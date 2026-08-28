@@ -1,0 +1,9 @@
+.resizable-mapper {
+  grid-template-columns: var(--source-width, 250px) 7px minmax(0, 1fr) !important;
+}
+.mapper-schema-title > i {
+  margin-left: auto;
+  color: #7ddfbe;
+  font: 9px "DM Mono";
+  font-style: normal;
+}
