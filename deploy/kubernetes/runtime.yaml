@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fabric-runtime
+  namespace: integration-fabric
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: fabric-runtime }
+  template:
+    metadata:
+      labels: { app: fabric-runtime }
+    spec:
+      containers:
+        - name: runtime
+          image: integration-fabric:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 8787}]
+          readinessProbe: {httpGet: {path: /api/health, port: 8787}, initialDelaySeconds: 5}
+          livenessProbe: {httpGet: {path: /api/health, port: 8787}, initialDelaySeconds: 15}
+          volumeMounts: [{name: data, mountPath: /app/backend/data}]
+      volumes: [{name: data, emptyDir: {}}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabric-runtime
+  namespace: integration-fabric
+spec:
+  selector: {app: fabric-runtime}
+  ports: [{port: 80, targetPort: 8787}]
