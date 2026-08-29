@@ -55,7 +55,7 @@ class DebugManager:
         if not state['frames']: state['status'] = 'completed'; return
         frame = state['frames'][-1]; project = state['project']; task = next(item for item in project.tasks if item.id == frame['taskId'])
         activity = next(item for item in task.activities if item.id == frame['activityId']); ctx = frame['context']
-        state['logs'].append({'time': datetime.now(timezone.utc).isoformat(), 'level': 'DEBUG', 'message': f'Paused/stepped at {task.name} / {activity.name}', 'activityId': activity.id})
+        state['logs'].append({'time': datetime.now(timezone.utc).isoformat(), 'level': 'DEBUG', 'kind': 'trace', 'message': f'Paused/stepped at {task.name} / {activity.name}', 'activityId': activity.id})
         if enter_subtask and activity.type == 'call_task':
             dynamic_id = self.runtime.resolve(activity.config.get('dynamicTaskId', ''), ctx)
             target_id = dynamic_id or activity.config.get('taskId')
@@ -92,4 +92,4 @@ class DebugManager:
     def view(self, state):
         current = self.current_activity(state)
         execution_state = state.get('executionState', {})
-        return {'sessionId': state['id'], 'status': state['status'], 'currentActivityId': current.id if current else None, 'currentTaskId': state['frames'][-1]['taskId'] if state['frames'] else None, 'callStack': [{'taskId': frame['taskId'], 'activityId': frame['activityId']} for frame in state['frames']], 'logs': state['logs'], 'output': state.get('output', {}), 'activityOutputs': execution_state.get('activities', {}), 'taskOutputs': execution_state.get('tasks', {})}
+        return {'sessionId': state['id'], 'status': state['status'], 'currentActivityId': current.id if current else None, 'currentTaskId': state['frames'][-1]['taskId'] if state['frames'] else None, 'callStack': [{'taskId': frame['taskId'], 'activityId': frame['activityId']} for frame in state['frames']], 'logs': state['logs'], 'output': state.get('output', {}), 'activityOutputs': execution_state.get('activities', {}), 'taskOutputs': execution_state.get('tasks', {}), 'endpoints': state.get('endpoints', [])}

@@ -424,6 +424,20 @@ const defaultProperties: Property[] = [
   { key: "advanced.retryCount", value: 3, data_type: "integer" },
   { key: "advanced.retryIntervalSeconds", value: 60, data_type: "integer" },
   { key: "connections.http.baseUrl", value: "https://api.example.com", data_type: "string" },
+  { key: "connections.http.host", value: "localhost", data_type: "string" },
+  { key: "connections.http.port", value: 8080, data_type: "integer" },
+  { key: "connections.http.basePath", value: "", data_type: "string" },
+  { key: "connections.http.scheme", value: "http", data_type: "string" },
+  { key: "connections.http.connectorMode", value: "both", data_type: "string" },
+  { key: "connections.http.authentication", value: "None", data_type: "string" },
+  { key: "connections.http.bearerToken", value: "", data_type: "password" },
+  { key: "connections.http.tlsEnabled", value: false, data_type: "boolean" },
+  { key: "connections.http.certificateFile", value: "", data_type: "string" },
+  { key: "connections.http.privateKeyFile", value: "", data_type: "string" },
+  { key: "connections.http.privateKeyPassword", value: "", data_type: "password" },
+  { key: "connections.http.certificateAuthorityFile", value: "", data_type: "string" },
+  { key: "connections.http.clientAuthentication", value: "none", data_type: "string" },
+  { key: "connections.http.tlsVersion", value: "TLSv1.2", data_type: "string" },
   { key: "connections.http.connectTimeoutSeconds", value: 30, data_type: "integer" },
   { key: "connections.http.timeoutSeconds", value: 60, data_type: "integer" },
   { key: "connections.http.username", value: "", data_type: "string" },
@@ -669,6 +683,7 @@ function App() {
     [packageOpen, setPackageOpen] = useState(false),
     [debugState, setDebugState] = useState<any>(null),
     [executionOutputs, setExecutionOutputs] = useState<Record<string, any>>({}),
+    [endpoints, setEndpoints] = useState<any[]>([]),
     [breakpoints, setBreakpoints] = useState<string[]>([]),
     [busy, setBusy] = useState(false),
     [zoom, setZoom] = useState(1),
@@ -713,7 +728,7 @@ function App() {
       localStorage.getItem("integration-fabric-theme") || "midnight",
     );
   const [activeTab, setActiveTab] = useState<
-      "configuration" | "input" | "output" | "advanced" | "errors"
+      "configuration" | "input" | "output" | "advanced" | "errors" | "documentation"
     >("configuration"),
     [propertyEditor, setPropertyEditor] = useState<string | null>(null),
     [renameOpen, setRenameOpen] = useState(false),
@@ -1203,7 +1218,9 @@ function App() {
   };
   const run = async () => {
       setBusy(true);
-      const r = await fetch(`/api/projects/${project.id}/run`, {
+      try {
+        await persistProject();
+        const r = await fetch(`/api/projects/${project.id}/run`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -1212,12 +1229,16 @@ function App() {
             task_id: task.id,
           }),
         }),
-        out = await r.json();
-      setLogs(out.logs || [{ level: "ERROR", message: out.detail }]);
-      setExecutionOutputs(out.activity_outputs || {});
-      setBusy(false);
+          out = await r.json();
+        setLogs(out.logs || [{ level: "ERROR", message: out.detail }]);
+        setExecutionOutputs(out.activity_outputs || {});
+        setEndpoints(out.endpoints || []);
+      } catch (error: any) {
+        setLogs([{ level: "ERROR", message: error?.message || "Run failed" }]);
+      } finally { setBusy(false); }
     },
     debug = async () => {
+      await persistProject();
       const r = await fetch(`/api/projects/${project.id}/debug`, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -1232,6 +1253,7 @@ function App() {
       setDebugState(out);
       setExecutionOutputs(out.activityOutputs || {});
       setLogs(out.logs || [{ level: "ERROR", message: out.detail }]);
+      setEndpoints(out.endpoints || []);
     },
     debugAction = async (action: string) => {
       if (!debugState) return;
@@ -1244,6 +1266,7 @@ function App() {
       setDebugState(out);
       setExecutionOutputs(out.activityOutputs || {});
       setLogs(out.logs || []);
+      setEndpoints(out.endpoints || endpoints);
       if (out.currentTaskId && out.currentTaskId !== project.active_task_id)
         selectTask(out.currentTaskId);
     };
@@ -1866,7 +1889,7 @@ function App() {
             <b>
               <Settings2 /> {edge ? "Transition" : resource ? "Connection" : "Activity"}
             </b>
-            {node ? (["configuration", "input", "output", "advanced", "errors"] as const).map(
+            {node ? (["configuration", "input", "output", "advanced", "errors", "documentation"] as const).map(
               (tab) => (
                 <button
                   key={tab}
@@ -1940,18 +1963,29 @@ function App() {
             ? `${debugState.status} · stack ${debugState.callStack?.length || 0}`
             : `Runtime: ${project.active_environment}`}
         </div>
-        {!!Object.keys(executionOutputs).length && <details className="runtime-outputs" open>
-          <summary>EXECUTED PATH OUTPUTS <b>{Object.keys(executionOutputs).length}</b></summary>
-          {Object.values(executionOutputs).map((record: any) => <details key={record.activityId}>
+        {!!endpoints.length && <section className="runtime-endpoints">
+          <strong>LIVE ENDPOINTS</strong>
+          {endpoints.map((endpoint: any) => <article key={endpoint.activityId}>
+            <span>{endpoint.methods?.join(", ")} · {endpoint.name}</span>
+            <code>{endpoint.url}</code>
+            <button title="Copy endpoint URL" onClick={() => navigator.clipboard.writeText(endpoint.url)}><ClipboardCopy/> Copy</button>
+            {endpoint.configuredUrl && endpoint.configuredUrl !== endpoint.url && <small>Packaged deployment: {endpoint.configuredUrl}</small>}
+          </article>)}
+        </section>}
+        {(() => {
+          const visible = Object.values(executionOutputs).filter((record: any) => !["start", "end", "log"].includes(record.type));
+          return !!visible.length && <details className="runtime-outputs" open>
+          <summary>EXECUTED PATH OUTPUTS <b>{visible.length}</b></summary>
+          {visible.map((record: any) => <details key={record.activityId}>
             <summary><span>{record.name}</span><small>{record.type}</small></summary>
             <pre>{JSON.stringify(record.logEvent || record.output, null, 2)}</pre>
           </details>)}
-        </details>}
-        {logs.map((l, i) => (
+        </details>})()}
+        {logs.filter((l) => l.kind !== "trace").map((l, i) => (
           <div className={`log ${(l.level || "info").toLowerCase()}`} key={i}>
             <small>{l.level}</small>
             <p>{l.message}</p>
-            {l.payload !== undefined && <pre>{JSON.stringify(l.payload, null, 2)}</pre>}
+            {l.payload !== undefined && l.payload !== "" && l.payload !== null && <pre>{JSON.stringify(l.payload, null, 2)}</pre>}
           </div>
         ))}
       </aside>
@@ -2702,10 +2736,18 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "minimumPoolSize", label: "Minimum pool size" }, { key: "maximumPoolSize", label: "Maximum pool size" },
   ],
   http: [
-    { key: "baseUrl", label: "Base URL" }, { key: "connectTimeoutSeconds", label: "Connect timeout (seconds)" },
-    { key: "timeoutSeconds", label: "Read timeout (seconds)" }, { key: "username", label: "Username" },
-    { key: "password", label: "Password", password: true }, { key: "proxyHost", label: "Proxy host" },
-    { key: "proxyPort", label: "Proxy port" }, { key: "verifyTls", label: "Verify TLS", options: ["true", "false"] },
+    { key: "connectorMode", label: "Connector mode", options: ["server", "client", "both"] },
+    { key: "scheme", label: "Protocol", options: ["http", "https"] }, { key: "host", label: "Listener host" }, { key: "port", label: "Listener port" },
+    { key: "basePath", label: "Listener base path" }, { key: "baseUrl", label: "Outbound base URL" },
+    { key: "authentication", label: "Authentication", options: ["None", "Basic", "Bearer", "Certificate"] },
+    { key: "username", label: "Basic-auth username" }, { key: "password", label: "Basic-auth password", password: true },
+    { key: "bearerToken", label: "Bearer token", password: true }, { key: "tlsEnabled", label: "Enable HTTPS / SSL", options: ["false", "true"] },
+    { key: "certificateFile", label: "Server certificate file" }, { key: "privateKeyFile", label: "Server private key file" },
+    { key: "privateKeyPassword", label: "Private key password", password: true }, { key: "certificateAuthorityFile", label: "Trusted CA file" },
+    { key: "clientAuthentication", label: "Client certificate authentication", options: ["none", "optional", "required"] },
+    { key: "tlsVersion", label: "Minimum TLS version", options: ["TLSv1.2", "TLSv1.3"] },
+    { key: "connectTimeoutSeconds", label: "Connect timeout (seconds)" }, { key: "timeoutSeconds", label: "Read timeout (seconds)" },
+    { key: "proxyHost", label: "Proxy host" }, { key: "proxyPort", label: "Proxy port" }, { key: "verifyTls", label: "Verify outbound TLS", options: ["true", "false"] },
   ],
   ftp: [
     { key: "host", label: "Host" }, { key: "port", label: "Port" }, { key: "username", label: "Username" },
@@ -2774,6 +2816,7 @@ function connectionDefaults(type: string) {
     values[field.key] = propertyExpression(`${prefix}.${field.key}`);
   }
   if (["ems", "kafka", "pubsub"].includes(type)) values.mode = "memory";
+  if (type === "http") Object.assign(values, { connectorMode: "both", scheme: "http", authentication: "None", tlsEnabled: "false", clientAuthentication: "none", tlsVersion: "TLSv1.2", verifyTls: "true" });
   if (type === "sap") Object.assign(values, { mode: "mock", release: "current", connectionType: "dedicated" });
   if (type === "jdbc") values.driver = "postgresql";
   return values;

@@ -16,6 +16,46 @@ app = FastAPI(title='Integration Fabric Runtime', version='0.1.0')
 runtime = WorkflowRuntime()
 debugger = DebugManager(runtime)
 
+INBOUND_OPERATIONS = {None, 'listen', 'receiver', 'service'}
+
+def _resolved_resource_config(item: Project, activity, properties: dict) -> dict:
+    resource = next((value for value in item.resources if value.id == activity.config.get('resourceId')), None)
+    if not resource: return {}
+    context = {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}
+    return {key: runtime.resolve(value, context) for key, value in resource.config.items()}
+
+def _listener_endpoints(item: Project, task, environment: str, base_url: str = '') -> list[dict]:
+    properties = {prop.key: prop.value for prop in item.properties.get(environment, [])}
+    endpoints = []
+    for activity in task.activities:
+        if activity.type not in ('http_listener', 'rest', 'soap') or activity.config.get('operation') not in INBOUND_OPERATIONS: continue
+        cfg = _resolved_resource_config(item, activity, properties)
+        path = str(runtime.resolve(activity.config.get('path', '/'), {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}) or '/')
+        if not path.startswith('/'): path = '/' + path
+        base_path = str(cfg.get('basePath') or '').strip('/')
+        deployment_path = ('/' + base_path if base_path else '') + path
+        tls = str(cfg.get('tlsEnabled', cfg.get('scheme') == 'https')).lower() in ('true', '1', 'yes', 'on')
+        scheme = 'https' if tls else str(cfg.get('scheme') or 'http')
+        host = str(cfg.get('host') or 'localhost')
+        port = int(cfg.get('port') or (443 if scheme == 'https' else 80))
+        default_port = (scheme == 'https' and port == 443) or (scheme == 'http' and port == 80)
+        configured_url = f'{scheme}://{host}{"" if default_port else f":{port}"}{deployment_path}'
+        relative_url = f'/api/listeners/{item.id}{path}'
+        methods = str(activity.config.get('methods', activity.config.get('method', 'POST'))).replace(' ', '').split(',')
+        endpoints.append({'taskId': task.id, 'activityId': activity.id, 'name': activity.name, 'type': activity.type,
+                          'methods': methods, 'path': path, 'url': base_url.rstrip('/') + relative_url if base_url else relative_url,
+                          'relativeUrl': relative_url, 'configuredUrl': configured_url, 'tlsEnabled': tls,
+                          'authentication': cfg.get('authentication', 'None')})
+    return endpoints
+
+def _lifecycle_logs(item: Project, endpoints: list[dict]) -> list[dict]:
+    logs = [
+        {'level': 'INFO', 'kind': 'lifecycle', 'message': f'Deploying application {item.name}'},
+        {'level': 'INFO', 'kind': 'lifecycle', 'message': f'Application {item.name} started'},
+    ]
+    logs.extend({'level': 'INFO', 'kind': 'endpoint', 'message': f'{", ".join(endpoint["methods"])} listener ready at {endpoint["url"]}'} for endpoint in endpoints)
+    return logs
+
 @app.get('/api/health')
 def health(): return {'status': 'ok', 'runtime': 'python'}
 
@@ -49,7 +89,7 @@ def project_json(project_id: str):
     return Response(item.model_dump_json(indent=2), media_type='application/json', headers={'Content-Disposition':f'attachment; filename="{filename}.json"','X-Project-Storage':str(project_dir(project_id))})
 
 @app.post('/api/projects/{project_id}/run')
-async def run(project_id: str, request: RunRequest):
+async def run(project_id: str, http_request: Request, request: RunRequest):
     item = get_project(project_id)
     if not item: raise HTTPException(404, 'Project not found')
     resources = {resource.id: resource for resource in item.resources}
@@ -61,7 +101,15 @@ async def run(project_id: str, request: RunRequest):
     if task.kind != 'starter': raise HTTPException(400, 'Sub Tasks are invoked by a Call Sub Task activity; run a Starter Task')
     events = effective_event_activities(task.activities)
     if len(events) != 1: raise HTTPException(400, f'Starter Task requires exactly one event activity; found {len(events)}')
-    return await runtime.run(task, request.input, resources, properties, project=item)
+    endpoints = _listener_endpoints(item, task, request.environment, str(http_request.base_url).rstrip('/'))
+    if endpoints:
+        return {'status': 'listening', 'output': {}, 'logs': _lifecycle_logs(item, endpoints),
+                'activity_outputs': {}, 'task_outputs': {}, 'endpoints': endpoints}
+    result = await runtime.run(task, request.input, resources, properties, project=item)
+    payload = result.model_dump()
+    payload['logs'] = _lifecycle_logs(item, []) + payload.get('logs', [])
+    payload['endpoints'] = []
+    return payload
 
 @app.get('/api/projects/{project_id}/export')
 def export_project(project_id: str):
@@ -210,8 +258,14 @@ async def test_connection(resource: SharedResource):
         import sqlite3
         conn = sqlite3.connect(cfg.get('url','sap-tid.db')); conn.execute('CREATE TABLE IF NOT EXISTS sap_tid (tid TEXT PRIMARY KEY, state TEXT, updated_at TEXT)'); conn.close(); return {'ok':True,'message':'SAP TID Manager database is ready'}
     if resource.type == 'http':
+        if cfg.get('connectorMode', 'both') in ('server', 'both'):
+            host, port = cfg.get('host', 'localhost'), int(cfg.get('port', 80))
+            if not 1 <= port <= 65535: return {'ok': False, 'message': 'Listener port must be between 1 and 65535'}
+            if str(cfg.get('tlsEnabled', 'false')).lower() in ('true','1','yes','on') and (not cfg.get('certificateFile') or not cfg.get('privateKeyFile')):
+                return {'ok': False, 'message': 'HTTPS listener requires a certificate file and private key file'}
+            return {'ok': True, 'message': f'HTTP listener configuration is valid for {host}:{port}'}
         import httpx
-        async with httpx.AsyncClient(timeout=float(cfg.get('timeout',5))) as client: response = await client.get(cfg.get('baseUrl') or cfg.get('url'))
+        async with httpx.AsyncClient(timeout=float(cfg.get('timeoutSeconds',5)), verify=str(cfg.get('verifyTls', 'true')).lower() in ('true','1','yes','on')) as client: response = await client.get(cfg.get('baseUrl') or cfg.get('url'))
         return {'ok': response.status_code < 500, 'message': f'HTTP endpoint returned {response.status_code}'}
     if resource.type == 'sap':
         try: return await __import__('asyncio').to_thread(sap_adapter.test, cfg)
@@ -286,12 +340,19 @@ def evaluate_condition(payload: dict):
     except Exception as exc: raise HTTPException(400, f'Condition evaluation failed: {exc}')
 
 @app.post('/api/projects/{project_id}/debug')
-def start_debug(project_id: str, request: DebugRequest):
+def start_debug(project_id: str, http_request: Request, request: DebugRequest):
     item = get_project(project_id)
     if not item: raise HTTPException(404, 'Project not found')
     task_id = request.task_id or item.active_task_id
     properties = {prop.key: prop.value for prop in item.properties.get(request.environment, [])}
-    try: return debugger.start(item, task_id, request.input, {resource.id:resource for resource in item.resources}, properties, request.breakpoints)
+    try:
+        view = debugger.start(item, task_id, request.input, {resource.id:resource for resource in item.resources}, properties, request.breakpoints)
+        task = next(value for value in item.tasks if value.id == task_id)
+        endpoints = _listener_endpoints(item, task, request.environment, str(http_request.base_url).rstrip('/'))
+        state = debugger.sessions[view['sessionId']]
+        state['endpoints'] = endpoints
+        state['logs'].extend(_lifecycle_logs(item, endpoints))
+        return debugger.view(state)
     except ValueError as exc: raise HTTPException(400, str(exc))
 
 @app.post('/api/debug/{session_id}/action')
@@ -314,6 +375,22 @@ async def invoke_listener(project_id: str, listener_path: str, request: Request,
     matched = next(((task, activity, match_path(activity.config.get('path', '/'))) for task, activity in candidates if match_path(activity.config.get('path', '/')) is not None and (request.method in str(activity.config.get('methods', activity.config.get('method', request.method))).replace(' ', '').split(',') or (activity.type == 'soap' and request.method == 'GET' and 'wsdl' in request.query_params))), None)
     task, listener, path_parameters = matched if matched else (None, None, {})
     if not listener: raise HTTPException(404, f'No listener configured for {request.method} {request_path}')
+    properties = {prop.key: prop.value for prop in item.properties.get(environment, [])}
+    listener_cfg = _resolved_resource_config(item, listener, properties)
+    authentication = str(listener_cfg.get('authentication', 'None')).lower()
+    authorization = request.headers.get('authorization', '')
+    if authentication == 'basic':
+        import base64, hmac
+        try: supplied = base64.b64decode(authorization.removeprefix('Basic ').strip()).decode()
+        except Exception: supplied = ''
+        expected = f'{listener_cfg.get("username", "")}:{listener_cfg.get("password", "")}'
+        if not authorization.startswith('Basic ') or not hmac.compare_digest(supplied, expected):
+            return JSONResponse({'detail': 'HTTP Basic authentication failed'}, status_code=401, headers={'WWW-Authenticate': 'Basic'})
+    elif authentication == 'bearer':
+        import hmac
+        expected = f'Bearer {listener_cfg.get("bearerToken", "")}'
+        if not hmac.compare_digest(authorization, expected):
+            return JSONResponse({'detail': 'Bearer authentication failed'}, status_code=401, headers={'WWW-Authenticate': 'Bearer'})
     if listener.type == 'soap' and request.method == 'GET' and 'wsdl' in request.query_params:
         wsdl = listener.config.get('wsdlContent', '')
         wsdl_path = listener.config.get('wsdl', '')
@@ -324,7 +401,7 @@ async def invoke_listener(project_id: str, listener_path: str, request: Request,
     try: body = json.loads(raw) if raw else None
     except (ValueError, UnicodeDecodeError): body = raw.decode(errors='replace')
     payload = {'body': body, 'method': request.method, 'path': request_path, 'query': dict(request.query_params), 'headers': dict(request.headers), 'pathParameters': path_parameters}
-    resources = {resource.id: resource for resource in item.resources}; properties = {prop.key: prop.value for prop in item.properties.get(environment, [])}
+    resources = {resource.id: resource for resource in item.resources}
     result = await runtime.run(task, payload, resources, properties, listener.id, item)
     if result.status == 'failed': return JSONResponse({'status': result.status, 'logs': result.logs}, status_code=500)
     output = result.output

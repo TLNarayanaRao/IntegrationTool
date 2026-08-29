@@ -52,7 +52,7 @@ class WorkflowRuntime:
         current = starts[0]
         try:
             for _ in range(len(process.activities) + 1):
-                self.log(logs, 'DEBUG', f'Executing {current.name}', current.id)
+                self.log(logs, 'DEBUG', f'Executing {current.name}', current.id, kind='trace')
                 context['context']['activityId'] = current.id
                 error = None
                 try:

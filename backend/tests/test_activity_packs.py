@@ -84,6 +84,29 @@ class ActivityPackTests(unittest.TestCase):
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.json()['pathParameters']['id'], '42')
 
+    def test_run_deploys_inbound_listener_and_returns_live_endpoint(self):
+        project = Project(
+            id='listener-deploy', name='Listener Deployment',
+            resources=[SharedResource(id='http-server', type='http', name='HTTPS Server', config={
+                'host': 'api.internal.example', 'port': 8443, 'tlsEnabled': True,
+                'authentication': 'Certificate', 'basePath': '/services',
+            })],
+            process=ProcessDefinition(activities=[
+                Activity(id='receive', type='http_listener', name='Orders Listener', config={
+                    'operation': 'listen', 'path': '/orders', 'method': 'POST', 'resourceId': 'http-server',
+                }),
+                Activity(id='end', type='end', name='End'),
+            ], transitions=[Transition(id='t', source='receive', target='end')]),
+        )
+        with patch('app.main.get_project', return_value=project):
+            response = TestClient(app).post('/api/projects/listener-deploy/run', json={'environment': 'local'})
+        self.assertEqual(response.status_code, 200)
+        result = response.json()
+        self.assertEqual(result['status'], 'listening')
+        self.assertEqual(result['endpoints'][0]['url'], 'http://testserver/api/listeners/listener-deploy/orders')
+        self.assertEqual(result['endpoints'][0]['configuredUrl'], 'https://api.internal.example:8443/services/orders')
+        self.assertIn('Application Listener Deployment started', [entry['message'] for entry in result['logs']])
+
     def test_project_persists_packaging_and_xsd_schemas(self):
         project = Project(
             id='schema-test', name='Schema Test',
