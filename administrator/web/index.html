@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Integration Fabric Administrator</title>
+  <link rel="stylesheet" href="/admin.css" />
+</head>
+<body>
+  <header><div class="mark">IF</div><div><b>INTEGRATION FABRIC</b><small>ENTERPRISE ADMINISTRATOR</small></div><span id="health">CONNECTING</span></header>
+  <nav><button class="active">Applications</button><button>Machines</button><button>Environments</button><button>Monitoring</button><button>Audit</button></nav>
+  <main>
+    <section class="hero"><div><small>CONTROL PLANE</small><h1>Application deployments</h1><p>Manage portable Integration Fabric packages across on-premises Linux runtime machines.</p></div><label class="upload">Upload package<input id="packageFile" type="file" accept=".ifpkg,.zip,.ear" /></label></section>
+    <section class="stats"><article><span id="packageCount">0</span><small>PACKAGES</small></article><article><span id="deploymentCount">0</span><small>DEPLOYMENTS</small></article><article><span id="runningCount">0</span><small>RUNNING</small></article><article><span>1</span><small>ADMIN NODE</small></article></section>
+    <section class="panel"><div class="panel-title"><div><h2>Deployment inventory</h2><small>Application instances registered with this Administrator</small></div><button id="refresh">Refresh</button></div><div id="deployments" class="grid"></div></section>
+    <section class="panel"><div class="panel-title"><div><h2>Package repository</h2><small>Validated application packages ready for deployment</small></div></div><div id="packages" class="packages"></div></section>
+  </main>
+  <div id="toast"></div>
+  <script src="/admin.js"></script>
+</body>
+</html>

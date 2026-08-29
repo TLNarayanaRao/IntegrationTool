@@ -52,6 +52,12 @@
 }
 .connection-test-output {
   grid-column: 1 / -1;
+  display: grid;
+  grid-template-rows: minmax(42px, auto) minmax(88px, auto);
+  min-height: 138px;
+  flex: 0 0 auto;
+  align-self: start;
+  scroll-margin-block: 14px;
   border: 1px solid color-mix(in srgb, var(--accent2) 50%, var(--line));
   border-radius: 9px;
   background: #061a1d;
@@ -65,6 +71,8 @@
   padding: 6px 9px;
   border-bottom: 1px solid #24515a;
 }
+.connection-test-output > header > span { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.connection-test-output > header > span small { color: #7796a7; font: 8px "DM Mono"; }
 .connection-test-output > header b { color: #75e5c3; font-size: 10px; }
 .connection-test-output > header button {
   margin-left: auto;
@@ -79,9 +87,13 @@
 }
 .connection-test-output > header button svg { width: 13px; height: 13px; }
 .connection-test-output textarea {
+  display: block !important;
   width: 100%;
-  min-height: 70px;
+  height: 96px !important;
+  min-height: 96px !important;
   max-height: 180px;
+  overflow: auto;
+  box-sizing: border-box;
   resize: vertical;
   border: 0;
   border-radius: 0;

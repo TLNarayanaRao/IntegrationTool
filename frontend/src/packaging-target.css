@@ -1,0 +1,6 @@
+.package-targets{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.package-targets button{display:flex;align-items:flex-start;gap:12px;padding:15px;text-align:left;background:#0b1724;border:1px solid #31485e;color:#c7d8e6;border-radius:7px}
+.package-targets button.selected{border-color:#25bddb;background:#0c2938;box-shadow:0 0 0 1px #25bddb44}
+.package-targets svg{width:25px;color:#38c7e3}.package-targets span{display:flex;flex-direction:column;gap:5px}.package-targets small{color:#7892a6;line-height:1.35}
+.package-security{grid-column:1/-1;display:flex;align-items:center;gap:9px;margin:0;color:#8fb3ae;font-size:12px}.package-security svg{width:18px;color:#37c79b}
+@media(max-width:680px){.package-targets{grid-template-columns:1fr}}

@@ -18,6 +18,18 @@ class SapMapperTests(unittest.TestCase):
         tested = self.client.post('/api/mapper/test', json={'input':{'customer':{'firstName':' Ada '}}, 'mappings':[{'source':'customer.firstName','target':'account.givenName','functions':['trim','upper']}]})
         self.assertEqual(tested.json()['output']['account']['givenName'], 'ADA')
 
+    def test_transform_accepts_typed_constants_and_dynamic_tree_mappings(self):
+        runtime = WorkflowRuntime()
+        context = {'input': {'order': {'id': 42}}, 'last': {'status': 'NEW'}, 'vars': {}, 'resources': {}, 'properties': {}, 'activities': {'source': {'output': {'amount': 19.5}}}}
+        activity = Activity(id='map', type='transform', name='Transform', config={'mappings':[
+            {'target':'order.id', 'source':'${input.order.id}', 'enabled':True},
+            {'target':'order.amount', 'source':'${activities.source.output.amount}', 'enabled':True},
+            {'target':'order.active', 'constant':True, 'enabled':True},
+            {'target':'order.tags', 'constant':['priority', 'new'], 'enabled':True},
+        ]})
+        result = asyncio.run(runtime.execute(activity, context))
+        self.assertEqual(result, {'order': {'id':42, 'amount':19.5, 'active':True, 'tags':['priority', 'new']}})
+
     def test_all_documented_sap_operations_run_in_mock_mode(self):
         operations = ['dynamic_connection','idoc_acknowledgment','idoc_confirmation','idoc_converter','idoc_listener','idoc_parser','idoc_reader','post_idoc','idoc_renderer','rfc_bapi_listener','invoke_rfc_bapi','reply_rfc_bapi','read_table']
         resource = SharedResource(id='sap-ecc', type='sap', name='ECC', config={'mode':'mock'})
@@ -34,6 +46,25 @@ class SapMapperTests(unittest.TestCase):
     def test_sap_connection_design_time_test(self):
         result = self.client.post('/api/connections/test',json={'id':'sap','type':'sap','name':'ECC','config':{'mode':'mock'}})
         self.assertTrue(result.json()['ok'])
+
+    def test_sap_connection_can_browse_and_download_idoc_metadata(self):
+        resource = {'id':'sap','type':'sap','name':'ECC','config':{'mode':'mock','release':'720'}}
+        listed = self.client.post('/api/sap/idocs', json={'resource':resource, 'search':'ORDER'})
+        self.assertEqual(listed.status_code, 200)
+        self.assertTrue(any(item['idocType'] == 'ORDERS05' for item in listed.json()['idocs']))
+        self.assertTrue(all(item['release'] == '720' for item in listed.json()['idocs']))
+        fetched = self.client.post('/api/sap/idocs', json={'resource':resource, 'idocType':'ORDERS05'})
+        self.assertEqual(fetched.status_code, 200)
+        metadata = fetched.json()['idoc']
+        self.assertEqual(metadata['idocType'], 'ORDERS05')
+        self.assertEqual(metadata['release'], '720')
+        self.assertIn('schema', metadata)
+        self.assertIn('EDI_DC40', metadata['schema'])
+        self.assertIn('release 720', metadata['schema'])
+
+        resource['config']['release'] = '730'
+        fetched_730 = self.client.post('/api/sap/idocs', json={'resource':resource, 'idocType':'ORDERS05'})
+        self.assertEqual(fetched_730.json()['idoc']['release'], '730')
 
     def test_project_seeds_global_advanced_and_connector_properties(self):
         project = Project(id='defaults', name='Defaults')

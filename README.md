@@ -34,7 +34,15 @@ SFTP uses Paramiko. FTP and FTPS use the Python standard library. Listener, REST
 
 ## Windows installer
 
-Run `scripts/build-windows.ps1` on Windows. It builds the React files, packages the Python runtime with PyInstaller, and creates an NSIS installer when NSIS is installed. The application opens in the system browser and is also usable as a local runtime API.
+The preferred Windows desktop build is now the Electron Studio installer:
+
+```powershell
+cd frontend
+npm ci
+npm run desktop:installer
+```
+
+The complete Studio, Administrator, Linux, Windows, and deployment-package instructions are in [docs/BUILDING_AND_DISTRIBUTION.md](docs/BUILDING_AND_DISTRIBUTION.md).
 
 ## Kubernetes runtime
 

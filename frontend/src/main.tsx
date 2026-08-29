@@ -2,17 +2,24 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
+  AlignHorizontalSpaceAround,
+  AlignVerticalSpaceAround,
+  ArrowDown,
+  ArrowUp,
   Braces,
   Bug,
   Cable,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   CirclePlay,
   ClipboardCopy,
+  ClipboardPaste,
   Cloud,
   CodeXml,
   Database,
   Download,
+  FilePlus2,
   Folder,
   FolderOpen,
   Globe,
@@ -24,7 +31,9 @@ import {
   Radio,
   Save,
   Search,
+  Scissors,
   Settings2,
+  ShieldCheck,
   SkipBack,
   SkipForward,
   Square,
@@ -51,6 +60,9 @@ import "./explorer-enhancements.css";
 import "./mapper-studio.css";
 import "./popup-enhancements.css";
 import "./mapping-fixes.css";
+import "./messaging-enhancements.css";
+import "./studio-ribbon.css";
+import "./packaging-target.css";
 type Kind =
   | "start"
   | "timer"
@@ -69,6 +81,7 @@ type Kind =
   | "flat"
   | "transform"
   | "log"
+  | "confirm"
   | "ems"
   | "kafka"
   | "pubsub"
@@ -142,6 +155,26 @@ type Project = {
   process?: any;
 };
 type Def = { type: Kind; operation?: string; label: string; asset: string };
+type ValidationIssue = {
+  id: string;
+  severity: "error" | "warning" | "mapping";
+  category: string;
+  message: string;
+  remedy: string;
+  taskId?: string;
+  activityId?: string;
+};
+const themeOptions = [
+  { value: "midnight", label: "Midnight Studio", detail: "Deep blue professional workspace" },
+  { value: "aurora", label: "Aurora Glass", detail: "Violet glass with teal highlights" },
+  { value: "graphite", label: "Graphite Pro", detail: "Neutral engineering workstation" },
+  { value: "arctic", label: "Arctic Light", detail: "Clean light enterprise canvas" },
+  { value: "ocean", label: "Oceanic", detail: "Layered blue operations center" },
+  { value: "forest", label: "Evergreen", detail: "Low-glare green integration studio" },
+  { value: "sunset", label: "Sunset Copper", detail: "Warm copper and plum workspace" },
+  { value: "classic", label: "Classic Office", detail: "Square, bright desktop application" },
+  { value: "contrast", label: "High Contrast", detail: "Maximum clarity and accessibility" },
+];
 const isEventActivity = (item: { type: Kind; operation?: string; config?: Record<string, any> }) => {
   const operation = item.operation || item.config?.operation || "";
   return item.type === "start" || item.type === "timer" || item.type === "http_listener" ||
@@ -374,7 +407,8 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
         label: "Transform",
         asset: "transform",
       },
-      { type: "log", operation: "write", label: "Log", asset: "runtime" },
+      { type: "log", operation: "write", label: "Log", asset: "log" },
+      { type: "confirm", operation: "acknowledge", label: "Confirm Message", asset: "runtime" },
       {
         type: "java",
         operation: "invoke",
@@ -433,6 +467,21 @@ const defaultProperties: Property[] = [
   { key: "connections.ems.clientId", value: "integration-fabric", data_type: "string" },
   { key: "connections.ems.connectionFactory", value: "ConnectionFactory", data_type: "string" },
   { key: "connections.ems.reconnectAttempts", value: 3, data_type: "integer" },
+  { key: "connections.ems.connectionFactoryType", value: "Direct", data_type: "string" },
+  { key: "connections.ems.messagingStyle", value: "Generic", data_type: "string" },
+  { key: "connections.ems.queueConnectionFactory", value: "QueueConnectionFactory", data_type: "string" },
+  { key: "connections.ems.topicConnectionFactory", value: "TopicConnectionFactory", data_type: "string" },
+  { key: "connections.ems.jndiContextFactory", value: "com.tibco.tibjms.naming.TibjmsInitialContextFactory", data_type: "string" },
+  { key: "connections.ems.jndiProviderUrl", value: "tcp://localhost:7222", data_type: "string" },
+  { key: "connections.ems.jndiUsername", value: "", data_type: "string" },
+  { key: "connections.ems.jndiPassword", value: "", data_type: "password" },
+  { key: "connections.ems.useXa", value: false, data_type: "boolean" },
+  { key: "connections.ems.useUfo", value: false, data_type: "boolean" },
+  { key: "connections.ems.sslEnabled", value: false, data_type: "boolean" },
+  { key: "connections.ems.sslTrustedCertificates", value: "", data_type: "string" },
+  { key: "connections.ems.reconnectDelayMs", value: 5000, data_type: "integer" },
+  { key: "connections.ems.heartbeatOutgoingMs", value: 0, data_type: "integer" },
+  { key: "connections.ems.heartbeatIncomingMs", value: 0, data_type: "integer" },
   { key: "connections.kafka.bootstrapServers", value: "localhost:9092", data_type: "string" },
   { key: "connections.kafka.clientId", value: "integration-fabric", data_type: "string" },
   { key: "connections.kafka.groupId", value: "integration-fabric", data_type: "string" },
@@ -441,12 +490,24 @@ const defaultProperties: Property[] = [
   { key: "connections.kafka.username", value: "", data_type: "string" },
   { key: "connections.kafka.password", value: "", data_type: "password" },
   { key: "connections.kafka.requestTimeoutMilliseconds", value: 30000, data_type: "integer" },
+  { key: "connections.kafka.connectionTimeoutMilliseconds", value: 10000, data_type: "integer" },
+  { key: "connections.kafka.sslCaLocation", value: "", data_type: "string" },
+  { key: "connections.kafka.sslCertificateLocation", value: "", data_type: "string" },
+  { key: "connections.kafka.sslKeyLocation", value: "", data_type: "string" },
+  { key: "connections.kafka.sslKeyPassword", value: "", data_type: "password" },
+  { key: "connections.kafka.schemaRegistryUrl", value: "", data_type: "string" },
+  { key: "connections.kafka.schemaRegistryUsername", value: "", data_type: "string" },
+  { key: "connections.kafka.schemaRegistryPassword", value: "", data_type: "password" },
   { key: "connections.pubsub.projectId", value: "my-gcp-project", data_type: "string" },
   { key: "connections.pubsub.credentialsFile", value: "", data_type: "string" },
   { key: "connections.pubsub.endpoint", value: "pubsub.googleapis.com:443", data_type: "string" },
   { key: "connections.pubsub.emulatorHost", value: "", data_type: "string" },
   { key: "connections.pubsub.ackDeadlineSeconds", value: 60, data_type: "integer" },
+  { key: "connections.pubsub.connectionTimeoutSeconds", value: 30, data_type: "integer" },
+  { key: "connections.pubsub.maxInboundMessageBytes", value: 20971520, data_type: "integer" },
+  { key: "connections.pubsub.keepAliveSeconds", value: 60, data_type: "integer" },
   { key: "connections.sap.applicationServerHost", value: "sap-ecc.example.com", data_type: "string" },
+  { key: "connections.sap.release", value: "current", data_type: "string" },
   { key: "connections.sap.systemNumber", value: "00", data_type: "string" },
   { key: "connections.sap.client", value: "100", data_type: "string" },
   { key: "connections.sap.language", value: "EN", data_type: "string" },
@@ -517,7 +578,9 @@ const initial: Project = {
   packaging: {
     artifact_name: "order-integration",
     version: "1.0.0",
-    format: "zip",
+    format: "ifpkg",
+    target: "on-prem",
+    environment: "production",
   },
   schemas: [],
   properties: envs,
@@ -525,9 +588,66 @@ const initial: Project = {
   tasks: [starter()],
   active_task_id: "main",
 };
+const propertyReferences = (value: any) => [...JSON.stringify(value ?? {}).matchAll(/\$\{properties\.([^}]+)\}/g)].map((match) => match[1]);
+const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[] => {
+  const issues: ValidationIssue[] = [], ids = new Set(task.activities.map((item) => item.id));
+  const add = (severity: ValidationIssue["severity"], category: string, message: string, remedy: string, activityId?: string) =>
+    issues.push({ id: `${task.id}-${issues.length}`, severity, category, message, remedy, taskId: task.id, activityId });
+  const events = task.activities.filter(isEventActivity);
+  if (events.length !== 1) add("error", "Flow", `${task.name} has ${events.length} event activities.`, "Each task must contain exactly one starter/event activity.");
+  if (!task.activities.some((item) => item.type === "end")) add("error", "Flow", `${task.name} has no End activity.`, "Add an End activity and connect every successful execution path.");
+  task.transitions.forEach((transition) => {
+    if (!ids.has(transition.source) || !ids.has(transition.target)) add("error", "Transition", "A transition references a missing activity.", "Reconnect or delete the invalid transition.");
+    if (transition.source === transition.target) add("warning", "Transition", "A transition connects an activity to itself.", "Connect it to the intended downstream activity.", transition.source);
+    if (transition.type === "success_condition" && !transition.condition?.trim()) add("error", "Transition", "A conditional transition has no executable condition.", "Enter and evaluate a boolean condition in the transition editor.", transition.source);
+  });
+  const startIds = events.map((item) => item.id), reachable = new Set(startIds), queue = [...startIds];
+  while (queue.length) {
+    const current = queue.shift()!;
+    task.transitions.filter((transition) => transition.source === current).forEach((transition) => {
+      if (!reachable.has(transition.target)) { reachable.add(transition.target); queue.push(transition.target); }
+    });
+  }
+  task.activities.filter((item) => !reachable.has(item.id)).forEach((item) => add("warning", "Flow", `${item.name} is not on an executable path.`, "Connect it to an upstream activity or remove it.", item.id));
+  const connectionTypes = new Set(["jdbc", "ftp", "sftp", "http", "ems", "kafka", "pubsub", "sap"]);
+  task.activities.forEach((item) => {
+    const operation = item.config.operation || "";
+    if (connectionTypes.has(item.type) && !item.config.resourceId && !["http_listener", "start", "end"].includes(item.type)) add("error", "Connection", `${item.name} has no shared connection.`, "Select a compatible shared connection in Configuration.", item.id);
+    if (item.config.resourceId && !project.resources.some((resource) => resource.id === item.config.resourceId)) add("error", "Connection", `${item.name} references a missing shared connection.`, "Select an existing connection or create one under Resources.", item.id);
+    if (item.type === "call_task" && !project.tasks.some((candidate) => candidate.id === item.config.taskId && candidate.kind === "subtask")) add("error", "Task", `${item.name} has no valid Sub Task.`, "Select an existing Sub Task.", item.id);
+    if (item.type === "transform") {
+      if (!Object.keys(item.config.targetSchema || {}).length && !item.config.targetSchemaId) add("mapping", "Mapper", `${item.name} has no target schema.`, "Select an XSD from Project Schemas or define an inline target schema.", item.id);
+      if (!(item.config.mappings || []).length) add("mapping", "Mapper", `${item.name} has no field mappings.`, "Map execution-path fields to the target schema.", item.id);
+    }
+    if (item.type === "jdbc" && !String(item.config.sql || "").trim() && !["create", "update", "delete", "truncate"].includes(operation)) add("warning", "Configuration", `${item.name} has no SQL statement.`, "Configure SQL or a stored procedure call.", item.id);
+    if ((item.type === "file" || item.type === "ftp" || item.type === "sftp") && !String(item.config.path || item.config.remotePath || "").trim()) add("warning", "Configuration", `${item.name} has no file path.`, "Configure the source or target path.", item.id);
+    if (item.type === "sap" && operation.includes("idoc") && !item.config.idocType) add("mapping", "SAP IDoc", `${item.name} has no IDoc type/schema.`, "Retrieve an IDoc type from the SAP shared connection and select it here.", item.id);
+  });
+  return issues;
+};
+const validateProjectDefinition = (project: Project) => {
+  const issues = project.tasks.flatMap((task) => validateTaskDefinition(project, task));
+  const environments = Object.entries(project.properties);
+  const canonical = new Set((project.properties.local || environments[0]?.[1] || []).map((item) => item.key));
+  environments.forEach(([environment, properties]) => {
+    const keys = new Set(properties.map((item) => item.key));
+    canonical.forEach((key) => { if (!keys.has(key)) issues.push({ id: `property-${environment}-${key}`, severity: "warning", category: "Properties", message: `${environment}.properties is missing ${key}.`, remedy: "Add the property so mappings behave consistently in every environment." }); });
+  });
+  const referenced = new Set([
+    ...project.tasks.flatMap((task) => task.activities.flatMap((activity) => propertyReferences(activity.config))),
+    ...project.resources.flatMap((resource) => propertyReferences(resource.config)),
+  ]);
+  referenced.forEach((key) => environments.forEach(([environment, properties]) => {
+    if (!properties.some((item) => item.key === key)) issues.push({ id: `mapping-${environment}-${key}`, severity: "mapping", category: "Property mapping", message: `${key} is referenced but missing from ${environment}.properties.`, remedy: "Create the property or replace the expression with a valid project property." });
+  }));
+  if (!project.name.trim()) issues.push({ id: "project-name", severity: "error", category: "Project", message: "Application name is empty.", remedy: "Rename the application." });
+  if (!project.packaging?.artifact_name || !project.packaging?.version) issues.push({ id: "packaging", severity: "warning", category: "Packaging", message: "Packaging metadata is incomplete.", remedy: "Configure artifact name and version under Packaging." });
+  return issues;
+};
 function App() {
   const [project, setProject] = useState(initial),
     [selected, setSelected] = useState("main-start"),
+    [selectedIds, setSelectedIds] = useState<string[]>(["main-start"]),
     [selectedEdge, setSelectedEdge] = useState<string | null>(null),
     [selectedResource, setSelectedResource] = useState<string | null>(null),
     [logs, setLogs] = useState<any[]>([]),
@@ -546,10 +666,13 @@ function App() {
       null,
     ),
     [schemaEditor, setSchemaEditor] = useState(false),
+    [packageOpen, setPackageOpen] = useState(false),
     [debugState, setDebugState] = useState<any>(null),
+    [executionOutputs, setExecutionOutputs] = useState<Record<string, any>>({}),
     [breakpoints, setBreakpoints] = useState<string[]>([]),
     [busy, setBusy] = useState(false),
     [zoom, setZoom] = useState(1),
+    [validation, setValidation] = useState<{ title: string; issues: ValidationIssue[] } | null>(null),
     [connectionDraft, setConnectionDraft] = useState<{ source: string; x: number; y: number } | null>(null);
   const [historyVersion, setHistoryVersion] = useState(0);
   const history = useRef<{
@@ -564,7 +687,9 @@ function App() {
   latestProject.current = project;
   const canvas = useRef<HTMLDivElement>(null),
     fileInput = useRef<HTMLInputElement>(null),
-    drag = useRef<any>(null);
+    drag = useRef<any>(null),
+    activityClipboard = useRef<{ activities: Node[]; transitions: Edge[] } | null>(null),
+    projectFileHandle = useRef<any>(null);
   const task =
       project.tasks.find((t) => t.id === project.active_task_id) ||
       project.tasks[0],
@@ -595,9 +720,11 @@ function App() {
     [helpDialog, setHelpDialog] = useState<"about" | "shortcuts" | null>(null),
     [treeHeight, setTreeHeight] = useState(305),
     [configHeight, setConfigHeight] = useState(285),
+    [explorerWidth, setExplorerWidth] = useState(Number(localStorage.getItem("integration-fabric-explorer-width")) || 245),
     [paletteOpen, setPaletteOpen] = useState(true);
   const split = useRef<{ y: number; height: number } | null>(null),
-    configSplit = useRef<{ y: number; height: number } | null>(null);
+    configSplit = useRef<{ y: number; height: number } | null>(null),
+    explorerSplit = useRef<{ x: number; width: number } | null>(null);
   const commitPendingHistory = () => {
     const state = history.current;
     if (state.timer !== null) window.clearTimeout(state.timer);
@@ -614,7 +741,7 @@ function App() {
   };
   const restoreHistorySelection = (snapshot: Project) => {
     const restoredTask = snapshot.tasks.find((item) => item.id === snapshot.active_task_id) || snapshot.tasks[0];
-    setSelected((id) => restoredTask?.activities.some((item) => item.id === id) ? id : restoredTask?.activities[0]?.id || "");
+    setSelected((id) => { const next = restoredTask?.activities.some((item) => item.id === id) ? id : restoredTask?.activities[0]?.id || ""; setSelectedIds(next ? [next] : []); return next; });
     setSelectedEdge((id) => id && restoredTask?.transitions.some((item) => item.id === id) ? id : null);
     setSelectedResource((id) => id && snapshot.resources.some((item) => item.id === id) ? id : null);
   };
@@ -664,6 +791,7 @@ function App() {
     document.body.dataset.theme = theme;
     localStorage.setItem("integration-fabric-theme", theme);
   }, [theme]);
+  useEffect(() => localStorage.setItem("integration-fabric-explorer-width", String(explorerWidth)), [explorerWidth]);
   useEffect(
     () =>
       setOpen((o) => ({
@@ -682,6 +810,7 @@ function App() {
         const tasks = p.tasks?.length
           ? p.tasks
           : [{ ...p.process, kind: "starter" }];
+        projectFileHandle.current = localStorage.getItem(`integration-fabric-project-path:${p.id}`);
         setProject({
           ...p,
           tasks,
@@ -702,20 +831,17 @@ function App() {
   useEffect(() => {
     const move = (e: PointerEvent) => {
         if (!drag.current || !canvas.current) return;
-        const r = canvas.current.getBoundingClientRect();
+        const deltaX = (e.clientX - drag.current.startX) / zoom;
+        const deltaY = (e.clientY - drag.current.startY) / zoom;
         mutateTask((t) => ({
           ...t,
           activities: t.activities.map((n) =>
-            n.id === drag.current.id
+            drag.current.positions[n.id]
               ? {
                   ...n,
                   position: {
-                    x:
-                      (e.clientX - r.left + canvas.current!.scrollLeft) / zoom -
-                      drag.current.dx,
-                    y:
-                      (e.clientY - r.top + canvas.current!.scrollTop) / zoom -
-                      drag.current.dy,
+                    x: Math.max(0, drag.current.positions[n.id].x + deltaX),
+                    y: Math.max(0, drag.current.positions[n.id].y + deltaY),
                   },
                 }
               : n,
@@ -772,10 +898,13 @@ function App() {
               ),
             ),
           );
+        if (explorerSplit.current)
+          setExplorerWidth(Math.max(190, Math.min(520, explorerSplit.current.width + e.clientX - explorerSplit.current.x)));
       },
       up = () => {
         split.current = null;
         configSplit.current = null;
+        explorerSplit.current = null;
       };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -787,7 +916,9 @@ function App() {
   const selectTask = (id: string) => {
     const t = project.tasks.find((t) => t.id === id);
     setProject((p) => ({ ...p, active_task_id: id }));
-    setSelected(t?.activities[0]?.id || "");
+    const first = t?.activities[0]?.id || "";
+    setSelected(first);
+    setSelectedIds(first ? [first] : []);
     setSelectedEdge(null);
     setSelectedResource(null);
   };
@@ -821,6 +952,9 @@ function App() {
         groupId: "integration-fabric",
         maxMessages: 1,
       });
+    if (d.type === "ems") Object.assign(config, { messagingStyle: d.operation?.includes("topic") ? "Topic" : "Queue", messageType: "Text", acknowledgeMode: ["queue_receiver", "topic_subscriber"].includes(d.operation || "") ? "Auto" : undefined, deliveryMode: "Persistent", priority: 4, expiration: 0, maxSessions: 1, receiveTimeout: 30000, dynamicProperties: "{}" });
+    if (d.type === "kafka") Object.assign(config, { acknowledgeMode: d.operation === "receive" || d.operation === "get" ? "Auto" : undefined, keySerializer: "String", valueSerializer: "String", keyDeserializer: "String", valueDeserializer: "String", acks: "all", compressionType: "none", retries: 3, batchSize: 16384, lingerMs: 0, enableIdempotence: false, enableAutoCommit: true, autoOffsetReset: "earliest", maxPollRecords: 1, additionalProperties: "{}" });
+    if (d.type === "pubsub") Object.assign(config, { acknowledgeMode: d.operation === "subscribe" ? "Auto" : undefined, receiveTimeout: 10, publishTimeout: 60, attributes: {}, data: "${last}" });
     if (d.type === "sap")
       Object.assign(config, {
         resourceId: project.resources.find((r) => r.type === "sap")?.id || "",
@@ -828,6 +962,7 @@ function App() {
         payload: "${last}",
         idocOutputMode: "XML",
         messagingSource: "NoMessaging",
+        idocType: project.resources.find((r) => r.type === "sap")?.config?.selectedIdoc?.idocType || "",
       });
     if (d.type === "jdbc")
       Object.assign(config, {
@@ -843,7 +978,16 @@ function App() {
         mappings: [],
         threshold: 70,
       });
-    if (d.type === "file") Object.assign(config, { path: "", pattern: "*" });
+    if (d.type === "log") Object.assign(config, { level: "INFO", message: "", includePayload: true, inputMappings: { payload: "${last}" } });
+    if (d.type === "confirm") Object.assign(config, { ackId: "${last.ackId}", failIfMissing: true });
+    if (d.type === "file") Object.assign(config, {
+      path: "", pattern: "*", encoding: "UTF-8", readAs: "Text", writeAs: "Text",
+      includeTimestamp: true, excludeFileContent: false, append: false, overwrite: false,
+      createDirectories: true, addLineSeparator: false, compression: "None", recursive: false,
+      ignoreMissing: false, preserveAttributes: true, listType: "Files and Directories",
+      sortBy: "Name", sortOrder: "Ascending", eventType: "Created", pollInterval: 5,
+      includeExisting: false, postAction: "None", moveTo: "",
+    });
     if (
       d.type === "http_listener" ||
       (d.type === "rest" && d.operation === "receiver")
@@ -872,27 +1016,30 @@ function App() {
         if (existingEvent.type !== "start" && !confirm(`Replace the existing event activity “${existingEvent.name}” with “${n.name}”? A Task can have only one event activity.`)) return;
         const replacement = { ...n, id: existingEvent.id, position: existingEvent.position };
         mutateTask((current) => ({ ...current, activities: current.activities.map((activity) => activity.id === existingEvent.id ? replacement : activity) }));
-        setSelected(existingEvent.id); setSelectedEdge(null); setSelectedResource(null); setMenu(null);
+        setSelected(existingEvent.id); setSelectedIds([existingEvent.id]); setSelectedEdge(null); setSelectedResource(null); setMenu(null);
         setLogs([{ level: "INFO", message: `Replaced event activity ${existingEvent.name} with ${n.name}.` }]);
         return;
       }
     }
     mutateTask((t) => ({ ...t, activities: [...t.activities, n] }));
     setSelected(id);
+    setSelectedIds([id]);
     setSelectedEdge(null);
     setSelectedResource(null);
     setMenu(null);
   };
   const deleteSelectedActivity = () => {
-    if (!node) return;
-    if (isEventActivity(node) && nodes.filter(isEventActivity).length === 1) {
+    const targets = selectedIds.length ? nodes.filter((item) => selectedIds.includes(item.id)) : node ? [node] : [];
+    if (!targets.length) return;
+    if (targets.some(isEventActivity) && nodes.filter(isEventActivity).every((item) => targets.some((target) => target.id === item.id))) {
       setLogs([{ level: "WARN", message: "A Task must retain one event activity. Add a replacement event to replace this starter." }]);
       return;
     }
-    if (!confirm(`Delete activity “${node.name}” and its connected transitions?`)) return;
-    mutateTask((current) => ({ ...current, activities: current.activities.filter((activity) => activity.id !== node.id), transitions: current.transitions.filter((transition) => transition.source !== node.id && transition.target !== node.id) }));
-    const remaining = nodes.filter((activity) => activity.id !== node.id);
-    setSelected(remaining[0]?.id || ""); setSelectedEdge(null); setSelectedResource(null);
+    if (!confirm(targets.length === 1 ? `Delete activity “${targets[0].name}” and its connected transitions?` : `Delete ${targets.length} selected activities and their connected transitions?`)) return;
+    const targetIds = new Set(targets.map((item) => item.id));
+    mutateTask((current) => ({ ...current, activities: current.activities.filter((activity) => !targetIds.has(activity.id)), transitions: current.transitions.filter((transition) => !targetIds.has(transition.source) && !targetIds.has(transition.target)) }));
+    const remaining = nodes.filter((activity) => !targetIds.has(activity.id));
+    setSelected(remaining[0]?.id || ""); setSelectedIds(remaining[0] ? [remaining[0].id] : []); setSelectedEdge(null); setSelectedResource(null);
   };
   const deleteSelectedTransition = () => {
     if (!edge) return;
@@ -901,8 +1048,57 @@ function App() {
     if (!confirm(`Delete the transition from “${sourceName}” to “${targetName}”?`)) return;
     mutateTask((current) => ({ ...current, transitions: current.transitions.filter((transition) => transition.id !== edge.id) }));
     setSelectedEdge(null);
-    setSelected(nodes[0]?.id || "");
+    setSelected(nodes[0]?.id || ""); setSelectedIds(nodes[0] ? [nodes[0].id] : []);
     setSelectedResource(null);
+  };
+  const alignSelection = (axis: "vertical" | "horizontal") => {
+    const chosen = nodes.filter((item) => selectedIds.includes(item.id));
+    if (chosen.length < 2) { setLogs([{ level: "WARN", message: "Select at least two activities with Ctrl/Shift-click before aligning." }]); return; }
+    const ordered = [...chosen].sort((left, right) => axis === "vertical" ? left.position.y - right.position.y || left.position.x - right.position.x : left.position.x - right.position.x || left.position.y - right.position.y);
+    const anchorX = Math.min(...chosen.map((item) => item.position.x)), anchorY = Math.min(...chosen.map((item) => item.position.y));
+    const arranged = Object.fromEntries(ordered.map((item, index) => [item.id, axis === "vertical" ? { x: anchorX, y: anchorY + index * 125 } : { x: anchorX + index * 180, y: anchorY }]));
+    mutateTask((current) => ({ ...current, activities: current.activities.map((item) => arranged[item.id] ? { ...item, position: arranged[item.id] } : item) }));
+    setLogs([{ level: "INFO", message: `Arranged ${chosen.length} activities in a ${axis === "vertical" ? "vertical column" : "horizontal row"}.` }]);
+  };
+  const moveSelection = (dy: number) => {
+    if (!selectedIds.length) return;
+    mutateTask((current) => ({ ...current, activities: current.activities.map((item) => selectedIds.includes(item.id) ? { ...item, position: { ...item.position, y: Math.max(0, item.position.y + dy) } } : item) }));
+  };
+  const copySelection = () => {
+    const activities = nodes.filter((item) => selectedIds.includes(item.id));
+    if (!activities.length) { setLogs([{ level: "WARN", message: "Select one or more activities to copy." }]); return; }
+    const ids = new Set(activities.map((item) => item.id));
+    activityClipboard.current = { activities: structuredClone(activities), transitions: structuredClone(edges.filter((item) => ids.has(item.source) && ids.has(item.target))) };
+    setLogs([{ level: "INFO", message: `Copied ${activities.length} activit${activities.length === 1 ? "y" : "ies"}.` }]);
+  };
+  const pasteSelection = () => {
+    const clipboard = activityClipboard.current;
+    if (!clipboard?.activities.length) { setLogs([{ level: "WARN", message: "The Studio activity clipboard is empty." }]); return; }
+    if (clipboard.activities.some(isEventActivity) && nodes.some(isEventActivity)) { setLogs([{ level: "WARN", message: "Paste blocked: a Task can contain only one event activity. Copy downstream activities without the starter/event." }]); return; }
+    const now = Date.now(), idMap: Record<string, string> = {};
+    clipboard.activities.forEach((item, index) => { idMap[item.id] = `${item.type}-${now}-${index}`; });
+    const pasted = clipboard.activities.map((item) => ({ ...structuredClone(item), id: idMap[item.id], name: `${item.name} Copy`, position: { x: item.position.x + 34, y: item.position.y + 34 } }));
+    const pastedEdges = clipboard.transitions.map((item, index) => ({ ...structuredClone(item), id: `edge-${now}-${index}`, source: idMap[item.source], target: idMap[item.target] }));
+    mutateTask((current) => ({ ...current, activities: [...current.activities, ...pasted], transitions: [...current.transitions, ...pastedEdges] }));
+    setSelected(pasted[0].id); setSelectedIds(pasted.map((item) => item.id)); setSelectedEdge(null); setSelectedResource(null);
+    setLogs([{ level: "INFO", message: `Pasted ${pasted.length} activit${pasted.length === 1 ? "y" : "ies"} with internal transitions.` }]);
+  };
+  const cutSelection = () => { copySelection(); deleteSelectedActivity(); };
+  const runValidation = (scope: "task" | "project") => {
+    const issues = scope === "task" ? validateTaskDefinition(project, task) : validateProjectDefinition(project);
+    const title = scope === "task" ? `Validate Task · ${task.name}` : `Validate Project · ${project.name}`;
+    setValidation({ title, issues });
+    setLogs([{ level: issues.some((item) => item.severity === "error") ? "ERROR" : issues.length ? "WARN" : "INFO", message: issues.length ? `${title}: ${issues.length} finding${issues.length === 1 ? "" : "s"}.` : `${title}: no errors or missing mappings.` }]);
+  };
+  const newProject = () => {
+    const name = prompt("New application name", "New Integration Application")?.trim();
+    if (!name) return;
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `project-${Date.now()}`;
+    const next = structuredClone(initial);
+    next.id = id; next.name = name; next.packaging = { ...next.packaging, artifact_name: id }; next.tasks = [starter("main", "Main Task")]; next.active_task_id = "main";
+    projectFileHandle.current = null;
+    setProject(next); setSelected("main-start"); setSelectedIds(["main-start"]); setSelectedEdge(null); setSelectedResource(null); setClosed(false);
+    setLogs([{ level: "INFO", message: `Created new project ${name}. Save to persist it.` }]);
   };
   useEffect(() => {
     const removeSelection = (event: KeyboardEvent) => {
@@ -917,22 +1113,95 @@ function App() {
     window.addEventListener("keydown", removeSelection);
     return () => window.removeEventListener("keydown", removeSelection);
   }, [node, edge, nodes, byId]);
-  const save = async () => {
-      const r = await fetch(`/api/projects/${project.id}`, {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(project),
-        }),
-        out = await r.json();
-      if (r.ok) setProject(out);
-      setLogs([
-        {
-          level: r.ok ? "INFO" : "ERROR",
-          message: r.ok ? "Project and all Tasks saved." : out.detail,
-        },
-      ]);
-    },
-    run = async () => {
+  useEffect(() => {
+    const shortcuts = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]')) return;
+      if (event.ctrlKey || event.metaKey) {
+        const key = event.key.toLowerCase();
+        if (key === "a") { event.preventDefault(); setSelectedIds(nodes.map((item) => item.id)); if (nodes[0]) setSelected(nodes[0].id); }
+        else if (key === "c") { event.preventDefault(); copySelection(); }
+        else if (key === "x") { event.preventDefault(); cutSelection(); }
+        else if (key === "v") { event.preventDefault(); pasteSelection(); }
+      } else if (event.key === "ArrowUp" && selectedIds.length > 1) { event.preventDefault(); moveSelection(-12); }
+      else if (event.key === "ArrowDown" && selectedIds.length > 1) { event.preventDefault(); moveSelection(12); }
+    };
+    window.addEventListener("keydown", shortcuts);
+    return () => window.removeEventListener("keydown", shortcuts);
+  }, [project, selectedIds]);
+  const projectFilename = (extension: string) => `${project.name.replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-|-$/g, "") || project.id}.${extension}`;
+  const persistProject = async () => {
+    const response = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(project) });
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) throw new Error("The project API returned HTML instead of project JSON. Verify the local runtime is running on port 8787.");
+    const output = await response.json();
+    if (!response.ok) throw new Error(output.detail || "Project save failed");
+    setProject(output);
+    return output;
+  };
+  const fetchProjectFile = async (format: "package" | "json") => {
+    const response = await fetch(`/api/projects/${project.id}/${format === "package" ? "export" : "json"}`, { headers: { accept: format === "package" ? "application/zip" : "application/json" } });
+    const contentType = response.headers.get("content-type") || "";
+    if (!response.ok) throw new Error(`Project ${format === "package" ? "export" : "JSON save"} failed (${response.status}).`);
+    if (contentType.includes("text/html")) throw new Error("The server returned the Studio HTML page instead of a project file.");
+    if (format === "package" && !contentType.includes("zip") && !contentType.includes("octet-stream")) throw new Error(`Unexpected export type: ${contentType || "unknown"}`);
+    if (format === "json" && !contentType.includes("json")) throw new Error(`Unexpected project JSON type: ${contentType || "unknown"}`);
+    return response.blob();
+  };
+  const browserDownload = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob), anchor = document.createElement("a");
+    anchor.href = url; anchor.download = filename; document.body.appendChild(anchor); anchor.click(); anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+  };
+  const saveProjectFile = async (format: "package" | "json" = "package", forceNew = false) => {
+    const extension = format === "package" ? "ifproject" : "json", filename = projectFilename(extension), picker = (window as any).showSaveFilePicker;
+    let handle = format === "package" && !forceNew ? projectFileHandle.current : null;
+    try {
+      if (picker && !handle) handle = await picker({ suggestedName: filename, types: [{ description: format === "package" ? "Integration Fabric Project" : "Integration Fabric Project JSON", accept: { [format === "package" ? "application/zip" : "application/json"]: [`.${extension}`] } }] });
+      await persistProject();
+      const blob = await fetchProjectFile(format);
+      if (window.fabricDesktop) {
+        const existingPath = format === "package" && !forceNew && typeof handle === "string" ? handle : undefined;
+        const filePath = await window.fabricDesktop.saveFile({ path: existingPath, filename, bytes: [...new Uint8Array(await blob.arrayBuffer())], filters: [{ name: format === "package" ? "Integration Fabric Project" : "Integration Fabric JSON", extensions: [extension] }] });
+        if (!filePath) { setLogs([{ level: "INFO", message: "Project file save cancelled." }]); return; }
+        if (format === "package") { projectFileHandle.current = filePath; localStorage.setItem(`integration-fabric-project-path:${project.id}`, filePath); }
+        setLogs([{ level: "INFO", message: `Saved complete project to ${filePath}.` }]);
+      } else if (handle) {
+        const writable = await handle.createWritable(); await writable.write(blob); await writable.close();
+        if (format === "package") projectFileHandle.current = handle;
+        setLogs([{ level: "INFO", message: `Saved complete project to ${handle.name || filename}. Backend JSON: backend/data/projects/${project.id}/` }]);
+      } else {
+        browserDownload(blob, filename);
+        setLogs([{ level: "INFO", message: `Saved complete project as ${filename}. Backend JSON: backend/data/projects/${project.id}/` }]);
+      }
+    } catch (error: any) {
+      if (error?.name === "AbortError") { setLogs([{ level: "INFO", message: "Project file save cancelled." }]); return; }
+      setLogs([{ level: "ERROR", message: error?.message || "Project file save failed" }]);
+    }
+  };
+  const save = () => saveProjectFile("package", false);
+  const exportProject = () => saveProjectFile("package", true);
+  const saveJsonFile = () => saveProjectFile("json", true);
+  const buildDeploymentPackage = async (settings: Record<string, string>) => {
+    try {
+      const next = { ...project, packaging: { ...project.packaging, ...settings } };
+      const saved = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
+      if (!saved.ok) throw new Error("Unable to save packaging configuration.");
+      setProject(await saved.json());
+      const query = new URLSearchParams({ target: settings.target, environment: settings.environment, archive: settings.format });
+      const response = await fetch(`/api/projects/${project.id}/package?${query}`);
+      if (!response.ok) { const detail = await response.json().catch(() => ({})); throw new Error(detail.detail || "Package generation failed."); }
+      const blob = await response.blob(), disposition = response.headers.get("content-disposition") || "";
+      const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `${settings.artifact_name}-${settings.version}.${settings.format === "ifpkg" ? "ifpkg" : settings.format}`;
+      if (window.fabricDesktop) {
+        const filePath = await window.fabricDesktop.saveFile({ filename, bytes: [...new Uint8Array(await blob.arrayBuffer())], filters: [{ name: "Integration Fabric Deployment Package", extensions: [filename.endsWith(".tar.gz") ? "tar.gz" : filename.split(".").pop() || "ifpkg"] }] });
+        if (!filePath) return;
+        setLogs([{ level: "INFO", message: `Created ${settings.target} deployment package: ${filePath}` }]);
+      } else browserDownload(blob, filename);
+      setPackageOpen(false);
+    } catch (error: any) { setLogs([{ level: "ERROR", message: error?.message || "Package generation failed" }]); }
+  };
+  const run = async () => {
       setBusy(true);
       const r = await fetch(`/api/projects/${project.id}/run`, {
           method: "POST",
@@ -945,6 +1214,7 @@ function App() {
         }),
         out = await r.json();
       setLogs(out.logs || [{ level: "ERROR", message: out.detail }]);
+      setExecutionOutputs(out.activity_outputs || {});
       setBusy(false);
     },
     debug = async () => {
@@ -960,6 +1230,7 @@ function App() {
         }),
         out = await r.json();
       setDebugState(out);
+      setExecutionOutputs(out.activityOutputs || {});
       setLogs(out.logs || [{ level: "ERROR", message: out.detail }]);
     },
     debugAction = async (action: string) => {
@@ -971,44 +1242,62 @@ function App() {
         }),
         out = await r.json();
       setDebugState(out);
+      setExecutionOutputs(out.activityOutputs || {});
       setLogs(out.logs || []);
       if (out.currentTaskId && out.currentTaskId !== project.active_task_id)
         selectTask(out.currentTaskId);
-    },
-    exportProject = () => {
-      const a = document.createElement("a");
-      a.href = `/api/projects/${project.id}/export`;
-      a.download = `${project.name}.ifproject`;
-      a.click();
-    },
-    importProject = async (file: File) => {
+    };
+  const importProject = async (file: File) => {
       const data = new FormData();
       data.append("file", file);
       const r = await fetch("/api/projects/import", {
           method: "POST",
           body: data,
-        }),
-        out = await r.json();
+        });
+      const contentType = r.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) { setLogs([{ level: "ERROR", message: "Import failed because the runtime returned HTML instead of project JSON." }]); return; }
+      const out = await r.json();
       if (r.ok) {
         setProject(out);
+        const first = out.tasks?.[0]?.activities?.[0]?.id || "";
+        setSelected(first); setSelectedIds(first ? [first] : []);
+        projectFileHandle.current = null;
         setLogs([
           { level: "INFO", message: `Imported complete project ${out.name}.` },
         ]);
+        return out;
       } else setLogs([{ level: "ERROR", message: out.detail }]);
+      return null;
     };
-  const saveJsonFile = () => {
-      const a = document.createElement("a");
-      a.href = `/api/projects/${project.id}/json`;
-      a.download = `${project.name}.json`;
-      a.click();
-    },
-    openProject = async (id: string) => {
+  const importFromFileSystem = async () => {
+    if (window.fabricDesktop) {
+      const selectedFile = await window.fabricDesktop.openProject();
+      if (!selectedFile) return;
+      const imported = await importProject(new File([new Uint8Array(selectedFile.bytes)], selectedFile.name));
+      projectFileHandle.current = selectedFile.path;
+      if (imported?.id) localStorage.setItem(`integration-fabric-project-path:${imported.id}`, selectedFile.path);
+      return;
+    }
+    const picker = (window as any).showOpenFilePicker;
+    if (!picker) { fileInput.current?.click(); return; }
+    try {
+      const [handle] = await picker({ multiple: false, types: [{ description: "Integration Fabric Project", accept: { "application/zip": [".ifproject", ".zip"], "application/json": [".json"] } }] });
+      const file = await handle.getFile();
+      await importProject(file);
+      projectFileHandle.current = handle;
+    } catch (error: any) {
+      if (error?.name !== "AbortError") setLogs([{ level: "ERROR", message: error?.message || "Project import failed" }]);
+    }
+  };
+  const openProject = async (id: string) => {
       const r = await fetch(`/api/projects/${id}`),
         out = await r.json();
       if (r.ok) {
         setProject(out);
         setClosed(false);
-        setSelected(out.tasks?.[0]?.activities?.[0]?.id || "");
+        const first = out.tasks?.[0]?.activities?.[0]?.id || "";
+        setSelected(first); setSelectedIds(first ? [first] : []);
+        projectFileHandle.current = localStorage.getItem(`integration-fabric-project-path:${out.id}`);
         setLogs([
           {
             level: "INFO",
@@ -1016,8 +1305,8 @@ function App() {
           },
         ]);
       }
-    },
-    deleteCurrent = async () => {
+    };
+  const deleteCurrent = async () => {
       if (
         !confirm(
           `Delete ${project.name} from backend JSON storage? This cannot be undone.`,
@@ -1031,11 +1320,21 @@ function App() {
         setClosed(true);
         setLogs([]);
       }
-    },
-    closeProject = () => {
+    };
+  const closeProject = () => {
       setClosed(true);
       setMenu(null);
     };
+  useEffect(() => {
+    const projectFileShortcuts = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") return;
+      event.preventDefault();
+      if (event.shiftKey) void exportProject();
+      else void save();
+    };
+    window.addEventListener("keydown", projectFileShortcuts);
+    return () => window.removeEventListener("keydown", projectFileShortcuts);
+  }, [project]);
   if (closed)
     return (
       <ProjectWelcome
@@ -1049,13 +1348,13 @@ function App() {
       />
     );
   return (
-    <div className="app" onClick={() => setMenu(null)}>
+    <div className="app" style={{ "--explorer-width": `${explorerWidth}px` } as React.CSSProperties} onClick={() => setMenu(null)}>
       <nav className="menu-bar">
         <div className="menu-mark">
           <Workflow /> IF
         </div>
         <div className="menu-root"><button className={menu === "file" ? "active" : ""} onClick={(e) => { e.stopPropagation(); setMenu(menu === "file" ? null : "file"); }}>File</button>
-          {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} save={save} saveJson={saveJsonFile} exportProject={exportProject} importProject={() => fileInput.current?.click()} openProjects={() => setClosed(true)} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
+          {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} save={save} saveJson={saveJsonFile} exportProject={exportProject} importProject={importFromFileSystem} openProjects={() => setClosed(true)} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
         <TopMenu label="Edit" open={menu === "edit"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "edit" ? null : "edit"); }} commands={[
           { label: "Undo", detail: "Restore an earlier Studio change · up to 100 levels", icon: Undo2, shortcut: "Ctrl+Z", action: undoStudio, disabled: history.current.past.length === 0 && !history.current.pendingBase },
           { label: "Redo", detail: "Restore the most recently undone change", icon: Redo2, shortcut: "Ctrl+Y", action: redoStudio, disabled: history.current.future.length === 0 },
@@ -1068,10 +1367,13 @@ function App() {
           { label: "Expand Project Explorer", detail: "Open every project folder", icon: FolderOpen, action: () => setOpen((value) => Object.fromEntries(Object.keys(value).map((key) => [key, true]))) },
           { label: "Collapse Project Explorer", detail: "Close every project folder", icon: Folder, action: () => setOpen((value) => Object.fromEntries(Object.keys(value).map((key) => [key, false]))) },
           { label: "Reset Canvas Zoom", detail: "Return designer to 100%", icon: Workflow, action: () => setZoom(1) },
+          ...themeOptions.map((option) => ({ label: `Theme · ${option.label}`, detail: option.detail, icon: option.value === theme ? CheckCircle2 : Workflow, action: () => setTheme(option.value) })),
         ]}/>
         <TopMenu label="Run" open={menu === "run"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "run" ? null : "run"); }} commands={[
           { label: "Run Active Task", detail: `${task.name} · ${project.active_environment}`, icon: CirclePlay, shortcut: "F5", action: run },
           { label: "Start Debugging", detail: "Honor configured breakpoints", icon: Bug, shortcut: "F6", action: debug },
+          { label: "Validate Current Task", detail: "Check flow, mappings, connections, and configuration", icon: ShieldCheck, action: () => runValidation("task") },
+          { label: "Validate Project", detail: "Check every task, environment, mapping, and package", icon: ShieldCheck, action: () => runValidation("project") },
           { label: "Continue", detail: "Resume the active debug session", icon: CirclePlay, action: () => debugAction("continue"), disabled: !debugState },
           { label: "Stop Debugging", detail: "End the active debug session", icon: Square, action: () => setDebugState(null), disabled: !debugState },
         ]}/>
@@ -1094,6 +1396,28 @@ function App() {
           <Bug /> Debug
         </button>
       </nav>
+      <StudioRibbon
+        selectedCount={selectedIds.length}
+        newProject={newProject}
+        openProject={() => setClosed(true)}
+        importProject={importFromFileSystem}
+        save={save}
+        exportProject={exportProject}
+        packageProject={() => setPackageOpen(true)}
+        closeProject={closeProject}
+        run={run}
+        debug={debug}
+        validateTask={() => runValidation("task")}
+        validateProject={() => runValidation("project")}
+        undo={undoStudio}
+        cut={cutSelection}
+        copy={copySelection}
+        paste={pasteSelection}
+        alignVertical={() => alignSelection("vertical")}
+        alignHorizontal={() => alignSelection("horizontal")}
+        moveUp={() => moveSelection(-24)}
+        moveDown={() => moveSelection(24)}
+      />
       <header>
         <div className="brand">
           <Workflow />
@@ -1132,6 +1456,7 @@ function App() {
         </div>
       </header>
       <aside className="explorer">
+        <div className="explorer-width-splitter" title="Drag left or right to resize Project Explorer" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); explorerSplit.current = { x: event.clientX, width: explorerWidth }; }}><span /></div>
         <div className="pane-title">PROJECT EXPLORER</div>
         <div className="tree project-tree" style={{ height: treeHeight }}>
           <button
@@ -1226,6 +1551,7 @@ function App() {
                     onClick={() => {
                       setSelectedResource(r.id);
                       setSelected("");
+                      setSelectedIds([]);
                       setSelectedEdge(null);
                       setActiveTab("configuration");
                     }}
@@ -1245,7 +1571,7 @@ function App() {
             <Package /> Packaging
           </button>
           {open.Packaging && (
-            <button className="tree-row indent2">
+            <button className="tree-row indent2" onClick={() => setPackageOpen(true)}>
               <Package />
               {project.packaging?.artifact_name || project.id}-
               {project.packaging?.version || "1.0.0"}
@@ -1417,6 +1743,9 @@ function App() {
               cy: e.nativeEvent.offsetY / zoom,
             });
           }}
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) { setSelectedIds([]); setSelected(""); setSelectedEdge(null); setSelectedResource(null); }
+          }}
         >
           <div
             className="canvas-content"
@@ -1435,6 +1764,7 @@ function App() {
                     onClick={() => {
                       setSelectedEdge(e.id);
                       setSelected("");
+                      setSelectedIds([]);
                       setSelectedResource(null);
                       setActiveTab("configuration");
                     }}
@@ -1469,16 +1799,21 @@ function App() {
                 <button
                   key={n.id}
                   data-node-id={n.id}
-                  className={`node ${selected === n.id ? "selected" : ""} ${debugState?.currentActivityId === n.id ? "debug-current" : ""}`}
+                  className={`node ${selectedIds.includes(n.id) ? "selected" : ""} ${selectedIds.length > 1 && selectedIds.includes(n.id) ? "multi-selected" : ""} ${debugState?.currentActivityId === n.id ? "debug-current" : ""}`}
                   style={{ left: n.position.x, top: n.position.y }}
                   onPointerDown={(e) => {
                     e.stopPropagation();
+                    const additive = e.ctrlKey || e.metaKey || e.shiftKey;
+                    const nextIds = additive ? (selectedIds.includes(n.id) ? selectedIds : [...selectedIds, n.id]) : (selectedIds.includes(n.id) && selectedIds.length > 1 ? selectedIds : [n.id]);
+                    const positions = Object.fromEntries(nodes.filter((item) => nextIds.includes(item.id)).map((item) => [item.id, { ...item.position }]));
                     drag.current = {
-                      id: n.id,
-                      dx: e.nativeEvent.offsetX / zoom,
-                      dy: e.nativeEvent.offsetY / zoom,
+                      ids: nextIds,
+                      positions,
+                      startX: e.clientX,
+                      startY: e.clientY,
                     };
                     setSelected(n.id);
+                    setSelectedIds(nextIds);
                     setSelectedEdge(null);
                     setSelectedResource(null);
                     setActiveTab("configuration");
@@ -1549,6 +1884,7 @@ function App() {
           {node ? (
             <ActivityEditor
               node={node}
+              task={task}
               resources={project.resources}
               tasks={project.tasks}
               schemas={project.schemas}
@@ -1604,10 +1940,18 @@ function App() {
             ? `${debugState.status} · stack ${debugState.callStack?.length || 0}`
             : `Runtime: ${project.active_environment}`}
         </div>
+        {!!Object.keys(executionOutputs).length && <details className="runtime-outputs" open>
+          <summary>EXECUTED PATH OUTPUTS <b>{Object.keys(executionOutputs).length}</b></summary>
+          {Object.values(executionOutputs).map((record: any) => <details key={record.activityId}>
+            <summary><span>{record.name}</span><small>{record.type}</small></summary>
+            <pre>{JSON.stringify(record.logEvent || record.output, null, 2)}</pre>
+          </details>)}
+        </details>}
         {logs.map((l, i) => (
           <div className={`log ${(l.level || "info").toLowerCase()}`} key={i}>
             <small>{l.level}</small>
             <p>{l.message}</p>
+            {l.payload !== undefined && <pre>{JSON.stringify(l.payload, null, 2)}</pre>}
           </div>
         ))}
       </aside>
@@ -1679,6 +2023,8 @@ function App() {
               tasks: [...p.tasks, t],
               active_task_id: id,
             }));
+            setSelected(t.activities[0]?.id || "");
+            setSelectedIds(t.activities[0] ? [t.activities[0].id] : []);
             setTaskDialog(null);
           }}
         />
@@ -1722,7 +2068,13 @@ function App() {
           }}
         />
       )}
+      {packageOpen && <PackageDialog packaging={project.packaging} environments={Object.keys(project.properties)} onClose={() => setPackageOpen(false)} onPackage={buildDeploymentPackage}/>} 
       {helpDialog && <HelpDialog mode={helpDialog} onClose={() => setHelpDialog(null)}/>} 
+      {validation && <ValidationDialog result={validation} onClose={() => setValidation(null)} onOpen={(issue: ValidationIssue) => {
+        if (issue.taskId) selectTask(issue.taskId);
+        if (issue.activityId) { setSelected(issue.activityId); setSelectedIds([issue.activityId]); setSelectedEdge(null); setSelectedResource(null); }
+        setValidation(null);
+      }}/>} 
       {renameOpen && (
         <RenameApplication
           name={project.name}
@@ -1744,6 +2096,47 @@ function App() {
       )}
     </div>
   );
+}
+function PackageDialog({ packaging, environments, onClose, onPackage }: any) {
+  const [draft, setDraft] = useState({
+    artifact_name: packaging?.artifact_name || "integration-application",
+    version: packaging?.version || "1.0.0",
+    target: packaging?.target || "on-prem",
+    environment: packaging?.environment || "production",
+    format: packaging?.format || "ifpkg",
+  });
+  const update = (key: string, value: string) => setDraft((current) => ({ ...current, [key]: value }));
+  const extension = draft.format === "ifpkg" ? "ifpkg" : draft.format;
+  return <div className="modal-backdrop"><div className="package-modal">
+    <header><div><Package/><b>Build deployment package</b><small>Choose how this integration will run</small></div><button onClick={onClose}>×</button></header>
+    <main>
+      <label>Artifact name<input value={draft.artifact_name} onChange={(event) => update("artifact_name", event.target.value)}/></label>
+      <label>Version<input value={draft.version} onChange={(event) => update("version", event.target.value)}/></label>
+      <div className="package-targets">
+        <button className={draft.target === "on-prem" ? "selected" : ""} onClick={() => update("target", "on-prem")}><HardDrive/><span><b>On-premises Linux</b><small>Administrator and runtime-agent deployment without containers</small></span></button>
+        <button className={draft.target === "cloud" ? "selected" : ""} onClick={() => update("target", "cloud")}><Cloud/><span><b>Cloud / Kubernetes</b><small>OCI image inputs and Kubernetes deployment descriptor</small></span></button>
+      </div>
+      <label>Target environment<select value={draft.environment} onChange={(event) => update("environment", event.target.value)}>{environments.map((name: string) => <option key={name}>{name}</option>)}</select></label>
+      <label>Archive format<select value={draft.format} onChange={(event) => update("format", event.target.value)}><option value="ifpkg">Integration package (.ifpkg)</option><option value="tar.gz">Compressed TAR (.tar.gz)</option><option value="ear">EAR-compatible ZIP (.ear)</option></select></label>
+      <div className="package-preview"><Package/><span><b>{draft.artifact_name}-{draft.version}-{draft.target}.{extension}</b><small>{draft.target === "cloud" ? "Includes Docker build input and Kubernetes manifest" : "Includes the Linux Administrator deployment descriptor"}</small></span></div>
+      <p className="package-security"><ShieldCheck/> Password values are removed. The target Administrator or Kubernetes secret provider supplies credentials during deployment.</p>
+    </main>
+    <footer><button onClick={onClose}>Cancel</button><button className="primary" disabled={!draft.artifact_name.trim() || !draft.version.trim()} onClick={() => onPackage(draft)}>Validate and package</button></footer>
+  </div></div>;
+}
+function StudioRibbon(props: any) {
+  const command = (label: string, Icon: any, action: () => void, disabled = false, emphasis = false) =>
+    <button type="button" className={emphasis ? "emphasis" : ""} disabled={disabled} onClick={(event) => { event.stopPropagation(); action(); }} title={label}><Icon/><span>{label}</span></button>;
+  return <section className="studio-ribbon" aria-label="Studio ribbon">
+    <div className="ribbon-group"><b>PROJECT</b><div>{command("New", FilePlus2, props.newProject)}{command("Open", FolderOpen, props.openProject)}{command("Import", Upload, props.importProject)}{command("Save", Save, props.save, false, true)}{command("Export", Download, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</div></div>
+    <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("Run", CirclePlay, props.run, false, true)}{command("Debug", Bug, props.debug)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}</div></div>
+    <div className="ribbon-group"><b>EDIT</b><div>{command("Undo", Undo2, props.undo)}{command("Cut", Scissors, props.cut, !props.selectedCount)}{command("Copy", ClipboardCopy, props.copy, !props.selectedCount)}{command("Paste", ClipboardPaste, props.paste)}</div></div>
+    <div className="ribbon-group layout-group"><b>ARRANGE · {props.selectedCount} SELECTED</b><div>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</div></div>
+  </section>;
+}
+function ValidationDialog({ result, onClose, onOpen }: any) {
+  const counts = result.issues.reduce((value: any, issue: ValidationIssue) => ({ ...value, [issue.severity]: (value[issue.severity] || 0) + 1 }), {});
+  return <div className="modal-backdrop"><div className="runtime-modal validation-dialog"><header><span><ShieldCheck/><b>{result.title}</b></span><button aria-label="Close validation" onClick={onClose}>×</button></header><div className="validation-summary"><span className="error">{counts.error || 0} errors</span><span className="warning">{counts.warning || 0} warnings</span><span className="mapping">{counts.mapping || 0} mappings needed</span></div><main>{!result.issues.length ? <div className="validation-clean"><CheckCircle2/><h2>Validation successful</h2><p>No errors or missing mappings were found.</p></div> : result.issues.map((issue: ValidationIssue) => <button key={issue.id} className={`validation-issue ${issue.severity}`} onClick={() => onOpen(issue)}><span>{issue.severity === "error" ? "ERROR" : issue.severity === "mapping" ? "MAPPING" : "WARNING"}</span><div><b>{issue.category}</b><p>{issue.message}</p><small>{issue.remedy}</small></div>{(issue.taskId || issue.activityId) && <ChevronRight/>}</button>)}</main><footer><span>Click a task/activity finding to open it in the designer.</span><button className="primary" onClick={onClose}>Close</button></footer></div></div>;
 }
 function RenameApplication({ name, onClose, onSave }: any) {
   const [value, setValue] = useState(name);
@@ -1790,6 +2183,13 @@ function PropertyEditor({ environment, properties, onClose, onSave }: any) {
     [mode, setMode] = useState<"table" | "json" | "plain">("table"),
     [text, setText] = useState(""),
     [error, setError] = useState("");
+  const convertValue = (value: any, type: Property["data_type"]) => {
+    if (type === "boolean") return typeof value === "boolean" ? value : ["true", "1", "yes", "on"].includes(String(value).toLowerCase());
+    if (["integer", "long"].includes(type)) return value === "" ? "" : Number.parseInt(String(value), 10);
+    if (type === "number") return value === "" ? "" : Number(value);
+    if (type === "json" && typeof value === "string") { try { return JSON.parse(value); } catch { return value; } }
+    return value == null ? "" : value;
+  };
   const types: Property["data_type"][] = [
       "string",
       "integer",
@@ -1854,7 +2254,8 @@ function PropertyEditor({ environment, properties, onClose, onSave }: any) {
                 value = Number(value);
               if (data_type === "boolean") value = value === "true";
               if (data_type === "json") value = JSON.parse(value);
-              return { key: match[1].trim(), value, data_type };
+              const key = match[1].trim();
+              return { key, value, data_type };
             });
         onSave(result);
       } catch (e: any) {
@@ -1946,6 +2347,7 @@ function PropertyEditor({ environment, properties, onClose, onSave }: any) {
                               ...v,
                               data_type: e.target
                                 .value as Property["data_type"],
+                              value: convertValue(v.value, e.target.value as Property["data_type"]),
                             }
                           : v,
                       ),
@@ -2084,10 +2486,7 @@ function ThemePicker({ theme, setTheme }: any) {
         value={theme}
         onChange={(e) => setTheme(e.target.value)}
       >
-        <option value="midnight">Midnight</option>
-        <option value="aurora">Aurora</option>
-        <option value="graphite">Graphite</option>
-        <option value="arctic">Arctic</option>
+        {themeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </label>
   );
@@ -2322,10 +2721,18 @@ const connectionFieldSets: Record<string, any[]> = {
   ],
   ems: [
     { key: "mode", label: "Runtime mode", options: ["memory", "external"] }, { key: "serverUrl", label: "Server URL" },
+    { key: "connectionFactoryType", label: "Connection factory type", options: ["Direct", "JNDI"] },
+    { key: "messagingStyle", label: "Messaging style", options: ["Generic", "Queue/Topic"] },
     { key: "host", label: "Host" }, { key: "port", label: "Port" }, { key: "username", label: "Username" },
     { key: "password", label: "Password", password: true }, { key: "clientId", label: "Client ID" },
     { key: "connectionFactory", label: "Connection factory", options: ["ConnectionFactory", "QueueConnectionFactory", "TopicConnectionFactory"] },
-    { key: "reconnectAttempts", label: "Reconnect attempts" },
+    { key: "queueConnectionFactory", label: "Queue connection factory" }, { key: "topicConnectionFactory", label: "Topic connection factory" },
+    { key: "jndiContextFactory", label: "JNDI context factory" }, { key: "jndiProviderUrl", label: "JNDI provider URL" },
+    { key: "jndiUsername", label: "JNDI username" }, { key: "jndiPassword", label: "JNDI password", password: true },
+    { key: "useXa", label: "Use XA connection factory", options: ["false", "true"] }, { key: "useUfo", label: "Use EMS unshared failover", options: ["false", "true"] },
+    { key: "sslEnabled", label: "Enable SSL", options: ["false", "true"] }, { key: "sslTrustedCertificates", label: "SSL trusted certificates" },
+    { key: "reconnectAttempts", label: "Reconnect attempts" }, { key: "reconnectDelayMs", label: "Reconnect delay (ms)" },
+    { key: "heartbeatOutgoingMs", label: "Outgoing heartbeat (ms)" }, { key: "heartbeatIncomingMs", label: "Incoming heartbeat (ms)" },
   ],
   kafka: [
     { key: "mode", label: "Runtime mode", options: ["memory", "external"] }, { key: "bootstrapServers", label: "Bootstrap servers" },
@@ -2333,15 +2740,22 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "securityProtocol", label: "Security protocol", options: ["PLAINTEXT", "SASL_PLAINTEXT", "SASL_SSL", "SSL"] },
     { key: "saslMechanism", label: "SASL mechanism", options: ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"] },
     { key: "username", label: "Username" }, { key: "password", label: "Password", password: true },
-    { key: "requestTimeoutMilliseconds", label: "Request timeout (ms)" },
+    { key: "sslCaLocation", label: "SSL CA location" }, { key: "sslCertificateLocation", label: "SSL certificate location" },
+    { key: "sslKeyLocation", label: "SSL key location" }, { key: "sslKeyPassword", label: "SSL key password", password: true },
+    { key: "schemaRegistryUrl", label: "Schema Registry URL" }, { key: "schemaRegistryUsername", label: "Schema Registry username" },
+    { key: "schemaRegistryPassword", label: "Schema Registry password", password: true },
+    { key: "requestTimeoutMilliseconds", label: "Request timeout (ms)" }, { key: "connectionTimeoutMilliseconds", label: "Connection timeout (ms)" },
   ],
   pubsub: [
     { key: "mode", label: "Runtime mode", options: ["memory", "external"] }, { key: "projectId", label: "GCP project ID" },
     { key: "credentialsFile", label: "Credentials file" }, { key: "endpoint", label: "Service endpoint" },
     { key: "emulatorHost", label: "Emulator host" }, { key: "ackDeadlineSeconds", label: "Ack deadline (seconds)" },
+    { key: "connectionTimeoutSeconds", label: "Connection timeout (seconds)" }, { key: "maxInboundMessageBytes", label: "Maximum inbound message bytes" },
+    { key: "keepAliveSeconds", label: "Keep-alive time (seconds)" },
   ],
   sap: [
     { key: "mode", label: "Runtime adapter", options: ["mock", "external"] },
+    { key: "release", label: "SAP release", options: ["current", "720", "730"] },
     { key: "connectionType", label: "Connection type", options: ["dedicated", "logongroup", "snc", "sncwithlogongroup", "websocket"] },
     { key: "applicationServerHost", label: "Application server host" }, { key: "systemNumber", label: "System number" },
     { key: "client", label: "Client number" }, { key: "language", label: "Language" }, { key: "username", label: "Username" },
@@ -2360,24 +2774,59 @@ function connectionDefaults(type: string) {
     values[field.key] = propertyExpression(`${prefix}.${field.key}`);
   }
   if (["ems", "kafka", "pubsub"].includes(type)) values.mode = "memory";
-  if (type === "sap") Object.assign(values, { mode: "mock", connectionType: "dedicated" });
+  if (type === "sap") Object.assign(values, { mode: "mock", release: "current", connectionType: "dedicated" });
   if (type === "jdbc") values.driver = "postgresql";
   return values;
 }
 function SharedConnectionDialog({ type, properties, onClose, onCreate }: any) {
   const fields = connectionFieldSets[type] || [];
+  const testOutputRef = useRef<HTMLDivElement>(null);
+  const idocBrowserRef = useRef<HTMLElement>(null);
   const [draft, setDraft] = useState<any>({ id: `${type}-${Date.now()}`, type, name: `${type === "sap" ? "SAP ECC" : type.toUpperCase()} Connection`, config: connectionDefaults(type) });
   const [status, setStatus] = useState(""), [statusOk, setStatusOk] = useState<boolean | null>(null), [copied, setCopied] = useState(false);
   const [target, setTarget] = useState<string | null>(null), [propertySearch, setPropertySearch] = useState("");
+  const [idocs, setIdocs] = useState<any[]>([]), [idocSearch, setIdocSearch] = useState(""), [idocLoading, setIdocLoading] = useState(false), [idocError, setIdocError] = useState("");
   const set = (key: string, value: any) => setDraft((current: any) => ({ ...current, config: { ...current.config, [key]: value } }));
   const connectorPrefix = type === "sap_tid" ? "connections.sapTid." : `connections.${type}.`;
   const visibleProperties = [...(properties as Property[])]
     .filter((item) => item.key.toLowerCase().includes(propertySearch.toLowerCase()))
     .sort((left, right) => Number(right.key.startsWith(connectorPrefix)) - Number(left.key.startsWith(connectorPrefix)) || left.key.localeCompare(right.key));
+  const runtimeResource = () => {
+    const values = Object.fromEntries((properties as Property[]).map((item) => [item.key, item.value]));
+    const resolved = Object.fromEntries(Object.entries(draft.config).map(([key, value]) => {
+      const match = typeof value === "string" ? value.match(/^\$\{properties\.([^}]+)\}$/) : null;
+      return [key, match ? values[match[1]] : value];
+    }));
+    return { ...draft, config: resolved };
+  };
+  const fetchIdocs = async () => {
+    setIdocLoading(true); setIdocError("");
+    requestAnimationFrame(() => idocBrowserRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+    try {
+      const response = await fetch("/api/sap/idocs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resource: runtimeResource(), search: idocSearch, limit: 250 }) });
+      const output = await response.json();
+      if (!response.ok) throw new Error(output.detail || "IDoc discovery failed");
+      setIdocs(output.idocs || []);
+    } catch (error: any) { setIdocError(error?.message || "IDoc discovery failed"); }
+    finally { setIdocLoading(false); }
+  };
+  const selectIdoc = async (item: any) => {
+    setIdocLoading(true); setIdocError("");
+    try {
+      const configuredRelease = draft.config.release;
+      const metadataRelease = configuredRelease && configuredRelease !== "current" ? configuredRelease : item.release;
+      const response = await fetch("/api/sap/idocs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resource: runtimeResource(), idocType: item.idocType, extensionType: item.extensionType, release: metadataRelease }) });
+      const output = await response.json();
+      if (!response.ok) throw new Error(output.detail || "IDoc metadata download failed");
+      const selected = output.idoc;
+      setDraft((current: any) => ({ ...current, config: { ...current.config, selectedIdoc: selected, idocCatalog: [...(current.config.idocCatalog || []).filter((entry: any) => entry.idocType !== selected.idocType), selected] } }));
+    } catch (error: any) { setIdocError(error?.message || "IDoc metadata download failed"); }
+    finally { setIdocLoading(false); }
+  };
   const test = async () => {
     setStatus("Testing…"); setStatusOk(null); setCopied(false);
     try {
-      const response = await fetch("/api/connections/test", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) });
+      const response = await fetch("/api/connections/test", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(runtimeResource()) });
       const output = await response.json();
       setStatus(output.message || output.detail || JSON.stringify(output, null, 2)); setStatusOk(response.ok && output.ok !== false);
     } catch (error: any) { setStatus(error?.message || "Connection test failed"); setStatusOk(false); }
@@ -2388,8 +2837,13 @@ function SharedConnectionDialog({ type, properties, onClose, onCreate }: any) {
       const output = document.querySelector<HTMLTextAreaElement>(".connection-test-output textarea"); output?.focus(); output?.select(); document.execCommand("copy");
     });
   };
+  useEffect(() => {
+    if (!status) return;
+    const frame = requestAnimationFrame(() => testOutputRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+    return () => cancelAnimationFrame(frame);
+  }, [status, statusOk]);
   return <div className="modal-backdrop"><div className="runtime-modal connection-dialog">
-    <header><b>Create {type === "sap" ? "SAP ECC" : type.toUpperCase()} shared connection</b><span className="connection-header-actions"><button aria-label="Close" onClick={onClose}>×</button></span></header>
+    <header><b>Create {type === "sap" ? "SAP ECC" : type.toUpperCase()} shared connection</b><span className="connection-header-actions">{type === "sap" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button>}<button aria-label="Close" onClick={onClose}>×</button></span></header>
     <main>
       <label>Name<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>
       {target && <section className="connection-property-picker">
@@ -2398,7 +2852,8 @@ function SharedConnectionDialog({ type, properties, onClose, onCreate }: any) {
         <div className="property-browser-list">{visibleProperties.map((item) => <button key={item.key} onClick={() => { set(target, propertyExpression(item.key)); setTarget(null); setPropertySearch(""); }}><span><b>{item.key}</b><small>{item.data_type}</small></span><code>{item.data_type === "password" ? "••••••" : String(item.value)}</code></button>)}{!visibleProperties.length && <p>No matching connector properties.</p>}</div>
       </section>}
       {fields.map((field: any) => <label key={field.key}>{field.label}{field.options ? <select value={draft.config[field.key] ?? ""} onChange={(event) => set(field.key, event.target.value)}>{field.options.map((option: string) => <option key={option} value={option}>{option}</option>)}</select> : <span className="property-field-wrap"><input type={field.password && !String(draft.config[field.key] || "").startsWith("${") ? "password" : "text"} value={draft.config[field.key] ?? ""} onChange={(event) => set(field.key, event.target.value)}/><button type="button" title={`Browse properties for ${field.label}`} aria-label={`Browse properties for ${field.label}`} onClick={() => { setTarget(field.key); setPropertySearch(""); }}><Braces/></button></span>}</label>)}
-      {status && <div className={`connection-test-output ${statusOk === true ? "success" : statusOk === false ? "failure" : "pending"}`}><header><b>{statusOk === true ? "CONNECTION SUCCEEDED" : statusOk === false ? "CONNECTION FAILED" : "CONNECTION TEST"}</b><button onClick={copyStatus}><ClipboardCopy/> {copied ? "Copied" : "Copy output"}</button></header><textarea aria-label="Connection test output" readOnly value={status} onFocus={(event) => event.currentTarget.select()}/></div>}
+      {type === "sap" && <section ref={idocBrowserRef} className="sap-idoc-browser"><header><span><b>SAP IDOC METADATA</b><small>Target release: {draft.config.release === "720" ? "SAP 7.20" : draft.config.release === "730" ? "SAP 7.30" : "Current / auto-detect"}. Retrieve and store the matching schema in this shared connection.</small></span><button type="button" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button></header><div className="sap-idoc-search"><Search/><input value={idocSearch} onChange={(event) => setIdocSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && fetchIdocs()} placeholder="Filter IDoc types, for example ORDERS…"/></div>{idocError && <p className="sap-idoc-error">{idocError}</p>}<div className="sap-idoc-list">{idocs.map((item) => { const selected = draft.config.selectedIdoc?.idocType === item.idocType; return <button type="button" className={selected ? "selected" : ""} key={`${item.idocType}-${item.release}`} onClick={() => selectIdoc(item)}><span><b>{item.idocType}</b><small>{item.description || "SAP IDoc"}</small></span><code>{item.extensionType || "basic"} · {item.release || "current"}</code>{selected && <i>Schema fetched</i>}</button>; })}{!idocs.length && <p>Test the SAP connection, then retrieve the available IDoc types.</p>}</div>{draft.config.selectedIdoc && <footer><CheckCircle2/><span><b>{draft.config.selectedIdoc.idocType}</b><small>{draft.config.selectedIdoc.segments?.length || 0} metadata rows · SAP release {draft.config.selectedIdoc.release || draft.config.release} · schema stored with shared connection</small></span></footer>}</section>}
+      {status && <div ref={testOutputRef} role="status" aria-live="polite" className={`connection-test-output ${statusOk === true ? "success" : statusOk === false ? "failure" : "pending"}`}><header><span><b>{statusOk === true ? "CONNECTION SUCCEEDED" : statusOk === false ? "CONNECTION FAILED" : "CONNECTION TEST"}</b><small>Selectable test response</small></span><button onClick={copyStatus}><ClipboardCopy/> {copied ? "Copied" : "Copy output"}</button></header><textarea aria-label="Connection test output" readOnly value={status} onFocus={(event) => event.currentTarget.select()}/></div>}
     </main>
     <footer><button onClick={test}>Test Connection</button><button onClick={onClose}>Cancel</button><button className="primary" onClick={() => onCreate(draft)}>Create</button></footer>
   </div></div>;

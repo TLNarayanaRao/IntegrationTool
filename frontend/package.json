@@ -1,9 +1,70 @@
 {
   "name": "integration-fabric-studio",
+  "description": "Windows desktop integration designer for Integration Fabric applications",
+  "author": "Integration Fabric",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.1",
   "type": "module",
-  "scripts": {"dev":"vite", "build":"tsc -b && vite build", "lint":"eslint .", "preview":"vite preview"},
-  "dependencies": {"@vitejs/plugin-react":"latest", "vite":"latest", "typescript":"latest", "react":"latest", "react-dom":"latest", "lucide-react":"latest"},
-  "devDependencies": {"@types/react":"latest", "@types/react-dom":"latest"}
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "desktop:dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && cross-env FABRIC_DEV_URL=http://127.0.0.1:5173 electron .\"",
+    "desktop:prepare": "powershell -ExecutionPolicy Bypass -File ../scripts/build-electron-sidecar.ps1",
+    "desktop:installer": "npm run desktop:prepare && electron-builder --win nsis",
+    "desktop:unpacked": "npm run desktop:prepare && electron-builder --win dir",
+    "administrator:windows": "powershell -ExecutionPolicy Bypass -File ../scripts/build-administrator.ps1"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "typescript": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "lucide-react": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "concurrently": "latest",
+    "cross-env": "latest",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "wait-on": "latest"
+  },
+  "build": {
+    "appId": "io.integrationfabric.studio",
+    "productName": "Integration Fabric Studio",
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend/dist/IntegrationFabricRuntime",
+        "to": "runtime/IntegrationFabricRuntime"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "IntegrationFabricStudio-${version}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
 }

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+FABRIC_ADMIN_HOME="${FABRIC_ADMIN_HOME:-/opt/integration-fabric/administrator}"
+PID_DIR="${FABRIC_ADMIN_PID_DIR:-/var/run/integration-fabric}"
+LOG_DIR="${FABRIC_ADMIN_LOG_DIR:-/var/log/integration-fabric}"
+EXECUTABLE="$FABRIC_ADMIN_HOME/IntegrationFabricAdministrator"
+PID_FILE="$PID_DIR/fabricadmin.pid"
+mkdir -p "$PID_DIR" "$LOG_DIR"
+case "${1:-status}" in
+  start)
+    if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then echo "Integration Fabric Administrator is already running"; exit 0; fi
+    nohup "$EXECUTABLE" >>"$LOG_DIR/administrator.log" 2>&1 & echo $! >"$PID_FILE"
+    echo "Integration Fabric Administrator started with PID $(cat "$PID_FILE")"
+    ;;
+  stop)
+    [[ -f "$PID_FILE" ]] || { echo "Integration Fabric Administrator is not running"; exit 0; }
+    kill "$(cat "$PID_FILE")"; rm -f "$PID_FILE"; echo "Integration Fabric Administrator stopped"
+    ;;
+  status)
+    if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then echo "RUNNING PID $(cat "$PID_FILE")"; else echo "STOPPED"; fi
+    ;;
+  run) exec "$EXECUTABLE" ;;
+  *) echo "Usage: fabricadmin {start|stop|status|run}"; exit 2 ;;
+esac

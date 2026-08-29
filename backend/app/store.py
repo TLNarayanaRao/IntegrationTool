@@ -1,8 +1,8 @@
-import json, re, shutil, sqlite3
+import json, os, re, shutil, sqlite3
 from pathlib import Path
 from .models import Project
 
-DATA_DIR = Path(__file__).parents[1] / 'data'
+DATA_DIR = Path(os.environ.get('FABRIC_DATA_DIR', Path(__file__).parents[1] / 'data')).expanduser().resolve()
 PROJECTS_DIR = DATA_DIR / 'projects'
 LEGACY_DB = DATA_DIR / 'fabric.db'
 

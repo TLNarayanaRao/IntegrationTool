@@ -1,11 +1,13 @@
 import asyncio
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models import Activity, EnvironmentProperty, ProcessDefinition, Project, SchemaAsset, Transition
+from app.models import Activity, EnvironmentProperty, ProcessDefinition, Project, SchemaAsset, SharedResource, Transition
 from app.runtime import WorkflowRuntime
 
 
@@ -94,6 +96,123 @@ class ActivityPackTests(unittest.TestCase):
         self.assertEqual(restored.schemas[0].name, 'Customer.xsd')
         typed = EnvironmentProperty(key='timeout', value='30', data_type='integer')
         self.assertEqual(typed.value, 30)
+
+    def test_universal_confirm_acknowledges_client_managed_messages(self):
+        cases = (
+            ('ems', {'operation': 'queue_receiver', 'queue': 'orders', 'acknowledgeMode': 'Client'}),
+            ('kafka', {'operation': 'receive', 'topic': 'orders', 'acknowledgeMode': 'Manual'}),
+            ('pubsub', {'operation': 'subscribe', 'subscription': 'orders', 'acknowledgeMode': 'Client'}),
+        )
+        for technology, receive_config in cases:
+            with self.subTest(technology=technology):
+                resource = SharedResource(id=f'{technology}-connection', type=technology, name=technology, config={'mode': 'memory'})
+                context = {'input': {'id': 42}, 'last': {'id': 42}, 'vars': {}, 'resources': {resource.id: resource}, 'properties': {}}
+                destination_key = 'queue' if technology == 'ems' else ('topic' if technology == 'kafka' else 'topic')
+                destination = 'orders' if technology != 'pubsub' else 'orders-topic'
+                send = Activity(id='send', type=technology, name='Send', config={
+                    'operation': 'publish', 'resourceId': resource.id, destination_key: destination,
+                })
+                asyncio.run(self.runtime.execute(send, context))
+                if technology == 'pubsub':
+                    receive_config = {**receive_config, 'subscription': destination}
+                receive = Activity(id='receive', type=technology, name='Receive', config={**receive_config, 'resourceId': resource.id})
+                received = asyncio.run(self.runtime.execute(receive, context))
+                ack_id = received.get('ackId') or received.get('AckID')
+                self.assertIn(ack_id, self.runtime.acknowledgements)
+                context['last'] = received
+                confirmed = asyncio.run(self.runtime.execute(Activity(
+                    id='confirm', type='confirm', name='Confirm Message',
+                    config={'ackId': '${last.ackId}', 'failIfMissing': True},
+                ), context))
+                self.assertTrue(confirmed['confirmed'])
+                self.assertEqual(confirmed['technologies'], [technology])
+                self.assertNotIn(ack_id, self.runtime.acknowledgements)
+
+    def test_confirm_reports_a_missing_acknowledgement_handle(self):
+        context = {'input': {}, 'last': {}, 'vars': {}, 'resources': {}, 'properties': {}}
+        with self.assertRaisesRegex(RuntimeError, 'requires an acknowledgement handle'):
+            asyncio.run(self.runtime.execute(Activity(
+                id='confirm', type='confirm', name='Confirm Message',
+                config={'ackId': '${last.ackId}', 'failIfMissing': True},
+            ), context))
+
+    def test_execution_path_outputs_are_retained_and_mappable_by_activity(self):
+        resource = SharedResource(id='ems-connection', type='ems', name='EMS', config={'mode': 'memory'})
+        seed_context = {'input': {'orderId': 42}, 'last': {'orderId': 42}, 'vars': {}, 'resources': {resource.id: resource}, 'properties': {}}
+        asyncio.run(self.runtime.execute(Activity(
+            id='sender', type='ems', name='Seed Queue',
+            config={'operation': 'publish', 'resourceId': resource.id, 'queue': 'orders'},
+        ), seed_context))
+        process = ProcessDefinition(id='path-task', name='Path Task', activities=[
+            Activity(id='receiver', type='ems', name='EMS Queue Receiver', config={
+                'operation': 'queue_receiver', 'resourceId': resource.id, 'queue': 'orders', 'acknowledgeMode': 'Client',
+            }),
+            Activity(id='confirm', type='confirm', name='Confirm Message', config={
+                'operation': 'acknowledge', 'inputMappings': {'ackId': '${activities.receiver.output.ackId}'},
+            }),
+            Activity(id='end', type='end', name='End'),
+            Activity(id='unrelated', type='log', name='Unrelated Branch'),
+        ], transitions=[
+            Transition(id='receive-unrelated', source='receiver', target='unrelated', type='success_condition', condition='false == true'),
+            Transition(id='receive-confirm', source='receiver', target='confirm'),
+            Transition(id='confirm-end', source='confirm', target='end'),
+        ])
+        result = asyncio.run(self.runtime.run(process, {}, {resource.id: resource}))
+        self.assertEqual(result.status, 'completed')
+        self.assertTrue(result.activity_outputs['receiver']['output']['ackId'])
+        self.assertTrue(result.activity_outputs['confirm']['output']['confirmed'])
+        self.assertNotIn('unrelated', result.activity_outputs)
+        self.assertEqual(result.task_outputs['path-task']['output'], result.output)
+
+    def test_log_activity_emits_configured_message_and_preserves_payload(self):
+        payload = {'orderId': '10001'}
+        process = ProcessDefinition(id='logging-task', name='Logging Task', activities=[
+            Activity(id='timer', type='timer', name='Timer / Scheduler', config={'operation': 'schedule'}),
+            Activity(id='log', type='log', name='Log', config={
+                'level': 'INFO', 'message': 'Order payload', 'includePayload': True,
+                'inputMappings': {'payload': '${last}'},
+            }),
+            Activity(id='end', type='end', name='End'),
+        ], transitions=[
+            Transition(id='timer-log', source='timer', target='log'),
+            Transition(id='log-end', source='log', target='end'),
+        ])
+
+        result = asyncio.run(self.runtime.run(process, payload))
+
+        self.assertEqual(result.status, 'completed')
+        self.assertEqual(result.output, payload)
+        event = next(item for item in result.logs if item.get('activityId') == 'log' and item['level'] == 'INFO')
+        self.assertEqual(event['message'], 'Order payload')
+        self.assertEqual(event['payload'], payload)
+        self.assertEqual(result.activity_outputs['log']['output'], payload)
+        self.assertEqual(result.activity_outputs['log']['logEvent']['payload'], payload)
+        self.assertTrue(all(item['level'] == 'DEBUG' for item in result.logs if item['message'].startswith('Executing ')))
+
+    def test_file_activity_runtime_inputs_and_metadata(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); source = root / 'orders' / 'order.txt'; copied = root / 'archive' / 'order.txt'
+            context = {'input': {}, 'last': {'orderId': 42}, 'vars': {}, 'resources': {}, 'properties': {}}
+            written = asyncio.run(self.runtime.execute(Activity(id='write', type='file', name='Write File', config={
+                'operation':'write', 'path':str(source), 'createDirectories':True, 'writeAs':'Text', 'encoding':'utf-8',
+                'inputMappings':{'textContent':'${last}'},
+            }), context))
+            self.assertTrue(written['success'])
+            self.assertEqual(__import__('json').loads(source.read_text()), {'orderId':42})
+            read = asyncio.run(self.runtime.execute(Activity(id='read', type='file', name='Read File', config={
+                'operation':'read', 'path':str(source), 'readAs':'Text', 'encoding':'utf-8',
+            }), context))
+            self.assertEqual(read['fileInfo']['fileName'], 'order.txt')
+            self.assertEqual(__import__('json').loads(read['textContent']), {'orderId':42})
+            copied_result = asyncio.run(self.runtime.execute(Activity(id='copy', type='file', name='Copy File', config={
+                'operation':'copy', 'path':str(source), 'destination':str(copied), 'createDirectories':True,
+            }), context))
+            self.assertTrue(copied_result['success'])
+            listed = asyncio.run(self.runtime.execute(Activity(id='list', type='file', name='List Files', config={
+                'operation':'list', 'path':str(root), 'pattern':'*.txt', 'recursive':True, 'listType':'Only Files',
+            }), context))
+            self.assertEqual(listed['count'], 2)
+            self.assertTrue(all('lastModified' in item for item in listed['files']))
 
 
 if __name__ == '__main__': unittest.main()

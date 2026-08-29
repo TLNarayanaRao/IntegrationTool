@@ -17,8 +17,10 @@ class DebugManager:
         starters = starters or [item for item in task.activities if item.id not in incoming]
         if not starters: raise ValueError('Task has no starting activity')
         session_id = str(uuid4())
-        context = {'input': initial, 'vars': {}, 'last': initial, 'resources': resources, 'properties': properties, 'project': project, 'runtime': self.runtime}
-        self.sessions[session_id] = {'id': session_id, 'project': project, 'frames': [{'taskId': task.id, 'activityId': starters[0].id, 'context': context}], 'breakpoints': set(breakpoints), 'logs': [], 'status': 'paused'}
+        execution_state = {'activities': {}, 'tasks': {task.id: {'name': task.name, 'activities': {}}}}
+        logs = []
+        context = {'input': initial, 'vars': {}, 'last': initial, 'resources': resources, 'properties': properties, 'project': project, 'runtime': self.runtime, 'logs': logs, 'activities': execution_state['activities'], 'tasks': execution_state['tasks'], 'context': {'taskId': task.id, 'activityId': starters[0].id, 'environment': project.active_environment}}
+        self.sessions[session_id] = {'id': session_id, 'project': project, 'executionState': execution_state, 'frames': [{'taskId': task.id, 'activityId': starters[0].id, 'context': context}], 'breakpoints': set(breakpoints), 'logs': logs, 'status': 'paused'}
         return self.view(self.sessions[session_id])
 
     async def action(self, session_id: str, action: str):
@@ -55,20 +57,28 @@ class DebugManager:
         activity = next(item for item in task.activities if item.id == frame['activityId']); ctx = frame['context']
         state['logs'].append({'time': datetime.now(timezone.utc).isoformat(), 'level': 'DEBUG', 'message': f'Paused/stepped at {task.name} / {activity.name}', 'activityId': activity.id})
         if enter_subtask and activity.type == 'call_task':
-            target = next((item for item in project.tasks if item.id == activity.config.get('taskId') and item.kind == 'subtask'), None)
+            dynamic_id = self.runtime.resolve(activity.config.get('dynamicTaskId', ''), ctx)
+            target_id = dynamic_id or activity.config.get('taskId')
+            target = next((item for item in project.tasks if item.id == target_id and item.kind == 'subtask'), None)
             if target:
                 incoming = {edge.target for edge in target.transitions}; starter = next((item for item in target.activities if item.type == 'start'), None) or next(item for item in target.activities if item.id not in incoming)
-                mapped = {key:self.runtime.resolve(value, ctx) for key,value in activity.config.get('inputMappings', {}).items()} or ctx['last']
-                child_context = {**ctx, 'input': mapped, 'last': mapped}
+                values = self.runtime.map_input_values(activity.config.get('inputMappings', {}), ctx)
+                mapped = self.runtime.unwrap_boundary(values, 'payload', ctx['last'])
+                child_context = {**ctx, 'input': mapped, 'last': mapped, 'context': {'taskId': target.id, 'activityId': starter.id, 'environment': project.active_environment}}
+                ctx['tasks'].setdefault(target.id, {'name': target.name, 'activities': {}})
                 state['frames'].append({'taskId': target.id, 'activityId': starter.id, 'context': child_context}); state['status'] = 'paused'; return
-        ctx['last'] = await self.runtime.execute(activity, ctx)
+        ctx['context']['activityId'] = activity.id
+        ctx['last'] = await self.runtime.execute_with_policy(activity, ctx)
+        self.runtime.record_activity_output(activity, ctx['last'], ctx)
         outgoing = [edge for edge in task.transitions if edge.source == activity.id]
         chosen = next((edge for edge in outgoing if edge.type == 'success_condition' and self.runtime.condition(edge.condition, ctx)), None) or next((edge for edge in outgoing if edge.type == 'success'), None) or next((edge for edge in outgoing if edge.type == 'success_no_match'), None)
         if activity.type == 'end' or not chosen:
             completed = state['frames'].pop()
+            completed['context']['tasks'].setdefault(completed['taskId'], {'activities': {}})['output'] = completed['context']['last']
             if not state['frames']: state['output'] = completed['context']['last']; state['status'] = 'completed'; return
             parent = state['frames'][-1]; parent['context']['last'] = completed['context']['last']
             parent_task = next(item for item in project.tasks if item.id == parent['taskId']); call = next(item for item in parent_task.activities if item.id == parent['activityId'])
+            self.runtime.record_activity_output(call, completed['context']['last'], parent['context'])
             edge = next((item for item in parent_task.transitions if item.source == call.id and item.type == 'success'), None)
             if edge: parent['activityId'] = edge.target
             return
@@ -81,4 +91,5 @@ class DebugManager:
 
     def view(self, state):
         current = self.current_activity(state)
-        return {'sessionId': state['id'], 'status': state['status'], 'currentActivityId': current.id if current else None, 'currentTaskId': state['frames'][-1]['taskId'] if state['frames'] else None, 'callStack': [{'taskId': frame['taskId'], 'activityId': frame['activityId']} for frame in state['frames']], 'logs': state['logs'], 'output': state.get('output', {})}
+        execution_state = state.get('executionState', {})
+        return {'sessionId': state['id'], 'status': state['status'], 'currentActivityId': current.id if current else None, 'currentTaskId': state['frames'][-1]['taskId'] if state['frames'] else None, 'callStack': [{'taskId': frame['taskId'], 'activityId': frame['activityId']} for frame in state['frames']], 'logs': state['logs'], 'output': state.get('output', {}), 'activityOutputs': execution_state.get('activities', {}), 'taskOutputs': execution_state.get('tasks', {})}

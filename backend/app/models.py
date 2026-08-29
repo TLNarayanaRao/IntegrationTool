@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, model_validator
 ActivityKind = Literal[
     'start', 'http', 'http_listener', 'http_response', 'rest', 'soap',
     'file', 'ftp', 'sftp', 'jdbc', 'xml', 'json', 'flat',
-    'transform', 'log', 'timer', 'call_task', 'ems', 'kafka', 'pubsub', 'sap', 'java', 'end'
+    'transform', 'log', 'confirm', 'timer', 'call_task', 'ems', 'kafka', 'pubsub', 'sap', 'java', 'end'
 ]
 
 class SharedResource(BaseModel):
@@ -95,6 +95,16 @@ def default_environment_properties() -> list[EnvironmentProperty]:
         ('connections.ems.clientId', 'integration-fabric', 'string'),
         ('connections.ems.connectionFactory', 'ConnectionFactory', 'string'),
         ('connections.ems.reconnectAttempts', 3, 'integer'),
+        ('connections.ems.connectionFactoryType', 'Direct', 'string'),
+        ('connections.ems.messagingStyle', 'Generic', 'string'),
+        ('connections.ems.queueConnectionFactory', 'QueueConnectionFactory', 'string'),
+        ('connections.ems.topicConnectionFactory', 'TopicConnectionFactory', 'string'),
+        ('connections.ems.jndiContextFactory', 'com.tibco.tibjms.naming.TibjmsInitialContextFactory', 'string'),
+        ('connections.ems.jndiProviderUrl', 'tcp://localhost:7222', 'string'),
+        ('connections.ems.jndiUsername', '', 'string'), ('connections.ems.jndiPassword', '', 'password'),
+        ('connections.ems.useXa', False, 'boolean'), ('connections.ems.useUfo', False, 'boolean'),
+        ('connections.ems.sslEnabled', False, 'boolean'), ('connections.ems.sslTrustedCertificates', '', 'string'),
+        ('connections.ems.reconnectDelayMs', 5000, 'integer'), ('connections.ems.heartbeatOutgoingMs', 0, 'integer'), ('connections.ems.heartbeatIncomingMs', 0, 'integer'),
         ('connections.kafka.bootstrapServers', 'localhost:9092', 'string'),
         ('connections.kafka.clientId', 'integration-fabric', 'string'),
         ('connections.kafka.groupId', 'integration-fabric', 'string'),
@@ -103,12 +113,19 @@ def default_environment_properties() -> list[EnvironmentProperty]:
         ('connections.kafka.username', '', 'string'),
         ('connections.kafka.password', '', 'password'),
         ('connections.kafka.requestTimeoutMilliseconds', 30000, 'integer'),
+        ('connections.kafka.connectionTimeoutMilliseconds', 10000, 'integer'),
+        ('connections.kafka.sslCaLocation', '', 'string'), ('connections.kafka.sslCertificateLocation', '', 'string'),
+        ('connections.kafka.sslKeyLocation', '', 'string'), ('connections.kafka.sslKeyPassword', '', 'password'),
+        ('connections.kafka.schemaRegistryUrl', '', 'string'), ('connections.kafka.schemaRegistryUsername', '', 'string'), ('connections.kafka.schemaRegistryPassword', '', 'password'),
         ('connections.pubsub.projectId', 'my-gcp-project', 'string'),
         ('connections.pubsub.credentialsFile', '', 'string'),
         ('connections.pubsub.endpoint', 'pubsub.googleapis.com:443', 'string'),
         ('connections.pubsub.emulatorHost', '', 'string'),
         ('connections.pubsub.ackDeadlineSeconds', 60, 'integer'),
+        ('connections.pubsub.connectionTimeoutSeconds', 30, 'integer'),
+        ('connections.pubsub.maxInboundMessageBytes', 20971520, 'integer'), ('connections.pubsub.keepAliveSeconds', 60, 'integer'),
         ('connections.sap.applicationServerHost', 'sap-ecc.example.com', 'string'),
+        ('connections.sap.release', 'current', 'string'),
         ('connections.sap.systemNumber', '00', 'string'),
         ('connections.sap.client', '100', 'string'),
         ('connections.sap.language', 'EN', 'string'),
@@ -173,7 +190,8 @@ class Project(BaseModel):
     description: str = ''
     resources: list[SharedResource] = Field(default_factory=list)
     packaging: dict[str, Any] = Field(default_factory=lambda: {
-        'artifact_name': '', 'version': '1.0.0', 'format': 'zip'
+        'artifact_name': '', 'version': '1.0.0', 'format': 'ifpkg',
+        'target': 'on-prem', 'environment': 'production'
     })
     schemas: list[SchemaAsset] = Field(default_factory=list)
     properties: dict[str, list[EnvironmentProperty]] = Field(default_factory=lambda: {
@@ -218,3 +236,5 @@ class RunResult(BaseModel):
     status: Literal['completed', 'failed']
     output: dict[str, Any]
     logs: list[dict[str, Any]]
+    activity_outputs: dict[str, Any] = Field(default_factory=dict)
+    task_outputs: dict[str, Any] = Field(default_factory=dict)

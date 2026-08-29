@@ -1,10 +1,17 @@
 frontend/node_modules/
 frontend/dist/
+frontend/release/
 backend/.venv/
 backend/data/
 backend/build/
 backend/dist/
 backend/*.spec
+administrator/.venv/
+administrator/data/
+administrator/build/
+administrator/dist/
+administrator/release/
+administrator/*.spec
 *.pyc
 __pycache__/
 .env
