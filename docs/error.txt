@@ -1,0 +1,126 @@
+Using cached six-1.17.0-py2.py3-none-any.whl (11 kB)
+Building wheels for collected packages: python-qpid-proton, docopt
+  Building wheel for python-qpid-proton (pyproject.toml) ... error
+  error: subprocess-exited-with-error
+
+  × Building wheel for python-qpid-proton (pyproject.toml) did not run successfully.
+  │ exit code: 1
+  ╰─> [85 lines of output]
+      C:\Users\ltangirala\AppData\Local\Temp\pip-build-env-jpa7xb0_\overlay\Lib\site-packages\setuptools\config\_apply_pyprojecttoml.py:82: SetuptoolsDeprecationWarning: `project.license` as a TOML table is deprecated
+      !!
+
+              ********************************************************************************
+              Please use a simple string containing a SPDX expression for `project.license`. You can also use `project.license-files`. (Both options available on setuptools>=77.0.0).
+
+              By 2027-Feb-18, you need to update your project and remove deprecated calls
+              or your builds will no longer be supported.
+
+              See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license for details.
+              ********************************************************************************
+
+      !!
+        corresp(dist, value, root_dir)
+      C:\Users\ltangirala\AppData\Local\Temp\pip-build-env-jpa7xb0_\overlay\Lib\site-packages\setuptools\config\_apply_pyprojecttoml.py:61: SetuptoolsDeprecationWarning: License classifiers are deprecated.
+      !!
+
+              ********************************************************************************
+              Please consider removing the following classifiers in favor of a SPDX license expression:
+
+              License :: OSI Approved :: Apache Software License
+
+              See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license for details.
+              ********************************************************************************
+
+      !!
+        dist._finalize_license_expression()
+      C:\Users\ltangirala\AppData\Local\Temp\pip-build-env-jpa7xb0_\overlay\Lib\site-packages\setuptools\dist.py:765: SetuptoolsDeprecationWarning: License classifiers are deprecated.
+      !!
+
+              ********************************************************************************
+              Please consider removing the following classifiers in favor of a SPDX license expression:
+
+              License :: OSI Approved :: Apache Software License
+
+              See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license for details.
+              ********************************************************************************
+
+      !!
+        self._finalize_license_expression()
+      running bdist_wheel
+      running build
+      running build_py
+      creating build\lib.win-amd64-cpython-311
+      copying cproton.py -> build\lib.win-amd64-cpython-311
+      creating build\lib.win-amd64-cpython-311\proton
+      copying proton\handlers.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\reactor.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\tracing.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\utils.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_common.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_condition.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_data.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_delivery.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_endpoints.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_events.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_exceptions.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_handler.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_handlers.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_io.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_message.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_reactor.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_selectable.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_tracing.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_transport.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_url.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_utils.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\_wrapper.py -> build\lib.win-amd64-cpython-311\proton
+      copying proton\__init__.py -> build\lib.win-amd64-cpython-311\proton
+      running egg_info
+      writing python_qpid_proton.egg-info\PKG-INFO
+      writing dependency_links to python_qpid_proton.egg-info\dependency_links.txt
+      writing requirements to python_qpid_proton.egg-info\requires.txt
+      writing top-level names to python_qpid_proton.egg-info\top_level.txt
+      reading manifest file 'python_qpid_proton.egg-info\SOURCES.txt'
+      reading manifest template 'MANIFEST.in'
+      warning: no previously-included files matching '*.pyc' found anywhere in distribution
+      warning: no previously-included files matching '*.pyo' found anywhere in distribution
+      writing manifest file 'python_qpid_proton.egg-info\SOURCES.txt'
+      copying proton\py.typed -> build\lib.win-amd64-cpython-311\proton
+      running build_ext
+      generating cffi module 'build\\temp.win-amd64-cpython-311\\Release\\cproton_ffi.c'
+      creating build\temp.win-amd64-cpython-311\Release
+      building 'cproton_ffi' extension
+      error: Microsoft Visual C++ 14.0 or greater is required. Get it with "Microsoft C++ Build Tools": https://visualstudio.microsoft.com/visual-cpp-build-tools/
+      [end of output]
+
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+  ERROR: Failed building wheel for python-qpid-proton
+  Building wheel for docopt (setup.py) ... done
+  Created wheel for docopt: filename=docopt-0.6.2-py2.py3-none-any.whl size=13856 sha256=5fcf202be5d9a4eaf00d2323f7c64c3056c3bfe017aa0dc4f78a1bd2e5ebc92f
+  Stored in directory: c:\users\ltangirala\appdata\local\pip\cache\wheels\1a\b0\8c\4b75c4116c31f83c8f9f047231251e13cc74481cca4a78a9ce
+Successfully built docopt
+Failed to build python-qpid-proton
+ERROR: Could not build wheels for python-qpid-proton, which is required to install pyproject.toml-based projects
+
+[notice] A new release of pip is available: 24.0 -> 26.2.1
+[notice] To update, run: C:\Narayana\Integration-Tool\Software\IntegrationFabric\backend\.venv\Scripts\python.exe -m pip install --upgrade pip
+202 INFO: PyInstaller: 6.22.2, contrib hooks: 2026.7
+202 INFO: Python: 3.11.9
+245 INFO: Platform: Windows-10-10.0.26100-SP0
+245 INFO: Python environment: C:\Narayana\Integration-Tool\Software\IntegrationFabric\backend\.venv
+250 INFO: wrote C:\Narayana\Integration-Tool\Software\IntegrationFabric\backend\IntegrationFabricRuntime.spec
+253 INFO: Removing temporary files and cleaning cache in C:\Users\ltangirala\AppData\Local\pyinstaller
+256 INFO: Module search paths (PYTHONPATH):
+['C:\\Narayana\\Integration-Tool\\Software\\IntegrationFabric\\backend',
+ 'C:\\Program '
+ 'Files\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\\python311.zip',
+ 'C:\\Program '
+ 'Files\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\\DLLs',
+ 'C:\\Program '
+ 'Files\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\\Lib',
+ 'C:\\Program '
+ 'Files\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0',
+ 'C:\\Narayana\\Integration-Tool\\Software\\IntegrationFabric\\backend\\.venv',
+ 'C:\\Narayana\\Integration-Tool\\Software\\IntegrationFabric\\backend\\.venv\\Lib\\site-packages',
+ 'C:\\Narayana\\Integration-Tool\\Software\\IntegrationFabric\\backend']
+842 INFO: Appending 'datas' from .spec
