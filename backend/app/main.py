@@ -1,4 +1,4 @@
-import io, json, os, socket, sys, tarfile, zipfile
+import asyncio, io, json, os, socket, sys, tarfile, zipfile
 import re
 import httpx
 from datetime import datetime, timezone
@@ -11,7 +11,8 @@ from .models import AIBuildRequest, DebugAction, DebugRequest, Project, RunReque
 from .store import delete_project, get_project, list_projects, project_dir, save_project
 from .runtime import WorkflowRuntime
 from .debugger import DebugManager
-from .mapper import execute as execute_mapping, recommend
+from .mapper import execute as execute_mapping, recommend, validate_output
+from .dataweave import DataWeaveError, execute_details as execute_dataweave
 from .sap import sap_adapter
 from .ai_builder import generate as generate_ai_design
 
@@ -19,6 +20,7 @@ app = FastAPI(title='Integration Fabric Runtime', version='0.1.0')
 runtime = WorkflowRuntime()
 debugger = DebugManager(runtime)
 runtime_states: dict[str, dict] = {}
+active_runs: dict[str, asyncio.Task] = {}
 
 INBOUND_OPERATIONS = {None, 'listen', 'receiver', 'service'}
 
@@ -147,12 +149,36 @@ async def run(project_id: str, http_request: Request, request: RunRequest):
         _publish_runtime_state(project_id, status='listening', logs=lifecycle, endpoints=endpoints)
         return {'status': 'listening', 'output': {}, 'logs': lifecycle,
                 'activity_outputs': {}, 'task_outputs': {}, 'endpoints': endpoints, 'executions': []}
-    result = await runtime.run(task, request.input, resources, properties, project=item)
+    current_run = asyncio.current_task()
+    if current_run: active_runs[project_id] = current_run
+    try:
+        result = await runtime.run(task, request.input, resources, properties, project=item)
+    except asyncio.CancelledError:
+        now = datetime.now(timezone.utc).isoformat()
+        logs = list(runtime_states.get(project_id, {}).get('logs', [])) + [{'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Application {item.name} stopped by user', 'endedAt': now}]
+        state = _publish_runtime_state(project_id, status='stopped', logs=logs[-500:], endpoints=[])
+        return {'status': 'stopped', 'output': {}, 'logs': state['logs'], 'activity_outputs': state['activityOutputs'], 'task_outputs': state['taskOutputs'], 'endpoints': []}
+    finally:
+        if active_runs.get(project_id) is current_run: active_runs.pop(project_id, None)
     payload = result.model_dump()
     payload['logs'] = _lifecycle_logs(item, []) + payload.get('logs', [])
     payload['endpoints'] = []
     _publish_runtime_state(project_id, status=result.status, logs=payload['logs'], endpoints=[], result=result)
     return payload
+
+@app.post('/api/projects/{project_id}/stop')
+async def stop_project(project_id: str):
+    item = get_project(project_id)
+    if not item: raise HTTPException(404, 'Project not found')
+    active = active_runs.get(project_id)
+    if active and not active.done(): active.cancel()
+    previous = runtime_states.get(project_id, {})
+    now = datetime.now(timezone.utc).isoformat()
+    logs = list(previous.get('logs', []))
+    if not logs or logs[-1].get('message') != f'Application {item.name} stopped by user':
+        logs.append({'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Application {item.name} stopped by user', 'endedAt': now})
+    state = _publish_runtime_state(project_id, status='stopped', logs=logs[-500:], endpoints=[])
+    return state
 
 @app.get('/api/projects/{project_id}/export')
 def export_project(project_id: str):
@@ -369,8 +395,91 @@ def mapper_suggest(payload: dict):
 
 @app.post('/api/mapper/test')
 def mapper_test(payload: dict):
-    try: return {'output':execute_mapping(payload.get('input',{}), payload.get('mappings',[])), 'valid':True}
+    try:
+        mappings = payload.get('mappings', []) or []
+        def test_path(value: str) -> str:
+            path = value[2:-1] if value.startswith('${') and value.endswith('}') else value
+            if path.startswith('activities.') and '.output.' in path:
+                return path.split('.output.', 1)[1]
+            if path.endswith('.output') and path.startswith('activities.'):
+                return ''
+            if path.startswith('input.'):
+                return path[6:]
+            if path.startswith('last.'):
+                return path[5:]
+            return '' if path in ('input', 'last') else path
+        normalized = []
+        for mapping in mappings:
+            rule = dict(mapping)
+            for key in ('source', 'select'):
+                value = rule.get(key)
+                if not isinstance(value, str) or not value.startswith('${'):
+                    continue
+                rule[key] = test_path(value)
+            if isinstance(rule.get('condition'), str):
+                rule['condition'] = re.sub(r'\$\{[^}]+\}', lambda match: test_path(match.group(0)), rule['condition'])
+            normalized.append(rule)
+        options = payload.get('options') or {}
+        if payload.get('targetSchema'): options = {**options, 'targetSchema': payload.get('targetSchema')}
+        output = execute_mapping(payload.get('input', {}), normalized, options)
+        errors = validate_output(output, payload.get('targetSchema')) if payload.get('targetSchema') and not options.get('validateOutput', True) else []
+        return {'output': output, 'valid': not errors, 'validationErrors': errors, 'mappingCount': len([rule for rule in normalized if rule.get('enabled', True)])}
     except Exception as exc: raise HTTPException(400, f'Mapping failed: {exc}')
+
+@app.post('/api/dataweave/test')
+def dataweave_test(payload: dict):
+    try:
+        return execute_dataweave(
+            str(payload.get('script') or ''), payload=payload.get('input'),
+            attributes=payload.get('attributes') or {}, variables=payload.get('variables') or {},
+        )
+    except DataWeaveError as exc:
+        raise HTTPException(400, f'DataWeave validation failed: {exc}')
+
+@app.post('/api/dataweave/generate')
+def dataweave_generate(payload: dict):
+    """Generate a reviewable starter script from mapper recommendations."""
+    source, target = payload.get('sourceSchema') or {}, payload.get('targetSchema') or {}
+    recommendations = recommend(source, target, float(payload.get('threshold', 70)) / 100, payload.get('weights'))
+    tree: dict = {}
+    for item in recommendations:
+        target_path, source_path = str(item.get('target') or ''), str(item.get('selected') or '')
+        if not target_path or not source_path: continue
+        current = tree
+        for part in target_path.split('.'): current = current.setdefault(part, {})
+        current['__mapping__'] = item
+    def key(value: str): return value if re.fullmatch(r'[A-Za-z_$][\w$-]*', value) else json.dumps(value)
+    def selector(base: str, path: str):
+        value = base
+        for part in path.split('.') if path else []:
+            value += f'.{part}' if re.fullmatch(r'[A-Za-z_$][\w$-]*', part) else f'[{json.dumps(part)}]'
+        return value
+    def render(nodes: dict, indent=0, source_repeat='', target_prefix=''):
+        lines = []
+        for name, child in nodes.items():
+            if name == '__mapping__': continue
+            target_path = f'{target_prefix}.{name}'.strip('.')
+            mapping = child.get('__mapping__')
+            children = {item_name:item for item_name,item in child.items() if item_name != '__mapping__'}
+            if children:
+                repeated = next((item for item in recommendations if item.get('targetRepeatPath') == target_path and item.get('selected')), None)
+                if repeated and repeated.get('sourceRepeatPath'):
+                    nested = render(children, indent + 2, str(repeated['sourceRepeatPath']), target_path)
+                    value = f"{selector('payload', str(repeated['sourceRepeatPath']))} map (item) -> {{\n{nested}\n{' ' * (indent + 2)}}}"
+                else: value = "{\n" + render(children, indent + 2, source_repeat, target_path) + "\n" + ' ' * (indent + 2) + "}"
+            elif mapping:
+                selected = str(mapping.get('selected') or '')
+                relative = selected[len(source_repeat):].lstrip('.') if source_repeat and selected.startswith(source_repeat) else ''
+                value = selector('item', relative) if relative else selector('payload', selected)
+            else: value = 'null'
+            lines.append(' ' * (indent + 2) + f'{key(name)}: {value}')
+        return ',\n'.join(lines)
+    body = '{\n' + (render(tree) if tree else '  result: payload') + '\n}'
+    return {
+        'script': '%dw 2.0\noutput application/json\n---\n' + body,
+        'recommendations': recommendations,
+        'reviewRequired': True,
+    }
 
 @app.post('/api/conditions/evaluate')
 def evaluate_condition(payload: dict):
@@ -403,7 +512,17 @@ async def debug_action(session_id: str, request: DebugAction):
     try: return await debugger.action(session_id, request.action)
     except ValueError as exc: raise HTTPException(404, str(exc))
 
-@app.api_route('/api/listeners/{project_id}/{listener_path:path}', methods=['GET','POST','PUT','PATCH','DELETE'])
+HTTP_LISTENER_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'TRACE', 'CONNECT']
+
+def _configured_http_methods(activity) -> set[str]:
+    configured = activity.config.get('methods', activity.config.get('method', ''))
+    if isinstance(configured, list):
+        values = configured
+    else:
+        values = str(configured).split(',')
+    return {str(value).strip().upper() for value in values if str(value).strip()}
+
+@app.api_route('/api/listeners/{project_id}/{listener_path:path}', methods=HTTP_LISTENER_METHODS)
 async def invoke_listener(project_id: str, listener_path: str, request: Request, environment: str = 'local'):
     item = get_project(project_id)
     if not item: raise HTTPException(404, 'Project not found')
@@ -415,7 +534,7 @@ async def invoke_listener(project_id: str, listener_path: str, request: Request,
         pattern = '^' + re.sub(r'\{[^}]+\}', r'([^/]+)', template.rstrip('/')) + '/?$'
         match = re.match(pattern, request_path)
         return dict(zip(names, match.groups())) if match else None
-    matched = next(((task, activity, match_path(activity.config.get('path', '/'))) for task, activity in candidates if match_path(activity.config.get('path', '/')) is not None and (request.method in str(activity.config.get('methods', activity.config.get('method', request.method))).replace(' ', '').split(',') or (activity.type == 'soap' and request.method == 'GET' and 'wsdl' in request.query_params))), None)
+    matched = next(((task, activity, match_path(activity.config.get('path', '/'))) for task, activity in candidates if match_path(activity.config.get('path', '/')) is not None and (request.method.upper() in _configured_http_methods(activity) or (activity.type == 'soap' and request.method == 'GET' and 'wsdl' in request.query_params))), None)
     task, listener, path_parameters = matched if matched else (None, None, {})
     if not listener: raise HTTPException(404, f'No listener configured for {request.method} {request_path}')
     properties = {prop.key: prop.value for prop in item.properties.get(environment, [])}

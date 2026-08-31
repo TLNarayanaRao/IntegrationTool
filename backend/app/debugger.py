@@ -58,8 +58,8 @@ class DebugManager:
         state['logs'].append({'time': datetime.now(timezone.utc).isoformat(), 'level': 'DEBUG', 'kind': 'trace', 'message': f'Paused/stepped at {task.name} / {activity.name}', 'activityId': activity.id})
         if enter_subtask and activity.type == 'call_task':
             dynamic_id = self.runtime.resolve(activity.config.get('dynamicTaskId', ''), ctx)
-            target_id = dynamic_id or activity.config.get('taskId')
-            target = next((item for item in project.tasks if item.id == target_id and item.kind == 'subtask'), None)
+            target_id = str(dynamic_id or activity.config.get('taskId') or '').strip()
+            target = next((item for item in project.tasks if (item.id == target_id or item.name.casefold() == target_id.casefold()) and item.kind == 'subtask'), None)
             if target:
                 incoming = {edge.target for edge in target.transitions}; starter = next((item for item in target.activities if item.type == 'start'), None) or next(item for item in target.activities if item.id not in incoming)
                 values = self.runtime.map_input_values(activity.config.get('inputMappings', {}), ctx)

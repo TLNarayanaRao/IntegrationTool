@@ -106,6 +106,22 @@ class ActivityPackTests(unittest.TestCase):
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.json()['pathParameters']['id'], '42')
 
+    def test_rest_receiver_supports_all_standard_http_methods(self):
+        methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'TRACE', 'CONNECT']
+        project = Project(id='all-methods', name='All Methods', process=ProcessDefinition(activities=[
+            Activity(id='receive', type='rest', name='Receive', config={
+                'operation': 'receiver', 'path': '/universal', 'methods': ','.join(methods),
+            }),
+            Activity(id='end', type='end', name='End'),
+        ], transitions=[Transition(id='t', source='receive', target='end')]))
+        with patch('app.main.get_project', return_value=project):
+            client = TestClient(app)
+            responses = {
+                method: client.request(method, '/api/listeners/all-methods/universal', json={'method': method})
+                for method in methods
+            }
+        self.assertEqual({method: response.status_code for method, response in responses.items()}, {method: 200 for method in methods})
+
     def test_run_deploys_inbound_listener_and_returns_live_endpoint(self):
         project = Project(
             id='listener-deploy', name='Listener Deployment',

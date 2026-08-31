@@ -1,10 +1,11 @@
 from __future__ import annotations
-import asyncio, base64, csv, ftplib, gzip, importlib.util, io, json, os, re, shutil, sqlite3, sys, tempfile, uuid
-from datetime import datetime, timezone
+import ast, asyncio, base64, csv, ftplib, gzip, importlib.util, io, json, os, re, shutil, sqlite3, sys, tempfile, traceback, uuid
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import httpx
 from .models import Activity, ProcessDefinition, Project, RunResult
 from .mapper import execute as execute_mapping
+from .dataweave import DataWeaveError, execute as execute_dataweave
 from .sap import sap_adapter
 
 class RuntimeErrorWithLogs(Exception): pass
@@ -115,10 +116,39 @@ class WorkflowRuntime:
 
     @staticmethod
     def fault_payload(error: Exception, activity_id: str) -> dict:
-        return {'type': getattr(error, 'fault_type', error.__class__.__name__), 'code': str(getattr(error, 'code', '') or ''), 'message': str(error), 'activityId': activity_id, 'details': getattr(error, 'details', {}) or {}, 'cause': getattr(error, 'cause', None)}
+        stack_trace = ''.join(traceback.format_exception(type(error), error, error.__traceback__))
+        return {'type': getattr(error, 'fault_type', error.__class__.__name__), 'code': str(getattr(error, 'code', '') or ''), 'message': str(error), 'stackTrace': stack_trace, 'activityId': activity_id, 'details': getattr(error, 'details', {}) or {}, 'cause': getattr(error, 'cause', None)}
 
     def log(self, logs, level, message, activity_id=None, **details):
         logs.append({'time': datetime.now(timezone.utc).isoformat(), 'level': level, 'message': message, 'activityId': activity_id, **details})
+
+    @staticmethod
+    def _cron_field_matches(expression: str, value: int, minimum: int, maximum: int) -> bool:
+        def item_matches(item: str) -> bool:
+            base, _, step_text = item.partition('/')
+            step = int(step_text or 1)
+            if step < 1: raise ValueError('Cron step must be greater than zero')
+            if base == '*': start, end = minimum, maximum
+            elif '-' in base: start, end = (int(part) for part in base.split('-', 1))
+            else: start = end = int(base)
+            if start < minimum or end > maximum or start > end: raise ValueError(f'Cron value {item!r} is outside {minimum}-{maximum}')
+            return start <= value <= end and (value - start) % step == 0
+        return any(item_matches(item.strip()) for item in expression.split(',') if item.strip())
+
+    @classmethod
+    def _next_cron_time(cls, expression: str, now: datetime) -> datetime:
+        parts = expression.split()
+        if len(parts) != 5: raise FabricFault('Cron expression requires five fields: minute hour day month weekday', fault_type='SCHEDULER')
+        candidate = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        for _ in range(527040):
+            weekday = (candidate.weekday() + 1) % 7
+            try:
+                if (cls._cron_field_matches(parts[0], candidate.minute, 0, 59) and cls._cron_field_matches(parts[1], candidate.hour, 0, 23) and cls._cron_field_matches(parts[2], candidate.day, 1, 31) and cls._cron_field_matches(parts[3], candidate.month, 1, 12) and cls._cron_field_matches(parts[4], weekday, 0, 6)):
+                    return candidate
+            except ValueError as error:
+                raise FabricFault(str(error), fault_type='SCHEDULER') from error
+            candidate += timedelta(minutes=1)
+        raise FabricFault('Cron expression did not produce an execution time within one year', fault_type='SCHEDULER')
 
     async def execute_with_policy(self, activity: Activity, ctx: dict):
         policy = self.resolve(activity.config.get('errorPolicy', {}), ctx)
@@ -194,7 +224,31 @@ class WorkflowRuntime:
         if activity.type == 'end':
             mapped = self.map_input_values(activity.config.get('inputMappings', {}), ctx)
             return self.unwrap_boundary(mapped, 'result', ctx['last'])
-        if activity.type == 'timer': return ctx['last']
+        if activity.type == 'timer':
+            now = datetime.now(timezone.utc)
+            environment = str(ctx.get('context', {}).get('environment') or '').lower()
+            run_once = environment == 'local' and self.as_bool(cfg.get('runOnceOnLocalStart', True))
+            mode = str(cfg.get('scheduleMode') or 'dateTime')
+            if run_once:
+                scheduled = now
+                trigger_mode = 'local-run-once'
+            elif mode == 'cron':
+                scheduled = self._next_cron_time(str(cfg.get('cronExpression') or ''), now)
+                trigger_mode = 'cron'
+            else:
+                raw = str(cfg.get('scheduledDateTime') or '').strip()
+                if not raw: raise FabricFault('Scheduler requires a date/time or local Run once option', fault_type='SCHEDULER')
+                try:
+                    scheduled = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+                    if scheduled.tzinfo is None: scheduled = scheduled.astimezone()
+                    scheduled = scheduled.astimezone(timezone.utc)
+                except ValueError as error: raise FabricFault(f'Invalid scheduler date/time: {raw}', fault_type='SCHEDULER') from error
+                trigger_mode = 'dateTime'
+            delay = max(0.0, (scheduled - now).total_seconds())
+            self.log(ctx['logs'], 'INFO', f'Scheduler armed for {scheduled.isoformat()}', activity.id, kind='scheduler', triggerMode=trigger_mode, waitSeconds=round(delay, 3))
+            if delay: await asyncio.sleep(delay)
+            fired = datetime.now(timezone.utc)
+            return {'scheduledTime': scheduled.isoformat(), 'actualTime': fired.isoformat(), 'sequence': 1, 'triggerMode': trigger_mode, 'payload': ctx['last']}
         if activity.type == 'basic':
             operation = str(cfg.get('operation') or 'empty')
             if operation == 'empty': return ctx['last']
@@ -228,6 +282,8 @@ class WorkflowRuntime:
             if isinstance(details, str) and details.strip():
                 try: details = json.loads(details)
                 except ValueError: details = {'text': details}
+            if cfg.get('stackTrace'):
+                details = {**(details if isinstance(details, dict) else {'value': details}), 'stackTrace': cfg.get('stackTrace')}
             raise FabricFault(str(cfg.get('message') or 'Business fault'), fault_type=str(cfg.get('errorType') or cfg.get('type') or 'UserDefinedException'), code=str(cfg.get('code') or ''), details=details)
         if activity.type == 'rethrow':
             fault = ctx.get('context', {}).get('error')
@@ -259,22 +315,36 @@ class WorkflowRuntime:
                     raise RuntimeError('Confirm Message requires an acknowledgement handle from a client/manual receiver')
                 return {'confirmed': False, 'count': 0, 'ackIds': [], 'technologies': []}
             return await self.confirm_messages(handles)
-        if activity.type in ('transform', 'ai_transform'):
-            source = cfg.get('source', ctx['last'])
+        if activity.type in ('mapper', 'transform', 'ai_transform'):
+            source = {
+                **(ctx['last'] if isinstance(ctx.get('last'), dict) else {}),
+                'last': ctx.get('last'), 'input': ctx.get('input'),
+                'properties': ctx.get('properties', {}), 'vars': ctx.get('vars', {}),
+                'context': ctx.get('context', {}), 'activities': ctx.get('activities', {}),
+            }
             rules = []
             for rule in activity.config.get('mappings', []) or []:
                 normalized = {**rule}
-                if rule.get('operator'):
-                    include, mapped_value = self.evaluate_mapping({'$rule': rule.get('operator'), 'source': rule.get('source'), 'select': rule.get('select'), 'groupBy': rule.get('groupBy'), 'condition': rule.get('condition'), 'otherwise': rule.get('otherwise')}, ctx)
-                    normalized.pop('source', None); normalized.pop('select', None); normalized.pop('operator', None)
-                    normalized['constant'] = mapped_value; normalized['enabled'] = bool(include and rule.get('enabled', True))
-                elif 'constant' in rule:
-                    normalized['constant'] = rule['constant']
-                elif isinstance(rule.get('source'), str) and rule['source'].startswith('${'):
-                    normalized.pop('source', None)
-                    normalized['constant'] = self.resolve(rule['source'], ctx)
+                if 'constant' in rule: normalized['constant'] = self.resolve(rule['constant'], ctx)
+                for key in ('source', 'select'):
+                    value = normalized.get(key)
+                    if isinstance(value, str) and value.startswith('${') and value.endswith('}'):
+                        normalized[key] = value[2:-1]
+                if isinstance(normalized.get('condition'), str):
+                    normalized['condition'] = re.sub(r'\$\{([^}]+)\}', r'\1', normalized['condition'])
                 rules.append(normalized)
-            return execute_mapping(source, rules)
+            return execute_mapping(source, rules, cfg)
+        if activity.type == 'dataweave':
+            try:
+                return execute_dataweave(
+                    str(cfg.get('script') or '%dw 2.0\noutput application/json\n---\npayload'),
+                    payload=cfg.get('payload', ctx.get('last')),
+                    attributes=cfg.get('attributes', ctx.get('attributes', {})),
+                    variables={**ctx.get('vars', {}), **(cfg.get('variables', {}) or {})},
+                    input_mime_type=str(cfg.get('inputMimeType') or ''),
+                )
+            except DataWeaveError as exc:
+                raise FabricFault(str(exc), fault_type='DATAWEAVE_SYNTAX', cause=exc.__class__.__name__) from exc
         if activity.type == 'sap':
             resource = ctx['resources'].get(cfg.get('resourceId'))
             if not resource or resource.type != 'sap': raise RuntimeError('SAP activity requires an SAP ECC shared connection')
@@ -381,8 +451,11 @@ class WorkflowRuntime:
         if activity.type == 'call_task':
             project = ctx.get('project')
             if not project: raise RuntimeError('Call Sub Task requires project execution context')
-            task_id = cfg.get('dynamicTaskId') or cfg.get('taskId')
-            task = next((item for item in project.tasks if item.id == task_id), None)
+            dynamic_value = self.resolve(cfg.get('dynamicTaskId'), ctx) if cfg.get('dynamicTaskId') not in (None, '') else None
+            task_id = str(dynamic_value).strip() if dynamic_value not in (None, '') else str(cfg.get('taskId') or '').strip()
+            task = next((item for item in project.tasks if item.id == task_id and item.kind == 'subtask'), None)
+            if not task:
+                task = next((item for item in project.tasks if item.name.casefold() == task_id.casefold() and item.kind == 'subtask'), None)
             if not task or task.kind != 'subtask': raise RuntimeError(f'Sub Task {task_id!r} was not found')
             mapped_values = self.map_input_values(activity.config.get('inputMappings', {}), ctx)
             mapped = self.unwrap_boundary(mapped_values, 'payload', ctx['last'] if isinstance(ctx['last'], dict) else {'value':ctx['last']})
@@ -678,6 +751,9 @@ class WorkflowRuntime:
             return re.sub(r'\$\{properties\.([^}]+)\}', lambda match: str(ctx['properties'].get(match.group(1), '')), value)
         if isinstance(value, str) and re.fullmatch(r'[\w:-]+\(.*\)', value.strip(), re.S):
             return self.evaluate_function_expression(value, ctx)
+        if isinstance(value, str) and len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            try: return ast.literal_eval(value)
+            except (SyntaxError, ValueError): return value[1:-1]
         return value
 
     def condition(self, expression, ctx):

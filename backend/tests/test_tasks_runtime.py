@@ -74,4 +74,29 @@ class TaskRuntimeTests(unittest.TestCase):
         self.assertEqual(deleted.status_code, 200)
         self.assertEqual(self.client.get('/api/projects/task-runtime-test').status_code, 404)
 
+    def test_dynamic_subtask_override_is_resolved_from_environment_properties(self):
+        payload = self.project()
+        payload['properties']['local'] = [{'key':'routing.targetTask','value':'Child','data_type':'string'}]
+        call = next(item for item in payload['tasks'][0]['activities'] if item['type'] == 'call_task')
+        call['config']['taskId'] = 'missing-static-fallback'
+        call['config']['dynamicTaskId'] = '${properties.routing.targetTask}'
+        self.assertEqual(self.client.post('/api/projects', json=payload).status_code, 200)
+        result = self.client.post('/api/projects/task-runtime-test/run', json={'task_id':'main','input':{'value':42},'environment':'local'})
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.json()['activity_outputs']['c']['output'], {'answer': {'value': 42}})
+        self.client.delete('/api/projects/task-runtime-test')
+
+    def test_dataweave_transform_executes_selectors_defaults_collections_and_xml(self):
+        script = '''%dw 2.0
+output application/json
+var fallback = "Unknown"
+---
+{ customer: upper(payload.name default fallback), ids: payload.lines map (line) -> line.id }'''
+        response = self.client.post('/api/dataweave/test', json={'script':script, 'input':{'name':'ada','lines':[{'id':1},{'id':2}]}})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['output'], {'customer':'ADA','ids':[1,2]})
+        xml = self.client.post('/api/dataweave/test', json={'script':'%dw 2.0\noutput application/xml\n---\n{ order: { id: payload.id } }', 'input':{'id':7}})
+        self.assertEqual(xml.status_code, 200, xml.text)
+        self.assertEqual(xml.json()['output'], '<order><id>7</id></order>')
+
 if __name__ == '__main__': unittest.main()

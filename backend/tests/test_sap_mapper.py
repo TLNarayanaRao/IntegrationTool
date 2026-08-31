@@ -17,10 +17,23 @@ class SapMapperTests(unittest.TestCase):
         self.assertTrue(any(item['selected'] for item in recommendations))
         tested = self.client.post('/api/mapper/test', json={'input':{'customer':{'firstName':' Ada '}}, 'mappings':[{'source':'customer.firstName','target':'account.givenName','functions':['trim','upper']}]})
         self.assertEqual(tested.json()['output']['account']['givenName'], 'ADA')
+        designer_test = self.client.post('/api/mapper/test', json={
+            'input': {'customer': {'firstName': ' Ada '}},
+            'mappings': [{'source': '${activities.read.output.customer.firstName}', 'target': 'account.givenName', 'functions': ['trim', 'upper']}],
+        })
+        self.assertEqual(designer_test.json()['output']['account']['givenName'], 'ADA')
+        self.assertEqual(designer_test.json()['mappingCount'], 1)
+        conditional = self.client.post('/api/mapper/test', json={
+            'input': {'customer': {'firstName': 'Ada'}},
+            'mappings': [{'source': '${input.customer.firstName}', 'target': 'account.givenName', 'operator': 'if', 'condition': 'exists(${input.customer.firstName})'}],
+        })
+        self.assertEqual(conditional.json()['output']['account']['givenName'], 'Ada')
 
     def test_transform_accepts_typed_constants_and_dynamic_tree_mappings(self):
         runtime = WorkflowRuntime()
         context = {'input': {'order': {'id': 42}}, 'last': {'status': 'NEW'}, 'vars': {}, 'resources': {}, 'properties': {}, 'activities': {'source': {'output': {'amount': 19.5}}}}
+        self.assertEqual(runtime.resolve('"quoted string"', context), 'quoted string')
+        self.assertEqual(runtime.resolve("'single quoted string'", context), 'single quoted string')
         activity = Activity(id='map', type='transform', name='Transform', config={'mappings':[
             {'target':'order.id', 'source':'${input.order.id}', 'enabled':True},
             {'target':'order.amount', 'source':'${activities.source.output.amount}', 'enabled':True},
@@ -29,6 +42,97 @@ class SapMapperTests(unittest.TestCase):
         ]})
         result = asyncio.run(runtime.execute(activity, context))
         self.assertEqual(result, {'order': {'id':42, 'amount':19.5, 'active':True, 'tags':['priority', 'new']}})
+
+    def test_mapper_repeats_target_and_maps_children_in_for_each_scope(self):
+        response = self.client.post('/api/mapper/test', json={
+            'input': {'catalog': {'book': [
+                {'@id': 'bk101', 'author': 'Matthew', 'price': 44.95},
+                {'@id': 'bk102', 'author': 'Kim', 'price': 12.50},
+            ]}},
+            'mappings': [
+                {'target': 'catalog.book', 'source': 'catalog.book', 'select': 'catalog.book', 'operator': 'for-each'},
+                {'target': 'catalog.book.@id', 'source': 'catalog.book.@id'},
+                {'target': 'catalog.book.author', 'source': 'catalog.book.author'},
+                {'target': 'catalog.book.price', 'source': 'catalog.book.price'},
+            ],
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['output']['catalog']['book'], [
+            {'@id': 'bk101', 'author': 'Matthew', 'price': 44.95},
+            {'@id': 'bk102', 'author': 'Kim', 'price': 12.50},
+        ])
+
+    def test_mapper_xpath_index_is_one_based_and_suppresses_iteration(self):
+        response = self.client.post('/api/mapper/test', json={
+            'input': {'catalog': {'book': [{'author': 'First'}, {'author': 'Second'}]}},
+            'mappings': [{'target': 'selectedAuthor', 'source': 'catalog.book[1].author'}],
+        })
+        self.assertEqual(response.json()['output']['selectedAuthor'], 'First')
+
+    def test_mapper_for_each_group_creates_one_target_per_group(self):
+        response = self.client.post('/api/mapper/test', json={
+            'input': {'orders': [
+                {'customerId': 'A', 'orderId': '1'},
+                {'customerId': 'A', 'orderId': '2'},
+                {'customerId': 'B', 'orderId': '3'},
+            ]},
+            'mappings': [
+                {'target': 'customers.customer', 'source': 'orders', 'operator': 'for-each-group', 'groupBy': 'customerId'},
+                {'target': 'customers.customer.customerId', 'source': 'orders.customerId'},
+            ],
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['output']['customers']['customer'], [
+            {'customerId': 'A'}, {'customerId': 'B'},
+        ])
+
+    def test_mapper_duplicate_repeating_occurrence_appends_complete_complex_nodes(self):
+        source = {'catalog': {'book': [{'author': 'First'}, {'author': 'Second'}]}}
+        family = [
+            {'target': 'catalog.book', 'source': 'catalog.book', 'operator': 'for-each'},
+            {'target': 'catalog.book.author', 'source': 'catalog.book.author'},
+        ]
+        duplicate = [{**rule, 'occurrenceId': 'copy-2', 'duplicateOf': 'primary'} for rule in family]
+        response = self.client.post('/api/mapper/test', json={'input': source, 'mappings': [*family, *duplicate]})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['output']['catalog']['book'], [
+            {'author': 'First'}, {'author': 'Second'},
+            {'author': 'First'}, {'author': 'Second'},
+        ])
+
+    def test_mapper_integration_policies_are_executable(self):
+        schema = {'type': 'object', 'required': ['order'], 'properties': {'order': {'type': 'object', 'required': ['id'], 'properties': {'id': {'type': 'integer'}, 'note': {'type': 'string'}}}}}
+        safe = self.client.post('/api/mapper/test', json={
+            'input': {'source': {'id': '42', 'note': None}}, 'targetSchema': schema,
+            'options': {'typeCoercion': 'safe', 'nullPolicy': 'omit', 'validateOutput': True},
+            'mappings': [
+                {'source': 'source.id', 'target': 'order.id', 'targetType': 'integer'},
+                {'source': 'source.note', 'target': 'order.note', 'targetType': 'string'},
+            ],
+        })
+        self.assertEqual(safe.status_code, 200)
+        self.assertEqual(safe.json()['output'], {'order': {'id': 42}})
+        strict = self.client.post('/api/mapper/test', json={
+            'input': {'source': {'id': '42'}}, 'options': {'typeCoercion': 'strict'},
+            'mappings': [{'source': 'source.id', 'target': 'order.id', 'targetType': 'integer'}],
+        })
+        self.assertEqual(strict.status_code, 400)
+        invalid = self.client.post('/api/mapper/test', json={
+            'input': {}, 'targetSchema': schema, 'options': {'validateOutput': True}, 'mappings': [],
+        })
+        self.assertEqual(invalid.status_code, 400)
+
+    def test_ai_mapper_recommends_for_each_for_compatible_arrays(self):
+        response = self.client.post('/api/mapper/suggest', json={
+            'threshold': 40,
+            'sourceSchema': {'type': 'object', 'properties': {'books': {'type': 'array', 'items': {'type': 'object', 'properties': {'title': {'type': 'string'}}}}}},
+            'targetSchema': {'type': 'object', 'properties': {'books': {'type': 'array', 'items': {'type': 'object', 'properties': {'title': {'type': 'string'}}}}}},
+        })
+        recommendation = next(item for item in response.json()['recommendations'] if item['target'] == 'books.title')
+        self.assertEqual(recommendation['selected'], 'books.title')
+        self.assertEqual(recommendation['operator'], 'for-each')
+        self.assertEqual(recommendation['sourceRepeatPath'], 'books')
+        self.assertEqual(recommendation['targetRepeatPath'], 'books')
 
     def test_all_documented_sap_operations_run_in_mock_mode(self):
         operations = ['dynamic_connection','idoc_acknowledgment','idoc_confirmation','idoc_converter','idoc_listener','idoc_parser','idoc_reader','post_idoc','idoc_renderer','rfc_bapi_listener','invoke_rfc_bapi','reply_rfc_bapi','read_table']
@@ -105,5 +209,18 @@ class SapMapperTests(unittest.TestCase):
         self.assertEqual(runtime.calls, 3)
         self.assertTrue(any('input payload' in item['message'] for item in result.logs))
         self.assertEqual(sum('retry' in item['message'] for item in result.logs), 2)
+
+    def test_mapper_ai_understands_xsd_attributes_and_repeating_cardinality(self):
+        xsd = '''<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="catalog"><xs:complexType><xs:sequence><xs:element name="book" maxOccurs="unbounded"><xs:complexType><xs:sequence><xs:element name="title" type="xs:string"/></xs:sequence><xs:attribute name="id" type="xs:string"/></xs:complexType></xs:element></xs:sequence></xs:complexType></xs:element></xs:schema>'''
+        response = self.client.post('/api/mapper/suggest', json={'sourceSchema':xsd, 'targetSchema':xsd, 'threshold':50})
+        self.assertEqual(response.status_code, 200, response.text)
+        recommendations = response.json()['recommendations']
+        self.assertTrue(any(item['target'].endswith('book.title') and item['sourceRepeating'] for item in recommendations))
+        self.assertTrue(any(item['target'].endswith('book.@id') for item in recommendations))
+        generated = self.client.post('/api/dataweave/generate', json={'sourceSchema':xsd, 'targetSchema':xsd, 'threshold':50})
+        self.assertEqual(generated.status_code, 200, generated.text)
+        tested = self.client.post('/api/dataweave/test', json={'script':generated.json()['script'], 'input':{'catalog':{'book':[{'title':'A','@id':'1'},{'title':'B','@id':'2'}]}}})
+        self.assertEqual(tested.status_code, 200, tested.text)
+        self.assertEqual(len(tested.json()['output']['catalog']['book']), 2)
 
 if __name__ == '__main__': unittest.main()

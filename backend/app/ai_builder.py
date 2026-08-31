@@ -41,7 +41,7 @@ def local_proposal(requirement: str, scope: str, current_task: dict | None = Non
     for index, (kind, operation, label) in enumerate(selected):
         activity_id = f'{_slug(label)}-{index + 1}'
         config: dict[str, Any] = {'operation': operation}
-        if kind in ('http_listener','rest') and operation == 'receiver': config.update({'path':'/api/resource','methods':'POST'})
+        if kind in ('http_listener','rest') and operation == 'receiver': config.update({'path':'/api/resource','methods':'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS,TRACE,CONNECT'})
         if kind == 'http_listener': config.update({'path':'/api/resource','method':'POST'})
         if kind == 'catch': config['catchAll'] = True
         activities.append({'id':activity_id,'type':kind,'name':label,'position':{'x':80 + index * 190,'y':100 if kind != 'catch' else 260},'config':config})

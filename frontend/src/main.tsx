@@ -4,6 +4,7 @@ import {
   Activity,
   AlignHorizontalSpaceAround,
   AlignVerticalSpaceAround,
+  AlertTriangle,
   ArrowDown,
   ArrowUp,
   Braces,
@@ -84,6 +85,8 @@ type Kind =
   | "xml"
   | "json"
   | "flat"
+  | "mapper"
+  | "dataweave"
   | "transform"
   | "ai_transform"
   | "log"
@@ -198,7 +201,7 @@ const isEventActivity = (item: { type: Kind; operation?: string; config?: Record
     (item.type === "sap" && ["idoc_listener", "rfc_bapi_listener"].includes(operation));
 };
 const ai = (asset: string) => (
-  <img src={`/activity-icons/${asset}.png`} alt="" />
+  <img src={`/activity-icons/${asset.includes(".") ? asset : `${asset}.png`}`} alt="" />
 );
 const packs: { name: string; icon: any; items: Def[] }[] = [
   {
@@ -208,8 +211,8 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
       {
         type: "timer",
         operation: "schedule",
-        label: "Timer / Scheduler",
-        asset: "timer",
+        label: "Scheduler",
+        asset: "scheduler.svg",
       },
       {
         type: "call_task",
@@ -413,17 +416,12 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
     name: "General",
     icon: Activity,
     items: [
-      {
-        type: "transform",
-        operation: "map",
-        label: "Transform",
-        asset: "transform",
-      },
-      { type: "ai_transform", operation: "ai_map", label: "AI Transform", asset: "transform" },
+      { type: "mapper", operation: "map", label: "Mapper", asset: "mapper.svg" },
+      { type: "dataweave", operation: "transform", label: "Transform", asset: "dataweave-transform.svg" },
       { type: "log", operation: "write", label: "Log", asset: "log" },
-      { type: "catch", operation: "catch", label: "Catch Exception", asset: "runtime" },
-      { type: "throw", operation: "throw", label: "Throw Exception", asset: "runtime" },
-      { type: "rethrow", operation: "rethrow", label: "Rethrow Exception", asset: "runtime" },
+      { type: "catch", operation: "catch", label: "Catch Exception", asset: "catch-exception.svg" },
+      { type: "throw", operation: "throw", label: "Throw Exception", asset: "throw-exception.svg" },
+      { type: "rethrow", operation: "rethrow", label: "Rethrow Exception", asset: "rethrow-exception.svg" },
       { type: "confirm", operation: "acknowledge", label: "Confirm Message", asset: "runtime" },
       {
         type: "java",
@@ -652,12 +650,28 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
   const connectionTypes = new Set(["jdbc", "ftp", "sftp", "http", "ems", "kafka", "pubsub", "sap"]);
   task.activities.forEach((item) => {
     const operation = item.config.operation || "";
+    if (item.type === "timer") {
+      const mode = item.config.scheduleMode || "dateTime";
+      if (mode === "dateTime" && !item.config.scheduledDateTime && item.config.runOnceOnLocalStart === false) add("error", "Scheduler", `${item.name} has no execution date and time.`, "Choose a date/time or enable local Run once for testing.", item.id);
+      if (mode === "cron" && !String(item.config.cronExpression || "").trim()) add("error", "Scheduler", `${item.name} has no cron expression.`, "Enter a five-field cron expression.", item.id);
+    }
     if (connectionTypes.has(item.type) && !item.config.resourceId && !["http_listener", "start", "end"].includes(item.type)) add("error", "Connection", `${item.name} has no shared connection.`, "Select a compatible shared connection in Configuration.", item.id);
     if (item.config.resourceId && !project.resources.some((resource) => resource.id === item.config.resourceId)) add("error", "Connection", `${item.name} references a missing shared connection.`, "Select an existing connection or create one under Resources.", item.id);
-    if (item.type === "call_task" && !project.tasks.some((candidate) => candidate.id === item.config.taskId && candidate.kind === "subtask")) add("error", "Task", `${item.name} has no valid Sub Task.`, "Select an existing Sub Task.", item.id);
-    if (item.type === "transform" || item.type === "ai_transform") {
+    if (item.type === "call_task") {
+      const dynamic = String(item.config.dynamicTaskId || "").trim();
+      const fallbackValid = project.tasks.some((candidate) => candidate.id === item.config.taskId && candidate.kind === "subtask");
+      if (!dynamic && !fallbackValid) add("error", "Task", `${item.name} has no valid Sub Task or dynamic override.`, "Select a fallback Sub Task or enter a dynamic ID/name expression.", item.id);
+      if (dynamic.startsWith("${") && !dynamic.endsWith("}")) add("error", "Task", `${item.name} has an incomplete dynamic Sub Task expression.`, "Close the expression with } or enter a literal Sub Task ID/name.", item.id);
+    }
+    if (["mapper", "transform", "ai_transform"].includes(item.type)) {
       if (!Object.keys(item.config.targetSchema || {}).length && !item.config.targetSchemaId) add("mapping", "Mapper", `${item.name} has no target schema.`, "Select an XSD from Project Schemas or define an inline target schema.", item.id);
       if (!(item.config.mappings || []).length) add("mapping", "Mapper", `${item.name} has no field mappings.`, "Map execution-path fields to the target schema.", item.id);
+    }
+    if (item.type === "dataweave") {
+      const script = String(item.config.script || "");
+      if (!script.trim()) add("error", "Transform", `${item.name} has no DataWeave script.`, "Enter or AI-generate an executable transform script.", item.id);
+      else if (!script.includes("---")) add("error", "Transform", `${item.name} is missing the DataWeave header/body separator.`, "Add --- before the transform expression.", item.id);
+      if (item.config.aiReviewRequired) add("mapping", "Transform", `${item.name} contains an unreviewed AI-generated draft.`, "Review the script and run Map & Test before packaging.", item.id);
     }
     if (item.type === "jdbc" && !String(item.config.sql || "").trim() && !["create", "update", "delete", "truncate"].includes(operation)) add("warning", "Configuration", `${item.name} has no SQL statement.`, "Configure SQL or a stored procedure call.", item.id);
     if ((item.type === "file" || item.type === "ftp" || item.type === "sftp") && !String(item.config.path || item.config.remotePath || "").trim()) add("warning", "Configuration", `${item.name} has no file path.`, "Configure the source or target path.", item.id);
@@ -718,6 +732,7 @@ function App() {
     [zoom, setZoom] = useState(1),
     [validation, setValidation] = useState<{ title: string; issues: ValidationIssue[] } | null>(null),
     [connectionDraft, setConnectionDraft] = useState<{ source: string; x: number; y: number } | null>(null),
+    [quickAddDrag, setQuickAddDrag] = useState<{ source: string; startClientX: number; startClientY: number; x: number; y: number; pointerId: number } | null>(null),
     [edgeRewire, setEdgeRewire] = useState<{ edgeId: string; endpoint: "source" | "target"; fixedId: string; x: number; y: number } | null>(null);
   const [monitorMode, setMonitorMode] = useState<"normal" | "expanded" | "fullscreen">("normal");
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -760,7 +775,7 @@ function App() {
       localStorage.getItem("integration-fabric-theme") || "midnight",
     );
   const [activeTab, setActiveTab] = useState<
-      "configuration" | "input" | "output" | "advanced" | "errors" | "documentation"
+      "configuration" | "input" | "map_test" | "output" | "advanced" | "errors" | "documentation"
     >("configuration"),
     [propertyEditor, setPropertyEditor] = useState<string | null>(null),
     [renameOpen, setRenameOpen] = useState(false),
@@ -871,7 +886,7 @@ function App() {
   }, [project.id, endpoints.length, debugState]);
   useEffect(() => {
     const move = (e: PointerEvent) => {
-        if (!drag.current || !canvas.current) return;
+        if (!drag.current || !canvas.current || (drag.current.pointerId != null && drag.current.pointerId !== e.pointerId)) return;
         const deltaX = (e.clientX - drag.current.startX) / zoom;
         const deltaY = (e.clientY - drag.current.startY) / zoom;
         mutateTask((t) => ({
@@ -889,12 +904,23 @@ function App() {
           ),
         }));
       },
-      up = () => (drag.current = null);
+      stopDrag = (event?: PointerEvent) => {
+        if (!drag.current || (event && drag.current.pointerId != null && drag.current.pointerId !== event.pointerId)) return;
+        const target = drag.current.captureTarget as HTMLElement | undefined;
+        const pointerId = drag.current.pointerId as number | undefined;
+        if (target && pointerId != null && target.hasPointerCapture?.(pointerId)) target.releasePointerCapture(pointerId);
+        drag.current = null;
+      },
+      blur = () => stopDrag();
     window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    window.addEventListener("pointerup", stopDrag);
+    window.addEventListener("pointercancel", stopDrag);
+    window.addEventListener("blur", blur);
     return () => {
       window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointerup", stopDrag);
+      window.removeEventListener("pointercancel", stopDrag);
+      window.removeEventListener("blur", blur);
     };
   }, [zoom, project.active_task_id]);
   useEffect(() => {
@@ -933,6 +959,35 @@ function App() {
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
     return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
   }, [edgeRewire?.edgeId, edgeRewire?.endpoint, project.active_task_id, zoom]);
+  useEffect(() => {
+    if (!quickAddDrag) return;
+    const move = (event: PointerEvent) => {
+      if (event.pointerId !== quickAddDrag.pointerId || !canvas.current) return;
+      const box = canvas.current.getBoundingClientRect();
+      setQuickAddDrag((draft) => draft ? { ...draft, x: (event.clientX - box.left + canvas.current!.scrollLeft) / zoom, y: (event.clientY - box.top + canvas.current!.scrollTop) / zoom } : null);
+    };
+    const finish = (event: PointerEvent) => {
+      if (event.pointerId !== quickAddDrag.pointerId) return;
+      const box = canvas.current?.getBoundingClientRect(), distance = Math.hypot(event.clientX - quickAddDrag.startClientX, event.clientY - quickAddDrag.startClientY);
+      setQuickAddDrag(null);
+      if (!box || distance < 12) return;
+      // The visible canvas can be quite short when the activity editor is open.
+      // Treat every completed drag as intentional and clamp its destination to
+      // the canvas instead of silently rejecting releases a few pixels outside.
+      const clientX = Math.max(box.left + 8, Math.min(event.clientX, box.right - 8));
+      const clientY = Math.max(box.top + 8, Math.min(event.clientY, box.bottom - 8));
+      const dropX = (clientX - box.left + canvas.current!.scrollLeft) / zoom;
+      const dropY = (clientY - box.top + canvas.current!.scrollTop) / zoom;
+      const picker = { type: "canvas", x: clientX + 12, y: clientY - 80, cx: Math.max(8, dropX - 52), cy: Math.max(8, dropY - 38), connectFrom: quickAddDrag.source, quickAdd: true };
+      // A completed pointer drag may emit a synthetic click after pointerup.
+      // Open on the next event-loop turn so that click cannot reach the Studio's
+      // global menu-dismiss handler and immediately close this picker.
+      window.setTimeout(() => setMenu(picker), 0);
+    };
+    const cancel = (event: PointerEvent) => { if (event.pointerId === quickAddDrag.pointerId) setQuickAddDrag(null); };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", finish); window.addEventListener("pointercancel", cancel);
+    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", finish); window.removeEventListener("pointercancel", cancel); };
+  }, [quickAddDrag?.source, quickAddDrag?.pointerId, project.active_task_id, zoom]);
   useEffect(() => {
     const move = (e: PointerEvent) => {
         if (split.current)
@@ -979,7 +1034,7 @@ function App() {
     setSelectedEdge(null);
     setSelectedResource(null);
   };
-  const addActivity = (d: Def, pos?: { x: number; y: number }) => {
+  const addActivity = (d: Def, pos?: { x: number; y: number; connectFrom?: string }) => {
     const id = `${d.type}-${Date.now()}`,
       config: any = {
         operation: d.operation,
@@ -987,10 +1042,14 @@ function App() {
       };
     if (d.type === "timer")
       Object.assign(config, {
-        startTime: "",
-        runOnce: false,
+        scheduleMode: "dateTime",
+        scheduledDateTime: "",
+        cronExpression: "0 * * * *",
+        timezone: "local",
+        repeatEnabled: false,
         interval: 1,
         unit: "minutes",
+        runOnceOnLocalStart: true,
       });
     if (d.type === "call_task")
       Object.assign(config, {
@@ -1027,13 +1086,21 @@ function App() {
         sql: "",
         parameters: {},
       });
-    if (d.type === "transform" || d.type === "ai_transform")
+    if (["mapper", "transform", "ai_transform"].includes(d.type))
       Object.assign(config, {
         language: "JSONPath / functions",
         sourceSchema: {},
         targetSchema: {},
         mappings: [],
         threshold: 70,
+      });
+    if (d.type === "dataweave")
+      Object.assign(config, {
+        script: "%dw 2.0\noutput application/json\n---\npayload",
+        inputMimeType: "application/json",
+        outputMimeType: "application/json",
+        variables: {},
+        sampleInput: "{}",
       });
     if (d.type === "log") Object.assign(config, { level: "INFO", message: "", includePayload: true, inputMappings: { payload: "${last}" } });
     if (d.type === "confirm") Object.assign(config, { ackId: "${last.ackId}", failIfMissing: true });
@@ -1049,7 +1116,7 @@ function App() {
       d.type === "http_listener" ||
       (d.type === "rest" && d.operation === "receiver")
     )
-      Object.assign(config, { path: "/events", methods: "GET,POST" });
+      Object.assign(config, { path: "/events", methods: "GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS,TRACE,CONNECT" });
     if (d.type === "http" || (d.type === "rest" && d.operation === "invoke"))
       Object.assign(config, {
         method: "GET",
@@ -1061,7 +1128,7 @@ function App() {
       id,
       type: d.type,
       name: d.label,
-      position: pos || {
+      position: pos ? { x: pos.x, y: pos.y } : {
         x: 160 + (nodes.length % 4) * 180,
         y: 270 + Math.floor(nodes.length / 4) * 105,
       },
@@ -1078,12 +1145,64 @@ function App() {
         return;
       }
     }
-    mutateTask((t) => ({ ...t, activities: [...t.activities, n] }));
+    mutateTask((t) => ({
+      ...t,
+      activities: [...t.activities, n],
+      transitions: pos?.connectFrom && t.activities.some((activity) => activity.id === pos.connectFrom) && !t.transitions.some((edge) => edge.source === pos.connectFrom && edge.target === id)
+        ? [...t.transitions, { id: `transition-${Date.now()}`, source: pos.connectFrom, target: id, type: "success" }]
+        : t.transitions,
+    }));
     setSelected(id);
     setSelectedIds([id]);
     setSelectedEdge(null);
     setSelectedResource(null);
     setMenu(null);
+  };
+  const createExceptionHandlers = (catchActivityId: string, exceptionTypes: string[]) => {
+    const selectedTypes = [...new Set(exceptionTypes.filter(Boolean))];
+    if (!selectedTypes.length) return;
+    const stamp = Date.now();
+    mutateTask((current) => {
+      const origin = current.activities.find((activity) => activity.id === catchActivityId);
+      if (!origin || origin.type !== "catch") return current;
+      const activities = current.activities.filter((activity) => !String(activity.config?.generatedByCatchAI || "").startsWith(`${catchActivityId}:`));
+      const removed = new Set(current.activities.filter((activity) => String(activity.config?.generatedByCatchAI || "").startsWith(`${catchActivityId}:`)).map((activity) => activity.id));
+      const transitions = current.transitions.filter((transition) => !removed.has(transition.source) && !removed.has(transition.target) && transition.source !== catchActivityId);
+      const generatedActivities: Node[] = [];
+      const generatedTransitions: Edge[] = [];
+      selectedTypes.forEach((exceptionType, index) => {
+        const catchId = index === 0 ? catchActivityId : `${catchActivityId}-ai-${stamp}-${index}`;
+        const throwId = `${catchActivityId}-throw-${stamp}-${index}`;
+        const catchPosition = { x: origin.position.x, y: origin.position.y + index * 145 };
+        if (index === 0) {
+          const position = activities.findIndex((activity) => activity.id === catchActivityId);
+          activities[position] = { ...origin, name: `Catch ${exceptionType}`, position: catchPosition, config: { ...origin.config, catchAll: false, errorType: exceptionType, errorCode: "" } };
+        } else generatedActivities.push({ id: catchId, type: "catch", name: `Catch ${exceptionType}`, position: catchPosition, config: { operation: "catch", catchAll: false, errorType: exceptionType, errorCode: "", advanced: advancedDefaults(), generatedByCatchAI: `${catchActivityId}:${exceptionType}` } });
+        generatedActivities.push({
+          id: throwId,
+          type: "throw",
+          name: `Throw ${exceptionType}`,
+          position: { x: catchPosition.x + 235, y: catchPosition.y },
+          config: {
+            operation: "throw",
+            errorType: exceptionType,
+            advanced: advancedDefaults(),
+            generatedByCatchAI: `${catchActivityId}:${exceptionType}`,
+            inputMappings: {
+              type: `\${activities.${catchId}.output.type}`,
+              code: `\${activities.${catchId}.output.code}`,
+              message: `\${activities.${catchId}.output.message}`,
+              details: `\${activities.${catchId}.output.details}`,
+              stackTrace: `\${activities.${catchId}.output.stackTrace}`,
+            },
+          },
+        });
+        generatedTransitions.push({ id: `${catchId}-to-${throwId}`, source: catchId, target: throwId, type: "success" });
+      });
+      return { ...current, activities: [...activities, ...generatedActivities], transitions: [...transitions, ...generatedTransitions] };
+    });
+    setSelected(catchActivityId); setSelectedIds([catchActivityId]); setSelectedEdge(null);
+    setLogs([{ level: "INFO", message: `Catch AI generated ${selectedTypes.length} exception handler block${selectedTypes.length === 1 ? "" : "s"} with code, message, details, and stack-trace mappings.` }]);
   };
   const deleteSelectedActivity = () => {
     const targets = selectedIds.length ? nodes.filter((item) => selectedIds.includes(item.id)) : node ? [node] : [];
@@ -1281,6 +1400,12 @@ function App() {
   const saveJsonFile = () => saveProjectFile("json", true);
   const buildDeploymentPackage = async (settings: Record<string, string>) => {
     try {
+      const issues = validateProjectDefinition(project);
+      const blocking = issues.filter((item) => item.severity === "error");
+      if (blocking.length) {
+        setValidation({ title: `Validate Project · ${project.name}`, issues });
+        throw new Error(`Package blocked by ${blocking.length} project validation error${blocking.length === 1 ? "" : "s"}.`);
+      }
       const next = { ...project, packaging: { ...project.packaging, ...settings } };
       const saved = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
       if (!saved.ok) throw new Error("Unable to save packaging configuration.");
@@ -1296,7 +1421,10 @@ function App() {
         setLogs([{ level: "INFO", message: `Created ${settings.target} deployment package: ${filePath}` }]);
       } else browserDownload(blob, filename);
       setPackageOpen(false);
-    } catch (error: any) { setLogs([{ level: "ERROR", message: error?.message || "Package generation failed" }]); }
+    } catch (error: any) {
+      setLogs([{ level: "ERROR", message: error?.message || "Package generation failed" }]);
+      throw error;
+    }
   };
   const run = async (requestedTaskId?: unknown) => {
       setBusy(true);
@@ -1354,6 +1482,18 @@ function App() {
       if (out.currentTaskId && out.currentTaskId !== project.active_task_id)
         selectTask(out.currentTaskId);
     };
+  const executionActive = busy || (!!debugState && !["completed", "failed", "stopped"].includes(debugState.status)) || endpoints.length > 0 || ["running", "listening", "paused"].includes(runtimeState?.status);
+  const stopExecution = async () => {
+    try {
+      if (debugState?.sessionId) await fetch(`/api/debug/${debugState.sessionId}/action`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "stop" }) });
+      const response = await fetch(`/api/projects/${project.id}/stop`, { method: "POST" });
+      const stopped = response.ok ? await response.json() : { status: "stopped", logs: [...logs, { level: "INFO", message: `Application ${project.name} stopped by user` }] };
+      setDebugState(null); setBusy(false); setEndpoints([]); setRuntimeState(stopped); setLogs(stopped.logs || []);
+    } catch (error: any) {
+      setBusy(false); setDebugState(null); setEndpoints([]);
+      setLogs((current) => [...current, { level: "ERROR", message: error?.message || "Unable to stop execution" }]);
+    }
+  };
   const importProject = async (file: File) => {
       const data = new FormData();
       data.append("file", file);
@@ -1515,7 +1655,7 @@ function App() {
           { label: "Validate Current Task", detail: "Check flow, mappings, connections, and configuration", icon: ShieldCheck, action: () => runValidation("task") },
           { label: "Validate Project", detail: "Check every task, environment, mapping, and package", icon: ShieldCheck, action: () => runValidation("project") },
           { label: "Continue", detail: "Resume the active debug session", icon: CirclePlay, action: () => debugAction("continue"), disabled: !debugState },
-          { label: "Stop Debugging", detail: "End the active debug session", icon: Square, action: () => setDebugState(null), disabled: !debugState },
+          { label: "Stop Execution", detail: "Stop the active run, listener deployment, or debug session", icon: Square, action: stopExecution, disabled: !executionActive },
         ]}/>
         <TopMenu label="Window" open={menu === "window"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "window" ? null : "window"); }} commands={[
           { label: "Project Explorer", detail: "Move focus to the project tree", icon: FolderOpen, action: () => focusStudioPanel(".explorer") },
@@ -1529,12 +1669,7 @@ function App() {
         ]}/>
         <span className="menu-spacer" />
         <ThemePicker theme={theme} setTheme={setTheme} />
-        <button onClick={run}>
-          <CirclePlay /> Run
-        </button>
-        <button onClick={debug}>
-          <Bug /> Debug
-        </button>
+        {executionActive ? <button className="global-stop" onClick={stopExecution}><Square/> Stop</button> : <><button onClick={run}><CirclePlay /> Run</button><button onClick={debug}><Bug /> Debug</button></>}
       </nav>
       <StudioRibbon
         selectedCount={selectedIds.length}
@@ -1547,6 +1682,8 @@ function App() {
         closeProject={closeProject}
         run={run}
         debug={debug}
+        stop={stopExecution}
+        executionActive={executionActive}
         aiBuild={() => setAiBuilderOpen(true)}
         validateTask={() => runValidation("task")}
         validateProject={() => runValidation("project")}
@@ -1586,14 +1723,6 @@ function App() {
               <option key={x}>{x}</option>
             ))}
           </select>
-        </div>
-        <div className="actions">
-          <button onClick={save}>
-            <Save /> Save
-          </button>
-          <button className="run" onClick={run} disabled={busy}>
-            <CirclePlay /> {busy ? "Running…" : "Run"}
-          </button>
         </div>
       </header>
       <aside className="explorer">
@@ -1869,7 +1998,7 @@ function App() {
             </button>
           </span>
         </div>
-        {debugState && <DebugBar state={debugState} act={debugAction} />}
+        {debugState && <DebugBar state={debugState} act={debugAction} stop={stopExecution} />}
         <div
           className="canvas"
           ref={canvas}
@@ -1907,7 +2036,7 @@ function App() {
                 const a = byId[e.source],
                   b = byId[e.target];
                 if (!a || !b) return null;
-                const d = `M${a.position.x + 142},${a.position.y + 38} C${a.position.x + 180},${a.position.y + 38} ${b.position.x - 38},${b.position.y + 38} ${b.position.x},${b.position.y + 38}`;
+                const d = `M${a.position.x + 104},${a.position.y + 38} C${a.position.x + 136},${a.position.y + 38} ${b.position.x - 32},${b.position.y + 38} ${b.position.x},${b.position.y + 38}`;
                 return (
                   <g
                     key={e.id}
@@ -1923,22 +2052,23 @@ function App() {
                     <path className="edge-hit" d={d} />
                     <path className="edge-line" d={d} markerEnd="url(#transition-arrow)" />
                     <text
-                      x={(a.position.x + b.position.x + 142) / 2}
+                      x={(a.position.x + b.position.x + 104) / 2}
                       y={(a.position.y + b.position.y) / 2 + 31}
                     >
                       {e.type || "success"}
                     </text>
-                    {selectedEdge === e.id && <><circle className="edge-rewire-handle source" cx={a.position.x + 142} cy={a.position.y + 38} r="7" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setEdgeRewire({ edgeId: e.id, endpoint: "source", fixedId: e.target, x: a.position.x + 142, y: a.position.y + 38 }); }}/><circle className="edge-rewire-handle target" cx={b.position.x} cy={b.position.y + 38} r="7" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setEdgeRewire({ edgeId: e.id, endpoint: "target", fixedId: e.source, x: b.position.x, y: b.position.y + 38 }); }}/></>}
+                    {selectedEdge === e.id && <><circle className="edge-rewire-handle source" cx={a.position.x + 104} cy={a.position.y + 38} r="7" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setEdgeRewire({ edgeId: e.id, endpoint: "source", fixedId: e.target, x: a.position.x + 104, y: a.position.y + 38 }); }}/><circle className="edge-rewire-handle target" cx={b.position.x} cy={b.position.y + 38} r="7" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setEdgeRewire({ edgeId: e.id, endpoint: "target", fixedId: e.source, x: b.position.x, y: b.position.y + 38 }); }}/></>}
                   </g>
                 );
               })}
               {connectionDraft && byId[connectionDraft.source] && (
                 <path
                   className="draft-connection"
-                  d={`M${byId[connectionDraft.source].position.x + 108},${byId[connectionDraft.source].position.y + 39} C${byId[connectionDraft.source].position.x + 165},${byId[connectionDraft.source].position.y + 39} ${connectionDraft.x - 45},${connectionDraft.y} ${connectionDraft.x},${connectionDraft.y}`}
+                  d={`M${byId[connectionDraft.source].position.x + 104},${byId[connectionDraft.source].position.y + 38} C${byId[connectionDraft.source].position.x + 136},${byId[connectionDraft.source].position.y + 38} ${connectionDraft.x - 32},${connectionDraft.y} ${connectionDraft.x},${connectionDraft.y}`}
                 />
               )}
-              {edgeRewire && byId[edgeRewire.fixedId] && <path className="draft-connection edge-rewire-draft" d={edgeRewire.endpoint === "target" ? `M${byId[edgeRewire.fixedId].position.x + 142},${byId[edgeRewire.fixedId].position.y + 38} C${byId[edgeRewire.fixedId].position.x + 180},${byId[edgeRewire.fixedId].position.y + 38} ${edgeRewire.x - 38},${edgeRewire.y} ${edgeRewire.x},${edgeRewire.y}` : `M${edgeRewire.x},${edgeRewire.y} C${edgeRewire.x + 38},${edgeRewire.y} ${byId[edgeRewire.fixedId].position.x - 38},${byId[edgeRewire.fixedId].position.y + 38} ${byId[edgeRewire.fixedId].position.x},${byId[edgeRewire.fixedId].position.y + 38}`} />}
+              {quickAddDrag && byId[quickAddDrag.source] && <><path className="quick-add-draft" d={`M${byId[quickAddDrag.source].position.x + 104},${byId[quickAddDrag.source].position.y + 70} C${byId[quickAddDrag.source].position.x + 145},${byId[quickAddDrag.source].position.y + 70} ${quickAddDrag.x - 38},${quickAddDrag.y} ${quickAddDrag.x},${quickAddDrag.y}`}/><circle className="quick-add-drop" cx={quickAddDrag.x} cy={quickAddDrag.y} r="11"/><path className="quick-add-drop-plus" d={`M${quickAddDrag.x - 5},${quickAddDrag.y}H${quickAddDrag.x + 5}M${quickAddDrag.x},${quickAddDrag.y - 5}V${quickAddDrag.y + 5}`}/></>}
+              {edgeRewire && byId[edgeRewire.fixedId] && <path className="draft-connection edge-rewire-draft" d={edgeRewire.endpoint === "target" ? `M${byId[edgeRewire.fixedId].position.x + 104},${byId[edgeRewire.fixedId].position.y + 38} C${byId[edgeRewire.fixedId].position.x + 136},${byId[edgeRewire.fixedId].position.y + 38} ${edgeRewire.x - 32},${edgeRewire.y} ${edgeRewire.x},${edgeRewire.y}` : `M${edgeRewire.x},${edgeRewire.y} C${edgeRewire.x + 32},${edgeRewire.y} ${byId[edgeRewire.fixedId].position.x - 32},${byId[edgeRewire.fixedId].position.y + 38} ${byId[edgeRewire.fixedId].position.x},${byId[edgeRewire.fixedId].position.y + 38}`} />}
             </svg>
             {nodes.map((n) => {
               const def = packs
@@ -1947,7 +2077,7 @@ function App() {
                   (d) =>
                     d.type === n.type &&
                     (!d.operation || d.operation === n.config.operation),
-                );
+                ) || packs.flatMap((p) => p.items).find((d) => d.type === n.type);
               return (
                 <button
                   key={n.id}
@@ -1955,6 +2085,8 @@ function App() {
                   className={`node ${selectedIds.includes(n.id) ? "selected" : ""} ${selectedIds.length > 1 && selectedIds.includes(n.id) ? "multi-selected" : ""} ${debugState?.currentActivityId === n.id ? "debug-current" : ""} ${executionOutputs[n.id] ? "runtime-executed" : ""}`}
                   style={{ left: n.position.x, top: n.position.y }}
                   onPointerDown={(e) => {
+                    if (e.button !== 0) return;
+                    e.preventDefault();
                     e.stopPropagation();
                     const additive = e.ctrlKey || e.metaKey || e.shiftKey;
                     const nextIds = additive ? (selectedIds.includes(n.id) ? selectedIds : [...selectedIds, n.id]) : (selectedIds.includes(n.id) && selectedIds.length > 1 ? selectedIds : [n.id]);
@@ -1964,7 +2096,10 @@ function App() {
                       positions,
                       startX: e.clientX,
                       startY: e.clientY,
+                      pointerId: e.pointerId,
+                      captureTarget: e.currentTarget,
                     };
+                    e.currentTarget.setPointerCapture(e.pointerId);
                     setSelected(n.id);
                     setSelectedIds(nextIds);
                     setSelectedEdge(null);
@@ -1985,7 +2120,11 @@ function App() {
                         ? "start-play"
                         : n.type === "end"
                           ? "end-stop"
-                          : def?.asset || "start-end",
+                          : ["mapper", "transform", "ai_transform"].includes(n.type)
+                            ? "mapper.svg"
+                            : n.type === "dataweave"
+                              ? "dataweave-transform.svg"
+                              : def?.asset || "start-end",
                     )}
                   </span>
                   {breakpoints.includes(n.id) && <i className="breakpoint" />}
@@ -1998,9 +2137,26 @@ function App() {
                     title="Drag to another activity to create a transition"
                     onPointerDown={(event) => {
                       event.preventDefault(); event.stopPropagation();
-                      setConnectionDraft({ source: n.id, x: n.position.x + 108, y: n.position.y + 39 });
+                      setConnectionDraft({ source: n.id, x: n.position.x + 104, y: n.position.y + 38 });
                     }}
                   ><ChevronRight /></span>
+                  <span
+                    className={`quick-add-handle ${quickAddDrag?.source === n.id ? "dragging" : ""}`}
+                    role="button"
+                    aria-label={`Add and connect an activity after ${n.name}`}
+                    title="Drag onto the canvas, then choose the next activity"
+                    onPointerDown={(event) => {
+                      event.preventDefault(); event.stopPropagation();
+                      if (!canvas.current) return;
+                      event.currentTarget.setPointerCapture(event.pointerId);
+                      const box = canvas.current.getBoundingClientRect();
+                      setMenu(null); setConnectionDraft(null);
+                      setQuickAddDrag({ source: n.id, startClientX: event.clientX, startClientY: event.clientY, x: (event.clientX - box.left + canvas.current.scrollLeft) / zoom, y: (event.clientY - box.top + canvas.current.scrollTop) / zoom, pointerId: event.pointerId });
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault(); event.stopPropagation();
+                    }}
+                  ><Plus /></span>
                 </button>
               );
             })}
@@ -2019,16 +2175,14 @@ function App() {
             <b>
               <Settings2 /> {edge ? "Transition" : resource ? "Connection" : "Activity"}
             </b>
-            {node ? (["configuration", "input", "output", "advanced", "errors", "documentation"] as const).map(
+            {node ? (["configuration", "input", "map_test", "output", "advanced", "errors", "documentation"] as const).filter((tab) => tab !== "map_test" || ["mapper", "transform", "ai_transform", "dataweave"].includes(node.type)).map(
               (tab) => (
                 <button
                   key={tab}
                   className={activeTab === tab ? "active" : ""}
                   onClick={() => setActiveTab(tab)}
                 >
-                  {tab === "configuration"
-                    ? "Configuration"
-                    : tab[0].toUpperCase() + tab.slice(1)}
+                  {tab === "configuration" ? "Configuration" : tab === "map_test" ? "Map & Test" : tab[0].toUpperCase() + tab.slice(1)}
                 </button>
               ),
             ) : <button className="active">Configuration</button>}
@@ -2053,6 +2207,7 @@ function App() {
                   ),
                 }))
               }
+              handleExceptions={(types: string[]) => createExceptionHandlers(node.id, types)}
             />
           ) : edge ? (
             <EdgeConfig
@@ -2170,7 +2325,7 @@ function App() {
                 type: event as Kind,
                 name:
                   event === "timer"
-                    ? "Timer / Scheduler"
+                    ? "Scheduler"
                     : event === "sap"
                       ? "SAP IDoc Listener"
                       : event.replaceAll("_", " "),
@@ -2189,13 +2344,16 @@ function App() {
                               ? "subscribe"
                               : event === "sap"
                                 ? "idoc_listener"
-                                : "listen",
+                                : event === "timer"
+                                  ? "schedule"
+                                  : "listen",
                   resourceId:
                     event === "sap"
                       ? project.resources.find((r) => r.type === "sap")?.id ||
                         ""
                       : undefined,
                   path: "/events",
+                  ...(event === "timer" ? { scheduleMode: "dateTime", scheduledDateTime: "", cronExpression: "0 * * * *", timezone: "local", runOnceOnLocalStart: true } : {}),
                 },
               };
             setProject((p) => ({
@@ -2322,8 +2480,19 @@ function PackageDialog({ packaging, environments, onClose, onPackage }: any) {
     environment: packaging?.environment || "production",
     format: packaging?.format || "ifpkg",
   });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const update = (key: string, value: string) => setDraft((current) => ({ ...current, [key]: value }));
   const extension = draft.format === "ifpkg" ? "ifpkg" : draft.format;
+  const build = async () => {
+    setError("");
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(draft.artifact_name.trim())) { setError("Artifact name may contain letters, numbers, dots, dashes, and underscores."); return; }
+    if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(draft.version.trim())) { setError("Use a semantic version such as 1.0.0 or 1.0.0-beta.1."); return; }
+    setBusy(true);
+    try { await onPackage(draft); }
+    catch (failure: any) { setError(failure?.message || "Package generation failed."); }
+    finally { setBusy(false); }
+  };
   return <div className="modal-backdrop"><div className="package-modal">
     <header><div><Package/><b>Build deployment package</b><small>Choose how this integration will run</small></div><button onClick={onClose}>×</button></header>
     <main>
@@ -2337,8 +2506,9 @@ function PackageDialog({ packaging, environments, onClose, onPackage }: any) {
       <label>Archive format<select value={draft.format} onChange={(event) => update("format", event.target.value)}><option value="ifpkg">Integration package (.ifpkg)</option><option value="tar.gz">Compressed TAR (.tar.gz)</option><option value="ear">EAR-compatible ZIP (.ear)</option></select></label>
       <div className="package-preview"><Package/><span><b>{draft.artifact_name}-{draft.version}-{draft.target}.{extension}</b><small>{draft.target === "cloud" ? "Includes Docker build input and Kubernetes manifest" : "Includes the Linux Administrator deployment descriptor"}</small></span></div>
       <p className="package-security"><ShieldCheck/> Password values are removed. The target Administrator or Kubernetes secret provider supplies credentials during deployment.</p>
+      {error && <p className="package-error"><AlertTriangle/>{error}</p>}
     </main>
-    <footer><button onClick={onClose}>Cancel</button><button className="primary" disabled={!draft.artifact_name.trim() || !draft.version.trim()} onClick={() => onPackage(draft)}>Validate and package</button></footer>
+    <footer><button disabled={busy} onClick={onClose}>Cancel</button><button className="primary" disabled={busy || !draft.artifact_name.trim() || !draft.version.trim()} onClick={build}>{busy ? "Validating and building…" : "Validate and package"}</button></footer>
   </div></div>;
 }
 function StudioRibbon(props: any) {
@@ -2346,7 +2516,7 @@ function StudioRibbon(props: any) {
     <button type="button" className={emphasis ? "emphasis" : ""} disabled={disabled} onClick={(event) => { event.stopPropagation(); action(); }} title={label}><Icon/><span>{label}</span></button>;
   return <section className="studio-ribbon" aria-label="Studio ribbon">
     <div className="ribbon-group"><b>PROJECT</b><div>{command("New", FilePlus2, props.newProject)}{command("Open", FolderOpen, props.openProject)}{command("Import", Upload, props.importProject)}{command("Save", Save, props.save)}{command("Export", Download, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</div></div>
-    <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("AI Build", WandSparkles, props.aiBuild)}{command("Run", CirclePlay, props.run)}{command("Debug", Bug, props.debug)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}</div></div>
+    <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("AI Build", WandSparkles, props.aiBuild)}{command("Run", CirclePlay, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}</div></div>
     <div className="ribbon-group"><b>EDIT</b><div>{command("Undo", Undo2, props.undo)}{command("Cut", Scissors, props.cut, !props.selectedCount)}{command("Copy", ClipboardCopy, props.copy, !props.selectedCount)}{command("Paste", ClipboardPaste, props.paste)}</div></div>
     <div className="ribbon-group layout-group"><b>ARRANGE · {props.selectedCount} SELECTED</b><div>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</div></div>
   </section>;
@@ -2924,7 +3094,7 @@ function TaskDialog({ kind, onClose, onCreate }: any) {
                 <option value="http_listener">HTTP Listener</option>
                 <option value="rest">REST API Receiver</option>
                 <option value="file">File Poller</option>
-                <option value="timer">Timer / Scheduler</option>
+                <option value="timer">Scheduler</option>
                 <option value="ems">EMS Queue Receiver</option>
                 <option value="kafka">Kafka Receive Message</option>
                 <option value="pubsub">GCP Pub/Sub Subscriber</option>
@@ -3771,7 +3941,7 @@ function ConnectionConfig({ resource, update }: any) {
     </div>
   );
 }
-function DebugBar({ state, act }: any) {
+function DebugBar({ state, act, stop }: any) {
   return (
     <div className="debug-bar">
       <Bug />
@@ -3793,7 +3963,7 @@ function DebugBar({ state, act }: any) {
       </button>
       <button onClick={() => act("jump_in")}>Jump In</button>
       <button onClick={() => act("jump_out")}>Jump Out</button>
-      <button onClick={() => act("stop")}>
+      <button className="debug-stop" onClick={stop}>
         <Square /> Stop
       </button>
     </div>

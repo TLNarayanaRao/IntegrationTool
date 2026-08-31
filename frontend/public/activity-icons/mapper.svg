@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <defs>
+    <linearGradient id="m1" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#29e0ff"/><stop offset="1" stop-color="#7969ff"/></linearGradient>
+    <filter id="mg"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#mg)">
+    <path d="M12 20h23v18H12zM61 58h23v18H61z" fill="#0b2940" stroke="url(#m1)" stroke-width="3"/>
+    <path d="M24 38v9c0 7 7 12 15 12h22M35 27h19c8 0 14 5 14 12v19" stroke="url(#m1)" stroke-width="4"/>
+    <path d="m55 51 8 7-8 7M47 20l8 7-8 7" stroke="#b8fbff" stroke-width="3"/>
+    <circle cx="24" cy="29" r="4" fill="#36f1c7" stroke="none"/><circle cx="73" cy="67" r="4" fill="#bc8cff" stroke="none"/>
+  </g>
+  <text x="48" y="90" text-anchor="middle" fill="#9befff" font-family="Arial,sans-serif" font-size="9" font-weight="700" letter-spacing="1">MAPPER</text>
+</svg>
