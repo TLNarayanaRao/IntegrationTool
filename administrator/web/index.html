@@ -1,21 +1,10 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Integration Fabric Administrator</title>
-  <link rel="stylesheet" href="/admin.css" />
-</head>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Integration Fabric Administrator</title><link rel="stylesheet" href="/admin.css"></head>
 <body>
-  <header><div class="mark">IF</div><div><b>INTEGRATION FABRIC</b><small>ENTERPRISE ADMINISTRATOR</small></div><span id="health">CONNECTING</span></header>
-  <nav><button class="active">Applications</button><button>Machines</button><button>Environments</button><button>Monitoring</button><button>Audit</button></nav>
-  <main>
-    <section class="hero"><div><small>CONTROL PLANE</small><h1>Application deployments</h1><p>Manage portable Integration Fabric packages across on-premises Linux runtime machines.</p></div><label class="upload">Upload package<input id="packageFile" type="file" accept=".ifpkg,.zip,.ear" /></label></section>
-    <section class="stats"><article><span id="packageCount">0</span><small>PACKAGES</small></article><article><span id="deploymentCount">0</span><small>DEPLOYMENTS</small></article><article><span id="runningCount">0</span><small>RUNNING</small></article><article><span>1</span><small>ADMIN NODE</small></article></section>
-    <section class="panel"><div class="panel-title"><div><h2>Deployment inventory</h2><small>Application instances registered with this Administrator</small></div><button id="refresh">Refresh</button></div><div id="deployments" class="grid"></div></section>
-    <section class="panel"><div class="panel-title"><div><h2>Package repository</h2><small>Validated application packages ready for deployment</small></div></div><div id="packages" class="packages"></div></section>
-  </main>
-  <div id="toast"></div>
-  <script src="/admin.js"></script>
-</body>
-</html>
+<header><div class="mark">IF</div><div class="brand"><b>INTEGRATION FABRIC</b><small>ENTERPRISE ADMINISTRATOR</small></div><span id="health" class="pill">CONNECTING</span></header>
+<nav id="nav"><button data-view="applications" class="active">Applications</button><button data-view="machines">Machines</button><button data-view="environments">Environments & secrets</button><button data-view="monitoring">Monitoring</button><button data-view="audit">Audit</button></nav>
+<main><section class="hero"><div><small>CONTROL PLANE</small><h1 id="pageTitle">Application deployments</h1><p id="pageDescription">Validate packages, provision profiles, and manage runtime instances.</p></div><label id="uploadButton" class="primary">Upload package<input id="packageFile" type="file" accept=".ifpkg,.zip,.ear,.gz"></label></section><section id="stats" class="stats"></section><section id="content"></section></main>
+<dialog id="deploymentDialog"><form id="deploymentForm"><div class="modal-title"><div><h2>Create deployment</h2><small id="deployPackage"></small></div><button type="button" class="icon" data-close>×</button></div><input id="deployPackageId" type="hidden"><div class="form-grid"><label>Environment<select id="deployEnvironment" required></select></label><label>Runtime machine<select id="deployMachine" required></select></label><label>Desired instances<input id="deployInstances" type="number" value="1" min="1" max="100" required></label></div><div id="secretFields"></div><div class="modal-actions"><button type="button" data-close>Cancel</button><button class="primary" type="submit">Validate and create</button></div></form></dialog>
+<dialog id="detailsDialog"><div class="modal-title"><div><h2 id="detailsTitle">Deployment details</h2><small id="detailsSubtitle"></small></div><button class="icon" data-close>×</button></div><div id="detailsContent"></div></dialog>
+<dialog id="machineDialog"><form id="machineForm"><div class="modal-title"><h2>Register runtime machine</h2><button type="button" class="icon" data-close>×</button></div><div class="form-grid"><label>Name<input id="machineName" required></label><label>Host<input id="machineHost" required placeholder="runtime01.example.com"></label><label>Capacity<input id="machineCapacity" type="number" min="1" value="10"></label></div><p class="notice">Remote machines become ONLINE after their first agent heartbeat.</p><div class="modal-actions"><button type="button" data-close>Cancel</button><button class="primary">Register machine</button></div></form></dialog>
+<div id="toast"></div><script src="/admin.js"></script></body></html>

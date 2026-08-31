@@ -1,76 +1,29 @@
-PS C:\Narayana\Integration-Tool\Software\IntegrationFabric\frontend> npm.cmd ci
-npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
-npm warn deprecated rimraf@2.6.3: Rimraf versions prior to v4 are no longer supported
-npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
-npm warn deprecated boolean@3.2.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
-npm warn cleanup Failed to remove some directories [
-npm warn cleanup   [
-npm warn cleanup     '\\\\?\\C:\\Narayana\\Integration-Tool\\Software\\IntegrationFabric\\frontend\\node_modules\\app-builder-lib',
-npm warn cleanup     [Error: EPERM: operation not permitted, rmdir 'C:\Narayana\Integration-Tool\Software\IntegrationFabric\frontend\node_modules\app-builder-lib\node_modules\@electron\get\node_modules'] {
-npm warn cleanup       errno: -4048,
-npm warn cleanup       code: 'EPERM',
-npm warn cleanup       syscall: 'rmdir',
-npm warn cleanup       path: 'C:\\Narayana\\Integration-Tool\\Software\\IntegrationFabric\\frontend\\node_modules\\app-builder-lib\\node_modules\\@electron\\get\\node_modules'
-npm warn cleanup     }
-npm warn cleanup   ]
-npm warn cleanup ]
-npm error code UNABLE_TO_GET_ISSUER_CERT_LOCALLY
-npm error errno UNABLE_TO_GET_ISSUER_CERT_LOCALLY
-npm error request to https://registry.npmjs.org/zod/-/zod-4.5.2.tgz failed, reason: unable to get local issuer certificate
-npm error A complete log of this run can be found in: C:\Users\ltangirala\AppData\Local\npm-cache\_logs\2026-08-31T22_33_03_288Z-debug-0.log
-PS C:\Narayana\Integration-Tool\Software\IntegrationFabric\frontend> npm.cmd run desktop:installer
+$ca = 'C:\Certificates\company-ca-chain.pem'
 
-> integration-fabric-studio@1.0.2 desktop:installer
-> npm run desktop:prepare && electron-builder --win nsis
+npm.cmd config set cafile "$ca" --location=user
+npm.cmd config set strict-ssl true --location=user
 
+py -3.11 -m pip config --user set global.cert "$ca"
 
-> integration-fabric-studio@1.0.2 desktop:prepare
-> powershell -ExecutionPolicy Bypass -File ../scripts/build-electron-sidecar.ps1
+[Environment]::SetEnvironmentVariable('NODE_EXTRA_CA_CERTS', $ca, 'User')
+[Environment]::SetEnvironmentVariable('PIP_CERT', $ca, 'User')
 
-node:internal/modules/cjs/loader:1520
-  throw err;
-  ^
+$env:NODE_EXTRA_CA_CERTS = $ca
+$env:PIP_CERT = $ca
+$env:REQUESTS_CA_BUNDLE = $ca
 
-Error: Cannot find module 'C:\Narayana\Integration-Tool\Software\IntegrationFabric\frontend\node_modules\electron\install.js'
-    at Module._resolveFilename (node:internal/modules/cjs/loader:1517:15)
-    at wrapResolveFilename (node:internal/modules/cjs/loader:1071:27)
-    at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1095:10)
-    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1122:12)
-    at Module._load (node:internal/modules/cjs/loader:1294:5)
-    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
-    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
-    at node:internal/main/run_main_module:33:47 {
-  code: 'MODULE_NOT_FOUND',
-  requireStack: []
-}
+cd C:\Narayana\Integration-Tool\Software\IntegrationFabric
 
-Node.js v24.18.0
+Get-Process node,electron,IntegrationFabricRuntime -ErrorAction SilentlyContinue |
+    Stop-Process -Force
 
-> integration-fabric-studio@1.0.2 build
-> tsc -b && vite build
+Remove-Item -LiteralPath '.\frontend\node_modules' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath '.\backend\.venv' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath '.\backend\build' -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath '.\backend\dist' -Recurse -Force -ErrorAction SilentlyContinue
 
-'tsc' is not recognized as an internal or external command,
-operable program or batch file.
-WARNING: Retrying (Retry(total=4, connect=None, read=None, redirect=None, status=None)) after connection broken by 'SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)'))': /simple/setuptools/
-WARNING: Retrying (Retry(total=3, connect=None, read=None, redirect=None, status=None)) after connection broken by 'SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)'))': /simple/setuptools/
-WARNING: Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)'))': /simple/setuptools/
-WARNING: Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)'))': /simple/setuptools/
-WARNING: Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)'))': /simple/setuptools/
-Could not fetch URL https://pypi.org/simple/setuptools/: There was a problem confirming the ssl certificate: HTTPSConnectionPool(host='pypi.org', port=443): Max retries exceeded with url: /simple/setuptools/ (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)'))) - skipping
-ERROR: Could not find a version that satisfies the requirement setuptools<83,>=80 (from versions: none)
-ERROR: No matching distribution found for setuptools<83,>=80
-Could not fetch URL https://pypi.org/simple/pip/: There was a problem confirming the ssl certificate: HTTPSConnectionPool(host='pypi.org', port=443): Max retries exceeded with url: /simple/pip/ (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)'))) - skipping
-WARNING: Retrying (Retry(total=4, connect=None, read=None, redirect=None, status=None)) after connection broken by 'SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)'))': /simple/fastapi/
-WARNING: Retrying (Retry(total=3, connect=None, read=None, redirect=None, status=None)) after connection broken by 'SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)'))': /simple/fastapi/
-WARNING: Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)'))': /simple/fastapi/
-WARNING: Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)'))': /simple/fastapi/
-WARNING: Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)'))': /simple/fastapi/
-Could not fetch URL https://pypi.org/simple/fastapi/: There was a problem confirming the ssl certificate: HTTPSConnectionPool(host='pypi.org', port=443): Max retries exceeded with url: /simple/fastapi/ (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)'))) - skipping
-ERROR: Could not find a version that satisfies the requirement fastapi==0.115.12 (from versions: none)
-ERROR: No matching distribution found for fastapi==0.115.12
-Could not fetch URL https://pypi.org/simple/pip/: There was a problem confirming the ssl certificate: HTTPSConnectionPool(host='pypi.org', port=443): Max retries exceeded with url: /simple/pip/ (Caused by SSLError(SSLCertVerificationError(1, '[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)'))) - skipping
-C:\Narayana\Integration-Tool\Software\IntegrationFabric\backend\.venv\Scripts\python.exe: No module named PyInstaller
-Electron sidecar ready: C:\Narayana\Integration-Tool\Software\IntegrationFabric\backend\dist\IntegrationFabricRuntime
-'electron-builder' is not recognized as an internal or external command,
-operable program or batch file.
-PS C:\Narayana\Integration-Tool\Software\IntegrationFabric\frontend>
+npm.cmd cache verify
+
+cd frontend
+npm.cmd ci
+npm.cmd run desktop:installer

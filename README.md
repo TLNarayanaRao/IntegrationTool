@@ -43,6 +43,7 @@ npm run desktop:installer
 ```
 
 The complete Studio, Administrator, Linux, Windows, and deployment-package instructions are in [docs/BUILDING_AND_DISTRIBUTION.md](docs/BUILDING_AND_DISTRIBUTION.md).
+Administrator installation, security, package validation, runtime adapters, lifecycle operations, monitoring, and recovery are documented in [docs/ADMINISTRATOR_GUIDE.md](docs/ADMINISTRATOR_GUIDE.md).
 
 ## Kubernetes runtime
 

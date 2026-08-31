@@ -41,13 +41,48 @@ npm run desktop:unpacked  # Build without creating the installer
 npm run desktop:installer # Build the sidecar and final Setup.exe
 ```
 
+### Corporate TLS certificate or proxy
+
+`UNABLE_TO_GET_ISSUER_CERT_LOCALLY` from npm and `CERTIFICATE_VERIFY_FAILED` from pip mean the build machine does not trust the CA used by an HTTPS-inspecting corporate proxy. This is download trust, not Windows executable signing. Obtain the organization's root and intermediate CA chain from IT as one PEM file. Do not commit the certificate to this repository.
+
+Configure both Node/npm and Python/pip from PowerShell, then open a new terminal:
+
+```powershell
+$ca = 'C:\Certificates\company-ca-chain.pem'
+npm.cmd config set cafile "$ca" --location=user
+npm.cmd config set strict-ssl true --location=user
+py -3.11 -m pip config --user set global.cert "$ca"
+[Environment]::SetEnvironmentVariable('NODE_EXTRA_CA_CERTS', $ca, 'User')
+[Environment]::SetEnvironmentVariable('PIP_CERT', $ca, 'User')
+```
+
+For the current terminal, set the values as well:
+
+```powershell
+$env:NODE_EXTRA_CA_CERTS = $ca
+$env:PIP_CERT = $ca
+$env:REQUESTS_CA_BUNDLE = $ca
+```
+
+Keep SSL verification enabled. If the company requires an explicit proxy, obtain its URL from IT and additionally configure `npm config set https-proxy <proxy-url> --location=user`, `HTTPS_PROXY`, and `ELECTRON_GET_USE_PROXY=1`.
+
+After a failed `npm ci`, close running Node/Electron processes and delete the incomplete `frontend\node_modules` directory before retrying. The desktop build script now stops at the first failed npm, pip, Electron, or PyInstaller command instead of reporting a misleading successful sidecar build.
+
 The unpacked executable is:
 
 ```text
 frontend\release\win-unpacked\Integration Fabric Studio.exe
 ```
 
-For production distribution, configure a company `.pfx` code-signing certificate in the CI/CD secret store and sign the installer and executables. Do not put certificate passwords in the repository.
+For production distribution, configure a company `.pfx` code-signing certificate through environment variables. A signing certificate is optional for producing an installer, but recommended for publisher identity and SmartScreen reputation:
+
+```powershell
+$env:WIN_CSC_LINK = 'C:\Certificates\integration-fabric-signing.pfx'
+$env:WIN_CSC_KEY_PASSWORD = '<password-from-secret-store>'
+npm.cmd run desktop:installer
+```
+
+Do not put the certificate or password in `package.json` or source control. Electron Builder automatically discovers `WIN_CSC_LINK`/`WIN_CSC_KEY_PASSWORD` (and supports `CSC_LINK`/`CSC_KEY_PASSWORD` as fallbacks).
 
 ## Build Enterprise Administrator on Windows
 
@@ -117,6 +152,8 @@ export FABRIC_ADMIN_HOME=/opt/integration-fabric/administrator
 ```
 
 The default Administrator URL is `http://linux-host:9080`.
+
+For production configuration, API authentication, encrypted secrets, package validation rules, machine registration, runtime command adapters, lifecycle transitions, monitoring, audit, backup, and troubleshooting, see [ADMINISTRATOR_GUIDE.md](ADMINISTRATOR_GUIDE.md).
 
 ## Run Administrator as a container
 
