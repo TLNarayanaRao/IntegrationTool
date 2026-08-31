@@ -13,7 +13,10 @@ google-cloud-pubsub>=2.25,<3
 snowflake-connector-python>=3.16,<4  # Snowflake JDBC-equivalent external runtime
 cryptography>=44                    # Snowflake key-pair authentication
 pika>=1.3.2                         # RabbitMQ AMQP 0.9.1
-python-qpid-proton>=0.40            # AMQP 1.0 brokers
+# Apache Qpid's 0.40 source distribution has no CPython 3.11 Windows wheel and
+# therefore requires Visual C++ during desktop builds. This distribution ships
+# the same `proton` modules as a reproducible CPython 3.11 wheel.
+python-qpid-proton-wheel==0.39.0   # AMQP 1.0 brokers
 azure-servicebus>=7.14              # Azure Service Bus AMQP runtime
 azure-identity>=1.20                # Azure OAuth and managed identity
 openpyxl>=3.1.5                     # Excel workbook reader

@@ -68,6 +68,8 @@ Keep SSL verification enabled. If the company requires an explicit proxy, obtain
 
 After a failed `npm ci`, close running Node/Electron processes and delete the incomplete `frontend\node_modules` directory before retrying. The desktop build script now stops at the first failed npm, pip, Electron, or PyInstaller command instead of reporting a misleading successful sidecar build.
 
+The desktop runtime is built with Python 3.11. The AMQP 1.0 connector uses the prebuilt `python-qpid-proton-wheel` distribution because the upstream `python-qpid-proton` 0.40 source release does not provide a CPython 3.11 Windows wheel and otherwise requires Microsoft Visual C++ Build Tools. Before PyInstaller starts, the build imports every external connector module and fails if a package or native DLL is unavailable.
+
 The unpacked executable is:
 
 ```text

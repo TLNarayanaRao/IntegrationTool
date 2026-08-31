@@ -30,6 +30,11 @@ try {
         if (Get-Command py -ErrorAction SilentlyContinue) { py -3.11 -m venv .venv }
         else { python -m venv .venv }
     }
+    $runtimePython = & .\.venv\Scripts\python.exe -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+    Assert-CommandSucceeded 'Python version detection' $LASTEXITCODE
+    if ($runtimePython.Trim() -ne '3.11') {
+        throw "Desktop runtime builds require Python 3.11, but backend\.venv uses Python $runtimePython. Delete backend\.venv and install Python 3.11 x64 before rebuilding."
+    }
     # A venv created by older Python tooling can retain setuptools 65.x. That
     # release imports pkgutil.ImpImporter, which was removed in Python 3.12.
     # Upgrade the isolated build toolchain explicitly before PyInstaller runs.
@@ -37,6 +42,8 @@ try {
     Assert-CommandSucceeded 'Python build-tool installation' $LASTEXITCODE
     & .\.venv\Scripts\python.exe -m pip install -r requirements.txt
     Assert-CommandSucceeded 'Python runtime dependency installation' $LASTEXITCODE
+    & .\.venv\Scripts\python.exe "$root\scripts\verify-runtime-dependencies.py"
+    Assert-CommandSucceeded 'Runtime connector dependency verification' $LASTEXITCODE
     & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --name IntegrationFabricRuntime --add-data "$root\frontend\dist;frontend\dist" --paths "$root\backend" run_sidecar.py
     Assert-CommandSucceeded 'Runtime executable build' $LASTEXITCODE
 } finally { Pop-Location }
