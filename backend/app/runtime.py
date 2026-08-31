@@ -1,5 +1,5 @@
 from __future__ import annotations
-import ast, asyncio, base64, csv, ftplib, gzip, importlib.util, io, json, os, re, shutil, sqlite3, sys, tempfile, traceback, uuid
+import ast, asyncio, base64, csv, ftplib, gzip, importlib.util, io, json, os, re, shlex, shutil, sqlite3, sys, tempfile, traceback, uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import httpx
@@ -8,6 +8,8 @@ from .mapper import execute as execute_mapping
 from .dataweave import DataWeaveError, execute as execute_dataweave
 from .sap import sap_adapter
 from .snowflake import snowflake_adapter
+from .jdbc import jdbc_adapter
+from .amqp import amqp_adapter
 
 class RuntimeErrorWithLogs(Exception): pass
 class FabricFault(Exception):
@@ -203,7 +205,7 @@ class WorkflowRuntime:
     @staticmethod
     def is_outbound(activity: Activity) -> bool:
         operation = activity.config.get('operation', '')
-        if activity.type in ('http','jdbc','snowflake','ftp','sftp'): return True
+        if activity.type in ('http','jdbc','snowflake','amqp','ftp','sftp'): return True
         if activity.type == 'ems': return operation in ('send','publish','request_reply','reply')
         if activity.type == 'kafka': return operation in ('publish','get')
         if activity.type == 'pubsub': return operation == 'publish'
@@ -262,6 +264,14 @@ class WorkflowRuntime:
                 name, value = str(cfg.get('variable') or '').strip(), cfg.get('value', ctx['last'])
                 if not name: raise RuntimeError('Assign Variable requires a process variable name')
                 ctx['vars'][name] = value; return {'name': name, 'value': value}
+            if operation == 'checkpoint':
+                checkpoint_id, created = str(uuid.uuid4()), datetime.now(timezone.utc).isoformat()
+                checkpoint = {'checkpointId': checkpoint_id, 'name': str(cfg.get('checkpointName') or activity.name), 'timestamp': created, 'activityId': activity.id}
+                if self.as_bool(cfg.get('includeProcessState', True)):
+                    checkpoint['state'] = {'last': ctx.get('last'), 'vars': dict(ctx.get('vars', {})), 'context': dict(ctx.get('context', {}))}
+                ctx.setdefault('checkpoints', []).append(checkpoint)
+                self.log(ctx['logs'], 'INFO', f"Checkpoint created: {checkpoint['name']}", activity.id, kind='checkpoint', checkpointId=checkpoint_id)
+                return {key: value for key, value in checkpoint.items() if key != 'state'}
             if operation == 'sleep':
                 duration = float(cfg.get('duration') or 0); unit = str(cfg.get('unit') or 'milliseconds').lower()
                 seconds = duration * (60 if unit == 'minutes' else 1 if unit == 'seconds' else .001)
@@ -277,10 +287,34 @@ class WorkflowRuntime:
                 name, value = str(cfg.get('name') or '').strip(), cfg.get('value', ctx['last'])
                 if not name: raise RuntimeError('Set Shared Variable requires a name')
                 self.shared_variables[name] = value; return {'name': name, 'value': value}
-            if operation == 'inspector':
-                label = str(cfg.get('label') or activity.name); payload = cfg.get('payload', ctx['last'])
-                self.log(ctx['logs'], 'DEBUG', f'Inspector: {label}', activity.id, kind='inspection', **({'payload': payload} if self.as_bool(cfg.get('includePayload', True)) else {}))
-                return ctx['last']
+            if operation == 'external_command':
+                command = str(cfg.get('command') or cfg.get('commandToExecute') or '').strip()
+                if not command: raise FabricFault('External Command requires a command to execute', fault_type='InvalidInputException')
+                arguments = shlex.split(command, posix=os.name != 'nt')
+                if os.name == 'nt': arguments = [item[1:-1] if len(item) > 1 and item[0] == item[-1] and item[0] in ('"', "'") else item for item in arguments]
+                if not arguments: raise FabricFault('External Command is empty', fault_type='InvalidInputException')
+                environment = cfg.get('environment') or {}
+                if isinstance(environment, str):
+                    environment = dict(item.split('=', 1) for item in environment.split(',') if '=' in item)
+                process_env = ({str(key): str(value) for key, value in environment.items()} if cfg.get('replaceEnvironment') else {**os.environ, **{str(key): str(value) for key, value in environment.items()}})
+                try:
+                    process = await asyncio.create_subprocess_exec(*arguments, cwd=cfg.get('workingDirectory') or None, env=process_env, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                    stdout, stderr = await asyncio.wait_for(process.communicate(str(cfg.get('input') or '').encode()), timeout=float(cfg.get('timeoutSeconds') or 300))
+                except asyncio.TimeoutError as exc:
+                    process.kill(); await process.wait(); raise FabricFault('External command exceeded its timeout', fault_type='CommandExecutionError') from exc
+                except (OSError, ValueError) as exc: raise FabricFault(str(exc), fault_type='CommandExecutionError') from exc
+                output, error = stdout.decode(cfg.get('encoding') or 'utf-8', errors='replace'), stderr.decode(cfg.get('encoding') or 'utf-8', errors='replace')
+                output_file = str(cfg.get('outputFile') or cfg.get('outputFilename') or '').strip()
+                if output_file:
+                    try: Path(output_file).write_text(output + error, encoding=cfg.get('encoding') or 'utf-8')
+                    except OSError as exc: raise FabricFault(str(exc), fault_type='FileIOError') from exc
+                split = str(cfg.get('outputLineSplitting') or 'None')
+                if split == 'AtOperatingSystemLineEnd': output, error = output.splitlines(), error.splitlines()
+                elif split == 'AtSpecifiedToken':
+                    token = str(cfg.get('splitToken') or '')
+                    if not token: raise FabricFault('A split token is required', fault_type='InvalidInputException')
+                    output, error = output.split(token), error.split(token)
+                return {'returnCode': process.returncode, 'output': output if cfg.get('provideCommandOutput', True) else None, 'error': error if cfg.get('provideCommandOutput', True) else None, 'outputFile': output_file or None}
             raise RuntimeError(f'Unsupported Basic/General operation {operation}')
         if activity.type == 'catch': return ctx.get('context', {}).get('error') or ctx['last']
         if activity.type == 'throw':
@@ -338,6 +372,12 @@ class WorkflowRuntime:
                         normalized[key] = value[2:-1]
                 if isinstance(normalized.get('condition'), str):
                     normalized['condition'] = re.sub(r'\$\{([^}]+)\}', r'\1', normalized['condition'])
+                if isinstance(normalized.get('whens'), list):
+                    normalized['whens'] = [{
+                        **branch,
+                        'condition': re.sub(r'\$\{([^}]+)\}', r'\1', str(branch.get('condition') or '')),
+                        'source': branch['source'][2:-1] if isinstance(branch.get('source'), str) and branch['source'].startswith('${') and branch['source'].endswith('}') else branch.get('source'),
+                    } for branch in normalized['whens']]
                 rules.append(normalized)
             return execute_mapping(source, rules, cfg)
         if activity.type == 'dataweave':
@@ -444,12 +484,58 @@ class WorkflowRuntime:
             if str(cfg.get('readAs', 'Text')).lower() == 'binary': return {'path':str(path), 'binaryContent':base64.b64encode(path.read_bytes()).decode(), 'content':None, 'fileInfo':info, **info}
             content = path.read_text(encoding=cfg.get('encoding') or 'utf-8')
             return {'path': str(path), 'content': content, 'textContent':content, 'fileInfo':info, **info}
-        if activity.type == 'jdbc': return await asyncio.to_thread(self.jdbc, cfg, ctx)
+        if activity.type == 'jdbc':
+            resource = ctx['resources'].get(cfg.get('resourceId'))
+            if not resource or resource.type != 'jdbc': raise FabricFault('JDBC activity requires a valid shared JDBC connection', fault_type='JDBCConnectionNotFoundException')
+            try: return await asyncio.to_thread(jdbc_adapter.execute, self.resolve(resource.config, ctx), cfg)
+            except Exception as exc: raise FabricFault(str(exc), fault_type=getattr(exc, 'fault_type', 'JDBCSQLException')) from exc
         if activity.type == 'snowflake':
             resource = ctx['resources'].get(cfg.get('resourceId'))
             if not resource or resource.type != 'snowflake': raise FabricFault('Snowflake activity requires a valid Snowflake JDBC shared connection', fault_type='SNOWFLAKE_CONNECTION')
             try: return await asyncio.to_thread(snowflake_adapter.execute, self.resolve(resource.config, ctx), cfg, ctx.get('last'))
             except Exception as exc: raise FabricFault(str(exc), fault_type='SNOWFLAKE_DATABASE_JDBC', code=str(getattr(exc, 'code', '') or '500009')) from exc
+        if activity.type == 'amqp':
+            resource = ctx['resources'].get(cfg.get('resourceId'))
+            if not resource or resource.type != 'amqp': raise FabricFault('AMQP activity requires a valid AMQP shared connection', fault_type='AMQPConnectionException')
+            rcfg, operation = self.resolve(resource.config, ctx), str(cfg.get('operation') or 'get')
+            destination = str(cfg.get('queueName') or cfg.get('topicName') or cfg.get('entityName') or rcfg.get('entityName') or 'default')
+            if rcfg.get('mode') == 'memory':
+                key = f'amqp:{destination}'
+                if operation == 'send':
+                    message_id = str(cfg.get('messageID') or uuid.uuid4()); body = cfg.get('body', cfg.get('message', ctx['last']))
+                    self.messages.setdefault(key, []).append({'messageId': message_id, 'body': body, 'UserProperties': cfg.get('userProperties') or {}, 'MessageProperties': {'deliveryMode': cfg.get('deliveryMode', 'Persistent') == 'Persistent', 'messageID': message_id, 'expiration': cfg.get('expiration', 0), 'priority': cfg.get('priority', 4), 'type': cfg.get('type'), 'contentType': cfg.get('contentType'), 'correlationID': cfg.get('correlationID')}})
+                    return {'sendResult': True, 'MessageId': message_id}
+                if operation in ('get', 'receive'):
+                    items = self.messages.setdefault(key, []); message = items.pop(0) if items else None
+                    if not message: return {'received': False, 'body': None, 'UserProperties': {}, 'MessageProperties': {}}
+                    if str(cfg.get('acknowledgeMode') or 'Auto') != 'Auto':
+                        token = self.register_acknowledgement('amqp', message['messageId']); self.acknowledgements[token]['message'] = message; self.acknowledgements[token]['destination'] = key
+                        message['settlementToken'] = token; message['ackId'] = token
+                    return {'received': True, **message}
+                if operation == 'dead_letter':
+                    token = str(cfg.get('settlementToken') or ''); pending = self.acknowledgements.pop(token, None)
+                    if not pending: raise FabricFault('Settlement token was not found or expired', fault_type='AMQPPluginException')
+                    dead_key = f"{pending.get('destination', key)}:$deadletter"; self.messages.setdefault(dead_key, []).append({**pending.get('message', {}), 'deadLetterReason': cfg.get('deadLetterReason'), 'deadLetterErrorDescription': cfg.get('deadLetterErrorDescription')})
+                    return {'status': 'Success', 'settlementToken': token, 'messageId': pending.get('messageId')}
+            try:
+                if operation == 'send': return await asyncio.to_thread(amqp_adapter.send, rcfg, cfg)
+                if operation in ('get', 'receive'):
+                    message, callback = await asyncio.to_thread(amqp_adapter.get, rcfg, cfg)
+                    if not message: return {'received': False, 'body': None, 'UserProperties': {}, 'MessageProperties': {}}
+                    if callback:
+                        token = self.register_acknowledgement('amqp', message.get('messageId', ''), callback); message['settlementToken'] = token; message['ackId'] = token
+                    return {'received': True, **message}
+                if operation == 'dead_letter':
+                    token = str(cfg.get('settlementToken') or ''); pending = self.acknowledgements.pop(token, None)
+                    if not pending: raise FabricFault('Settlement token was not found or expired', fault_type='AMQPPluginException')
+                    result = pending.get('callback')(True) if pending.get('callback') else None
+                    if asyncio.iscoroutine(result): await result
+                    return {'status': 'Success', 'settlementToken': token, 'messageId': pending.get('messageId')}
+            except FabricFault: raise
+            except Exception as exc: raise FabricFault(str(exc), fault_type=getattr(exc, 'fault_type', 'AMQPPluginException')) from exc
+        if activity.type == 'excel':
+            try: return await asyncio.to_thread(self.read_excel, cfg)
+            except Exception as exc: raise FabricFault(str(exc), fault_type='EXCEL_READ') from exc
         if activity.type == 'ftp': return await asyncio.to_thread(self.ftp, cfg, ctx)
         if activity.type == 'sftp': return await asyncio.to_thread(self.sftp, cfg, ctx)
         if activity.type == 'xml':
@@ -486,7 +572,7 @@ class WorkflowRuntime:
             ctx.setdefault('logs', []).extend(result.logs)
             if result.status == 'failed': raise RuntimeError(result.logs[-1]['message'] if result.logs else f'Sub Task {task.name} failed')
             return result.output
-        if activity.type in ('ems', 'kafka', 'pubsub'):
+        if activity.type in ('ems', 'jms', 'kafka', 'pubsub'):
             return await self.messaging(activity.type, cfg, ctx)
         if activity.type == 'java': return await self.java_worker(cfg, ctx['last'])
         if activity.type == 'python': return await self.python_worker(cfg, ctx['last'])
@@ -498,7 +584,7 @@ class WorkflowRuntime:
             raise RuntimeError(f'{technology.upper()} activity requires a shared {technology.upper()} connection')
         rcfg = self.resolve(resource.config, ctx)
         operation = cfg.get('operation', 'publish')
-        destination = cfg.get('queue') or cfg.get('topic') or cfg.get('subscription') or 'default'
+        destination = cfg.get('destination') or cfg.get('queue') or cfg.get('topic') or cfg.get('subscription') or 'default'
         broker_key = f'{technology}:{resource.id}:{destination}'
         payload = self.resolve(cfg.get('data', cfg.get('message', '${last}')), ctx)
         def mapping(value):
@@ -507,9 +593,28 @@ class WorkflowRuntime:
                 try: return json.loads(value)
                 except ValueError: return {}
             return {}
+        def kafka_bytes(value, serializer: str):
+            kind = str(serializer or 'String').lower()
+            if value is None: return None
+            if kind == 'json': return json.dumps(value, separators=(',', ':')).encode()
+            if kind == 'byte array':
+                if isinstance(value, bytes): return value
+                try: return base64.b64decode(value, validate=True) if isinstance(value, str) else bytes(value)
+                except (ValueError, TypeError): return str(value).encode()
+            if kind == 'avro schema':
+                raise FabricFault('Avro Schema serialization requires the configured Schema Registry runtime', fault_type='KafkaSchemaRegistryException')
+            return value if isinstance(value, bytes) else str(value).encode()
+        def kafka_value(raw, deserializer: str):
+            if raw is None: return None
+            kind = str(deserializer or 'String').lower()
+            if kind == 'byte array': return base64.b64encode(raw).decode()
+            if kind == 'json': return json.loads(raw.decode())
+            if kind == 'avro schema': raise FabricFault('Avro Schema deserialization requires the configured Schema Registry runtime', fault_type='KafkaSchemaRegistryException')
+            return raw.decode(errors='replace')
         attributes = {str(key): str(value) for key, value in {**mapping(cfg.get('dynamicProperties')), **mapping(cfg.get('attributes')), **mapping(cfg.get('headers'))}.items()}
-        envelope = {'id': str(uuid.uuid4()), 'data': payload, 'attributes': attributes, 'destination': destination, 'technology': technology, 'timestamp': datetime.now(timezone.utc).isoformat(), 'key': cfg.get('key')}
-        receive_ops = {'receive', 'subscribe', 'get', 'queue_receiver', 'topic_subscriber'}
+        timestamp = datetime.now(timezone.utc).isoformat()
+        envelope = {'id': str(uuid.uuid4()), 'data': payload, 'attributes': attributes, 'destination': destination, 'technology': technology, 'timestamp': timestamp, 'key': cfg.get('key'), 'correlationId': cfg.get('correlationId'), 'replyTo': cfg.get('replyTo'), 'type': cfg.get('type'), 'priority': int(cfg.get('priority', 4) or 4), 'deliveryMode': cfg.get('deliveryMode', 'Persistent'), 'expiration': int(cfg.get('expiration', 0) or 0)}
+        receive_ops = {'receive', 'subscribe', 'get', 'queue_receiver', 'topic_subscriber', 'get_queue_message', 'receive_message', 'wait_request'}
         client_ack = str(cfg.get('acknowledgeMode', '')).lower() in ('client', 'manual', 'explicit client', 'explicit client dups ok') or cfg.get('acknowledge') is False
         if rcfg.get('mode', 'memory') == 'memory':
             queue = self.messages.setdefault(broker_key, [])
@@ -518,22 +623,30 @@ class WorkflowRuntime:
                 received, queue[:] = queue[:maximum], queue[maximum:]
                 for item in received:
                     if client_ack: item['ackId'] = self.register_acknowledgement(technology, item['id'])
-                if technology == 'ems':
+                if technology in ('ems', 'jms'):
                     first = received[0] if received else {}
-                    return {'body': first.get('data'), 'headers': {'JMSMessageID': first.get('id'), 'JMSTimestamp': first.get('timestamp'), 'JMSCorrelationID': first.get('correlationId')}, 'properties': first.get('attributes', {}), 'ackId': first.get('ackId'), 'messages': received, 'count': len(received)}
+                    return {'body': first.get('data'), 'headers': {'JMSMessageID': first.get('id'), 'JMSTimestamp': first.get('timestamp'), 'JMSCorrelationID': first.get('correlationId'), 'JMSReplyTo': first.get('replyTo'), 'JMSType': first.get('type'), 'JMSPriority': first.get('priority'), 'JMSDeliveryMode': first.get('deliveryMode'), 'JMSExpiration': first.get('expiration'), 'JMSRedelivered': False}, 'properties': first.get('attributes', {}), 'ackId': first.get('ackId'), 'messages': received, 'count': len(received)}
                 if technology == 'pubsub':
                     first = received[0] if received else {}
                     return {'MessageID': first.get('id'), 'PublishTime': first.get('timestamp'), 'Data': first.get('data'), 'Attributes': first.get('attributes', {}), 'AckID': first.get('ackId'), 'ackId': first.get('ackId'), 'messages': received, 'count': len(received)}
                 return {'messages': received, 'count': len(received), 'destination': destination, 'ackId': received[0].get('ackId') if received else None, 'ackIds': [item['ackId'] for item in received if item.get('ackId')]}
             queue.append(envelope)
             if technology == 'pubsub': return {'TopicName': destination, 'MessageID': envelope['id'], 'messageId': envelope['id'], 'published': True}
-            if technology == 'ems': return {'messageId': envelope['id'], 'destination': destination, 'timestamp': envelope['timestamp'], 'published': True}
-            return {'messageId': envelope['id'], 'topic': destination, 'partition': int(cfg.get('partitionId', 0) or 0), 'offset': len(queue)-1, 'timestamp': envelope['timestamp'], 'published': True}
-        if technology == 'ems':
+            if technology in ('ems', 'jms'): return {'messageId': envelope['id'], 'destination': destination, 'timestamp': envelope['timestamp'], 'published': True}
+            envelope.update({'topic': destination, 'partition': int(cfg.get('partitionId', 0) or 0), 'offset': len(queue)-1})
+            return {'messageId': envelope['id'], 'topic': destination, 'partition': envelope['partition'], 'offset': envelope['offset'], 'timestamp': envelope['timestamp'], 'published': True}
+        if technology in ('ems', 'jms'):
             try: import stomp
-            except ImportError: raise RuntimeError('External TIBCO EMS/JMS mode requires the optional stomp.py package and an enabled EMS STOMP service')
-            host, port = rcfg.get('host', 'localhost'), int(rcfg.get('port', 7222)); connection = stomp.Connection12([(host, port)], heartbeats=(int(rcfg.get('heartbeatOutgoingMs', 0) or 0), int(rcfg.get('heartbeatIncomingMs', 0) or 0)))
-            connection.connect(rcfg.get('username', ''), rcfg.get('password', ''), wait=True, headers={'client-id': rcfg.get('clientId', '')} if rcfg.get('clientId') else {})
+            except ImportError: raise RuntimeError('External JMS mode requires the optional stomp.py package and a STOMP-enabled JMS provider')
+            host, port = rcfg.get('host', 'localhost'), int(rcfg.get('port', 7222 if technology == 'ems' else 61613))
+            username, password = rcfg.get('username', ''), rcfg.get('password', '')
+            if str(rcfg.get('connectionFactoryType', 'Direct')).lower() == 'jndi':
+                provider = str(rcfg.get('jndiProviderUrl') or '')
+                match = re.search(r'(?:\w+://)?([^:/]+)(?::(\d+))?', provider)
+                if match: host, port = match.group(1), int(match.group(2) or port)
+                username, password = rcfg.get('jndiUsername') or username, rcfg.get('jndiPassword') or password
+            connection = stomp.Connection12([(host, port)], heartbeats=(int(rcfg.get('heartbeatOutgoingMs', 0) or 0), int(rcfg.get('heartbeatIncomingMs', 0) or 0)))
+            connection.connect(username, password, wait=True, headers={'client-id': rcfg.get('clientId', '')} if rcfg.get('clientId') else {})
             target = destination if str(destination).startswith('/') else f"/{'topic' if 'topic' in operation else 'queue'}/{destination}"
             if operation in receive_ops:
                 import queue as queue_module
@@ -548,7 +661,7 @@ class WorkflowRuntime:
                 message_id = frame.headers.get('message-id') or str(uuid.uuid4())
                 ack_id = None
                 if client_ack:
-                    ack_id = self.register_acknowledgement('ems', message_id, lambda: (connection.ack(message_id, subscription_id), connection.disconnect()))
+                    ack_id = self.register_acknowledgement(technology, message_id, lambda: (connection.ack(message_id, subscription_id), connection.disconnect()))
                 else: connection.disconnect()
                 try: body = json.loads(frame.body)
                 except (ValueError, TypeError): body = frame.body
@@ -558,23 +671,39 @@ class WorkflowRuntime:
             connection.send(target, body=body, headers=headers); connection.disconnect()
             return {'messageId': envelope['id'], 'destination': destination, 'timestamp': envelope['timestamp'], 'published': True}
         if technology == 'kafka':
-            try: from confluent_kafka import Consumer, Producer
+            try: from confluent_kafka import Consumer, Producer, TopicPartition
             except ImportError: raise RuntimeError('External Kafka mode requires confluent-kafka')
-            common = {'bootstrap.servers': rcfg['bootstrapServers'], 'client.id': rcfg.get('clientId', 'integration-fabric'), **mapping(rcfg.get('clientProperties'))}
+            common = {'bootstrap.servers': rcfg['bootstrapServers'], 'client.id': rcfg.get('clientId', 'integration-fabric'), 'request.timeout.ms': int(rcfg.get('requestTimeoutMilliseconds', 30000) or 30000), 'reconnect.backoff.ms': int(rcfg.get('reconnectBackoffMilliseconds', 50) or 50), 'retry.backoff.ms': int(rcfg.get('retryBackoffMilliseconds', 100) or 100), **mapping(rcfg.get('clientProperties'))}
             if rcfg.get('securityProtocol'): common['security.protocol'] = rcfg['securityProtocol']
             if rcfg.get('saslMechanism'): common['sasl.mechanism'] = rcfg['saslMechanism']
             if rcfg.get('username'): common['sasl.username'] = rcfg['username']
             if rcfg.get('password'): common['sasl.password'] = rcfg['password']
+            if rcfg.get('sslCaLocation'): common['ssl.ca.location'] = rcfg['sslCaLocation']
+            if rcfg.get('sslCertificateLocation'): common['ssl.certificate.location'] = rcfg['sslCertificateLocation']
+            if rcfg.get('sslKeyLocation'): common['ssl.key.location'] = rcfg['sslKeyLocation']
+            if rcfg.get('sslKeyPassword'): common['ssl.key.password'] = rcfg['sslKeyPassword']
+            if rcfg.get('principalName'): common['sasl.kerberos.principal'] = rcfg['principalName']
             if operation in receive_ops:
-                consumer_cfg = {**common, 'group.id': cfg.get('groupId') or rcfg.get('groupId', 'integration-fabric'), 'auto.offset.reset': cfg.get('autoOffsetReset', cfg.get('offsetReset', 'earliest')), 'enable.auto.commit': bool(cfg.get('enableAutoCommit', not client_ack)), 'fetch.min.bytes': int(cfg.get('fetchMinBytes', 1) or 1), 'max.poll.records': int(cfg.get('maxPollRecords', cfg.get('maxMessages', 1)) or 1), **mapping(cfg.get('additionalProperties'))}
-                consumer = Consumer(consumer_cfg); topics = [item.strip() for item in str(destination).split(';') if item.strip()]; consumer.subscribe(topics)
+                consumer_cfg = {**common, 'group.id': cfg.get('groupId') or rcfg.get('groupId', 'integration-fabric'), 'auto.offset.reset': cfg.get('autoOffsetReset', cfg.get('offsetReset', 'earliest')), 'enable.auto.commit': bool(cfg.get('enableAutoCommit', not client_ack)), 'fetch.min.bytes': int(cfg.get('fetchMinBytes', 1) or 1), 'max.poll.records': int(cfg.get('maxPollRecords', cfg.get('maxMessages', 1)) or 1), 'session.timeout.ms': int(cfg.get('sessionTimeoutMs', 45000) or 45000), 'heartbeat.interval.ms': int(cfg.get('heartbeatIntervalMs', 3000) or 3000), **mapping(cfg.get('additionalProperties'))}
+                consumer = Consumer(consumer_cfg); topics = [item.strip() for item in str(destination).split(';') if item.strip()]
+                if self.as_bool(cfg.get('assignCustomPartition', False)):
+                    partitions = []
+                    for token in re.split(r'[,;]', str(cfg.get('partitionIds') or cfg.get('partitionId') or '0')):
+                        token = token.strip()
+                        if not token: continue
+                        if '-' in token:
+                            start, end = token.split('-', 1); partitions.extend(range(int(start), int(end) + 1))
+                        else: partitions.append(int(token))
+                    offset = int(cfg.get('customOffset')) if str(cfg.get('seekPosition', '')).lower() == 'custom' and cfg.get('customOffset') not in (None, '') else -2 if str(cfg.get('seekPosition', '')).lower() == 'beginning' else -1
+                    consumer.assign([TopicPartition(topic, partition, offset) for topic in topics for partition in partitions])
+                else: consumer.subscribe(topics)
                 messages, native_messages = [], []
                 for _ in range(int(cfg.get('maxMessages', 1))):
                     message = consumer.poll(float(cfg.get('timeout', 1)))
                     if message and not message.error():
-                        try: data = json.loads(message.value().decode())
-                        except (ValueError, UnicodeDecodeError): data = message.value().decode(errors='replace')
-                        item = {'id':f'{message.topic()}:{message.partition()}:{message.offset()}','data':data,'key':message.key().decode(errors='replace') if message.key() else None,'topic':message.topic(),'partition':message.partition(),'offset':message.offset(),'timestamp':message.timestamp()[1],'headers':dict(message.headers() or [])}
+                        data = kafka_value(message.value(), cfg.get('valueDeserializer', 'String'))
+                        key = kafka_value(message.key(), cfg.get('keyDeserializer', 'String')) if message.key() else None
+                        item = {'id':f'{message.topic()}:{message.partition()}:{message.offset()}','data':data,'key':key,'topic':message.topic(),'partition':message.partition(),'offset':message.offset(),'timestamp':message.timestamp()[1],'headers':dict(message.headers() or [])}
                         messages.append(item); native_messages.append(message)
                 if client_ack:
                     pending = {'count': len(native_messages)}
@@ -587,14 +716,21 @@ class WorkflowRuntime:
                     if not native_messages: consumer.close()
                 else: consumer.close()
                 return {'messages': messages, 'count': len(messages), 'ackId': messages[0].get('ackId') if messages else None, 'ackIds':[item['ackId'] for item in messages if item.get('ackId')]}
-            producer_cfg = {**common, 'acks': str(cfg.get('acks','all')), 'compression.type': cfg.get('compressionType','none'), 'retries': int(cfg.get('retries',3) or 0), 'batch.size': int(cfg.get('batchSize',16384) or 16384), 'linger.ms': int(cfg.get('lingerMs',0) or 0), 'enable.idempotence': bool(cfg.get('enableIdempotence',False)), **mapping(cfg.get('additionalProperties'))}
+            producer_cfg = {**common, 'acks': str(cfg.get('acks','all')), 'compression.type': cfg.get('compressionType','none'), 'retries': int(cfg.get('retries',3) or 0), 'batch.size': int(cfg.get('batchSize',16384) or 16384), 'linger.ms': int(cfg.get('lingerMs',0) or 0), 'queue.buffering.max.kbytes': max(1, int(cfg.get('bufferMemory',33554432) or 33554432) // 1024), 'message.max.bytes': int(cfg.get('maxRequestSize',1048576) or 1048576), 'enable.idempotence': bool(cfg.get('enableIdempotence',False)), **mapping(cfg.get('additionalProperties'))}
             if cfg.get('transactionalId'): producer_cfg['transactional.id'] = cfg['transactionalId']
-            producer = Producer(producer_cfg); delivered = {}
+            producer = Producer(producer_cfg); delivered = {}; transactional = bool(cfg.get('transactionalId'))
+            if transactional: producer.init_transactions(); producer.begin_transaction()
             def delivery(error, message):
                 if error: delivered['error'] = str(error)
                 else: delivered.update({'partition':message.partition(),'offset':message.offset(),'timestamp':message.timestamp()[1]})
-            raw = payload if isinstance(payload, bytes) else (payload.encode() if isinstance(payload, str) else json.dumps(payload).encode())
-            producer.produce(destination, raw, key=str(cfg.get('key', '')).encode() or None, partition=int(cfg['partitionId']) if cfg.get('assignCustomPartition') else -1, headers=list(attributes.items()), callback=delivery); producer.flush()
+            raw = kafka_bytes(payload, cfg.get('valueSerializer', 'String'))
+            key = kafka_bytes(cfg.get('key'), cfg.get('keySerializer', 'String'))
+            try:
+                producer.produce(destination, raw, key=key, partition=int(cfg['partitionId']) if cfg.get('assignCustomPartition') else -1, headers=list(attributes.items()), callback=delivery); producer.flush()
+                if transactional: producer.commit_transaction()
+            except Exception:
+                if transactional: producer.abort_transaction()
+                raise
             if delivered.get('error'): raise RuntimeError(delivered['error'])
             return {**envelope, **delivered, 'messageId':envelope['id'], 'topic':destination, 'published':True}
         if technology == 'pubsub':
@@ -869,6 +1005,60 @@ class WorkflowRuntime:
                 return {'rows': [dict(row) for row in cursor.fetchall()], 'rowCount': cursor.rowcount}
             conn.commit(); return {'rowCount': cursor.rowcount, 'lastInsertId': cursor.lastrowid}
         finally: conn.close()
+
+    @staticmethod
+    def read_excel(cfg: dict) -> dict:
+        file_path = Path(str(cfg.get('filePath') or cfg.get('path') or ''))
+        if not file_path.is_file(): raise FileNotFoundError(f'Excel workbook not found: {file_path}')
+        def assign(target: dict, path: str, value):
+            parts = [part.strip() for part in str(path).split('.') if part.strip()]
+            current = target
+            for part in parts[:-1]: current = current.setdefault(part, {})
+            if parts: current[parts[-1]] = value
+        if file_path.suffix.lower() == '.xls':
+            try: import xlrd
+            except ImportError as exc: raise RuntimeError('Legacy .xls workbooks require xlrd') from exc
+            workbook = xlrd.open_workbook(file_path)
+            requested = str(cfg.get('sheetName') or '').strip(); names = [requested] if requested else workbook.sheet_names()
+            header_row = max(1, int(cfg.get('headerRow') or 1)) - 1; start_row = max(header_row + 1, int(cfg.get('startRow') or header_row + 2) - 1)
+            maximum = max(0, int(cfg.get('maximumRows') or 0)); nested = bool(cfg.get('nestedHeaders', True)); sheets = []
+            for name in names:
+                sheet = workbook.sheet_by_name(name); headers = [str(sheet.cell_value(header_row, col)).strip() or f'column{col + 1}' for col in range(sheet.ncols)]; rows = []
+                for row_index in range(start_row, sheet.nrows):
+                    if maximum and len(rows) >= maximum: break
+                    values = [sheet.cell_value(row_index, col) for col in range(sheet.ncols)]
+                    if cfg.get('skipBlankRows', True) and all(value in (None, '') for value in values): continue
+                    record = {}
+                    for key, value in zip(headers, values): assign(record, key, value) if nested and '.' in key else record.__setitem__(key, value)
+                    rows.append(record)
+                sheets.append({'name': name, 'index': workbook.sheet_names().index(name), 'rowCount': len(rows), 'columnCount': len(headers), 'headers': headers, 'rows': rows})
+            return {'workbook': {'fileName': file_path.name, 'sheetCount': len(sheets), 'sheets': sheets}, 'sheets': sheets}
+        try:
+            from openpyxl import load_workbook
+        except ImportError as exc:
+            raise RuntimeError('Excel activities require openpyxl') from exc
+        workbook = load_workbook(file_path, read_only=True, data_only=bool(cfg.get('dataOnly', True)))
+        try:
+            requested = str(cfg.get('sheetName') or '').strip()
+            names = [requested] if requested else list(workbook.sheetnames)
+            header_row = max(1, int(cfg.get('headerRow') or 1)); start_row = max(header_row + 1, int(cfg.get('startRow') or header_row + 1))
+            maximum = max(0, int(cfg.get('maximumRows') or 0)); nested = bool(cfg.get('nestedHeaders', True)); sheets = []
+            for index, name in enumerate(names):
+                if name not in workbook.sheetnames: raise ValueError(f'Worksheet {name!r} does not exist')
+                sheet = workbook[name]
+                headers = [str(cell.value).strip() if cell.value not in (None, '') else f'column{cell.column}' for cell in sheet[header_row]]
+                rows = []
+                for values in sheet.iter_rows(min_row=start_row, values_only=True):
+                    if maximum and len(rows) >= maximum: break
+                    if cfg.get('skipBlankRows', True) and all(value is None for value in values): continue
+                    record = {}
+                    for key, value in zip(headers, values):
+                        if nested and '.' in key: assign(record, key, value)
+                        else: record[key] = value
+                    rows.append(record)
+                sheets.append({'name': name, 'index': workbook.sheetnames.index(name), 'rowCount': len(rows), 'columnCount': len(headers), 'headers': headers, 'rows': rows})
+            return {'workbook': {'fileName': file_path.name, 'sheetCount': len(sheets), 'sheets': sheets}, 'sheets': sheets}
+        finally: workbook.close()
 
     def ftp(self, cfg, ctx):
         client_class = ftplib.FTP_TLS if cfg.get('tls') else ftplib.FTP

@@ -83,6 +83,8 @@ type Kind =
   | "sftp"
   | "jdbc"
   | "snowflake"
+  | "amqp"
+  | "excel"
   | "xml"
   | "json"
   | "flat"
@@ -96,6 +98,7 @@ type Kind =
   | "throw"
   | "rethrow"
   | "ems"
+  | "jms"
   | "kafka"
   | "pubsub"
   | "sap"
@@ -133,10 +136,12 @@ type Resource = {
   type:
     | "jdbc"
     | "snowflake"
+    | "amqp"
     | "ftp"
     | "sftp"
     | "http"
     | "ems"
+    | "jms"
     | "kafka"
     | "pubsub"
     | "sap"
@@ -198,13 +203,17 @@ const isEventActivity = (item: { type: Kind; operation?: string; config?: Record
     (item.type === "rest" && operation === "receiver") || (item.type === "soap" && operation === "service") ||
     (item.type === "file" && operation === "poll") ||
     (item.type === "ems" && ["queue_receiver", "topic_subscriber"].includes(operation)) ||
+    (item.type === "jms" && operation === "receive_message") ||
     (item.type === "kafka" && ["receive", "get"].includes(operation)) ||
     (item.type === "pubsub" && operation === "subscribe") ||
+    (item.type === "amqp" && operation === "receive") ||
     (item.type === "sap" && ["idoc_listener", "rfc_bapi_listener"].includes(operation));
 };
 const ai = (asset: string) => (
   <img src={`/activity-icons/${asset.includes(".") ? asset : `${asset}.png`}`} alt="" />
 );
+const resourceIconSources: Record<string, string> = { http: "/activity-icons/http.png", ftp: "/activity-icons/ftp.png", sftp: "/activity-icons/sftp.png", ems: "/activity-icons/ems.png", jms: "/activity-icons/jms-connection.svg", kafka: "/vendor-logos/apache-kafka.svg", pubsub: "/vendor-logos/gcp-pubsub.png", jdbc: "/activity-icons/JDBC-Query.png", snowflake: "/activity-icons/snowflake.svg", amqp: "/vendor-logos/rabbitmq.svg", sap: "/vendor-logos/sap.svg", sap_tid: "/vendor-logos/sap.svg" };
+const ResourceVendorIcon = ({ type }: { type: string }) => resourceIconSources[type] ? <img className={`resource-vendor-icon resource-${type}`} src={resourceIconSources[type]} alt=""/> : <Database/>;
 const packs: { name: string; icon: any; items: Def[] }[] = [
   {
     name: "Starters & Tasks",
@@ -344,11 +353,23 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
     ),
   },
   {
+    name: "JMS",
+    icon: MessageSquare,
+    items: [
+      ["get_queue_message", "Get JMS Queue Message", "jms-get.svg"],
+      ["receive_message", "JMS Receive Message", "jms-receive.svg"],
+      ["request_reply", "JMS Request Reply", "jms-request-reply.svg"],
+      ["send_message", "JMS Send Message", "jms-send.svg"],
+      ["reply_message", "Reply to JMS Message", "jms-reply.svg"],
+      ["wait_request", "Wait for JMS Request", "jms-wait.svg"],
+    ].map(([operation, label, asset]) => ({ type: "jms", operation, label, asset }) as Def),
+  },
+  {
     name: "Kafka",
     icon: Radio,
     items: [
       ["receive", "Kafka Receive Message"],
-      ["publish", "Kafka Send Message"],
+      ["send", "Kafka Send Message"],
       ["get", "Kafka Get Messages"],
     ].map(
       ([operation, label]) =>
@@ -408,12 +429,22 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
     name: "Snowflake",
     icon: Database,
     items: [
-      ["insert", "Snowflake Insert", "snowflake"],
-      ["query", "Snowflake Query", "snowflake"],
-      ["update", "Snowflake Update", "snowflake"],
-      ["delete", "Snowflake Delete", "snowflake"],
-      ["bulk_load", "Snowflake Bulk Load", "snowflake"],
+      ["insert", "Snowflake Insert", "snowflake.svg"],
+      ["query", "Snowflake Query", "snowflake.svg"],
+      ["update", "Snowflake Update", "snowflake.svg"],
+      ["delete", "Snowflake Delete", "snowflake.svg"],
+      ["bulk_load", "Snowflake Bulk Load", "snowflake.svg"],
     ].map(([operation, label, asset]) => ({ type: "snowflake", operation, label, asset }) as Def),
+  },
+  {
+    name: "AMQP",
+    icon: Radio,
+    items: [
+      ["receive", "AMQP Receive Message", "amqp-receive.svg"],
+      ["get", "AMQP Get Message", "amqp-get.svg"],
+      ["send", "AMQP Send Message", "amqp-send.svg"],
+      ["dead_letter", "AMQP Dead Letter Message", "amqp-dead-letter.svg"],
+    ].map(([operation, label, asset]) => ({ type: "amqp", operation, label, asset }) as Def),
   },
   {
     name: "Data",
@@ -435,6 +466,7 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
         label: "Render Data",
         asset: "flat",
       },
+      { type: "excel", operation: "read", label: "Read Excel Workbook", asset: "excel-read.svg" },
     ],
   },
   {
@@ -447,7 +479,7 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
       { type: "catch", operation: "catch", label: "Catch Exception", asset: "catch-exception.svg" },
       { type: "throw", operation: "throw", label: "Throw Exception", asset: "throw-exception.svg" },
       { type: "rethrow", operation: "rethrow", label: "Rethrow Exception", asset: "rethrow-exception.svg" },
-      { type: "confirm", operation: "acknowledge", label: "Confirm Message", asset: "runtime" },
+      { type: "confirm", operation: "acknowledge", label: "Confirm Message", asset: "general-confirm.svg" },
       {
         type: "java",
         operation: "invoke",
@@ -455,14 +487,12 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
         asset: "runtime",
       },
       { type: "python", operation: "invoke", label: "Python Invoke", asset: "runtime" },
-      { type: "basic", operation: "empty", label: "Empty", asset: "runtime" },
-      { type: "basic", operation: "assign", label: "Assign Variable", asset: "runtime" },
-      { type: "basic", operation: "sleep", label: "Sleep", asset: "runtime" },
-      { type: "basic", operation: "get_context", label: "Get Process Context", asset: "runtime" },
-      { type: "basic", operation: "set_context", label: "Set Process Context", asset: "runtime" },
-      { type: "basic", operation: "get_shared_variable", label: "Get Shared Variable", asset: "runtime" },
-      { type: "basic", operation: "set_shared_variable", label: "Set Shared Variable", asset: "runtime" },
-      { type: "basic", operation: "inspector", label: "Inspector", asset: "runtime" },
+      { type: "basic", operation: "external_command", label: "External Command", asset: "external-command.svg" },
+      { type: "basic", operation: "assign", label: "Assign", asset: "general-assign.svg" },
+      { type: "basic", operation: "checkpoint", label: "Checkpoint", asset: "general-checkpoint.svg" },
+      { type: "basic", operation: "sleep", label: "Sleep", asset: "general-sleep.svg" },
+      { type: "basic", operation: "get_shared_variable", label: "Get Shared Variable", asset: "general-shared-get.svg" },
+      { type: "basic", operation: "set_shared_variable", label: "Set Shared Variable", asset: "general-shared-set.svg" },
     ],
   },
 ];
@@ -536,6 +566,36 @@ const defaultProperties: Property[] = [
   { key: "connections.snowflake.maximumConnections", value: 8, data_type: "integer" },
   { key: "connections.snowflake.maximumConnectionWaitSeconds", value: 300, data_type: "integer" },
   { key: "connections.snowflake.serviceThreads", value: 8, data_type: "integer" },
+  { key: "connections.amqp.mode", value: "memory", data_type: "string" },
+  { key: "connections.amqp.brokerType", value: "RabbitMQ", data_type: "string" },
+  { key: "connections.amqp.amqpVersion", value: "AMQP-0-9-1", data_type: "string" },
+  { key: "connections.amqp.hostPort", value: "localhost:5672", data_type: "string" },
+  { key: "connections.amqp.virtualHost", value: "/", data_type: "string" },
+  { key: "connections.amqp.username", value: "guest", data_type: "string" },
+  { key: "connections.amqp.password", value: "guest", data_type: "password" },
+  { key: "connections.amqp.clientId", value: "integration-fabric", data_type: "string" },
+  { key: "connections.amqp.authenticationType", value: "SAS", data_type: "string" },
+  { key: "connections.amqp.connectionString", value: "", data_type: "password" },
+  { key: "connections.amqp.tenantId", value: "", data_type: "string" },
+  { key: "connections.amqp.azureClientId", value: "", data_type: "string" },
+  { key: "connections.amqp.clientSecret", value: "", data_type: "password" },
+  { key: "connections.amqp.sharedAccessKeyName", value: "", data_type: "string" },
+  { key: "connections.amqp.sharedAccessKey", value: "", data_type: "password" },
+  { key: "connections.amqp.entityType", value: "Queue", data_type: "string" },
+  { key: "connections.amqp.entityName", value: "", data_type: "string" },
+  { key: "connections.amqp.entitySubscriberName", value: "", data_type: "string" },
+  { key: "connections.amqp.connectionTimeoutMsec", value: 30000, data_type: "integer" },
+  { key: "connections.amqp.sessionCount", value: 1, data_type: "integer" },
+  { key: "connections.amqp.idleTimeoutMsec", value: 0, data_type: "integer" },
+  { key: "connections.amqp.connectionRecovery", value: true, data_type: "boolean" },
+  { key: "connections.amqp.retryIntervalMsec", value: 3000, data_type: "integer" },
+  { key: "connections.amqp.retryAttempts", value: 20, data_type: "integer" },
+  { key: "connections.amqp.networkRecoveryIntervalMsec", value: 5000, data_type: "integer" },
+  { key: "connections.amqp.sslEnabled", value: false, data_type: "boolean" },
+  { key: "connections.amqp.caFile", value: "", data_type: "string" },
+  { key: "connections.amqp.clientCertificateFile", value: "", data_type: "string" },
+  { key: "connections.amqp.clientKeyFile", value: "", data_type: "string" },
+  { key: "connections.amqp.clientKeyPassword", value: "", data_type: "password" },
   { key: "connections.ems.host", value: "localhost", data_type: "string" },
   { key: "connections.ems.port", value: 7222, data_type: "integer" },
   { key: "connections.ems.serverUrl", value: "tcp://localhost:7222", data_type: "string" },
@@ -559,6 +619,22 @@ const defaultProperties: Property[] = [
   { key: "connections.ems.reconnectDelayMs", value: 5000, data_type: "integer" },
   { key: "connections.ems.heartbeatOutgoingMs", value: 0, data_type: "integer" },
   { key: "connections.ems.heartbeatIncomingMs", value: 0, data_type: "integer" },
+  { key: "connections.jms.provider", value: "Generic JMS 2.0", data_type: "string" },
+  { key: "connections.jms.host", value: "localhost", data_type: "string" },
+  { key: "connections.jms.port", value: 61613, data_type: "integer" },
+  { key: "connections.jms.username", value: "", data_type: "string" },
+  { key: "connections.jms.password", value: "", data_type: "password" },
+  { key: "connections.jms.clientId", value: "integration-fabric", data_type: "string" },
+  { key: "connections.jms.connectionFactoryType", value: "Direct", data_type: "string" },
+  { key: "connections.jms.connectionFactory", value: "ConnectionFactory", data_type: "string" },
+  { key: "connections.jms.jndiContextFactory", value: "", data_type: "string" },
+  { key: "connections.jms.jndiProviderUrl", value: "", data_type: "string" },
+  { key: "connections.jms.jndiUsername", value: "", data_type: "string" },
+  { key: "connections.jms.jndiPassword", value: "", data_type: "password" },
+  { key: "connections.jms.sslEnabled", value: false, data_type: "boolean" },
+  { key: "connections.jms.sslTrustedCertificates", value: "", data_type: "string" },
+  { key: "connections.jms.reconnectAttempts", value: 3, data_type: "integer" },
+  { key: "connections.jms.reconnectDelayMs", value: 5000, data_type: "integer" },
   { key: "connections.kafka.bootstrapServers", value: "localhost:9092", data_type: "string" },
   { key: "connections.kafka.clientId", value: "integration-fabric", data_type: "string" },
   { key: "connections.kafka.groupId", value: "integration-fabric", data_type: "string" },
@@ -575,6 +651,16 @@ const defaultProperties: Property[] = [
   { key: "connections.kafka.schemaRegistryUrl", value: "", data_type: "string" },
   { key: "connections.kafka.schemaRegistryUsername", value: "", data_type: "string" },
   { key: "connections.kafka.schemaRegistryPassword", value: "", data_type: "password" },
+  { key: "connections.kafka.reconnectBackoffMilliseconds", value: 50, data_type: "integer" },
+  { key: "connections.kafka.retryBackoffMilliseconds", value: 100, data_type: "integer" },
+  { key: "connections.kafka.authenticationType", value: "None", data_type: "string" },
+  { key: "connections.kafka.useTicketCache", value: false, data_type: "boolean" },
+  { key: "connections.kafka.keytabFile", value: "", data_type: "string" },
+  { key: "connections.kafka.principalName", value: "", data_type: "string" },
+  { key: "connections.kafka.jaasConfigFile", value: "", data_type: "string" },
+  { key: "connections.kafka.loginCallbackHandler", value: "", data_type: "string" },
+  { key: "connections.kafka.schemaRegistryVendor", value: "Confluent", data_type: "string" },
+  { key: "connections.kafka.clientProperties", value: "{}", data_type: "json" },
   { key: "connections.pubsub.projectId", value: "my-gcp-project", data_type: "string" },
   { key: "connections.pubsub.credentialsFile", value: "", data_type: "string" },
   { key: "connections.pubsub.endpoint", value: "pubsub.googleapis.com:443", data_type: "string" },
@@ -606,9 +692,9 @@ const envs = Object.fromEntries(
   ["local", "dev", "qa", "pre", "production"].map((name) => [name, newEnvironmentProperties()]),
 ) as Record<string, Property[]>;
 const supportsOutboundRetry = (type = "", operation = "") =>
-  ["http", "jdbc", "snowflake", "ftp", "sftp"].includes(type) ||
-  (type === "ems" && ["send", "publish", "request_reply", "reply"].includes(operation)) ||
-  (type === "kafka" && ["publish", "get"].includes(operation)) ||
+  ["http", "jdbc", "snowflake", "amqp", "ftp", "sftp"].includes(type) ||
+  (["ems", "jms"].includes(type) && ["send", "publish", "request_reply", "reply", "send_message", "reply_message"].includes(operation)) ||
+  (type === "kafka" && ["send", "publish", "get"].includes(operation)) ||
   (type === "pubsub" && operation === "publish") ||
   (type === "rest" && operation === "invoke") ||
   (type === "soap" && operation === "request_reply") ||
@@ -757,7 +843,7 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
     });
   }
   task.activities.filter((item) => !reachable.has(item.id)).forEach((item) => add("warning", "Flow", `${item.name} is not on an executable path.`, "Connect it to an upstream activity or remove it.", item.id));
-  const connectionTypes = new Set(["jdbc", "snowflake", "ftp", "sftp", "http", "ems", "kafka", "pubsub", "sap"]);
+  const connectionTypes = new Set(["jdbc", "snowflake", "amqp", "ftp", "sftp", "http", "ems", "jms", "kafka", "pubsub", "sap"]);
   task.activities.forEach((item) => {
     const operation = item.config.operation || "";
     if (item.type === "timer") {
@@ -783,7 +869,8 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
       else if (!script.includes("---")) add("error", "Transform", `${item.name} is missing the DataWeave header/body separator.`, "Add --- before the transform expression.", item.id);
       if (item.config.aiReviewRequired) add("mapping", "Transform", `${item.name} contains an unreviewed AI-generated draft.`, "Review the script and run Map & Test before packaging.", item.id);
     }
-    if (item.type === "jdbc" && !String(item.config.sql || "").trim() && !["create", "update", "delete", "truncate"].includes(operation)) add("warning", "Configuration", `${item.name} has no SQL statement.`, "Configure SQL or a stored procedure call.", item.id);
+    if (item.type === "jdbc" && operation === "call" && !String(item.config.procedure || "").trim()) add("error", "JDBC", `${item.name} has no procedure or function.`, "Select or enter a stored procedure/function.", item.id);
+    if (item.type === "jdbc" && operation !== "call" && !String(item.config.sql || "").trim() && !item.config.overrideSqlStatement) add("error", "JDBC", `${item.name} has no SQL statement.`, "Build SQL in the JDBC designer or enable a mapped SQL override.", item.id);
     if (item.type === "snowflake") {
       if (!item.config.resourceId) add("error", "Snowflake", `${item.name} has no Snowflake JDBC connection.`, "Select a Snowflake shared connection.", item.id);
       if (operation === "query" && !String(item.config.statement || item.config.sql || item.config.entity || "").trim()) add("error", "Snowflake", `${item.name} has no SELECT statement or entity.`, "Choose downloaded metadata or enter a Snowflake SELECT statement.", item.id);
@@ -791,6 +878,9 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
       if (item.config.merge && !String(item.config.mergeOnColumns || "").trim()) add("error", "Snowflake", `${item.name} enables Merge without Merge On Columns.`, "Enter one or more comma-separated match columns.", item.id);
       if (operation === "insert" && item.config.merge && Number(item.config.batchSize || 100) !== 1) add("error", "Snowflake", `${item.name} Merge requires Batch Size 1.`, "Set Batch Size to 1 as required by the Snowflake plug-in.", item.id);
     }
+    if (item.type === "amqp" && !item.config.resourceId) add("error", "AMQP", `${item.name} has no AMQP connection.`, "Select an AMQP shared connection.", item.id);
+    if (item.type === "excel" && !String(item.config.filePath || item.config.inputMappings?.filePath || "").trim()) add("error", "Excel", `${item.name} has no workbook path.`, "Enter a workbook path or map filePath in Input.", item.id);
+    if (item.type === "basic" && operation === "external_command" && !String(item.config.command || item.config.inputMappings?.command || "").trim()) add("error", "External Command", `${item.name} has no executable command.`, "Enter a command or map it in Input.", item.id);
     if ((item.type === "file" || item.type === "ftp" || item.type === "sftp") && !String(item.config.path || item.config.remotePath || "").trim()) add("warning", "Configuration", `${item.name} has no file path.`, "Configure the source or target path.", item.id);
     if (item.type === "sap" && operation.includes("idoc") && !item.config.idocType) add("mapping", "SAP IDoc", `${item.name} has no IDoc type/schema.`, "Retrieve an IDoc type from the SAP shared connection and select it here.", item.id);
   });
@@ -1222,7 +1312,7 @@ function App() {
         spawn: false,
         inputMappings: {},
       });
-    if (["ems", "kafka", "pubsub"].includes(d.type))
+    if (["ems", "jms", "kafka", "pubsub"].includes(d.type))
       Object.assign(config, {
         resourceId: project.resources.find((r) => r.type === d.type)?.id || "",
         topic: "",
@@ -1234,7 +1324,8 @@ function App() {
         maxMessages: 1,
       });
     if (d.type === "ems") Object.assign(config, { messagingStyle: d.operation?.includes("topic") ? "Topic" : "Queue", messageType: "Text", acknowledgeMode: ["queue_receiver", "topic_subscriber"].includes(d.operation || "") ? "Auto" : undefined, deliveryMode: "Persistent", priority: 4, expiration: 0, maxSessions: 1, receiveTimeout: 30000, dynamicProperties: "{}" });
-    if (d.type === "kafka") Object.assign(config, { acknowledgeMode: d.operation === "receive" || d.operation === "get" ? "Auto" : undefined, keySerializer: "String", valueSerializer: "String", keyDeserializer: "String", valueDeserializer: "String", acks: "all", compressionType: "none", retries: 3, batchSize: 16384, lingerMs: 0, enableIdempotence: false, enableAutoCommit: true, autoOffsetReset: "earliest", maxPollRecords: 1, additionalProperties: "{}" });
+    if (d.type === "jms") Object.assign(config, { messagingStyle: "Queue", messageType: "Text", acknowledgeMode: ["get_queue_message", "receive_message", "wait_request"].includes(d.operation || "") ? "Auto" : undefined, deliveryMode: "Persistent", priority: 4, expiration: 0, maxSessions: 1, receiveTimeout: 30000, requestTimeout: 30000, dynamicProperties: "{}" });
+    if (d.type === "kafka") Object.assign(config, { acknowledgeMode: d.operation === "receive" || d.operation === "get" ? "Auto" : undefined, keySerializer: "String", valueSerializer: "String", keyDeserializer: "String", valueDeserializer: "String", acks: "all", compressionType: "none", retries: 3, bufferMemory: 33554432, batchSize: 16384, lingerMs: 0, maxRequestSize: 1048576, enableIdempotence: false, enableAutoCommit: true, autoOffsetReset: "earliest", fetchMinBytes: 1, maxPollRecords: 1, sessionTimeoutMs: 45000, heartbeatIntervalMs: 3000, additionalProperties: "{}" });
     if (d.type === "pubsub") Object.assign(config, { acknowledgeMode: d.operation === "subscribe" ? "Auto" : undefined, receiveTimeout: 10, publishTimeout: 60, attributes: {}, data: "${last}" });
     if (d.type === "sap")
       Object.assign(config, {
@@ -1263,6 +1354,18 @@ function App() {
         purgeStageFiles: false, compressData: true, onError: "ABORT_STATEMENT",
         skipFileErrorCount: 1, skipFileErrorPercentage: 1,
       });
+    if (d.type === "amqp")
+      Object.assign(config, {
+        resourceId: project.resources.find((r) => r.type === "amqp")?.id || "",
+        queueName: "", entityType: "Queue", entityName: "", subscriptionName: "",
+        destinationType: "Queue", exchangeType: "direct", exchangeName: "", routingKey: "",
+        messageType: "TextMessage", acknowledgeMode: d.operation === "receive" ? "Auto" : "Auto",
+        deliveryMode: "Persistent", expiration: 0, priority: 4, getMessageID: true,
+        maxMessages: 1, receiverMode: "PeekLock", durableSubscription: false, sharedSubscription: false,
+        useRetry: false, totalTimeoutSeconds: 12, maxAttempts: 10, backoffTimeMsec: 1000,
+      });
+    if (d.type === "excel") Object.assign(config, { filePath: "", sheetName: "", headerRow: 1, startRow: 2, maximumRows: 0, dataOnly: true, nestedHeaders: true, skipBlankRows: true });
+    if (d.type === "basic" && d.operation === "external_command") Object.assign(config, { command: "", provideCommandOutput: true, removeParameterQuotes: false, outputFile: "", outputLineSplitting: "None", splitToken: "", workingDirectory: "", environment: "", timeoutSeconds: 300, encoding: "utf-8" });
     if (["mapper", "transform", "ai_transform"].includes(d.type))
       Object.assign(config, {
         language: "JSONPath / functions",
@@ -1402,6 +1505,24 @@ function App() {
     });
     setSelected(catchActivityId); setSelectedIds([catchActivityId]); setSelectedEdge(null);
     setLogs([{ level: "INFO", message: `Catch AI generated ${selectedTypes.length} exception handler block${selectedTypes.length === 1 ? "" : "s"} with code, message, details, and stack-trace mappings.` }]);
+  };
+  const openCatchAI = () => {
+    const existing = node?.type === "catch" ? node : nodes.find((activity) => activity.type === "catch" && !activity.config?.generatedByCatchAI);
+    const catchId = existing?.id || `catch-ai-${Date.now()}`;
+    if (!existing) {
+      const lowest = nodes.reduce((value, activity) => Math.max(value, activity.position.y), 120);
+      const catchNode: Node = {
+        id: catchId,
+        type: "catch",
+        name: "Catch Exception",
+        position: { x: 80, y: lowest + 135 },
+        config: { operation: "catch", catchAll: true, errorType: "", errorCode: "", advanced: advancedDefaults() },
+      };
+      mutateTask((current) => ({ ...current, activities: [...current.activities, catchNode] }));
+      setLogs([{ level: "INFO", message: "Added a Catch block and opened Catch AI. Select task exceptions to generate mapped handlers." }]);
+    }
+    setSelected(catchId); setSelectedIds([catchId]); setSelectedEdge(null); setSelectedResource(null);
+    setActiveTab("configuration"); setConfigHeight((height) => Math.max(height, 390)); setMenu(null);
   };
   const deleteSelectedActivity = () => {
     const targets = selectedIds.length ? nodes.filter((item) => selectedIds.includes(item.id)) : node ? [node] : [];
@@ -1601,7 +1722,7 @@ function App() {
   const save = () => saveProjectFolder();
   const exportProject = () => saveProjectFile("package", true);
   const saveJsonFile = () => saveProjectFile("json", true);
-  const buildDeploymentPackage = async (settings: Record<string, string>) => {
+  const buildDeploymentPackage = async (settings: Record<string, any>) => {
     try {
       const issues = validateProjectDefinition(project);
       const blocking = issues.filter((item) => item.severity === "error");
@@ -1613,7 +1734,8 @@ function App() {
       const saved = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
       if (!saved.ok) throw new Error("Unable to save packaging configuration.");
       setProject(await saved.json());
-      const query = new URLSearchParams({ target: settings.target, environment: settings.environment, archive: settings.format });
+      const selectedEnvironments = settings.environments?.length ? settings.environments : [settings.environment || project.active_environment];
+      const query = new URLSearchParams({ target: settings.target, environments: selectedEnvironments.join(","), starters: (settings.starterTaskIds || []).join(","), archive: settings.format, artifacts: settings.artifacts.join(",") });
       const response = await fetch(`/api/projects/${project.id}/package?${query}`);
       if (!response.ok) { const detail = await response.json().catch(() => ({})); throw new Error(detail.detail || "Package generation failed."); }
       const blob = await response.blob(), disposition = response.headers.get("content-disposition") || "";
@@ -1849,7 +1971,7 @@ function App() {
           <Workflow /> IF
         </div>
         <div className="menu-root"><button className={menu === "file" ? "active" : ""} onClick={(e) => { e.stopPropagation(); setMenu(menu === "file" ? null : "file"); }}>File</button>
-          {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} save={save} saveJson={saveJsonFile} exportProject={exportProject} importProject={importFromFileSystem} openProjects={() => setClosed(true)} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
+          {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} save={save} saveJson={saveJsonFile} exportProject={exportProject} importProject={importFromFileSystem} openProjects={() => setClosed(true)} catchAI={openCatchAI} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
         <TopMenu label="Edit" open={menu === "edit"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "edit" ? null : "edit"); }} commands={[
           { label: "Undo", detail: "Restore an earlier Studio change · up to 100 levels", icon: Undo2, shortcut: "Ctrl+Z", action: undoStudio, disabled: history.current.past.length === 0 && !history.current.pendingBase },
           { label: "Redo", detail: "Restore the most recently undone change", icon: Redo2, shortcut: "Ctrl+Y", action: redoStudio, disabled: history.current.future.length === 0 },
@@ -1900,6 +2022,7 @@ function App() {
         stop={stopExecution}
         executionActive={executionActive}
         aiBuild={() => setAiBuilderOpen(true)}
+        catchAI={openCatchAI}
         validateTask={() => runValidation("task")}
         validateProject={() => runValidation("project")}
         undo={undoStudio}
@@ -2045,7 +2168,7 @@ function App() {
                       setActiveTab("configuration");
                     }}
                   >
-                    <Database />
+                    <ResourceVendorIcon type={r.type}/>
                     {r.name}
                     <small>{r.type}</small>
                   </button>
@@ -2581,15 +2704,16 @@ function App() {
                             ? "receive"
                             : event === "pubsub"
                               ? "subscribe"
+                              : event === "amqp"
+                                ? "receive"
                               : event === "sap"
                                 ? "idoc_listener"
                                 : event === "timer"
                                   ? "schedule"
                                   : "listen",
                   resourceId:
-                    event === "sap"
-                      ? project.resources.find((r) => r.type === "sap")?.id ||
-                        ""
+                    ["sap", "amqp"].includes(event)
+                      ? project.resources.find((r) => r.type === event)?.id || ""
                       : undefined,
                   path: "/events",
                   ...(event === "timer" ? { scheduleMode: "dateTime", scheduledDateTime: "", cronExpression: "0 * * * *", timezone: "local", runOnceOnLocalStart: true } : {}),
@@ -2659,7 +2783,7 @@ function App() {
           }}
         />
       )}
-      {packageOpen && <PackageDialog packaging={project.packaging} environments={Object.keys(project.properties)} onClose={() => setPackageOpen(false)} onPackage={buildDeploymentPackage}/>} 
+      {packageOpen && <PackageDialog packaging={project.packaging} environments={Object.keys(project.properties)} tasks={project.tasks} onClose={() => setPackageOpen(false)} onPackage={buildDeploymentPackage}/>}
       {aiBuilderOpen && <AIBuilderDialog currentTask={task} onClose={() => setAiBuilderOpen(false)} onApply={(proposal: any) => {
         const generated = proposal.project, scope = proposal.scope;
         if (scope === "task") {
@@ -2711,22 +2835,65 @@ function AIBuilderDialog({ currentTask, onClose, onApply }: any) {
   const taskCount = proposal?.project?.tasks?.length || 0, activityCount = proposal?.project?.tasks?.reduce((total: number, task: any) => total + task.activities.length, 0) || 0;
   return <div className="modal-backdrop"><div className="runtime-modal ai-builder-dialog"><header><span><WandSparkles/><span><b>AI Integration Builder</b><small>Natural language to editable middleware design</small></span></span><button aria-label="Close AI builder" onClick={onClose}>×</button></header><main><section className="ai-requirement"><div className="ai-scope"><button className={scope === "task" ? "active" : ""} onClick={() => setScope("task")}><Activity/> Current Task</button><button className={scope === "project" ? "active" : ""} onClick={() => setScope("project")}><Package/> Complete Project</button><small>{status?.provider === "openai" ? `OpenAI · ${status.model}` : "Local blueprint mode · set OPENAI_API_KEY for model-assisted generation"}</small></div><label>Describe the integration requirement<textarea autoFocus value={requirement} onChange={(event) => setRequirement(event.target.value)} placeholder="Receive a REST order, validate and transform JSON, insert it with JDBC, catch errors, log them, and return an HTTP response…"/></label><button className="generate-ai-design" disabled={busy || requirement.trim().length < 10} onClick={generate}><WandSparkles/> {busy ? "Designing…" : "Generate design preview"}</button>{error && <p className="ai-builder-error">{error}</p>}</section><section className="ai-preview">{proposal ? <><header><span><b>DESIGN PREVIEW</b><small>{proposal.summary}</small></span><span>{taskCount} tasks · {activityCount} activities · {proposal.project.resources?.length || 0} connections</span></header>{proposal.project.tasks.map((task: any) => <article key={task.id}><b>{task.name}</b><small>{task.kind}</small><div>{task.activities.map((activity: any) => <span key={activity.id}>{activity.name}</span>)}</div></article>)}<details><summary>Review generated JSON</summary><pre>{JSON.stringify(proposal.project, null, 2)}</pre></details></> : <div className="ai-preview-empty"><WandSparkles/><b>Your design preview appears here</b><p>Nothing is changed until you inspect the proposal and click Apply.</p></div>}</section></main><footer><span>Credentials are never stored in the generated project.</span><button onClick={onClose}>Cancel</button><button className="primary" disabled={!proposal} onClick={() => onApply(proposal)}>Apply generated {scope}</button></footer></div></div>;
 }
-function PackageDialog({ packaging, environments, onClose, onPackage }: any) {
-  const [draft, setDraft] = useState({
+const deploymentArtifactChoices: Record<string, { key: string; label: string; detail: string }[]> = {
+  cloud: [
+    { key: "dockerfile", label: "Dockerfile", detail: "OCI runtime image build" },
+    { key: "configmap", label: "ConfigMap YAML", detail: "Selected environment values" },
+    { key: "secret", label: "Secret YAML", detail: "Empty credential placeholders" },
+    { key: "deployment", label: "Deployment YAML", detail: "Pods, probes, resources and replicas" },
+    { key: "service", label: "Service YAML", detail: "Expose the configured listener port" },
+    { key: "hpa", label: "Horizontal scaling YAML", detail: "CPU-based autoscaling" },
+    { key: "package", label: "Kustomize package", detail: "Kustomization and package metadata" },
+  ],
+  "on-prem": [
+    { key: "application", label: "Application descriptor", detail: "Administrator deployment configuration" },
+    { key: "environment", label: "Environment properties", detail: "Non-secret selected environment values" },
+    { key: "administrator", label: "Administrator deploy script", detail: "Deploy, scale and optional startup" },
+    { key: "systemd", label: "systemd service", detail: "Linux service installation unit" },
+    { key: "install", label: "Install script", detail: "Create directories and copy runtime files" },
+    { key: "readme", label: "Deployment guide", detail: "Generated on-premises deployment steps" },
+  ],
+};
+function PackageDialog({ packaging, environments, tasks, onClose, onPackage }: any) {
+  const initialTarget = packaging?.target || "on-prem";
+  const starterTasks = (tasks || []).filter((task: Task) => task.kind === "starter");
+  const initialChoices = deploymentArtifactChoices[initialTarget] || deploymentArtifactChoices["on-prem"];
+  const savedArtifacts = Array.isArray(packaging?.artifacts) ? packaging.artifacts.filter((key: string) => initialChoices.some((choice) => choice.key === key)) : [];
+  const [draft, setDraft] = useState<any>({
     artifact_name: packaging?.artifact_name || "integration-application",
     version: packaging?.version || "1.0.0",
-    target: packaging?.target || "on-prem",
-    environment: packaging?.environment || "production",
+    target: initialTarget,
+    starterTaskIds: Array.isArray(packaging?.starterTaskIds) && packaging.starterTaskIds.length ? packaging.starterTaskIds.filter((id: string) => starterTasks.some((task: Task) => task.id === id)) : starterTasks.map((task: Task) => task.id),
+    environments: Array.isArray(packaging?.environments) && packaging.environments.length ? packaging.environments.filter((name: string) => environments.includes(name)) : [packaging?.environment || "production"].filter((name: string) => environments.includes(name)),
     format: packaging?.format || "ifpkg",
+    artifacts: savedArtifacts.length ? savedArtifacts : initialChoices.map((choice) => choice.key),
+    image: packaging?.image || "",
+    replicas: packaging?.replicas || 1,
+    minimumReplicas: packaging?.minimumReplicas || 1,
+    maximumReplicas: packaging?.maximumReplicas || 3,
+    cpuTargetPercent: packaging?.cpuTargetPercent || 70,
+    serviceType: packaging?.serviceType || "ClusterIP",
+    containerPort: packaging?.containerPort || 8787,
+    instances: packaging?.instances || 1,
+    startOnBoot: packaging?.startOnBoot || false,
+    gracefulShutdownSeconds: packaging?.gracefulShutdownSeconds || 60,
+    installRoot: packaging?.installRoot || "",
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const update = (key: string, value: string) => setDraft((current) => ({ ...current, [key]: value }));
+  const update = (key: string, value: any) => setDraft((current: any) => ({ ...current, [key]: value }));
+  const chooseTarget = (target: string) => setDraft((current: any) => ({ ...current, target, artifacts: deploymentArtifactChoices[target].map((choice) => choice.key) }));
+  const toggleArtifact = (key: string) => setDraft((current: any) => ({ ...current, artifacts: current.artifacts.includes(key) ? current.artifacts.filter((value: string) => value !== key) : [...current.artifacts, key] }));
+  const toggleEnvironment = (name: string) => setDraft((current: any) => ({ ...current, environments: current.environments.includes(name) ? current.environments.filter((value: string) => value !== name) : [...current.environments, name] }));
+  const toggleStarter = (id: string) => setDraft((current: any) => ({ ...current, starterTaskIds: current.starterTaskIds.includes(id) ? current.starterTaskIds.filter((value: string) => value !== id) : [...current.starterTaskIds, id] }));
   const extension = draft.format === "ifpkg" ? "ifpkg" : draft.format;
   const build = async () => {
     setError("");
     if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(draft.artifact_name.trim())) { setError("Artifact name may contain letters, numbers, dots, dashes, and underscores."); return; }
     if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(draft.version.trim())) { setError("Use a semantic version such as 1.0.0 or 1.0.0-beta.1."); return; }
+    if (!draft.artifacts.length) { setError("Select at least one deployment artifact."); return; }
+    if (!draft.environments.length) { setError("Select at least one environment profile."); return; }
+    if (!draft.starterTaskIds.length) { setError("Select at least one Starter Task to package."); return; }
     setBusy(true);
     try { await onPackage(draft); }
     catch (failure: any) { setError(failure?.message || "Package generation failed."); }
@@ -2738,12 +2905,33 @@ function PackageDialog({ packaging, environments, onClose, onPackage }: any) {
       <label>Artifact name<input value={draft.artifact_name} onChange={(event) => update("artifact_name", event.target.value)}/></label>
       <label>Version<input value={draft.version} onChange={(event) => update("version", event.target.value)}/></label>
       <div className="package-targets">
-        <button className={draft.target === "on-prem" ? "selected" : ""} onClick={() => update("target", "on-prem")}><HardDrive/><span><b>On-premises Linux</b><small>Administrator and runtime-agent deployment without containers</small></span></button>
-        <button className={draft.target === "cloud" ? "selected" : ""} onClick={() => update("target", "cloud")}><Cloud/><span><b>Cloud / Kubernetes</b><small>OCI image inputs and Kubernetes deployment descriptor</small></span></button>
+        <button className={draft.target === "on-prem" ? "selected" : ""} onClick={() => chooseTarget("on-prem")}><HardDrive/><span><b>On-premises Linux</b><small>Administrator and runtime-agent deployment without containers</small></span></button>
+        <button className={draft.target === "cloud" ? "selected" : ""} onClick={() => chooseTarget("cloud")}><Cloud/><span><b>Cloud / Kubernetes</b><small>OCI image inputs and Kubernetes deployment descriptors</small></span></button>
       </div>
-      <label>Target environment<select value={draft.environment} onChange={(event) => update("environment", event.target.value)}>{environments.map((name: string) => <option key={name}>{name}</option>)}</select></label>
+      <section className="package-starters"><header><span><b>TASK STARTERS</b><small>Select the deployable entry points. Called Sub Tasks are discovered recursively and included automatically; unrelated Sub Tasks are excluded.</small></span><button type="button" onClick={() => update("starterTaskIds", starterTasks.map((task: Task) => task.id))}>Select all</button></header><div>{starterTasks.map((task: Task) => <label key={task.id} className={draft.starterTaskIds.includes(task.id) ? "selected" : ""}><input type="checkbox" checked={draft.starterTaskIds.includes(task.id)} onChange={() => toggleStarter(task.id)}/><span><b>{task.name}</b><small>{task.description || "Starter Task"}</small></span></label>)}</div>{!starterTasks.length && <p>No Starter Tasks are available. Create a Starter Task before packaging.</p>}</section>
+      <section className="package-environments"><header><span><b>ENVIRONMENT PROFILES</b><small>The application is common; configuration and secret files are generated separately for every selected profile.</small></span><button type="button" onClick={() => update("environments", environments)}>Select all</button></header><div>{environments.map((name: string) => <label key={name} className={draft.environments.includes(name) ? "selected" : ""}><input type="checkbox" checked={draft.environments.includes(name)} onChange={() => toggleEnvironment(name)}/><span><b>{name}</b><small>{draft.environments.includes(name) ? "Included" : "Not packaged"}</small></span></label>)}</div></section>
       <label>Archive format<select value={draft.format} onChange={(event) => update("format", event.target.value)}><option value="ifpkg">Integration package (.ifpkg)</option><option value="tar.gz">Compressed TAR (.tar.gz)</option><option value="ear">EAR-compatible ZIP (.ear)</option></select></label>
-      <div className="package-preview"><Package/><span><b>{draft.artifact_name}-{draft.version}-{draft.target}.{extension}</b><small>{draft.target === "cloud" ? "Includes Docker build input and Kubernetes manifest" : "Includes the Linux Administrator deployment descriptor"}</small></span></div>
+      <section className="package-artifacts">
+        <header><span><b>SELECT DEPLOYMENT FILES</b><small>Core application, tasks, resources, schemas, and secret requirements are always included.</small></span><button type="button" onClick={() => update("artifacts", deploymentArtifactChoices[draft.target].map((choice) => choice.key))}>Select all</button></header>
+        <div>{deploymentArtifactChoices[draft.target].map((choice) => <label key={choice.key} className={draft.artifacts.includes(choice.key) ? "selected" : ""}><input type="checkbox" checked={draft.artifacts.includes(choice.key)} onChange={() => toggleArtifact(choice.key)}/><span><b>{choice.label}</b><small>{choice.detail}</small></span></label>)}</div>
+      </section>
+      {draft.target === "cloud" ? <section className="package-runtime-options">
+        <h3>Cloud runtime configuration</h3>
+        <label>Container image<input value={draft.image} onChange={(event) => update("image", event.target.value)} placeholder={`integration-fabric/${draft.artifact_name}:${draft.version}`}/></label>
+        <label>Container/listener port<input type="number" min="1" max="65535" value={draft.containerPort} onChange={(event) => update("containerPort", Number(event.target.value))}/></label>
+        <label>Initial replicas<input type="number" min="1" value={draft.replicas} onChange={(event) => update("replicas", Number(event.target.value))}/></label>
+        <label>Minimum replicas<input type="number" min="1" value={draft.minimumReplicas} onChange={(event) => update("minimumReplicas", Number(event.target.value))}/></label>
+        <label>Maximum replicas<input type="number" min="1" value={draft.maximumReplicas} onChange={(event) => update("maximumReplicas", Number(event.target.value))}/></label>
+        <label>CPU target %<input type="number" min="1" max="100" value={draft.cpuTargetPercent} onChange={(event) => update("cpuTargetPercent", Number(event.target.value))}/></label>
+        <label>Service type<select value={draft.serviceType} onChange={(event) => update("serviceType", event.target.value)}><option>ClusterIP</option><option>NodePort</option><option>LoadBalancer</option></select></label>
+      </section> : <section className="package-runtime-options">
+        <h3>On-premises runtime configuration</h3>
+        <label>Runtime instances<input type="number" min="1" value={draft.instances} onChange={(event) => update("instances", Number(event.target.value))}/></label>
+        <label>Graceful shutdown (seconds)<input type="number" min="1" value={draft.gracefulShutdownSeconds} onChange={(event) => update("gracefulShutdownSeconds", Number(event.target.value))}/></label>
+        <label>Install root<input value={draft.installRoot} onChange={(event) => update("installRoot", event.target.value)} placeholder={`/opt/integration-fabric/apps/${draft.artifact_name}`}/></label>
+        <label className="package-toggle"><input type="checkbox" checked={!!draft.startOnBoot} onChange={(event) => update("startOnBoot", event.target.checked)}/> Start application after Administrator deployment</label>
+      </section>}
+      <div className="package-preview"><Package/><span><b>{draft.artifact_name}-{draft.version}-{draft.target}.{extension}</b><small>{draft.starterTaskIds.length} starter{draft.starterTaskIds.length === 1 ? "" : "s"} · {draft.environments.length} environment profile{draft.environments.length === 1 ? "" : "s"} · related Sub Tasks resolved automatically</small></span></div>
       <p className="package-security"><ShieldCheck/> Password values are removed. The target Administrator or Kubernetes secret provider supplies credentials during deployment.</p>
       {error && <p className="package-error"><AlertTriangle/>{error}</p>}
     </main>
@@ -2755,7 +2943,7 @@ function StudioRibbon(props: any) {
     <button type="button" className={emphasis ? "emphasis" : ""} disabled={disabled} onClick={(event) => { event.stopPropagation(); action(); }} title={label}><Icon/><span>{label}</span></button>;
   return <section className="studio-ribbon" aria-label="Studio ribbon">
     <div className="ribbon-group"><b>PROJECT</b><div>{command("New", FilePlus2, props.newProject)}{command("Open", FolderOpen, props.openProject)}{command("Import", Upload, props.importProject)}{command("Save", Save, props.save)}{command("Export", Download, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</div></div>
-    <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("AI Build", WandSparkles, props.aiBuild)}{command("Run", CirclePlay, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}</div></div>
+    <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("AI Build", WandSparkles, props.aiBuild)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Run", CirclePlay, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}</div></div>
     <div className="ribbon-group"><b>EDIT</b><div>{command("Undo", Undo2, props.undo)}{command("Cut", Scissors, props.cut, !props.selectedCount)}{command("Copy", ClipboardCopy, props.copy, !props.selectedCount)}{command("Paste", ClipboardPaste, props.paste)}</div></div>
     <div className="ribbon-group layout-group"><b>ARRANGE · {props.selectedCount} SELECTED</b><div>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</div></div>
   </section>;
@@ -3047,6 +3235,7 @@ function FileMenu({
   exportProject,
   importProject,
   openProjects,
+  catchAI,
   closeProject,
   deleteProject,
 }: any) {
@@ -3085,6 +3274,12 @@ function FileMenu({
         <FolderOpen />
         <span>
           Open Saved Project<small>Projects stored by the runtime</small>
+        </span>
+      </button>
+      <button onClick={go(catchAI)}>
+        <WandSparkles />
+        <span>
+          AI Catch Blocks<small>Analyze task exceptions and generate mapped handlers</small>
         </span>
       </button>
       <hr />
@@ -3215,12 +3410,20 @@ function Context({
     ftp: { label: "FTP Connection", description: "File transfer over FTP" },
     sftp: { label: "SFTP Connection", description: "Secure SSH file transfer" },
     ems: { label: "EMS Connection", description: "TIBCO EMS queues and topics" },
+    jms: { label: "JMS Connection", description: "Provider-neutral JMS queues and topics" },
     kafka: { label: "Kafka Connection", description: "Kafka brokers and security" },
     pubsub: { label: "Pub/Sub Connection", description: "Google Cloud messaging" },
     jdbc: { label: "Database Connection", description: "JDBC databases and pools" },
     snowflake: { label: "Snowflake JDBC Connection", description: "Snowflake authentication, pools and metadata" },
+    amqp: { label: "AMQP Connection", description: "RabbitMQ, Qpid, ActiveMQ, AMQ and Azure Service Bus" },
     sap: { label: "SAP ECC Connection", description: "RFC, BAPI and IDoc metadata" },
     sap_tid: { label: "SAP TID Manager", description: "Transactional RFC state" },
+  };
+  const connectionIcons: Record<string, string> = {
+    http: "/activity-icons/http.png", ftp: "/activity-icons/ftp.png", sftp: "/activity-icons/sftp.png",
+    ems: "/activity-icons/ems.png", jms: "/activity-icons/jms-connection.svg", kafka: "/vendor-logos/apache-kafka.svg", pubsub: "/vendor-logos/gcp-pubsub.png",
+    jdbc: "/activity-icons/JDBC-Query.png", snowflake: "/activity-icons/snowflake.svg", amqp: "/vendor-logos/rabbitmq.svg",
+    sap: "/vendor-logos/sap.svg", sap_tid: "/vendor-logos/sap.svg",
   };
   if (menu.type === "canvas")
     return (
@@ -3288,10 +3491,12 @@ function Context({
               "ftp",
               "sftp",
               "ems",
+              "jms",
               "kafka",
               "pubsub",
               "jdbc",
               "snowflake",
+              "amqp",
               "sap",
               "sap_tid",
             ] as const
@@ -3303,7 +3508,7 @@ function Context({
                 close();
               }}
             >
-              <span className={`connection-menu-icon connector-${t}`}><Cable /></span><span><b>{connectionChoices[t].label}</b><small>{connectionChoices[t].description}</small></span><ChevronRight/>
+              <span className={`connection-menu-icon connector-${t}`}><img src={connectionIcons[t]} alt="" /></span><span><b>{connectionChoices[t].label}</b><small>{connectionChoices[t].description}</small></span><ChevronRight/>
             </button>
           ))}
         </>
@@ -3340,6 +3545,7 @@ function TaskDialog({ kind, onClose, onCreate }: any) {
                 <option value="ems">EMS Queue Receiver</option>
                 <option value="kafka">Kafka Receive Message</option>
                 <option value="pubsub">GCP Pub/Sub Subscriber</option>
+                <option value="amqp">AMQP Receive Message</option>
                 <option value="sap">SAP IDoc Listener</option>
                 <option value="start">Manual Start</option>
               </select>
@@ -3394,6 +3600,38 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "minimumConnections", label: "Minimum connections" }, { key: "maximumConnections", label: "Maximum connections" },
     { key: "maximumConnectionWaitSeconds", label: "Maximum connection wait (seconds)" }, { key: "serviceThreads", label: "Service number of threads" },
   ],
+  amqp: [
+    { key: "mode", label: "Runtime mode", options: ["memory", "external"] },
+    { key: "brokerType", label: "Broker type", options: ["Qpid-1-0", "RabbitMQ", "ActiveMQ-1-0", "AzureSB-1-0", "AMQ-1-0", "ActiveMQ-Artemis-1-0"] },
+    { key: "amqpVersion", label: "AMQP version", options: ["AMQP-0-9-1", "AMQP-1-0"], when: (config: any) => config.brokerType === "RabbitMQ" },
+    { key: "hostPort", label: "Host:Port (comma-separated for failover)", when: (config: any) => config.brokerType !== "AzureSB-1-0" },
+    { key: "virtualHost", label: "Virtual host", when: (config: any) => ["RabbitMQ", "Qpid-1-0"].includes(config.brokerType) },
+    { key: "username", label: "Username", when: (config: any) => config.brokerType !== "AzureSB-1-0" },
+    { key: "password", label: "Password", password: true, when: (config: any) => config.brokerType !== "AzureSB-1-0" },
+    { key: "clientId", label: "Client ID", when: (config: any) => !["RabbitMQ", "AzureSB-1-0"].includes(config.brokerType) },
+    { key: "authenticationType", label: "Azure authentication", options: ["SAS", "OAuth", "ManagedIdentity"], when: (config: any) => config.brokerType === "AzureSB-1-0" },
+    { key: "connectionString", label: "Azure Service Bus endpoint", when: (config: any) => config.brokerType === "AzureSB-1-0" },
+    { key: "tenantId", label: "Azure tenant ID", when: (config: any) => config.brokerType === "AzureSB-1-0" && config.authenticationType === "OAuth" },
+    { key: "azureClientId", label: "Azure application/client ID", when: (config: any) => config.brokerType === "AzureSB-1-0" && ["OAuth", "ManagedIdentity"].includes(config.authenticationType) },
+    { key: "clientSecret", label: "Azure client secret", password: true, when: (config: any) => config.brokerType === "AzureSB-1-0" && config.authenticationType === "OAuth" },
+    { key: "sharedAccessKeyName", label: "Shared access key name", when: (config: any) => config.brokerType === "AzureSB-1-0" && config.authenticationType === "SAS" },
+    { key: "sharedAccessKey", label: "Shared access key", password: true, when: (config: any) => config.brokerType === "AzureSB-1-0" && config.authenticationType === "SAS" },
+    { key: "entityType", label: "Default entity type", options: ["Queue", "Topic"], when: (config: any) => config.brokerType === "AzureSB-1-0" },
+    { key: "entityName", label: "Default entity name", when: (config: any) => config.brokerType === "AzureSB-1-0" },
+    { key: "entitySubscriberName", label: "Default subscription", when: (config: any) => config.brokerType === "AzureSB-1-0" && config.entityType === "Topic" },
+    { key: "connectionTimeoutMsec", label: "Connection timeout (msec)" },
+    { key: "sessionCount", label: "RabbitMQ session count (1-20)", when: (config: any) => config.brokerType === "RabbitMQ" },
+    { key: "idleTimeoutMsec", label: "Idle timeout (msec)", when: (config: any) => config.brokerType === "RabbitMQ" && config.amqpVersion === "AMQP-1-0" },
+    { key: "connectionRecovery", label: "Connection recovery", options: ["true", "false"] },
+    { key: "retryIntervalMsec", label: "Retry interval (msec)", when: (config: any) => config.brokerType !== "RabbitMQ" },
+    { key: "retryAttempts", label: "Retry attempts", when: (config: any) => config.brokerType !== "RabbitMQ" },
+    { key: "networkRecoveryIntervalMsec", label: "RabbitMQ recovery interval (msec)", when: (config: any) => config.brokerType === "RabbitMQ" },
+    { key: "sslEnabled", label: "SSL confidentiality", options: ["false", "true"] },
+    { key: "caFile", label: "Trusted CA file", when: (config: any) => String(config.sslEnabled) === "true" },
+    { key: "clientCertificateFile", label: "Client certificate", when: (config: any) => String(config.sslEnabled) === "true" },
+    { key: "clientKeyFile", label: "Client private key", when: (config: any) => String(config.sslEnabled) === "true" },
+    { key: "clientKeyPassword", label: "Private key password", password: true, when: (config: any) => String(config.sslEnabled) === "true" },
+  ],
   http: [
     { key: "connectorMode", label: "Connector mode", options: ["server", "client", "both"] },
     { key: "scheme", label: "Protocol", options: ["http", "https"] }, { key: "host", label: "Listener host" }, { key: "port", label: "Listener port" },
@@ -3435,17 +3673,33 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "reconnectAttempts", label: "Reconnect attempts" }, { key: "reconnectDelayMs", label: "Reconnect delay (ms)" },
     { key: "heartbeatOutgoingMs", label: "Outgoing heartbeat (ms)" }, { key: "heartbeatIncomingMs", label: "Incoming heartbeat (ms)" },
   ],
+  jms: [
+    { key: "mode", label: "Runtime mode", options: ["memory", "external"] }, { key: "provider", label: "JMS provider" },
+    { key: "connectionFactoryType", label: "Connection factory type", options: ["Direct", "JNDI"] },
+    { key: "connectionFactory", label: "Connection factory" }, { key: "host", label: "Host" }, { key: "port", label: "STOMP port" },
+    { key: "username", label: "Username" }, { key: "password", label: "Password", password: true }, { key: "clientId", label: "Client ID" },
+    { key: "jndiContextFactory", label: "JNDI initial context factory" }, { key: "jndiProviderUrl", label: "JNDI provider URL" },
+    { key: "jndiUsername", label: "JNDI username" }, { key: "jndiPassword", label: "JNDI password", password: true },
+    { key: "sslEnabled", label: "Enable SSL", options: ["false", "true"] }, { key: "sslTrustedCertificates", label: "Trusted certificates" },
+    { key: "reconnectAttempts", label: "Reconnect attempts" }, { key: "reconnectDelayMs", label: "Reconnect delay (ms)" },
+  ],
   kafka: [
     { key: "mode", label: "Runtime mode", options: ["memory", "external"] }, { key: "bootstrapServers", label: "Bootstrap servers" },
     { key: "clientId", label: "Client ID" }, { key: "groupId", label: "Default consumer group" },
     { key: "securityProtocol", label: "Security protocol", options: ["PLAINTEXT", "SASL_PLAINTEXT", "SASL_SSL", "SSL"] },
-    { key: "saslMechanism", label: "SASL mechanism", options: ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"] },
+    { key: "authenticationType", label: "Authentication type", options: ["None", "PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512", "GSSAPI", "OAUTHBEARER"] },
+    { key: "saslMechanism", label: "SASL mechanism", options: ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512", "GSSAPI", "OAUTHBEARER"] },
     { key: "username", label: "Username" }, { key: "password", label: "Password", password: true },
     { key: "sslCaLocation", label: "SSL CA location" }, { key: "sslCertificateLocation", label: "SSL certificate location" },
     { key: "sslKeyLocation", label: "SSL key location" }, { key: "sslKeyPassword", label: "SSL key password", password: true },
     { key: "schemaRegistryUrl", label: "Schema Registry URL" }, { key: "schemaRegistryUsername", label: "Schema Registry username" },
     { key: "schemaRegistryPassword", label: "Schema Registry password", password: true },
+    { key: "schemaRegistryVendor", label: "Schema Registry vendor", options: ["Confluent", "TIBCO", "Apicurio"] },
+    { key: "useTicketCache", label: "Use Kerberos ticket cache", options: ["false", "true"] }, { key: "keytabFile", label: "Kerberos keytab file" }, { key: "principalName", label: "Kerberos principal" },
+    { key: "jaasConfigFile", label: "OAuth JAAS config file" }, { key: "loginCallbackHandler", label: "OAuth login callback handler" },
     { key: "requestTimeoutMilliseconds", label: "Request timeout (ms)" }, { key: "connectionTimeoutMilliseconds", label: "Connection timeout (ms)" },
+    { key: "reconnectBackoffMilliseconds", label: "Reconnect backoff (ms)" }, { key: "retryBackoffMilliseconds", label: "Retry backoff (ms)" },
+    { key: "clientProperties", label: "Advanced client properties (JSON)" },
   ],
   pubsub: [
     { key: "mode", label: "Runtime mode", options: ["memory", "external"] }, { key: "projectId", label: "GCP project ID" },
@@ -3474,11 +3728,12 @@ function connectionDefaults(type: string) {
   for (const field of connectionFieldSets[type] || []) {
     values[field.key] = propertyExpression(`${prefix}.${field.key}`);
   }
-  if (["ems", "kafka", "pubsub"].includes(type)) values.mode = "memory";
+  if (["ems", "jms", "kafka", "pubsub"].includes(type)) values.mode = "memory";
   if (type === "http") Object.assign(values, { connectorMode: "both", scheme: "http", authentication: "None", tlsEnabled: "false", clientAuthentication: "none", tlsVersion: "TLSv1.2", verifyTls: "true" });
   if (type === "sap") Object.assign(values, { mode: "mock", release: "current", connectionType: "dedicated" });
   if (type === "jdbc") values.driver = "postgresql";
   if (type === "snowflake") Object.assign(values, { mode: "external", authenticationType: "Username/Password", provider: "Snowflake" });
+  if (type === "amqp") Object.assign(values, { mode: "memory", brokerType: "RabbitMQ", amqpVersion: "AMQP-0-9-1", authenticationType: "SAS", connectionRecovery: "true", sslEnabled: "false" });
   return values;
 }
 function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }: any) {
@@ -3593,7 +3848,7 @@ function ConnectionDialog({ type, onClose, onCreate }: any) {
       type,
       name: `${type.toUpperCase()} Connection`,
       config: {
-        mode: ["ems", "kafka", "pubsub"].includes(type)
+        mode: ["ems", "jms", "kafka", "pubsub"].includes(type)
           ? "memory"
           : type === "sap"
             ? "mock"
@@ -3608,6 +3863,8 @@ function ConnectionDialog({ type, onClose, onCreate }: any) {
               ? "${properties.connections.sftp.host}"
               : type === "ems"
                 ? "${properties.connections.ems.host}"
+                : type === "jms"
+                  ? "${properties.connections.jms.host}"
                 : undefined,
         port:
           type === "sftp"
@@ -3616,6 +3873,8 @@ function ConnectionDialog({ type, onClose, onCreate }: any) {
               ? "${properties.connections.ftp.port}"
               : type === "ems"
                 ? "${properties.connections.ems.port}"
+                : type === "jms"
+                  ? "${properties.connections.jms.port}"
                 : undefined,
         bootstrapServers:
           type === "kafka" ? "${properties.connections.kafka.bootstrapServers}" : undefined,
@@ -3688,7 +3947,7 @@ function ConnectionDialog({ type, onClose, onCreate }: any) {
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             />
           </label>
-          {["ems", "kafka", "pubsub"].includes(type) && (
+          {["ems", "jms", "kafka", "pubsub"].includes(type) && (
             <label>
               Runtime mode
               <select
@@ -4015,6 +4274,8 @@ function ActivityConfig({ node, resources, tasks, update }: any) {
     ),
     rt: any = {
       jdbc: "jdbc",
+      snowflake: "snowflake",
+      amqp: "amqp",
       ems: "ems",
       kafka: "kafka",
       pubsub: "pubsub",
@@ -4101,7 +4362,7 @@ function ActivityConfig({ node, resources, tasks, update }: any) {
           </label>
         </>
       )}
-      {["ems", "kafka", "pubsub"].includes(node.type) && (
+      {["ems", "kafka", "pubsub", "amqp"].includes(node.type) && (
         <>
           {field(
             c.operation?.includes("queue")

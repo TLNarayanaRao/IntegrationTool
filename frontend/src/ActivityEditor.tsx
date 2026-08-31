@@ -592,54 +592,36 @@ export function activityContract(n: any): Contract {
   if (n.type === "jdbc")
     return {
       configuration: [
-        {
-          ...f("resourceId", "Database shared connection", "resource"),
-          resourceType: "jdbc",
-        },
-        ...(op === "call"
-          ? [f("procedure", "Stored procedure")]
-          : [f("sql", "SQL statement", "textarea")]),
-        f("timeout", "Query timeout seconds", "number"),
-        f("transaction", "Transaction mode", "select"),
+        { ...f("resourceId", "JDBC shared connection", "resource"), resourceType: "jdbc", required: true },
+        ...(op === "call" ? [f("schema", "Procedure schema"), f("catalog", "Catalog or package"), f("procedure", "Procedure / function", "text", "Browse and refresh procedure metadata from the JDBC designer below.")] : []),
+        f("timeout", "Timeout (seconds)", "number"),
+        ...(["query", "dynamic", "call"].includes(op) ? [f("maxRows", "Maximum rows (0 retrieves all)", "number")] : []),
+        f("overrideTransactionBehavior", "Override transaction behavior", "boolean"),
+        f("overrideJdbcConnection", "Override JDBC connection", "boolean"),
+        ...(["query", "dynamic"].includes(op) ? [f("useNil", "Use nil for SQL NULL", "boolean"), f("interpretEmptyStringAsNull", "Interpret empty string as NULL", "boolean"), f("interpretInvalidXmlChars", "Interpret invalid XML characters", "boolean"), f("processInSubsets", "Process result in subsets", "boolean"), f("subsetSize", "Subset size", "number"), f("overrideSqlStatement", "Allow mapped SQL override", "boolean")] : []),
+        ...(["insert", "update", "delete"].includes(op) ? [f("insertIfRecordDoesNotExist", "Insert if record does not exist", "boolean"), f("interpretEmptyStringAsNull", "Interpret empty string as NULL", "boolean"), f("batchUpdate", "Batch update", "boolean"), f("overrideSqlStatement", "Allow mapped SQL override", "boolean")] : []),
       ],
-      input: [
-        d("parameters", "Named SQL parameters", "object"),
-        ...(op === "dynamic" ? [d("sql", "Dynamic SQL", "string", true)] : []),
-      ],
-      output:
-        op === "query" || op === "dynamic"
-          ? [
-              d("rows", "Result rows", "array"),
-              d("rowCount", "Row count", "integer"),
-            ]
-          : op === "call"
-            ? [
-                d("resultSets", "Result sets", "array"),
-                d("outParameters", "OUT parameters", "object"),
-              ]
-            : [
-                d("rowCount", "Affected rows", "integer"),
-                d("lastInsertId", "Generated key", "integer|string"),
-              ],
+      input: [d("ServerTimeZone", "Database server time zone", "string"), d("timeout", "Dynamic timeout", "number"), ...(["query", "dynamic"].includes(op) ? [d("maxRows", "Dynamic maximum rows", "number"), d("SqlStatement", "Dynamic SQL override", "string"), d("parameters", "Prepared statement parameters", "object")] : op === "call" ? [d("parameters", "IN and IN/OUT procedure parameters", "object")] : [d("parameters", "Prepared statement parameters", "object"), d("records", "Batch parameter records", "array"), d("SqlUpdateStatement", "Dynamic update SQL", "string"), d("InsertStatement", "Insert-if-missing SQL", "string")])],
+      output: ["query", "dynamic"].includes(op) ? [d("resultSet", "JDBC result set", "object"), d("resultSet.Record", "Result records", "array"), d("rows", "Result records", "array"), d("rowCount", "Rows returned", "integer"), d("lastSubset", "Last result subset", "boolean")] : op === "call" ? [d("resultSets", "Procedure result sets", "array"), d("outParameters", "OUT and IN/OUT parameters", "object"), d("UnresolvedResultSets", "Unresolved result sets", "array")] : [d("noOfUpdates", "Number of updates", "integer"), d("rowCount", "Affected rows", "integer"), d("lastInsertId", "Generated key", "integer|string")],
       errors: [
-        {
-          type: "DB_CONNECTIVITY",
-          description: "The database connection failed.",
-        },
-        {
-          type: "DB_BAD_SQL",
-          description: "The SQL or stored procedure is invalid.",
-        },
-        {
-          type: "DB_CONSTRAINT",
-          description: "A database constraint was violated.",
-        },
-        {
-          type: "DB_TRANSACTION",
-          description: "The transaction could not commit or roll back.",
-        },
+        { type: "JDBCConnectionNotFoundException", description: "The selected JDBC shared connection is unavailable." },
+        { type: "InvalidTimeZoneException", description: "The database server time zone is invalid." },
+        { type: "JDBCSQLException", description: "The database rejected the SQL or procedure call." },
+        { type: "LoginTimedOutException", description: "The database login timed out." },
+        { type: "InvalidSQLTypeException", description: "A prepared parameter type does not match its database column." },
+        { type: "DuplicatedFieldNameException", description: "The query result contains an unsupported duplicate field name." },
+        { type: "ActivityTimedOutException", description: "The configured activity timeout was reached." },
       ],
     };
+  if (n.type === "amqp") {
+    const resource = { ...f("resourceId", "AMQP connection", "resource"), resourceType: "amqp", required: true };
+    const destination = [f("queueName", "Queue name"), { ...f("entityType", "Entity type", "select"), options: ["Queue", "Topic"] }, f("entityName", "Entity name"), f("subscriptionName", "Subscription name"), f("durableSubscription", "Durable subscription", "boolean"), f("sharedSubscription", "Shared subscription", "boolean")];
+    const message = [{ ...f("messageType", "Message type", "select"), options: op === "receive" ? ["TextMessage", "BytesMessage", "Simple", "Any"] : ["TextMessage", "BytesMessage", "Simple"] }];
+    const errors = [{ type: "AMQPPluginException", description: "The AMQP operation failed or its message configuration is invalid." }, { type: "AMQPConnectionException", description: "The broker connection failed or could not be recovered." }];
+    if (op === "send") return { configuration: [resource, { ...f("destinationType", "RabbitMQ destination type", "select"), options: ["Queue", "Exchange"] }, ...destination.slice(0, 3), { ...f("exchangeType", "Exchange type", "select"), options: ["direct", "topic", "fanout", "headers"] }, f("exchangeName", "Exchange name"), f("routingKey", "Routing key"), ...message, f("getMessageID", "Get message ID", "boolean"), { ...f("deliveryMode", "Delivery mode", "select"), options: ["Persistent", "Non-Persistent"] }, f("expiration", "Expiration (msec)", "number"), f("priority", "Priority (0-9)", "number"), f("type", "Message type/property")], input: [d("userProperties", "User properties", "object"), d("deliveryMode", "Dynamic delivery mode"), d("messageID", "Message ID"), d("expiration", "Dynamic expiration", "integer"), d("priority", "Dynamic priority", "integer"), d("type", "Dynamic type"), d("contentType", "Content type"), d("sessionID", "Azure session ID"), d("correlationID", "Correlation ID"), d("exchangeName", "Dynamic exchange"), d("routingKey", "Dynamic routing key"), d("topicName", "Dynamic topic"), d("queueName", "Dynamic queue"), d("body", "Message body", "string|binary", true)], output: [d("sendResult", "Send succeeded", "boolean"), d("MessageId", "Broker message ID")], errors };
+    if (op === "dead_letter") return { configuration: [resource, f("useRetry", "Use retry", "boolean"), f("totalTimeoutSeconds", "Total timeout (seconds)", "number"), f("maxAttempts", "Maximum attempts", "number"), f("backoffTimeMsec", "Backoff time (msec)", "number")], input: [d("settlementToken", "Settlement token", "string", true), d("deadLetterReason", "Dead-letter reason"), d("deadLetterErrorDescription", "Dead-letter error description"), d("useRetry", "Dynamic retry", "boolean"), d("totalTimeoutSeconds", "Dynamic total timeout", "integer"), d("maxAttempts", "Dynamic attempts", "integer"), d("backoffTimeMsec", "Dynamic backoff", "integer")], output: [d("status", "Dead-letter status"), d("settlementToken", "Settlement token"), d("messageId", "Processed message ID")], errors };
+    return { configuration: [resource, ...destination, ...message, f("maxMessages", "Maximum messages", "number"), { ...f("acknowledgeMode", "Acknowledge mode", "select"), options: op === "receive" ? ["Auto", "Client", "Client or Dead Letter Queue"] : ["Auto", "Client"] }, { ...f("receiverMode", "Azure receiver mode", "select"), options: ["PeekLock", "ReceiveAndDelete"] }, f("getCorrelationID", "Get correlation ID", "boolean"), f("sessionEnabled", "Azure session enabled", "boolean"), { ...f("receiveType", "Session receive type", "select"), options: ["FirstAvailableSession", "SpecificSession", "AllAvailableSessions"] }, f("maxConcurrentSessions", "Maximum concurrent sessions", "number"), f("sessionId", "Specific session ID"), f("prefetchCount", "Prefetch count / credits", "number")], input: [d("queueName", "Dynamic queue"), d("topicName", "Dynamic topic"), d("subscriptionName", "Dynamic subscription")], output: [d("received", "Message received", "boolean"), d("UserProperties", "User properties", "object"), d("MessageProperties", "AMQP message properties", "object"), d("body", "Message body", "string|binary"), d("settlementToken", "Client/dead-letter settlement token"), d("ackId", "Confirm Message handle")], errors };
+  }
   if (n.type === "snowflake") {
     const commonConfiguration: Field[] = [
       { ...f("resourceId", "Snowflake JDBC connection", "resource"), resourceType: "snowflake", required: true },
@@ -682,6 +664,12 @@ export function activityContract(n: any): Contract {
       errors: [...documentedErrors, { type: "SNOWFLAKE_DATABASE_JDBC-500018", description: "Uploading data to the Snowflake stage failed." }, { type: "SNOWFLAKE_DATABASE_JDBC-500020", description: "Bulk-load validation found invalid data." }],
     };
   }
+  if (n.type === "excel") return {
+    configuration: [f("filePath", "Workbook file path", "text", "Reads .xlsx, .xlsm, or legacy .xls workbooks at runtime."), f("sheetName", "Worksheet name", "text", "Leave blank to return every worksheet/tab."), f("headerRow", "Header row", "number"), f("startRow", "First data row", "number"), f("maximumRows", "Maximum rows per sheet (0 = all)", "number"), f("dataOnly", "Return calculated cell values", "boolean"), f("nestedHeaders", "Convert dotted headers into nested JSON fields", "boolean"), f("skipBlankRows", "Skip blank rows", "boolean")],
+    input: [d("filePath", "Dynamic workbook path", "string"), d("sheetName", "Dynamic worksheet/tab name", "string"), d("headerRow", "Dynamic header row", "integer"), d("startRow", "Dynamic first row", "integer"), d("maximumRows", "Dynamic maximum rows", "integer")],
+    output: [d("workbook", "Workbook result", "object"), d("workbook.fileName", "Workbook file name"), d("workbook.sheetCount", "Worksheet count", "integer"), d("workbook.sheets", "Worksheets/tabs", "array"), d("workbook.sheets.name", "Worksheet name"), d("workbook.sheets.headers", "Column headers", "array"), d("workbook.sheets.rows", "Nested JSON row data", "array")],
+    errors: [{ type: "EXCEL_READ", description: "The workbook, requested worksheet, or cell data could not be read." }],
+  };
   if (n.type === "xml" || n.type === "json" || n.type === "flat") {
     const format = n.type.toUpperCase();
     const parsing = op === "parse";
@@ -744,13 +732,13 @@ export function activityContract(n: any): Contract {
       ],
     };
   }
-  if (n.type === "ems") {
-    const resource = { ...f("resourceId", "JMS / TIBCO EMS connection", "resource"), resourceType: "ems", required: true },
+  if (n.type === "ems" || n.type === "jms") {
+    const jms = n.type === "jms", destinationKey = op.includes("queue") || op === "send" ? "queue" : op.includes("topic") || op === "publish" ? "topic" : "destination", resource = { ...f("resourceId", jms ? "JMS connection" : "TIBCO EMS connection", "resource"), resourceType: n.type, required: true },
       messageType = { ...f("messageType", "Message type", "select"), options: ["Text", "Bytes", "Map", "Object", "Object Ref", "Simple", "Stream", "XML Text"] },
       style = { ...f("messagingStyle", "Messaging style", "select"), options: ["Queue", "Topic", "Generic"] },
       ack = { ...f("acknowledgeMode", "Acknowledge mode", "select"), options: ["Auto", "Client", "Dups OK", "Explicit Client", "Explicit Client Dups OK", "Transactional"] },
-      receiver = [resource, style, f(op.includes("queue") ? "queue" : "topic", "Destination", "text", "Queue or topic name; expressions are supported."), messageType, f("messageSelector", "JMS message selector"), ack, f("maxSessions", "Maximum sessions", "number"), f("flowLimit", "Flow limit", "number"), f("receiveTimeout", "Receive timeout (ms)", "number")],
-      sender = [resource, style, f(op.includes("queue") ? "queue" : "topic", "Destination"), messageType,
+      receiver = [resource, style, f(destinationKey, "Destination", "text", "Queue or topic name; expressions are supported."), messageType, f("messageSelector", "JMS message selector"), ack, f("maxSessions", "Maximum sessions", "number"), f("flowLimit", "Flow limit", "number"), f("receiveTimeout", "Receive timeout (ms)", "number")],
+      sender = [resource, style, f(destinationKey, "Destination"), messageType,
         { ...f("deliveryMode", "Delivery mode", "select"), options: ["Persistent", "Non-Persistent"] }, f("priority", "Priority (0-9)", "number"), f("expiration", "Expiration (ms)", "number"), f("correlationId", "JMS correlation ID"), f("replyTo", "Reply-to destination"), f("disableMessageId", "Disable JMS message ID", "boolean"), f("disableTimestamp", "Disable JMS timestamp", "boolean"), f("dynamicProperties", "JMS application / dynamic properties (JSON)", "textarea")];
     const configs: Record<string, Field[]> = {
       queue_receiver: receiver,
@@ -759,8 +747,13 @@ export function activityContract(n: any): Contract {
       topic_publisher: sender,
       request_reply: [...sender, f("requestTimeout", "Request timeout (ms)", "number"), f("temporaryReplyDestination", "Use temporary reply destination", "boolean")],
       reply: [resource, style, f("destination", "Reply destination"), messageType, f("correlationId", "Request correlation ID"), ...sender.slice(4)],
+      get_queue_message: [resource, f("queue", "Queue name"), messageType, f("messageSelector", "JMS message selector"), ack, f("receiveTimeout", "Receive timeout (ms)", "number")],
+      receive_message: [resource, style, f("destination", "Destination"), messageType, f("messageSelector", "JMS message selector"), ack, f("maxSessions", "Maximum sessions", "number"), f("flowLimit", "Flow limit", "number"), f("receiveTimeout", "Receive timeout (ms)", "number"), f("durable", "Durable subscription", "boolean"), f("subscriptionName", "Durable subscription name"), f("sharedSubscription", "Shared subscription", "boolean")],
+      send_message: [resource, style, f("destination", "Destination"), messageType, ...sender.slice(4)],
+      reply_message: [resource, style, f("destination", "Reply destination"), messageType, f("correlationId", "Request correlation ID"), ...sender.slice(4)],
+      wait_request: [resource, style, f("destination", "Destination"), messageType, f("messageSelector", "JMS message selector"), ack, f("receiveTimeout", "Receive timeout (ms)", "number")],
     };
-    const receiving = ["queue_receiver", "topic_subscriber"].includes(op);
+    const receiving = ["queue_receiver", "topic_subscriber", "get_queue_message", "receive_message", "wait_request"].includes(op);
     return {
       configuration: configs[op] || [resource],
       input: receiving ? [] : [d("message", "JMS message body", "object|string|binary", true), d("destination", "Dynamic destination override"), d("dynamicProperties", "Dynamic JMS properties", "object"), d("headers", "JMS headers", "object")],
@@ -782,6 +775,7 @@ export function activityContract(n: any): Contract {
       consumer = [resource, f("groupId", "Consumer group ID"), f("topic", "Topic names", "text", "Separate multiple topic names with semicolons."), f("assignCustomPartition", "Assign custom partitions", "boolean"), f("partitionIds", "Partition IDs / ranges"), f("consumerCount", "Consumer count", "number"), ...consumerSerialization, { ...f("acknowledgeMode", "Acknowledgement mode", "select"), options: ["Auto", "Manual"] }, f("enableAutoCommit", "Enable auto commit", "boolean"), f("autoOffsetReset", "Auto offset reset", "select"), f("fetchMinBytes", "Fetch minimum bytes", "number"), f("maxPollRecords", "Maximum poll records", "number"), f("sessionTimeoutMs", "Session timeout (ms)", "number"), f("heartbeatIntervalMs", "Heartbeat interval (ms)", "number"), f("additionalProperties", "Additional consumer properties (JSON)", "textarea")];
     const configs: Record<string, Field[]> = {
       send: [resource, f("topic", "Topic name"), f("assignCustomPartition", "Assign custom partition", "boolean"), f("partitionId", "Partition ID", "number"), ...serialization, { ...f("acks", "Acknowledgements", "select"), options: ["0", "1", "all"] }, { ...f("compressionType", "Compression type", "select"), options: ["none", "gzip", "snappy", "lz4", "zstd"] }, f("retries", "Producer retries", "number"), f("bufferMemory", "Buffer memory (bytes)", "number"), f("batchSize", "Batch size", "number"), f("lingerMs", "Linger (ms)", "number"), f("maxRequestSize", "Maximum request size", "number"), f("transactionalId", "Transactional ID"), f("enableIdempotence", "Enable idempotence", "boolean"), f("additionalProperties", "Additional producer properties (JSON)", "textarea")],
+      publish: [resource, f("topic", "Topic name"), f("assignCustomPartition", "Assign custom partition", "boolean"), f("partitionId", "Partition ID", "number"), ...serialization, { ...f("acks", "Acknowledgements", "select"), options: ["0", "1", "all"] }, { ...f("compressionType", "Compression type", "select"), options: ["none", "gzip", "snappy", "lz4", "zstd"] }, f("retries", "Producer retries", "number"), f("bufferMemory", "Buffer memory (bytes)", "number"), f("batchSize", "Batch size", "number"), f("lingerMs", "Linger (ms)", "number"), f("maxRequestSize", "Maximum request size", "number"), f("transactionalId", "Transactional ID"), f("enableIdempotence", "Enable idempotence", "boolean"), f("additionalProperties", "Additional producer properties (JSON)", "textarea")],
       receive: consumer,
       get: [...consumer, { ...f("seekPosition", "Seek position", "select"), options: ["current", "beginning", "end", "custom"] }, f("customOffset", "Custom offset", "number"), f("maxMessages", "Maximum messages", "number"), f("timeout", "Poll timeout (seconds)", "number")],
     };
@@ -1108,12 +1102,13 @@ export function activityContract(n: any): Contract {
     const basic: Record<string, Contract> = {
       empty: { configuration: [], input: [], output: [d("payload", "Unchanged payload", "object")], errors: [] },
       assign: { configuration: [f("variable", "Process variable", "text", "Name stored in process variables.")], input: [d("value", "Assigned value", "object", true)], output: [d("name", "Variable name"), d("value", "Assigned value", "object")], errors: commonErrors.slice(2) },
+      checkpoint: { configuration: [f("checkpointName", "Checkpoint name", "text", "Optional logical name stored in runtime execution metadata."), f("includeProcessState", "Include process state", "boolean")], input: [], output: [d("checkpointId", "Checkpoint ID"), d("timestamp", "Checkpoint timestamp", "dateTime")], errors: [{ type: "CheckpointException", description: "The process state could not be persisted." }] },
       sleep: { configuration: [f("duration", "Duration", "number"), { ...f("unit", "Unit", "select"), options: ["milliseconds", "seconds", "minutes"] }], input: [d("duration", "Dynamic duration", "number")], output: [d("sleptMilliseconds", "Elapsed delay", "integer")], errors: [{ type: "INTERRUPTED", description: "The wait was interrupted or cancelled." }] },
       get_context: { configuration: [], input: [], output: [d("taskId", "Task ID"), d("activityId", "Activity ID"), d("environment", "Environment"), d("correlationId", "Correlation ID")], errors: [] },
       set_context: { configuration: [], input: [d("values", "Context values", "object", true)], output: [d("context", "Updated process context", "object")], errors: commonErrors.slice(2) },
       get_shared_variable: { configuration: [f("name", "Shared variable name")], input: [d("default", "Default value", "object")], output: [d("name", "Variable name"), d("value", "Shared value", "object")], errors: [] },
       set_shared_variable: { configuration: [f("name", "Shared variable name")], input: [d("value", "Shared value", "object", true)], output: [d("name", "Variable name"), d("value", "Shared value", "object")], errors: [] },
-      inspector: { configuration: [f("label", "Inspection label"), f("includePayload", "Include payload", "boolean")], input: [d("payload", "Inspected payload", "object")], output: [d("payload", "Unchanged payload", "object")], errors: [] },
+      external_command: { configuration: [f("command", "Command to execute", "textarea", "Executable and arguments. Shell pipes are intentionally not evaluated."), f("provideCommandOutput", "Provide command output", "boolean"), f("removeParameterQuotes", "Remove parameter quotes", "boolean"), f("outputFile", "Output filename"), { ...f("outputLineSplitting", "Output line splitting", "select"), options: ["None", "AtOperatingSystemLineEnd", "AtSpecifiedToken"] }, f("splitToken", "Specified split token"), f("workingDirectory", "Working directory"), f("environment", "Environment variables [NAME=value,...]"), f("replaceEnvironment", "Replace inherited environment", "boolean"), f("timeoutSeconds", "Timeout seconds", "number"), f("encoding", "Output encoding")], input: [d("command", "Dynamic command", "string"), d("input", "Standard input", "string"), d("outputFile", "Dynamic output file", "string"), d("environment", "Dynamic environment", "object|string"), d("workingDirectory", "Dynamic working directory", "string"), d("splitToken", "Dynamic split token", "string")], output: [d("returnCode", "Process return code", "integer"), d("output", "Standard output", "string|array"), d("error", "Standard error", "string|array"), d("outputFile", "Written output file")], errors: [{ type: "CommandExecutionError", description: "The operating system command could not start or timed out." }, { type: "FileIOError", description: "Command output could not be written to the configured file." }, { type: "InvalidInputException", description: "The command or line-splitting configuration is invalid." }] },
     };
     return basic[op] || base;
   }
@@ -1160,6 +1155,10 @@ function resolvedActivityContract(node: any, task: any, tasks: any[], schemas: a
     const columns = node.config.entityMetadata.columns.map((column: any) => d(column.name, column.name, column.xsdType || "string", !!column.notNull));
     if (node.config.operation === "query") return { ...contract, output: [d("rows", "Query result records", "array"), ...columns.map((field: DataField) => ({ ...field, key: `rows.${field.key}` })), d("rowCount", "Rows returned", "integer")] };
     if (["insert", "update", "delete"].includes(node.config.operation)) return { ...contract, input: [d("records", "Snowflake records", "array"), ...columns.map((field: DataField) => ({ ...field, key: `records.${field.key}` }))] };
+  }
+  if (node.type === "jdbc" && node.config?.outputColumns?.length && ["query", "dynamic"].includes(node.config?.operation)) {
+    const columns = node.config.outputColumns.map((column: any) => d(`resultSet.Record.${column.name}`, column.name, column.xsdType || column.dataType || "string"));
+    return { ...contract, output: [...contract.output.filter((field) => field.key !== "resultSet.Record"), ...columns] };
   }
   if (node.type === "start") {
     const fields = boundaryFields(task, "start", schemas);
@@ -1215,8 +1214,11 @@ const activityDocumentation: Record<string, { summary: string; behavior: string;
   file: { summary: "Performs the selected filesystem operation.", behavior: "File paths and operation-specific values accept constants, property expressions, or mappings from earlier execution-path outputs. Runtime output contains operation-specific metadata and content." },
   ftp: { summary: "Performs the selected FTP operation through a shared FTP connection.", behavior: "Connection defaults come from the resource; paths, names, content, and transfer settings may be mapped dynamically for each invocation." },
   sftp: { summary: "Performs the selected secure file-transfer operation.", behavior: "Authentication and host-key policy come from the SFTP shared connection. Operation inputs remain dynamically mappable at runtime." },
-  jdbc: { summary: "Executes the selected database operation through a pooled shared connection.", behavior: "SQL parameters and dynamic fields are mapped as a hierarchy. Query activities return rows; update and DDL activities return operation counts and status." },
+  jdbc: { summary: "Executes the documented JDBC Query, Update, Call Procedure, or SQL Direct contract.", behavior: "The JDBC designer runs and fetches SQL metadata, derives prepared parameters and result fields, supports dynamic SQL overrides, batching, subsets, NULL handling, maximum rows, transaction overrides, and database-specific drivers.", url: "https://docs.tibco.com/pub/activematrix_businessworks/6.13.0/doc/pdf/TIB_BW_6.13.0_bindings_palletes_reference.pdf?id=4" },
   snowflake: { summary: "Runs Snowflake Insert, Query, Update, Delete, or staged Bulk Load operations.", behavior: "The Snowflake JDBC shared connection supplies authentication, warehouse, database, schema, pooling, and downloaded table/view metadata. Activity inputs and outputs follow the TIBCO BusinessWorks Snowflake 6.3.1 contracts.", url: "https://docs.tibco.com/pub/bwpluginsnowflake/6.3.1/doc/pdf/TIB_bwpluginsnowflake_6.3.1_user-guide.pdf?id=0" },
+  amqp: { summary: "Sends, receives, gets, or dead-letters AMQP messages.", behavior: "The shared connection supports RabbitMQ AMQP 0.9.1/1.0 and AMQP 1.0 broker profiles. Destinations, subscriptions, typed messages, properties, settlement handles, recovery, SSL, sessions, and Azure dead-letter behavior follow the TIBCO AMQP 6.5.3 contracts.", url: "https://docs.tibco.com/pub/bwpluginamqp/6.5.3/doc/pdf/TIB_bwpluginamqp_6.5.3_user-guide.pdf?id=1" },
+  excel: { summary: "Reads an Excel workbook and publishes every selected worksheet as nested JSON.", behavior: "Leave Worksheet blank to read every tab. The configured header row becomes field names; dotted headers such as customer.address.city create nested objects. Formula cells can return their cached calculated values." },
+  basic: { summary: "Executes the selected BusinessWorks-style general activity.", behavior: "External Command runs an executable without a shell, accepts stdin/environment/working-directory overrides, can capture or persist stdout and stderr, applies documented line splitting, and publishes the process return code.", url: "https://docs.tibco.com/pub/activematrix_businessworks/6.13.0/doc/pdf/TIB_BW_6.13.0_bindings_palletes_reference.pdf?id=4" },
   ems: { summary: "Sends, receives, browses, or acknowledges TIBCO EMS messages.", behavior: "Destination, delivery, selector, acknowledgement, and message properties follow the selected EMS operation. Client acknowledgement handles can be passed to Confirm Message." },
   kafka: { summary: "Produces, receives, or commits Apache Kafka records.", behavior: "Broker security comes from the shared Kafka connection. Topic, key, headers, value, partitions, offsets, and acknowledgement handles are available for hierarchical mapping." },
   pubsub: { summary: "Publishes, receives, or acknowledges Google Cloud Pub/Sub messages.", behavior: "Project and credential defaults come from the shared connection. Message data, attributes, ordering keys, and acknowledgement handles remain available on the execution path." },
@@ -1310,6 +1312,7 @@ export default function ActivityEditor({
             />
           ))}
         </div>
+        {node.type === "jdbc" && <JdbcDesigner config={cfg} resource={resources.find((resource: any) => resource.id === cfg.resourceId)} properties={properties} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>}
         {node.type === "timer" && <SchedulerEditor config={cfg} set={set}/>}
         {node.type === "call_task" && <CallTaskRoutingEditor config={cfg} tasks={tasks} properties={properties} set={set}/>}
         {node.type === "catch" && <CatchAIEditor nodeId={node.id} exceptionTypes={exceptionTypes} handleExceptions={handleExceptions}/>}
@@ -1425,6 +1428,12 @@ function SchedulerEditor({ config, set }: any) {
 
 function DataWeaveScriptEditor({ config, schemas, setConfig }: any) {
   const [status, setStatus] = useState("");
+  const templates = [
+    { name: "Map collection", script: `%dw 2.0\noutput application/json\nfun normalize(value) = upper(trim(value))\n---\npayload.items map (item) -> {\n  id: item.id as String,\n  name: normalize(item.name default "")\n}` },
+    { name: "Group records", script: `%dw 2.0\noutput application/json\n---\npayload.items groupBy (item) -> item.category default "unclassified"` },
+    { name: "Enrich message", script: `%dw 2.0\noutput application/json\n---\n{\n  data: payload,\n  requestId: attributes.requestId default "",\n  region: vars.region default "global"\n}` },
+    { name: "CSV to JSON", script: `%dw 2.0\ninput payload text/csv\noutput application/json\n---\npayload` },
+  ];
   const chooseSchema = (key: "sourceSchemaId" | "targetSchemaId", id: string) => {
     const schema = schemas.find((item: any) => item.id === id);
     setConfig({ [key]: id, [key === "sourceSchemaId" ? "sourceSchema" : "targetSchema"]: schema?.content || {} });
@@ -1452,8 +1461,9 @@ function DataWeaveScriptEditor({ config, schemas, setConfig }: any) {
       <label>Output target<select value={config.outputTarget || "payload"} onChange={(event) => setConfig({ outputTarget: event.target.value })}><option value="payload">Message payload</option><option value="attributes">Message attributes</option><option value="variable">Flow variable</option></select></label>
       {config.outputTarget === "variable" && <label>Variable name<input value={config.outputVariable || "transformResult"} onChange={(event) => setConfig({ outputVariable: event.target.value })} placeholder="transformResult"/></label>}
     </div>
+    <div className="dataweave-templates"><b>STARTING POINTS</b>{templates.map((template) => <button type="button" key={template.name} onClick={() => { setConfig({ script: template.script, outputMimeType: "application/json", inputMimeType: template.name === "CSV to JSON" ? "text/csv" : config.inputMimeType || "application/json", aiReviewRequired: false }); setStatus(`${template.name} template loaded. Use Map & Test with representative data before Run.`); }}>{template.name}</button>)}</div>
     <label className="dataweave-script"><span>Transform script <i>runtime executable</i></span><textarea value={config.script || "%dw 2.0\noutput application/json\n---\npayload"} onChange={(event) => setConfig({ script: event.target.value, aiReviewRequired: false })} spellCheck={false}/></label>
-    <div className="dataweave-capabilities"><b>Embedded engine</b><span>Selectors</span><span>Objects &amp; arrays</span><span>default / if-else</span><span>map / filter / groupBy</span><span>orderBy / distinctBy</span><span>JSON / XML / text</span><small>Imports, custom modules, annotations, pattern matching, and Mule-only streaming require an external Mule/DataWeave runtime and are rejected explicitly rather than stored as inert options.</small></div>
+    <div className="dataweave-capabilities"><b>Embedded engine</b><span>Nested &amp; wildcard selectors</span><span>Objects &amp; arrays</span><span>default / if-else</span><span>Custom functions</span><span>as type coercion</span><span>map / flatMap / filter</span><span>mapObject / pluck</span><span>groupBy / orderBy / distinctBy</span><span>read / write</span><span>JSON / XML / CSV / text</span><small>Common integration transformations execute locally in Run, Debug, and Test. Namespaces, type declarations, pattern matching, annotations, and Mule runtime-only modules are rejected explicitly.</small></div>
     {status && <p className="dataweave-status">{status}</p>}
   </section>;
 }
@@ -1548,6 +1558,27 @@ function SchemaHierarchyPreview({ text }: { text: string }) {
   const fields = transformSchemaFields({ targetSchemaText: text });
   const tree = useTreeCollapse();
   return <div className="schema-hierarchy-preview"><header><Braces/><span><b>Tree preview</b><small>{fields.length} schema elements</small></span></header>{fields.map((field) => { if (!tree.visible(field.path)) return null; const group = hasTreeChildren(fields, field); return <div className={group ? "tree-branch-row" : ""} key={field.path} style={{ "--schema-depth": field.depth } as React.CSSProperties}>{group ? <TreeToggle path={field.path} label={field.name} collapsed={tree.collapsed.has(field.path)} toggle={tree.toggle}/> : <i className="tree-elbow"/>}<span><b>{field.name}</b><small>{field.type}</small></span></div>; })}{!fields.length && <p>No schema elements are available yet.</p>}</div>;
+}
+
+function JdbcDesigner({ config, resource, properties, setConfig }: any) {
+  const [metadata, setMetadata] = useState<any>(null), [preview, setPreview] = useState<any>(null), [status, setStatus] = useState(""), [busy, setBusy] = useState(false);
+  const propertyValues = Object.fromEntries((properties || []).map((item: any) => [item.key, item.value]));
+  const runtimeResource = resource ? { ...resource, config: Object.fromEntries(Object.entries(resource.config || {}).map(([key, value]) => { const match = typeof value === "string" ? value.match(/^\$\{properties\.([^}]+)\}$/) : null; return [key, match ? propertyValues[match[1]] : value]; })) } : null;
+  const updateSql = (sql: string) => {
+    const named = [...sql.matchAll(/:([A-Za-z_][A-Za-z0-9_]*)/g)].map((match) => match[1]);
+    const count = (sql.match(/\?/g) || []).length;
+    setConfig({ sql, preparedParameterNames: named.length ? named : Array.from({ length: count }, (_, index) => `Parameter${index + 1}`) });
+  };
+  const request = async (path: string, body: any) => {
+    if (!runtimeResource) { setStatus("Select a JDBC shared connection first."); return null; }
+    setBusy(true); setStatus("");
+    try { const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); const output = await response.json(); if (!response.ok) throw new Error(output.detail || "JDBC operation failed"); return output; }
+    catch (error: any) { setStatus(error?.message || "JDBC operation failed"); return null; }
+    finally { setBusy(false); }
+  };
+  const fetchMetadata = async () => { const output = await request("/api/jdbc/metadata", { resource: runtimeResource }); if (output) { setMetadata(output); setStatus(`${output.tables?.length || 0} tables and views fetched.`); } };
+  const run = async () => { const output = await request("/api/jdbc/test-query", { resource: runtimeResource, operation: config.operation, config: { ...config, parameters: Object.fromEntries((config.preparedParameterNames || []).map((name: string) => [name, null])) } }); if (output) { setPreview(output); const columns = output.columns || Object.keys(output.rows?.[0] || {}).map((name) => ({ name, dataType: typeof output.rows[0][name] })); setConfig({ outputColumns: columns }); setStatus(`${output.rowCount ?? output.noOfUpdates ?? 0} rows returned/affected. Output schema refreshed.`); } };
+  return <section className="jdbc-designer"><header><span><Database/><b>JDBC SQL DESIGNER</b><small>Build from live metadata, derive prepared parameters, run, and fetch the output schema.</small></span><span><button type="button" onClick={fetchMetadata} disabled={busy || !resource}><RefreshCw/> Fetch metadata</button><button type="button" onClick={run} disabled={busy || !resource || (!String(config.sql || "").trim() && config.operation !== "call")}><FlaskConical/> Run &amp; fetch</button></span></header>{config.operation !== "call" && <textarea aria-label="JDBC SQL statement" value={config.sql || ""} onChange={(event) => updateSql(event.target.value)} placeholder={config.operation === "query" ? "SELECT id, name FROM customer WHERE status = :status" : config.operation === "dynamic" ? "SQL can be mapped through SqlStatement in Input" : "UPDATE customer SET status = ? WHERE id = ?"} spellCheck={false}/>} {!!config.preparedParameterNames?.length && <div className="jdbc-parameters"><b>Prepared parameters</b>{config.preparedParameterNames.map((name: string, index: number) => <span key={`${name}-${index}`}><code>{index + 1}</code>{name}</span>)}</div>} {metadata && <div className="jdbc-schema-browser">{metadata.tables?.map((table: any) => <button type="button" key={`${table.schema}.${table.name}`} onClick={() => updateSql(`SELECT * FROM ${table.schema ? `${table.schema}.` : ""}${table.name}`)}><span><b>{table.name}</b><small>{table.schema} · {table.type}</small></span><code>{table.columns?.length || 0} columns</code></button>)}</div>} {preview && <pre>{JSON.stringify(preview, null, 2)}</pre>} {status && <p>{status}</p>}</section>;
 }
 
 function FieldEditor({ field, value, set, resources, tasks, selectedResourceId }: any) {
@@ -1936,7 +1967,7 @@ function TransformInputEditor({ config, properties, sources, setMappings, custom
     if (!tree.visible(field.path)) return null;
     const rule = mappings.find((item: any) => item.target === field.path && !item.occurrenceId), group = hasTreeChildren(fields, field), structural = group || isComplexSchemaType(field.type), canMapStructure = structural && field.repeating, duplicateLoops = mappings.filter((item: any) => item.target === field.path && item.occurrenceId && ["for-each", "for-each-group"].includes(item.operator));
     return <React.Fragment key={field.path}><div data-target={!structural || canMapStructure ? field.path : undefined} className={`schema-tree-row ${structural ? "tree-parent-target structural-row" : ""} ${rule?.operator ? "mapping-statement-row" : ""} ${selected === field.path ? "selected" : ""}`} style={{ paddingLeft: 12 + field.depth * 18 }} onClick={() => setSelected(field.path)} onContextMenu={(event) => { event.preventDefault(); if (structural && !canMapStructure) return; setSelected(field.path); setContextMenu({ x: event.clientX, y: event.clientY, path: field.path, label: field.name }); }} onDragOver={(event) => { if (structural && !canMapStructure) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDrop={(event) => { event.preventDefault(); if (structural && !canMapStructure) return; const expression = event.dataTransfer.getData("expression"); if (expression) mapTo(field.path, expression, event.dataTransfer.getData("sourceRepeating") === "true"); }}>{group ? <TreeToggle path={field.path} label={field.name} collapsed={tree.collapsed.has(field.path)} toggle={tree.toggle}/> : <span className="tree-node-dot"/>}<span className="tree-field"><b>{field.name}{field.repeating && <em> repeating</em>}</b><small>{field.type} · {field.minOccurs || "1"}..{field.maxOccurs || "1"}{structural && !field.repeating ? " · child mappings only" : ""}{rule?.operator && ` · ${String(rule.operator).replaceAll("-", " ").toUpperCase()} #1`}</small>{field.repeating && rule?.operator && <button type="button" className="duplicate-occurrence" onClick={(event) => { event.stopPropagation(); duplicateOccurrence(field.path); }}><Plus/> Duplicate occurrence</button>}</span><span className={`mapping-connection ${rule ? "connected" : ""}`}><i/><ArrowRight/></span><MappingBinding structural={structural} expression={rule && "constant" in rule ? rule.constant : rule?.source ?? ""} fieldType={field.type} sources={sources} onChange={(value: any) => mapTo(field.path, value)} onConstantChange={(value: any) => mapConstant(field.path, value)}/></div>{duplicateLoops.map((duplicate: any, index: number) => <div className="mapper-duplicate-card" key={duplicate.occurrenceId} style={{ marginLeft: 30 + field.depth * 18 }}><Braces/><span><b>{field.name} · FOR EACH #{index + 2}</b><small>{describeMapping(duplicate.source, sources)} · complete child mapping copy</small></span><button type="button" onClick={() => removeOccurrence(duplicate.occurrenceId)}>Remove</button></div>)}</React.Fragment>;
-  })}{!fields.length && <div className="contract-empty">Select a project XSD or enter a valid inline target schema on Configuration.</div>}</div></section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextValue} canDuplicate={!!contextField?.repeating && !!contextValue?.operator} duplicate={() => contextMenu && duplicateOccurrence(contextMenu.path)} close={() => setContextMenu(null)} change={(value: any) => contextMenu && setMappings([...mappings.filter((item: any) => !(item.target === contextMenu.path && !item.occurrenceId)), { target: contextMenu.path, targetType: contextField?.type || "any", ...(value && typeof value === "object" && value.$rule ? { source: value.source, operator: value.$rule, select: value.select, groupBy: value.groupBy, condition: value.condition, otherwise: value.otherwise, duplicateOf: value.duplicateOf } : { source: value }), functions: [], enabled: true }])} remove={() => contextMenu && setMappings(mappings.filter((item: any) => item.target !== contextMenu.path))}/></div>;
+  })}{!fields.length && <div className="contract-empty">Select a project XSD or enter a valid inline target schema on Configuration.</div>}</div></section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextValue} canDuplicate={!!contextField?.repeating && !!contextValue?.operator} duplicate={() => contextMenu && duplicateOccurrence(contextMenu.path)} close={() => setContextMenu(null)} change={(value: any) => contextMenu && setMappings([...mappings.filter((item: any) => !(item.target === contextMenu.path && !item.occurrenceId)), { target: contextMenu.path, targetType: contextField?.type || "any", ...(value && typeof value === "object" && value.$rule ? { source: value.source, operator: value.$rule, select: value.select, groupBy: value.groupBy, condition: value.condition, otherwise: value.otherwise, whens: value.whens, duplicateOf: value.duplicateOf } : { source: value }), functions: [], enabled: true }])} remove={() => contextMenu && setMappings(mappings.filter((item: any) => item.target !== contextMenu.path))}/></div>;
 }
 function TransformOutputEditor({ config }: any) {
   const fields = transformSchemaFields(config);
@@ -2041,11 +2072,11 @@ function AdvancedEditor({ node, value, properties, set }: any) {
     change = (key: string, next: any) => set({ ...advanced, [key]: next }),
     operation = node.config?.operation || "",
     outbound =
-      ["http", "jdbc", "snowflake", "ftp", "sftp"].includes(
+      ["http", "jdbc", "snowflake", "amqp", "ftp", "sftp"].includes(
         node.type,
       ) ||
       (node.type === "ems" && ["send", "publish", "request_reply", "reply"].includes(operation)) ||
-      (node.type === "kafka" && ["publish", "get"].includes(operation)) ||
+      (node.type === "kafka" && ["send", "publish", "get"].includes(operation)) ||
       (node.type === "pubsub" && operation === "publish") ||
       (node.type === "rest" && operation === "invoke") ||
       (node.type === "soap" && operation === "request_reply") ||

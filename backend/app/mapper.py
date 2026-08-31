@@ -180,7 +180,36 @@ def _clean_empty(value: Any):
 def validate_output(document: Any, schema: Any) -> list[str]:
     """Validate the JSON-schema subset used by project schemas and mapper tests."""
     errors: list[str] = []
+    if isinstance(schema, str) and schema.strip():
+        try: schema = json.loads(schema)
+        except (ValueError, TypeError):
+            fields = flatten_schema(schema)
+            def valid_type(value: Any, expected: str) -> bool:
+                expected = str(expected or 'any').lower().removesuffix('[]')
+                if expected in ('any', 'anytype'): return True
+                if expected in ('string', 'normalizedstring', 'token', 'date', 'datetime', 'time', 'anyuri'): return isinstance(value, str)
+                if expected in ('integer', 'int', 'long', 'short', 'byte'): return isinstance(value, int) and not isinstance(value, bool)
+                if expected in ('number', 'decimal', 'double', 'float'): return isinstance(value, (int, float)) and not isinstance(value, bool)
+                if expected in ('boolean', 'bool'): return isinstance(value, bool)
+                return True
+            for field in fields:
+                value = get_path(document, field['path'])
+                if value is None:
+                    if field.get('required'): errors.append(f'{field["path"]}: required field is not mapped')
+                    continue
+                values = value if isinstance(value, list) else [value]
+                if field.get('repeating') and not isinstance(value, list): errors.append(f'{field["path"]}: expected repeating value')
+                for index, item in enumerate(values):
+                    if item is not None and not valid_type(item, field.get('type', 'any')):
+                        suffix = f'[{index + 1}]' if isinstance(value, list) else ''
+                        errors.append(f'{field["path"]}{suffix}: expected {field.get("type", "value")}')
+            return errors
     if not isinstance(schema, dict) or not schema: return errors
+    if 'properties' not in schema and schema.get('type') != 'object':
+        fields = flatten_schema(schema)
+        for field in fields:
+            if field.get('required') and get_path(document, field['path']) is None: errors.append(f'{field["path"]}: required field is not mapped')
+        return errors
     def walk(value: Any, definition: dict, path: str):
         expected = definition.get('type')
         if expected == 'object' or 'properties' in definition:
@@ -259,7 +288,9 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
             if operator == '<': return left < right
             if operator == '>=': return left >= right
             return left <= right
-        return condition.lower() in ('true', 'true()', '1')
+        if condition.lower() in ('true', 'true()', '1'): return True
+        if condition.lower() in ('false', 'false()', '0', ''): return False
+        return bool(resolve_value({'source': condition}, scope, scope_source))
 
     def conditional_value(rule: dict, scope: Any = None, scope_source: str = ''):
         operator = str(rule.get('operator', '')).lower()
@@ -360,7 +391,7 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
         existing = get_path(result, target)
         set_path(result, target, ([*existing, *generated] if isinstance(existing, list) else generated))
     if options.get('removeEmptyStructures'): result = _clean_empty(result)
-    schema = options.get('targetSchema')
+    schema = options.get('targetSchema') or options.get('targetSchemaText')
     validation_errors = validate_output(result, schema) if options.get('validateOutput', True) else []
     if validation_errors: raise ValueError('Target schema validation failed: ' + '; '.join(validation_errors))
     maximum_kb = int(options.get('maxOutputSizeKb') or 0)

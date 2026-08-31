@@ -29,3 +29,4 @@ img[src$="start-end.png"],img[src$="transform.png"],img[src$="file-tools.png"]{m
 .package-security svg,.package-error svg{width:16px;flex:0 0 auto}.package-error{padding:10px;color:#ffd1d7;background:#431c28;border:1px solid #a44759;border-radius:6px}
 .package-modal>footer{flex:0 0 auto}.package-modal>footer button:disabled{opacity:.55;cursor:wait}
 @media(max-width:680px){.package-modal>main{grid-template-columns:1fr}.package-modal>main>label,.package-targets,.package-preview,.package-security,.package-error{grid-column:1}}
+.resource-vendor-icon{width:17px!important;height:17px!important;object-fit:contain;flex:0 0 auto}.resource-vendor-icon.resource-sap,.resource-vendor-icon.resource-sap_tid{padding:1px;background:#fff;border-radius:3px}

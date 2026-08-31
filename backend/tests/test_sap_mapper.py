@@ -120,7 +120,23 @@ class SapMapperTests(unittest.TestCase):
         invalid = self.client.post('/api/mapper/test', json={
             'input': {}, 'targetSchema': schema, 'options': {'validateOutput': True}, 'mappings': [],
         })
-        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(invalid.status_code, 200)
+        self.assertFalse(invalid.json()['valid'])
+        self.assertTrue(invalid.json()['validationErrors'])
+
+    def test_mapper_preview_validates_xsd_and_normalizes_choose_branches(self):
+        xsd = '''<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="order"><xs:complexType><xs:sequence><xs:element name="id" type="xs:integer"/><xs:element name="status" type="xs:string"/></xs:sequence></xs:complexType></xs:element></xs:schema>'''
+        response = self.client.post('/api/mapper/test', json={
+            'input': {'active': True, 'identifier': 7}, 'targetSchemaText': xsd,
+            'mappings': [
+                {'source': 'identifier', 'target': 'order.id'},
+                {'target': 'order.status', 'operator': 'choose', 'whens': [{'condition': 'active', 'source': '"ACTIVE"'}], 'otherwise': '"INACTIVE"'},
+            ],
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()['valid'], response.text)
+        self.assertEqual(response.json()['output'], {'order': {'id': 7, 'status': 'ACTIVE'}})
+        self.assertEqual(response.json()['diagnostics']['conditionalCount'], 1)
 
     def test_ai_mapper_recommends_for_each_for_compatible_arrays(self):
         response = self.client.post('/api/mapper/suggest', json={

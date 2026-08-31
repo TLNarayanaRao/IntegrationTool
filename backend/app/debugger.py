@@ -13,7 +13,7 @@ class DebugManager:
         task = next((item for item in project.tasks if item.id == task_id), None)
         if not task: raise ValueError('Task not found')
         incoming = {edge.target for edge in task.transitions}
-        starters = [item for item in task.activities if item.type in ('start','timer','http_listener') or (item.type in ('rest','soap','ems','kafka','pubsub') and item.config.get('operation') in ('receiver','service','receive','subscribe','queue_receiver','topic_subscriber'))]
+        starters = [item for item in task.activities if item.type in ('start','timer','http_listener') or (item.type in ('rest','soap','ems','jms','kafka','pubsub') and item.config.get('operation') in ('receiver','service','receive','receive_message','subscribe','queue_receiver','topic_subscriber'))]
         starters = starters or [item for item in task.activities if item.id not in incoming]
         if not starters: raise ValueError('Task has no starting activity')
         session_id = str(uuid4())

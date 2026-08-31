@@ -15,6 +15,8 @@ from .mapper import execute as execute_mapping, recommend, validate_output
 from .dataweave import DataWeaveError, execute_details as execute_dataweave
 from .sap import sap_adapter
 from .snowflake import snowflake_adapter
+from .jdbc import jdbc_adapter
+from .amqp import amqp_adapter
 from .ai_builder import generate as generate_ai_design
 
 app = FastAPI(title='Integration Fabric Runtime', version='0.1.0')
@@ -198,11 +200,57 @@ def export_project(project_id: str):
     filename = re.sub(r'[^A-Za-z0-9_.-]+','-',item.name).strip('-') or item.id
     return StreamingResponse(stream, media_type='application/zip', headers={'Content-Disposition':f'attachment; filename="{filename}.ifproject"'})
 
-def deployment_package_files(item: Project, target: str, environment: str) -> dict[str, bytes]:
+DEPLOYMENT_ARTIFACTS = {
+    'cloud': {'dockerfile', 'configmap', 'secret', 'deployment', 'service', 'hpa', 'package'},
+    'on-prem': {'application', 'environment', 'administrator', 'systemd', 'install', 'readme'},
+}
+
+def packaging_task_closure(item: Project, starter_ids: list[str] | None = None) -> tuple[Project, list[str], list[str]]:
+    """Select package roots and follow statically determinable Call Process dependencies."""
+    tasks = {task.id: task for task in item.tasks}
+    names = {task.name.casefold(): task.id for task in item.tasks}
+    available_roots = [task.id for task in item.tasks if task.kind == 'starter']
+    roots = list(dict.fromkeys(starter_ids or available_roots))
+    if not roots: raise HTTPException(400, 'The project has no Starter Tasks to package')
+    invalid = [task_id for task_id in roots if task_id not in tasks or tasks[task_id].kind != 'starter']
+    if invalid: raise HTTPException(400, f'Packaging roots must be Starter Tasks: {", ".join(invalid)}')
+    included: list[str] = []
+    visiting: set[str] = set()
+    def visit(task_id: str):
+        if task_id in visiting: return
+        visiting.add(task_id); included.append(task_id)
+        for activity in tasks[task_id].activities:
+            if activity.type != 'call_task': continue
+            configured = str(activity.config.get('taskId') or '').strip()
+            dynamic = str(activity.config.get('dynamicTaskId') or '').strip()
+            candidates = [configured]
+            if dynamic and not dynamic.startswith('${'): candidates.insert(0, dynamic)
+            target_id = next((value for value in candidates if value in tasks), '')
+            if not target_id: target_id = next((names.get(value.casefold(), '') for value in candidates if value and names.get(value.casefold())), '')
+            if not target_id:
+                if dynamic.startswith('${') and not configured:
+                    raise HTTPException(400, f'{tasks[task_id].name} / {activity.name} uses a dynamic Call Process expression without a static fallback; packaging cannot determine its dependency')
+                raise HTTPException(400, f'{tasks[task_id].name} / {activity.name} references missing Sub Task {configured or dynamic!r}')
+            if tasks[target_id].kind != 'subtask': raise HTTPException(400, f'{tasks[task_id].name} / {activity.name} must call a Sub Task, not Starter Task {tasks[target_id].name}')
+            visit(target_id)
+    for root in roots: visit(root)
+    selected = item.model_copy(deep=True)
+    selected_by_id = {task.id: task for task in selected.tasks}
+    selected.tasks = [selected_by_id[task_id] for task_id in included]
+    selected.active_task_id = roots[0]
+    selected.packaging = {**selected.packaging, 'starterTaskIds': roots, 'includedTaskIds': included}
+    return selected, roots, included
+
+def deployment_package_files(item: Project, target: str, environment: str, artifacts: set[str] | None = None) -> dict[str, bytes]:
     if target not in {'on-prem', 'cloud'}:
         raise HTTPException(400, 'Target must be on-prem or cloud')
     if environment not in item.properties:
         raise HTTPException(400, f'Unknown environment: {environment}')
+    allowed_artifacts = DEPLOYMENT_ARTIFACTS[target]
+    selected_artifacts = set(artifacts) if artifacts is not None else set(allowed_artifacts)
+    unknown_artifacts = selected_artifacts - allowed_artifacts
+    if unknown_artifacts:
+        raise HTTPException(400, f'Unsupported {target} deployment artifacts: {", ".join(sorted(unknown_artifacts))}')
     artifact = item.packaging.get('artifact_name') or item.id
     version = item.packaging.get('version') or '1.0.0'
     properties = [value.model_dump() for value in item.properties[environment]]
@@ -234,6 +282,7 @@ def deployment_package_files(item: Project, target: str, environment: str) -> di
         'artifact': artifact, 'version': version, 'target': target,
         'environment': environment, 'runtime': 'integration-fabric-python',
         'secretKeys': secret_keys,
+        'selectedArtifacts': sorted(selected_artifacts),
     }
     files: dict[str, bytes] = {
         'manifest.json': json.dumps(manifest, indent=2).encode(),
@@ -244,47 +293,249 @@ def deployment_package_files(item: Project, target: str, environment: str) -> di
     for task in item.tasks: files[f'application/tasks/{task.id}.json'] = task.model_dump_json(indent=2).encode()
     for resource, payload in zip(item.resources, sanitized_resources): files[f'application/resources/{resource.type}/{resource.id}.json'] = json.dumps(payload, indent=2).encode()
     for schema in item.schemas: files[f'application/schemas/{schema.name}'] = schema.content.encode()
+    deployment_name = re.sub(r'[^a-z0-9-]+', '-', artifact.lower()).strip('-')[:63] or 'integration-fabric-app'
     if target == 'cloud':
-        image = f'integration-fabric/{artifact}:{version}'
-        files['deployment/cloud/Dockerfile'] = ('FROM integration-fabric-runtime:latest\nCOPY application /opt/integration-fabric/application\nCOPY environments /opt/integration-fabric/environments\n').encode()
-        files['deployment/cloud/kubernetes.yaml'] = f'''apiVersion: apps/v1
+        image = str(item.packaging.get('image') or f'integration-fabric/{artifact}:{version}')
+        replicas = max(1, int(item.packaging.get('replicas') or 1))
+        minimum_replicas = max(1, int(item.packaging.get('minimumReplicas') or replicas))
+        maximum_replicas = max(minimum_replicas, int(item.packaging.get('maximumReplicas') or max(3, minimum_replicas)))
+        cpu_target = min(100, max(1, int(item.packaging.get('cpuTargetPercent') or 70)))
+        service_type = str(item.packaging.get('serviceType') or 'ClusterIP')
+        discovered_ports: list[int] = []
+        for resource in item.resources:
+            if resource.type != 'http': continue
+            try:
+                port = int(resource.config.get('port') or 0)
+                if 1 <= port <= 65535: discovered_ports.append(port)
+            except (TypeError, ValueError): pass
+        container_port = int(item.packaging.get('containerPort') or (discovered_ports[0] if discovered_ports else 8787))
+        public_properties = [value for value in properties if value.get('data_type') != 'password']
+        config_data = '\n'.join(f'  {value["key"]}: {json.dumps(str(value.get("value", "")))}' for value in public_properties) or '  {}'
+        secret_data = '\n'.join(f'  {key}: ""' for key in secret_keys) or '  {}'
+        if 'dockerfile' in selected_artifacts:
+            files['deployment/cloud/Dockerfile'] = (f'''FROM integration-fabric-runtime:latest
+LABEL org.opencontainers.image.title="{artifact}" org.opencontainers.image.version="{version}"
+COPY application /opt/integration-fabric/application
+COPY environments /opt/integration-fabric/environments
+ENV FABRIC_ENVIRONMENT={environment} FABRIC_APPLICATION_DIR=/opt/integration-fabric/application
+EXPOSE {container_port}
+USER 10001
+ENTRYPOINT ["integration-fabric-runtime"]
+''').encode()
+        if 'configmap' in selected_artifacts:
+            files['deployment/cloud/configmap.yaml'] = f'''apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {deployment_name}-config
+  labels:
+    app.kubernetes.io/name: {deployment_name}
+    app.kubernetes.io/version: {json.dumps(version)}
+data:
+{config_data}
+'''.encode()
+        if 'secret' in selected_artifacts:
+            files['deployment/cloud/secret.yaml'] = f'''apiVersion: v1
+kind: Secret
+metadata:
+  name: {deployment_name}-secrets
+type: Opaque
+stringData:
+{secret_data}
+'''.encode()
+        if 'deployment' in selected_artifacts:
+            env_from = ''
+            if 'configmap' in selected_artifacts: env_from += f'            - configMapRef:\n                name: {deployment_name}-config\n'
+            if 'secret' in selected_artifacts: env_from += f'            - secretRef:\n                name: {deployment_name}-secrets\n'
+            files['deployment/cloud/deployment.yaml'] = f'''apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {artifact}
+  name: {deployment_name}
+  labels:
+    app.kubernetes.io/name: {deployment_name}
 spec:
-  replicas: 1
+  replicas: {replicas}
   selector:
-    matchLabels: {{app: {artifact}}}
+    matchLabels:
+      app.kubernetes.io/name: {deployment_name}
   template:
     metadata:
-      labels: {{app: {artifact}}}
+      labels:
+        app.kubernetes.io/name: {deployment_name}
     spec:
       containers:
         - name: runtime
           image: {image}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: {container_port}
           env:
             - name: FABRIC_ENVIRONMENT
-              value: {environment}
+              value: {json.dumps(environment)}
             - name: FABRIC_APPLICATION_DIR
               value: /opt/integration-fabric/application
           envFrom:
-            - secretRef:
-                name: {artifact}-secrets
+{env_from or '            []\n'}          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+          resources:
+            requests: {{cpu: 100m, memory: 256Mi}}
+            limits: {{cpu: "1", memory: 1Gi}}
 '''.encode()
+        if 'service' in selected_artifacts:
+            files['deployment/cloud/service.yaml'] = f'''apiVersion: v1
+kind: Service
+metadata:
+  name: {deployment_name}
+spec:
+  type: {service_type}
+  selector:
+    app.kubernetes.io/name: {deployment_name}
+  ports:
+    - name: http
+      port: {container_port}
+      targetPort: http
+'''.encode()
+        if 'hpa' in selected_artifacts:
+            files['deployment/cloud/hpa.yaml'] = f'''apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {deployment_name}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {deployment_name}
+  minReplicas: {minimum_replicas}
+  maxReplicas: {maximum_replicas}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {cpu_target}
+'''.encode()
+        if 'package' in selected_artifacts:
+            resources = [f'{name}.yaml' for name in ('configmap', 'secret', 'deployment', 'service', 'hpa') if name in selected_artifacts]
+            resource_lines = '\n'.join(f'  - {name}' for name in resources) or '  []'
+            files['deployment/cloud/kustomization.yaml'] = f'''apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+{resource_lines}
+commonLabels:
+  app.kubernetes.io/managed-by: integration-fabric
+'''.encode()
+            files['deployment/cloud/package.json'] = json.dumps({'image': image, 'environment': environment, 'artifacts': sorted(selected_artifacts)}, indent=2).encode()
     else:
-        files['deployment/on-prem/application.json'] = json.dumps({
-            'application': artifact, 'version': version, 'environment': environment,
-            'engine': 'isolated', 'instances': 1, 'startOnBoot': False,
-            'gracefulShutdownSeconds': 60, 'secretProvider': 'administrator'
-        }, indent=2).encode()
-        files['deployment/on-prem/README.txt'] = f'Deploy {artifact} {version} through Integration Fabric Administrator.\nTarget environment: {environment}\n'.encode()
+        instances = max(1, int(item.packaging.get('instances') or 1))
+        start_on_boot = str(item.packaging.get('startOnBoot') or 'false').lower() in ('true', '1', 'yes', 'on')
+        shutdown_seconds = max(1, int(item.packaging.get('gracefulShutdownSeconds') or 60))
+        install_root = str(item.packaging.get('installRoot') or f'/opt/integration-fabric/apps/{artifact}')
+        if 'application' in selected_artifacts:
+            files['deployment/on-prem/application.json'] = json.dumps({
+                'application': artifact, 'version': version, 'environment': environment,
+                'engine': 'isolated', 'instances': instances, 'startOnBoot': start_on_boot,
+                'gracefulShutdownSeconds': shutdown_seconds, 'secretProvider': 'administrator',
+                'installRoot': install_root,
+            }, indent=2).encode()
+        if 'environment' in selected_artifacts:
+            files['deployment/on-prem/environment.properties'] = ('\n'.join(f'{value["key"]}={value.get("value", "")}' for value in properties if value.get('data_type') != 'password') + '\n').encode()
+        if 'administrator' in selected_artifacts:
+            files['deployment/on-prem/deploy.sh'] = f'''#!/usr/bin/env sh
+set -eu
+fabric-admin deploy --application {artifact} --version {version} --environment {environment} --package "$1"
+fabric-admin scale --application {artifact} --instances {instances}
+{'fabric-admin start --application ' + artifact if start_on_boot else '# Start manually with: fabric-admin start --application ' + artifact}
+'''.encode()
+        if 'systemd' in selected_artifacts:
+            files[f'deployment/on-prem/{deployment_name}.service'] = f'''[Unit]
+Description=Integration Fabric {artifact}
+After=network-online.target
+[Service]
+Type=simple
+User=integration-fabric
+WorkingDirectory={install_root}
+Environment=FABRIC_ENVIRONMENT={environment}
+ExecStart=/usr/local/bin/integration-fabric-runtime --application {install_root}/application
+TimeoutStopSec={shutdown_seconds}
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+'''.encode()
+        if 'install' in selected_artifacts:
+            files['deployment/on-prem/install.sh'] = f'''#!/usr/bin/env sh
+set -eu
+install -d -m 0750 "{install_root}"
+cp -R application environments "{install_root}/"
+echo "Install required secrets listed in deployment/secrets.required.json before starting."
+'''.encode()
+        if 'readme' in selected_artifacts:
+            files['deployment/on-prem/README.txt'] = f'''Integration Fabric on-premises deployment
+Application: {artifact}
+Version: {version}
+Environment: {environment}
+Instances: {instances}
+Install root: {install_root}
+
+1. Supply values listed in deployment/secrets.required.json through Administrator.
+2. Run install.sh, or import application.json through Integration Fabric Administrator.
+3. Run deploy.sh with this package path and start the application when ready.
+'''.encode()
+    return files
+
+def multi_environment_package_files(item: Project, target: str, environments: list[str], artifacts: set[str] | None = None) -> dict[str, bytes]:
+    """Build one immutable application with independently deployable environment profiles."""
+    selected = list(dict.fromkeys(value.strip() for value in environments if value.strip()))
+    if not selected: raise HTTPException(400, 'Select at least one packaging environment')
+    unknown = [value for value in selected if value not in item.properties]
+    if unknown: raise HTTPException(400, f'Unknown environments: {", ".join(unknown)}')
+    if len(selected) == 1: return deployment_package_files(item, target, selected[0], artifacts)
+    profiles = {environment: deployment_package_files(item, target, environment, artifacts) for environment in selected}
+    first = profiles[selected[0]]
+    files = {name: body for name, body in first.items() if not name.startswith('deployment/') and not name.startswith('environments/')}
+    project_payload = json.loads(files['application/project.json'])
+    project_payload['properties'] = {}
+    required_by_environment: dict[str, list[str]] = {}
+    for environment, generated in profiles.items():
+        properties = json.loads(generated[f'environments/{environment}.json'])
+        project_payload['properties'][environment] = properties
+        files[f'environments/{environment}.json'] = generated[f'environments/{environment}.json']
+        required = json.loads(generated['deployment/secrets.required.json']).get('required', [])
+        required_by_environment[environment] = required
+        profile_root = f'deployment/{target}/profiles/{environment}'
+        source_root = f'deployment/{target}/'
+        for name, body in generated.items():
+            if not name.startswith(source_root): continue
+            relative = name[len(source_root):]
+            if target == 'cloud' and relative == 'Dockerfile':
+                files['deployment/cloud/Dockerfile'] = body
+            else: files[f'{profile_root}/{relative}'] = body
+        files[f'{profile_root}/secrets.required.json'] = json.dumps({'environment': environment, 'required': required}, indent=2).encode()
+    files['application/project.json'] = json.dumps(project_payload, indent=2).encode()
+    files['deployment/secrets.required.json'] = json.dumps({'profiles': required_by_environment}, indent=2).encode()
+    manifest = json.loads(files['manifest.json'])
+    manifest.pop('environment', None); manifest['environments'] = selected; manifest['profileLayout'] = f'deployment/{target}/profiles/<environment>'
+    manifest['secretKeysByEnvironment'] = required_by_environment
+    files['manifest.json'] = json.dumps(manifest, indent=2).encode()
     return files
 
 @app.get('/api/projects/{project_id}/package')
-def package_project(project_id: str, target: str = 'on-prem', environment: str = 'local', archive: str = 'ifpkg'):
+def package_project(project_id: str, target: str = 'on-prem', environment: str = 'local', environments: str = '', starters: str = '', archive: str = 'ifpkg', artifacts: str = ''):
     item = get_project(project_id)
     if not item: raise HTTPException(404, 'Project not found')
-    files = deployment_package_files(item, target, environment)
+    selected_starters = [value.strip() for value in starters.split(',') if value.strip()] if starters else None
+    item, root_tasks, included_tasks = packaging_task_closure(item, selected_starters)
+    selected_artifacts = {value.strip() for value in artifacts.split(',') if value.strip()} if artifacts else None
+    selected_environments = [value.strip() for value in environments.split(',') if value.strip()] if environments else [environment]
+    files = multi_environment_package_files(item, target, selected_environments, selected_artifacts)
+    manifest = json.loads(files['manifest.json']); manifest['starterTaskIds'] = root_tasks; manifest['includedTaskIds'] = included_tasks
+    files['manifest.json'] = json.dumps(manifest, indent=2).encode()
     artifact = re.sub(r'[^A-Za-z0-9_.-]+', '-', item.packaging.get('artifact_name') or item.id).strip('-')
     version = re.sub(r'[^A-Za-z0-9_.-]+', '-', item.packaging.get('version') or '1.0.0').strip('-')
     stream = io.BytesIO()
@@ -320,11 +571,14 @@ async def import_project(file: UploadFile = File(...)):
 async def test_connection(resource: SharedResource):
     cfg = resource.config
     if cfg.get('mode') == 'memory': return {'ok': True, 'message': 'Local in-memory broker is ready'}
-    if resource.type == 'jdbc' and cfg.get('driver','sqlite') == 'sqlite':
-        import sqlite3
-        conn = sqlite3.connect(cfg.get('url','integration.db')); conn.execute('SELECT 1'); conn.close(); return {'ok':True,'message':'SQLite connection succeeded'}
+    if resource.type == 'jdbc':
+        try: return await __import__('asyncio').to_thread(jdbc_adapter.test, cfg)
+        except Exception as exc: return {'ok':False,'message':str(exc)}
     if resource.type == 'snowflake':
         try: return await __import__('asyncio').to_thread(snowflake_adapter.test, cfg)
+        except Exception as exc: return {'ok':False,'message':str(exc)}
+    if resource.type == 'amqp':
+        try: return await __import__('asyncio').to_thread(amqp_adapter.test, cfg)
         except Exception as exc: return {'ok':False,'message':str(exc)}
     if resource.type == 'sap_tid' and cfg.get('mode','none') == 'none': return {'ok':True,'message':'SAP TID duplicate management is disabled'}
     if resource.type == 'sap_tid' and cfg.get('driver','sqlite') == 'sqlite':
@@ -343,13 +597,18 @@ async def test_connection(resource: SharedResource):
     if resource.type == 'sap':
         try: return await __import__('asyncio').to_thread(sap_adapter.test, cfg)
         except Exception as exc: return {'ok':False,'message':str(exc)}
-    if resource.type == 'ems':
+    if resource.type in ('ems', 'jms'):
         try:
             import stomp
-            connection = stomp.Connection12([(cfg.get('host','localhost'), int(cfg.get('port',7222)))]); connection.connect(cfg.get('username',''), cfg.get('password',''), wait=True); connection.disconnect()
-            return {'ok':True,'message':'TIBCO EMS STOMP connection succeeded'}
-        except ImportError: return {'ok':False,'message':'External EMS testing requires stomp.py and an enabled EMS STOMP service'}
-        except Exception as exc: return {'ok':False,'message':f'TIBCO EMS connection failed: {exc}'}
+            host, port = cfg.get('host','localhost'), int(cfg.get('port', 7222 if resource.type == 'ems' else 61613)); username, password = cfg.get('username',''), cfg.get('password','')
+            if str(cfg.get('connectionFactoryType', 'Direct')).lower() == 'jndi':
+                match = re.search(r'(?:\w+://)?([^:/]+)(?::(\d+))?', str(cfg.get('jndiProviderUrl') or ''))
+                if match: host, port = match.group(1), int(match.group(2) or port)
+                username, password = cfg.get('jndiUsername') or username, cfg.get('jndiPassword') or password
+            connection = stomp.Connection12([(host, port)]); connection.connect(username, password, wait=True); connection.disconnect()
+            return {'ok':True,'message':f'{resource.type.upper()} STOMP connection succeeded'}
+        except ImportError: return {'ok':False,'message':'External JMS testing requires stomp.py and a STOMP-enabled provider'}
+        except Exception as exc: return {'ok':False,'message':f'{resource.type.upper()} connection failed: {exc}'}
     if resource.type == 'kafka':
         try:
             from confluent_kafka.admin import AdminClient
@@ -406,6 +665,23 @@ async def snowflake_entities(payload: dict):
         return {'entities': entities}
     except Exception as exc: raise HTTPException(400, f'Unable to retrieve Snowflake metadata: {exc}')
 
+@app.post('/api/jdbc/metadata')
+async def jdbc_metadata(payload: dict):
+    try:
+        resource = SharedResource.model_validate(payload.get('resource') or {})
+        if resource.type != 'jdbc': raise ValueError('A JDBC shared connection is required')
+        return await __import__('asyncio').to_thread(jdbc_adapter.metadata, resource.config)
+    except Exception as exc: raise HTTPException(400, f'Unable to retrieve JDBC metadata: {exc}')
+
+@app.post('/api/jdbc/test-query')
+async def jdbc_test_query(payload: dict):
+    try:
+        resource = SharedResource.model_validate(payload.get('resource') or {})
+        if resource.type != 'jdbc': raise ValueError('A JDBC shared connection is required')
+        config = dict(payload.get('config') or {}); config['operation'] = payload.get('operation') or config.get('operation') or 'query'
+        return await __import__('asyncio').to_thread(jdbc_adapter.execute, resource.config, config)
+    except Exception as exc: raise HTTPException(400, f'JDBC test failed: {exc}')
+
 @app.post('/api/mapper/suggest')
 def mapper_suggest(payload: dict):
     return {'recommendations': recommend(payload.get('sourceSchema',{}), payload.get('targetSchema',{}), float(payload.get('threshold',70))/100, payload.get('weights'))}
@@ -435,12 +711,22 @@ def mapper_test(payload: dict):
                 rule[key] = test_path(value)
             if isinstance(rule.get('condition'), str):
                 rule['condition'] = re.sub(r'\$\{[^}]+\}', lambda match: test_path(match.group(0)), rule['condition'])
+            if isinstance(rule.get('whens'), list):
+                rule['whens'] = [{
+                    **branch,
+                    'condition': re.sub(r'\$\{[^}]+\}', lambda match: test_path(match.group(0)), str(branch.get('condition') or '')),
+                    'source': test_path(branch['source']) if isinstance(branch.get('source'), str) and branch['source'].startswith('${') else branch.get('source'),
+                } for branch in rule['whens']]
             normalized.append(rule)
-        options = payload.get('options') or {}
+        options = {**(payload.get('options') or {}), 'validateOutput': False}
         if payload.get('targetSchema'): options = {**options, 'targetSchema': payload.get('targetSchema')}
+        if payload.get('targetSchemaText'): options = {**options, 'targetSchemaText': payload.get('targetSchemaText')}
         output = execute_mapping(payload.get('input', {}), normalized, options)
-        errors = validate_output(output, payload.get('targetSchema')) if payload.get('targetSchema') and not options.get('validateOutput', True) else []
-        return {'output': output, 'valid': not errors, 'validationErrors': errors, 'mappingCount': len([rule for rule in normalized if rule.get('enabled', True)])}
+        schema = payload.get('targetSchema') or payload.get('targetSchemaText')
+        errors = validate_output(output, schema) if schema and (payload.get('options') or {}).get('validateOutput', True) else []
+        active = [rule for rule in normalized if rule.get('enabled', True)]
+        mapped_targets = sorted({str(rule.get('target')) for rule in active if rule.get('target')})
+        return {'output': output, 'valid': not errors, 'validationErrors': errors, 'mappingCount': len(active), 'mappedTargets': mapped_targets, 'diagnostics': {'mappedTargetCount': len(mapped_targets), 'loopCount': len([rule for rule in active if rule.get('operator') in ('for-each', 'for-each-group')]), 'conditionalCount': len([rule for rule in active if rule.get('operator') in ('if', 'when-otherwise', 'choose')])}}
     except Exception as exc: raise HTTPException(400, f'Mapping failed: {exc}')
 
 @app.post('/api/dataweave/test')

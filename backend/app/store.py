@@ -25,9 +25,9 @@ def write_json(path: Path, value):
 
 def supports_outbound_retry(activity) -> bool:
     operation = str(activity.config.get('operation') or '')
-    if activity.type in ('http', 'jdbc', 'snowflake', 'ftp', 'sftp'): return True
-    if activity.type == 'ems': return operation in ('send', 'publish', 'request_reply', 'reply')
-    if activity.type == 'kafka': return operation in ('publish', 'get')
+    if activity.type in ('http', 'jdbc', 'snowflake', 'amqp', 'ftp', 'sftp'): return True
+    if activity.type in ('ems', 'jms'): return operation in ('send', 'publish', 'request_reply', 'reply', 'send_message', 'reply_message')
+    if activity.type == 'kafka': return operation in ('send', 'publish', 'get')
     if activity.type == 'pubsub': return operation == 'publish'
     if activity.type == 'rest': return operation == 'invoke'
     if activity.type == 'soap': return operation == 'request_reply'

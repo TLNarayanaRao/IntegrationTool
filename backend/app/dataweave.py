@@ -47,6 +47,8 @@ def _tokens(text: str) -> list[tuple[str, str]]:
 
 def _select(value: Any, key: Any) -> Any:
     if value is None: return None
+    if key == '*' and isinstance(value, dict): return list(value.values())
+    if key == '*' and isinstance(value, (list, tuple)): return list(value)
     if isinstance(value, dict): return value.get(str(key))
     if isinstance(value, (list, tuple)):
         if isinstance(key, int): return value[key] if -len(value) <= key < len(value) else None
@@ -98,9 +100,13 @@ class Parser:
 
     def compare(self):
         value = self.concat()
-        while self.peek()[1] in ('==', '!=', '>', '<', '>=', '<='):
-            operator = self.take()[1]; right = self.concat()
-            value = {'==': value == right, '!=': value != right, '>': value > right, '<': value < right, '>=': value >= right, '<=': value <= right}[operator]
+        while self.peek()[1] in ('==', '!=', '>', '<', '>=', '<=', 'is'):
+            operator = self.take()[1]
+            right = self.take()[1] if operator == 'is' and self.peek()[0] == 'identifier' else self.concat()
+            if operator == 'is':
+                expected = str(right or '').lower()
+                value = {'string': isinstance(value, str), 'number': isinstance(value, (int, float)) and not isinstance(value, bool), 'boolean': isinstance(value, bool), 'object': isinstance(value, dict), 'array': isinstance(value, list), 'null': value is None}.get(expected, False)
+            else: value = {'==': value == right, '!=': value != right, '>': value > right, '<': value < right, '>=': value >= right, '<=': value <= right}[operator]
         return value
 
     def concat(self):
@@ -134,36 +140,52 @@ class Parser:
                 self.take(); value = _select(value, self.take()[1])
             elif self.peek('['):
                 self.take(); key = self.expression(); self.take(']'); value = _select(value, key)
-            elif self.peek()[1] in ('map', 'filter', 'groupBy', 'orderBy', 'distinctBy'):
+            elif self.peek('as'):
+                self.take(); target = self.take()[1].lower()
+                if target == 'string': value = '' if value is None else str(value)
+                elif target in ('number', 'decimal'): value = None if value in (None, '') else float(value)
+                elif target in ('integer', 'int'): value = None if value in (None, '') else int(value)
+                elif target in ('boolean', 'bool'): value = value if isinstance(value, bool) else str(value).lower() in ('true', '1', 'yes', 'on')
+                elif target == 'array': value = value if isinstance(value, list) else ([] if value is None else [value])
+                elif target == 'object' and not isinstance(value, dict): raise DataWeaveError(f'Cannot coerce {type(value).__name__} to Object')
+            elif self.peek()[1] in ('map', 'flatMap', 'filter', 'groupBy', 'orderBy', 'distinctBy', 'pluck', 'mapObject'):
                 operation = self.take()[1]; self.take('('); name = self.take()[1]
                 index_name = None
                 if self.peek(','): self.take(); index_name = self.take()[1]
                 self.take(')'); self.take('->')
-                items = list(value or []) if not isinstance(value, dict) else list(value.items())
+                object_input = isinstance(value, dict)
+                items = list((value or {}).items()) if object_input else list(value or [])
                 results = []
                 start = self.index
                 for index, item in enumerate(items):
                     self.index = start
-                    child = dict(self.environment); child[name] = item; child['$'] = item
-                    if index_name: child[index_name] = index
+                    item_value, item_key = (item[1], item[0]) if object_input else (item, index)
+                    child = dict(self.environment); child[name] = item_value; child['$'] = item_value
+                    if index_name: child[index_name] = item_key
                     prior = self.environment; self.environment = child
                     try: transformed = self.expression()
                     finally: self.environment = prior
-                    results.append((item, transformed))
+                    results.append((item_value, item_key, transformed))
                 if not items:
                     self.expression()
-                if operation == 'map': value = [result for _, result in results]
-                elif operation == 'filter': value = [item for item, result in results if result]
-                elif operation == 'orderBy': value = [item for item, _ in sorted(results, key=lambda pair: (pair[1] is None, pair[1]))]
+                if operation in ('map', 'pluck'): value = [result for _, _, result in results]
+                elif operation == 'flatMap': value = [nested for _, _, result in results for nested in (result if isinstance(result, list) else [result])]
+                elif operation == 'mapObject':
+                    value = {}
+                    for _, key, result in results:
+                        if isinstance(result, dict): value.update(result)
+                        else: value[str(key)] = result
+                elif operation == 'filter': value = [item for item, _, result in results if result]
+                elif operation == 'orderBy': value = [item for item, _, _ in sorted(results, key=lambda row: (row[2] is None, row[2]))]
                 elif operation == 'distinctBy':
                     seen = set(); unique = []
-                    for item, result in results:
+                    for item, _, result in results:
                         marker = json.dumps(result, sort_keys=True, default=str)
                         if marker not in seen: seen.add(marker); unique.append(item)
                     value = unique
                 else:
                     grouped: dict[str, list[Any]] = {}
-                    for item, result in results: grouped.setdefault(str(result), []).append(item)
+                    for item, _, result in results: grouped.setdefault(str(result), []).append(item)
                     value = grouped
             else: break
         return value
@@ -205,8 +227,13 @@ class Parser:
             return self.environment.get(value)
         raise DataWeaveError(f'Expected expression, found {value!r}')
 
-    @staticmethod
-    def call(name: str, args: list[Any]):
+    def call(self, name: str, args: list[Any]):
+        custom = (self.environment.get('__functions__') or {}).get(name)
+        if custom:
+            parameters, expression = custom
+            if len(args) != len(parameters): raise DataWeaveError(f'Function {name} expects {len(parameters)} arguments, received {len(args)}')
+            child = dict(self.environment); child.update(dict(zip(parameters, args)))
+            return Parser(expression, child).parse()
         value = args[0] if args else None
         functions = {
             'upper': lambda: str(value or '').upper(), 'lower': lambda: str(value or '').lower(),
@@ -214,12 +241,19 @@ class Parser:
             'isEmpty': lambda: value in (None, '', [], {}), 'flatten': lambda: [nested for item in (value or []) for nested in (item if isinstance(item, list) else [item])],
             'keysOf': lambda: list((value or {}).keys()), 'valuesOf': lambda: list((value or {}).values()),
             'distinctBy': lambda: list(dict.fromkeys(value or [])), 'sum': lambda: sum(value or []),
-            'min': lambda: min(value or []), 'max': lambda: max(value or []),
+            'min': lambda: min(value or []), 'max': lambda: max(value or []), 'avg': lambda: sum(value or []) / len(value or []) if value else None,
             'joinBy': lambda: str(args[1] if len(args) > 1 else '').join(map(str, value or [])),
             'splitBy': lambda: str(value or '').split(str(args[1] if len(args) > 1 else '')),
             'replace': lambda: str(value or '').replace(str(args[1]), str(args[2])),
+            'contains': lambda: args[1] in (value or []), 'startsWith': lambda: str(value or '').startswith(str(args[1])),
+            'endsWith': lambda: str(value or '').endswith(str(args[1])),
+            'substring': lambda: str(value or '')[int(args[1]):int(args[2]) if len(args) > 2 else None],
+            'capitalize': lambda: str(value or '').capitalize(),
+            'abs': lambda: abs(value), 'floor': lambda: int(float(value) // 1), 'ceil': lambda: int(-(-float(value) // 1)),
             'uuid': lambda: str(uuid.uuid4()), 'now': lambda: datetime.now(timezone.utc).isoformat(),
-            'typeOf': lambda: type(value).__name__, 'write': lambda: json.dumps(value, separators=(',', ':')),
+            'typeOf': lambda: 'Null' if value is None else 'Object' if isinstance(value, dict) else 'Array' if isinstance(value, list) else 'Boolean' if isinstance(value, bool) else 'Number' if isinstance(value, (int, float)) else 'String',
+            'read': lambda: _decode_payload(value, str(args[1] if len(args) > 1 else 'application/json')),
+            'write': lambda: _xml(value) if len(args) > 1 and str(args[1]).lower() in ('application/xml', 'text/xml') else _csv(value) if len(args) > 1 and str(args[1]).lower() in ('text/csv', 'application/csv') else json.dumps(value, separators=(',', ':')),
         }
         if name in ('asString', 'string'): return '' if value is None else str(value)
         if name in ('asNumber', 'number'): return float(value) if value not in (None, '') else None
@@ -231,7 +265,7 @@ class Parser:
 def parse_script(script: str) -> tuple[dict[str, Any], str]:
     if '---' not in script: raise DataWeaveError('A DataWeave script requires the --- header/body separator')
     header, body = script.split('---', 1)
-    metadata: dict[str, Any] = {'version': '2.0', 'outputMimeType': 'application/json', 'variables': []}
+    metadata: dict[str, Any] = {'version': '2.0', 'outputMimeType': 'application/json', 'variables': [], 'functions': {}}
     for raw in header.splitlines():
         line = raw.strip()
         if not line or line.startswith('//'): continue
@@ -244,7 +278,14 @@ def parse_script(script: str) -> tuple[dict[str, Any], str]:
             match = re.match(r'var\s+([A-Za-z_$][\w$-]*)\s*=\s*(.+)', line)
             if not match: raise DataWeaveError(f'Invalid variable declaration: {line}')
             metadata['variables'].append((match.group(1), match.group(2)))
-        elif line.startswith(('import ', 'ns ', 'type ', 'fun ')):
+        elif line.startswith('fun '):
+            match = re.match(r'fun\s+([A-Za-z_$][\w$-]*)\s*\(([^)]*)\)\s*=\s*(.+)', line)
+            if not match: raise DataWeaveError(f'Invalid function declaration: {line}')
+            parameters = [value.strip().split(':', 1)[0].strip() for value in match.group(2).split(',') if value.strip()]
+            metadata['functions'][match.group(1)] = (parameters, match.group(3).strip())
+        elif line.startswith('import '):
+            metadata.setdefault('imports', []).append(line[7:].strip())
+        elif line.startswith(('ns ', 'type ')):
             raise DataWeaveError(f'{line.split()[0]} declarations require the Mule DataWeave runtime and are not supported by the embedded engine')
         else: raise DataWeaveError(f'Unsupported header directive: {line}')
     return metadata, body.strip()
@@ -305,7 +346,7 @@ def _decode_payload(value: Any, mime_type: str) -> Any:
 def execute_details(script: str, *, payload: Any = None, attributes: Any = None, variables: dict[str, Any] | None = None, input_mime_type: str = '') -> dict[str, Any]:
     metadata, body = parse_script(script)
     payload = _decode_payload(payload, input_mime_type or (metadata.get('inputs') or {}).get('payload', ''))
-    environment = {'payload': payload, 'attributes': attributes or {}, 'vars': variables or {}}
+    environment = {'payload': payload, 'attributes': attributes or {}, 'vars': variables or {}, '__functions__': metadata.get('functions', {})}
     environment.update(variables or {})
     for name, expression in metadata['variables']:
         environment[name] = Parser(expression, environment).parse()

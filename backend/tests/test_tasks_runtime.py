@@ -64,12 +64,31 @@ class TaskRuntimeTests(unittest.TestCase):
         self.assertEqual(cloud_package.status_code, 200)
         self.assertNotIn(b'do-not-package', cloud_package.content)
         with zipfile.ZipFile(io.BytesIO(cloud_package.content)) as archive:
-            self.assertIn('deployment/cloud/Dockerfile', archive.namelist())
-            self.assertEqual(json.loads(archive.read('manifest.json'))['target'], 'cloud')
+            names = archive.namelist()
+            self.assertIn('deployment/cloud/Dockerfile', names)
+            self.assertIn('deployment/cloud/configmap.yaml', names)
+            self.assertIn('deployment/cloud/secret.yaml', names)
+            self.assertIn('deployment/cloud/deployment.yaml', names)
+            self.assertIn('deployment/cloud/service.yaml', names)
+            self.assertIn('deployment/cloud/hpa.yaml', names)
+            self.assertIn('deployment/cloud/kustomization.yaml', names)
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(manifest['target'], 'cloud')
+            self.assertIn('deployment', manifest['selectedArtifacts'])
+        selected_cloud = self.client.get('/api/projects/task-runtime-test/package?target=cloud&environment=production&archive=ifpkg&artifacts=deployment,service')
+        self.assertEqual(selected_cloud.status_code, 200)
+        with zipfile.ZipFile(io.BytesIO(selected_cloud.content)) as archive:
+            self.assertIn('deployment/cloud/deployment.yaml', archive.namelist())
+            self.assertIn('deployment/cloud/service.yaml', archive.namelist())
+            self.assertNotIn('deployment/cloud/Dockerfile', archive.namelist())
+            self.assertNotIn('deployment/cloud/secret.yaml', archive.namelist())
         on_prem_package = self.client.get('/api/projects/task-runtime-test/package?target=on-prem&environment=production&archive=tar.gz')
         self.assertEqual(on_prem_package.status_code, 200)
         with tarfile.open(fileobj=io.BytesIO(on_prem_package.content), mode='r:gz') as archive:
             self.assertIsNotNone(archive.getmember('deployment/on-prem/application.json'))
+            self.assertIsNotNone(archive.getmember('deployment/on-prem/environment.properties'))
+            self.assertIsNotNone(archive.getmember('deployment/on-prem/deploy.sh'))
+            self.assertIsNotNone(archive.getmember('deployment/on-prem/install.sh'))
         deleted = self.client.delete('/api/projects/task-runtime-test')
         self.assertEqual(deleted.status_code, 200)
         self.assertEqual(self.client.get('/api/projects/task-runtime-test').status_code, 404)
@@ -84,6 +103,51 @@ class TaskRuntimeTests(unittest.TestCase):
         result = self.client.post('/api/projects/task-runtime-test/run', json={'task_id':'main','input':{'value':42},'environment':'local'})
         self.assertEqual(result.status_code, 200)
         self.assertEqual(result.json()['activity_outputs']['c']['output'], {'answer': {'value': 42}})
+        self.client.delete('/api/projects/task-runtime-test')
+
+    def test_multi_environment_package_has_common_application_and_profile_specific_descriptors(self):
+        payload = self.project()
+        payload['properties']['dev'] = [{'key':'service.url','value':'https://dev.example','data_type':'string'}, {'key':'service.password','value':'dev-secret','data_type':'password'}]
+        payload['properties']['qa'] = [{'key':'service.url','value':'https://qa.example','data_type':'string'}, {'key':'service.password','value':'qa-secret','data_type':'password'}]
+        self.assertEqual(self.client.post('/api/projects', json=payload).status_code, 200)
+        response = self.client.get('/api/projects/task-runtime-test/package?target=cloud&environments=dev,qa&archive=ifpkg&artifacts=configmap,secret,deployment,service,package')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertNotIn(b'dev-secret', response.content); self.assertNotIn(b'qa-secret', response.content)
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            names = archive.namelist()
+            self.assertIn('application/project.json', names)
+            self.assertIn('environments/dev.json', names); self.assertIn('environments/qa.json', names)
+            self.assertIn('deployment/cloud/profiles/dev/configmap.yaml', names)
+            self.assertIn('deployment/cloud/profiles/qa/configmap.yaml', names)
+            self.assertIn('deployment/cloud/profiles/dev/deployment.yaml', names)
+            self.assertIn('deployment/cloud/profiles/qa/secret.yaml', names)
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(manifest['environments'], ['dev', 'qa'])
+            self.assertEqual(json.loads(archive.read('application/project.json'))['properties'].keys(), {'dev', 'qa'})
+            self.assertIn(b'https://dev.example', archive.read('deployment/cloud/profiles/dev/configmap.yaml'))
+            self.assertIn(b'https://qa.example', archive.read('deployment/cloud/profiles/qa/configmap.yaml'))
+        self.client.delete('/api/projects/task-runtime-test')
+
+    def test_package_includes_selected_starters_and_only_transitive_subtask_dependencies(self):
+        payload = self.project()
+        payload['tasks'].extend([
+            {'id':'secondary','name':'Secondary Starter','kind':'starter','activities':[{'id':'ss','type':'start','name':'Start','position':{'x':0,'y':0},'config':{}},{'id':'se','type':'end','name':'End','position':{'x':1,'y':0},'config':{}}], 'transitions':[{'id':'s1','source':'ss','target':'se'}]},
+            {'id':'orphan','name':'Unused Sub Task','kind':'subtask','activities':[{'id':'os','type':'start','name':'Start','position':{'x':0,'y':0},'config':{}},{'id':'oe','type':'end','name':'End','position':{'x':1,'y':0},'config':{}}], 'transitions':[{'id':'o1','source':'os','target':'oe'}]},
+        ])
+        self.assertEqual(self.client.post('/api/projects', json=payload).status_code, 200)
+        response = self.client.get('/api/projects/task-runtime-test/package?target=on-prem&environments=dev&starters=main&archive=ifpkg')
+        self.assertEqual(response.status_code, 200, response.text)
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            names = archive.namelist()
+            self.assertIn('application/tasks/main.json', names)
+            self.assertIn('application/tasks/child.json', names)
+            self.assertNotIn('application/tasks/secondary.json', names)
+            self.assertNotIn('application/tasks/orphan.json', names)
+            project = json.loads(archive.read('application/project.json'))
+            self.assertEqual([task['id'] for task in project['tasks']], ['main', 'child'])
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(manifest['starterTaskIds'], ['main'])
+            self.assertEqual(manifest['includedTaskIds'], ['main', 'child'])
         self.client.delete('/api/projects/task-runtime-test')
 
     def test_project_save_removes_retry_from_non_outbound_activities_only(self):
@@ -126,5 +190,27 @@ var fallback = "Unknown"
         })
         self.assertEqual(csv_output.status_code, 200, csv_output.text)
         self.assertEqual(csv_output.json()['output'], 'id,name\n1,Ada\n2,Lin\n')
+
+    def test_dataweave_custom_functions_coercions_and_extended_collections(self):
+        script = '''%dw 2.0
+output application/json
+fun normalize(value: String) = upper(trim(value))
+---
+{
+  name: normalize(payload.name),
+  id: payload.id as String,
+  numeric: payload.id is Number,
+  values: payload.groups flatMap (group) -> group.values,
+  wildcard: payload.labels.*,
+  entries: payload.labels pluck (value, key) -> { name: key, value: value }
+}'''
+        response = self.client.post('/api/dataweave/test', json={'script': script, 'input': {
+            'name': ' ada ', 'id': 7, 'groups': [{'values': [1, 2]}, {'values': [3]}], 'labels': {'a': 'A', 'b': 'B'},
+        }})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['output'], {
+            'name': 'ADA', 'id': '7', 'numeric': True, 'values': [1, 2, 3], 'wildcard': ['A', 'B'],
+            'entries': [{'name': 'a', 'value': 'A'}, {'name': 'b', 'value': 'B'}],
+        })
 
 if __name__ == '__main__': unittest.main()

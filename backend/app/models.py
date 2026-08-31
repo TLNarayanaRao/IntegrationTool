@@ -4,13 +4,13 @@ from pydantic import BaseModel, Field, model_validator
 
 ActivityKind = Literal[
     'start', 'http', 'http_listener', 'http_response', 'rest', 'soap',
-    'file', 'ftp', 'sftp', 'jdbc', 'snowflake', 'xml', 'json', 'flat',
-    'mapper', 'dataweave', 'transform', 'ai_transform', 'log', 'confirm', 'catch', 'throw', 'rethrow', 'timer', 'call_task', 'ems', 'kafka', 'pubsub', 'sap', 'java', 'python', 'basic', 'end'
+    'file', 'ftp', 'sftp', 'jdbc', 'snowflake', 'amqp', 'excel', 'xml', 'json', 'flat',
+    'mapper', 'dataweave', 'transform', 'ai_transform', 'log', 'confirm', 'catch', 'throw', 'rethrow', 'timer', 'call_task', 'ems', 'jms', 'kafka', 'pubsub', 'sap', 'java', 'python', 'basic', 'end'
 ]
 
 class SharedResource(BaseModel):
     id: str
-    type: Literal['jdbc', 'snowflake', 'ftp', 'sftp', 'http', 'ems', 'kafka', 'pubsub', 'sap', 'sap_tid'] = 'jdbc'
+    type: Literal['jdbc', 'snowflake', 'amqp', 'ftp', 'sftp', 'http', 'ems', 'jms', 'kafka', 'pubsub', 'sap', 'sap_tid'] = 'jdbc'
     name: str
     config: dict[str, Any] = Field(default_factory=dict)
 
@@ -116,6 +116,36 @@ def default_environment_properties() -> list[EnvironmentProperty]:
         ('connections.snowflake.maximumConnections', 8, 'integer'),
         ('connections.snowflake.maximumConnectionWaitSeconds', 300, 'integer'),
         ('connections.snowflake.serviceThreads', 8, 'integer'),
+        ('connections.amqp.mode', 'memory', 'string'),
+        ('connections.amqp.brokerType', 'RabbitMQ', 'string'),
+        ('connections.amqp.amqpVersion', 'AMQP-0-9-1', 'string'),
+        ('connections.amqp.hostPort', 'localhost:5672', 'string'),
+        ('connections.amqp.virtualHost', '/', 'string'),
+        ('connections.amqp.username', 'guest', 'string'),
+        ('connections.amqp.password', 'guest', 'password'),
+        ('connections.amqp.clientId', 'integration-fabric', 'string'),
+        ('connections.amqp.authenticationType', 'SAS', 'string'),
+        ('connections.amqp.connectionString', '', 'password'),
+        ('connections.amqp.tenantId', '', 'string'),
+        ('connections.amqp.azureClientId', '', 'string'),
+        ('connections.amqp.clientSecret', '', 'password'),
+        ('connections.amqp.sharedAccessKeyName', '', 'string'),
+        ('connections.amqp.sharedAccessKey', '', 'password'),
+        ('connections.amqp.entityType', 'Queue', 'string'),
+        ('connections.amqp.entityName', '', 'string'),
+        ('connections.amqp.entitySubscriberName', '', 'string'),
+        ('connections.amqp.connectionTimeoutMsec', 30000, 'integer'),
+        ('connections.amqp.sessionCount', 1, 'integer'),
+        ('connections.amqp.idleTimeoutMsec', 0, 'integer'),
+        ('connections.amqp.connectionRecovery', True, 'boolean'),
+        ('connections.amqp.retryIntervalMsec', 3000, 'integer'),
+        ('connections.amqp.retryAttempts', 20, 'integer'),
+        ('connections.amqp.networkRecoveryIntervalMsec', 5000, 'integer'),
+        ('connections.amqp.sslEnabled', False, 'boolean'),
+        ('connections.amqp.caFile', '', 'string'),
+        ('connections.amqp.clientCertificateFile', '', 'string'),
+        ('connections.amqp.clientKeyFile', '', 'string'),
+        ('connections.amqp.clientKeyPassword', '', 'password'),
         ('connections.ems.host', 'localhost', 'string'),
         ('connections.ems.port', 7222, 'integer'),
         ('connections.ems.serverUrl', 'tcp://localhost:7222', 'string'),
@@ -134,6 +164,15 @@ def default_environment_properties() -> list[EnvironmentProperty]:
         ('connections.ems.useXa', False, 'boolean'), ('connections.ems.useUfo', False, 'boolean'),
         ('connections.ems.sslEnabled', False, 'boolean'), ('connections.ems.sslTrustedCertificates', '', 'string'),
         ('connections.ems.reconnectDelayMs', 5000, 'integer'), ('connections.ems.heartbeatOutgoingMs', 0, 'integer'), ('connections.ems.heartbeatIncomingMs', 0, 'integer'),
+        ('connections.jms.provider', 'Generic JMS 2.0', 'string'),
+        ('connections.jms.host', 'localhost', 'string'), ('connections.jms.port', 61613, 'integer'),
+        ('connections.jms.username', '', 'string'), ('connections.jms.password', '', 'password'),
+        ('connections.jms.clientId', 'integration-fabric', 'string'),
+        ('connections.jms.connectionFactoryType', 'Direct', 'string'), ('connections.jms.connectionFactory', 'ConnectionFactory', 'string'),
+        ('connections.jms.jndiContextFactory', '', 'string'), ('connections.jms.jndiProviderUrl', '', 'string'),
+        ('connections.jms.jndiUsername', '', 'string'), ('connections.jms.jndiPassword', '', 'password'),
+        ('connections.jms.sslEnabled', False, 'boolean'), ('connections.jms.sslTrustedCertificates', '', 'string'),
+        ('connections.jms.reconnectAttempts', 3, 'integer'), ('connections.jms.reconnectDelayMs', 5000, 'integer'),
         ('connections.kafka.bootstrapServers', 'localhost:9092', 'string'),
         ('connections.kafka.clientId', 'integration-fabric', 'string'),
         ('connections.kafka.groupId', 'integration-fabric', 'string'),
@@ -146,6 +185,11 @@ def default_environment_properties() -> list[EnvironmentProperty]:
         ('connections.kafka.sslCaLocation', '', 'string'), ('connections.kafka.sslCertificateLocation', '', 'string'),
         ('connections.kafka.sslKeyLocation', '', 'string'), ('connections.kafka.sslKeyPassword', '', 'password'),
         ('connections.kafka.schemaRegistryUrl', '', 'string'), ('connections.kafka.schemaRegistryUsername', '', 'string'), ('connections.kafka.schemaRegistryPassword', '', 'password'),
+        ('connections.kafka.reconnectBackoffMilliseconds', 50, 'integer'), ('connections.kafka.retryBackoffMilliseconds', 100, 'integer'),
+        ('connections.kafka.authenticationType', 'None', 'string'), ('connections.kafka.useTicketCache', False, 'boolean'),
+        ('connections.kafka.keytabFile', '', 'string'), ('connections.kafka.principalName', '', 'string'),
+        ('connections.kafka.jaasConfigFile', '', 'string'), ('connections.kafka.loginCallbackHandler', '', 'string'),
+        ('connections.kafka.schemaRegistryVendor', 'Confluent', 'string'), ('connections.kafka.clientProperties', '{}', 'json'),
         ('connections.pubsub.projectId', 'my-gcp-project', 'string'),
         ('connections.pubsub.credentialsFile', '', 'string'),
         ('connections.pubsub.endpoint', 'pubsub.googleapis.com:443', 'string'),
@@ -185,6 +229,7 @@ def is_event_activity(activity: Activity) -> bool:
         (activity.type == 'soap' and operation == 'service') or \
         (activity.type == 'file' and operation == 'poll') or \
         (activity.type == 'ems' and operation in ('queue_receiver', 'topic_subscriber')) or \
+        (activity.type == 'jms' and operation == 'receive_message') or \
         (activity.type == 'kafka' and operation in ('receive', 'get')) or \
         (activity.type == 'pubsub' and operation == 'subscribe') or \
         (activity.type == 'sap' and operation in ('idoc_listener', 'rfc_bapi_listener'))
