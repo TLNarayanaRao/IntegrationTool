@@ -223,4 +223,16 @@ class SapMapperTests(unittest.TestCase):
         self.assertEqual(tested.status_code, 200, tested.text)
         self.assertEqual(len(tested.json()['output']['catalog']['book']), 2)
 
+    def test_mapper_choose_executes_multiple_when_branches_and_otherwise(self):
+        rules = [{'target':'route', 'operator':'choose', 'whens':[
+            {'condition':'amount >= 1000', 'source':'"priority"'},
+            {'condition':'amount >= 100', 'source':'"standard"'},
+        ], 'otherwise':'"economy"'}]
+        high = self.client.post('/api/mapper/test', json={'input':{'amount':1500}, 'mappings':rules})
+        medium = self.client.post('/api/mapper/test', json={'input':{'amount':250}, 'mappings':rules})
+        low = self.client.post('/api/mapper/test', json={'input':{'amount':25}, 'mappings':rules})
+        self.assertEqual(high.json()['output']['route'], 'priority')
+        self.assertEqual(medium.json()['output']['route'], 'standard')
+        self.assertEqual(low.json()['output']['route'], 'economy')
+
 if __name__ == '__main__': unittest.main()

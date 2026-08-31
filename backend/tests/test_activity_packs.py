@@ -24,6 +24,11 @@ class ActivityPackTests(unittest.TestCase):
         parsed = self.execute(Activity(id='x', type='xml', name='Parse XML', config={'operation': 'parse'}), '<order id="7"><name>Ada</name></order>')
         self.assertEqual(parsed['root'], 'order')
         self.assertEqual(parsed['value']['@id'], '7')
+        self.assertEqual(parsed['mediaType'], 'application/xml')
+        self.assertEqual(parsed['xml'], '<order id="7"><name>Ada</name></order>')
+        debug_context = {'activities': {}, 'context': {}}
+        self.runtime.record_activity_output(Activity(id='x', type='xml', name='Parse XML', config={'operation': 'parse'}), parsed, debug_context)
+        self.assertEqual(debug_context['activities']['x']['displayOutput'], parsed['xml'])
         rendered = self.execute(Activity(id='x', type='xml', name='Render XML', config={'operation': 'render'}), parsed)
         self.assertIn('<name>Ada</name>', rendered['content'])
 
@@ -74,6 +79,18 @@ class ActivityPackTests(unittest.TestCase):
     def test_delimited_and_fixed_width_data(self):
         csv_result = self.execute(Activity(id='f', type='flat', name='Parse Data', config={'operation': 'parse', 'delimiter': ',', 'header': True}), 'id,name\n7,Ada\n')
         self.assertEqual(csv_result['records'][0]['name'], 'Ada')
+        self.assertEqual(csv_result['mediaType'], 'application/xml')
+        self.assertEqual(csv_result['xml'], '<records><record><id>7</id><name>Ada</name></record></records>')
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'orders.csv'
+            path.write_text('id,name\n8,Grace\n', encoding='utf-8')
+            file_result = self.execute(Activity(id='fp', type='flat', name='Parse Data File', config={
+                'operation': 'parse', 'inputSource': 'File path', 'filePath': str(path),
+                'fileEncoding': 'utf-8', 'delimiter': ',', 'header': True,
+                'rootElement': 'orders', 'recordElement': 'order',
+            }), {})
+            self.assertEqual(file_result['records'][0]['name'], 'Grace')
+            self.assertEqual(file_result['xml'], '<orders><order><id>8</id><name>Grace</name></order></orders>')
         fixed = self.execute(Activity(id='f', type='flat', name='Render Data', config={'operation': 'render', 'format': 'fixed', 'fields': 'id,name', 'widths': '3,5'}), {'records': [{'id': 7, 'name': 'Ada'}]})
         self.assertEqual(fixed['content'], '7  Ada  ')
 
@@ -239,14 +256,14 @@ class ActivityPackTests(unittest.TestCase):
     def test_log_activity_emits_configured_message_and_preserves_payload(self):
         payload = {'orderId': '10001'}
         process = ProcessDefinition(id='logging-task', name='Logging Task', activities=[
-            Activity(id='timer', type='timer', name='Timer / Scheduler', config={'operation': 'schedule'}),
+            Activity(id='start', type='start', name='Start'),
             Activity(id='log', type='log', name='Log', config={
                 'level': 'INFO', 'message': 'Order payload', 'includePayload': True,
                 'inputMappings': {'payload': '${last}'},
             }),
             Activity(id='end', type='end', name='End'),
         ], transitions=[
-            Transition(id='timer-log', source='timer', target='log'),
+            Transition(id='start-log', source='start', target='log'),
             Transition(id='log-end', source='log', target='end'),
         ])
 

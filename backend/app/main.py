@@ -14,6 +14,7 @@ from .debugger import DebugManager
 from .mapper import execute as execute_mapping, recommend, validate_output
 from .dataweave import DataWeaveError, execute_details as execute_dataweave
 from .sap import sap_adapter
+from .snowflake import snowflake_adapter
 from .ai_builder import generate as generate_ai_design
 
 app = FastAPI(title='Integration Fabric Runtime', version='0.1.0')
@@ -322,6 +323,9 @@ async def test_connection(resource: SharedResource):
     if resource.type == 'jdbc' and cfg.get('driver','sqlite') == 'sqlite':
         import sqlite3
         conn = sqlite3.connect(cfg.get('url','integration.db')); conn.execute('SELECT 1'); conn.close(); return {'ok':True,'message':'SQLite connection succeeded'}
+    if resource.type == 'snowflake':
+        try: return await __import__('asyncio').to_thread(snowflake_adapter.test, cfg)
+        except Exception as exc: return {'ok':False,'message':str(exc)}
     if resource.type == 'sap_tid' and cfg.get('mode','none') == 'none': return {'ok':True,'message':'SAP TID duplicate management is disabled'}
     if resource.type == 'sap_tid' and cfg.get('driver','sqlite') == 'sqlite':
         import sqlite3
@@ -389,6 +393,19 @@ def sap_idocs(payload: dict):
         return {'idocs': sap_adapter.list_idocs(resource.config, str(payload.get('search') or ''), int(payload.get('limit', 250)))}
     except Exception as exc: raise HTTPException(400, f'Unable to fetch SAP IDoc metadata: {exc}')
 
+@app.post('/api/snowflake/entities')
+async def snowflake_entities(payload: dict):
+    try:
+        resource = SharedResource.model_validate(payload.get('resource') or {})
+        if resource.type != 'snowflake': raise ValueError('A Snowflake JDBC shared connection is required')
+        entity = str(payload.get('entity') or '').strip()
+        if entity:
+            metadata = await __import__('asyncio').to_thread(snowflake_adapter.entity_metadata, resource.config, str(payload.get('database') or resource.config.get('database') or ''), str(payload.get('schema') or resource.config.get('schema') or 'PUBLIC'), entity)
+            return {'entity': metadata}
+        entities = await __import__('asyncio').to_thread(snowflake_adapter.list_entities, resource.config, str(payload.get('database') or ''), str(payload.get('schema') or ''), str(payload.get('pattern') or ''))
+        return {'entities': entities}
+    except Exception as exc: raise HTTPException(400, f'Unable to retrieve Snowflake metadata: {exc}')
+
 @app.post('/api/mapper/suggest')
 def mapper_suggest(payload: dict):
     return {'recommendations': recommend(payload.get('sourceSchema',{}), payload.get('targetSchema',{}), float(payload.get('threshold',70))/100, payload.get('weights'))}
@@ -432,6 +449,7 @@ def dataweave_test(payload: dict):
         return execute_dataweave(
             str(payload.get('script') or ''), payload=payload.get('input'),
             attributes=payload.get('attributes') or {}, variables=payload.get('variables') or {},
+            input_mime_type=str(payload.get('inputMimeType') or ''),
         )
     except DataWeaveError as exc:
         raise HTTPException(400, f'DataWeave validation failed: {exc}')

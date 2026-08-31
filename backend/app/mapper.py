@@ -232,13 +232,61 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
 
     def condition_passes(rule: dict, scope: Any = None, scope_source: str = '') -> bool:
         condition = str(rule.get('condition', '')).strip()
+        if re.search(r'\s+or\s+', condition, re.I):
+            return any(condition_passes({'condition': part}, scope, scope_source) for part in re.split(r'\s+or\s+', condition, flags=re.I))
+        if re.search(r'\s+and\s+', condition, re.I):
+            return all(condition_passes({'condition': part}, scope, scope_source) for part in re.split(r'\s+and\s+', condition, flags=re.I))
         match = re.fullmatch(r'(exists|empty)\(([^)]+)\)', condition, re.I)
         if match:
             probe = {'source': match.group(2).strip()}
             tested = resolve_value(probe, scope, scope_source)
             passed = tested not in (None, '', [], {})
             return not passed if match.group(1).lower() == 'empty' else passed
+        comparison = re.fullmatch(r'(.+?)\s*(==|=|!=|>=|<=|>|<)\s*(.+)', condition)
+        if comparison:
+            def operand(text: str):
+                text = text.strip()
+                if (text.startswith("'") and text.endswith("'")) or (text.startswith('"') and text.endswith('"')): return text[1:-1]
+                if text.lower() in ('true', 'true()'): return True
+                if text.lower() in ('false', 'false()'): return False
+                if text.lower() in ('null', '()'): return None
+                try: return float(text) if '.' in text else int(text)
+                except ValueError: return resolve_value({'source': text}, scope, scope_source)
+            left, right, operator = operand(comparison.group(1)), operand(comparison.group(3)), comparison.group(2)
+            if operator in ('=', '=='): return left == right
+            if operator == '!=': return left != right
+            if operator == '>': return left > right
+            if operator == '<': return left < right
+            if operator == '>=': return left >= right
+            return left <= right
         return condition.lower() in ('true', 'true()', '1')
+
+    def conditional_value(rule: dict, scope: Any = None, scope_source: str = ''):
+        operator = str(rule.get('operator', '')).lower()
+        if operator == 'choose':
+            def branch_value(value: Any):
+                if not isinstance(value, str): return value
+                text = value.strip()
+                if (text.startswith("'") and text.endswith("'")) or (text.startswith('"') and text.endswith('"')): return text[1:-1]
+                if text.lower() in ('true', 'true()'): return True
+                if text.lower() in ('false', 'false()'): return False
+                if text.lower() in ('null', '()'): return None
+                try: return float(text) if '.' in text else int(text)
+                except ValueError: return resolve_value({'source': text}, scope, scope_source)
+            branches = rule.get('whens', []) or []
+            if not branches and isinstance(rule.get('source'), str):
+                try: branches = json.loads(rule['source'])
+                except (TypeError, ValueError, json.JSONDecodeError): branches = []
+            for branch in branches:
+                if condition_passes({'condition': branch.get('condition', '')}, scope, scope_source):
+                    return branch_value(branch.get('source', '')), True
+            otherwise = rule.get('otherwise', _OMIT)
+            return branch_value(otherwise), otherwise is not _OMIT
+        value = resolve_value(rule, scope, scope_source)
+        if operator in ('if', 'when-otherwise') and not condition_passes(rule, scope, scope_source):
+            if operator == 'if': return _OMIT, False
+            value = rule.get('otherwise')
+        return value, True
 
     def mapped_value(rule: dict, value: Any):
         try:
@@ -285,11 +333,8 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
             for child in direct:
                 relative_target = _relative_path(str(child['target']), target)
                 if relative_target is None or not relative_target: continue
-                child_value = resolve_value(child, current, loop_source)
-                child_operator = str(child.get('operator', '')).lower()
-                if child_operator in ('if', 'when-otherwise') and not condition_passes(child, current, loop_source):
-                    if child_operator == 'if': continue
-                    child_value = child.get('otherwise')
+                child_value, present = conditional_value(child, current, loop_source)
+                if not present: continue
                 child_value = mapped_value(child, child_value)
                 if child_value is not _OMIT: set_path(item_result, relative_target, child_value)
             for nested in nested_loops:
@@ -305,11 +350,8 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
     for rule in rules:
         target = str(rule['target']).strip('.')
         if rule in loops or any(under(target, loop_target) for loop_target in loop_targets): continue
-        value = resolve_value(rule)
-        operator = str(rule.get('operator', '')).lower()
-        if operator in ('if', 'when-otherwise') and not condition_passes(rule):
-            if operator == 'if': continue
-            value = rule.get('otherwise')
+        value, present = conditional_value(rule)
+        if not present: continue
         value = mapped_value(rule, value)
         if value is not _OMIT: set_path(result, target, value)
     for loop in top_loops:

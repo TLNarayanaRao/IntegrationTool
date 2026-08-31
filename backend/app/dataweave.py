@@ -266,6 +266,21 @@ def _xml(value: Any) -> str:
     return ET.tostring(build(name, item), encoding='unicode')
 
 
+def _csv(value: Any) -> str:
+    rows = value if isinstance(value, list) else [value]
+    if not rows: return ''
+    if not all(isinstance(row, dict) for row in rows):
+        raise DataWeaveError('CSV output requires an object or an array of objects')
+    fields: list[str] = []
+    for row in rows:
+        for key in row:
+            if key not in fields: fields.append(str(key))
+    stream = io.StringIO(newline='')
+    writer = csv.DictWriter(stream, fieldnames=fields, lineterminator='\n')
+    writer.writeheader(); writer.writerows(rows)
+    return stream.getvalue()
+
+
 def _decode_payload(value: Any, mime_type: str) -> Any:
     if not isinstance(value, (str, bytes)): return value
     text = value.decode() if isinstance(value, bytes) else value
@@ -297,6 +312,7 @@ def execute_details(script: str, *, payload: Any = None, attributes: Any = None,
     result = Parser(body, environment).parse()
     mime = metadata['outputMimeType'].lower()
     if mime in ('application/xml', 'text/xml'): result = _xml(result)
+    elif mime in ('application/csv', 'text/csv'): result = _csv(result)
     elif mime.startswith('text/'): result = '' if result is None else str(result)
     return {'output': result, 'mimeType': metadata['outputMimeType'], 'version': metadata['version']}
 

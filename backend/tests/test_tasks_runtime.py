@@ -86,6 +86,22 @@ class TaskRuntimeTests(unittest.TestCase):
         self.assertEqual(result.json()['activity_outputs']['c']['output'], {'answer': {'value': 42}})
         self.client.delete('/api/projects/task-runtime-test')
 
+    def test_project_save_removes_retry_from_non_outbound_activities_only(self):
+        payload = self.project()
+        retry = {'retryEnabled':True, 'retryCount':3, 'retryIntervalSeconds':5, 'logPayload':False}
+        activities = payload['tasks'][0]['activities']
+        next(item for item in activities if item['id'] == 'p')['config']['advanced'] = dict(retry)
+        next(item for item in activities if item['id'] == 'r')['config']['advanced'] = dict(retry)
+        saved = self.client.post('/api/projects', json=payload)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        saved_activities = saved.json()['tasks'][0]['activities']
+        publish_advanced = next(item for item in saved_activities if item['id'] == 'p')['config']['advanced']
+        receive_advanced = next(item for item in saved_activities if item['id'] == 'r')['config']['advanced']
+        self.assertIn('retryEnabled', publish_advanced)
+        self.assertNotIn('retryEnabled', receive_advanced)
+        self.assertEqual(receive_advanced, {'logPayload':False})
+        self.client.delete('/api/projects/task-runtime-test')
+
     def test_dataweave_transform_executes_selectors_defaults_collections_and_xml(self):
         script = '''%dw 2.0
 output application/json
@@ -98,5 +114,17 @@ var fallback = "Unknown"
         xml = self.client.post('/api/dataweave/test', json={'script':'%dw 2.0\noutput application/xml\n---\n{ order: { id: payload.id } }', 'input':{'id':7}})
         self.assertEqual(xml.status_code, 200, xml.text)
         self.assertEqual(xml.json()['output'], '<order><id>7</id></order>')
+        metadata = self.client.post('/api/dataweave/test', json={
+            'script':'%dw 2.0\noutput application/json\n---\n{ requestId: attributes.requestId, region: vars.region }',
+            'input':{}, 'attributes':{'requestId':'req-7'}, 'variables':{'region':'west'}
+        })
+        self.assertEqual(metadata.status_code, 200, metadata.text)
+        self.assertEqual(metadata.json()['output'], {'requestId':'req-7','region':'west'})
+        csv_output = self.client.post('/api/dataweave/test', json={
+            'script':'%dw 2.0\noutput text/csv\n---\npayload',
+            'input':[{'id':1,'name':'Ada'},{'id':2,'name':'Lin'}]
+        })
+        self.assertEqual(csv_output.status_code, 200, csv_output.text)
+        self.assertEqual(csv_output.json()['output'], 'id,name\n1,Ada\n2,Lin\n')
 
 if __name__ == '__main__': unittest.main()

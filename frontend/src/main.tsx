@@ -82,6 +82,7 @@ type Kind =
   | "ftp"
   | "sftp"
   | "jdbc"
+  | "snowflake"
   | "xml"
   | "json"
   | "flat"
@@ -131,6 +132,7 @@ type Resource = {
   id: string;
   type:
     | "jdbc"
+    | "snowflake"
     | "ftp"
     | "sftp"
     | "http"
@@ -209,6 +211,12 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
     icon: Workflow,
     items: [
       {
+        type: "start",
+        operation: "start",
+        label: "Start",
+        asset: "start-play",
+      },
+      {
         type: "timer",
         operation: "schedule",
         label: "Scheduler",
@@ -219,6 +227,12 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
         operation: "call",
         label: "Call Sub Task",
         asset: "call-task",
+      },
+      {
+        type: "end",
+        operation: "end",
+        label: "End",
+        asset: "end-stop",
       },
     ],
   },
@@ -391,6 +405,17 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
     ),
   },
   {
+    name: "Snowflake",
+    icon: Database,
+    items: [
+      ["insert", "Snowflake Insert", "snowflake"],
+      ["query", "Snowflake Query", "snowflake"],
+      ["update", "Snowflake Update", "snowflake"],
+      ["delete", "Snowflake Delete", "snowflake"],
+      ["bulk_load", "Snowflake Bulk Load", "snowflake"],
+    ].map(([operation, label, asset]) => ({ type: "snowflake", operation, label, asset }) as Def),
+  },
+  {
     name: "Data",
     icon: CodeXml,
     items: [
@@ -496,6 +521,21 @@ const defaultProperties: Property[] = [
   { key: "connections.jdbc.timeoutSeconds", value: 30, data_type: "integer" },
   { key: "connections.jdbc.minimumPoolSize", value: 1, data_type: "integer" },
   { key: "connections.jdbc.maximumPoolSize", value: 10, data_type: "integer" },
+  { key: "connections.snowflake.mode", value: "external", data_type: "string" },
+  { key: "connections.snowflake.authenticationType", value: "Username/Password", data_type: "string" },
+  { key: "connections.snowflake.provider", value: "Snowflake", data_type: "string" },
+  { key: "connections.snowflake.account", value: "", data_type: "string" },
+  { key: "connections.snowflake.username", value: "", data_type: "string" },
+  { key: "connections.snowflake.password", value: "", data_type: "password" },
+  { key: "connections.snowflake.warehouse", value: "", data_type: "string" },
+  { key: "connections.snowflake.database", value: "", data_type: "string" },
+  { key: "connections.snowflake.schema", value: "PUBLIC", data_type: "string" },
+  { key: "connections.snowflake.role", value: "", data_type: "string" },
+  { key: "connections.snowflake.loginTimeoutSeconds", value: 60, data_type: "integer" },
+  { key: "connections.snowflake.minimumConnections", value: 2, data_type: "integer" },
+  { key: "connections.snowflake.maximumConnections", value: 8, data_type: "integer" },
+  { key: "connections.snowflake.maximumConnectionWaitSeconds", value: 300, data_type: "integer" },
+  { key: "connections.snowflake.serviceThreads", value: 8, data_type: "integer" },
   { key: "connections.ems.host", value: "localhost", data_type: "string" },
   { key: "connections.ems.port", value: 7222, data_type: "integer" },
   { key: "connections.ems.serverUrl", value: "tcp://localhost:7222", data_type: "string" },
@@ -565,11 +605,21 @@ const newEnvironmentProperties = () => defaultProperties.map((item) => ({ ...ite
 const envs = Object.fromEntries(
   ["local", "dev", "qa", "pre", "production"].map((name) => [name, newEnvironmentProperties()]),
 ) as Record<string, Property[]>;
-const advancedDefaults = () => ({
+const supportsOutboundRetry = (type = "", operation = "") =>
+  ["http", "jdbc", "snowflake", "ftp", "sftp"].includes(type) ||
+  (type === "ems" && ["send", "publish", "request_reply", "reply"].includes(operation)) ||
+  (type === "kafka" && ["publish", "get"].includes(operation)) ||
+  (type === "pubsub" && operation === "publish") ||
+  (type === "rest" && operation === "invoke") ||
+  (type === "soap" && operation === "request_reply") ||
+  (type === "sap" && ["idoc_acknowledgment", "idoc_confirmation", "post_idoc", "invoke_rfc_bapi", "reply_rfc_bapi", "read_table"].includes(operation));
+const advancedDefaults = (type = "", operation = "") => ({
   logPayload: "${properties.advanced.logPayload}",
-  retryEnabled: "${properties.advanced.retryEnabled}",
-  retryCount: "${properties.advanced.retryCount}",
-  retryIntervalSeconds: "${properties.advanced.retryIntervalSeconds}",
+  ...(supportsOutboundRetry(type, operation) ? {
+    retryEnabled: "${properties.advanced.retryEnabled}",
+    retryCount: "${properties.advanced.retryCount}",
+    retryIntervalSeconds: "${properties.advanced.retryIntervalSeconds}",
+  } : {}),
 });
 const starter = (id = "main", name = "Main Task"): Task => ({
   id,
@@ -600,6 +650,66 @@ const starter = (id = "main", name = "Main Task"): Task => ({
     },
   ],
 });
+const ensureTaskEnd = (task: Task): Task => {
+  if (task.activities.some((activity) => activity.type === "end")) return task;
+  const rightmost = task.activities.reduce<Node | undefined>(
+    (current, activity) => !current || activity.position.x > current.position.x ? activity : current,
+    undefined,
+  );
+  const endId = `${task.id}-end`;
+  const end: Node = {
+    id: endId,
+    type: "end",
+    name: "End",
+    position: { x: Math.max(350, (rightmost?.position.x || 70) + 220), y: rightmost?.position.y || 150 },
+    config: { operation: "end", advanced: advancedDefaults() },
+  };
+  const sources = new Set(task.transitions.map((transition) => transition.source));
+  const terminals = task.activities.filter((activity) => !sources.has(activity.id) && !["throw", "rethrow"].includes(activity.type));
+  return {
+    ...task,
+    activities: [...task.activities, end],
+    transitions: [
+      ...task.transitions,
+      ...terminals.map((activity, index) => ({
+        id: `${task.id}-end-edge-${Date.now()}-${index}`,
+        source: activity.id,
+        target: endId,
+        type: "success" as const,
+      })),
+    ],
+  };
+};
+const xmlEscape = (value: unknown, attribute = false) => {
+  const escaped = String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+  return attribute ? escaped.replaceAll('"', "&quot;") : escaped;
+};
+const legacyXmlOutput = (output: any) => {
+  if (!output || typeof output !== "object" || !output.root || !("value" in output)) return "";
+  const localName = (name: string) => name.includes("}") ? name.slice(name.lastIndexOf("}") + 1) : name;
+  const render = (name: string, value: any, depth = 0): string => {
+    const indent = "  ".repeat(depth), tag = localName(name);
+    if (Array.isArray(value)) return value.map((item) => render(tag, item, depth)).join("\n");
+    if (value === null || value === undefined) return `${indent}<${tag}/>`;
+    if (typeof value !== "object") return `${indent}<${tag}>${xmlEscape(value)}</${tag}>`;
+    const attributes = Object.entries(value).filter(([key]) => key.startsWith("@")).map(([key, item]) => ` ${localName(key.slice(1))}="${xmlEscape(item, true)}"`).join("");
+    const text = value["#text"] === undefined ? "" : xmlEscape(value["#text"]);
+    const children = Object.entries(value).filter(([key]) => !key.startsWith("@") && key !== "#text").flatMap(([key, item]) => Array.isArray(item) ? item.map((entry) => render(key, entry, depth + 1)) : [render(key, item, depth + 1)]);
+    if (!children.length) return text ? `${indent}<${tag}${attributes}>${text}</${tag}>` : `${indent}<${tag}${attributes}/>`;
+    return `${indent}<${tag}${attributes}>${text}${text ? "" : "\n"}${children.join("\n")}\n${indent}</${tag}>`;
+  };
+  return render(String(output.root), output.value);
+};
+const formatRuntimeOutput = (record: any) => {
+  const output = record?.displayOutput ?? record?.logEvent ?? record?.output;
+  if (["xml", "flat"].includes(record?.type) && output?.xml) return String(output.xml);
+  if (record?.type === "xml") {
+    const xml = legacyXmlOutput(record?.output);
+    if (xml) return xml;
+  }
+  if (typeof output === "string") return output;
+  return JSON.stringify(output, null, 2);
+};
 const initial: Project = {
   id: "order-integration",
   name: "Order Integration",
@@ -647,7 +757,7 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
     });
   }
   task.activities.filter((item) => !reachable.has(item.id)).forEach((item) => add("warning", "Flow", `${item.name} is not on an executable path.`, "Connect it to an upstream activity or remove it.", item.id));
-  const connectionTypes = new Set(["jdbc", "ftp", "sftp", "http", "ems", "kafka", "pubsub", "sap"]);
+  const connectionTypes = new Set(["jdbc", "snowflake", "ftp", "sftp", "http", "ems", "kafka", "pubsub", "sap"]);
   task.activities.forEach((item) => {
     const operation = item.config.operation || "";
     if (item.type === "timer") {
@@ -674,6 +784,13 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
       if (item.config.aiReviewRequired) add("mapping", "Transform", `${item.name} contains an unreviewed AI-generated draft.`, "Review the script and run Map & Test before packaging.", item.id);
     }
     if (item.type === "jdbc" && !String(item.config.sql || "").trim() && !["create", "update", "delete", "truncate"].includes(operation)) add("warning", "Configuration", `${item.name} has no SQL statement.`, "Configure SQL or a stored procedure call.", item.id);
+    if (item.type === "snowflake") {
+      if (!item.config.resourceId) add("error", "Snowflake", `${item.name} has no Snowflake JDBC connection.`, "Select a Snowflake shared connection.", item.id);
+      if (operation === "query" && !String(item.config.statement || item.config.sql || item.config.entity || "").trim()) add("error", "Snowflake", `${item.name} has no SELECT statement or entity.`, "Choose downloaded metadata or enter a Snowflake SELECT statement.", item.id);
+      if (["insert", "update", "delete", "bulk_load"].includes(operation) && !String(item.config.entity || item.config.tableName || "").trim()) add("error", "Snowflake", `${item.name} has no target entity.`, "Choose a downloaded table or enter the target table name.", item.id);
+      if (item.config.merge && !String(item.config.mergeOnColumns || "").trim()) add("error", "Snowflake", `${item.name} enables Merge without Merge On Columns.`, "Enter one or more comma-separated match columns.", item.id);
+      if (operation === "insert" && item.config.merge && Number(item.config.batchSize || 100) !== 1) add("error", "Snowflake", `${item.name} Merge requires Batch Size 1.`, "Set Batch Size to 1 as required by the Snowflake plug-in.", item.id);
+    }
     if ((item.type === "file" || item.type === "ftp" || item.type === "sftp") && !String(item.config.path || item.config.remotePath || "").trim()) add("warning", "Configuration", `${item.name} has no file path.`, "Configure the source or target path.", item.id);
     if (item.type === "sap" && operation.includes("idoc") && !item.config.idocType) add("mapping", "SAP IDoc", `${item.name} has no IDoc type/schema.`, "Retrieve an IDoc type from the SAP shared connection and select it here.", item.id);
   });
@@ -733,7 +850,9 @@ function App() {
     [validation, setValidation] = useState<{ title: string; issues: ValidationIssue[] } | null>(null),
     [connectionDraft, setConnectionDraft] = useState<{ source: string; x: number; y: number } | null>(null),
     [quickAddDrag, setQuickAddDrag] = useState<{ source: string; startClientX: number; startClientY: number; x: number; y: number; pointerId: number } | null>(null),
-    [edgeRewire, setEdgeRewire] = useState<{ edgeId: string; endpoint: "source" | "target"; fixedId: string; x: number; y: number } | null>(null);
+    [edgeRewire, setEdgeRewire] = useState<{ edgeId: string; endpoint: "source" | "target"; fixedId: string; x: number; y: number } | null>(null),
+    [openTaskIds, setOpenTaskIds] = useState<string[]>([initial.active_task_id]),
+    [taskTabMenu, setTaskTabMenu] = useState<{ taskId: string; x: number; y: number } | null>(null);
   const [monitorMode, setMonitorMode] = useState<"normal" | "expanded" | "fullscreen">("normal");
   const [historyVersion, setHistoryVersion] = useState(0);
   const history = useRef<{
@@ -854,6 +973,24 @@ function App() {
     localStorage.setItem("integration-fabric-theme", theme);
   }, [theme]);
   useEffect(() => localStorage.setItem("integration-fabric-explorer-width", String(explorerWidth)), [explorerWidth]);
+  useEffect(() => {
+    const missingEnd = project.tasks.some((item) => !item.activities.some((activity) => activity.type === "end"));
+    if (missingEnd) setProject((current) => ({ ...current, tasks: current.tasks.map(ensureTaskEnd), process: undefined }));
+  }, [project.id, project.tasks.map((item) => `${item.id}:${item.activities.some((activity) => activity.type === "end")}`).join("|")]);
+  useEffect(() => {
+    const available = new Set(project.tasks.map((item) => item.id));
+    setOpenTaskIds((current) => {
+      const next = current.filter((id) => available.has(id));
+      if (project.active_task_id && available.has(project.active_task_id) && !next.includes(project.active_task_id)) next.push(project.active_task_id);
+      return next.length ? next : project.tasks[0] ? [project.tasks[0].id] : [];
+    });
+  }, [project.id, project.active_task_id, project.tasks.map((item) => item.id).join("|")]);
+  useEffect(() => {
+    if (!taskTabMenu) return;
+    const dismiss = () => setTaskTabMenu(null);
+    window.addEventListener("pointerdown", dismiss);
+    return () => window.removeEventListener("pointerdown", dismiss);
+  }, [taskTabMenu]);
   useEffect(
     () =>
       setOpen((o) => ({
@@ -964,7 +1101,19 @@ function App() {
     const move = (event: PointerEvent) => {
       if (event.pointerId !== quickAddDrag.pointerId || !canvas.current) return;
       const box = canvas.current.getBoundingClientRect();
-      setQuickAddDrag((draft) => draft ? { ...draft, x: (event.clientX - box.left + canvas.current!.scrollLeft) / zoom, y: (event.clientY - box.top + canvas.current!.scrollTop) / zoom } : null);
+      const clientX = Math.max(box.left + 8, Math.min(event.clientX, box.right - 8));
+      const clientY = Math.max(box.top + 8, Math.min(event.clientY, box.bottom - 8));
+      const dragX = (clientX - box.left + canvas.current.scrollLeft) / zoom;
+      const dragY = (clientY - box.top + canvas.current.scrollTop) / zoom;
+      const distance = Math.hypot(event.clientX - quickAddDrag.startClientX, event.clientY - quickAddDrag.startClientY);
+      if (distance >= 18) {
+        // Dragging the glossy + is the command itself. Open the picker as soon
+        // as the pointer has clearly moved; do not depend on a later drop event.
+        setMenu({ type: "canvas", x: clientX + 12, y: clientY - 80, cx: Math.max(8, dragX - 52), cy: Math.max(8, dragY - 38), connectFrom: quickAddDrag.source, quickAdd: true });
+        setQuickAddDrag(null);
+        return;
+      }
+      setQuickAddDrag((draft) => draft ? { ...draft, x: dragX, y: dragY } : null);
     };
     const finish = (event: PointerEvent) => {
       if (event.pointerId !== quickAddDrag.pointerId) return;
@@ -1027,6 +1176,7 @@ function App() {
   }, []);
   const selectTask = (id: string) => {
     const t = project.tasks.find((t) => t.id === id);
+    setOpenTaskIds((current) => current.includes(id) ? current : [...current, id]);
     setProject((p) => ({ ...p, active_task_id: id }));
     const first = t?.activities[0]?.id || "";
     setSelected(first);
@@ -1034,11 +1184,26 @@ function App() {
     setSelectedEdge(null);
     setSelectedResource(null);
   };
+  const closeTaskTabs = (taskId: string, mode: "one" | "left" | "right" | "others") => {
+    const index = openTaskIds.indexOf(taskId);
+    if (index < 0) return;
+    let keep = mode === "others" ? [taskId]
+      : mode === "left" ? openTaskIds.slice(index)
+        : mode === "right" ? openTaskIds.slice(0, index + 1)
+          : openTaskIds.filter((id) => id !== taskId);
+    if (!keep.length) {
+      const fallback = project.tasks.find((item) => item.id !== taskId) || project.tasks.find((item) => item.id === taskId);
+      if (fallback) keep = [fallback.id];
+    }
+    setOpenTaskIds(keep);
+    if (!keep.includes(project.active_task_id) && keep[0]) selectTask(keep[Math.min(index, keep.length - 1)] || keep[0]);
+    setTaskTabMenu(null);
+  };
   const addActivity = (d: Def, pos?: { x: number; y: number; connectFrom?: string }) => {
     const id = `${d.type}-${Date.now()}`,
       config: any = {
         operation: d.operation,
-        advanced: advancedDefaults(),
+        advanced: advancedDefaults(d.type, d.operation || ""),
       };
     if (d.type === "timer")
       Object.assign(config, {
@@ -1086,6 +1251,18 @@ function App() {
         sql: "",
         parameters: {},
       });
+    if (d.type === "snowflake")
+      Object.assign(config, {
+        resourceId: project.resources.find((r) => r.type === "snowflake")?.id || "",
+        entity: "", tableName: "", timeout: d.operation === "query" || d.operation === "delete" ? 100 : 0,
+        maximumRows: 100, batchSize: 100, createTableFromXsd: false,
+        valueColumns: "", parameterColumns: "", preparedParameters: "",
+        overrideDatabaseName: "", overrideSchemaName: "", interpretEmptyStringAsNull: false,
+        merge: false, mergeOnColumns: "", faultOnBatchFailure: false, createTableIfNoneExists: false,
+        stageType: "UserStage", namedStage: "", fileFormat: "DelimitedFiles", validationMode: false,
+        purgeStageFiles: false, compressData: true, onError: "ABORT_STATEMENT",
+        skipFileErrorCount: 1, skipFileErrorPercentage: 1,
+      });
     if (["mapper", "transform", "ai_transform"].includes(d.type))
       Object.assign(config, {
         language: "JSONPath / functions",
@@ -1099,6 +1276,8 @@ function App() {
         script: "%dw 2.0\noutput application/json\n---\npayload",
         inputMimeType: "application/json",
         outputMimeType: "application/json",
+        outputTarget: "payload",
+        outputVariable: "transformResult",
         variables: {},
         sampleInput: "{}",
       });
@@ -1111,6 +1290,11 @@ function App() {
       ignoreMissing: false, preserveAttributes: true, listType: "Files and Directories",
       sortBy: "Name", sortOrder: "Ascending", eventType: "Created", pollInterval: 5,
       includeExisting: false, postAction: "None", moveTo: "",
+    });
+    if (d.type === "flat") Object.assign(config, {
+      inputSource: "String", filePath: "", fileEncoding: "UTF-8", format: "delimited",
+      delimiter: ",", lineSeparator: "Auto", header: true, rootElement: "records",
+      recordElement: "record", trimValues: true, skipBlankLines: true,
     });
     if (
       d.type === "http_listener" ||
@@ -1134,6 +1318,21 @@ function App() {
       },
       config,
     };
+    if (d.type === "end") {
+      const existingEnd = nodes.find((activity) => activity.type === "end");
+      if (existingEnd) {
+        mutateTask((current) => ({
+          ...current,
+          activities: current.activities.map((activity) => activity.id === existingEnd.id && pos ? { ...activity, position: { x: pos.x, y: pos.y } } : activity),
+          transitions: pos?.connectFrom && pos.connectFrom !== existingEnd.id && !current.transitions.some((transition) => transition.source === pos.connectFrom && transition.target === existingEnd.id)
+            ? [...current.transitions, { id: `transition-${Date.now()}`, source: pos.connectFrom, target: existingEnd.id, type: "success" }]
+            : current.transitions,
+        }));
+        setSelected(existingEnd.id); setSelectedIds([existingEnd.id]); setSelectedEdge(null); setSelectedResource(null); setMenu(null);
+        setLogs([{ level: "INFO", message: "A Task has one End boundary. The existing End activity was selected and moved to the drop position." }]);
+        return;
+      }
+    }
     if (isEventActivity(n)) {
       const existingEvent = nodes.find(isEventActivity);
       if (existingEvent) {
@@ -1209,6 +1408,10 @@ function App() {
     if (!targets.length) return;
     if (targets.some(isEventActivity) && nodes.filter(isEventActivity).every((item) => targets.some((target) => target.id === item.id))) {
       setLogs([{ level: "WARN", message: "A Task must retain one event activity. Add a replacement event to replace this starter." }]);
+      return;
+    }
+    if (targets.some((item) => item.type === "end") && nodes.filter((item) => item.type === "end").every((item) => targets.some((target) => target.id === item.id))) {
+      setLogs([{ level: "WARN", message: "A Task must retain one End activity. Drag End to reposition it instead of deleting it." }]);
       return;
     }
     if (!confirm(targets.length === 1 ? `Delete activity “${targets[0].name}” and its connected transitions?` : `Delete ${targets.length} selected activities and their connected transitions?`)) return;
@@ -1461,6 +1664,14 @@ function App() {
           }),
         }),
         out = await r.json();
+      if (out.status === "stopped") {
+        setDebugState(null);
+        setExecutionOutputs({});
+        setEndpoints([]);
+        setRuntimeState(null);
+        setLogs(out.logs || []);
+        return;
+      }
       setDebugState(out);
       setExecutionOutputs(out.activityOutputs || {});
       setLogs(out.logs || [{ level: "ERROR", message: out.detail }]);
@@ -1475,6 +1686,10 @@ function App() {
           body: JSON.stringify({ action }),
         }),
         out = await r.json();
+      if (out.status === "stopped") {
+        setDebugState(null); setExecutionOutputs({}); setEndpoints([]); setRuntimeState(null); setLogs(out.logs || []);
+        return;
+      }
       setDebugState(out);
       setExecutionOutputs(out.activityOutputs || {});
       setLogs(out.logs || []);
@@ -1488,9 +1703,9 @@ function App() {
       if (debugState?.sessionId) await fetch(`/api/debug/${debugState.sessionId}/action`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "stop" }) });
       const response = await fetch(`/api/projects/${project.id}/stop`, { method: "POST" });
       const stopped = response.ok ? await response.json() : { status: "stopped", logs: [...logs, { level: "INFO", message: `Application ${project.name} stopped by user` }] };
-      setDebugState(null); setBusy(false); setEndpoints([]); setRuntimeState(stopped); setLogs(stopped.logs || []);
+      setDebugState(null); setBusy(false); setEndpoints([]); setExecutionOutputs({}); setRuntimeState(null); setLogs(stopped.logs || []);
     } catch (error: any) {
-      setBusy(false); setDebugState(null); setEndpoints([]);
+      setBusy(false); setDebugState(null); setEndpoints([]); setExecutionOutputs({}); setRuntimeState(null);
       setLogs((current) => [...current, { level: "ERROR", message: error?.message || "Unable to stop execution" }]);
     }
   };
@@ -1979,6 +2194,24 @@ function App() {
         </div>
       </aside>
       <main style={{ "--config-height": `${configHeight}px` } as React.CSSProperties}>
+        <nav className="task-editor-tabs" aria-label="Open task editors">
+          {openTaskIds.map((taskId) => {
+            const openTask = project.tasks.find((item) => item.id === taskId);
+            if (!openTask) return null;
+            const active = taskId === project.active_task_id;
+            return <div key={taskId} className={`task-editor-tab ${active ? "active" : ""}`} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setTaskTabMenu({ taskId, x: event.clientX, y: event.clientY }); }}>
+              <button className="task-tab-title" title={openTask.name} onClick={() => selectTask(taskId)}><Workflow/><span>{openTask.name}</span><small>{openTask.kind === "starter" ? "Starter" : "Sub Task"}</small></button>
+              <button className="task-tab-more" aria-label={`Task tab options for ${openTask.name}`} onClick={(event) => { event.stopPropagation(); const bounds = event.currentTarget.getBoundingClientRect(); setTaskTabMenu({ taskId, x: bounds.right - 8, y: bounds.bottom + 4 }); }}>•••</button>
+              <button className="task-tab-close" aria-label={`Close ${openTask.name} tab`} onClick={(event) => { event.stopPropagation(); closeTaskTabs(taskId, "one"); }}>×</button>
+            </div>;
+          })}
+        </nav>
+        {taskTabMenu && <div className="task-tab-context" style={{ left: taskTabMenu.x, top: taskTabMenu.y }} onPointerDown={(event) => event.stopPropagation()}>
+          <button onClick={() => closeTaskTabs(taskTabMenu.taskId, "one")}>Close Tab</button>
+          <button onClick={() => closeTaskTabs(taskTabMenu.taskId, "others")}>Close Other Tabs</button>
+          <button disabled={openTaskIds.indexOf(taskTabMenu.taskId) === 0} onClick={() => closeTaskTabs(taskTabMenu.taskId, "left")}>Close Tabs to the Left</button>
+          <button disabled={openTaskIds.indexOf(taskTabMenu.taskId) === openTaskIds.length - 1} onClick={() => closeTaskTabs(taskTabMenu.taskId, "right")}>Close Tabs to the Right</button>
+        </div>}
         <div className="canvas-toolbar">
           <span>
             <Activity /> Task Designer{" "}
@@ -2023,7 +2256,13 @@ function App() {
             });
           }}
           onPointerDown={(event) => {
-            if (event.target === event.currentTarget) { setSelectedIds([]); setSelected(""); setSelectedEdge(null); setSelectedResource(null); }
+            const target = event.target as Element;
+            // The visual canvas is mostly the nested canvas-content/SVG rather
+            // than this scrolling element itself. Any blank orchestrator click
+            // should clear the active activity or transition selection.
+            if (!target.closest(".node") && !target.closest(".wires g")) {
+              setSelectedIds([]); setSelected(""); setSelectedEdge(null); setSelectedResource(null);
+            }
           }}
         >
           <div
@@ -2272,7 +2511,7 @@ function App() {
           <summary>EXECUTED PATH OUTPUTS <b>{visible.length}</b></summary>
           {visible.map((record: any) => <details key={record.activityId}>
             <summary><span>{record.name}</span><small>{record.type}</small></summary>
-            <pre>{JSON.stringify(record.logEvent || record.output, null, 2)}</pre>
+            <pre>{formatRuntimeOutput(record)}</pre>
           </details>)}
         </details>})()}
         {logs.filter((l) => monitorMode !== "normal" || l.kind !== "trace").map((l, i) => (
@@ -2951,8 +3190,7 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, th
       </section>
       <section className="launch-actions">
         <span className="launch-eyebrow">BUILD THE CONNECTED ENTERPRISE</span>
-        <h1>Move data. Orchestrate systems. Deliver integrations.</h1>
-        <p>Begin with a clean application or bring a compatible Integration Fabric Studio project from your filesystem.</p>
+        <h1>Mediation,<br /><span>Transformation &amp;</span><br />Deliver Integrations.</h1>
         <div className="launch-buttons">
           <button className="create-project" onClick={() => setCreateOpen(true)}><span><FilePlus2/></span><b>Create new project<small>Start with the standard project structure</small></b><ChevronRight/></button>
           <button className="import-project" onClick={beginImport} disabled={importing}><span><Upload/></span><b>{importing ? "Importing project…" : "Import existing project"}<small>.ifproject, project folder, ZIP or compatible JSON</small></b><ChevronRight/></button>
@@ -2980,6 +3218,7 @@ function Context({
     kafka: { label: "Kafka Connection", description: "Kafka brokers and security" },
     pubsub: { label: "Pub/Sub Connection", description: "Google Cloud messaging" },
     jdbc: { label: "Database Connection", description: "JDBC databases and pools" },
+    snowflake: { label: "Snowflake JDBC Connection", description: "Snowflake authentication, pools and metadata" },
     sap: { label: "SAP ECC Connection", description: "RFC, BAPI and IDoc metadata" },
     sap_tid: { label: "SAP TID Manager", description: "Transactional RFC state" },
   };
@@ -2993,6 +3232,8 @@ function Context({
       />
     );
   const targetFolder = menu.type === "task" ? "tasks" : (menu.type === "resource" || menu.type === "resources-root") ? "resources" : menu.type === "schema" ? "schemas" : menu.type === "property" ? "properties" : menu.type;
+  const explorerMenuTop = Math.max(8, Math.min(menu.y, Math.max(8, window.innerHeight - 240)));
+  const explorerMenuMaxHeight = Math.max(180, window.innerHeight - explorerMenuTop - 8);
   const act = (callback: () => void) => () => { callback(); close(); };
   const item = (label: string, detail: string, Icon: any, callback: () => void, disabled = false) => <button disabled={disabled} onClick={act(callback)}><Icon/><span><b>{label}</b><small>{detail}</small></span></button>;
   const fileCommands = <div className="explorer-context-commands">
@@ -3009,7 +3250,7 @@ function Context({
   return (
     <div
       className={`canvas-menu resource-menu ${menu.type === "resources" ? "connection-create-menu" : ""}`}
-      style={{ left: Math.max(8, Math.min(menu.x, window.innerWidth - 340)), top: Math.max(8, Math.min(menu.y, window.innerHeight - 560)) }}
+      style={{ left: Math.max(8, Math.min(menu.x, window.innerWidth - 340)), top: explorerMenuTop, maxHeight: explorerMenuMaxHeight }}
       onClick={(e) => e.stopPropagation()}
     >
       {(menu.type === "tasks" || menu.type === "task") && (
@@ -3050,6 +3291,7 @@ function Context({
               "kafka",
               "pubsub",
               "jdbc",
+              "snowflake",
               "sap",
               "sap_tid",
             ] as const
@@ -3131,6 +3373,26 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "username", label: "Username" }, { key: "password", label: "Password", password: true },
     { key: "timeoutSeconds", label: "Connection timeout (seconds)" },
     { key: "minimumPoolSize", label: "Minimum pool size" }, { key: "maximumPoolSize", label: "Maximum pool size" },
+  ],
+  snowflake: [
+    { key: "mode", label: "Runtime mode", options: ["external", "mock"] },
+    { key: "authenticationType", label: "Authentication type", options: ["Username/Password", "Federated Authentication and SSO", "OAuth", "Key Pair Authentication"] },
+    { key: "provider", label: "Authentication provider", options: ["Snowflake", "Okta"] },
+    { key: "account", label: "Account [account.region.platform]" },
+    { key: "username", label: "Snowflake username" }, { key: "password", label: "Snowflake password", password: true, when: (config: any) => config.authenticationType === "Username/Password" },
+    { key: "oktaTokenEndpoint", label: "Okta token endpoint", when: (config: any) => config.authenticationType === "OAuth" && config.provider === "Okta" },
+    { key: "oktaUsername", label: "Okta username", when: (config: any) => config.authenticationType === "Federated Authentication and SSO" && config.provider === "Okta" },
+    { key: "oktaPassword", label: "Okta password", password: true, when: (config: any) => config.authenticationType === "Federated Authentication and SSO" && config.provider === "Okta" },
+    { key: "oktaEndpointUrl", label: "Okta endpoint URL", when: (config: any) => config.authenticationType === "Federated Authentication and SSO" && config.provider === "Okta" },
+    { key: "clientId", label: "OAuth client ID", when: (config: any) => config.authenticationType === "OAuth" }, { key: "clientSecret", label: "OAuth client secret", password: true, when: (config: any) => config.authenticationType === "OAuth" },
+    { key: "scope", label: "OAuth scope [session:role:<role>]", when: (config: any) => config.authenticationType === "OAuth" }, { key: "authorizationCode", label: "Authorization code", password: true, when: (config: any) => config.authenticationType === "OAuth" && config.provider === "Snowflake" },
+    { key: "redirectUri", label: "OAuth redirect URI", when: (config: any) => config.authenticationType === "OAuth" && config.provider === "Snowflake" }, { key: "accessToken", label: "OAuth access token", password: true, when: (config: any) => config.authenticationType === "OAuth" },
+    { key: "privateKeyFile", label: "Private key file", when: (config: any) => config.authenticationType === "Key Pair Authentication" }, { key: "privateKeyPassphrase", label: "Private key passphrase", password: true, when: (config: any) => config.authenticationType === "Key Pair Authentication" },
+    { key: "loginTimeoutSeconds", label: "Login timeout (seconds)" },
+    { key: "warehouse", label: "Warehouse" }, { key: "database", label: "Default database" }, { key: "schema", label: "Default schema" },
+    { key: "role", label: "Default role" }, { key: "otherProperties", label: "Other properties [Name=Value;]" },
+    { key: "minimumConnections", label: "Minimum connections" }, { key: "maximumConnections", label: "Maximum connections" },
+    { key: "maximumConnectionWaitSeconds", label: "Maximum connection wait (seconds)" }, { key: "serviceThreads", label: "Service number of threads" },
   ],
   http: [
     { key: "connectorMode", label: "Connector mode", options: ["server", "client", "both"] },
@@ -3216,16 +3478,19 @@ function connectionDefaults(type: string) {
   if (type === "http") Object.assign(values, { connectorMode: "both", scheme: "http", authentication: "None", tlsEnabled: "false", clientAuthentication: "none", tlsVersion: "TLSv1.2", verifyTls: "true" });
   if (type === "sap") Object.assign(values, { mode: "mock", release: "current", connectionType: "dedicated" });
   if (type === "jdbc") values.driver = "postgresql";
+  if (type === "snowflake") Object.assign(values, { mode: "external", authenticationType: "Username/Password", provider: "Snowflake" });
   return values;
 }
 function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }: any) {
   const fields = connectionFieldSets[type] || [];
   const testOutputRef = useRef<HTMLDivElement>(null);
   const idocBrowserRef = useRef<HTMLElement>(null);
+  const snowflakeBrowserRef = useRef<HTMLElement>(null);
   const [draft, setDraft] = useState<any>(() => initial ? structuredClone(initial) : { id: `${type}-${Date.now()}`, type, name: `${type === "sap" ? "SAP ECC" : type.toUpperCase()} Connection`, config: connectionDefaults(type) });
   const [status, setStatus] = useState(""), [statusOk, setStatusOk] = useState<boolean | null>(null), [copied, setCopied] = useState(false);
   const [target, setTarget] = useState<string | null>(null), [propertySearch, setPropertySearch] = useState("");
   const [idocs, setIdocs] = useState<any[]>([]), [idocSearch, setIdocSearch] = useState(""), [idocLoading, setIdocLoading] = useState(false), [idocError, setIdocError] = useState("");
+  const [snowflakeEntities, setSnowflakeEntities] = useState<any[]>([]), [snowflakeSearch, setSnowflakeSearch] = useState(""), [snowflakeLoading, setSnowflakeLoading] = useState(false), [snowflakeError, setSnowflakeError] = useState("");
   const set = (key: string, value: any) => setDraft((current: any) => ({ ...current, config: { ...current.config, [key]: value } }));
   const connectorPrefix = type === "sap_tid" ? "connections.sapTid." : `connections.${type}.`;
   const visibleProperties = [...(properties as Property[])]
@@ -3263,6 +3528,29 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
     } catch (error: any) { setIdocError(error?.message || "IDoc metadata download failed"); }
     finally { setIdocLoading(false); }
   };
+  const fetchSnowflakeEntities = async () => {
+    setSnowflakeLoading(true); setSnowflakeError("");
+    requestAnimationFrame(() => snowflakeBrowserRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+    try {
+      const response = await fetch("/api/snowflake/entities", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resource: runtimeResource(), database: draft.config.database, schema: draft.config.schema, pattern: snowflakeSearch || "%" }) });
+      const output = await response.json();
+      if (!response.ok) throw new Error(output.detail || "Snowflake entity discovery failed");
+      setSnowflakeEntities(output.entities || []);
+    } catch (error: any) { setSnowflakeError(error?.message || "Snowflake entity discovery failed"); }
+    finally { setSnowflakeLoading(false); }
+  };
+  const selectSnowflakeEntity = async (item: any) => {
+    setSnowflakeLoading(true); setSnowflakeError("");
+    try {
+      const response = await fetch("/api/snowflake/entities", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resource: runtimeResource(), database: item.database, schema: item.schema, entity: item.name }) });
+      const output = await response.json();
+      if (!response.ok) throw new Error(output.detail || "Snowflake metadata download failed");
+      const selected = output.entity;
+      setDraft((current: any) => ({ ...current, config: { ...current.config, entityCatalog: [...(current.config.entityCatalog || []).filter((entry: any) => !(entry.database === selected.database && entry.schema === selected.schema && entry.name === selected.name)), selected] } }));
+    } catch (error: any) { setSnowflakeError(error?.message || "Snowflake metadata download failed"); }
+    finally { setSnowflakeLoading(false); }
+  };
+  const clearSnowflakeMetadata = () => setDraft((current: any) => ({ ...current, config: { ...current.config, entityCatalog: [] } }));
   const test = async () => {
     setStatus("Testing…"); setStatusOk(null); setCopied(false);
     try {
@@ -3283,7 +3571,7 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
     return () => cancelAnimationFrame(frame);
   }, [status, statusOk]);
   return <div className="modal-backdrop"><div className="runtime-modal connection-dialog">
-    <header><span className="connection-dialog-title"><Cable/><span><b>{initial ? "Edit" : "Create"} {type === "sap" ? "SAP ECC" : type.toUpperCase()} shared connection</b><small>{initial ? "Update the reusable project connection" : "Reusable across every task in this project"}</small></span></span><span className="connection-header-actions">{type === "sap" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button>}<button aria-label="Close" onClick={onClose}>×</button></span></header>
+    <header><span className="connection-dialog-title"><Cable/><span><b>{initial ? "Edit" : "Create"} {type === "sap" ? "SAP ECC" : type === "snowflake" ? "Snowflake JDBC" : type.toUpperCase()} shared connection</b><small>{initial ? "Update the reusable project connection" : "Reusable across every task in this project"}</small></span></span><span className="connection-header-actions">{type === "sap" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button>}{type === "snowflake" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchSnowflakeEntities} disabled={snowflakeLoading}><Download/> {snowflakeLoading ? "Retrieving…" : "Retrieve entities"}</button>}<button aria-label="Close" onClick={onClose}>×</button></span></header>
     <main>
       <label>Name<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>
       {target && <section className="connection-property-picker">
@@ -3291,8 +3579,9 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
         <div className="property-picker-search"><Search/><input autoFocus aria-label="Find connection property" value={propertySearch} onChange={(event) => setPropertySearch(event.target.value)} placeholder="Search connector properties…"/></div>
         <div className="property-browser-list">{visibleProperties.map((item) => <button key={item.key} onClick={() => { set(target, propertyExpression(item.key)); setTarget(null); setPropertySearch(""); }}><span><b>{item.key}</b><small>{item.data_type}</small></span><code>{item.data_type === "password" ? "••••••" : String(item.value)}</code></button>)}{!visibleProperties.length && <p>No matching connector properties.</p>}</div>
       </section>}
-      {fields.map((field: any) => <label key={field.key}>{field.label}{field.options ? <select value={draft.config[field.key] ?? ""} onChange={(event) => set(field.key, event.target.value)}>{field.options.map((option: string) => <option key={option} value={option}>{option}</option>)}</select> : <span className="property-field-wrap"><input type={field.password && !String(draft.config[field.key] || "").startsWith("${") ? "password" : "text"} value={draft.config[field.key] ?? ""} onChange={(event) => set(field.key, event.target.value)}/><button type="button" title={`Browse properties for ${field.label}`} aria-label={`Browse properties for ${field.label}`} onClick={() => { setTarget(field.key); setPropertySearch(""); }}><Braces/></button></span>}</label>)}
+      {fields.filter((field: any) => !field.when || field.when(draft.config)).map((field: any) => <label key={field.key}>{field.label}{field.options ? <select value={draft.config[field.key] ?? ""} onChange={(event) => set(field.key, event.target.value)}>{field.options.map((option: string) => <option key={option} value={option}>{option}</option>)}</select> : <span className="property-field-wrap"><input type={field.password && !String(draft.config[field.key] || "").startsWith("${") ? "password" : "text"} value={draft.config[field.key] ?? ""} onChange={(event) => set(field.key, event.target.value)}/><button type="button" title={`Browse properties for ${field.label}`} aria-label={`Browse properties for ${field.label}`} onClick={() => { setTarget(field.key); setPropertySearch(""); }}><Braces/></button></span>}</label>)}
       {type === "sap" && <section ref={idocBrowserRef} className="sap-idoc-browser"><header><span><b>SAP IDOC METADATA</b><small>Target release: {draft.config.release === "720" ? "SAP 7.20" : draft.config.release === "730" ? "SAP 7.30" : "Current / auto-detect"}. Retrieve and store the matching schema in this shared connection.</small></span><button type="button" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button></header><div className="sap-idoc-search"><Search/><input value={idocSearch} onChange={(event) => setIdocSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && fetchIdocs()} placeholder="Filter IDoc types, for example ORDERS…"/></div>{idocError && <p className="sap-idoc-error">{idocError}</p>}<div className="sap-idoc-list">{idocs.map((item) => { const selected = draft.config.selectedIdoc?.idocType === item.idocType; return <button type="button" className={selected ? "selected" : ""} key={`${item.idocType}-${item.release}`} onClick={() => selectIdoc(item)}><span><b>{item.idocType}</b><small>{item.description || "SAP IDoc"}</small></span><code>{item.extensionType || "basic"} · {item.release || "current"}</code>{selected && <i>Schema fetched</i>}</button>; })}{!idocs.length && <p>Test the SAP connection, then retrieve the available IDoc types.</p>}</div>{draft.config.selectedIdoc && <footer><CheckCircle2/><span><b>{draft.config.selectedIdoc.idocType}</b><small>{draft.config.selectedIdoc.segments?.length || 0} metadata rows · SAP release {draft.config.selectedIdoc.release || draft.config.release} · schema stored with shared connection</small></span></footer>}</section>}
+      {type === "snowflake" && <section ref={snowflakeBrowserRef} className="sap-idoc-browser snowflake-entity-browser"><header><span><b>SNOWFLAKE SCHEMA METADATA</b><small>Retrieve TABLE and VIEW entities from the configured database and schema, then select each entity whose column metadata should be stored.</small></span><button type="button" onClick={fetchSnowflakeEntities} disabled={snowflakeLoading}><Download/> {snowflakeLoading ? "Retrieving…" : "Retrieve entities"}</button></header><div className="sap-idoc-search"><Search/><input value={snowflakeSearch} onChange={(event) => setSnowflakeSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && fetchSnowflakeEntities()} placeholder="Entity name pattern, for example ORDER_%…"/></div>{snowflakeError && <p className="sap-idoc-error">{snowflakeError}</p>}<div className="sap-idoc-list">{snowflakeEntities.map((item) => { const stored = (draft.config.entityCatalog || []).some((entry: any) => entry.database === item.database && entry.schema === item.schema && entry.name === item.name); return <button type="button" className={stored ? "selected" : ""} key={`${item.database}.${item.schema}.${item.name}`} onClick={() => selectSnowflakeEntity(item)}><span><b>{item.name}</b><small>{item.database}.{item.schema}</small></span><code>{item.entityType || "TABLE"}</code>{stored && <i>Metadata fetched</i>}</button>; })}{!snowflakeEntities.length && <p>Test the Snowflake connection, then retrieve tables and views.</p>}</div>{!!draft.config.entityCatalog?.length && <footer><CheckCircle2/><span><b>{draft.config.entityCatalog.length} entities stored</b><small>{draft.config.entityCatalog.reduce((count: number, item: any) => count + (item.columns?.length || 0), 0)} columns available to Snowflake activity input/output editors</small></span><button type="button" onClick={clearSnowflakeMetadata}>Remove metadata</button></footer>}</section>}
       {status && <div ref={testOutputRef} role="status" aria-live="polite" className={`connection-test-output ${statusOk === true ? "success" : statusOk === false ? "failure" : "pending"}`}><header><span><b>{statusOk === true ? "CONNECTION SUCCEEDED" : statusOk === false ? "CONNECTION FAILED" : "CONNECTION TEST"}</b><small>Selectable test response</small></span><button onClick={copyStatus}><ClipboardCopy/> {copied ? "Copied" : "Copy output"}</button></header><textarea aria-label="Connection test output" readOnly value={status} onFocus={(event) => event.currentTarget.select()}/></div>}
     </main>
     <footer><button onClick={test}>Test Connection</button><button onClick={onClose}>Cancel</button><button className="primary" onClick={() => onCreate(draft)}>{initial ? "Save changes" : "Create connection"}</button></footer>

@@ -9,4 +9,6 @@ paramiko==3.5.1
 # stomp.py>=8.2       # TIBCO EMS with the EMS STOMP service enabled
 # confluent-kafka>=2.6
 # google-cloud-pubsub>=2.25
+snowflake-connector-python>=3.16,<4  # Snowflake JDBC-equivalent external runtime
+cryptography>=44                    # Snowflake key-pair authentication
 # pyrfc>=3.3          # also requires the separately licensed SAP NetWeaver RFC SDK

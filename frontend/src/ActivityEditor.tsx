@@ -32,6 +32,7 @@ type Field = {
     | "resource"
     | "artifact"
     | "idoc"
+    | "snowflake_entity"
     | "task";
   options?: string[];
   resourceType?: string;
@@ -86,28 +87,38 @@ const mapperFunctions = [
   "concat", "substring", "substringBefore", "substringAfter", "stringLength", "normalizeSpace", "upperCase", "lowerCase", "translate", "trim", "replace", "matches", "tokenize", "startsWith", "endsWith", "contains", "compare", "codepointsToString", "stringToCodepoints", "format", "parseDate", "formatDate", "formatDateTime", "currentDate", "currentTime", "currentDateTime", "timezoneFromDateTime", "adjustDateTimeToTimezone", "addDays", "addMonths", "dateDifference", "yearsFromDuration", "monthsFromDuration", "daysFromDuration", "hoursFromDuration", "minutesFromDuration", "secondsFromDuration", "number", "integer", "decimal", "round", "roundHalfToEven", "floor", "ceiling", "abs", "min", "max", "sum", "average", "count", "boolean", "not", "true", "false", "ifThenElse", "coalesce", "exists", "empty", "default", "distinctValues", "deepEqual", "sort", "reverse", "subsequence", "insertBefore", "remove", "first", "last", "position", "indexOf", "join", "split", "filter", "map", "reduce", "forEach", "forEachGroup", "localName", "namespaceUri", "name", "nodeName", "root", "path", "data", "nil", "isNil", "jsonParse", "jsonRender", "xmlParse", "xmlRender", "base64Encode", "base64Decode", "hexEncode", "hexDecode", "urlEncode", "urlDecode", "uuid", "hash", "xpath", "jsonPath", "property", "processContext", "taskOutput", "lookup", "crossReference", "trace", "error"
 ];
 
-type StructuredMapping = { $rule: "for-each" | "for-each-group" | "if" | "when-otherwise"; source: any; select?: string; groupBy?: string; condition?: string; otherwise?: any; duplicateOf?: string };
+type MappingWhen = { condition: string; source: any };
+type StructuredMapping = { $rule: "for-each" | "for-each-group" | "if" | "when-otherwise" | "choose"; source?: any; select?: string; groupBy?: string; condition?: string; otherwise?: any; whens?: MappingWhen[]; duplicateOf?: string };
 const mappingSource = (value: any) => value && typeof value === "object" && ("$rule" in value || "operator" in value) ? (value.select || value.source) : value;
 
-function MappingContextMenu({ menu, value, close, change, remove, duplicate, canDuplicate = false }: any) {
-  const panel = useRef<HTMLDivElement>(null), source = String(mappingSource(value) || ""), [mode, setMode] = useState<StructuredMapping["$rule"] | "">(""), [select, setSelect] = useState(source), [condition, setCondition] = useState(source ? `exists(${source})` : ""), [groupBy, setGroupBy] = useState(""), [otherwise, setOtherwise] = useState("");
+function MappingContextMenu({ menu, value, close, change, remove, duplicate, canDuplicate = false, required = false }: any) {
+  const panel = useRef<HTMLDivElement>(null), source = String(mappingSource(value) || ""), [mode, setMode] = useState<StructuredMapping["$rule"] | "">(""), [select, setSelect] = useState(source), [condition, setCondition] = useState(source ? `exists(${source})` : ""), [groupBy, setGroupBy] = useState(""), [otherwise, setOtherwise] = useState(""), [whens, setWhens] = useState<MappingWhen[]>([{ condition: source ? `exists(${source})` : "true()", source }]);
   useEffect(() => {
     if (!menu) return;
     const dismiss = (event: PointerEvent) => { if (!panel.current?.contains(event.target as globalThis.Node)) close(); };
     window.addEventListener("pointerdown", dismiss);
     return () => window.removeEventListener("pointerdown", dismiss);
   }, [menu, close]);
-  useEffect(() => { if (menu) { const next = String(mappingSource(value) || ""); setMode((value?.operator || value?.$rule || "") as StructuredMapping["$rule"] | ""); setSelect(next); setCondition(value?.condition || (next ? `exists(${next})` : "")); setGroupBy(value?.groupBy || ""); setOtherwise(value?.otherwise || ""); } }, [menu, value]);
+  useEffect(() => { if (menu) { const next = String(mappingSource(value) || ""); let storedWhens = value?.whens; if (!storedWhens?.length && (value?.operator || value?.$rule) === "choose") { try { storedWhens = JSON.parse(String(value?.source || "[]")); } catch { storedWhens = []; } } setMode((value?.operator || value?.$rule || "") as StructuredMapping["$rule"] | ""); setSelect(next); setCondition(value?.condition || (next ? `exists(${next})` : "")); setGroupBy(value?.groupBy || ""); setOtherwise(value?.otherwise || ""); setWhens(storedWhens?.length ? storedWhens : [{ condition: next ? `exists(${next})` : "true()", source: next }]); } }, [menu, value]);
   if (!menu) return null;
   const apply = (next: StructuredMapping) => { change(next); close(); };
-  const commit = () => mode && select.trim() && apply({ $rule: mode, source: select.trim(), select: select.trim(), condition, groupBy, otherwise });
+  const commit = () => {
+    if (!mode) return;
+    if (mode === "choose") {
+      const branches = whens.filter((branch) => branch.condition.trim() && String(branch.source ?? "").trim());
+      if (branches.length) apply({ $rule: "choose", source: JSON.stringify(branches), whens: branches, otherwise });
+      return;
+    }
+    if (select.trim()) apply({ $rule: mode, source: select.trim(), select: select.trim(), condition, groupBy, otherwise });
+  };
   const content = <div ref={panel} className="mapping-context-menu" style={{ left: Math.max(8, Math.min(menu.x, window.innerWidth - 350)), top: Math.max(8, Math.min(menu.y, window.innerHeight - 455)) }} onPointerDown={(event) => event.stopPropagation()}>
     <header><Braces/><span><b>{menu.label}</b><small>Mapping statement</small></span></header>
     <button className={mode === "for-each" ? "selected" : ""} onClick={() => setMode("for-each")}>For Each…<small>Iterate a repeating source value</small></button>
     <button className={mode === "for-each-group" ? "selected" : ""} onClick={() => setMode("for-each-group")}>For Each Group…<small>Group repeated values before mapping</small></button>
-    <button className={mode === "if" ? "selected" : ""} onClick={() => setMode("if")}>If…<small>Emit this target only when true</small></button>
+    <button disabled={required} className={mode === "if" ? "selected" : ""} onClick={() => setMode("if")}>If…<small>{required ? "Required schema fields cannot be conditional" : "Emit this target only when true"}</small></button>
     <button className={mode === "when-otherwise" ? "selected" : ""} onClick={() => setMode("when-otherwise")}>When / Otherwise…<small>Choose between two mapping values</small></button>
-    {mode && <section className="mapping-rule-editor"><label>Source expression<input value={select} placeholder="Drag a source first, or enter its expression" onChange={(event) => setSelect(event.target.value)}/></label>{mode === "for-each-group" && <label>Group-by child path<input value={groupBy} placeholder="customerId" onChange={(event) => setGroupBy(event.target.value)}/></label>}{(mode === "if" || mode === "when-otherwise") && <label>Condition<input value={condition} onChange={(event) => setCondition(event.target.value)}/></label>}{mode === "when-otherwise" && <label>Otherwise value/expression<input value={otherwise} onChange={(event) => setOtherwise(event.target.value)}/></label>}<div><button onClick={() => setMode("")}>Cancel</button><button className="apply" disabled={!select.trim()} onClick={commit}>Apply mapping</button></div>{!select.trim() && <small>Select or drag an actual source sequence; the mapper no longer substitutes the ambiguous $&#123;last&#125; expression.</small>}</section>}
+    <button className={mode === "choose" ? "selected" : ""} onClick={() => setMode("choose")}>Choose…<small>Evaluate multiple When branches, then Otherwise</small></button>
+    {mode && <section className="mapping-rule-editor">{mode !== "choose" && <label>Source expression<input value={select} placeholder="Drag a source first, or enter its expression" onChange={(event) => setSelect(event.target.value)}/></label>}{mode === "for-each-group" && <label>Group-by child path<input value={groupBy} placeholder="customerId" onChange={(event) => setGroupBy(event.target.value)}/></label>}{(mode === "if" || mode === "when-otherwise") && <label>Condition<input value={condition} onChange={(event) => setCondition(event.target.value)}/></label>}{mode === "when-otherwise" && <label>Otherwise value/expression<input value={otherwise} onChange={(event) => setOtherwise(event.target.value)}/></label>}{mode === "choose" && <div className="mapping-choose-editor">{whens.map((branch, index) => <div key={index}><b>WHEN {index + 1}</b><input aria-label={`When ${index + 1} condition`} value={branch.condition} placeholder="${input.status} = 'ACTIVE'" onChange={(event) => setWhens((items) => items.map((item, current) => current === index ? { ...item, condition: event.target.value } : item))}/><input aria-label={`When ${index + 1} value`} value={String(branch.source ?? "")} placeholder="Value or source expression" onChange={(event) => setWhens((items) => items.map((item, current) => current === index ? { ...item, source: event.target.value } : item))}/><button disabled={whens.length === 1} onClick={() => setWhens((items) => items.filter((_, current) => current !== index))}>Remove</button></div>)}<button onClick={() => setWhens((items) => [...items, { condition: "", source: "" }])}><Plus/> Add When</button><label>Otherwise value/expression<input value={otherwise} onChange={(event) => setOtherwise(event.target.value)}/></label></div>}<div><button onClick={() => setMode("")}>Cancel</button><button className="apply" disabled={mode === "choose" ? !whens.some((branch) => branch.condition.trim() && String(branch.source ?? "").trim()) : !select.trim()} onClick={commit}>Apply mapping</button></div>{mode !== "choose" && !select.trim() && <small>Select or drag an actual source sequence; the mapper no longer substitutes the ambiguous $&#123;last&#125; expression.</small>}</section>}
     <button disabled={!canDuplicate && !value} onClick={() => { if (duplicate) duplicate(); else change(typeof value === "object" ? { ...value, duplicateOf: `${menu.path}-${Date.now()}` } : { $rule: "if", source: value, condition: "true()", duplicateOf: `${menu.path}-${Date.now()}` }); close(); }}>Duplicate {canDuplicate ? "repeating occurrence" : "mapping"}<small>{canDuplicate ? "Create another target occurrence with its complete child mapping tree" : "Create an independently editable statement"}</small></button>
     <button disabled={!value} className="danger" onClick={() => { remove(); close(); }}>Delete mapping<small>Remove the target expression</small></button>
   </div>;
@@ -629,6 +640,48 @@ export function activityContract(n: any): Contract {
         },
       ],
     };
+  if (n.type === "snowflake") {
+    const commonConfiguration: Field[] = [
+      { ...f("resourceId", "Snowflake JDBC connection", "resource"), resourceType: "snowflake", required: true },
+      f("entity", "Entity", "snowflake_entity", "Tables and views retrieved in the Snowflake connection Schema section."),
+      f("timeout", "Activity timeout (seconds)", "number"),
+      f("overrideDatabaseName", "Override database name"), f("overrideSchemaName", "Override schema name"),
+      f("interpretEmptyStringAsNull", "Interpret empty string as NULL", "boolean"),
+    ];
+    const documentedErrors = [
+      { type: "SNOWFLAKE_CONNECTION", description: "The Snowflake shared resource or connection pool is unavailable." },
+      { type: "SNOWFLAKE_DATABASE_JDBC-500005", description: "Snowflake failed to create a prepared statement." },
+      { type: "SNOWFLAKE_DATABASE_JDBC-500007", description: "Snowflake failed to bind prepared-statement parameters." },
+      { type: "SNOWFLAKE_DATABASE_JDBC-500009", description: "Snowflake failed to execute the generated query." },
+      { type: "SNOWFLAKE_DATABASE_JDBC-500013", description: "The activity could not generate its structured output." },
+    ];
+    if (op === "query") return {
+      configuration: [...commonConfiguration, f("statement", "Snowflake SELECT statement", "textarea"), f("preparedParameters", "Prepared parameters [name:type]"), f("maximumRows", "Maximum rows (0 retrieves all)", "number")],
+      input: [d("parameters", "Prepared statement parameters", "object")],
+      output: [d("rows", "Query result records", "array"), d("rowCount", "Rows returned", "integer")],
+      errors: [...documentedErrors, { type: "SNOWFLAKE_DATABASE_JDBC-500014", description: "Maximum Rows is negative." }],
+    };
+    if (op === "insert") return {
+      configuration: [...commonConfiguration, f("createTableFromXsd", "Create table from XSD", "boolean"), f("schemaId", "Table XSD/schema"), f("tableName", "Table name"), f("valueColumns", "Values columns"), f("batchSize", "Batch size", "number"), f("faultOnBatchFailure", "Fault on batch failure", "boolean"), f("merge", "Merge existing records", "boolean"), f("mergeOnColumns", "Merge on columns")],
+      input: [d("records", "Rows to insert", "array", true)],
+      output: [d("rowsAttempted", "Rows attempted", "integer"), d("rowsAffected", "Rows affected", "integer"), d("batchFailures", "Batch failure details", "array")],
+      errors: [...documentedErrors, { type: "SNOWFLAKE_DATABASE_JDBC-500016", description: "One or more insert batches failed." }, { type: "SNOWFLAKE_DATABASE_JDBC-500022", description: "Schema or table creation failed." }],
+    };
+    if (op === "update") return {
+      configuration: [...commonConfiguration, f("valueColumns", "SET / Values columns"), f("parameterColumns", "WHERE / Parameter columns"), f("merge", "Insert when record does not exist", "boolean"), f("mergeOnColumns", "Merge on columns"), f("createTableIfNoneExists", "Create table if none exists", "boolean")],
+      input: [d("records", "Rows containing values and parameters", "array", true)], output: [d("rowsAffected", "Rows affected", "integer")], errors: documentedErrors,
+    };
+    if (op === "delete") return {
+      configuration: [...commonConfiguration, f("parameterColumns", "WHERE / Parameter columns"), f("merge", "Merge when record does not exist", "boolean"), f("mergeOnColumns", "Merge on columns"), f("createTableIfNoneExists", "Create table if none exists", "boolean")],
+      input: [d("records", "Rows containing delete parameters", "array")], output: [d("rowsAffected", "Rows affected", "integer")], errors: documentedErrors,
+    };
+    return {
+      configuration: [...commonConfiguration, f("createTableFromXsd", "Create table from XSD", "boolean"), f("schemaId", "Table XSD/schema"), f("tableName", "Table name"), { ...f("stageType", "Stage type", "select"), options: ["UserStage", "TableStage", "NamedStage", "AmazonS3"] }, f("namedStage", "Named stage / storage integration stage"), { ...f("fileFormat", "Amazon S3 file format", "select"), options: ["DelimitedFiles", "JSON", "AVRO", "ORC", "PARQUET", "XML"] }, f("validationMode", "Validation mode", "boolean"), f("purgeStageFiles", "Purge stage files", "boolean"), f("compressData", "Compress internal-stage data", "boolean"), { ...f("onError", "On error", "select"), options: ["CONTINUE", "SKIP_FILE", "SKIP_FILE_<num>", "SKIP_FILE_<num>%", "ABORT_STATEMENT"] }, f("skipFileErrorCount", "Skip file at error count", "number"), f("skipFileErrorPercentage", "Skip file at error percentage", "number"), f("merge", "Merge loaded records", "boolean"), f("mergeOnColumns", "Merge on columns")],
+      input: [d("records", "Rows for an internal stage", "array"), d("filePath", "Local file for an internal stage", "string"), d("loadOptions", "Stage load options", "object")],
+      output: [d("loadResults", "Per-file load results", "array"), d("loadResults.FILE", "Source file", "string"), d("loadResults.STATUS", "Load status", "string"), d("loadResults.ROWS_PARSED", "Rows parsed", "integer"), d("loadResults.ROWS_LOADED", "Rows loaded", "integer"), d("loadResults.ERRORS_SEEN", "Errors seen", "integer"), d("loadResults.FIRST_ERROR", "First error", "string"), d("loadResults.FIRST_ERROR_LINE", "First error line", "integer"), d("loadResults.FIRST_ERROR_CHARACTER", "First error character", "integer"), d("loadResults.FIRST_ERROR_COLUMN_NAME", "First error column", "string")],
+      errors: [...documentedErrors, { type: "SNOWFLAKE_DATABASE_JDBC-500018", description: "Uploading data to the Snowflake stage failed." }, { type: "SNOWFLAKE_DATABASE_JDBC-500020", description: "Bulk-load validation found invalid data." }],
+    };
+  }
   if (n.type === "xml" || n.type === "json" || n.type === "flat") {
     const format = n.type.toUpperCase();
     const parsing = op === "parse";
@@ -647,11 +700,20 @@ export function activityContract(n: any): Contract {
                 ...(parsing ? [{ ...f("duplicateKeyPolicy", "Duplicate keys", "select"), options: ["Last wins", "First wins", "Error"] }] : [{ ...f("rootStyle", "JSON root", "select"), options: ["With root", "Anonymous"] }, f("prettyPrint", "Pretty print", "boolean"), f("indent", "Indent spaces", "number"), f("asciiOnly", "Escape non-ASCII characters", "boolean"), f("omitNulls", "Omit null fields", "boolean")]),
               ]
             : [
+                ...(parsing ? [
+                  { ...f("inputSource", "Input source", "select"), options: ["String", "File path"] },
+                  f("filePath", "Input file path", "text", "Read the formatted data directly from this local runtime path when Input source is File path."),
+                  f("fileEncoding", "File encoding", "text", "Defaults to UTF-8 with optional BOM detection."),
+                  f("rootElement", "Output XML root element"),
+                  f("recordElement", "Output XML record element"),
+                ] : []),
                 { ...f("format", "Format", "select"), options: ["delimited", "fixed"] },
                 f("delimiter", "Column separator"),
                 { ...f("separatorRule", "Multi-character separator rule", "select"), options: ["single", "any-character"] },
                 { ...f("lineSeparator", "Line separator", "select"), options: ["Auto", "LF", "CRLF", "CR"] },
                 f("header", "First row is header", "boolean"),
+                f("fields", "Field names", "text", "Comma-separated names used when the input has no header. An attached schema supplies these automatically."),
+                f("fieldTypes", "Field data types", "text", "Optional comma-separated XML schema types such as string, integer, decimal, and boolean."),
                 f("widths", "Fixed field widths"),
                 f("fillCharacter", "Fixed-width fill character"),
                 f("strictColumns", "Require exact column count", "boolean"),
@@ -660,9 +722,11 @@ export function activityContract(n: any): Contract {
                 f("includeFinalLineSeparator", "Append final line separator", "boolean"),
               ]),
       ],
-      input: n.type === "xml" && parsing ? [d("xmlString", "XML text", "string"), d("xmlBinary", "XML binary/base64", "binary"), d("forceEncoding", "Forced encoding")] : n.type === "xml" ? [d("value", "XML schema tree", "object", true)] : n.type === "json" && parsing ? [d("jsonString", "JSON text", "string", true)] : n.type === "json" ? [d("value", "JSON schema tree", "object", true)] : [d(parsing ? "text" : "records", parsing ? "Formatted text" : "Data records", parsing ? "string" : "array", true)],
+      input: n.type === "xml" && parsing ? [d("xmlString", "XML text", "string"), d("xmlBinary", "XML binary/base64", "binary"), d("forceEncoding", "Forced encoding")] : n.type === "xml" ? [d("value", "XML schema tree", "object", true)] : n.type === "json" && parsing ? [d("jsonString", "JSON text", "string", true)] : n.type === "json" ? [d("value", "JSON schema tree", "object", true)] : parsing ? [d("text", "Formatted data string", "string"), d("filePath", "Direct file path", "string")] : [d("records", "Data records", "array", true)],
       output: parsing
-        ? [d(n.type === "flat" ? "records" : "value", "Parsed schema tree", n.type === "flat" ? "array" : "object")]
+        ? n.type === "json"
+          ? [d("value", "Parsed JSON value", "json")]
+          : [d("xml", n.type === "flat" ? "Parsed data XML" : "Parsed XML", "xml")]
         : [d(n.type === "xml" ? "xmlString" : n.type === "json" ? "jsonString" : "text", `Rendered ${format} text`, "string")],
       errors: [
         {
@@ -1092,6 +1156,11 @@ function resolvedActivityContract(node: any, task: any, tasks: any[], schemas: a
       : schemaFields;
     return parsing ? { ...contract, output: fields } : { ...contract, input: fields };
   }
+  if (node.type === "snowflake" && node.config?.entityMetadata?.columns?.length) {
+    const columns = node.config.entityMetadata.columns.map((column: any) => d(column.name, column.name, column.xsdType || "string", !!column.notNull));
+    if (node.config.operation === "query") return { ...contract, output: [d("rows", "Query result records", "array"), ...columns.map((field: DataField) => ({ ...field, key: `rows.${field.key}` })), d("rowCount", "Rows returned", "integer")] };
+    if (["insert", "update", "delete"].includes(node.config.operation)) return { ...contract, input: [d("records", "Snowflake records", "array"), ...columns.map((field: DataField) => ({ ...field, key: `records.${field.key}` }))] };
+  }
   if (node.type === "start") {
     const fields = boundaryFields(task, "start", schemas);
     return fields.length ? { ...contract, input: [], output: fields } : contract;
@@ -1128,7 +1197,7 @@ function runtimeMappableInputs(node: any, contract: Contract): DataField[] {
   const existing = new Set(contract.input.map((field) => field.key));
   const inferred = (field: Field) => field.type === "number" ? "number" : field.type === "boolean" ? "boolean" : "string";
   const dynamic = contract.configuration
-    .filter((field) => !existing.has(field.key) && !["resource", "task", "idoc"].includes(field.type || "text"))
+    .filter((field) => !existing.has(field.key) && !["resource", "task", "idoc", "snowflake_entity"].includes(field.type || "text"))
     .map((field) => d(field.key, field.label, inferred(field), !!field.required, field.help));
   return [...contract.input, ...dynamic];
 }
@@ -1147,6 +1216,7 @@ const activityDocumentation: Record<string, { summary: string; behavior: string;
   ftp: { summary: "Performs the selected FTP operation through a shared FTP connection.", behavior: "Connection defaults come from the resource; paths, names, content, and transfer settings may be mapped dynamically for each invocation." },
   sftp: { summary: "Performs the selected secure file-transfer operation.", behavior: "Authentication and host-key policy come from the SFTP shared connection. Operation inputs remain dynamically mappable at runtime." },
   jdbc: { summary: "Executes the selected database operation through a pooled shared connection.", behavior: "SQL parameters and dynamic fields are mapped as a hierarchy. Query activities return rows; update and DDL activities return operation counts and status." },
+  snowflake: { summary: "Runs Snowflake Insert, Query, Update, Delete, or staged Bulk Load operations.", behavior: "The Snowflake JDBC shared connection supplies authentication, warehouse, database, schema, pooling, and downloaded table/view metadata. Activity inputs and outputs follow the TIBCO BusinessWorks Snowflake 6.3.1 contracts.", url: "https://docs.tibco.com/pub/bwpluginsnowflake/6.3.1/doc/pdf/TIB_bwpluginsnowflake_6.3.1_user-guide.pdf?id=0" },
   ems: { summary: "Sends, receives, browses, or acknowledges TIBCO EMS messages.", behavior: "Destination, delivery, selector, acknowledgement, and message properties follow the selected EMS operation. Client acknowledgement handles can be passed to Confirm Message." },
   kafka: { summary: "Produces, receives, or commits Apache Kafka records.", behavior: "Broker security comes from the shared Kafka connection. Topic, key, headers, value, partitions, offsets, and acknowledgement handles are available for hierarchical mapping." },
   pubsub: { summary: "Publishes, receives, or acknowledges Google Cloud Pub/Sub messages.", behavior: "Project and credential defaults come from the shared connection. Message data, attributes, ordering keys, and acknowledgement handles remain available on the execution path." },
@@ -1257,7 +1327,7 @@ export default function ActivityEditor({
         {(node.type === "start" || node.type === "end") && (
           <TaskBoundarySchemaEditor node={node} config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>
         )}
-        {!(["xml", "json", "flat"].includes(node.type)) && <ExpressionHelp properties={properties} />}
+        {!(["xml", "json", "flat", "timer"].includes(node.type)) && <ExpressionHelp properties={properties} />}
         {mapperOpen && (
           <MapperStudio
             config={cfg}
@@ -1378,7 +1448,9 @@ function DataWeaveScriptEditor({ config, schemas, setConfig }: any) {
       <label>Output MIME type<select value={config.outputMimeType || "application/json"} onChange={(event) => {
         const mime = event.target.value, script = String(config.script || "").replace(/output\s+[^\s]+/, `output ${mime}`);
         setConfig({ outputMimeType: mime, script });
-      }}><option>application/json</option><option>application/xml</option><option>text/plain</option></select></label>
+      }}><option>application/json</option><option>application/xml</option><option>text/csv</option><option>text/plain</option></select></label>
+      <label>Output target<select value={config.outputTarget || "payload"} onChange={(event) => setConfig({ outputTarget: event.target.value })}><option value="payload">Message payload</option><option value="attributes">Message attributes</option><option value="variable">Flow variable</option></select></label>
+      {config.outputTarget === "variable" && <label>Variable name<input value={config.outputVariable || "transformResult"} onChange={(event) => setConfig({ outputVariable: event.target.value })} placeholder="transformResult"/></label>}
     </div>
     <label className="dataweave-script"><span>Transform script <i>runtime executable</i></span><textarea value={config.script || "%dw 2.0\noutput application/json\n---\npayload"} onChange={(event) => setConfig({ script: event.target.value, aiReviewRequired: false })} spellCheck={false}/></label>
     <div className="dataweave-capabilities"><b>Embedded engine</b><span>Selectors</span><span>Objects &amp; arrays</span><span>default / if-else</span><span>map / filter / groupBy</span><span>orderBy / distinctBy</span><span>JSON / XML / text</span><small>Imports, custom modules, annotations, pattern matching, and Mule-only streaming require an external Mule/DataWeave runtime and are rejected explicitly rather than stored as inert options.</small></div>
@@ -1389,20 +1461,22 @@ function DataWeaveScriptEditor({ config, schemas, setConfig }: any) {
 function DataWeaveTestEditor({ config, setConfig }: any) {
   const initial = typeof config.sampleInput === "string" ? config.sampleInput : JSON.stringify(config.sampleInput || {}, null, 2);
   const [input, setInput] = useState(initial || "{}");
+  const [attributes, setAttributes] = useState(JSON.stringify(config.sampleAttributes || {}, null, 2));
+  const [variables, setVariables] = useState(JSON.stringify(config.sampleVariables || config.variables || {}, null, 2));
   const [output, setOutput] = useState(config.lastTestOutput == null ? "" : typeof config.lastTestOutput === "string" ? config.lastTestOutput : JSON.stringify(config.lastTestOutput, null, 2));
   const [state, setState] = useState<"idle" | "running" | "valid" | "error">("idle"), [message, setMessage] = useState("The test uses the same embedded engine as Run and Debug.");
   const run = async () => {
     setState("running"); setMessage("Executing transform script…");
     try {
-      const parsed = JSON.parse(input), response = await fetch("/api/dataweave/test", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ script: config.script, input: parsed, variables: config.variables || {} }) }), result = await response.json();
+      const parsed = config.inputMimeType === "application/json" ? JSON.parse(input) : input, parsedAttributes = JSON.parse(attributes || "{}"), parsedVariables = JSON.parse(variables || "{}"), response = await fetch("/api/dataweave/test", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ script: config.script, input: parsed, attributes: parsedAttributes, variables: parsedVariables, inputMimeType: config.inputMimeType || "application/json" }) }), result = await response.json();
       if (!response.ok) throw new Error(result.detail || "Transform test failed");
       setOutput(typeof result.output === "string" ? result.output : JSON.stringify(result.output, null, 2));
-      setState("valid"); setMessage(`Valid ${result.version} transform · ${result.mimeType}`); setConfig({ sampleInput: input, lastTestOutput: result.output, outputMimeType: result.mimeType });
+      setState("valid"); setMessage(`Valid ${result.version} transform · ${result.mimeType}`); setConfig({ sampleInput: input, sampleAttributes: parsedAttributes, sampleVariables: parsedVariables, lastTestOutput: result.output, outputMimeType: result.mimeType });
     } catch (error: any) { setState("error"); setMessage(error.message || "Transform test failed"); setOutput(""); }
   };
   return <div className="activity-tab dataweave-test">
     <header><FlaskConical/><span><b>Transform · Test</b><small>Execute representative payload data before running the Task.</small></span></header>
-    <main><label><span>INPUT PAYLOAD</span><textarea value={input} onChange={(event) => { setInput(event.target.value); setState("idle"); }} spellCheck={false}/></label><label><span>GENERATED OUTPUT</span><pre>{output || "Run the transform to generate output."}</pre></label></main>
+    <main><section className="dataweave-test-inputs"><label><span>INPUT PAYLOAD · {config.inputMimeType || "application/json"}</span><textarea value={input} onChange={(event) => { setInput(event.target.value); setState("idle"); }} spellCheck={false}/></label><details><summary>Message attributes</summary><textarea aria-label="Sample message attributes" value={attributes} onChange={(event) => { setAttributes(event.target.value); setState("idle"); }} spellCheck={false}/></details><details><summary>Flow variables</summary><textarea aria-label="Sample flow variables" value={variables} onChange={(event) => { setVariables(event.target.value); setState("idle"); }} spellCheck={false}/></details></section><label><span>GENERATED OUTPUT · {config.outputTarget || "payload"}</span><pre>{output || "Run the transform to generate output."}</pre></label></main>
     <footer className={state}><span>{state === "valid" ? <CheckCircle2/> : state === "error" ? <AlertTriangle/> : <FlaskConical/>}{message}</span><button type="button" disabled={state === "running" || !String(config.script || "").trim()} onClick={run}>{state === "running" ? "Running…" : "Run transform"}</button></footer>
   </div>;
 }
@@ -1562,6 +1636,18 @@ function FieldEditor({ field, value, set, resources, tasks, selectedResourceId }
             </option>
           ))}
         </select>
+      ) : field.type === "snowflake_entity" ? (
+        <select value={value || ""} onChange={(e) => {
+          const selected = resources.find((resource: any) => resource.id === selectedResourceId)?.config?.entityCatalog?.find((item: any) => `${item.database}.${item.schema}.${item.name}` === e.target.value || item.name === e.target.value);
+          change(e.target.value);
+          if (selected) set("entityMetadata", selected);
+        }}>
+          <option value="">Select an entity retrieved by the Snowflake connection…</option>
+          {(resources.find((resource: any) => resource.id === selectedResourceId)?.config?.entityCatalog || []).map((item: any) => {
+            const qualified = [item.database, item.schema, item.name].filter(Boolean).join(".");
+            return <option value={qualified || item.name} key={qualified || item.name}>{qualified || item.name} · {item.entityType || "TABLE"}</option>;
+          })}
+        </select>
       ) : field.type === "task" ? (
         <select value={value || ""} onChange={(e) => change(e.target.value)}>
           <option value="">Select Sub Task…</option>
@@ -1624,13 +1710,14 @@ function upstreamActivitySources(node: any, task: any, tasks: any[] = [], schema
 function DataSourcePane({ properties, sources = [], customFunctions = [], updateCustomFunctions }: any) {
   customFunctions = customFunctions.length ? customFunctions : properties?.customFunctions || [];
   updateCustomFunctions = updateCustomFunctions || properties?.updateCustomFunctions;
-  const [tab, setTab] = useState<"data" | "functions">("data"), [search, setSearch] = useState(""), [selectedSource, setSelectedSource] = useState("");
+  const [tab, setTab] = useState<"data" | "functions" | "constants">("data"), [search, setSearch] = useState(""), [selectedSource, setSelectedSource] = useState("");
   const tree = useTreeCollapse();
   const item = (label: string, expression: string, type = "object", showExpression = true, depth = 0, group = false, enabled = true, treePath = expression) => {
     const branch = group ? <TreeToggle path={treePath} label={label} collapsed={tree.collapsed.has(treePath)} toggle={tree.toggle}/> : <i className="tree-elbow"/>;
     return enabled ? <button className={`source-tree-node ${group ? "tree-group-node" : ""} ${selectedSource === expression ? "source-selected" : ""}`} aria-pressed={selectedSource === expression} style={{ "--tree-depth": depth } as React.CSSProperties} data-expression={expression} key={`${label}-${expression}`} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("expression", expression); event.dataTransfer.setData("sourceType", type); event.dataTransfer.setData("sourceRepeating", String(type.toLowerCase().includes("[]") || type.toLowerCase().includes("array"))); setSelectedSource(expression); }} onClick={() => setSelectedSource(expression)} title={`Drag ${label} onto the desired target field`}>{branch}<Braces/><span><b>{label}</b>{showExpression && <small>{expression}</small>}</span><code>{type}</code></button> : <div className="source-tree-node tree-group-node" style={{ "--tree-depth": depth } as React.CSSProperties} key={`${label}-${depth}`}>{branch}<Braces/><span><b>{label}</b></span><code>{type}</code></div>;
   };
   const functionItems = mapperFunctions.filter((name) => name.toLowerCase().includes(search.toLowerCase()));
+  const constantItem = (label: string, value: any, type: string) => <button className="source-tree-node constant-source" key={label} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("expression", `__fabric_constant__:${JSON.stringify(value)}`); event.dataTransfer.setData("sourceType", type); }} title={`Drag ${label} onto a simple target field`}><Braces/><span><b>{label}</b><small>{JSON.stringify(value)}</small></span><code>{type}</code></button>;
   const createFunction = () => {
     const name = window.prompt("Custom XPath function name", "normalizeCustomerId")?.trim();
     if (!name) return;
@@ -1641,12 +1728,13 @@ function DataSourcePane({ properties, sources = [], customFunctions = [], update
   };
   const query = search.toLowerCase(), visibleSources = sources.map((source: ActivitySource) => ({ ...source, fields: source.fields.filter((field) => !query || field.label.toLowerCase().includes(query) || field.key.toLowerCase().includes(query) || source.activity.name.toLowerCase().includes(query)) })).filter((source: ActivitySource) => !query || source.activity.name.toLowerCase().includes(query) || source.fields.length);
   const propertyFields = properties.filter((property: any) => property.key.toLowerCase().includes(query)).map((property: any) => d(property.key, property.key.split(".").pop() || property.key, property.data_type));
-  return <aside className="source-pane"><div className="source-tabs"><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}>Data</button><button className={tab === "functions" ? "active" : ""} onClick={() => setTab("functions")}>Functions</button></div><div className="source-drag-guide"><ArrowRight/><span><b>DRAG TO MAP</b><small>Click only selects; drop onto the desired target field to create a mapping.</small></span></div><input className="source-search" aria-label={`Search ${tab}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${tab}…`}/>{tab === "data" ? <div className="source-list"><h4>EXECUTION PATH OUTPUTS · {visibleSources.length}</h4>{!query && item("Initial task input", "${input}", "object", false)}{visibleSources.map((source: ActivitySource) => { const sourceRows = dataTreeRows(source.fields); return <details className="activity-source" key={source.activity.id} open={source.distance === 1 || !!query}><summary><span className="tree-disclosure"/><Braces/><span><b>{source.activity.name}</b><small>{source.distance === 1 ? "Immediate predecessor" : `${source.distance} steps upstream`} · {source.activity.type}</small></span><code>{source.fields.length}</code></summary>{item("Output", `\${activities.${source.activity.id}.output}`, "object", false)}{sourceRows.map((field) => { const path = `${source.activity.id}.${field.path}`; if (!query && !tree.visible(path)) return null; return item(field.label, `\${activities.${source.activity.id}.output.${field.path}}`, field.type, false, field.depth + 1, field.group, true, path); })}</details>; })}{!visibleSources.length && <p className="source-empty">No connected upstream activity matches this search.</p>}<h4>PROCESS CONTEXT</h4>{item("Task ID", "${context.taskId}", "string", false)}{item("Environment", "${context.environment}", "string", false)}{item("Current activity ID", "${context.activityId}", "string", false)}<h4>GLOBAL VARIABLES</h4>{dataTreeRows(propertyFields).map((property) => { const path = `properties.${property.path}`; if (!query && !tree.visible(path)) return null; return item(property.label, `\${properties.${property.path}}`, property.type, false, property.depth, property.group, property.explicit, path); })}</div> : <div className="source-list function-list"><div className="custom-function-heading"><h4>PROJECT FUNCTIONS · {customFunctions.length}</h4><button onClick={createFunction}><Plus/> New</button></div>{customFunctions.filter((fn: any) => fn.name.toLowerCase().includes(query)).map((fn: any) => item(fn.name, `custom:${fn.name}(${fn.parameters.map((name: string) => `$${name}`).join(", ")})`, "custom", false))}<h4>BW-STYLE FUNCTIONS · {functionItems.length}</h4>{functionItems.map((name) => item(name, `${name}()`, "function", false))}</div>}</aside>;
+  return <aside className="source-pane"><div className="source-tabs"><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}>Data</button><button className={tab === "functions" ? "active" : ""} onClick={() => setTab("functions")}>Functions</button><button className={tab === "constants" ? "active" : ""} onClick={() => setTab("constants")}>Constants</button></div><div className="source-drag-guide"><ArrowRight/><span><b>DRAG TO MAP</b><small>Click only selects; drop onto the desired target field to create a mapping.</small></span></div><input className="source-search" aria-label={`Search ${tab}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${tab}…`}/>{tab === "data" ? <div className="source-list"><h4>EXECUTION PATH OUTPUTS · {visibleSources.length}</h4>{!query && item("Initial task input", "${input}", "object", false)}{visibleSources.map((source: ActivitySource) => { const sourceRows = dataTreeRows(source.fields); return <details className="activity-source" key={source.activity.id} open={source.distance === 1 || !!query}><summary><span className="tree-disclosure"/><Braces/><span><b>{source.activity.name}</b><small>{source.distance === 1 ? "Immediate predecessor" : `${source.distance} steps upstream`} · {source.activity.type}</small></span><code>{source.fields.length}</code></summary>{item("Output", `\${activities.${source.activity.id}.output}`, "object", false)}{sourceRows.map((field) => { const path = `${source.activity.id}.${field.path}`; if (!query && !tree.visible(path)) return null; return item(field.label, `\${activities.${source.activity.id}.output.${field.path}}`, field.type, false, field.depth + 1, field.group, true, path); })}</details>; })}{!visibleSources.length && <p className="source-empty">No connected upstream activity matches this search.</p>}<h4>PROCESS CONTEXT</h4>{item("Task ID", "${context.taskId}", "string", false)}{item("Environment", "${context.environment}", "string", false)}{item("Current activity ID", "${context.activityId}", "string", false)}<h4>GLOBAL VARIABLES</h4>{dataTreeRows(propertyFields).map((property) => { const path = `properties.${property.path}`; if (!query && !tree.visible(path)) return null; return item(property.label, `\${properties.${property.path}}`, property.type, false, property.depth, property.group, property.explicit, path); })}</div> : tab === "functions" ? <div className="source-list function-list"><div className="custom-function-heading"><h4>PROJECT FUNCTIONS · {customFunctions.length}</h4><button onClick={createFunction}><Plus/> New</button></div>{customFunctions.filter((fn: any) => fn.name.toLowerCase().includes(query)).map((fn: any) => item(fn.name, `custom:${fn.name}(${fn.parameters.map((name: string) => `$${name}`).join(", ")})`, "custom", false))}<h4>BW-STYLE FUNCTIONS · {functionItems.length}</h4>{functionItems.map((name) => item(name, `${name}()`, "function", false))}</div> : <div className="source-list constants-list"><h4>TYPED CONSTANTS</h4>{constantItem("Empty string", "", "string")}{constantItem("True", true, "boolean")}{constantItem("False", false, "boolean")}{constantItem("Zero", 0, "integer")}{constantItem("Empty object", {}, "object")}{constantItem("Empty array", [], "array")}{constantItem("Null", null, "null")}</div>}</aside>;
 }
 function describeMapping(expression: any, sources: ActivitySource[]): string {
   if (expression === undefined || expression === null || expression === "") return "Drop a source field or enter a constant";
   if (typeof expression === "object" && expression?.$rule) return `${expression.$rule} › ${describeMapping(expression.source, sources)}`;
   if (typeof expression !== "string") return `Constant › ${JSON.stringify(expression)}`;
+  if (expression.startsWith("__fabric_constant__:")) return `Constant › ${expression.slice(20)}`;
   if (expression === "${input}") return "Initial task input";
   const activityPath = expression.match(/^\$\{activities\.([^.}]+)\.output(?:\.([^}]+))?\}$/);
   if (activityPath) {
@@ -1808,6 +1896,10 @@ function TransformInputEditor({ config, properties, sources, setMappings, custom
   properties = Object.assign([...(properties || [])], { customFunctions, updateCustomFunctions });
   const fields = transformSchemaFields(config), resize = useSourcePaneWidth(280), tree = useTreeCollapse(), root = useRef<HTMLDivElement>(null), [selected, setSelected] = useState(fields[0]?.path || ""), [contextMenu, setContextMenu] = useState<any>(null), mappings = Array.isArray(config.mappings) ? config.mappings : [];
   const mapTo = (target: string, source: any, sourceRepeating = false) => {
+    if (typeof source === "string" && source.startsWith("__fabric_constant__:")) {
+      try { mapConstant(target, JSON.parse(source.slice(20))); } catch { /* Ignore malformed drag data. */ }
+      return;
+    }
     const targetField = fields.find((field) => field.path === target), explicitlyIndexed = typeof source === "string" && /\[\d+\]/.test(source);
     const targetIsComplex = !!targetField && (hasTreeChildren(fields, targetField) || isComplexSchemaType(targetField.type));
     if (targetIsComplex && !targetField?.repeating) return;
@@ -1949,19 +2041,16 @@ function AdvancedEditor({ node, value, properties, set }: any) {
     change = (key: string, next: any) => set({ ...advanced, [key]: next }),
     operation = node.config?.operation || "",
     outbound =
-      ["http", "jdbc", "ftp", "sftp", "ems", "kafka", "pubsub"].includes(
+      ["http", "jdbc", "snowflake", "ftp", "sftp"].includes(
         node.type,
       ) ||
+      (node.type === "ems" && ["send", "publish", "request_reply", "reply"].includes(operation)) ||
+      (node.type === "kafka" && ["publish", "get"].includes(operation)) ||
+      (node.type === "pubsub" && operation === "publish") ||
       (node.type === "rest" && operation === "invoke") ||
       (node.type === "soap" && operation === "request_reply") ||
       (node.type === "sap" &&
-        ![
-          "idoc_listener",
-          "rfc_bapi_listener",
-          "idoc_converter",
-          "idoc_parser",
-          "idoc_renderer",
-        ].includes(operation)),
+        ["idoc_acknowledgment", "idoc_confirmation", "post_idoc", "invoke_rfc_bapi", "reply_rfc_bapi", "read_table"].includes(operation)),
     resolvedRetry = (() => {
       const match = String(advanced.retryEnabled).match(/^\$\{properties\.([^}]+)\}$/);
       return match
@@ -1972,6 +2061,12 @@ function AdvancedEditor({ node, value, properties, set }: any) {
       resolvedRetry === true ||
       ["true", "1", "yes", "on"].includes(String(resolvedRetry).toLowerCase())
     );
+  useEffect(() => {
+    if (outbound || !value || !("retryEnabled" in value || "retryCount" in value || "retryIntervalSeconds" in value)) return;
+    const applicable = { ...value };
+    delete applicable.retryEnabled; delete applicable.retryCount; delete applicable.retryIntervalSeconds;
+    set(applicable);
+  }, [node.id, outbound, value.retryEnabled, value.retryCount, value.retryIntervalSeconds]);
   const suggestions = [
     "true",
     "false",
@@ -2013,24 +2108,21 @@ function AdvancedEditor({ node, value, properties, set }: any) {
             <small>Boolean or global property expression</small>
           </label>
         </article>
-        <article className={`advanced-tree-branch ${!outbound ? "disabled-card" : ""}`}>
+        {outbound && <article className="advanced-tree-branch">
           <header>
             <RefreshCw />
             <span>
               <b>Outbound retry policy</b>
               <small>
-                {outbound
-                  ? "Applied when this activity calls its target system."
-                  : "This activity does not make an outbound target-system call; retry settings are retained but not executed."}
+                Applied when this activity calls its target system.
               </small>
             </span>
-            <i>{outbound ? "OUTBOUND" : "NOT APPLICABLE"}</i>
+            <i>OUTBOUND</i>
           </header>
           <div className="advanced-grid">
             <label className="advanced-tree-field">
               Retry{" "}
               <input
-                disabled={!outbound}
                 list="advanced-property-values"
                 value={advanced.retryEnabled}
                 onChange={(e) => change("retryEnabled", e.target.value)}
@@ -2040,7 +2132,7 @@ function AdvancedEditor({ node, value, properties, set }: any) {
             <label className="advanced-tree-field">
               Retry count{" "}
               <input
-                disabled={!outbound || retryDisabled}
+                disabled={retryDisabled}
                 value={advanced.retryCount}
                 onChange={(e) => change("retryCount", e.target.value)}
               />
@@ -2049,14 +2141,14 @@ function AdvancedEditor({ node, value, properties, set }: any) {
             <label className="advanced-tree-field">
               Retry interval (seconds){" "}
               <input
-                disabled={!outbound || retryDisabled}
+                disabled={retryDisabled}
                 value={advanced.retryIntervalSeconds}
                 onChange={(e) => change("retryIntervalSeconds", e.target.value)}
               />
               <small>Default: 60 seconds</small>
             </label>
           </div>
-        </article>
+        </article>}
       </section>
       <aside>
         <b>PROJECT-GLOBAL PROPERTY MAPPINGS</b>

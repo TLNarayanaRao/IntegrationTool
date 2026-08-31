@@ -7,6 +7,7 @@ from .models import Activity, ProcessDefinition, Project, RunResult
 from .mapper import execute as execute_mapping
 from .dataweave import DataWeaveError, execute as execute_dataweave
 from .sap import sap_adapter
+from .snowflake import snowflake_adapter
 
 class RuntimeErrorWithLogs(Exception): pass
 class FabricFault(Exception):
@@ -107,6 +108,8 @@ class WorkflowRuntime:
     def record_activity_output(activity: Activity, result, ctx: dict):
         """Retain every executed activity result for downstream mappings and debugging."""
         record = {'activityId': activity.id, 'name': activity.name, 'type': activity.type, 'output': result}
+        if activity.type in ('xml', 'flat') and activity.config.get('operation') == 'parse' and isinstance(result, dict) and result.get('xml'):
+            record['displayOutput'] = result['xml']
         record.update(ctx.pop('_activityMetadata', {}))
         ctx.setdefault('activities', {})[activity.id] = record
         task_id = ctx.get('context', {}).get('taskId')
@@ -200,10 +203,13 @@ class WorkflowRuntime:
     @staticmethod
     def is_outbound(activity: Activity) -> bool:
         operation = activity.config.get('operation', '')
-        if activity.type in ('http','jdbc','ftp','sftp','ems','kafka','pubsub'): return True
+        if activity.type in ('http','jdbc','snowflake','ftp','sftp'): return True
+        if activity.type == 'ems': return operation in ('send','publish','request_reply','reply')
+        if activity.type == 'kafka': return operation in ('publish','get')
+        if activity.type == 'pubsub': return operation == 'publish'
         if activity.type == 'rest': return operation == 'invoke'
         if activity.type == 'soap': return operation == 'request_reply'
-        if activity.type == 'sap': return operation not in ('idoc_listener','rfc_bapi_listener','idoc_converter','idoc_parser','idoc_renderer')
+        if activity.type == 'sap': return operation in ('idoc_acknowledgment','idoc_confirmation','post_idoc','invoke_rfc_bapi','reply_rfc_bapi','read_table')
         return False
 
     async def execute(self, activity: Activity, ctx: dict):
@@ -336,13 +342,20 @@ class WorkflowRuntime:
             return execute_mapping(source, rules, cfg)
         if activity.type == 'dataweave':
             try:
-                return execute_dataweave(
+                transformed = execute_dataweave(
                     str(cfg.get('script') or '%dw 2.0\noutput application/json\n---\npayload'),
                     payload=cfg.get('payload', ctx.get('last')),
                     attributes=cfg.get('attributes', ctx.get('attributes', {})),
                     variables={**ctx.get('vars', {}), **(cfg.get('variables', {}) or {})},
                     input_mime_type=str(cfg.get('inputMimeType') or ''),
                 )
+                target = str(cfg.get('outputTarget') or 'payload').lower()
+                if target == 'attributes': ctx['attributes'] = transformed
+                elif target == 'variable':
+                    name = str(cfg.get('outputVariable') or 'transformResult').strip()
+                    if not name: raise DataWeaveError('A variable output target requires a variable name')
+                    ctx.setdefault('vars', {})[name] = transformed
+                return transformed
             except DataWeaveError as exc:
                 raise FabricFault(str(exc), fault_type='DATAWEAVE_SYNTAX', cause=exc.__class__.__name__) from exc
         if activity.type == 'sap':
@@ -432,6 +445,11 @@ class WorkflowRuntime:
             content = path.read_text(encoding=cfg.get('encoding') or 'utf-8')
             return {'path': str(path), 'content': content, 'textContent':content, 'fileInfo':info, **info}
         if activity.type == 'jdbc': return await asyncio.to_thread(self.jdbc, cfg, ctx)
+        if activity.type == 'snowflake':
+            resource = ctx['resources'].get(cfg.get('resourceId'))
+            if not resource or resource.type != 'snowflake': raise FabricFault('Snowflake activity requires a valid Snowflake JDBC shared connection', fault_type='SNOWFLAKE_CONNECTION')
+            try: return await asyncio.to_thread(snowflake_adapter.execute, self.resolve(resource.config, ctx), cfg, ctx.get('last'))
+            except Exception as exc: raise FabricFault(str(exc), fault_type='SNOWFLAKE_DATABASE_JDBC', code=str(getattr(exc, 'code', '') or '500009')) from exc
         if activity.type == 'ftp': return await asyncio.to_thread(self.ftp, cfg, ctx)
         if activity.type == 'sftp': return await asyncio.to_thread(self.sftp, cfg, ctx)
         if activity.type == 'xml':
@@ -641,6 +659,14 @@ class WorkflowRuntime:
         if rule == 'when-otherwise':
             if self.condition(expression.get('condition', ''), ctx): return True, source
             return True, self.resolve(expression.get('otherwise'), ctx)
+        if rule == 'choose':
+            branches = expression.get('whens') or []
+            if not branches and isinstance(expression.get('source'), str):
+                try: branches = json.loads(expression['source'])
+                except (TypeError, ValueError, json.JSONDecodeError): branches = []
+            for branch in branches:
+                if self.condition(branch.get('condition', ''), ctx): return True, self.resolve(branch.get('source'), ctx)
+            return True, self.resolve(expression.get('otherwise'), ctx)
         if rule == 'for-each':
             values = source if isinstance(source, list) else ([] if source in (None, '') else [source])
             return True, values
@@ -720,6 +746,9 @@ class WorkflowRuntime:
     def resolve(self, value, ctx):
         if isinstance(value, dict): return {key: self.resolve(item, ctx) for key, item in value.items()}
         if isinstance(value, list): return [self.resolve(item, ctx) for item in value]
+        if isinstance(value, str) and value.startswith('__fabric_constant__:'):
+            try: return json.loads(value.split(':', 1)[1])
+            except (TypeError, ValueError, json.JSONDecodeError): return value
         if value == '${last}': return ctx['last']
         if value == '${input}': return ctx['input']
         if value == '${properties}': return ctx['properties']
@@ -801,7 +830,7 @@ class WorkflowRuntime:
             if name == 'startswith': return left.startswith(right)
             if name == 'endswith': return left.endswith(right)
             if name == 'matches': return re.search(right, left) is not None
-        for operator in ('==', '!=', '>=', '<=', '>', '<'):
+        for operator in ('==', '!=', '>=', '<=', '>', '<', '='):
             if operator in expression:
                 left, right = (part.strip() for part in expression.split(operator, 1))
                 def comparison_value(raw):
@@ -812,14 +841,14 @@ class WorkflowRuntime:
                     return self.resolve(raw, ctx)
                 left, right = comparison_value(left), comparison_value(right)
                 try:
-                    if operator == '==': return left == right or str(left) == str(right)
+                    if operator in ('=', '=='): return left == right or str(left) == str(right)
                     if operator == '!=': return left != right and str(left) != str(right)
                     if operator == '>=': return left >= right
                     if operator == '<=': return left <= right
                     if operator == '>': return left > right
                     if operator == '<': return left < right
                 except TypeError: return False
-        if expression.lower() in ('true', 'false'): return expression.lower() == 'true'
+        if expression.lower() in ('true', 'true()', 'false', 'false()'): return expression.lower() in ('true', 'true()')
         return bool(self.resolve(expression, ctx))
 
     def jdbc(self, cfg, ctx):
@@ -1001,7 +1030,15 @@ class WorkflowRuntime:
             if element.text and element.text.strip(): result['#text'] = element.text.strip()
             return result
         value = convert(root)
-        return {'root': root.tag, 'value': value, root.tag.rsplit('}', 1)[-1]: value}
+        xml = ElementTree.tostring(root, encoding='unicode')
+        return {
+            'mediaType': 'application/xml',
+            'xml': xml,
+            'xmlString': xml,
+            'root': root.tag,
+            'value': value,
+            root.tag.rsplit('}', 1)[-1]: value,
+        }
 
     def render_xml(self, source, root_name='root', encoding='unicode', pretty=False):
         from xml.etree import ElementTree
@@ -1063,6 +1100,14 @@ class WorkflowRuntime:
 
     def flat_data(self, cfg, ctx):
         source, delimiter = cfg.get('text', cfg.get('records', cfg.get('source', ctx['last']))), str(cfg.get('delimiter', ','))
+        if cfg.get('operation') == 'parse' and str(cfg.get('inputSource', 'String')).lower() in ('file', 'file path', 'filepath'):
+            file_path = cfg.get('filePath') or (source.get('path') if isinstance(source, dict) else source)
+            if not file_path:
+                raise FabricFault('Parse Data file input requires a file path', fault_type='ParseDataException')
+            try:
+                source = Path(str(file_path)).expanduser().read_text(encoding=str(cfg.get('fileEncoding') or cfg.get('encoding') or 'utf-8-sig'))
+            except (OSError, UnicodeError) as exc:
+                raise FabricFault(f'Unable to read Parse Data input file {file_path!s}: {exc}', fault_type='ParseDataException', details={'filePath': str(file_path)}) from exc
         fields = [item.strip() for item in cfg.get('fields', '').split(',') if item.strip()]
         types = [item.strip().lower() for item in str(cfg.get('fieldTypes', '')).split(',') if item.strip()]
         if not fields:
@@ -1078,6 +1123,36 @@ class WorkflowRuntime:
             if kind in ('decimal','number','float','double'): return float(value)
             if kind in ('boolean','bool'): return value.lower() in ('true','1','yes','y')
             return value
+        def parsed_xml_result(records, names=None):
+            from xml.etree import ElementTree
+            def xml_name(value, fallback):
+                normalized = re.sub(r'[^A-Za-z0-9_.-]+', '_', str(value or fallback))
+                return normalized if re.match(r'[A-Za-z_]', normalized) else f'_{normalized}'
+            schema = self.configured_schema(cfg, ctx)
+            root_name = xml_name(cfg.get('rootElement') or self.schema_root_name(schema), 'records')
+            schema_record_name = None
+            if schema:
+                try:
+                    schema_document = ElementTree.fromstring(schema)
+                    schema_elements = [item for item in schema_document.iter() if item.tag.rsplit('}', 1)[-1] == 'element' and item.attrib.get('name')]
+                    schema_record_name = schema_elements[1].attrib['name'] if len(schema_elements) > 1 else None
+                except (ElementTree.ParseError, TypeError):
+                    pass
+            record_name = xml_name(cfg.get('recordElement') or schema_record_name, 'record')
+            root = ElementTree.Element(root_name)
+            for record in records:
+                item = ElementTree.SubElement(root, record_name)
+                values = record if isinstance(record, dict) else {'value': record}
+                for key, value in values.items():
+                    child = ElementTree.SubElement(item, xml_name(key, 'field'))
+                    if value is not None: child.text = str(value).lower() if isinstance(value, bool) else str(value)
+            xml = ElementTree.tostring(root, encoding='unicode')
+            return {
+                'mediaType': 'application/xml', 'xml': xml, 'xmlString': xml,
+                'root': root_name, 'value': {record_name: records},
+                'records': records, 'recordCount': len(records),
+                **({'fields': names} if names else {}),
+            }
         if str(cfg.get('format', 'delimited')).lower() == 'fixed':
             widths = [int(item.strip()) for item in cfg.get('widths', '').split(',') if item.strip()]
             if not fields or len(fields) != len(widths): raise RuntimeError('Fixed-width data requires matching field names and widths')
@@ -1089,7 +1164,7 @@ class WorkflowRuntime:
                     offset, record = 0, {}
                     for index, (name, width) in enumerate(zip(fields, widths)): record[name], offset = typed(line[offset:offset + width].rstrip(str(cfg.get('fillCharacter', ' ')) or ' '), index), offset + width
                     records.append(record)
-                return {'records': records, 'recordCount':len(records)}
+                return parsed_xml_result(records, fields)
             records = source.get('records', source) if isinstance(source, dict) else source
             if not isinstance(records, list): records = [records]
             fill = str(cfg.get('fillCharacter', ' ') or ' ')[0]
@@ -1114,7 +1189,7 @@ class WorkflowRuntime:
             for row in rows:
                 if self.as_bool(cfg.get('strictColumns', False)) and len(row) != len(names): raise FabricFault(f'Column count {len(row)} does not match schema field count {len(names)}', fault_type='ParseDataException')
                 records.append({name: typed(row[index] if index < len(row) else '', index) for index, name in enumerate(names)})
-            return {'records': records, 'recordCount':len(records), 'fields':names}
+            return parsed_xml_result(records, names)
         records = source.get('records', source) if isinstance(source, dict) else source
         if not isinstance(records, list): records = [records]
         names = fields or list(records[0].keys() if records else [])

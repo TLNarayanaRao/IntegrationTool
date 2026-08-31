@@ -4,13 +4,13 @@ from pydantic import BaseModel, Field, model_validator
 
 ActivityKind = Literal[
     'start', 'http', 'http_listener', 'http_response', 'rest', 'soap',
-    'file', 'ftp', 'sftp', 'jdbc', 'xml', 'json', 'flat',
+    'file', 'ftp', 'sftp', 'jdbc', 'snowflake', 'xml', 'json', 'flat',
     'mapper', 'dataweave', 'transform', 'ai_transform', 'log', 'confirm', 'catch', 'throw', 'rethrow', 'timer', 'call_task', 'ems', 'kafka', 'pubsub', 'sap', 'java', 'python', 'basic', 'end'
 ]
 
 class SharedResource(BaseModel):
     id: str
-    type: Literal['jdbc', 'ftp', 'sftp', 'http', 'ems', 'kafka', 'pubsub', 'sap', 'sap_tid'] = 'jdbc'
+    type: Literal['jdbc', 'snowflake', 'ftp', 'sftp', 'http', 'ems', 'kafka', 'pubsub', 'sap', 'sap_tid'] = 'jdbc'
     name: str
     config: dict[str, Any] = Field(default_factory=dict)
 
@@ -101,6 +101,21 @@ def default_environment_properties() -> list[EnvironmentProperty]:
         ('connections.jdbc.timeoutSeconds', 30, 'integer'),
         ('connections.jdbc.minimumPoolSize', 1, 'integer'),
         ('connections.jdbc.maximumPoolSize', 10, 'integer'),
+        ('connections.snowflake.mode', 'external', 'string'),
+        ('connections.snowflake.authenticationType', 'Username/Password', 'string'),
+        ('connections.snowflake.provider', 'Snowflake', 'string'),
+        ('connections.snowflake.account', '', 'string'),
+        ('connections.snowflake.username', '', 'string'),
+        ('connections.snowflake.password', '', 'password'),
+        ('connections.snowflake.warehouse', '', 'string'),
+        ('connections.snowflake.database', '', 'string'),
+        ('connections.snowflake.schema', 'PUBLIC', 'string'),
+        ('connections.snowflake.role', '', 'string'),
+        ('connections.snowflake.loginTimeoutSeconds', 60, 'integer'),
+        ('connections.snowflake.minimumConnections', 2, 'integer'),
+        ('connections.snowflake.maximumConnections', 8, 'integer'),
+        ('connections.snowflake.maximumConnectionWaitSeconds', 300, 'integer'),
+        ('connections.snowflake.serviceThreads', 8, 'integer'),
         ('connections.ems.host', 'localhost', 'string'),
         ('connections.ems.port', 7222, 'integer'),
         ('connections.ems.serverUrl', 'tcp://localhost:7222', 'string'),

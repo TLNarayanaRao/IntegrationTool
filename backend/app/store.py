@@ -23,7 +23,27 @@ def write_json(path: Path, value):
     temporary.write_text(json.dumps(value, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
     temporary.replace(path)
 
+def supports_outbound_retry(activity) -> bool:
+    operation = str(activity.config.get('operation') or '')
+    if activity.type in ('http', 'jdbc', 'snowflake', 'ftp', 'sftp'): return True
+    if activity.type == 'ems': return operation in ('send', 'publish', 'request_reply', 'reply')
+    if activity.type == 'kafka': return operation in ('publish', 'get')
+    if activity.type == 'pubsub': return operation == 'publish'
+    if activity.type == 'rest': return operation == 'invoke'
+    if activity.type == 'soap': return operation == 'request_reply'
+    if activity.type == 'sap': return operation in ('idoc_acknowledgment', 'idoc_confirmation', 'post_idoc', 'invoke_rfc_bapi', 'reply_rfc_bapi', 'read_table')
+    return False
+
+def clean_activity_policies(project: Project) -> None:
+    for task in project.tasks:
+        for activity in task.activities:
+            if supports_outbound_retry(activity): continue
+            advanced = activity.config.get('advanced')
+            if not isinstance(advanced, dict): continue
+            for key in ('retryEnabled', 'retryCount', 'retryIntervalSeconds'): advanced.pop(key, None)
+
 def save_project(project: Project) -> Project:
+    clean_activity_policies(project)
     folder = project_dir(project.id); tasks_dir = folder / 'tasks'; resources_dir = folder / 'resources'
     metadata = project.model_dump(exclude={'tasks','resources','process'})
     write_json(folder / 'project.json', metadata)
