@@ -93,6 +93,25 @@ def execute(document: Any, mappings: Any) -> dict:
     rules = [{'target': k, 'source': v} for k,v in mappings.items()] if isinstance(mappings, dict) else mappings or []
     for rule in rules:
         if not rule.get('enabled', True): continue
-        value = rule.get('constant') if 'constant' in rule else get_path(document, rule.get('source',''))
+        value = rule.get('constant') if 'constant' in rule else get_path(document, rule.get('select') or rule.get('source',''))
+        operator = str(rule.get('operator', '')).lower()
+        condition = str(rule.get('condition', '')).strip()
+        if operator in ('if', 'when-otherwise'):
+            match = re.fullmatch(r'(exists|empty)\(([^)]+)\)', condition, re.I)
+            if match:
+                tested = get_path(document, match.group(2).strip().removeprefix('${').removesuffix('}'))
+                passed = tested not in (None, '', [], {})
+                if match.group(1).lower() == 'empty': passed = not passed
+            else: passed = condition.lower() in ('true', 'true()', '1')
+            if not passed:
+                if operator == 'if': continue
+                value = rule.get('otherwise')
+        if operator == 'for-each' and not isinstance(value, list): value = [] if value in (None, '') else [value]
+        if operator == 'for-each-group':
+            values = value if isinstance(value, list) else ([] if value in (None, '') else [value])
+            group_by = str(rule.get('groupBy', '')).strip('.')
+            grouped: dict[str, list[Any]] = {}
+            for item in values: grouped.setdefault(str(get_path(item, group_by) if group_by else item), []).append(item)
+            value = [{'key': key, 'items': items} for key, items in grouped.items()]
         set_path(result, rule.get('target','result'), transform_value(value, rule.get('functions', [])))
     return result

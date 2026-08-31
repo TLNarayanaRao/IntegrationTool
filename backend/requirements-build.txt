@@ -1,0 +1,5 @@
+# Build-only tooling. Keep modern setuptools because Python 3.12+ removed
+# pkgutil.ImpImporter, which is referenced by legacy pkg_resources releases.
+setuptools>=80,<83
+wheel>=0.45,<1
+pyinstaller>=6.15,<7

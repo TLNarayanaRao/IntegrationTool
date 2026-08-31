@@ -1,6 +1,7 @@
 import asyncio
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
@@ -31,6 +32,27 @@ class ActivityPackTests(unittest.TestCase):
         self.assertEqual(parsed, {'id': 7})
         rendered = self.execute(Activity(id='j', type='json', name='Render JSON', config={'operation': 'render'}), parsed)
         self.assertEqual(__import__('json').loads(rendered['content']), {'id': 7})
+
+    def test_schema_editor_contracts_drive_parse_render_and_flat_data(self):
+        xsd = '''<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="catalog"><xs:complexType><xs:sequence><xs:element name="book"><xs:complexType><xs:sequence><xs:element name="price" type="xs:decimal"/></xs:sequence><xs:attribute name="id" type="xs:string"/></xs:complexType></xs:element></xs:sequence></xs:complexType></xs:element></xs:schema>'''
+        parsed = self.execute(Activity(id='px', type='xml', name='Parse XML', config={
+            'operation': 'parse', 'schemaText': xsd, 'validateOutput': True, 'xmlString': '<catalog><book id="bk101"><price>44.95</price></book></catalog>'
+        }), {})
+        self.assertEqual(parsed['catalog']['book']['@id'], 'bk101')
+        rendered = self.execute(Activity(id='rx', type='xml', name='Render XML', config={
+            'operation': 'render', 'schemaText': xsd, 'catalog': {'book': {'@id': 'bk102', 'price': 10.5}}
+        }), {})
+        self.assertIn('<catalog>', rendered['xmlString'])
+        self.assertIn('id="bk102"', rendered['xmlString'])
+        json_rendered = self.execute(Activity(id='rj', type='json', name='Render JSON', config={
+            'operation': 'render', 'schemaText': xsd, 'catalog': {'book': {'id': 'bk103', 'price': 12.5}}, 'rootStyle': 'With root'
+        }), {})
+        self.assertEqual(__import__('json').loads(json_rendered['jsonString'])['catalog']['book']['id'], 'bk103')
+        flat_xsd = '''<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="record"><xs:complexType><xs:sequence><xs:element name="id" type="xs:integer"/><xs:element name="price" type="xs:decimal"/><xs:element name="active" type="xs:boolean"/></xs:sequence></xs:complexType></xs:element></xs:schema>'''
+        flat = self.execute(Activity(id='pd', type='flat', name='Parse Data', config={
+            'operation': 'parse', 'schemaText': flat_xsd, 'text': '1,44.95,true', 'header': False, 'delimiter': ','
+        }), {})
+        self.assertEqual(flat['records'][0], {'id': 1, 'price': 44.95, 'active': True})
 
     def test_designer_input_mapping_and_error_policy(self):
         context = {'input': {'payload': {'id': 9}}, 'last': {}, 'vars': {}, 'resources': {}, 'properties': {}}
@@ -99,13 +121,24 @@ class ActivityPackTests(unittest.TestCase):
             ], transitions=[Transition(id='t', source='receive', target='end')]),
         )
         with patch('app.main.get_project', return_value=project):
-            response = TestClient(app).post('/api/projects/listener-deploy/run', json={'environment': 'local'})
+            client = TestClient(app)
+            response = client.post('/api/projects/listener-deploy/run', json={'environment': 'local'})
+            invocation = client.post('/api/listeners/listener-deploy/orders', json={'orderId': '10001'})
+            runtime_state = client.get('/api/projects/listener-deploy/runtime-state').json()
         self.assertEqual(response.status_code, 200)
         result = response.json()
         self.assertEqual(result['status'], 'listening')
         self.assertEqual(result['endpoints'][0]['url'], 'http://testserver/api/listeners/listener-deploy/orders')
         self.assertEqual(result['endpoints'][0]['configuredUrl'], 'https://api.internal.example:8443/services/orders')
         self.assertIn('Application Listener Deployment started', [entry['message'] for entry in result['logs']])
+        self.assertEqual(invocation.status_code, 200)
+        self.assertEqual(runtime_state['status'], 'listening')
+        self.assertEqual(runtime_state['lastExecution']['status'], 'completed')
+        uuid.UUID(runtime_state['lastExecution']['correlationId'])
+        self.assertIn('receive', runtime_state['activityOutputs'])
+        self.assertGreaterEqual(runtime_state['lastExecution']['durationMs'], 0)
+        self.assertTrue(any('Job started' in entry['message'] for entry in runtime_state['logs']))
+        self.assertTrue(any('Job completed' in entry['message'] for entry in runtime_state['logs']))
 
     def test_project_persists_packaging_and_xsd_schemas(self):
         project = Project(

@@ -1,20 +1,24 @@
 import io, json, os, socket, sys, tarfile, zipfile
 import re
+import httpx
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from .models import DebugAction, DebugRequest, Project, RunRequest, SharedResource, effective_event_activities
+from .models import AIBuildRequest, DebugAction, DebugRequest, Project, RunRequest, SharedResource, effective_event_activities
 from .store import delete_project, get_project, list_projects, project_dir, save_project
 from .runtime import WorkflowRuntime
 from .debugger import DebugManager
 from .mapper import execute as execute_mapping, recommend
 from .sap import sap_adapter
+from .ai_builder import generate as generate_ai_design
 
 app = FastAPI(title='Integration Fabric Runtime', version='0.1.0')
 runtime = WorkflowRuntime()
 debugger = DebugManager(runtime)
+runtime_states: dict[str, dict] = {}
 
 INBOUND_OPERATIONS = {None, 'listen', 'receiver', 'service'}
 
@@ -49,15 +53,46 @@ def _listener_endpoints(item: Project, task, environment: str, base_url: str = '
     return endpoints
 
 def _lifecycle_logs(item: Project, endpoints: list[dict]) -> list[dict]:
+    now = datetime.now(timezone.utc).isoformat()
     logs = [
-        {'level': 'INFO', 'kind': 'lifecycle', 'message': f'Deploying application {item.name}'},
-        {'level': 'INFO', 'kind': 'lifecycle', 'message': f'Application {item.name} started'},
+        {'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Deploying application {item.name}', 'startedAt': now},
+        {'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Application {item.name} started', 'startedAt': now},
     ]
-    logs.extend({'level': 'INFO', 'kind': 'endpoint', 'message': f'{", ".join(endpoint["methods"])} listener ready at {endpoint["url"]}'} for endpoint in endpoints)
+    logs.extend({'time': now, 'level': 'INFO', 'kind': 'endpoint', 'message': f'{", ".join(endpoint["methods"])} listener ready at {endpoint["url"]}'} for endpoint in endpoints)
     return logs
+
+def _publish_runtime_state(project_id: str, *, status: str, logs: list[dict], endpoints=None, result=None):
+    previous = runtime_states.get(project_id, {})
+    executions = list(previous.get('executions', []))
+    if result is not None:
+        execution = {
+            'runId': result.run_id, 'correlationId': result.correlation_id, 'status': result.status,
+            'startedAt': result.started_at, 'endedAt': result.ended_at, 'durationMs': result.duration_ms,
+            'activityOutputs': result.activity_outputs, 'taskOutputs': result.task_outputs,
+        }
+        executions = ([execution] + executions)[:100]
+    state = {
+        'status': status, 'updatedAt': datetime.now(timezone.utc).isoformat(),
+        'logs': logs, 'endpoints': endpoints if endpoints is not None else previous.get('endpoints', []),
+        'activityOutputs': result.activity_outputs if result is not None else previous.get('activityOutputs', {}),
+        'taskOutputs': result.task_outputs if result is not None else previous.get('taskOutputs', {}),
+        'lastExecution': executions[0] if executions else None, 'executions': executions,
+    }
+    runtime_states[project_id] = state
+    return state
 
 @app.get('/api/health')
 def health(): return {'status': 'ok', 'runtime': 'python'}
+
+@app.get('/api/ai/status')
+def ai_status():
+    return {'available': True, 'provider': 'openai' if os.getenv('OPENAI_API_KEY') else 'local-blueprint', 'model': os.getenv('INTEGRATION_FABRIC_AI_MODEL', 'gpt-5') if os.getenv('OPENAI_API_KEY') else None, 'credentialsStoredInProject': False}
+
+@app.post('/api/ai/generate')
+async def ai_generate(request: AIBuildRequest):
+    try: return await generate_ai_design(request.requirement, request.scope, request.current_task)
+    except httpx.HTTPStatusError as exc: raise HTTPException(502, f'AI provider rejected the design request: {exc.response.text[:500]}')
+    except (ValueError, json.JSONDecodeError) as exc: raise HTTPException(422, f'AI design did not pass Studio validation: {exc}')
 
 @app.get('/api/projects', response_model=list[Project])
 def projects(): return list_projects()
@@ -67,6 +102,11 @@ def project(project_id: str):
     item = get_project(project_id)
     if not item: raise HTTPException(404, 'Project not found')
     return item
+
+@app.get('/api/projects/{project_id}/runtime-state')
+def runtime_state(project_id: str):
+    if not get_project(project_id): raise HTTPException(404, 'Project not found')
+    return runtime_states.get(project_id, {'status': 'stopped', 'logs': [], 'endpoints': [], 'activityOutputs': {}, 'taskOutputs': {}, 'lastExecution': None, 'executions': []})
 
 @app.post('/api/projects', response_model=Project)
 def create_project(item: Project): return save_project(item)
@@ -103,12 +143,15 @@ async def run(project_id: str, http_request: Request, request: RunRequest):
     if len(events) != 1: raise HTTPException(400, f'Starter Task requires exactly one event activity; found {len(events)}')
     endpoints = _listener_endpoints(item, task, request.environment, str(http_request.base_url).rstrip('/'))
     if endpoints:
-        return {'status': 'listening', 'output': {}, 'logs': _lifecycle_logs(item, endpoints),
-                'activity_outputs': {}, 'task_outputs': {}, 'endpoints': endpoints}
+        lifecycle = _lifecycle_logs(item, endpoints)
+        _publish_runtime_state(project_id, status='listening', logs=lifecycle, endpoints=endpoints)
+        return {'status': 'listening', 'output': {}, 'logs': lifecycle,
+                'activity_outputs': {}, 'task_outputs': {}, 'endpoints': endpoints, 'executions': []}
     result = await runtime.run(task, request.input, resources, properties, project=item)
     payload = result.model_dump()
     payload['logs'] = _lifecycle_logs(item, []) + payload.get('logs', [])
     payload['endpoints'] = []
+    _publish_runtime_state(project_id, status=result.status, logs=payload['logs'], endpoints=[], result=result)
     return payload
 
 @app.get('/api/projects/{project_id}/export')
@@ -403,6 +446,9 @@ async def invoke_listener(project_id: str, listener_path: str, request: Request,
     payload = {'body': body, 'method': request.method, 'path': request_path, 'query': dict(request.query_params), 'headers': dict(request.headers), 'pathParameters': path_parameters}
     resources = {resource.id: resource for resource in item.resources}
     result = await runtime.run(task, payload, resources, properties, listener.id, item)
+    deployment = runtime_states.get(project_id, {})
+    combined_logs = list(deployment.get('logs', [])) + result.logs
+    _publish_runtime_state(project_id, status='listening' if result.status == 'completed' else 'failed', logs=combined_logs[-500:], result=result)
     if result.status == 'failed': return JSONResponse({'status': result.status, 'logs': result.logs}, status_code=500)
     output = result.output
     if output.get('__httpResponse'):

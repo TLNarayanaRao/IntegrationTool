@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, model_validator
 ActivityKind = Literal[
     'start', 'http', 'http_listener', 'http_response', 'rest', 'soap',
     'file', 'ftp', 'sftp', 'jdbc', 'xml', 'json', 'flat',
-    'transform', 'log', 'confirm', 'timer', 'call_task', 'ems', 'kafka', 'pubsub', 'sap', 'java', 'end'
+    'transform', 'ai_transform', 'log', 'confirm', 'catch', 'throw', 'rethrow', 'timer', 'call_task', 'ems', 'kafka', 'pubsub', 'sap', 'java', 'python', 'basic', 'end'
 ]
 
 class SharedResource(BaseModel):
@@ -190,6 +190,9 @@ class ProcessDefinition(BaseModel):
         events = effective_event_activities(self.activities)
         if len(events) > 1:
             raise ValueError(f'A Task can contain only one event activity; found: {", ".join(activity.name for activity in events)}')
+        catch_ids = {activity.id for activity in self.activities if activity.type == 'catch'}
+        if any(transition.target in catch_ids for transition in self.transitions):
+            raise ValueError('Transitions cannot target a Catch activity; Catch is entered only by an unhandled exception')
         return self
 
 class TaskDefinition(ProcessDefinition):
@@ -197,6 +200,13 @@ class TaskDefinition(ProcessDefinition):
     description: str = ''
     input_schema: dict[str, Any] = Field(default_factory=dict)
     output_schema: dict[str, Any] = Field(default_factory=dict)
+
+class CustomFunction(BaseModel):
+    id: str
+    name: str
+    parameters: list[str] = Field(default_factory=list)
+    expression: str
+    description: str = ''
 
 class Project(BaseModel):
     id: str
@@ -208,6 +218,7 @@ class Project(BaseModel):
         'target': 'on-prem', 'environment': 'production'
     })
     schemas: list[SchemaAsset] = Field(default_factory=list)
+    custom_functions: list[CustomFunction] = Field(default_factory=list)
     properties: dict[str, list[EnvironmentProperty]] = Field(default_factory=lambda: {
         name: default_environment_properties() for name in ('local', 'dev', 'qa', 'pre', 'production')
     })
@@ -239,6 +250,11 @@ class RunRequest(BaseModel):
     environment: str = 'local'
     task_id: str | None = None
 
+class AIBuildRequest(BaseModel):
+    requirement: str = Field(min_length=10, max_length=20000)
+    scope: Literal['task', 'project'] = 'task'
+    current_task: dict[str, Any] | None = None
+
 class DebugRequest(RunRequest):
     breakpoints: list[str] = Field(default_factory=list)
 
@@ -247,6 +263,10 @@ class DebugAction(BaseModel):
 
 class RunResult(BaseModel):
     run_id: str
+    correlation_id: str = ''
+    started_at: str = ''
+    ended_at: str = ''
+    duration_ms: float = 0
     status: Literal['completed', 'failed']
     output: dict[str, Any]
     logs: list[dict[str, Any]]

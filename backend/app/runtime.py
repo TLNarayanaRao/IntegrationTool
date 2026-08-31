@@ -1,5 +1,5 @@
 from __future__ import annotations
-import asyncio, base64, csv, ftplib, gzip, io, json, os, re, shutil, sqlite3, uuid
+import asyncio, base64, csv, ftplib, gzip, importlib.util, io, json, os, re, shutil, sqlite3, sys, tempfile, uuid
 from datetime import datetime, timezone
 from pathlib import Path
 import httpx
@@ -8,11 +8,15 @@ from .mapper import execute as execute_mapping
 from .sap import sap_adapter
 
 class RuntimeErrorWithLogs(Exception): pass
+class FabricFault(Exception):
+    def __init__(self, message: str, *, fault_type='UserDefinedException', code='', details=None, cause=None):
+        super().__init__(message); self.fault_type = fault_type; self.code = code; self.details = details or {}; self.cause = cause
 
 class WorkflowRuntime:
     def __init__(self):
         self.messages: dict[str, list[dict]] = {}
         self.acknowledgements: dict[str, dict] = {}
+        self.shared_variables: dict[str, Any] = {}
 
     def register_acknowledgement(self, technology: str, message_id: str, callback=None) -> str:
         ack_id = f'{technology}:{message_id}:{uuid.uuid4()}'
@@ -34,6 +38,8 @@ class WorkflowRuntime:
 
     async def run(self, process: ProcessDefinition, initial: dict, resources=None, properties=None, entry_activity_id=None, project: Project | None=None, execution_state: dict | None=None) -> RunResult:
         run_id, logs = str(uuid.uuid4()), []
+        started = datetime.now(timezone.utc)
+        correlation_id = str(initial.get('correlationId') or initial.get('correlation_id') or run_id) if isinstance(initial, dict) else run_id
         execution_state = execution_state or {'activities': {}, 'tasks': {}}
         activity_outputs = execution_state.setdefault('activities', {})
         task_outputs = execution_state.setdefault('tasks', {})
@@ -42,13 +48,21 @@ class WorkflowRuntime:
             'input': initial, 'vars': {}, 'last': initial, 'resources': resources or {},
             'properties': properties or {}, 'project': project, 'runtime': self, 'logs': logs,
             'activities': activity_outputs, 'tasks': task_outputs,
-            'context': {'taskId': process.id, 'activityId': '', 'environment': getattr(project, 'active_environment', '') if project else ''},
+            'context': {'taskId': process.id, 'activityId': '', 'environment': getattr(project, 'active_environment', '') if project else '', 'correlationId': correlation_id, 'runId': run_id},
         }
+        self.log(logs, 'INFO', f'Job started: {process.name}', kind='lifecycle', correlationId=correlation_id, runId=run_id, startedAt=started.isoformat())
+        def finish(status: str, output: dict) -> RunResult:
+            ended = datetime.now(timezone.utc); duration = round((ended - started).total_seconds() * 1000, 3)
+            self.log(logs, 'INFO' if status == 'completed' else 'ERROR', f'Job {status}: {process.name} in {duration:.3f} ms', kind='lifecycle', correlationId=correlation_id, runId=run_id, endedAt=ended.isoformat(), durationMs=duration)
+            for entry in logs:
+                entry.setdefault('correlationId', correlation_id); entry.setdefault('runId', run_id)
+            return RunResult(run_id=run_id, correlation_id=correlation_id, started_at=started.isoformat(), ended_at=ended.isoformat(), duration_ms=duration, status=status, output=output, logs=logs, activity_outputs=activity_outputs, task_outputs=task_outputs)
         activity_by_id = {a.id: a for a in process.activities}
         incoming = {t.target for t in process.transitions}
-        starts = [activity_by_id[entry_activity_id]] if entry_activity_id in activity_by_id else ([a for a in process.activities if a.type == 'start'] or [a for a in process.activities if a.id not in incoming])
+        starts = [activity_by_id[entry_activity_id]] if entry_activity_id in activity_by_id else ([a for a in process.activities if a.type == 'start'] or [a for a in process.activities if a.id not in incoming and a.type != 'catch'])
         if len(starts) != 1:
-            return RunResult(run_id=run_id, status='failed', output={}, logs=[{'level':'ERROR','message':'Process must have exactly one Start activity'}])
+            self.log(logs, 'ERROR', 'Process must have exactly one Start activity')
+            return finish('failed', {})
         current = starts[0]
         try:
             for _ in range(len(process.activities) + 1):
@@ -63,8 +77,17 @@ class WorkflowRuntime:
                 if current.type in ('end', 'http_response'): break
                 if error:
                     chosen = next((t for t in outgoing if t.type == 'error'), None)
-                    if not chosen: raise error
-                    context['last'] = {'error': str(error), 'activityId': current.id}
+                    fault = self.fault_payload(error, current.id)
+                    context['last'] = fault; context['context']['error'] = fault
+                    if not chosen:
+                        used = set(context['context'].setdefault('handledCatchIds', []))
+                        catches = [activity for activity in process.activities if activity.type == 'catch' and activity.id not in used]
+                        caught = next((activity for activity in catches if self.as_bool(activity.config.get('catchAll', True)) or (activity.config.get('errorType') and activity.config.get('errorType') == fault['type']) or (activity.config.get('errorCode') and str(activity.config.get('errorCode')) == fault['code'])), None)
+                        if not caught: raise error
+                        context['context']['handledCatchIds'].append(caught.id)
+                        self.log(logs, 'WARN', f'{caught.name} caught {fault["type"]}: {fault["message"]}', caught.id, kind='exception', fault=fault)
+                        current = caught
+                        continue
                 else:
                     chosen = next((t for t in outgoing if t.type == 'success_condition' and self.condition(t.condition, context)), None)
                     chosen = chosen or next((t for t in outgoing if t.type == 'success'), None)
@@ -73,11 +96,11 @@ class WorkflowRuntime:
                 current = activity_by_id[chosen.target]
             final_output = context['last'] if isinstance(context['last'], dict) else {'result': context['last']}
             task_state['output'] = final_output
-            return RunResult(run_id=run_id, status='completed', output=final_output, logs=logs, activity_outputs=activity_outputs, task_outputs=task_outputs)
+            return finish('completed', final_output)
         except Exception as exc:
             self.log(logs, 'ERROR', str(exc), current.id)
             task_state['error'] = {'message': str(exc), 'activityId': current.id}
-            return RunResult(run_id=run_id, status='failed', output={}, logs=logs, activity_outputs=activity_outputs, task_outputs=task_outputs)
+            return finish('failed', {})
 
     @staticmethod
     def record_activity_output(activity: Activity, result, ctx: dict):
@@ -89,6 +112,10 @@ class WorkflowRuntime:
         if task_id:
             task = ctx.setdefault('tasks', {}).setdefault(task_id, {'activities': {}})
             task.setdefault('activities', {})[activity.id] = record
+
+    @staticmethod
+    def fault_payload(error: Exception, activity_id: str) -> dict:
+        return {'type': getattr(error, 'fault_type', error.__class__.__name__), 'code': str(getattr(error, 'code', '') or ''), 'message': str(error), 'activityId': activity_id, 'details': getattr(error, 'details', {}) or {}, 'cause': getattr(error, 'cause', None)}
 
     def log(self, logs, level, message, activity_id=None, **details):
         logs.append({'time': datetime.now(timezone.utc).isoformat(), 'level': level, 'message': message, 'activityId': activity_id, **details})
@@ -153,7 +180,8 @@ class WorkflowRuntime:
         # Resolve environment, input, variable, and previous-output expressions in every activity field.
         cfg = self.resolve(activity.config, ctx)
         for key, expression in activity.config.get('inputMappings', {}).items():
-            self.assign_path(cfg, key, self.resolve(expression, ctx))
+            include, value = self.evaluate_mapping(expression, ctx)
+            if include: self.assign_path(cfg, key, value)
         if activity.type in ('ftp','sftp','http','http_listener','http_response','rest','soap','sap') and cfg.get('resourceId'):
             shared = ctx['resources'].get(cfg['resourceId'])
             if not shared: raise RuntimeError(f'{activity.name} requires a valid shared connection')
@@ -167,6 +195,44 @@ class WorkflowRuntime:
             mapped = self.map_input_values(activity.config.get('inputMappings', {}), ctx)
             return self.unwrap_boundary(mapped, 'result', ctx['last'])
         if activity.type == 'timer': return ctx['last']
+        if activity.type == 'basic':
+            operation = str(cfg.get('operation') or 'empty')
+            if operation == 'empty': return ctx['last']
+            if operation == 'assign':
+                name, value = str(cfg.get('variable') or '').strip(), cfg.get('value', ctx['last'])
+                if not name: raise RuntimeError('Assign Variable requires a process variable name')
+                ctx['vars'][name] = value; return {'name': name, 'value': value}
+            if operation == 'sleep':
+                duration = float(cfg.get('duration') or 0); unit = str(cfg.get('unit') or 'milliseconds').lower()
+                seconds = duration * (60 if unit == 'minutes' else 1 if unit == 'seconds' else .001)
+                await asyncio.sleep(max(0, seconds)); return {'sleptMilliseconds': round(seconds * 1000), 'payload': ctx['last']}
+            if operation == 'get_context': return dict(ctx.get('context', {}))
+            if operation == 'set_context':
+                values = cfg.get('values') or {}
+                if not isinstance(values, dict): raise RuntimeError('Set Process Context requires an object')
+                ctx['context'].update(values); return {'context': dict(ctx['context'])}
+            if operation == 'get_shared_variable':
+                name = str(cfg.get('name') or '').strip(); return {'name': name, 'value': self.shared_variables.get(name, cfg.get('default'))}
+            if operation == 'set_shared_variable':
+                name, value = str(cfg.get('name') or '').strip(), cfg.get('value', ctx['last'])
+                if not name: raise RuntimeError('Set Shared Variable requires a name')
+                self.shared_variables[name] = value; return {'name': name, 'value': value}
+            if operation == 'inspector':
+                label = str(cfg.get('label') or activity.name); payload = cfg.get('payload', ctx['last'])
+                self.log(ctx['logs'], 'DEBUG', f'Inspector: {label}', activity.id, kind='inspection', **({'payload': payload} if self.as_bool(cfg.get('includePayload', True)) else {}))
+                return ctx['last']
+            raise RuntimeError(f'Unsupported Basic/General operation {operation}')
+        if activity.type == 'catch': return ctx.get('context', {}).get('error') or ctx['last']
+        if activity.type == 'throw':
+            details = cfg.get('details', {})
+            if isinstance(details, str) and details.strip():
+                try: details = json.loads(details)
+                except ValueError: details = {'text': details}
+            raise FabricFault(str(cfg.get('message') or 'Business fault'), fault_type=str(cfg.get('errorType') or cfg.get('type') or 'UserDefinedException'), code=str(cfg.get('code') or ''), details=details)
+        if activity.type == 'rethrow':
+            fault = ctx.get('context', {}).get('error')
+            if not fault: raise FabricFault('Rethrow requires an active caught exception', fault_type='RethrowException')
+            raise FabricFault(fault.get('message', 'Rethrown exception'), fault_type=fault.get('type', 'RethrowException'), code=fault.get('code', ''), details=fault.get('details', {}), cause=fault)
         if activity.type in ('http_listener',) or (activity.type == 'rest' and cfg.get('operation') == 'receiver') or (activity.type == 'soap' and cfg.get('operation') == 'service'):
             return ctx['last']
         if activity.type == 'http_response':
@@ -193,12 +259,16 @@ class WorkflowRuntime:
                     raise RuntimeError('Confirm Message requires an acknowledgement handle from a client/manual receiver')
                 return {'confirmed': False, 'count': 0, 'ackIds': [], 'technologies': []}
             return await self.confirm_messages(handles)
-        if activity.type == 'transform':
+        if activity.type in ('transform', 'ai_transform'):
             source = cfg.get('source', ctx['last'])
             rules = []
             for rule in activity.config.get('mappings', []) or []:
                 normalized = {**rule}
-                if 'constant' in rule:
+                if rule.get('operator'):
+                    include, mapped_value = self.evaluate_mapping({'$rule': rule.get('operator'), 'source': rule.get('source'), 'select': rule.get('select'), 'groupBy': rule.get('groupBy'), 'condition': rule.get('condition'), 'otherwise': rule.get('otherwise')}, ctx)
+                    normalized.pop('source', None); normalized.pop('select', None); normalized.pop('operator', None)
+                    normalized['constant'] = mapped_value; normalized['enabled'] = bool(include and rule.get('enabled', True))
+                elif 'constant' in rule:
                     normalized['constant'] = rule['constant']
                 elif isinstance(rule.get('source'), str) and rule['source'].startswith('${'):
                     normalized.pop('source', None)
@@ -295,13 +365,19 @@ class WorkflowRuntime:
         if activity.type == 'ftp': return await asyncio.to_thread(self.ftp, cfg, ctx)
         if activity.type == 'sftp': return await asyncio.to_thread(self.sftp, cfg, ctx)
         if activity.type == 'xml':
-            if cfg.get('operation') == 'parse': return self.parse_xml(cfg.get('source', ctx['last']))
-            return {'content': self.render_xml(cfg.get('source', ctx['last']), cfg.get('rootElement', 'root'), cfg.get('encoding', 'unicode'))}
+            try:
+                if cfg.get('operation') == 'parse': return self.parse_xml_activity(cfg, ctx)
+                return self.render_xml_activity(cfg, ctx)
+            except FabricFault: raise
+            except (ValueError, TypeError, UnicodeError, LookupError) as exc: raise FabricFault(str(exc), fault_type='XMLParseException' if cfg.get('operation') == 'parse' else 'XMLRenderException', cause=exc.__class__.__name__) from exc
         if activity.type == 'json':
-            source = cfg.get('source', ctx['last'])
-            if cfg.get('operation') == 'parse': return json.loads(source) if isinstance(source, (str, bytes)) else source
-            return {'content': json.dumps(source, indent=int(cfg.get('indent', 2)), ensure_ascii=bool(cfg.get('asciiOnly', False)))}
-        if activity.type == 'flat': return self.flat_data(cfg, ctx)
+            try: return self.json_activity(cfg, ctx)
+            except FabricFault: raise
+            except (ValueError, TypeError, UnicodeError) as exc: raise FabricFault(str(exc), fault_type='JSONParserException' if cfg.get('operation') == 'parse' else 'JSONRenderException', cause=exc.__class__.__name__) from exc
+        if activity.type == 'flat':
+            try: return self.flat_data(cfg, ctx)
+            except FabricFault: raise
+            except (ValueError, TypeError, csv.Error) as exc: raise FabricFault(str(exc), fault_type='ParseDataException' if cfg.get('operation') == 'parse' else 'RenderDataException', cause=exc.__class__.__name__) from exc
         if activity.type == 'call_task':
             project = ctx.get('project')
             if not project: raise RuntimeError('Call Sub Task requires project execution context')
@@ -322,6 +398,7 @@ class WorkflowRuntime:
         if activity.type in ('ems', 'kafka', 'pubsub'):
             return await self.messaging(activity.type, cfg, ctx)
         if activity.type == 'java': return await self.java_worker(cfg, ctx['last'])
+        if activity.type == 'python': return await self.python_worker(cfg, ctx['last'])
         raise RuntimeError(f'Unsupported activity type {activity.type}')
 
     async def messaging(self, technology: str, cfg: dict, ctx: dict):
@@ -474,13 +551,98 @@ class WorkflowRuntime:
 
     def map_input_values(self, mappings: dict, ctx: dict) -> dict:
         result = {}
-        for path, expression in (mappings or {}).items(): self.assign_path(result, path, self.resolve(expression, ctx))
+        for path, expression in (mappings or {}).items():
+            include, value = self.evaluate_mapping(expression, ctx)
+            if include: self.assign_path(result, path, value)
         return result
+
+    def evaluate_mapping(self, expression, ctx) -> tuple[bool, Any]:
+        """Evaluate the structured mapping statements used by every activity Input tab."""
+        if not isinstance(expression, dict) or '$rule' not in expression:
+            return True, self.resolve(expression, ctx)
+        rule = str(expression.get('$rule', '')).lower()
+        source_expression = expression.get('select') or expression.get('source')
+        source = self.resolve(source_expression, ctx)
+        if rule == 'if':
+            return self.condition(expression.get('condition', ''), ctx), source
+        if rule == 'when-otherwise':
+            if self.condition(expression.get('condition', ''), ctx): return True, source
+            return True, self.resolve(expression.get('otherwise'), ctx)
+        if rule == 'for-each':
+            values = source if isinstance(source, list) else ([] if source in (None, '') else [source])
+            return True, values
+        if rule == 'for-each-group':
+            values = source if isinstance(source, list) else ([] if source in (None, '') else [source])
+            group_path = str(expression.get('groupBy') or '').strip('.')
+            groups: dict[str, list[Any]] = {}
+            for item in values:
+                current = item
+                for part in group_path.split('.') if group_path else []:
+                    current = current.get(part) if isinstance(current, dict) else None
+                groups.setdefault(str(current), []).append(item)
+            return True, [{'key': key, 'items': items} for key, items in groups.items()]
+        return True, source
 
     @staticmethod
     def unwrap_boundary(mapped: dict, wrapper: str, fallback):
         if not mapped: return fallback
         return mapped[wrapper] if set(mapped) == {wrapper} else mapped
+
+    @staticmethod
+    def split_function_args(raw: str) -> list[str]:
+        args, start, depth, quote = [], 0, 0, None
+        for index, char in enumerate(raw):
+            if quote:
+                if char == quote and (index == 0 or raw[index - 1] != '\\'): quote = None
+            elif char in ('"', "'"): quote = char
+            elif char == '(': depth += 1
+            elif char == ')': depth = max(0, depth - 1)
+            elif char == ',' and depth == 0: args.append(raw[start:index].strip()); start = index + 1
+        if raw.strip(): args.append(raw[start:].strip())
+        return args
+
+    def evaluate_function_expression(self, expression: str, ctx: dict, variables: dict | None = None):
+        variables = variables or {}
+        text = expression.strip()
+        if text in variables: return variables[text]
+        if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'"): return text[1:-1]
+        if re.fullmatch(r'-?\d+(\.\d+)?', text): return float(text) if '.' in text else int(text)
+        if text.lower() in ('true()', 'true'): return True
+        if text.lower() in ('false()', 'false'): return False
+        call = re.fullmatch(r'([\w:-]+)\((.*)\)', text, re.S)
+        if not call: return self.resolve(text, ctx)
+        name = call.group(1); args = [self.evaluate_function_expression(item, ctx, variables) for item in self.split_function_args(call.group(2))]
+        if name.startswith('custom:'):
+            function_name = name.split(':', 1)[1]
+            project = ctx.get('project')
+            definition = next((item for item in (getattr(project, 'custom_functions', []) if project else []) if item.name == function_name), None)
+            if not definition: raise RuntimeError(f'Custom function {function_name!r} was not found in this project')
+            bindings = {f'${parameter}': args[index] if index < len(args) else None for index, parameter in enumerate(definition.parameters)}
+            return self.evaluate_function_expression(definition.expression, ctx, bindings)
+        key = name.lower().replace('-', '')
+        if key == 'concat': return ''.join('' if value is None else str(value) for value in args)
+        if key in ('uppercase', 'upper'): return str(args[0] if args else '').upper()
+        if key in ('lowercase', 'lower'): return str(args[0] if args else '').lower()
+        if key in ('trim', 'normalizespace'): return ' '.join(str(args[0] if args else '').split())
+        if key == 'stringlength': return len(str(args[0] if args else ''))
+        if key == 'substring':
+            start = int(args[1]) - 1
+            return str(args[0])[start:start + int(args[2])] if len(args) > 2 else str(args[0])[start:]
+        if key == 'replace': return re.sub(str(args[1]), str(args[2]), str(args[0]))
+        if key == 'contains': return str(args[1]) in str(args[0])
+        if key == 'startswith': return str(args[0]).startswith(str(args[1]))
+        if key == 'endswith': return str(args[0]).endswith(str(args[1]))
+        if key == 'coalesce': return next((value for value in args if value not in (None, '')), None)
+        if key == 'count': return len(args[0]) if args and hasattr(args[0], '__len__') else len(args)
+        if key == 'sum': return sum(args[0] if len(args) == 1 and isinstance(args[0], list) else args)
+        if key in ('average', 'avg'):
+            values = args[0] if len(args) == 1 and isinstance(args[0], list) else args
+            return sum(values) / len(values) if values else 0
+        if key == 'ifthenelse': return args[1] if args and self.as_bool(args[0]) else (args[2] if len(args) > 2 else None)
+        if key == 'uuid': return str(uuid.uuid4())
+        if key == 'exists': return bool(args and args[0] not in (None, '', [], {}))
+        if key == 'empty': return not args or args[0] in (None, '', [], {})
+        raise RuntimeError(f'Unsupported mapper function {name!r}')
 
     def resolve(self, value, ctx):
         if isinstance(value, dict): return {key: self.resolve(item, ctx) for key, item in value.items()}
@@ -514,6 +676,8 @@ class WorkflowRuntime:
                 return current
         if isinstance(value, str) and '${properties.' in value:
             return re.sub(r'\$\{properties\.([^}]+)\}', lambda match: str(ctx['properties'].get(match.group(1), '')), value)
+        if isinstance(value, str) and re.fullmatch(r'[\w:-]+\(.*\)', value.strip(), re.S):
+            return self.evaluate_function_expression(value, ctx)
         return value
 
     def condition(self, expression, ctx):
@@ -641,22 +805,129 @@ class WorkflowRuntime:
             raise RuntimeError(f'Unsupported SFTP operation {operation}')
         finally: client.close(); ssh.close()
 
+    @staticmethod
+    def schema_content(schema_id, ctx):
+        project = ctx.get('project')
+        schema = next((item for item in getattr(project, 'schemas', []) if item.id == schema_id or item.name == schema_id), None) if project and schema_id else None
+        return schema.content if schema else ''
+
+    def configured_schema(self, cfg, ctx):
+        return cfg.get('schemaText') or self.schema_content(cfg.get('schemaId'), ctx)
+
+    @staticmethod
+    def schema_root_name(schema):
+        if not schema: return ''
+        try:
+            document = json.loads(schema)
+            return document.get('title') or next(iter((document.get('properties') or {}).keys()), '')
+        except (ValueError, TypeError):
+            pass
+        from xml.etree import ElementTree
+        try: root = ElementTree.fromstring(schema)
+        except (ElementTree.ParseError, TypeError): return ''
+        return next((item.attrib.get('name') for item in list(root) if item.tag.rsplit('}', 1)[-1] == 'element' and item.attrib.get('name')), '')
+
+    @staticmethod
+    def schema_leaf_fields(schema):
+        if not schema: return [], []
+        try:
+            document = json.loads(schema); fields = []
+            def walk(node):
+                properties = node.get('properties', {}) if isinstance(node, dict) else {}
+                for name, child in properties.items():
+                    if isinstance(child, dict) and child.get('properties'): walk(child)
+                    else: fields.append((name, child.get('type', 'string') if isinstance(child, dict) else 'string'))
+            walk(document)
+            return [item[0] for item in fields], [item[1] for item in fields]
+        except (ValueError, TypeError):
+            pass
+        from xml.etree import ElementTree
+        try: document = ElementTree.fromstring(schema)
+        except (ElementTree.ParseError, TypeError): return [], []
+        fields = []
+        def local(element): return element.tag.rsplit('}', 1)[-1]
+        def child_elements(element):
+            result = []
+            for child in list(element):
+                if local(child) == 'element': result.append(child)
+                elif local(child) in ('complexType', 'sequence', 'all', 'choice', 'group', 'extension'): result.extend(child_elements(child))
+            return result
+        def walk(element):
+            children = child_elements(element)
+            if children:
+                for child in children: walk(child)
+            elif local(element) == 'element' and element.attrib.get('name'):
+                fields.append((element.attrib['name'], element.attrib.get('type', 'string').split(':')[-1]))
+            for child in element.iter():
+                if local(child) == 'attribute' and child.attrib.get('name'): fields.append((child.attrib['name'], child.attrib.get('type', 'string').split(':')[-1]))
+        roots = [item for item in list(document) if local(item) == 'element']
+        for root in roots: walk(root)
+        unique = list(dict.fromkeys(fields))
+        return [item[0] for item in unique], [item[1] for item in unique]
+
+    def parse_xml_activity(self, cfg, ctx):
+        style = str(cfg.get('inputStyle', 'Text')).lower()
+        source = cfg.get('xmlString', cfg.get('source', ctx['last']))
+        if style in ('binary','dynamic') and cfg.get('xmlBinary') not in (None, ''): source = cfg.get('xmlBinary')
+        if isinstance(source, dict): source = source.get('bytes') or source.get('binaryContent') or source.get('xmlString') or source.get('content') or source.get('body') or ''
+        if isinstance(source, str) and style == 'binary':
+            try: source = base64.b64decode(source)
+            except ValueError: source = source.encode(cfg.get('forceEncoding') or cfg.get('encoding') or 'utf-8')
+        if isinstance(source, bytes): source = source.decode(cfg.get('forceEncoding') or cfg.get('encoding') or 'utf-8-sig')
+        parsed = self.parse_xml(source)
+        if self.as_bool(cfg.get('validateOutput', False)):
+            schema = self.configured_schema(cfg, ctx)
+            if not schema: raise FabricFault('Validate Output requires a project or inline XSD in Output Editor', fault_type='ValidationException')
+            self.validate_xml_root(parsed['root'], schema)
+        return parsed
+
+    def render_xml_activity(self, cfg, ctx):
+        schema = self.configured_schema(cfg, ctx)
+        root_name = self.schema_root_name(schema) or cfg.get('rootElement') or 'root'
+        source = cfg.get(root_name, cfg.get('value', cfg.get('source', ctx['last'])))
+        if isinstance(source, dict) and root_name in source and not ('root' in source and 'value' in source): source = source[root_name]
+        if self.as_bool(cfg.get('validateInput', False)):
+            if not schema: raise FabricFault('Validate Input requires a project or inline XSD in Input Editor', fault_type='ValidationException')
+            actual_root = source.get('root') if isinstance(source, dict) and 'root' in source else root_name
+            self.validate_xml_root(actual_root, schema)
+        encoding = cfg.get('encoding') or 'UTF-8'
+        content = self.render_xml(source, root_name, 'unicode', pretty=self.as_bool(cfg.get('prettyPrint', False)))
+        if not self.as_bool(cfg.get('suppressXmlDeclaration', False)): content = f'<?xml version="1.0" encoding="{encoding}"?>\n{content}'
+        if str(cfg.get('outputStyle', 'Text')).lower() == 'binary':
+            raw = content.encode(encoding); return {'binaryContent': base64.b64encode(raw).decode(), 'bytes': base64.b64encode(raw).decode(), 'byteCount': len(raw), 'encoding': encoding, 'content': None}
+        return {'content': content, 'xmlString': content, 'encoding': encoding}
+
+    @staticmethod
+    def validate_xml_root(root_name, schema):
+        from xml.etree import ElementTree
+        try: schema_root = ElementTree.fromstring(schema)
+        except ElementTree.ParseError as exc: raise FabricFault(f'Selected XSD is invalid: {exc}', fault_type='ValidationException') from exc
+        expected = next((item.attrib.get('name') for item in list(schema_root) if item.tag.rsplit('}',1)[-1] == 'element' and item.attrib.get('name')), None)
+        actual = str(root_name or '').rsplit('}',1)[-1]
+        if expected and actual != expected: raise FabricFault(f'XML root {actual!r} does not match XSD root {expected!r}', fault_type='ValidationException', details={'expectedRoot':expected,'actualRoot':actual})
+
     def parse_xml(self, source):
         from xml.etree import ElementTree
         if isinstance(source, dict): source = source.get('content') or source.get('body') or ''
         root = ElementTree.fromstring(source)
         def convert(element):
             children = list(element); result = {'@' + key: value for key, value in element.attrib.items()}
-            if not children: return element.text or result
+            if not children:
+                text = element.text or ''
+                if result:
+                    if text: result['#text'] = text
+                    return result
+                return text
             for child in children:
                 value = convert(child)
                 if child.tag in result: result[child.tag] = result[child.tag] if isinstance(result[child.tag], list) else [result[child.tag]]; result[child.tag].append(value)
                 else: result[child.tag] = value
             if element.text and element.text.strip(): result['#text'] = element.text.strip()
             return result
-        return {'root': root.tag, 'value': convert(root)}
+        value = convert(root)
+        return {'root': root.tag, 'value': value, root.tag.rsplit('}', 1)[-1]: value}
 
-    def render_xml(self, source, root_name='root', encoding='unicode'):
+    def render_xml(self, source, root_name='root', encoding='unicode', pretty=False):
         from xml.etree import ElementTree
         if isinstance(source, dict) and 'root' in source and 'value' in source: root_name, source = source['root'], source['value']
         def build(name, value):
@@ -670,38 +941,175 @@ class WorkflowRuntime:
                     else: element.append(build(key, item))
             elif value is not None: element.text = str(value)
             return element
-        return ElementTree.tostring(build(root_name, source), encoding=encoding).decode() if encoding != 'unicode' else ElementTree.tostring(build(root_name, source), encoding='unicode')
+        root = build(root_name, source)
+        if pretty: ElementTree.indent(root, space='  ')
+        return ElementTree.tostring(root, encoding=encoding).decode() if encoding != 'unicode' else ElementTree.tostring(root, encoding='unicode')
+
+    def json_activity(self, cfg, ctx):
+        operation = cfg.get('operation', 'parse'); source = cfg.get('jsonString', cfg.get('value', cfg.get('source', ctx['last'])))
+        if isinstance(source, dict) and operation == 'parse': source = source.get('jsonString') or source.get('content') or source.get('body') or source
+        if operation == 'parse':
+            if not isinstance(source, (str, bytes, bytearray)): value = source
+            else:
+                policy = str(cfg.get('duplicateKeyPolicy', 'Last wins')).lower()
+                def pairs(items):
+                    result = {}
+                    for key, value in items:
+                        if key in result and policy == 'error': raise ValueError(f'Duplicate JSON key: {key}')
+                        if key not in result or policy != 'first wins': result[key] = value
+                    return result
+                value = json.loads(source, object_pairs_hook=pairs)
+            self.validate_json_if_requested(value, cfg, ctx, 'validateOutput')
+            return value
+        schema = self.configured_schema(cfg, ctx); root_name = self.schema_root_name(schema)
+        if root_name and root_name in cfg:
+            source = {root_name: cfg[root_name]} if str(cfg.get('rootStyle', 'With root')).lower() != 'anonymous' else cfg[root_name]
+        self.validate_json_if_requested(source, cfg, ctx, 'validateInput')
+        if self.as_bool(cfg.get('omitNulls', False)):
+            def without_nulls(value):
+                if isinstance(value, dict): return {key: without_nulls(item) for key, item in value.items() if item is not None}
+                if isinstance(value, list): return [without_nulls(item) for item in value if item is not None]
+                return value
+            source = without_nulls(source)
+        indent = int(cfg.get('indent', 2)) if self.as_bool(cfg.get('prettyPrint', True)) else None
+        content = json.dumps(source, indent=indent, ensure_ascii=self.as_bool(cfg.get('asciiOnly', False)), separators=None if indent is not None else (',', ':'))
+        return {'content': content, 'jsonString': content}
+
+    def validate_json_if_requested(self, value, cfg, ctx, flag):
+        if not self.as_bool(cfg.get(flag, False)): return
+        content = self.configured_schema(cfg, ctx)
+        if not content: raise FabricFault(f'{flag} requires a project or inline schema in the schema editor', fault_type='ValidationException')
+        try: schema = json.loads(content)
+        except ValueError: return
+        if schema.get('type') == 'object' and not isinstance(value, dict): raise FabricFault('JSON value must be an object according to the selected schema', fault_type='ValidationException')
+        missing = [key for key in schema.get('required', []) if not isinstance(value, dict) or key not in value]
+        if missing: raise FabricFault(f'Missing required JSON fields: {", ".join(missing)}', fault_type='ValidationException', details={'missing':missing})
 
     def flat_data(self, cfg, ctx):
-        source, delimiter = cfg.get('source', ctx['last']), cfg.get('delimiter', ',')
+        source, delimiter = cfg.get('text', cfg.get('records', cfg.get('source', ctx['last']))), str(cfg.get('delimiter', ','))
         fields = [item.strip() for item in cfg.get('fields', '').split(',') if item.strip()]
-        if cfg.get('format', 'delimited') == 'fixed':
+        types = [item.strip().lower() for item in str(cfg.get('fieldTypes', '')).split(',') if item.strip()]
+        if not fields:
+            schema_fields, schema_types = self.schema_leaf_fields(self.configured_schema(cfg, ctx))
+            if schema_fields: fields = schema_fields
+            if not types and schema_types: types = [item.lower() for item in schema_types]
+        line_ending = {'lf':'\n','crlf':'\r\n','cr':'\r','auto':'\n'}.get(str(cfg.get('lineSeparator', cfg.get('lineEnding', 'Auto'))).lower(), str(cfg.get('lineEnding', '\n')))
+        def typed(value, index):
+            value = value.strip() if self.as_bool(cfg.get('trimValues', True)) else value
+            kind = types[index] if index < len(types) else 'string'
+            if value == '': return None if kind not in ('string','text') else ''
+            if kind in ('integer','int','long'): return int(value)
+            if kind in ('decimal','number','float','double'): return float(value)
+            if kind in ('boolean','bool'): return value.lower() in ('true','1','yes','y')
+            return value
+        if str(cfg.get('format', 'delimited')).lower() == 'fixed':
             widths = [int(item.strip()) for item in cfg.get('widths', '').split(',') if item.strip()]
             if not fields or len(fields) != len(widths): raise RuntimeError('Fixed-width data requires matching field names and widths')
             if cfg.get('operation') == 'parse':
                 records = []
                 for line in str(source).splitlines():
+                    if not line and self.as_bool(cfg.get('skipBlankLines', True)): continue
+                    if self.as_bool(cfg.get('strictColumns', False)) and len(line) != sum(widths): raise FabricFault(f'Fixed-width line length {len(line)} does not match configured width {sum(widths)}', fault_type='ParseDataException')
                     offset, record = 0, {}
-                    for name, width in zip(fields, widths): record[name], offset = line[offset:offset + width].rstrip(), offset + width
+                    for index, (name, width) in enumerate(zip(fields, widths)): record[name], offset = typed(line[offset:offset + width].rstrip(str(cfg.get('fillCharacter', ' ')) or ' '), index), offset + width
                     records.append(record)
-                return {'records': records}
+                return {'records': records, 'recordCount':len(records)}
             records = source.get('records', source) if isinstance(source, dict) else source
             if not isinstance(records, list): records = [records]
-            content = cfg.get('lineEnding', '\n').join(''.join(str(record.get(name, ''))[:width].ljust(width) for name, width in zip(fields, widths)) for record in records)
+            fill = str(cfg.get('fillCharacter', ' ') or ' ')[0]
+            def fixed_field(record, name, width, index):
+                value = '' if record.get(name) is None else str(record.get(name)); value = value[:width]
+                return value.rjust(width, fill) if index < len(types) and types[index] in ('integer','int','long','decimal','number','float','double') else value.ljust(width, fill)
+            content = line_ending.join(''.join(fixed_field(record, name, width, index) for index, (name, width) in enumerate(zip(fields, widths))) for record in records)
+            if self.as_bool(cfg.get('includeFinalLineSeparator', False)): content += line_ending
             return {'content': content, 'recordCount': len(records)}
         if cfg.get('operation') == 'parse':
-            reader = csv.DictReader(io.StringIO(source), delimiter=delimiter) if cfg.get('header', True) else csv.DictReader(io.StringIO(source), fieldnames=fields, delimiter=delimiter)
-            return {'records': list(reader)}
+            text = str(source.get('content', source) if isinstance(source, dict) else source)
+            lines = [line for line in text.splitlines() if line or not self.as_bool(cfg.get('skipBlankLines', True))]
+            if len(delimiter) == 1:
+                rows = list(csv.reader(lines, delimiter=delimiter))
+            else:
+                pattern = f'[{re.escape(delimiter)}]' if str(cfg.get('separatorRule', 'single')).lower() == 'any-character' else re.escape(delimiter)
+                rows = [re.split(pattern, line) for line in lines]
+            if self.as_bool(cfg.get('header', True)) and rows: names, rows = rows[0], rows[1:]
+            else: names = fields
+            if not names: raise FabricFault('Parse Data requires header fields or configured field names', fault_type='ParseDataException')
+            records = []
+            for row in rows:
+                if self.as_bool(cfg.get('strictColumns', False)) and len(row) != len(names): raise FabricFault(f'Column count {len(row)} does not match schema field count {len(names)}', fault_type='ParseDataException')
+                records.append({name: typed(row[index] if index < len(row) else '', index) for index, name in enumerate(names)})
+            return {'records': records, 'recordCount':len(records), 'fields':names}
         records = source.get('records', source) if isinstance(source, dict) else source
         if not isinstance(records, list): records = [records]
-        names = fields or list(records[0].keys() if records else []); output = io.StringIO(); writer = csv.DictWriter(output, fieldnames=names, delimiter=delimiter, lineterminator=cfg.get('lineEnding', '\n'))
-        if cfg.get('header', True): writer.writeheader()
-        writer.writerows(records); return {'content': output.getvalue(), 'recordCount': len(records)}
+        names = fields or list(records[0].keys() if records else [])
+        if len(delimiter) == 1:
+            output = io.StringIO(); writer = csv.DictWriter(output, fieldnames=names, delimiter=delimiter, lineterminator=line_ending)
+            if self.as_bool(cfg.get('header', True)): writer.writeheader()
+            writer.writerows(records); content = output.getvalue()
+            if not self.as_bool(cfg.get('includeFinalLineSeparator', True)): content = content.removesuffix(line_ending)
+        else:
+            rows = ([delimiter.join(names)] if self.as_bool(cfg.get('header', True)) else []) + [delimiter.join('' if record.get(name) is None else str(record.get(name)) for name in names) for record in records]
+            content = line_ending.join(rows) + (line_ending if self.as_bool(cfg.get('includeFinalLineSeparator', False)) else '')
+        return {'content': content, 'recordCount': len(records), 'fields':names}
 
     async def java_worker(self, cfg, payload):
         command = cfg.get('command') or os.getenv('JAVA_WORKER_COMMAND')
-        if not command: raise RuntimeError('Java activity requires a configured command or JAVA_WORKER_COMMAND')
-        proc = await asyncio.create_subprocess_shell(command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        out, err = await proc.communicate(json.dumps({'className': cfg.get('className'), 'payload': payload}).encode())
-        if proc.returncode: raise RuntimeError(err.decode() or 'Java worker failed')
-        return json.loads(out.decode())
+        if command:
+            proc = await asyncio.create_subprocess_shell(command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            out, err = await proc.communicate(json.dumps({'className': cfg.get('className'), 'method': cfg.get('method'), 'payload': payload}).encode())
+            if proc.returncode: raise RuntimeError(err.decode() or 'Java worker failed')
+            return json.loads(out.decode())
+        class_name, method = str(cfg.get('className') or '').strip(), str(cfg.get('method') or '').strip()
+        if not class_name or not method: raise RuntimeError('Java Invoke requires a class name and method')
+        artifact = Path(str(cfg.get('artifactPath') or '')).expanduser()
+        source = str(cfg.get('sourceCode') or '')
+        parameters = cfg.get('parameters')
+        if not isinstance(parameters, list): parameters = [cfg.get('payload', payload)]
+        helper = '''import java.lang.reflect.*; public class FabricInvoker { public static void main(String[] a) throws Exception { Class<?> c=Class.forName(a[0]); Method found=null; for(Method m:c.getMethods()) if(m.getName().equals(a[1])&&m.getParameterCount()==a.length-2){found=m;break;} if(found==null) throw new NoSuchMethodException(a[0]+"."+a[1]); Object[] v=new Object[found.getParameterCount()]; Class<?>[] t=found.getParameterTypes(); for(int i=0;i<v.length;i++){String s=a[i+2]; v[i]=t[i]==String.class?s:t[i]==int.class||t[i]==Integer.class?Integer.valueOf(s):t[i]==long.class||t[i]==Long.class?Long.valueOf(s):t[i]==double.class||t[i]==Double.class?Double.valueOf(s):t[i]==boolean.class||t[i]==Boolean.class?Boolean.valueOf(s):s;} Object target=Modifier.isStatic(found.getModifiers())?null:c.getDeclaredConstructor().newInstance(); Object out=found.invoke(target,v); if(out!=null) System.out.print(out); }}'''
+        with tempfile.TemporaryDirectory(prefix='fabric-java-') as folder:
+            root = Path(folder); (root / 'FabricInvoker.java').write_text(helper, encoding='utf-8')
+            classpath = str(root)
+            compile_inputs = [str(root / 'FabricInvoker.java')]
+            if source:
+                java_file = root / f'{class_name.rsplit(".", 1)[-1]}.java'; java_file.write_text(source, encoding='utf-8'); compile_inputs.append(str(java_file))
+            elif artifact.exists() and artifact.suffix.lower() == '.java': compile_inputs.append(str(artifact)); classpath += os.pathsep + str(artifact.parent)
+            elif artifact.exists() and artifact.suffix.lower() == '.jar': classpath += os.pathsep + str(artifact)
+            elif artifact.exists() and artifact.suffix.lower() == '.class': classpath += os.pathsep + str(artifact.parent)
+            elif not artifact.exists(): raise RuntimeError('Java Invoke requires an existing JAR/class/source artifact or inline source')
+            compiler = await asyncio.create_subprocess_exec('javac', '-cp', classpath, '-d', str(root), *compile_inputs, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            _, compile_error = await compiler.communicate()
+            if compiler.returncode: raise RuntimeError(f'Java compilation failed: {compile_error.decode().strip()}')
+            args = [json.dumps(value, separators=(',', ':')) if isinstance(value, (dict, list)) else str(value) for value in parameters]
+            process = await asyncio.create_subprocess_exec('java', '-cp', classpath, 'FabricInvoker', class_name, method, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            try: out, err = await asyncio.wait_for(process.communicate(), timeout=float(cfg.get('timeout') or 60))
+            except asyncio.TimeoutError: process.kill(); raise RuntimeError('Java method invocation timed out')
+            if process.returncode: raise RuntimeError(err.decode().strip() or 'Java method invocation failed')
+            value = out.decode().strip()
+            try: value = json.loads(value)
+            except ValueError: pass
+            return {'methodReturnValue': value, 'className': class_name, 'method': method}
+
+    async def python_worker(self, cfg, payload):
+        def invoke():
+            function_name = str(cfg.get('function') or '').strip()
+            if not function_name: raise RuntimeError('Python Invoke requires a function name')
+            source, artifact = str(cfg.get('sourceCode') or ''), Path(str(cfg.get('artifactPath') or '')).expanduser()
+            module_name = str(cfg.get('moduleName') or artifact.stem or 'fabric_inline')
+            if source:
+                namespace = {'__name__': module_name}; exec(compile(source, f'<{module_name}>', 'exec'), namespace); function = namespace.get(function_name)
+            elif artifact.suffix.lower() == '.py' and artifact.exists():
+                spec = importlib.util.spec_from_file_location(module_name, artifact)
+                if not spec or not spec.loader: raise RuntimeError(f'Cannot load Python module {artifact}')
+                module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module); function = getattr(module, function_name, None)
+            elif artifact.exists():
+                sys.path.insert(0, str(artifact));
+                try: module = __import__(module_name, fromlist=[function_name]); function = getattr(module, function_name, None)
+                finally: sys.path.pop(0)
+            else: raise RuntimeError('Python Invoke requires an existing .py/package artifact or inline source')
+            if not callable(function): raise RuntimeError(f'Python function {module_name}.{function_name} was not found')
+            parameters = cfg.get('parameters')
+            if isinstance(parameters, list): result = function(*parameters)
+            elif isinstance(parameters, dict): result = function(**parameters)
+            else: result = function(cfg.get('payload', payload))
+            return {'result': result, 'module': module_name, 'function': function_name}
+        return await asyncio.wait_for(asyncio.to_thread(invoke), timeout=float(cfg.get('timeout') or 60))

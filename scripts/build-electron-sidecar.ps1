@@ -17,8 +17,12 @@ try {
         if (Get-Command py -ErrorAction SilentlyContinue) { py -3.11 -m venv .venv }
         else { python -m venv .venv }
     }
-    & .\.venv\Scripts\python.exe -m pip install -r requirements.txt pyinstaller
-    & .\.venv\Scripts\pyinstaller.exe --noconfirm --clean --name IntegrationFabricRuntime --add-data "$root\frontend\dist;frontend\dist" --paths "$root\backend" run_sidecar.py
+    # A venv created by older Python tooling can retain setuptools 65.x. That
+    # release imports pkgutil.ImpImporter, which was removed in Python 3.12.
+    # Upgrade the isolated build toolchain explicitly before PyInstaller runs.
+    & .\.venv\Scripts\python.exe -m pip install --upgrade -r requirements-build.txt
+    & .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+    & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --name IntegrationFabricRuntime --add-data "$root\frontend\dist;frontend\dist" --paths "$root\backend" run_sidecar.py
 } finally { Pop-Location }
 
 Write-Host "Electron sidecar ready: $root\backend\dist\IntegrationFabricRuntime"

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   ArrowRight,
@@ -24,10 +25,12 @@ type Field = {
     | "select"
     | "textarea"
     | "resource"
+    | "artifact"
     | "idoc"
     | "task";
   options?: string[];
   resourceType?: string;
+  artifactType?: "java" | "python";
   required?: boolean;
   help?: string;
 };
@@ -73,8 +76,36 @@ const commonErrors = [
   },
 ];
 const mapperFunctions = [
-  "concat", "substring", "substringBefore", "substringAfter", "stringLength", "normalizeSpace", "upperCase", "lowerCase", "trim", "replace", "matches", "tokenize", "startsWith", "endsWith", "contains", "format", "parseDate", "formatDate", "currentDate", "currentDateTime", "addDays", "addMonths", "dateDifference", "number", "integer", "decimal", "round", "floor", "ceiling", "abs", "min", "max", "sum", "average", "count", "boolean", "not", "ifThenElse", "coalesce", "exists", "empty", "default", "distinctValues", "sort", "reverse", "first", "last", "indexOf", "join", "split", "filter", "map", "reduce", "jsonParse", "jsonRender", "xmlParse", "xmlRender", "base64Encode", "base64Decode", "urlEncode", "urlDecode", "uuid", "hash", "xpath", "jsonPath", "property", "processContext", "taskOutput", "lookup", "crossReference", "nil", "isNil"
+  "concat", "substring", "substringBefore", "substringAfter", "stringLength", "normalizeSpace", "upperCase", "lowerCase", "translate", "trim", "replace", "matches", "tokenize", "startsWith", "endsWith", "contains", "compare", "codepointsToString", "stringToCodepoints", "format", "parseDate", "formatDate", "formatDateTime", "currentDate", "currentTime", "currentDateTime", "timezoneFromDateTime", "adjustDateTimeToTimezone", "addDays", "addMonths", "dateDifference", "yearsFromDuration", "monthsFromDuration", "daysFromDuration", "hoursFromDuration", "minutesFromDuration", "secondsFromDuration", "number", "integer", "decimal", "round", "roundHalfToEven", "floor", "ceiling", "abs", "min", "max", "sum", "average", "count", "boolean", "not", "true", "false", "ifThenElse", "coalesce", "exists", "empty", "default", "distinctValues", "deepEqual", "sort", "reverse", "subsequence", "insertBefore", "remove", "first", "last", "position", "indexOf", "join", "split", "filter", "map", "reduce", "forEach", "forEachGroup", "localName", "namespaceUri", "name", "nodeName", "root", "path", "data", "nil", "isNil", "jsonParse", "jsonRender", "xmlParse", "xmlRender", "base64Encode", "base64Decode", "hexEncode", "hexDecode", "urlEncode", "urlDecode", "uuid", "hash", "xpath", "jsonPath", "property", "processContext", "taskOutput", "lookup", "crossReference", "trace", "error"
 ];
+
+type StructuredMapping = { $rule: "for-each" | "for-each-group" | "if" | "when-otherwise"; source: any; select?: string; groupBy?: string; condition?: string; otherwise?: any; duplicateOf?: string };
+const mappingSource = (value: any) => value && typeof value === "object" && "$rule" in value ? value.source : value;
+
+function MappingContextMenu({ menu, value, close, change, remove }: any) {
+  const panel = useRef<HTMLDivElement>(null), source = String(mappingSource(value) || "${last}"), [mode, setMode] = useState<StructuredMapping["$rule"] | "">(""), [select, setSelect] = useState(source), [condition, setCondition] = useState(`exists(${source})`), [groupBy, setGroupBy] = useState("id"), [otherwise, setOtherwise] = useState("");
+  useEffect(() => {
+    if (!menu) return;
+    const dismiss = (event: PointerEvent) => { if (!panel.current?.contains(event.target as globalThis.Node)) close(); };
+    window.addEventListener("pointerdown", dismiss);
+    return () => window.removeEventListener("pointerdown", dismiss);
+  }, [menu, close]);
+  useEffect(() => { if (menu) { const next = String(mappingSource(value) || "${last}"); setMode(""); setSelect(next); setCondition(`exists(${next})`); setGroupBy("id"); setOtherwise(""); } }, [menu, value]);
+  if (!menu) return null;
+  const apply = (next: StructuredMapping) => { change(next); close(); };
+  const commit = () => mode && apply({ $rule: mode, source, select: select || source, condition, groupBy, otherwise });
+  const content = <div ref={panel} className="mapping-context-menu" style={{ left: Math.max(8, Math.min(menu.x, window.innerWidth - 350)), top: Math.max(8, Math.min(menu.y, window.innerHeight - 455)) }} onPointerDown={(event) => event.stopPropagation()}>
+    <header><Braces/><span><b>{menu.label}</b><small>Mapping statement</small></span></header>
+    <button className={mode === "for-each" ? "selected" : ""} onClick={() => setMode("for-each")}>For Each…<small>Iterate a repeating source value</small></button>
+    <button className={mode === "for-each-group" ? "selected" : ""} onClick={() => setMode("for-each-group")}>For Each Group…<small>Group repeated values before mapping</small></button>
+    <button className={mode === "if" ? "selected" : ""} onClick={() => setMode("if")}>If…<small>Emit this target only when true</small></button>
+    <button className={mode === "when-otherwise" ? "selected" : ""} onClick={() => setMode("when-otherwise")}>When / Otherwise…<small>Choose between two mapping values</small></button>
+    {mode && <section className="mapping-rule-editor"><label>Source expression<input value={select} onChange={(event) => setSelect(event.target.value)}/></label>{mode === "for-each-group" && <label>Group-by child path<input value={groupBy} onChange={(event) => setGroupBy(event.target.value)}/></label>}{(mode === "if" || mode === "when-otherwise") && <label>Condition<input value={condition} onChange={(event) => setCondition(event.target.value)}/></label>}{mode === "when-otherwise" && <label>Otherwise value/expression<input value={otherwise} onChange={(event) => setOtherwise(event.target.value)}/></label>}<div><button onClick={() => setMode("")}>Cancel</button><button className="apply" onClick={commit}>Apply mapping</button></div></section>}
+    <button disabled={!value} onClick={() => { change(typeof value === "object" ? { ...value, duplicateOf: `${menu.path}-${Date.now()}` } : { $rule: "if", source: value, condition: "true()", duplicateOf: `${menu.path}-${Date.now()}` }); close(); }}>Duplicate mapping<small>Create an independently editable statement</small></button>
+    <button disabled={!value} className="danger" onClick={() => { remove(); close(); }}>Delete mapping<small>Remove the target expression</small></button>
+  </div>;
+  return createPortal(content, document.body);
+}
 
 function dataTreeRows(fields: DataField[]): DataTreeRow[] {
   type Node = { name: string; path: string; children: Map<string, Node>; field?: DataField };
@@ -188,6 +219,25 @@ export function activityContract(n: any): Contract {
         { type: "ACKNOWLEDGEMENT_NOT_FOUND", description: "The acknowledgement handle is missing, expired, or was already confirmed." },
         { type: "ACKNOWLEDGEMENT_FAILED", description: "The transport rejected the message confirmation." },
       ],
+    };
+  if (n.type === "catch")
+    return {
+      configuration: [{ ...f("catchAll", "Catch all unhandled exceptions", "boolean") }, f("errorType", "Exception type", "text", "Used when Catch All is false; for example XMLParseException."), f("errorCode", "Error code filter")],
+      input: [],
+      output: [d("type", "Exception type"), d("code", "Error code"), d("message", "Error message"), d("activityId", "Failed activity ID"), d("details", "Fault details", "object"), d("cause", "Original cause", "object")],
+      errors: [],
+    };
+  if (n.type === "throw")
+    return {
+      configuration: [f("errorType", "Exception type"), f("code", "Error code"), f("message", "Error message"), f("details", "Fault details (JSON)", "textarea")],
+      input: [d("message", "Error message", "string", true), d("code", "Error code"), d("type", "Exception type"), d("details", "Fault details", "object")],
+      output: [],
+      errors: [{ type: "UserDefinedException", description: "The configured business fault is raised to the nearest matching handler." }],
+    };
+  if (n.type === "rethrow")
+    return {
+      configuration: [], input: [d("error", "Current caught exception", "object")], output: [],
+      errors: [{ type: "RethrowException", description: "The current caught fault is propagated to the next available handler or calling task." }],
     };
   if (n.type === "file") {
     const common = [f("path", "Filename / directory", "text", "Absolute paths and project-property expressions are supported."), f("includeTimestamp", "Include timestamp metadata", "boolean")];
@@ -546,34 +596,39 @@ export function activityContract(n: any): Contract {
     };
   if (n.type === "xml" || n.type === "json" || n.type === "flat") {
     const format = n.type.toUpperCase();
+    const parsing = op === "parse";
     return {
       configuration: [
         ...(n.type === "xml"
           ? [
-              f("schemaId", "XSD schema"),
-              f("rootElement", "Root element"),
+              { ...f(parsing ? "inputStyle" : "outputStyle", parsing ? "Input style" : "Output style", "select"), options: parsing ? ["Text", "Binary", "Dynamic"] : ["Text", "Binary"] },
+              f(parsing ? "validateOutput" : "validateInput", parsing ? "Validate parsed output" : "Validate input tree", "boolean"),
               f("encoding", "Encoding"),
+              ...(parsing ? [] : [f("suppressXmlDeclaration", "Suppress XML declaration", "boolean"), f("prettyPrint", "Pretty print", "boolean")]),
             ]
           : n.type === "json"
             ? [
-                f("schemaId", "JSON/XSD schema"),
-                f("indent", "Indent", "number"),
+                f(parsing ? "validateOutput" : "validateInput", parsing ? "Validate parsed output" : "Validate input tree", "boolean"),
+                ...(parsing ? [{ ...f("duplicateKeyPolicy", "Duplicate keys", "select"), options: ["Last wins", "First wins", "Error"] }] : [{ ...f("rootStyle", "JSON root", "select"), options: ["With root", "Anonymous"] }, f("prettyPrint", "Pretty print", "boolean"), f("indent", "Indent spaces", "number"), f("asciiOnly", "Escape non-ASCII characters", "boolean"), f("omitNulls", "Omit null fields", "boolean")]),
               ]
             : [
-                f("format", "Format", "select"),
-                f("delimiter", "Delimiter"),
-                f("fields", "Field names"),
+                { ...f("format", "Format", "select"), options: ["delimited", "fixed"] },
+                f("delimiter", "Column separator"),
+                { ...f("separatorRule", "Multi-character separator rule", "select"), options: ["single", "any-character"] },
+                { ...f("lineSeparator", "Line separator", "select"), options: ["Auto", "LF", "CRLF", "CR"] },
                 f("header", "First row is header", "boolean"),
+                f("widths", "Fixed field widths"),
+                f("fillCharacter", "Fixed-width fill character"),
+                f("strictColumns", "Require exact column count", "boolean"),
+                f("trimValues", "Trim parsed values", "boolean"),
+                f("skipBlankLines", "Skip blank lines", "boolean"),
+                f("includeFinalLineSeparator", "Append final line separator", "boolean"),
               ]),
       ],
-      input: [d("source", `${format} source`, "object|string", true)],
-      output: [
-        d(
-          op === "parse" ? "value" : "content",
-          op === "parse" ? "Parsed value" : "Rendered content",
-          op === "parse" ? "object" : "string",
-        ),
-      ],
+      input: n.type === "xml" && parsing ? [d("xmlString", "XML text", "string"), d("xmlBinary", "XML binary/base64", "binary"), d("forceEncoding", "Forced encoding")] : n.type === "xml" ? [d("value", "XML schema tree", "object", true)] : n.type === "json" && parsing ? [d("jsonString", "JSON text", "string", true)] : n.type === "json" ? [d("value", "JSON schema tree", "object", true)] : [d(parsing ? "text" : "records", parsing ? "Formatted text" : "Data records", parsing ? "string" : "array", true)],
+      output: parsing
+        ? [d(n.type === "flat" ? "records" : "value", "Parsed schema tree", n.type === "flat" ? "array" : "object")]
+        : [d(n.type === "xml" ? "xmlString" : n.type === "json" ? "jsonString" : "text", `Rendered ${format} text`, "string")],
       errors: [
         {
           type: `${format}_PARSE`,
@@ -865,7 +920,7 @@ export function activityContract(n: any): Contract {
       ],
     };
   }
-  if (n.type === "transform")
+  if (n.type === "transform" || n.type === "ai_transform")
     return {
       configuration: [
         {
@@ -908,13 +963,16 @@ export function activityContract(n: any): Contract {
   if (n.type === "java")
     return {
       configuration: [
-        f("className", "Java class"),
+        { ...f("mode", "Source mode", "select"), options: ["JAR / class", "Inline source"] },
+        { ...f("artifactPath", "JAR, .class, or .java", "artifact"), artifactType: "java" },
+        f("className", "Fully qualified Java class"),
         f("method", "Method"),
-        f("classpath", "JAR / classpath"),
+        f("instantiate", "Instantiate class", "boolean"),
+        f("sourceCode", "Inline Java source", "textarea"),
         f("timeout", "Timeout seconds", "number"),
       ],
-      input: [d("payload", "JSON input", "object")],
-      output: [d("result", "Java result", "object")],
+      input: [d("parameters", "Method parameters", "array"), d("payload", "JSON input", "object")],
+      output: [d("methodReturnValue", "Method return value", "object"), d("className", "Invoked class"), d("method", "Invoked method")],
       errors: [
         {
           type: "JAVA_CLASS_NOT_FOUND",
@@ -930,6 +988,30 @@ export function activityContract(n: any): Contract {
         },
       ],
     };
+  if (n.type === "python")
+    return {
+      configuration: [
+        { ...f("mode", "Source mode", "select"), options: ["Python file / package", "Inline source"] },
+        { ...f("artifactPath", ".py, .zip, or .whl", "artifact"), artifactType: "python" },
+        f("moduleName", "Module name"), f("function", "Function"), f("sourceCode", "Inline Python source", "textarea"), f("timeout", "Timeout seconds", "number"),
+      ],
+      input: [d("parameters", "Function parameters", "array"), d("payload", "JSON input", "object")],
+      output: [d("result", "Python result", "object"), d("module", "Loaded module"), d("function", "Invoked function")],
+      errors: [{ type: "PYTHON_IMPORT", description: "The module or package could not be imported." }, { type: "PYTHON_INVOCATION", description: "The selected Python function raised an exception." }],
+    };
+  if (n.type === "basic") {
+    const basic: Record<string, Contract> = {
+      empty: { configuration: [], input: [], output: [d("payload", "Unchanged payload", "object")], errors: [] },
+      assign: { configuration: [f("variable", "Process variable", "text", "Name stored in process variables.")], input: [d("value", "Assigned value", "object", true)], output: [d("name", "Variable name"), d("value", "Assigned value", "object")], errors: commonErrors.slice(2) },
+      sleep: { configuration: [f("duration", "Duration", "number"), { ...f("unit", "Unit", "select"), options: ["milliseconds", "seconds", "minutes"] }], input: [d("duration", "Dynamic duration", "number")], output: [d("sleptMilliseconds", "Elapsed delay", "integer")], errors: [{ type: "INTERRUPTED", description: "The wait was interrupted or cancelled." }] },
+      get_context: { configuration: [], input: [], output: [d("taskId", "Task ID"), d("activityId", "Activity ID"), d("environment", "Environment"), d("correlationId", "Correlation ID")], errors: [] },
+      set_context: { configuration: [], input: [d("values", "Context values", "object", true)], output: [d("context", "Updated process context", "object")], errors: commonErrors.slice(2) },
+      get_shared_variable: { configuration: [f("name", "Shared variable name")], input: [d("default", "Default value", "object")], output: [d("name", "Variable name"), d("value", "Shared value", "object")], errors: [] },
+      set_shared_variable: { configuration: [f("name", "Shared variable name")], input: [d("value", "Shared value", "object", true)], output: [d("name", "Variable name"), d("value", "Shared value", "object")], errors: [] },
+      inspector: { configuration: [f("label", "Inspection label"), f("includePayload", "Include payload", "boolean")], input: [d("payload", "Inspected payload", "object")], output: [d("payload", "Unchanged payload", "object")], errors: [] },
+    };
+    return basic[op] || base;
+  }
   return base;
 }
 
@@ -937,6 +1019,13 @@ function schemaDataFields(value: any): DataField[] {
   if (!value) return [];
   const config = typeof value === "string" ? { targetSchemaText: value } : { targetSchema: value };
   return transformSchemaFields(config).map((field) => d(field.path, field.name, field.type));
+}
+
+function activitySchemaText(node: any, schemas: any[]): string {
+  const configured = node.config?.schemaText;
+  if (configured) return configured;
+  const selected = schemas.find((schema: any) => schema.id === node.config?.schemaId || schema.name === node.config?.schemaId);
+  return selected?.content || "";
 }
 
 function boundaryFields(task: any, boundaryType: "start" | "end", schemas: any[]): DataField[] {
@@ -952,6 +1041,16 @@ function boundaryFields(task: any, boundaryType: "start" | "end", schemas: any[]
 
 function resolvedActivityContract(node: any, task: any, tasks: any[], schemas: any[]): Contract {
   const contract = activityContract(node);
+  if (["xml", "json", "flat"].includes(node.type)) {
+    const schemaFields = schemaDataFields(activitySchemaText(node, schemas));
+    if (!schemaFields.length) return contract;
+    const parsing = node.config?.operation === "parse";
+    const flatLeaves = schemaFields.filter((field) => !schemaFields.some((candidate) => candidate.key.startsWith(`${field.key}.`)));
+    const fields = node.type === "flat"
+      ? [d("records", "Records", "array"), ...flatLeaves.map((field) => ({ ...field, key: `records.${field.label}` }))]
+      : schemaFields;
+    return parsing ? { ...contract, output: fields } : { ...contract, input: fields };
+  }
   if (node.type === "start") {
     const fields = boundaryFields(task, "start", schemas);
     return fields.length ? { ...contract, input: [], output: fields } : contract;
@@ -973,6 +1072,7 @@ function resolvedActivityContract(node: any, task: any, tasks: any[], schemas: a
 }
 
 function runtimeMappableInputs(node: any, contract: Contract): DataField[] {
+  if (["xml", "json", "flat"].includes(node.type)) return contract.input;
   if (["start", "timer", "http_listener"].includes(node.type) || (node.type === "file" && node.config?.operation === "poll")) return contract.input;
   const existing = new Set(contract.input.map((field) => field.key));
   const inferred = (field: Field) => field.type === "number" ? "number" : field.type === "boolean" ? "boolean" : "string";
@@ -1006,6 +1106,9 @@ const activityDocumentation: Record<string, { summary: string; behavior: string;
   start: { summary: "Defines the task input boundary.", behavior: "For Sub Tasks, the Start schema is the callable input contract. Starter Tasks normally use one external event activity instead." },
   end: { summary: "Defines the task output boundary.", behavior: "Mapped values become the final task result. For a Sub Task, this result is returned to its Call Sub Task activity." },
   log: { summary: "Writes a structured application log event.", behavior: "Message, level, and payload accept constants or dynamic mappings. Advanced automatic payload logging can be used when a dedicated Log activity is unnecessary." },
+  xml: { summary: "Parses XML text into an XSD-defined tree or renders an XSD-defined tree as XML.", behavior: "Parse XML accepts serialized XML in Input and defines its published tree in Output Editor. Render XML defines and maps its source tree in Input Editor, then emits xmlString (or binary output when selected).", url: "https://docs.tibco.com/pub/activematrix_businessworks/6.11.0/doc/html/binding-palette/render-xml.htm" },
+  json: { summary: "Converts between serialized JSON and a schema-defined activity tree.", behavior: "Parse JSON accepts jsonString and publishes the structure selected in Output Editor. Render JSON maps the structure selected in Input Editor and emits jsonString.", url: "https://docs.tibco.com/pub/activematrix_businessworks/6.8.0/doc/html/binding-palette/render-json.htm" },
+  flat: { summary: "Parses delimited/fixed-width text into records or renders records as formatted text.", behavior: "The schema contract defines record fields; Configuration controls separators, widths, headers, trimming, and line endings. Parse Data publishes records while Render Data accepts mapped records and emits text.", url: "https://docs.tibco.com/pub/activematrix_businessworks/6.11.0/doc/html/binding-palette/render-data.htm" },
 };
 
 function ActivityDocumentation({ node, contract }: { node: any; contract: Contract }) {
@@ -1037,6 +1140,8 @@ export default function ActivityEditor({
   tasks,
   properties,
   schemas,
+  customFunctions = [],
+  updateCustomFunctions,
   tab,
   update,
 }: any) {
@@ -1080,7 +1185,7 @@ export default function ActivityEditor({
             />
           ))}
         </div>
-        {node.type === "transform" && (
+        {(node.type === "transform" || node.type === "ai_transform") && (
           <>
             <TransformSchemaEditor config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>
             <button className="open-mapper" onClick={() => setMapperOpen(true)}>
@@ -1092,7 +1197,7 @@ export default function ActivityEditor({
         {(node.type === "start" || node.type === "end") && (
           <TaskBoundarySchemaEditor node={node} config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>
         )}
-        <ExpressionHelp properties={properties} />
+        {!(["xml", "json", "flat"].includes(node.type)) && <ExpressionHelp properties={properties} />}
         {mapperOpen && (
           <MapperStudio
             config={cfg}
@@ -1107,8 +1212,8 @@ export default function ActivityEditor({
       </div>
     );
   if (tab === "input")
-    return node.type === "transform" ? (
-      <TransformInputEditor config={cfg} schemas={schemas || []} properties={properties} sources={upstreamSources} setMappings={(value: any) => set("mappings", value)}/>
+    return (node.type === "transform" || node.type === "ai_transform") ? (
+      <TransformInputEditor config={cfg} schemas={schemas || []} properties={properties} sources={upstreamSources} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} setMappings={(value: any) => set("mappings", value)}/>
     ) : (
       <InputEditor
         node={node}
@@ -1117,10 +1222,13 @@ export default function ActivityEditor({
         set={(v: any) => set("inputMappings", v)}
         properties={properties}
         sources={upstreamSources}
+        customFunctions={customFunctions}
+        updateCustomFunctions={updateCustomFunctions}
+        before={(["xml", "json", "flat"].includes(node.type) && cfg.operation !== "parse") ? <DataContractSchemaEditor node={node} config={cfg} schemas={schemas || []} direction="input" setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/> : null}
       />
     );
   if (tab === "output")
-    return node.type === "transform" ? <TransformOutputEditor config={cfg}/> : <OutputEditor fields={contract.output} config={cfg} set={set} />;
+    return (node.type === "transform" || node.type === "ai_transform") ? <TransformOutputEditor config={cfg}/> : <OutputEditor fields={contract.output} config={cfg} set={set} before={(["xml", "json", "flat"].includes(node.type) && cfg.operation === "parse") ? <DataContractSchemaEditor node={node} config={cfg} schemas={schemas || []} direction="output" setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/> : null}/>;
   if (tab === "advanced")
     return (
       <AdvancedEditor
@@ -1164,6 +1272,22 @@ function TaskBoundarySchemaEditor({ node, config, schemas, setConfig }: any) {
   };
   const selected = config.interfaceSchemaId || (config.interfaceSchemaText ? "inline" : ""), start = node.type === "start";
   return <div className="transform-schema-editor task-interface-editor"><div className="transform-schema-heading"><Braces/><span><b>{start ? "TASK INPUT INTERFACE" : "TASK RETURN INTERFACE"}</b><small>{start ? "Defines the data accepted by this task and published by Start." : "Defines the response mapped into End and returned to Call Sub Task."}</small></span></div><div className="transform-schema-columns single"><section><header><span><b>{start ? "Input schema" : "Output schema"}</b><small>Select a project schema or define an inline JSON Schema/XSD contract.</small></span><select aria-label={start ? "Task input schema" : "Task output schema"} value={selected} onChange={(event) => choose(event.target.value)}><option value="">Generic object</option><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header>{selected && <><textarea aria-label={start ? "Task input inline schema" : "Task output inline schema"} value={config.interfaceSchemaText || ""} onChange={(event) => setConfig({ interfaceSchemaId: "", interfaceSchemaText: event.target.value })} placeholder="Paste JSON Schema or XSD here…" spellCheck={false}/><SchemaHierarchyPreview text={config.interfaceSchemaText || ""}/></>}</section></div></div>;
+}
+
+function DataContractSchemaEditor({ node, config, schemas, direction, setConfig }: any) {
+  const selected = config.schemaId || (config.schemaText ? "inline" : "");
+  const projectSchema = schemas.find((schema: any) => schema.id === config.schemaId || schema.name === config.schemaId);
+  const text = config.schemaText || projectSchema?.content || "";
+  const format = node.type === "flat" ? "data record" : node.type.toUpperCase();
+  const choose = (id: string) => {
+    if (!id) { setConfig({ schemaId: "", schemaText: "" }); return; }
+    if (id === "inline") {
+      setConfig({ schemaId: "", schemaText: config.schemaText || "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">\n  <xs:element name=\"root\" type=\"xs:string\"/>\n</xs:schema>" });
+      return;
+    }
+    setConfig({ schemaId: id, schemaText: "" });
+  };
+  return <div className="transform-schema-editor data-contract-editor"><div className="transform-schema-heading"><Braces/><span><b>{direction === "input" ? "INPUT EDITOR" : "OUTPUT EDITOR"} · {format} CONTRACT</b><small>{direction === "input" ? "Define the tree to map before serialization." : "Define the tree published after parsing."}</small></span></div><div className="transform-schema-columns single"><section><header><span><b>Structure schema</b><small>Choose a project XSD/JSON schema or provide an inline definition.</small></span><select aria-label={`${direction} structure schema`} value={selected} onChange={(event) => choose(event.target.value)}><option value="">Select schema…</option><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header>{selected === "inline" && <textarea aria-label={`Inline ${direction} schema`} value={config.schemaText || ""} onChange={(event) => setConfig({ schemaId: "", schemaText: event.target.value })} placeholder="Paste an inline XSD or JSON Schema here…" spellCheck={false}/>}<SchemaHierarchyPreview text={text}/></section></div></div>;
 }
 
 function SchemaHierarchyPreview({ text }: { text: string }) {
@@ -1216,6 +1340,8 @@ function FieldEditor({ field, value, set, resources, tasks, selectedResourceId }
               </option>
             ))}
         </select>
+      ) : field.type === "artifact" ? (
+        <span className="artifact-picker"><input value={value || ""} placeholder={`Select a ${field.artifactType} artifact…`} onChange={(e) => change(e.target.value)}/><button type="button" onClick={async () => { const selected = await window.fabricDesktop?.selectCodeArtifact(field.artifactType || "java"); if (selected?.path) change(selected.path); }}>Browse…</button></span>
       ) : field.type === "idoc" ? (
         <select value={value || resources.find((resource: any) => resource.id === selectedResourceId)?.config?.selectedIdoc?.idocType || ""} onChange={(e) => change(e.target.value)}>
           <option value="">Select an IDoc fetched by the SAP connection…</option>
@@ -1278,22 +1404,33 @@ function upstreamActivitySources(node: any, task: any, tasks: any[] = [], schema
   return [...distance.entries()].map(([id, pathDistance]) => {
     const activity = (task.activities || []).find((item: any) => item.id === id);
     if (!activity) return null;
-    const fields = activity.type === "transform"
+    const fields = (activity.type === "transform" || activity.type === "ai_transform")
       ? transformSchemaFields(activity.config || {}).map((field) => ({ key: field.path, label: field.name, type: field.type }))
       : resolvedActivityContract(activity, task, tasks, schemas).output;
     return { activity, distance: pathDistance, fields };
   }).filter(Boolean).sort((a: any, b: any) => a.distance - b.distance) as ActivitySource[];
 }
-function DataSourcePane({ properties, sources = [], onChoose }: any) {
+function DataSourcePane({ properties, sources = [], onChoose, customFunctions = [], updateCustomFunctions }: any) {
+  customFunctions = customFunctions.length ? customFunctions : properties?.customFunctions || [];
+  updateCustomFunctions = updateCustomFunctions || properties?.updateCustomFunctions;
   const [tab, setTab] = useState<"data" | "functions">("data"), [search, setSearch] = useState("");
   const item = (label: string, expression: string, type = "object", showExpression = true, depth = 0, group = false, enabled = true) => enabled ? <button className={`source-tree-node ${group ? "tree-group-node" : ""}`} style={{ "--tree-depth": depth } as React.CSSProperties} data-expression={expression} key={`${label}-${expression}`} draggable onDragStart={(event) => event.dataTransfer.setData("expression", expression)} onClick={() => onChoose(expression)} title={`Map ${label}`}><i className="tree-elbow"/><Braces/><span><b>{label}</b>{showExpression && <small>{expression}</small>}</span><code>{type}</code></button> : <div className="source-tree-node tree-group-node" style={{ "--tree-depth": depth } as React.CSSProperties} key={`${label}-${depth}`}><i className="tree-elbow"/><Braces/><span><b>{label}</b></span><code>{type}</code></div>;
   const functionItems = mapperFunctions.filter((name) => name.toLowerCase().includes(search.toLowerCase()));
+  const createFunction = () => {
+    const name = window.prompt("Custom XPath function name", "normalizeCustomerId")?.trim();
+    if (!name) return;
+    const parameters = (window.prompt("Comma-separated parameters", "value") || "").split(",").map((entry) => entry.trim()).filter(Boolean);
+    const expression = window.prompt("XPath-style body; reference parameters with $name", "upperCase(trim($value))")?.trim();
+    if (!expression) return;
+    updateCustomFunctions?.([...customFunctions.filter((entry: any) => entry.name !== name), { id: `function-${Date.now()}`, name, parameters, expression, description: "Project custom XPath function" }]);
+  };
   const query = search.toLowerCase(), visibleSources = sources.map((source: ActivitySource) => ({ ...source, fields: source.fields.filter((field) => !query || field.label.toLowerCase().includes(query) || field.key.toLowerCase().includes(query) || source.activity.name.toLowerCase().includes(query)) })).filter((source: ActivitySource) => !query || source.activity.name.toLowerCase().includes(query) || source.fields.length);
   const propertyFields = properties.filter((property: any) => property.key.toLowerCase().includes(query)).map((property: any) => d(property.key, property.key.split(".").pop() || property.key, property.data_type));
-  return <aside className="source-pane"><div className="source-tabs"><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}>Data</button><button className={tab === "functions" ? "active" : ""} onClick={() => setTab("functions")}>Functions</button></div><input className="source-search" aria-label={`Search ${tab}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${tab}…`}/>{tab === "data" ? <div className="source-list"><h4>EXECUTION PATH OUTPUTS · {visibleSources.length}</h4>{!query && item("Initial task input", "${input}", "object", false)}{visibleSources.map((source: ActivitySource) => <details className="activity-source" key={source.activity.id} open={source.distance === 1 || !!query}><summary><Braces/><span><b>{source.activity.name}</b><small>{source.distance === 1 ? "Immediate predecessor" : `${source.distance} steps upstream`} · {source.activity.type}</small></span><code>{source.fields.length}</code></summary>{item("Output", `\${activities.${source.activity.id}.output}`, "object", false)}{dataTreeRows(source.fields).map((field) => item(field.label, `\${activities.${source.activity.id}.output.${field.path}}`, field.type, false, field.depth + 1, field.group))}</details>)}{!visibleSources.length && <p className="source-empty">No connected upstream activity matches this search.</p>}<h4>PROCESS CONTEXT</h4>{item("Task ID", "${context.taskId}", "string", false)}{item("Environment", "${context.environment}", "string", false)}{item("Current activity ID", "${context.activityId}", "string", false)}<h4>GLOBAL VARIABLES</h4>{dataTreeRows(propertyFields).map((property) => item(property.label, `\${properties.${property.path}}`, property.type, false, property.depth, property.group, property.explicit))}</div> : <div className="source-list function-list"><h4>BW-STYLE FUNCTIONS · {functionItems.length}</h4>{functionItems.map((name) => item(name, `${name}()`, "function", false))}</div>}</aside>;
+  return <aside className="source-pane"><div className="source-tabs"><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}>Data</button><button className={tab === "functions" ? "active" : ""} onClick={() => setTab("functions")}>Functions</button></div><input className="source-search" aria-label={`Search ${tab}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${tab}…`}/>{tab === "data" ? <div className="source-list"><h4>EXECUTION PATH OUTPUTS · {visibleSources.length}</h4>{!query && item("Initial task input", "${input}", "object", false)}{visibleSources.map((source: ActivitySource) => <details className="activity-source" key={source.activity.id} open={source.distance === 1 || !!query}><summary><Braces/><span><b>{source.activity.name}</b><small>{source.distance === 1 ? "Immediate predecessor" : `${source.distance} steps upstream`} · {source.activity.type}</small></span><code>{source.fields.length}</code></summary>{item("Output", `\${activities.${source.activity.id}.output}`, "object", false)}{dataTreeRows(source.fields).map((field) => item(field.label, `\${activities.${source.activity.id}.output.${field.path}}`, field.type, false, field.depth + 1, field.group))}</details>)}{!visibleSources.length && <p className="source-empty">No connected upstream activity matches this search.</p>}<h4>PROCESS CONTEXT</h4>{item("Task ID", "${context.taskId}", "string", false)}{item("Environment", "${context.environment}", "string", false)}{item("Current activity ID", "${context.activityId}", "string", false)}<h4>GLOBAL VARIABLES</h4>{dataTreeRows(propertyFields).map((property) => item(property.label, `\${properties.${property.path}}`, property.type, false, property.depth, property.group, property.explicit))}</div> : <div className="source-list function-list"><div className="custom-function-heading"><h4>PROJECT FUNCTIONS · {customFunctions.length}</h4><button onClick={createFunction}><Plus/> New</button></div>{customFunctions.filter((fn: any) => fn.name.toLowerCase().includes(query)).map((fn: any) => item(fn.name, `custom:${fn.name}(${fn.parameters.map((name: string) => `$${name}`).join(", ")})`, "custom", false))}<h4>BW-STYLE FUNCTIONS · {functionItems.length}</h4>{functionItems.map((name) => item(name, `${name}()`, "function", false))}</div>}</aside>;
 }
-function describeMapping(expression: any, sources: ActivitySource[]) {
+function describeMapping(expression: any, sources: ActivitySource[]): string {
   if (expression === undefined || expression === null || expression === "") return "Drop a source field or enter a constant";
+  if (typeof expression === "object" && expression?.$rule) return `${expression.$rule} › ${describeMapping(expression.source, sources)}`;
   if (typeof expression !== "string") return `Constant › ${JSON.stringify(expression)}`;
   if (expression === "${input}") return "Initial task input";
   const activityPath = expression.match(/^\$\{activities\.([^.}]+)\.output(?:\.([^}]+))?\}$/);
@@ -1316,7 +1453,7 @@ function describeMapping(expression: any, sources: ActivitySource[]) {
 }
 function MappingBinding({ expression, sources, onChange, onConstantChange, fieldType = "string" }: any) {
   const hasValue = expression !== undefined && expression !== null && expression !== "";
-  const textValue = typeof expression === "string" ? expression : JSON.stringify(expression);
+  const editableExpression = mappingSource(expression), textValue = typeof editableExpression === "string" ? editableExpression : JSON.stringify(editableExpression);
   const setConstant = (raw: string) => {
     const type = String(fieldType).toLowerCase();
     const commit = onConstantChange || onChange;
@@ -1327,7 +1464,7 @@ function MappingBinding({ expression, sources, onChange, onConstantChange, field
     }
     commit(raw);
   };
-  return <div className={`mapping-binding ${hasValue ? "mapped" : ""}`}><span>{describeMapping(expression, sources)}</span>{hasValue && <button title="Clear value" onClick={(event) => { event.stopPropagation(); onChange(""); }}>×</button>}<details className="mapping-constant-editor" onClick={(event) => event.stopPropagation()}><summary title="Enter a constant value">123</summary><div className="mapping-constant-box"><b>Constant value</b>{String(fieldType).toLowerCase().includes("boolean") ? <select aria-label="Constant boolean value" value={expression === true ? "true" : expression === false ? "false" : ""} onChange={(event) => setConstant(event.target.value)}><option value="">Select…</option><option value="true">true</option><option value="false">false</option></select> : (String(fieldType).toLowerCase().includes("object") || String(fieldType).toLowerCase().includes("array") || String(fieldType).toLowerCase().includes("json")) ? <textarea aria-label="Constant JSON value" value={textValue || ""} placeholder={String(fieldType).toLowerCase().includes("array") ? "[]" : "{}"} onChange={(event) => setConstant(event.target.value)}/> : <input type={["integer", "long", "number", "decimal"].some((name) => String(fieldType).toLowerCase().includes(name)) ? "number" : "text"} aria-label="Constant value" value={textValue || ""} placeholder="Enter a literal value…" onChange={(event) => setConstant(event.target.value)}/>}<small>The literal is stored with this target field and used without a source mapping.</small></div></details><details className="mapping-function-editor" onClick={(event) => event.stopPropagation()}><summary title="Open function and expression editor">fx</summary><div className="mapping-function-box"><b>Function or expression</b><input aria-label="Advanced mapping expression" value={typeof expression === "string" ? expression : ""} placeholder="Choose a function or enter an expression…" onChange={(event) => onChange(event.target.value)}/><small>Use the Functions tab, project properties, or an advanced runtime expression.</small></div></details></div>;
+  return <div className={`mapping-binding ${hasValue ? "mapped" : ""}`}><span>{describeMapping(expression, sources)}</span>{hasValue && <button title="Clear value" onClick={(event) => { event.stopPropagation(); onChange(""); }}>×</button>}<details className="mapping-constant-editor" onClick={(event) => event.stopPropagation()}><summary title="Enter a constant value">123</summary><div className="mapping-constant-box"><b>Constant value</b>{String(fieldType).toLowerCase().includes("boolean") ? <select aria-label="Constant boolean value" value={editableExpression === true ? "true" : editableExpression === false ? "false" : ""} onChange={(event) => setConstant(event.target.value)}><option value="">Select…</option><option value="true">true</option><option value="false">false</option></select> : (String(fieldType).toLowerCase().includes("object") || String(fieldType).toLowerCase().includes("array") || String(fieldType).toLowerCase().includes("json")) ? <textarea aria-label="Constant JSON value" value={textValue || ""} placeholder={String(fieldType).toLowerCase().includes("array") ? "[]" : "{}"} onChange={(event) => setConstant(event.target.value)}/> : <input type={["integer", "long", "number", "decimal"].some((name) => String(fieldType).toLowerCase().includes(name)) ? "number" : "text"} aria-label="Constant value" value={textValue || ""} placeholder="Enter a literal value…" onChange={(event) => setConstant(event.target.value)}/>}<small>The literal is stored with this target field and used without a source mapping.</small></div></details><details className="mapping-function-editor" onClick={(event) => event.stopPropagation()}><summary title="Open function and expression editor">fx</summary><div className="mapping-function-box"><b>Function or expression</b><input aria-label="Advanced mapping expression" value={typeof editableExpression === "string" ? editableExpression : ""} placeholder="Choose a function or enter an expression…" onChange={(event) => onChange(event.target.value)}/><small>Use the Functions tab, project properties, or an advanced runtime expression.</small></div></details></div>;
 }
 function MappingConnections({ root, mappings }: any) {
   const [paths, setPaths] = useState<Array<{ key: string; d: string }>>([]);
@@ -1354,12 +1491,14 @@ function MappingConnections({ root, mappings }: any) {
   }, [root, mappings]);
   return <svg className="field-mapping-lines" aria-hidden="true">{paths.map((path) => <g key={path.key}><path className="mapping-line-glow" d={path.d}/><path d={path.d}/></g>)}</svg>;
 }
-function InputEditor({ node, fields, mappings, set, properties, sources }: any) {
+function InputEditor({ node, fields, mappings, set, properties, sources, customFunctions, updateCustomFunctions, before }: any) {
+  properties = Object.assign([...(properties || [])], { customFunctions, updateCustomFunctions });
   const rows = dataTreeRows(fields), firstTarget = rows.find((row) => row.explicit)?.path || "";
-  const resize = useSourcePaneWidth(), root = useRef<HTMLDivElement>(null), [selected, setSelected] = useState(firstTarget);
+  const resize = useSourcePaneWidth(), root = useRef<HTMLDivElement>(null), [selected, setSelected] = useState(firstTarget), [contextMenu, setContextMenu] = useState<any>(null);
   useEffect(() => { if (!rows.some((row) => row.explicit && row.path === selected)) setSelected(firstTarget); }, [firstTarget, selected, rows]);
   const choose = (expression: string) => selected && set({ ...mappings, [selected]: expression });
-  return <div ref={root} className="activity-tab mapping-editor resizable-mapper visual-field-mapper" style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}><DataSourcePane properties={properties} sources={sources} onChoose={choose}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}><span/></div><section><div className="contract-heading"><SettingsTitle title="Activity input" text="Map a source, function, or typed constant to this hierarchical input tree"/></div>{fields.length ? <div className="input-contract-tree"><header><Braces/><span><b>{node.name}</b><small>Hierarchical input structure · {fields.length} mappable fields</small></span></header>{rows.map((field) => field.explicit ? <div data-target={field.path} className={`input-tree-row ${field.group ? "tree-parent-target" : ""} ${selected === field.path ? "selected" : ""}`} key={field.path} style={{ "--target-depth": field.depth + 1 } as React.CSSProperties} onClick={() => setSelected(field.path)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { setSelected(field.path); set({ ...mappings, [field.path]: event.dataTransfer.getData("expression") }); }}><i className="tree-elbow"/><span className="target-tree-field"><b>{field.label}</b>{field.required && <em>required</em>}<small>{field.type}{field.help && ` · ${field.help}`}</small></span><MappingBinding expression={mappings[field.path] ?? ""} fieldType={field.type} sources={sources} onChange={(value: any) => set({ ...mappings, [field.path]: value })}/></div> : <div className="input-tree-group" key={field.path} style={{ "--target-depth": field.depth + 1 } as React.CSSProperties}><i className="tree-elbow"/><Braces/><span><b>{field.label}</b><small>object · {rows.filter((candidate) => candidate.path.startsWith(`${field.path}.`) && candidate.explicit).length} fields</small></span></div>)}</div> : <div className="contract-empty"><CheckCircle2/>This starter/activity has no configurable input.</div>}</section><MappingConnections root={root} mappings={mappings}/></div>;
+  const connectionMappings = Object.fromEntries(Object.entries(mappings).map(([path, value]) => [path, mappingSource(value)]));
+  return <div ref={root} className="activity-tab mapping-editor resizable-mapper visual-field-mapper" style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}><DataSourcePane properties={properties} sources={sources} onChoose={choose}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}><span/></div><section><div className="contract-heading"><SettingsTitle title="Activity input" text="Map a source, function, or typed constant to this hierarchical input tree"/></div>{before}{fields.length ? <div className="input-contract-tree"><header><Braces/><span><b>{node.name}</b><small>Hierarchical input structure · {fields.length} mappable fields · right-click a field for BW mapping statements</small></span></header>{rows.map((field) => field.explicit ? <div data-target={field.path} className={`input-tree-row ${field.group ? "tree-parent-target" : ""} ${selected === field.path ? "selected" : ""}`} key={field.path} style={{ "--target-depth": field.depth + 1 } as React.CSSProperties} onClick={() => setSelected(field.path)} onContextMenu={(event) => { event.preventDefault(); setSelected(field.path); setContextMenu({ x: event.clientX, y: event.clientY, path: field.path, label: field.label }); }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { setSelected(field.path); set({ ...mappings, [field.path]: event.dataTransfer.getData("expression") }); }}><i className="tree-elbow"/><span className="target-tree-field"><b>{field.label}</b>{field.required && <em>required</em>}<small>{field.type}{field.help && ` · ${field.help}`}</small></span><MappingBinding expression={mappings[field.path] ?? ""} fieldType={field.type} sources={sources} onChange={(value: any) => set({ ...mappings, [field.path]: value })}/></div> : <div className="input-tree-group" key={field.path} style={{ "--target-depth": field.depth + 1 } as React.CSSProperties}><i className="tree-elbow"/><Braces/><span><b>{field.label}</b><small>object · {rows.filter((candidate) => candidate.path.startsWith(`${field.path}.`) && candidate.explicit).length} fields</small></span></div>)}</div> : <div className="contract-empty"><CheckCircle2/>This starter/activity has no configurable input.</div>}</section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextMenu ? mappings[contextMenu.path] : null} close={() => setContextMenu(null)} change={(value: any) => contextMenu && set({ ...mappings, [contextMenu.path]: value })} remove={() => { if (!contextMenu) return; const next = { ...mappings }; delete next[contextMenu.path]; set(next); }}/></div>;
 }
 
 type SchemaTreeField = { path: string; name: string; type: string; depth: number };
@@ -1378,28 +1517,32 @@ function transformSchemaFields(config: any): SchemaTreeField[] {
       const directElements = (container: Element): Element[] => Array.from(container.children).flatMap((child) => local(child) === "element" ? [child] : ["complextype", "sequence", "all", "choice", "group", "extension"].includes(local(child)) ? directElements(child) : []);
       const fields: SchemaTreeField[] = [];
       const walkElement = (element: Element, prefix = "", depth = 0) => {
-        const name = element.getAttribute("name") || element.getAttribute("ref")?.split(":").pop() || "element", rawType = element.getAttribute("type") || "complex", type = rawType.split(":").pop() || rawType, path = prefix ? `${prefix}.${name}` : name;
+        const name = element.getAttribute("name") || element.getAttribute("ref")?.split(":").pop() || "element", rawType = element.getAttribute("type") || "complex", baseType = rawType.split(":").pop() || rawType, type = element.getAttribute("maxOccurs") === "unbounded" || Number(element.getAttribute("maxOccurs") || 1) > 1 ? `${baseType}[]` : baseType, path = prefix ? `${prefix}.${name}` : name;
         fields.push({ path, name, type, depth });
-        const inline = Array.from(element.children).find((child) => local(child) === "complextype"), referenced = complexTypes.get(type);
-        directElements(inline || referenced || element).forEach((child) => walkElement(child, path, depth + 1));
+        const inline = Array.from(element.children).find((child) => local(child) === "complextype"), referenced = complexTypes.get(baseType);
+        const container = inline || referenced || element;
+        Array.from(container.getElementsByTagNameNS("*", "attribute")).filter((attribute) => { let parent: Element | null = attribute.parentElement; while (parent && local(parent) !== "element") parent = parent.parentElement; return parent === element; }).forEach((attribute) => { const attributeName = attribute.getAttribute("name") || attribute.getAttribute("ref")?.split(":").pop() || "attribute"; fields.push({ path: `${path}.@${attributeName}`, name: `@${attributeName}`, type: (attribute.getAttribute("type") || "string").split(":").pop() || "string", depth: depth + 1 }); });
+        directElements(container).forEach((child) => walkElement(child, path, depth + 1));
       };
       Array.from(document.documentElement.children).filter((element) => local(element) === "element").forEach((element) => walkElement(element));
       return fields;
     } catch { return []; }
   }
 }
-function TransformInputEditor({ config, properties, sources, setMappings }: any) {
-  const fields = transformSchemaFields(config), resize = useSourcePaneWidth(280), root = useRef<HTMLDivElement>(null), [selected, setSelected] = useState(fields[0]?.path || ""), mappings = Array.isArray(config.mappings) ? config.mappings : [];
+function TransformInputEditor({ config, properties, sources, setMappings, customFunctions, updateCustomFunctions }: any) {
+  properties = Object.assign([...(properties || [])], { customFunctions, updateCustomFunctions });
+  const fields = transformSchemaFields(config), resize = useSourcePaneWidth(280), root = useRef<HTMLDivElement>(null), [selected, setSelected] = useState(fields[0]?.path || ""), [contextMenu, setContextMenu] = useState<any>(null), mappings = Array.isArray(config.mappings) ? config.mappings : [];
   const mapTo = (target: string, source: any) => setMappings([...mappings.filter((rule: any) => rule.target !== target), { target, source, functions: [], enabled: true }]);
   const mapConstant = (target: string, constant: any) => setMappings([...mappings.filter((rule: any) => rule.target !== target), { target, constant, functions: [], enabled: true }]);
   const connectionMappings = Object.fromEntries(mappings.filter((rule: any) => rule.enabled !== false && typeof rule.source === "string" && rule.source.startsWith("${")).map((rule: any) => [rule.target, rule.source]));
-  return <div ref={root} className="activity-tab mapping-editor transform-input-editor resizable-mapper visual-field-mapper" style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}><DataSourcePane properties={properties} sources={sources} onChoose={(expression: string) => selected && mapTo(selected, expression)}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}><span/></div><section><div className="contract-heading"><SettingsTitle title="Target schema mapping" text="Map a source, function, or typed constant into the target tree"/></div><div className="target-schema-tree">{fields.map((field) => { const rule = mappings.find((item: any) => item.target === field.path); return <div data-target={field.path} className={`schema-tree-row ${selected === field.path ? "selected" : ""}`} key={field.path} style={{ paddingLeft: 12 + field.depth * 18 }} onClick={() => setSelected(field.path)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => mapTo(field.path, event.dataTransfer.getData("expression"))}><span className="tree-node-dot"/><span className="tree-field"><b>{field.name}</b><small>{field.type} · level {field.depth + 1}</small></span><span className={`mapping-connection ${rule ? "connected" : ""}`}><i/><ArrowRight/></span><MappingBinding expression={rule && "constant" in rule ? rule.constant : rule?.source ?? ""} fieldType={field.type} sources={sources} onChange={(value: any) => mapTo(field.path, value)} onConstantChange={(value: any) => mapConstant(field.path, value)}/></div>; })}{!fields.length && <div className="contract-empty">Select a project XSD or enter a valid inline target schema on Configuration.</div>}</div></section><MappingConnections root={root} mappings={connectionMappings}/></div>;
+  const contextValue = contextMenu ? mappings.find((item: any) => item.target === contextMenu.path) : null;
+  return <div ref={root} className="activity-tab mapping-editor transform-input-editor resizable-mapper visual-field-mapper" style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}><DataSourcePane properties={properties} sources={sources} onChoose={(expression: string) => selected && mapTo(selected, expression)}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}><span/></div><section><div className="contract-heading"><SettingsTitle title="Target schema mapping" text="Map a source, function, or typed constant into the target tree"/></div><div className="target-schema-tree">{fields.map((field) => { const rule = mappings.find((item: any) => item.target === field.path); return <div data-target={field.path} className={`schema-tree-row ${selected === field.path ? "selected" : ""}`} key={field.path} style={{ paddingLeft: 12 + field.depth * 18 }} onClick={() => setSelected(field.path)} onContextMenu={(event) => { event.preventDefault(); setSelected(field.path); setContextMenu({ x: event.clientX, y: event.clientY, path: field.path, label: field.name }); }} onDragOver={(event) => event.preventDefault()} onDrop={(event) => mapTo(field.path, event.dataTransfer.getData("expression"))}><span className="tree-node-dot"/><span className="tree-field"><b>{field.name}</b><small>{field.type} · level {field.depth + 1}</small></span><span className={`mapping-connection ${rule ? "connected" : ""}`}><i/><ArrowRight/></span><MappingBinding expression={rule && "constant" in rule ? rule.constant : rule?.source ?? ""} fieldType={field.type} sources={sources} onChange={(value: any) => mapTo(field.path, value)} onConstantChange={(value: any) => mapConstant(field.path, value)}/></div>; })}{!fields.length && <div className="contract-empty">Select a project XSD or enter a valid inline target schema on Configuration.</div>}</div></section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextValue?.source ?? contextValue?.constant} close={() => setContextMenu(null)} change={(value: any) => contextMenu && setMappings([...mappings.filter((item: any) => item.target !== contextMenu.path), { target: contextMenu.path, ...(value && typeof value === "object" && value.$rule ? { source: value.source, operator: value.$rule, select: value.select, groupBy: value.groupBy, condition: value.condition, otherwise: value.otherwise, duplicateOf: value.duplicateOf } : { source: value }), functions: [], enabled: true }])} remove={() => contextMenu && setMappings(mappings.filter((item: any) => item.target !== contextMenu.path))}/></div>;
 }
 function TransformOutputEditor({ config }: any) {
   const fields = transformSchemaFields(config);
   return <div className="activity-tab output-editor"><div className="contract-heading"><SettingsTitle title="Transformer output structure" text="Published target schema available to downstream activities"/></div><div className="output-schema-tree">{fields.map((field) => <div key={field.path} style={{ paddingLeft: 14 + field.depth * 18 }}><span className="tree-node-dot"/><code>{field.name}</code><small>{field.type}</small><span>{field.depth ? "Nested field" : "Root field"}</span></div>)}{!fields.length && <div className="contract-empty">No target schema is configured.</div>}</div></div>;
 }
-function OutputEditor({ fields, config, set }: any) {
+function OutputEditor({ fields, config, set, before }: any) {
   const rows = dataTreeRows(fields);
   return (
     <div className="activity-tab output-editor">
@@ -1409,6 +1552,7 @@ function OutputEditor({ fields, config, set }: any) {
           text="Published values available to downstream activity mappings"
         />
       </div>
+      {before}
       <div className="output-options">
         <label>
           Output name
@@ -1418,14 +1562,14 @@ function OutputEditor({ fields, config, set }: any) {
             onChange={(e) => set("outputName", e.target.value)}
           />
         </label>
-        <label className="switch-row">
+        {!before && <label className="switch-row">
           <input
             type="checkbox"
             checked={config.validateOutput !== false}
             onChange={(e) => set("validateOutput", e.target.checked)}
           />{" "}
           Validate output schema
-        </label>
+        </label>}
       </div>
       <div className="schema-table">
         <header>
