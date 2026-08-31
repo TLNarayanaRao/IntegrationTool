@@ -7,6 +7,8 @@ const path = require('node:path');
 
 let mainWindow;
 let runtimeProcess;
+let runtimeStartupError;
+let runtimeLogPath;
 
 const availablePort = () => new Promise((resolve, reject) => {
   const server = net.createServer();
@@ -18,25 +20,68 @@ const availablePort = () => new Promise((resolve, reject) => {
   });
 });
 
-const healthReady = (port, attempts = 100) => new Promise((resolve, reject) => {
+const logTail = (filePath, maximum = 12000) => {
+  try {
+    const value = fs.readFileSync(filePath, 'utf8');
+    return value.slice(Math.max(0, value.length - maximum)).trim();
+  } catch {
+    return '';
+  }
+};
+
+const healthReady = (port, executable, timeoutMs = 60000) => new Promise((resolve, reject) => {
+  const deadline = Date.now() + timeoutMs;
+  let complete = false;
+  const finish = (error) => {
+    if (complete) return;
+    complete = true;
+    if (!error) return resolve();
+    const details = logTail(runtimeLogPath);
+    const message = [
+      error,
+      `Runtime executable: ${executable}`,
+      `Startup log: ${runtimeLogPath}`,
+      details ? `\nLast runtime output:\n${details}` : '\nThe runtime produced no output. Check antivirus quarantine and Windows Event Viewer.',
+    ].join('\n');
+    reject(new Error(message));
+  };
+  const retry = () => {
+    if (complete) return;
+    if (runtimeStartupError) return finish(`The Integration Fabric runtime could not start: ${runtimeStartupError.message}`);
+    if (runtimeProcess && runtimeProcess.exitCode !== null) return finish(`The Integration Fabric runtime exited during startup with code ${runtimeProcess.exitCode}.`);
+    if (Date.now() >= deadline) return finish(`The Integration Fabric runtime did not become ready on 127.0.0.1:${port} within ${Math.round(timeoutMs / 1000)} seconds.`);
+    setTimeout(probe, 250);
+  };
   const probe = () => {
+    if (complete) return;
+    let retried = false;
+    const retryOnce = () => {
+      if (retried) return;
+      retried = true;
+      retry();
+    };
     const request = http.get(`http://127.0.0.1:${port}/api/health`, (response) => {
       response.resume();
-      if (response.statusCode === 200) resolve();
-      else retry();
+      if (response.statusCode === 200) finish();
+      else retryOnce();
     });
-    request.on('error', retry);
-    request.setTimeout(500, () => { request.destroy(); retry(); });
+    request.on('error', retryOnce);
+    request.setTimeout(1000, () => request.destroy(new Error('Runtime health probe timed out')));
   };
-  const retry = () => attempts-- > 0 ? setTimeout(probe, 150) : reject(new Error('The Integration Fabric runtime did not become ready.'));
   probe();
 });
 
 function startRuntime(port) {
+  runtimeStartupError = undefined;
+  const logDirectory = path.join(app.getPath('userData'), 'logs');
+  fs.mkdirSync(logDirectory, { recursive: true });
+  runtimeLogPath = path.join(logDirectory, 'runtime-startup.log');
   const environment = {
     ...process.env,
     FABRIC_PORT: String(port),
     FABRIC_DATA_DIR: path.join(app.getPath('userData'), 'workspace-data'),
+    FABRIC_LOG_LEVEL: process.env.FABRIC_LOG_LEVEL || 'info',
+    PYTHONUTF8: '1',
   };
   let executable;
   let args = [];
@@ -52,19 +97,33 @@ function startRuntime(port) {
     args = ['run_sidecar.py'];
     cwd = path.join(root, 'backend');
   }
+  if (!fs.existsSync(executable)) throw new Error(`The packaged runtime executable is missing: ${executable}`);
+  fs.writeFileSync(runtimeLogPath, `[${new Date().toISOString()}] Starting ${executable}\nWorking directory: ${cwd}\nPort: ${port}\n`, 'utf8');
   runtimeProcess = spawn(executable, args, { cwd, env: environment, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-  runtimeProcess.stdout?.on('data', (value) => process.stdout.write(`[runtime] ${value}`));
-  runtimeProcess.stderr?.on('data', (value) => process.stderr.write(`[runtime] ${value}`));
+  const record = (stream, value) => {
+    const line = `[${new Date().toISOString()}] [${stream}] ${value}`;
+    fs.appendFileSync(runtimeLogPath, line);
+    if (stream === 'stdout') process.stdout.write(`[runtime] ${value}`);
+    else process.stderr.write(`[runtime] ${value}`);
+  };
+  runtimeProcess.stdout?.on('data', (value) => record('stdout', value));
+  runtimeProcess.stderr?.on('data', (value) => record('stderr', value));
+  runtimeProcess.on('error', (error) => {
+    runtimeStartupError = error;
+    fs.appendFileSync(runtimeLogPath, `[${new Date().toISOString()}] [spawn-error] ${error.stack || error}\n`);
+  });
   runtimeProcess.on('exit', (code) => {
+    fs.appendFileSync(runtimeLogPath, `[${new Date().toISOString()}] [exit] Runtime exited with code ${code}\n`);
     if (!app.isQuitting && mainWindow) dialog.showErrorBox('Integration Fabric Runtime', `The local runtime stopped unexpectedly (exit code ${code}).`);
   });
+  return executable;
 }
 
 async function createWindow() {
   const port = await availablePort();
-  startRuntime(app.isPackaged ? port : 8787);
   const runtimePort = app.isPackaged ? port : 8787;
-  await healthReady(runtimePort);
+  const executable = startRuntime(runtimePort);
+  await healthReady(runtimePort, executable);
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 1000,

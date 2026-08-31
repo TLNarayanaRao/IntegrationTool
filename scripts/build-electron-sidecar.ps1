@@ -51,4 +51,6 @@ try {
 if (!(Test-Path "$root\backend\dist\IntegrationFabricRuntime\IntegrationFabricRuntime.exe")) {
     throw "Runtime executable output was not created."
 }
+& "$root\backend\.venv\Scripts\python.exe" "$root\scripts\smoke-test-packaged-runtime.py" "$root\backend\dist\IntegrationFabricRuntime\IntegrationFabricRuntime.exe"
+Assert-CommandSucceeded 'Packaged runtime health check' $LASTEXITCODE
 Write-Host "Electron sidecar ready: $root\backend\dist\IntegrationFabricRuntime"
