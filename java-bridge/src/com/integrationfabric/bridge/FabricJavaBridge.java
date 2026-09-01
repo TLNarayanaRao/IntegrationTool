@@ -161,7 +161,11 @@ public final class FabricJavaBridge {
         if ("null".equals(type)) statement.setObject(index, null);
         else if ("boolean".equals(type)) statement.setBoolean(index, Boolean.parseBoolean(value));
         else if ("integer".equals(type)) statement.setLong(index, Long.parseLong(value));
-        else if ("number".equals(type)) statement.setBigDecimal(index, new java.math.BigDecimal(value));
+        else if ("number".equals(type) || "decimal".equals(type)) statement.setBigDecimal(index, new java.math.BigDecimal(value));
+        else if ("date".equals(type)) statement.setDate(index, java.sql.Date.valueOf(value));
+        else if ("time".equals(type)) statement.setTime(index, java.sql.Time.valueOf(value));
+        else if ("timestamp".equals(type) || "datetime".equals(type)) statement.setTimestamp(index, java.sql.Timestamp.valueOf(value.replace('T', ' ')));
+        else if ("binary".equals(type)) statement.setBytes(index, Base64.getDecoder().decode(value));
         else statement.setString(index, value == null ? "" : value);
     }
 
@@ -176,13 +180,48 @@ public final class FabricJavaBridge {
     private static Object invoke(Object target, String name, Object... args) throws Exception {
         Method selected = null;
         for (Method method : target.getClass().getMethods()) {
-            if (!method.getName().equals(name) || method.getParameterCount() != args.length) continue;
-            Class<?>[] types = method.getParameterTypes(); boolean compatible = true;
-            for (int index = 0; index < args.length; index++) if (args[index] != null && !wrap(types[index]).isAssignableFrom(wrap(args[index].getClass()))) { compatible = false; break; }
-            if (compatible) { selected = method; break; }
+            if (!compatible(method, name, args)) continue;
+            selected = method;
+            break;
         }
         if (selected == null) throw new NoSuchMethodException(target.getClass().getName() + "." + name + "/" + args.length);
+        // Several JMS providers, including TIBCO EMS, return package-private
+        // implementation classes such as TibjmsxSessionImp. A public method on
+        // that class is still inaccessible to callers in another package. Use
+        // the equivalent method declared by its public JMS interface instead.
+        Method callable = publicContractMethod(target.getClass(), name, args);
+        if (callable != null) return callable.invoke(target, args);
+        if (!selected.canAccess(target) && !selected.trySetAccessible()) {
+            throw new IllegalAccessException("Cannot access " + selected + " through " + target.getClass().getName());
+        }
         return selected.invoke(target, args);
+    }
+
+    private static Method publicContractMethod(Class<?> type, String name, Object[] args) {
+        Set<Class<?>> visited = new HashSet<>();
+        Deque<Class<?>> contracts = new ArrayDeque<>();
+        Class<?> current = type;
+        while (current != null) {
+            contracts.addAll(Arrays.asList(current.getInterfaces()));
+            current = current.getSuperclass();
+        }
+        while (!contracts.isEmpty()) {
+            Class<?> contract = contracts.removeFirst();
+            if (!visited.add(contract)) continue;
+            contracts.addAll(Arrays.asList(contract.getInterfaces()));
+            if (!Modifier.isPublic(contract.getModifiers())) continue;
+            for (Method method : contract.getMethods()) if (compatible(method, name, args)) return method;
+        }
+        return null;
+    }
+
+    private static boolean compatible(Method method, String name, Object[] args) {
+        if (!method.getName().equals(name) || method.getParameterCount() != args.length) return false;
+        Class<?>[] types = method.getParameterTypes();
+        for (int index = 0; index < args.length; index++) {
+            if (args[index] != null && !wrap(types[index]).isAssignableFrom(wrap(args[index].getClass()))) return false;
+        }
+        return true;
     }
 
     private static Class<?> wrap(Class<?> type) {

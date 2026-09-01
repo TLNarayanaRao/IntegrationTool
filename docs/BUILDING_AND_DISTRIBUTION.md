@@ -28,7 +28,7 @@ npm run desktop:installer
 Output:
 
 ```text
-frontend\release\IntegrationFabricStudio-0.2.0-Setup.exe
+frontend\release\IntegrationFabricStudio-1.0.3-Setup.exe
 ```
 
 The installer is machine-wide so different Windows users can launch Studio in parallel. Each user gets an independent local runtime port and workspace data directory under that user's application-data profile.
@@ -68,7 +68,7 @@ Keep SSL verification enabled. If the company requires an explicit proxy, obtain
 
 After a failed `npm ci`, close running Node/Electron processes and delete the incomplete `frontend\node_modules` directory before retrying. The desktop build script now stops at the first failed npm, pip, Electron, or PyInstaller command instead of reporting a misleading successful sidecar build.
 
-The desktop runtime is built with Python 3.11. The AMQP 1.0 connector uses the prebuilt `python-qpid-proton-wheel` distribution because the upstream `python-qpid-proton` 0.40 source release does not provide a CPython 3.11 Windows wheel and otherwise requires Microsoft Visual C++ Build Tools. Before PyInstaller starts, the build imports every external connector module and fails if a package or native DLL is unavailable.
+The desktop runtime is built with Python 3.11. Install the standard x64 distribution from python.org; a Microsoft Store execution alias that appears in `py -0p` but cannot launch is not sufficient. If `backend\.venv` uses another Python version, the installer build now preserves it and creates a dedicated Python 3.11 environment under `backend\build\.venv311`. The AMQP 1.0 connector uses the prebuilt `python-qpid-proton-wheel` distribution because the upstream `python-qpid-proton` 0.40 source release does not provide a CPython 3.11 Windows wheel and otherwise requires Microsoft Visual C++ Build Tools. Before PyInstaller starts, the build imports every external connector module and fails if a package or native DLL is unavailable.
 
 Database shared connections accept either the Studio host/port/database fields or vendor JDBC URLs and translate them to the corresponding native Python adapter. The packaged runtime includes adapters for SQLite, PostgreSQL, MySQL/MariaDB, Oracle, IBM Db2, Databricks SQL, Snowflake, and SQL Server. SQL Server additionally requires Microsoft ODBC Driver 18 (or 17) to be installed on the runtime machine; the Studio detects installed drivers and reports the available names. Databricks supports personal access tokens, OAuth machine-to-machine, and interactive OAuth user-to-machine authentication with SQL warehouse hostname, HTTP path, catalog, and schema configuration.
 

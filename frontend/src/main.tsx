@@ -26,6 +26,7 @@ import {
   Globe,
   HardDrive,
   MessageSquare,
+  LoaderCircle,
   Maximize2,
   Minimize2,
   Monitor,
@@ -961,6 +962,7 @@ function App() {
     [runtimeState, setRuntimeState] = useState<any>(null),
     [breakpoints, setBreakpoints] = useState<string[]>([]),
     [busy, setBusy] = useState(false),
+    [workStatus, setWorkStatus] = useState("Loading project workspace…"),
     [zoom, setZoom] = useState(1),
     [validation, setValidation] = useState<{ title: string; issues: ValidationIssue[] } | null>(null),
     [connectionDraft, setConnectionDraft] = useState<{ source: string; x: number; y: number } | null>(null),
@@ -1004,6 +1006,10 @@ function App() {
       tasks: p.tasks.map((t) => (t.id === p.active_task_id ? fn(t) : t)),
       process: undefined,
     }));
+  useEffect(() => {
+    const ready = window.setTimeout(() => setWorkStatus(""), 900);
+    return () => window.clearTimeout(ready);
+  }, []);
   const [closed, setClosed] = useState(true),
     [theme, setTheme] = useState(
       localStorage.getItem("integration-fabric-theme") || "midnight",
@@ -1682,6 +1688,7 @@ function App() {
   const saveProjectFile = async (format: "package" | "json" = "package", forceNew = false) => {
     const extension = format === "package" ? "ifproject" : "json", filename = projectFilename(extension), picker = (window as any).showSaveFilePicker;
     let handle = format === "package" && !forceNew ? projectFileHandle.current : null;
+    setWorkStatus(format === "package" ? "Saving project package…" : "Saving project JSON…");
     try {
       if (picker && !handle) handle = await picker({ suggestedName: filename, types: [{ description: format === "package" ? "Integration Fabric Project" : "Integration Fabric Project JSON", accept: { [format === "package" ? "application/zip" : "application/json"]: [`.${extension}`] } }] });
       await persistProject();
@@ -1703,9 +1710,10 @@ function App() {
     } catch (error: any) {
       if (error?.name === "AbortError") { setLogs([{ level: "INFO", message: "Project file save cancelled." }]); return; }
       setLogs([{ level: "ERROR", message: error?.message || "Project file save failed" }]);
-    }
+    } finally { setWorkStatus(""); }
   };
   const saveProjectFolder = async () => {
+    setWorkStatus("Saving project workspace…");
     try {
       const saved = await persistProject();
       const folderName = projectFilename("").replace(/\.$/, "");
@@ -1742,12 +1750,13 @@ function App() {
       setLogs([{ level: "INFO", message: `Saved structured project folder ${folderName}.` }]);
     } catch (error: any) {
       if (error?.name !== "AbortError") setLogs([{ level: "ERROR", message: error?.message || "Project folder save failed" }]);
-    }
+    } finally { setWorkStatus(""); }
   };
   const save = () => saveProjectFolder();
   const exportProject = () => saveProjectFile("package", true);
   const saveJsonFile = () => saveProjectFile("json", true);
   const buildDeploymentPackage = async (settings: Record<string, any>) => {
+    setWorkStatus("Validating and building deployment package…");
     try {
       const issues = validateProjectDefinition(project);
       const blocking = issues.filter((item) => item.severity === "error");
@@ -1774,7 +1783,7 @@ function App() {
     } catch (error: any) {
       setLogs([{ level: "ERROR", message: error?.message || "Package generation failed" }]);
       throw error;
-    }
+    } finally { setWorkStatus(""); }
   };
   const run = async (requestedTaskId?: unknown) => {
       setBusy(true);
@@ -1845,6 +1854,7 @@ function App() {
         selectTask(out.currentTaskId);
     };
   const executionActive = busy || (!!debugState && !["completed", "failed", "stopped"].includes(debugState.status)) || endpoints.length > 0 || ["running", "listening", "paused"].includes(runtimeState?.status);
+  const visibleWorkStatus = workStatus || (busy ? "Starting and running task…" : debugState?.status === "paused" ? "Debugger paused" : debugState ? `Debugger ${debugState.status || "working"}…` : runtimeState?.status === "listening" ? "Application is listening" : "");
   const stopExecution = async () => {
     try {
       if (debugState?.sessionId) await fetch(`/api/debug/${debugState.sessionId}/action`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "stop" }) });
@@ -1857,6 +1867,8 @@ function App() {
     }
   };
   const importProject = async (file: File) => {
+    setWorkStatus(`Loading project ${file.name}…`);
+    try {
       const data = new FormData();
       data.append("file", file);
       const r = await fetch("/api/projects/import", {
@@ -1878,8 +1890,14 @@ function App() {
         return out;
       } else setLogs([{ level: "ERROR", message: out.detail }]);
       return null;
-    };
+    } catch (error: any) {
+      setLogs([{ level: "ERROR", message: error?.message || "Project import failed" }]);
+      return null;
+    } finally { setWorkStatus(""); }
+  };
   const importFromFileSystem = async () => {
+    setWorkStatus("Opening project from filesystem…");
+    try {
     if (window.fabricDesktop) {
       const selectedFile = await window.fabricDesktop.openProject();
       if (!selectedFile) return;
@@ -1907,6 +1925,7 @@ function App() {
     } catch (error: any) {
       if (error?.name !== "AbortError") setLogs([{ level: "ERROR", message: error?.message || "Project import failed" }]);
     }
+    } finally { setWorkStatus(""); }
   };
   const deleteCurrent = async () => {
       if (
@@ -1968,7 +1987,7 @@ function App() {
     if (type === "schema") setProject((current) => ({ ...current, schemas: current.schemas.filter((item) => item.id !== id) }));
     if (type === "property" && id) setProject((current) => { const properties = { ...current.properties }; delete properties[id]; return { ...current, properties, active_environment: current.active_environment === id ? Object.keys(properties)[0] || "local" : current.active_environment }; });
   };
-  const explorerRefresh = async () => { const response = await fetch(`/api/projects/${project.id}`); if (response.ok) { setProject(await response.json()); setLogs([{ level: "INFO", message: "Project Explorer refreshed from saved project storage." }]); } };
+  const explorerRefresh = async () => { setWorkStatus("Refreshing project workspace…"); try { const response = await fetch(`/api/projects/${project.id}`); if (response.ok) { setProject(await response.json()); setLogs([{ level: "INFO", message: "Project Explorer refreshed from saved project storage." }]); } } finally { setWorkStatus(""); } };
   useEffect(() => {
     const projectFileShortcuts = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") return;
@@ -2557,7 +2576,7 @@ function App() {
             configSplit.current = { y: event.clientY, height: configHeight };
           }}
         ><span /></div>
-        <section className="config">
+        <section className="config" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
           <div className="tabs">
             <b>
               <Settings2 /> {edge ? "Transition" : resource ? "Connection" : "Activity"}
@@ -2670,6 +2689,14 @@ function App() {
           </div>
         ))}
       </aside>
+      <footer className="studio-status-bar">
+        <span className="status-product"><Workflow/> Integration Fabric Studio</span>
+        <span className="status-context">{project.name} · {task.name}</span>
+        <span className="status-spacer"/>
+        <span className="status-environment">{project.active_environment.toUpperCase()}</span>
+        <span className={visibleWorkStatus ? "status-progress working" : "status-progress ready"}>{visibleWorkStatus ? <LoaderCircle/> : <CheckCircle2/>}<b>{visibleWorkStatus || "Ready"}</b></span>
+      </footer>
+      {visibleWorkStatus && <div className="studio-progress-toast" role="status" aria-live="polite"><LoaderCircle/><span><b>Studio is working</b><small>{visibleWorkStatus}</small></span></div>}
       <input
         hidden
         ref={fileInput}

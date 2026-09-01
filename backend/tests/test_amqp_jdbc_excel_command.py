@@ -7,7 +7,7 @@ from pathlib import Path
 
 from app.jdbc import (
     JdbcAdapterError, _connection_url, _databricks_settings, _db2_connection_string,
-    _java_driver_class, _java_jdbc_url, _normalize_sql, _sqlserver_connection_string, _uses_java, execute as jdbc_execute,
+    _java_driver_class, _java_jdbc_url, _normalize_sql, _parameters, _sqlserver_connection_string, _uses_java, execute as jdbc_execute,
     metadata as jdbc_metadata,
 )
 from app.models import Activity, SharedResource
@@ -32,6 +32,20 @@ class AmqpJdbcExcelCommandTests(unittest.TestCase):
             catalog = jdbc_metadata(connection)
             self.assertEqual(catalog["tables"][0]["name"], "orders")
             self.assertEqual(catalog["tables"][0]["columns"][0]["name"], "id")
+
+    def test_jdbc_prepared_parameter_metadata_coerces_runtime_input_types(self):
+        values = _parameters({
+            "preparedParameters": [
+                {"name": "orderId", "type": "integer"},
+                {"name": "active", "type": "boolean"},
+                {"name": "amount", "type": "number"},
+            ],
+            "parameters": {"orderId": "42", "active": "true", "amount": "19.75"},
+        })
+        self.assertEqual(values, {"orderId": 42, "active": True, "amount": 19.75})
+        sql, parameters = _normalize_sql("SELECT value::text FROM orders WHERE id=:orderId", values, "sqlserver")
+        self.assertEqual(sql, "SELECT value::text FROM orders WHERE id=?")
+        self.assertEqual(parameters, [42])
 
     def test_sqlserver_builds_odbc_string_from_jdbc_fields_and_uses_qmark_parameters(self):
         drivers = ["PostgreSQL Unicode(x64)", "ODBC Driver 18 for SQL Server"]

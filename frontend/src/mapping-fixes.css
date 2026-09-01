@@ -1,5 +1,58 @@
 .resizable-mapper {
-  grid-template-columns: var(--source-width, 250px) 7px minmax(0, 1fr) !important;
+  grid-template-columns: minmax(170px, min(var(--source-width, 250px), 34%)) 7px minmax(0, 1fr) !important;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.resizable-mapper > .source-pane,
+.resizable-mapper > section,
+.resizable-mapper .input-contract-tree,
+.resizable-mapper .target-schema-tree,
+.resizable-mapper .mapping-binding {
+  min-width: 0;
+  max-width: 100%;
+}
+.resizable-mapper > section {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+}
+.source-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+.source-tabs button {
+  min-width: 0;
+  padding-inline: 3px !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.input-tree-row,
+.schema-tree-row {
+  max-width: 100%;
+  overflow: hidden;
+}
+.mapping-binding > span {
+  min-width: 0;
+}
+
+@container (max-width: 700px) {
+  .resizable-mapper {
+    grid-template-columns: minmax(150px, 31%) 6px minmax(0, 1fr) !important;
+  }
+  .input-tree-row {
+    grid-template-columns: 18px minmax(0, 1fr) !important;
+  }
+  .input-tree-row > .mapping-binding {
+    grid-column: 2;
+    margin-top: 4px;
+  }
+  .schema-tree-row {
+    grid-template-columns: 14px minmax(0, 1fr) 28px !important;
+  }
+  .schema-tree-row > .mapping-binding {
+    grid-column: 2 / 4;
+  }
 }
 .mapper-schema-title > i {
   margin-left: auto;

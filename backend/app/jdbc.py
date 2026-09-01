@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 import re
 import sqlite3
 from pathlib import Path
@@ -202,21 +204,30 @@ def _java_connection_values(config: dict) -> dict[str, Any]:
     return values
 
 
-def _java_parameters(sql: str, parameters: Any) -> tuple[str, list[Any]]:
+def _java_parameters(sql: str, parameters: Any) -> tuple[str, list[Any], list[str]]:
     if isinstance(parameters, dict):
-        names = re.findall(r":([A-Za-z_][A-Za-z0-9_]*)", sql)
+        names = re.findall(r"(?<!:):([A-Za-z_][A-Za-z0-9_]*)", sql)
         if names:
-            return re.sub(r":[A-Za-z_][A-Za-z0-9_]*", "?", sql), [parameters.get(name) for name in names]
-        return sql, list(parameters.values())
-    return sql, list(parameters or [])
+            return re.sub(r"(?<!:):[A-Za-z_][A-Za-z0-9_]*", "?", sql), [parameters.get(name) for name in names], names
+        return sql, list(parameters.values()), list(parameters.keys())
+    values = list(parameters or [])
+    return sql, values, [f"Parameter{index + 1}" for index in range(len(values))]
 
 
-def _java_parameter_type(value: Any) -> str:
+def _java_parameter_type(value: Any, declared_type: str = "") -> str:
     if value is None: return "null"
+    if declared_type: return declared_type.lower()
     if isinstance(value, bool): return "boolean"
     if isinstance(value, int): return "integer"
     if isinstance(value, float): return "number"
     return "string"
+
+
+def _java_parameter_value(value: Any, data_type: str) -> Any:
+    if value is None: return ""
+    if data_type == "binary" and isinstance(value, bytes): return base64.b64encode(value).decode("ascii")
+    if data_type == "json" and isinstance(value, (dict, list)): return json.dumps(value, separators=(",", ":"))
+    return value
 
 
 def _java_test(config: dict) -> dict:
@@ -243,11 +254,13 @@ def _java_execute(connection_config: dict, config: dict) -> dict:
         values = list(parameters.values()) if isinstance(parameters, dict) else list(parameters or [])
         sql, parameters = "{call " + procedure + "(" + ",".join("?" for _ in values) + ")}", values
     if not sql: raise JdbcAdapterError("An SQL statement is required", "InvalidInputException")
-    sql, parameters = _java_parameters(sql, parameters)
+    sql, parameters, parameter_names = _java_parameters(sql, parameters)
+    declared = _parameter_types(config)
     values = {**_java_connection_values(connection_config), "sql": sql, "parameterCount": len(parameters), "queryTimeoutSeconds": config.get("timeout", 0), "maxRows": config.get("maxRows") if config.get("maxRows") is not None else config.get("maximumRows", 0)}
     for index, value in enumerate(parameters):
-        values[f"parameter.{index}.type"] = _java_parameter_type(value)
-        values[f"parameter.{index}.value"] = "" if value is None else value
+        data_type = _java_parameter_type(value, declared.get(parameter_names[index], ""))
+        values[f"parameter.{index}.type"] = data_type
+        values[f"parameter.{index}.value"] = _java_parameter_value(value, data_type)
     try: return invoke_java("jdbc.execute", connection_config, values, family=_java_family(connection_config), timeout=float(config.get("timeout") or connection_config.get("timeoutSeconds") or 30) + 5)
     except JavaBridgeError as exc: raise JdbcAdapterError(str(exc), "JDBCSQLException") from exc
 
@@ -446,9 +459,33 @@ def metadata(config: dict) -> dict:
 
 
 def _parameters(config: dict) -> Any:
-    value = config.get("parameters") or config.get("preparedParameters") or {}
+    value = config.get("parameters") or {}
     if isinstance(value, list):
         return [item.get("value") if isinstance(item, dict) else item for item in value]
+    definitions = _parameter_types(config)
+    if isinstance(value, dict):
+        return {key: _coerce_parameter(item, definitions.get(key, "string")) for key, item in value.items()}
+    return value
+
+
+def _parameter_types(config: dict) -> dict[str, str]:
+    definitions = config.get("preparedParameters") or []
+    if not isinstance(definitions, list): return {}
+    return {
+        str(item.get("name")): str(item.get("type") or "string").lower()
+        for item in definitions if isinstance(item, dict) and item.get("name")
+    }
+
+
+def _coerce_parameter(value: Any, data_type: str) -> Any:
+    if value is None: return None
+    kind = str(data_type or "string").lower()
+    if kind in ("string", "date", "time", "timestamp", "datetime"): return str(value)
+    if kind in ("integer", "long"): return int(value)
+    if kind in ("number", "decimal", "float", "double"): return float(value)
+    if kind == "boolean": return value if isinstance(value, bool) else str(value).strip().lower() in ("1", "true", "yes", "on")
+    if kind == "json": return value if isinstance(value, (dict, list)) else json.loads(str(value))
+    if kind == "binary": return value if isinstance(value, bytes) else base64.b64decode(str(value))
     return value
 
 
@@ -458,10 +495,10 @@ def _normalize_sql(sql: str, parameters: Any, driver: str):
             return sql, parameters
         if driver == "oracle" and re.search(r":[A-Za-z_][A-Za-z0-9_]*", sql):
             return sql, parameters
-        names = re.findall(r":([A-Za-z_][A-Za-z0-9_]*)", sql)
+        names = re.findall(r"(?<!:):([A-Za-z_][A-Za-z0-9_]*)", sql)
         placeholder = "?" if driver in ("sqlserver", "mssql", "db2", "databricks") else "%s"
         if names:
-            return re.sub(r":[A-Za-z_][A-Za-z0-9_]*", placeholder, sql), [parameters.get(name) for name in names]
+            return re.sub(r"(?<!:):[A-Za-z_][A-Za-z0-9_]*", placeholder, sql), [parameters.get(name) for name in names]
         return (sql if placeholder == "?" else sql.replace("?", placeholder)), list(parameters.values())
     if driver == "oracle" and isinstance(parameters, (list, tuple)):
         index = iter(range(1, len(parameters) + 1))
