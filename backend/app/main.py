@@ -346,6 +346,9 @@ stringData:
             env_from = ''
             if 'configmap' in selected_artifacts: env_from += f'            - configMapRef:\n                name: {deployment_name}-config\n'
             if 'secret' in selected_artifacts: env_from += f'            - secretRef:\n                name: {deployment_name}-secrets\n'
+            # Keep escape sequences outside the replacement field so this
+            # module remains valid on the Python 3.11 desktop build runtime.
+            env_from_yaml = env_from or '            []\n'
             files['deployment/cloud/deployment.yaml'] = f'''apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -375,7 +378,7 @@ spec:
             - name: FABRIC_APPLICATION_DIR
               value: /opt/integration-fabric/application
           envFrom:
-{env_from or '            []\n'}          readinessProbe:
+{env_from_yaml}          readinessProbe:
             tcpSocket:
               port: http
             initialDelaySeconds: 5

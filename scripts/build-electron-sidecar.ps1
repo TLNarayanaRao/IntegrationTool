@@ -44,6 +44,8 @@ try {
     Assert-CommandSucceeded 'Python runtime dependency installation' $LASTEXITCODE
     & .\.venv\Scripts\python.exe "$root\scripts\verify-runtime-dependencies.py"
     Assert-CommandSucceeded 'Runtime connector dependency verification' $LASTEXITCODE
+    & .\.venv\Scripts\python.exe -m compileall -q app run_sidecar.py
+    Assert-CommandSucceeded 'Python 3.11 backend syntax verification' $LASTEXITCODE
     & .\.venv\Scripts\python.exe -c "import app.main; print('Backend application package import passed')"
     Assert-CommandSucceeded 'Backend application package verification' $LASTEXITCODE
     # Explicitly collect the local `app` package. Some clean Python 3.11
