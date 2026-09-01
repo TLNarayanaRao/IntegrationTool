@@ -68,7 +68,8 @@ class SapAdapter:
             return [{**item, 'release':configured_release or item['release']} for item in self._mock_idocs() if not term or term in (item['idocType']+' '+item['description']).lower()]
         conn = self.connect(cfg)
         try:
-            options = [{'TEXT':f"IDOCTYP LIKE '%{search.upper().replace("'", "") }%'"}] if search else []
+            safe_search = search.upper().replace("'", '')
+            options = [{'TEXT': f"IDOCTYP LIKE '%{safe_search}%'"}] if safe_search else []
             result = conn.call('RFC_READ_TABLE', QUERY_TABLE='EDBAS', DELIMITER='|', ROWCOUNT=int(limit), OPTIONS=options, FIELDS=[{'FIELDNAME':'IDOCTYP'},{'FIELDNAME':'RELEASE'}])
             found = []
             for row in result.get('DATA', []):
