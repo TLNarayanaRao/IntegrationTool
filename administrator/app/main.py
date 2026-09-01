@@ -28,7 +28,22 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-ADMIN_VERSION = "2.1.0"
+def administrator_version() -> str:
+    override = os.environ.get("FABRIC_ADMIN_VERSION", "").strip()
+    if override:
+        return override
+    bundle_root = Path(getattr(sys, "_MEIPASS", Path(__file__).parents[1]))
+    for candidate in (bundle_root / "build_info.json", Path(__file__).parents[1] / "build_info.json"):
+        try:
+            value = json.loads(candidate.read_text(encoding="utf-8-sig"))
+            if str(value.get("version") or "").strip():
+                return str(value["version"]).strip()
+        except (OSError, ValueError, AttributeError):
+            continue
+    return "development"
+
+
+ADMIN_VERSION = administrator_version()
 RUN_ID = uuid4().hex
 STARTED_AT = time.time()
 DATA_DIR = Path(os.environ.get("FABRIC_ADMIN_DATA_DIR", Path(__file__).parents[1] / "data")).expanduser().resolve()

@@ -13,8 +13,8 @@
     "preview": "vite preview",
     "desktop:dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && cross-env FABRIC_DEV_URL=http://127.0.0.1:5173 electron .\"",
     "desktop:prepare": "powershell -ExecutionPolicy Bypass -File ../scripts/build-electron-sidecar.ps1",
-    "desktop:installer": "npm run desktop:prepare && electron-builder --win nsis",
-    "desktop:unpacked": "npm run desktop:prepare && electron-builder --win dir",
+    "desktop:installer": "powershell -ExecutionPolicy Bypass -File ../scripts/build-studio.ps1 -Target nsis",
+    "desktop:unpacked": "powershell -ExecutionPolicy Bypass -File ../scripts/build-studio.ps1 -Target dir",
     "administrator:windows": "powershell -ExecutionPolicy Bypass -File ../scripts/build-administrator.ps1"
   },
   "dependencies": {

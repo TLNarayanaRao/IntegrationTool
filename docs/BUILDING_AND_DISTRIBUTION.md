@@ -22,14 +22,16 @@ Run from a normal PowerShell or Command Prompt. PowerShell is used internally by
 ```powershell
 cd D:\Integration-tool\IntegrationFabric\frontend
 npm ci
-npm run desktop:installer
+npm run desktop:installer -- -Version 2.4.0
 ```
 
 Output:
 
 ```text
-frontend\release\IntegrationFabricStudio-1.0.3-Setup.exe
+frontend\release\IntegrationFabricStudio-2.4.0-Setup.exe
 ```
+
+`-Version` is injected into Electron Builder at build time; `package.json` is not edited. It must be a semantic version. CI can set `$env:FABRIC_VERSION = '2.4.0'` and run `npm run desktop:installer` without passing the argument. When neither is supplied, the version in `frontend/package.json` is used as the fallback.
 
 The installer is machine-wide so different Windows users can launch Studio in parallel. Each user gets an independent local runtime port and workspace data directory under that user's application-data profile.
 
@@ -96,21 +98,23 @@ Do not put the certificate or password in `package.json` or source control. Elec
 
 ```powershell
 cd D:\Integration-tool\IntegrationFabric
-.\scripts\build-administrator.ps1
+.\scripts\build-administrator.ps1 -Version 2.4.0
 ```
 
 Or from the `frontend` directory:
 
 ```powershell
-npm run administrator:windows
+npm run administrator:windows -- -Version 2.4.0
 ```
 
 Outputs:
 
 ```text
 administrator\dist\IntegrationFabricAdministrator\IntegrationFabricAdministrator.exe
-administrator\release\IntegrationFabricAdministrator-Windows-x64.zip
+administrator\release\IntegrationFabricAdministrator-2.4.0-Windows-x64.zip
 ```
+
+The ZIP is a PyInstaller **one-directory** distribution. Copy or extract the complete `IntegrationFabricAdministrator` directory, including its `_internal`, `web`, and `bin` content. Copying only `IntegrationFabricAdministrator.exe` will not work reliably.
 
 Run it:
 
@@ -137,20 +141,20 @@ Build:
 ```bash
 cd /path/to/IntegrationFabric
 chmod +x scripts/build-administrator.sh administrator/bin/fabricadmin
-./scripts/build-administrator.sh
+./scripts/build-administrator.sh 2.4.0
 ```
 
 Output:
 
 ```text
-administrator/release/IntegrationFabricAdministrator-Linux-x64.tar.gz
+administrator/release/IntegrationFabricAdministrator-2.4.0-Linux-x64.tar.gz
 ```
 
 Install and start:
 
 ```bash
 sudo mkdir -p /opt/integration-fabric/administrator
-sudo tar -xzf administrator/release/IntegrationFabricAdministrator-Linux-x64.tar.gz \
+sudo tar -xzf administrator/release/IntegrationFabricAdministrator-2.4.0-Linux-x64.tar.gz \
   -C /opt/integration-fabric/administrator --strip-components=1
 sudo chmod +x /opt/integration-fabric/administrator/IntegrationFabricAdministrator
 sudo chmod +x /opt/integration-fabric/administrator/bin/fabricadmin
@@ -159,17 +163,17 @@ export FABRIC_ADMIN_HOME=/opt/integration-fabric/administrator
 ./administrator/bin/fabricadmin status
 ```
 
-The default Administrator URL is `http://linux-host:9080`.
+The default Administrator URL is `http://linux-host:9080`. A Windows Administrator build cannot run on Linux. Build the Linux tarball on Linux (or a Linux CI runner), or use the container image. In either operating system, deploy the entire generated bundle rather than copying only the executable.
 
 For production configuration, API authentication, encrypted secrets, package validation rules, machine registration, runtime command adapters, lifecycle transitions, monitoring, audit, backup, and troubleshooting, see [ADMINISTRATOR_GUIDE.md](ADMINISTRATOR_GUIDE.md).
 
 ## Run Control Plane as a container
 
 ```bash
-docker build -f Dockerfile.administrator -t integration-fabric-administrator:0.1.0 .
+docker build -f Dockerfile.administrator --build-arg FABRIC_VERSION=2.4.0 -t integration-fabric-administrator:2.4.0 .
 docker run -d --name fabric-admin -p 9080:9080 \
   -v fabric-admin-data:/var/lib/integration-fabric/administrator \
-  integration-fabric-administrator:0.1.0
+  integration-fabric-administrator:2.4.0
 ```
 
 ## Create deployment packages in Studio

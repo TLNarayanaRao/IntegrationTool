@@ -34,21 +34,21 @@ Open `http://localhost:9080`. OpenAPI is available at `http://localhost:9080/doc
 
 ### Windows distribution
 
-Build with `scripts/build-administrator.ps1`, extract the generated ZIP, and run `IntegrationFabricAdministrator.exe`. Use `bin\fabricadmin.cmd start|stop|status|run` for service-style local control.
+Build with `scripts/build-administrator.ps1 -Version 2.4.0`, extract the generated versioned ZIP, and run `IntegrationFabricAdministrator.exe`. The output is a one-directory native Windows distribution, so copy the complete extracted directory—not only the `.exe`. Use `bin\fabricadmin.cmd start|stop|status|run` for service-style local control.
 
 ### Linux distribution
 
-Build on Linux with `scripts/build-administrator.sh`, extract the generated tarball under `/opt/integration-fabric/administrator`, set `FABRIC_ADMIN_HOME`, and use `bin/fabricadmin start|stop|status|run`.
+Build on Linux with `scripts/build-administrator.sh 2.4.0`, extract the generated tarball under `/opt/integration-fabric/administrator`, set `FABRIC_ADMIN_HOME`, and use `bin/fabricadmin start|stop|status|run`. PyInstaller output is operating-system specific: build the Linux bundle on Linux and deploy the entire extracted directory.
 
 ### Container
 
 ```bash
-docker build -f Dockerfile.administrator -t integration-fabric-administrator:1.0.0 .
+docker build -f Dockerfile.administrator --build-arg FABRIC_VERSION=2.4.0 -t integration-fabric-administrator:2.4.0 .
 docker run -d --name fabric-admin -p 9080:9080 \
   -e FABRIC_ADMIN_API_KEY='replace-me' \
   -e FABRIC_ADMIN_SECRET_KEY='retrieve-from-secret-manager' \
   -v fabric-admin-data:/var/lib/integration-fabric/administrator \
-  integration-fabric-administrator:1.0.0
+  integration-fabric-administrator:2.4.0
 ```
 
 ## Configuration

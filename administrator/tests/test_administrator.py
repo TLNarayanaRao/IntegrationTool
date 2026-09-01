@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -31,6 +32,10 @@ def package_bytes(*, unsafe=False, target="on-prem"):
 
 
 class AdministratorTests(unittest.TestCase):
+    def test_administrator_version_accepts_build_or_runtime_override(self):
+        with patch.dict("os.environ", {"FABRIC_ADMIN_VERSION": "3.4.5"}):
+            self.assertEqual(main.administrator_version(), "3.4.5")
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         root = Path(self.temporary.name)

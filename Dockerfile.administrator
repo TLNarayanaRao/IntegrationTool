@@ -1,8 +1,10 @@
 FROM python:3.12-slim
+ARG FABRIC_VERSION=development
 WORKDIR /opt/integration-fabric/administrator
 COPY administrator/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY administrator .
 EXPOSE 9080
 ENV FABRIC_ADMIN_DATA_DIR=/var/lib/integration-fabric/administrator
+ENV FABRIC_ADMIN_VERSION=${FABRIC_VERSION}
 CMD ["python", "run_admin.py"]
