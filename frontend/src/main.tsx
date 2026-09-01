@@ -498,6 +498,7 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
   },
 ];
 const defaultProperties: Property[] = [
+  { key: "runtime.logDirectory", value: "", data_type: "string" },
   { key: "advanced.logPayload", value: false, data_type: "boolean" },
   { key: "advanced.retryEnabled", value: false, data_type: "boolean" },
   { key: "advanced.retryCount", value: 3, data_type: "integer" },
@@ -960,12 +961,14 @@ function App() {
     [executionOutputs, setExecutionOutputs] = useState<Record<string, any>>({}),
     [endpoints, setEndpoints] = useState<any[]>([]),
     [runtimeState, setRuntimeState] = useState<any>(null),
+    [systemLogInfo, setSystemLogInfo] = useState<any>(null),
     [breakpoints, setBreakpoints] = useState<string[]>([]),
     [busy, setBusy] = useState(false),
     [workStatus, setWorkStatus] = useState("Loading project workspace…"),
     [zoom, setZoom] = useState(1),
     [validation, setValidation] = useState<{ title: string; issues: ValidationIssue[] } | null>(null),
     [connectionDraft, setConnectionDraft] = useState<{ source: string; x: number; y: number } | null>(null),
+    [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; x: number; y: number; pointerId: number; baseIds: string[] } | null>(null),
     [quickAddDrag, setQuickAddDrag] = useState<{ source: string; startClientX: number; startClientY: number; x: number; y: number; pointerId: number } | null>(null),
     [edgeRewire, setEdgeRewire] = useState<{ edgeId: string; endpoint: "source" | "target"; fixedId: string; x: number; y: number } | null>(null),
     [openTaskIds, setOpenTaskIds] = useState<string[]>([initial.active_task_id]),
@@ -1094,6 +1097,7 @@ function App() {
     localStorage.setItem("integration-fabric-theme", theme);
   }, [theme]);
   useEffect(() => localStorage.setItem("integration-fabric-explorer-width", String(explorerWidth)), [explorerWidth]);
+  useEffect(() => setSystemLogInfo(null), [project.id]);
   useEffect(() => {
     const missingEnd = project.tasks.some((item) => !item.activities.some((activity) => activity.type === "end"));
     if (missingEnd) setProject((current) => ({ ...current, tasks: current.tasks.map(ensureTaskEnd), process: undefined }));
@@ -1853,6 +1857,18 @@ function App() {
       if (out.currentTaskId && out.currentTaskId !== project.active_task_id)
         selectTask(out.currentTaskId);
     };
+  const loadSystemLogs = async () => {
+    setWorkStatus("Loading saved project logs…");
+    try {
+      const response = await fetch(`/api/projects/${project.id}/logs?limit=2000&environment=${encodeURIComponent(project.active_environment)}`);
+      const output = await response.json();
+      if (!response.ok) throw new Error(output.detail || "Unable to load saved logs");
+      setSystemLogInfo(output);
+      setLogs(output.entries || []);
+    } catch (error: any) {
+      setLogs((current) => [...current, { level: "ERROR", message: error?.message || "Unable to load saved logs" }]);
+    } finally { setWorkStatus(""); }
+  };
   const executionActive = busy || (!!debugState && !["completed", "failed", "stopped"].includes(debugState.status)) || endpoints.length > 0 || ["running", "listening", "paused"].includes(runtimeState?.status);
   const visibleWorkStatus = workStatus || (busy ? "Starting and running task…" : debugState?.status === "paused" ? "Debugger paused" : debugState ? `Debugger ${debugState.status || "working"}…` : runtimeState?.status === "listening" ? "Application is listening" : "");
   const stopExecution = async () => {
@@ -2427,9 +2443,38 @@ function App() {
             // The visual canvas is mostly the nested canvas-content/SVG rather
             // than this scrolling element itself. Any blank orchestrator click
             // should clear the active activity or transition selection.
-            if (!target.closest(".node") && !target.closest(".wires g")) {
-              setSelectedIds([]); setSelected(""); setSelectedEdge(null); setSelectedResource(null);
-            }
+            if (event.button !== 0 || target.closest(".node") || target.closest(".wires g")) return;
+            if (!canvas.current) return;
+            const bounds = canvas.current.getBoundingClientRect();
+            const x = (event.clientX - bounds.left + canvas.current.scrollLeft) / zoom;
+            const y = (event.clientY - bounds.top + canvas.current.scrollTop) / zoom;
+            const additive = event.ctrlKey || event.metaKey || event.shiftKey;
+            setSelectionBox({ startX: x, startY: y, x, y, pointerId: event.pointerId, baseIds: additive ? selectedIds : [] });
+            if (!additive) { setSelectedIds([]); setSelected(""); }
+            setSelectedEdge(null); setSelectedResource(null);
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            if (!selectionBox || selectionBox.pointerId !== event.pointerId || !canvas.current) return;
+            const bounds = canvas.current.getBoundingClientRect();
+            const x = (event.clientX - bounds.left + canvas.current.scrollLeft) / zoom;
+            const y = (event.clientY - bounds.top + canvas.current.scrollTop) / zoom;
+            const left = Math.min(selectionBox.startX, x), right = Math.max(selectionBox.startX, x);
+            const top = Math.min(selectionBox.startY, y), bottom = Math.max(selectionBox.startY, y);
+            const hits = nodes.filter((item) => item.position.x < right && item.position.x + 104 > left && item.position.y < bottom && item.position.y + 94 > top).map((item) => item.id);
+            const nextIds = [...new Set([...selectionBox.baseIds, ...hits])];
+            setSelectionBox((current) => current ? { ...current, x, y } : null);
+            setSelectedIds(nextIds);
+            setSelected((current) => current && nextIds.includes(current) ? current : nextIds[0] || "");
+          }}
+          onPointerUp={(event) => {
+            if (!selectionBox || selectionBox.pointerId !== event.pointerId) return;
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+            setSelectionBox(null);
+          }}
+          onPointerCancel={(event) => {
+            if (!selectionBox || selectionBox.pointerId !== event.pointerId) return;
+            setSelectionBox(null);
           }}
         >
           <div
@@ -2476,6 +2521,7 @@ function App() {
               {quickAddDrag && byId[quickAddDrag.source] && <><path className="quick-add-draft" d={`M${byId[quickAddDrag.source].position.x + 104},${byId[quickAddDrag.source].position.y + 70} C${byId[quickAddDrag.source].position.x + 145},${byId[quickAddDrag.source].position.y + 70} ${quickAddDrag.x - 38},${quickAddDrag.y} ${quickAddDrag.x},${quickAddDrag.y}`}/><circle className="quick-add-drop" cx={quickAddDrag.x} cy={quickAddDrag.y} r="11"/><path className="quick-add-drop-plus" d={`M${quickAddDrag.x - 5},${quickAddDrag.y}H${quickAddDrag.x + 5}M${quickAddDrag.x},${quickAddDrag.y - 5}V${quickAddDrag.y + 5}`}/></>}
               {edgeRewire && byId[edgeRewire.fixedId] && <path className="draft-connection edge-rewire-draft" d={edgeRewire.endpoint === "target" ? `M${byId[edgeRewire.fixedId].position.x + 104},${byId[edgeRewire.fixedId].position.y + 38} C${byId[edgeRewire.fixedId].position.x + 136},${byId[edgeRewire.fixedId].position.y + 38} ${edgeRewire.x - 32},${edgeRewire.y} ${edgeRewire.x},${edgeRewire.y}` : `M${edgeRewire.x},${edgeRewire.y} C${edgeRewire.x + 32},${edgeRewire.y} ${byId[edgeRewire.fixedId].position.x - 32},${byId[edgeRewire.fixedId].position.y + 38} ${byId[edgeRewire.fixedId].position.x},${byId[edgeRewire.fixedId].position.y + 38}`} />}
             </svg>
+            {selectionBox && <div className="canvas-selection-box" style={{ left: Math.min(selectionBox.startX, selectionBox.x), top: Math.min(selectionBox.startY, selectionBox.y), width: Math.abs(selectionBox.x - selectionBox.startX), height: Math.abs(selectionBox.y - selectionBox.startY) }} />}
             {nodes.map((n) => {
               const def = packs
                 .flatMap((p) => p.items)
@@ -2650,6 +2696,7 @@ function App() {
       </main>
       <aside className={`monitor monitor-${monitorMode}`}>
         <div className="pane-title"><span>EXECUTION / DEBUG</span><span className="monitor-actions">
+          <button title="Load saved project logs" onClick={loadSystemLogs}><HardDrive/></button>
           <button title={monitorMode === "expanded" ? "Restore execution panel" : "Expand execution panel"} onClick={() => setMonitorMode((mode) => mode === "expanded" ? "normal" : "expanded")}><Maximize2/></button>
           <button title={monitorMode === "fullscreen" ? "Exit full screen" : "Open execution panel full screen"} onClick={() => setMonitorMode((mode) => mode === "fullscreen" ? "normal" : "fullscreen")}>{monitorMode === "fullscreen" ? <Minimize2/> : <Square/>}</button>
         </span></div>
@@ -2659,6 +2706,7 @@ function App() {
             ? `${debugState.status} · stack ${debugState.callStack?.length || 0}`
             : `${runtimeState?.status || "Runtime"} · ${project.active_environment}`}
         </div>
+        {systemLogInfo && <div className="system-log-info"><b>SYSTEM LOG · {String(systemLogInfo.environment || project.active_environment).toUpperCase()}</b><span title={systemLogInfo.path}>{systemLogInfo.path}</span><small>{systemLogInfo.configuredDirectory ? "Configured by runtime.logDirectory" : "Default Studio data directory"} · {(Number(systemLogInfo.maxBytes || 0) / 1024 / 1024).toFixed(0)} MB · {systemLogInfo.backupCount} rolling archives</small></div>}
         {runtimeState?.lastExecution && <section className="runtime-job-summary">
           <header><b>LAST EXECUTION</b><button title="Copy correlation ID" onClick={() => navigator.clipboard.writeText(runtimeState.lastExecution.correlationId)}><ClipboardCopy/></button></header>
           <dl><div><dt>Correlation ID</dt><dd>{runtimeState.lastExecution.correlationId}</dd></div><div><dt>Started</dt><dd>{runtimeState.lastExecution.startedAt || "—"}</dd></div><div><dt>Ended</dt><dd>{runtimeState.lastExecution.endedAt || "—"}</dd></div><div><dt>Duration</dt><dd>{Number(runtimeState.lastExecution.durationMs || 0).toFixed(1)} ms</dd></div></dl>
@@ -2681,7 +2729,7 @@ function App() {
             <pre>{formatRuntimeOutput(record)}</pre>
           </details>)}
         </details>})()}
-        {logs.filter((l) => monitorMode !== "normal" || l.kind !== "trace").map((l, i) => (
+        {logs.map((l, i) => (
           <div className={`log ${(l.level || "info").toLowerCase()}`} key={i}>
             <small>{l.time ? new Date(l.time).toLocaleTimeString() : ""} {l.level}{l.correlationId ? ` · ${l.correlationId}` : ""}</small>
             <p>{l.message}</p>

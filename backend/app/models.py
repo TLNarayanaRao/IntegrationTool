@@ -47,6 +47,7 @@ class EnvironmentProperty(BaseModel):
 def default_environment_properties() -> list[EnvironmentProperty]:
     """Project-global defaults available to every task and shared resource."""
     values = [
+        ('runtime.logDirectory', '', 'string'),
         ('advanced.logPayload', False, 'boolean'),
         ('advanced.retryEnabled', False, 'boolean'),
         ('advanced.retryCount', 3, 'integer'),

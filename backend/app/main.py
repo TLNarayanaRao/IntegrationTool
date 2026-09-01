@@ -20,6 +20,7 @@ from .amqp import amqp_adapter
 from .java_bridge import JavaBridgeError, test_jms
 from .google_pubsub import client_configuration as pubsub_client_configuration, credential_summary as pubsub_credential_summary
 from .ai_builder import generate as generate_ai_design
+from .project_logging import append_project_logs, project_log_info, read_project_logs
 
 app = FastAPI(title='Integration Fabric Runtime', version='0.1.0')
 runtime = WorkflowRuntime()
@@ -28,6 +29,12 @@ runtime_states: dict[str, dict] = {}
 active_runs: dict[str, asyncio.Task] = {}
 
 INBOUND_OPERATIONS = {None, 'listen', 'receiver', 'service'}
+
+def _environment_values(item: Project, environment: str) -> dict:
+    return {prop.key: prop.value for prop in item.properties.get(environment, [])}
+
+def _project_log_directory(item: Project, environment: str) -> str:
+    return str(_environment_values(item, environment).get('runtime.logDirectory') or '').strip()
 
 def _resolved_resource_config(item: Project, activity, properties: dict) -> dict:
     resource = next((value for value in item.resources if value.id == activity.config.get('resourceId')), None)
@@ -62,13 +69,14 @@ def _listener_endpoints(item: Project, task, environment: str, base_url: str = '
 def _lifecycle_logs(item: Project, endpoints: list[dict]) -> list[dict]:
     now = datetime.now(timezone.utc).isoformat()
     logs = [
-        {'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Deploying application {item.name}', 'startedAt': now},
+        {'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Integration Fabric runtime initializing application {item.name}', 'startedAt': now},
+        {'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Application module loaded: {item.name} ({len(item.tasks)} task(s), {len(item.resources)} shared resource(s))'},
         {'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Application {item.name} started', 'startedAt': now},
     ]
     logs.extend({'time': now, 'level': 'INFO', 'kind': 'endpoint', 'message': f'{", ".join(endpoint["methods"])} listener ready at {endpoint["url"]}'} for endpoint in endpoints)
     return logs
 
-def _publish_runtime_state(project_id: str, *, status: str, logs: list[dict], endpoints=None, result=None):
+def _publish_runtime_state(project_id: str, *, status: str, logs: list[dict], endpoints=None, result=None, environment: str | None = None):
     previous = runtime_states.get(project_id, {})
     executions = list(previous.get('executions', []))
     if result is not None:
@@ -80,6 +88,7 @@ def _publish_runtime_state(project_id: str, *, status: str, logs: list[dict], en
         executions = ([execution] + executions)[:100]
     state = {
         'status': status, 'updatedAt': datetime.now(timezone.utc).isoformat(),
+        'environment': environment or previous.get('environment', 'local'),
         'logs': logs, 'endpoints': endpoints if endpoints is not None else previous.get('endpoints', []),
         'activityOutputs': result.activity_outputs if result is not None else previous.get('activityOutputs', {}),
         'taskOutputs': result.task_outputs if result is not None else previous.get('taskOutputs', {}),
@@ -114,6 +123,14 @@ def project(project_id: str):
 def runtime_state(project_id: str):
     if not get_project(project_id): raise HTTPException(404, 'Project not found')
     return runtime_states.get(project_id, {'status': 'stopped', 'logs': [], 'endpoints': [], 'activityOutputs': {}, 'taskOutputs': {}, 'lastExecution': None, 'executions': []})
+
+@app.get('/api/projects/{project_id}/logs')
+def project_logs(project_id: str, limit: int = 1000, environment: str = 'local'):
+    item = get_project(project_id)
+    if not item: raise HTTPException(404, 'Project not found')
+    if environment not in item.properties: raise HTTPException(400, f'Environment {environment!r} was not found')
+    directory = _project_log_directory(item, environment)
+    return {**project_log_info(project_id, directory), 'environment': environment, 'propertyKey': 'runtime.logDirectory', 'configuredDirectory': directory, 'entries': read_project_logs(project_id, limit, directory)}
 
 @app.post('/api/projects', response_model=Project)
 def create_project(item: Project): return save_project(item)
@@ -151,11 +168,13 @@ async def run(project_id: str, http_request: Request, request: RunRequest):
     endpoints = _listener_endpoints(item, task, request.environment, str(http_request.base_url).rstrip('/'))
     if endpoints:
         lifecycle = _lifecycle_logs(item, endpoints)
-        _publish_runtime_state(project_id, status='listening', logs=lifecycle, endpoints=endpoints)
+        append_project_logs(project_id, item.name, lifecycle, _project_log_directory(item, request.environment))
+        _publish_runtime_state(project_id, status='listening', logs=lifecycle, endpoints=endpoints, environment=request.environment)
         return {'status': 'listening', 'output': {}, 'logs': lifecycle,
                 'activity_outputs': {}, 'task_outputs': {}, 'endpoints': endpoints, 'executions': []}
     current_run = asyncio.current_task()
     if current_run: active_runs[project_id] = current_run
+    runtime_states.setdefault(project_id, {})['environment'] = request.environment
     try:
         result = await runtime.run(task, request.input, resources, properties, project=item)
     except asyncio.CancelledError:
@@ -168,7 +187,8 @@ async def run(project_id: str, http_request: Request, request: RunRequest):
     payload = result.model_dump()
     payload['logs'] = _lifecycle_logs(item, []) + payload.get('logs', [])
     payload['endpoints'] = []
-    _publish_runtime_state(project_id, status=result.status, logs=payload['logs'], endpoints=[], result=result)
+    append_project_logs(project_id, item.name, payload['logs'], _project_log_directory(item, request.environment))
+    _publish_runtime_state(project_id, status=result.status, logs=payload['logs'], endpoints=[], result=result, environment=request.environment)
     return payload
 
 @app.post('/api/projects/{project_id}/stop')
@@ -178,11 +198,14 @@ async def stop_project(project_id: str):
     active = active_runs.get(project_id)
     if active and not active.done(): active.cancel()
     previous = runtime_states.get(project_id, {})
+    environment = str(previous.get('environment') or item.active_environment or 'local')
     now = datetime.now(timezone.utc).isoformat()
     logs = list(previous.get('logs', []))
     if not logs or logs[-1].get('message') != f'Application {item.name} stopped by user':
-        logs.append({'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Application {item.name} stopped by user', 'endedAt': now})
-    state = _publish_runtime_state(project_id, status='stopped', logs=logs[-500:], endpoints=[])
+        stopped_entry = {'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Application {item.name} stopped by user', 'endedAt': now}
+        logs.append(stopped_entry)
+        append_project_logs(project_id, item.name, [stopped_entry], _project_log_directory(item, environment))
+    state = _publish_runtime_state(project_id, status='stopped', logs=logs[-500:], endpoints=[], environment=environment)
     return state
 
 @app.get('/api/projects/{project_id}/export')
@@ -816,18 +839,28 @@ def start_debug(project_id: str, http_request: Request, request: DebugRequest):
     task_id = request.task_id or item.active_task_id
     properties = {prop.key: prop.value for prop in item.properties.get(request.environment, [])}
     try:
-        view = debugger.start(item, task_id, request.input, {resource.id:resource for resource in item.resources}, properties, request.breakpoints)
+        view = debugger.start(item, task_id, request.input, {resource.id:resource for resource in item.resources}, properties, request.breakpoints, request.environment)
         task = next(value for value in item.tasks if value.id == task_id)
         endpoints = _listener_endpoints(item, task, request.environment, str(http_request.base_url).rstrip('/'))
         state = debugger.sessions[view['sessionId']]
+        runtime_states.setdefault(project_id, {})['environment'] = request.environment
         state['endpoints'] = endpoints
-        state['logs'].extend(_lifecycle_logs(item, endpoints))
+        state['logs'][:] = _lifecycle_logs(item, endpoints) + state['logs']
+        append_project_logs(project_id, item.name, state['logs'], _project_log_directory(item, request.environment))
+        state['persistedLogCount'] = len(state['logs'])
         return debugger.view(state)
     except ValueError as exc: raise HTTPException(400, str(exc))
 
 @app.post('/api/debug/{session_id}/action')
 async def debug_action(session_id: str, request: DebugAction):
-    try: return await debugger.action(session_id, request.action)
+    try:
+        view = await debugger.action(session_id, request.action)
+        state = debugger.sessions[session_id]
+        project = state['project']
+        cursor = int(state.get('persistedLogCount', 0))
+        append_project_logs(project.id, project.name, state['logs'][cursor:], _project_log_directory(project, state.get('environment', 'local')))
+        state['persistedLogCount'] = len(state['logs'])
+        return view
     except ValueError as exc: raise HTTPException(404, str(exc))
 
 HTTP_LISTENER_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'TRACE', 'CONNECT']
@@ -885,7 +918,8 @@ async def invoke_listener(project_id: str, listener_path: str, request: Request,
     result = await runtime.run(task, payload, resources, properties, listener.id, item)
     deployment = runtime_states.get(project_id, {})
     combined_logs = list(deployment.get('logs', [])) + result.logs
-    _publish_runtime_state(project_id, status='listening' if result.status == 'completed' else 'failed', logs=combined_logs[-500:], result=result)
+    append_project_logs(project_id, item.name, result.logs, _project_log_directory(item, environment))
+    _publish_runtime_state(project_id, status='listening' if result.status == 'completed' else 'failed', logs=combined_logs[-500:], result=result, environment=environment)
     if result.status == 'failed': return JSONResponse({'status': result.status, 'logs': result.logs}, status_code=500)
     output = result.output
     if output.get('__httpResponse'):

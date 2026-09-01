@@ -3,6 +3,7 @@ import ast, asyncio, base64, csv, ftplib, gzip, importlib.util, io, json, os, re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import httpx
+from time import perf_counter
 from .models import Activity, ProcessDefinition, Project, RunResult
 from .mapper import execute as execute_mapping
 from .dataweave import DataWeaveError, execute as execute_dataweave
@@ -72,13 +73,20 @@ class WorkflowRuntime:
         current = starts[0]
         try:
             for _ in range(len(process.activities) + 1):
-                self.log(logs, 'DEBUG', f'Executing {current.name}', current.id, kind='trace')
+                activity_started = perf_counter()
+                operation = str(current.config.get('operation') or current.type)
+                self.log(logs, 'INFO', f'Activity started: {process.name} / {current.name}', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation)
                 context['context']['activityId'] = current.id
                 error = None
                 try:
                     context['last'] = await self.execute_with_policy(current, context)
                     self.record_activity_output(current, context['last'], context)
                 except Exception as exc: error = exc
+                activity_duration = round((perf_counter() - activity_started) * 1000, 3)
+                if error:
+                    self.log(logs, 'ERROR', f'Activity failed: {process.name} / {current.name} in {activity_duration:.3f} ms: {error}', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation, durationMs=activity_duration)
+                else:
+                    self.log(logs, 'INFO', f'Activity completed: {process.name} / {current.name} in {activity_duration:.3f} ms', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation, durationMs=activity_duration)
                 outgoing = [t for t in process.transitions if t.source == current.id]
                 if current.type in ('end', 'http_response'): break
                 if error:
@@ -99,6 +107,7 @@ class WorkflowRuntime:
                     chosen = chosen or next((t for t in outgoing if t.type == 'success'), None)
                     chosen = chosen or next((t for t in outgoing if t.type == 'success_no_match'), None)
                 if not chosen: raise RuntimeErrorWithLogs(f'{current.name} has no matching outgoing transition')
+                self.log(logs, 'DEBUG', f'Transition selected: {current.name} -> {activity_by_id[chosen.target].name} ({chosen.type})', kind='trace', runtimeActivityId=current.id, transitionId=chosen.id)
                 current = activity_by_id[chosen.target]
             final_output = context['last'] if isinstance(context['last'], dict) else {'result': context['last']}
             task_state['output'] = final_output

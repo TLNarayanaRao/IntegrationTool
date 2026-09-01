@@ -32,3 +32,4 @@ img[src$="start-end.png"],img[src$="transform.png"],img[src$="file-tools.png"]{m
 .package-modal>footer{flex:0 0 auto}.package-modal>footer button:disabled{opacity:.55;cursor:wait}
 @media(max-width:680px){.package-modal>main{grid-template-columns:1fr}.package-modal>main>label,.package-targets,.package-preview,.package-security,.package-error{grid-column:1}}
 .resource-vendor-icon{width:17px!important;height:17px!important;object-fit:contain;flex:0 0 auto}.resource-vendor-icon.resource-sap,.resource-vendor-icon.resource-sap_tid{padding:1px;background:#fff;border-radius:3px}
+.canvas-selection-box{position:absolute;z-index:6;pointer-events:none;border:1px solid #5de7ff;border-radius:6px;background:linear-gradient(145deg,#2bd8ff26,#34efb51a);box-shadow:inset 0 0 16px #57e6ff1f,0 0 16px #23cfff55;outline:1px solid #c3f8ff2b}
