@@ -5,7 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.jdbc import execute as jdbc_execute, metadata as jdbc_metadata
+from app.jdbc import (
+    JdbcAdapterError, _connection_url, _databricks_settings, _db2_connection_string,
+    _java_driver_class, _java_jdbc_url, _normalize_sql, _sqlserver_connection_string, _uses_java, execute as jdbc_execute,
+    metadata as jdbc_metadata,
+)
 from app.models import Activity, SharedResource
 from app.runtime import WorkflowRuntime
 
@@ -28,6 +32,62 @@ class AmqpJdbcExcelCommandTests(unittest.TestCase):
             catalog = jdbc_metadata(connection)
             self.assertEqual(catalog["tables"][0]["name"], "orders")
             self.assertEqual(catalog["tables"][0]["columns"][0]["name"], "id")
+
+    def test_sqlserver_builds_odbc_string_from_jdbc_fields_and_uses_qmark_parameters(self):
+        drivers = ["PostgreSQL Unicode(x64)", "ODBC Driver 18 for SQL Server"]
+        connection_string = _sqlserver_connection_string({
+            "url": "jdbc:sqlserver://db.example.test:1433;databaseName=orders;encrypt=true;trustServerCertificate=true",
+            "username": "fabric",
+            "password": "p;ass}word",
+        }, drivers)
+        self.assertIn("DRIVER={ODBC Driver 18 for SQL Server}", connection_string)
+        self.assertIn("SERVER={db.example.test,1433}", connection_string)
+        self.assertIn("DATABASE={orders}", connection_string)
+        self.assertIn("PWD={p;ass}}word}", connection_string)
+        self.assertIn("Encrypt=yes", connection_string)
+        self.assertIn("TrustServerCertificate=yes", connection_string)
+        sql, parameters = _normalize_sql("SELECT * FROM orders WHERE id=:id AND status=:status", {"id": 7, "status": "NEW"}, "sqlserver")
+        self.assertEqual(sql, "SELECT * FROM orders WHERE id=? AND status=?")
+        self.assertEqual(parameters, [7, "NEW"])
+
+    def test_sqlserver_and_oracle_default_to_pure_jdbc_without_native_clients(self):
+        sqlserver = {"driver":"sqlserver", "host":"db01", "port":1433, "database":"orders", "encrypt":True, "trustServerCertificate":False}
+        self.assertTrue(_uses_java(sqlserver))
+        self.assertEqual(_java_driver_class(sqlserver), "com.microsoft.sqlserver.jdbc.SQLServerDriver")
+        self.assertEqual(_java_jdbc_url(sqlserver), "jdbc:sqlserver://db01:1433;databaseName=orders;encrypt=true;trustServerCertificate=false")
+        oracle = {"driver":"oracle", "host":"ora01", "port":1521, "serviceName":"ORCLPDB1"}
+        self.assertTrue(_uses_java(oracle))
+        self.assertEqual(_java_driver_class(oracle), "oracle.jdbc.OracleDriver")
+        self.assertEqual(_java_jdbc_url(oracle), "jdbc:oracle:thin:@//ora01:1521/ORCLPDB1")
+
+    def test_sqlserver_adds_driver_to_odbc_attributes_and_reports_missing_driver(self):
+        value = _sqlserver_connection_string({"url": "Server=db01;Database=orders;Trusted_Connection=yes"}, ["ODBC Driver 17 for SQL Server"])
+        self.assertTrue(value.startswith("DRIVER={ODBC Driver 17 for SQL Server};Server=db01"))
+        with self.assertRaisesRegex(JdbcAdapterError, "Install Microsoft ODBC Driver 18"):
+            _sqlserver_connection_string({"host": "db01"}, ["PostgreSQL Unicode(x64)"])
+
+    def test_database_jdbc_urls_are_normalized_for_native_drivers(self):
+        self.assertEqual(_connection_url({"url": "jdbc:postgresql://db01:5432/orders"}, "jdbc:"), "postgresql://db01:5432/orders")
+        db2 = _db2_connection_string({"url": "jdbc:db2://db02:50001/inventory", "username": "fabric", "password": "secret"})
+        self.assertIn("DATABASE=inventory", db2)
+        self.assertIn("HOSTNAME=db02", db2)
+        self.assertIn("PORT=50001", db2)
+        sql, values = _normalize_sql("SELECT * FROM item WHERE id=:id", {"id": 9}, "db2")
+        self.assertEqual((sql, values), ("SELECT * FROM item WHERE id=?", [9]))
+        oracle_sql, oracle_values = _normalize_sql("SELECT * FROM item WHERE id=:id", {"id": 9}, "oracle")
+        self.assertEqual((oracle_sql, oracle_values), ("SELECT * FROM item WHERE id=:id", {"id": 9}))
+
+    def test_databricks_jdbc_url_and_pat_settings(self):
+        settings = _databricks_settings({
+            "url": "jdbc:databricks://dbc-example.cloud.databricks.com:443/default;httpPath=/sql/1.0/warehouses/abc;AuthMech=3;Auth_AccessToken=token-value",
+            "catalog": "main", "schema": "sales", "authentication": "Personal Access Token",
+        })
+        self.assertEqual(settings["server_hostname"], "dbc-example.cloud.databricks.com")
+        self.assertEqual(settings["http_path"], "/sql/1.0/warehouses/abc")
+        self.assertEqual(settings["access_token"], "token-value")
+        self.assertEqual(settings["catalog"], "main")
+        sql, values = _normalize_sql("SELECT * FROM orders WHERE state=:state", {"state": "OPEN"}, "databricks")
+        self.assertEqual((sql, values), ("SELECT * FROM orders WHERE state=?", ["OPEN"]))
 
     def test_amqp_memory_send_receive_confirm_and_dead_letter(self):
         runtime = WorkflowRuntime()

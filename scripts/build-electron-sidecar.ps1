@@ -24,6 +24,9 @@ try {
     Assert-CommandSucceeded 'Frontend production build' $LASTEXITCODE
 } finally { Pop-Location }
 
+& "$root\scripts\build-java-bridge.ps1"
+Assert-CommandSucceeded 'Java connector bridge build' $LASTEXITCODE
+
 Push-Location "$root\backend"
 try {
     if (!(Test-Path .venv)) {
@@ -51,13 +54,14 @@ try {
     # Explicitly collect the local `app` package. Some clean Python 3.11
     # environments resolve generic namespace packages differently during
     # analysis, which can otherwise produce an EXE without app.main.
-    & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --name IntegrationFabricRuntime --add-data "$root\frontend\dist;frontend\dist" --paths "$root\backend" --hidden-import app.main --collect-submodules app run_sidecar.py
+    & .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --name IntegrationFabricRuntime --add-data "$root\frontend\dist;frontend\dist" --paths "$root\backend" --hidden-import app.main --hidden-import ibm_db --hidden-import ibm_db_dbi --collect-submodules app --collect-submodules databricks run_sidecar.py
     Assert-CommandSucceeded 'Runtime executable build' $LASTEXITCODE
 } finally { Pop-Location }
 
 if (!(Test-Path "$root\backend\dist\IntegrationFabricRuntime\IntegrationFabricRuntime.exe")) {
     throw "Runtime executable output was not created."
 }
+Copy-Item -Recurse -Force "$root\java-bridge\build" "$root\backend\dist\IntegrationFabricRuntime\java-bridge"
 & "$root\backend\.venv\Scripts\python.exe" "$root\scripts\smoke-test-packaged-runtime.py" "$root\backend\dist\IntegrationFabricRuntime\IntegrationFabricRuntime.exe"
 Assert-CommandSucceeded 'Packaged runtime health check' $LASTEXITCODE
 Write-Host "Electron sidecar ready: $root\backend\dist\IntegrationFabricRuntime"

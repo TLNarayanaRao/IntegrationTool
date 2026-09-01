@@ -5,8 +5,8 @@
 Integration Fabric has three independently distributable components:
 
 1. **Studio** — an Electron desktop IDE for Windows. It embeds the React designer and a packaged Python sidecar.
-2. **Enterprise Administrator** — a Linux or Windows web control plane for on-premises package management.
-3. **Runtime package** — a portable `.ifpkg`, `.tar.gz`, or `.ear`-compatible archive produced by Studio for either on-premises Administrator deployment or cloud/Kubernetes deployment.
+2. **Control Plane** — a Linux or Windows management plane for data planes, capabilities, applications, resources, access, observability, and package deployment.
+3. **Runtime package** — a portable `.ifpkg`, `.tar.gz`, or `.ear`-compatible archive produced by Studio for either an on-premises or Kubernetes data plane.
 
 ## Build Studio on Windows
 
@@ -70,6 +70,8 @@ After a failed `npm ci`, close running Node/Electron processes and delete the in
 
 The desktop runtime is built with Python 3.11. The AMQP 1.0 connector uses the prebuilt `python-qpid-proton-wheel` distribution because the upstream `python-qpid-proton` 0.40 source release does not provide a CPython 3.11 Windows wheel and otherwise requires Microsoft Visual C++ Build Tools. Before PyInstaller starts, the build imports every external connector module and fails if a package or native DLL is unavailable.
 
+Database shared connections accept either the Studio host/port/database fields or vendor JDBC URLs and translate them to the corresponding native Python adapter. The packaged runtime includes adapters for SQLite, PostgreSQL, MySQL/MariaDB, Oracle, IBM Db2, Databricks SQL, Snowflake, and SQL Server. SQL Server additionally requires Microsoft ODBC Driver 18 (or 17) to be installed on the runtime machine; the Studio detects installed drivers and reports the available names. Databricks supports personal access tokens, OAuth machine-to-machine, and interactive OAuth user-to-machine authentication with SQL warehouse hostname, HTTP path, catalog, and schema configuration.
+
 After PyInstaller finishes, the build launches that exact packaged runtime on an isolated loopback port and requires a successful `/api/health` response before Electron Builder is allowed to create an installer. Installed Studio startup writes the runtime path, port, stdout, stderr, spawn errors, and exit status to `%APPDATA%\Integration Fabric Studio\logs\runtime-startup.log`. Startup errors include the log path and its latest output instead of only showing a generic readiness timeout.
 
 The build compiles the complete backend with Python 3.11 before freezing it. PyInstaller then explicitly collects every module under the backend `app` package and verifies `app.main` both before and after freezing. This catches incompatible Python syntax early and avoids environment-dependent namespace/package discovery producing an executable that fails with `ModuleNotFoundError: app.main`.
@@ -90,7 +92,7 @@ npm.cmd run desktop:installer
 
 Do not put the certificate or password in `package.json` or source control. Electron Builder automatically discovers `WIN_CSC_LINK`/`WIN_CSC_KEY_PASSWORD` (and supports `CSC_LINK`/`CSC_KEY_PASSWORD` as fallbacks).
 
-## Build Enterprise Administrator on Windows
+## Build Control Plane on Windows
 
 ```powershell
 cd D:\Integration-tool\IntegrationFabric
@@ -119,7 +121,7 @@ $env:FABRIC_ADMIN_DATA_DIR = "D:\IntegrationFabricAdmin\data"
 
 Open `http://localhost:9080`. To listen on a different address or port, set `FABRIC_ADMIN_HOST` and `FABRIC_ADMIN_PORT`.
 
-## Build Enterprise Administrator on Linux
+## Build Control Plane on Linux
 
 PyInstaller produces native binaries, so the Linux artifact must be built on Linux or in a Linux CI runner. It cannot be produced directly by a Windows Python installation.
 
@@ -161,7 +163,7 @@ The default Administrator URL is `http://linux-host:9080`.
 
 For production configuration, API authentication, encrypted secrets, package validation rules, machine registration, runtime command adapters, lifecycle transitions, monitoring, audit, backup, and troubleshooting, see [ADMINISTRATOR_GUIDE.md](ADMINISTRATOR_GUIDE.md).
 
-## Run Administrator as a container
+## Run Control Plane as a container
 
 ```bash
 docker build -f Dockerfile.administrator -t integration-fabric-administrator:0.1.0 .
@@ -182,3 +184,6 @@ Open **Packaging** in Project Explorer or select **Package** on the ribbon. Conf
 An on-premises package contains an Administrator deployment descriptor. A cloud package contains a Docker build input and Kubernetes deployment manifest. Password property values are removed from both outputs and replaced by deployment-time secret requirements.
 
 The `.ifproject` file remains the editable Studio project. The `.ifpkg` file is the immutable deployment artifact.
+# Vendor Java connector bridge
+
+Desktop builds require JDK 17 or newer (`javac` and `jlink`). The build bundles a minimal Java runtime automatically; target machines do not need Java installed. TIBCO EMS, Microsoft SQL Server JDBC, and Oracle JDBC JAR placement is documented in [VENDOR_DRIVERS.md](VENDOR_DRIVERS.md).

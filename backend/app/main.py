@@ -17,6 +17,8 @@ from .sap import sap_adapter
 from .snowflake import snowflake_adapter
 from .jdbc import jdbc_adapter
 from .amqp import amqp_adapter
+from .java_bridge import JavaBridgeError, test_jms
+from .google_pubsub import client_configuration as pubsub_client_configuration, credential_summary as pubsub_credential_summary
 from .ai_builder import generate as generate_ai_design
 
 app = FastAPI(title='Integration Fabric Runtime', version='0.1.0')
@@ -257,7 +259,7 @@ def deployment_package_files(item: Project, target: str, environment: str, artif
     secret_keys = [value['key'] for value in properties if value.get('data_type') == 'password']
     for value in properties:
         if value.get('data_type') == 'password': value['value'] = ''
-    sensitive = re.compile(r'(password|passwd|secret|token|private.?key|credential)', re.I)
+    sensitive = re.compile(r'(password|passwd|secret|token|private.?key|credential|service.?account)', re.I)
     def scrub(value, path=''):
         if isinstance(value, dict):
             output = {}
@@ -581,7 +583,10 @@ async def test_connection(resource: SharedResource):
         try: return await __import__('asyncio').to_thread(snowflake_adapter.test, cfg)
         except Exception as exc: return {'ok':False,'message':str(exc)}
     if resource.type == 'amqp':
-        try: return await __import__('asyncio').to_thread(amqp_adapter.test, cfg)
+        try:
+            timeout = min(60.0, max(3.0, float(cfg.get('connectionTimeoutMsec') or 30000) / 1000 + 1))
+            return await asyncio.wait_for(asyncio.to_thread(amqp_adapter.test, cfg), timeout=timeout)
+        except asyncio.TimeoutError: return {'ok':False,'message':'AMQP connection test timed out. Verify the endpoint, port, TLS, and firewall settings.'}
         except Exception as exc: return {'ok':False,'message':str(exc)}
     if resource.type == 'sap_tid' and cfg.get('mode','none') == 'none': return {'ok':True,'message':'SAP TID duplicate management is disabled'}
     if resource.type == 'sap_tid' and cfg.get('driver','sqlite') == 'sqlite':
@@ -602,20 +607,22 @@ async def test_connection(resource: SharedResource):
         except Exception as exc: return {'ok':False,'message':str(exc)}
     if resource.type in ('ems', 'jms'):
         try:
-            import stomp
-            host, port = cfg.get('host','localhost'), int(cfg.get('port', 7222 if resource.type == 'ems' else 61613)); username, password = cfg.get('username',''), cfg.get('password','')
-            if str(cfg.get('connectionFactoryType', 'Direct')).lower() == 'jndi':
-                match = re.search(r'(?:\w+://)?([^:/]+)(?::(\d+))?', str(cfg.get('jndiProviderUrl') or ''))
-                if match: host, port = match.group(1), int(match.group(2) or port)
-                username, password = cfg.get('jndiUsername') or username, cfg.get('jndiPassword') or password
-            connection = stomp.Connection12([(host, port)]); connection.connect(username, password, wait=True); connection.disconnect()
-            return {'ok':True,'message':f'{resource.type.upper()} STOMP connection succeeded'}
-        except ImportError: return {'ok':False,'message':'External JMS testing requires stomp.py and a STOMP-enabled provider'}
+            required = {'JMS connection URL':cfg.get('serverUrl'), 'Username':cfg.get('username'), 'Password':cfg.get('password')}
+            is_jndi = str(cfg.get('connectionFactoryType', 'Direct')).lower() == 'jndi'
+            if is_jndi:
+                required.update({'JNDI context factory':cfg.get('jndiContextFactory'), 'JNDI provider URL':cfg.get('jndiProviderUrl'), 'JNDI username':cfg.get('jndiUsername'), 'JNDI password':cfg.get('jndiPassword'), 'JNDI connection factory':cfg.get('connectionFactory')})
+            missing = [name for name, value in required.items() if not str(value or '').strip()]
+            if missing: return {'ok':False,'message':f"Required connection values are missing: {', '.join(missing)}"}
+            output = await asyncio.to_thread(test_jms, cfg)
+            output['message'] = f'{resource.type.upper()} native JMS connection succeeded'
+            return output
+        except JavaBridgeError as exc: return {'ok':False,'message':f'{resource.type.upper()} connection failed: {exc}'}
         except Exception as exc: return {'ok':False,'message':f'{resource.type.upper()} connection failed: {exc}'}
     if resource.type == 'kafka':
         try:
             from confluent_kafka.admin import AdminClient
-            settings = {'bootstrap.servers':cfg['bootstrapServers']}
+            if not str(cfg.get('bootstrapServers') or '').strip(): return {'ok':False,'message':'Kafka bootstrap servers are required'}
+            settings = {'bootstrap.servers':cfg['bootstrapServers'], 'client.id':cfg.get('clientId') or f'integration-fabric-{uuid4()}'}
             if cfg.get('securityProtocol'): settings['security.protocol'] = cfg['securityProtocol']
             if cfg.get('saslMechanism'): settings['sasl.mechanism'] = cfg['saslMechanism']
             if cfg.get('username'): settings['sasl.username'] = cfg['username']
@@ -627,14 +634,18 @@ async def test_connection(resource: SharedResource):
     if resource.type == 'pubsub':
         try:
             from google.cloud import pubsub_v1
-            kwargs = {}
-            if cfg.get('credentialsFile'):
-                from google.oauth2 import service_account
-                kwargs['credentials'] = service_account.Credentials.from_service_account_file(cfg['credentialsFile'])
-            endpoint = cfg.get('emulatorHost') or cfg.get('endpoint')
-            if endpoint: kwargs['client_options'] = {'api_endpoint':endpoint}
-            publisher = pubsub_v1.PublisherClient(**kwargs); iterator = publisher.list_topics(request={'project':f"projects/{cfg['projectId']}", 'page_size':1}); next(iter(iterator), None); publisher.transport.close()
-            return {'ok':True,'message':'Google Pub/Sub connection succeeded'}
+            def test_pubsub():
+                kwargs, project_id = pubsub_client_configuration(cfg)
+                publisher = pubsub_v1.PublisherClient(**kwargs)
+                try:
+                    iterator = publisher.list_topics(request={'project':f"projects/{project_id}", 'page_size':1}, timeout=float(cfg.get('connectionTimeoutSeconds') or 30)); next(iter(iterator), None)
+                finally: publisher.transport.close()
+                return pubsub_credential_summary(cfg)
+            timeout = min(60.0, max(3.0, float(cfg.get('connectionTimeoutSeconds') or 30)))
+            identity = await asyncio.wait_for(asyncio.to_thread(test_pubsub), timeout=timeout + 1)
+            principal = f" as {identity['clientEmail']}" if identity.get('clientEmail') else ''
+            return {'ok':True,'message':f"Google Pub/Sub connection succeeded for project {identity['projectId']}{principal}"}
+        except asyncio.TimeoutError: return {'ok':False,'message':'Google Pub/Sub connection test timed out. Verify credentials, endpoint, proxy, and firewall settings.'}
         except ImportError: return {'ok':False,'message':'External Google Pub/Sub testing requires google-cloud-pubsub'}
         except Exception as exc: return {'ok':False,'message':f'Google Pub/Sub connection failed: {exc}'}
     host = cfg.get('host') or cfg.get('bootstrapServers','').split(',')[0].split(':')[0] or cfg.get('emulatorHost','').split(':')[0]

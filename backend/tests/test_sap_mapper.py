@@ -198,6 +198,7 @@ class SapMapperTests(unittest.TestCase):
                 'connections.jdbc.username', 'connections.jdbc.password', 'connections.ftp.username',
                 'connections.sftp.privateKeyFile', 'connections.http.proxyHost', 'connections.ems.clientId',
                 'connections.kafka.securityProtocol', 'connections.pubsub.credentialsFile',
+                'connections.pubsub.authenticationType', 'connections.pubsub.serviceAccountJson',
                 'connections.sap.client', 'connections.sap.username', 'connections.sap.password',
             ):
                 self.assertIn(required, values)

@@ -20,6 +20,27 @@ class ActivityPackTests(unittest.TestCase):
         context = {'input': payload, 'last': payload, 'vars': {}, 'resources': {}, 'properties': {}}
         return asyncio.run(self.runtime.execute(activity, context))
 
+    def test_ems_connection_requires_only_direct_fields_and_completes(self):
+        client = TestClient(app)
+        missing = client.post('/api/connections/test', json={'id':'ems','type':'ems','name':'EMS','config':{'serverUrl':'tcp://ems:7222'}}).json()
+        self.assertFalse(missing['ok'])
+        self.assertIn('Username', missing['message'])
+        with patch('app.main.test_jms', return_value={'ok':True, 'message':'Native JMS connection succeeded', 'loadedJars':['tibjms.jar']} ) as bridge:
+            response = client.post('/api/connections/test', json={'id':'ems','type':'ems','name':'EMS','config':{'serverUrl':'tcp://ems.example:7222','username':'admin','password':'secret','connectionTimeoutSeconds':3}})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['ok'])
+        bridge.assert_called_once()
+        self.assertEqual(bridge.call_args.args[0]['serverUrl'], 'tcp://ems.example:7222')
+        self.assertEqual(response.json()['loadedJars'], ['tibjms.jar'])
+
+    def test_ems_jndi_fields_are_conditional_requirements(self):
+        response = TestClient(app).post('/api/connections/test', json={'id':'ems','type':'ems','name':'EMS','config':{
+            'serverUrl':'tcp://ems:7222','username':'admin','password':'secret','connectionFactoryType':'JNDI',
+        }}).json()
+        self.assertFalse(response['ok'])
+        self.assertIn('JNDI context factory', response['message'])
+        self.assertIn('JNDI provider URL', response['message'])
+
     def test_xml_parse_and_render(self):
         parsed = self.execute(Activity(id='x', type='xml', name='Parse XML', config={'operation': 'parse'}), '<order id="7"><name>Ada</name></order>')
         self.assertEqual(parsed['root'], 'order')

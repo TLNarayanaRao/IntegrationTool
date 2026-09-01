@@ -548,6 +548,23 @@ const defaultProperties: Property[] = [
   { key: "connections.jdbc.schema", value: "public", data_type: "string" },
   { key: "connections.jdbc.username", value: "", data_type: "string" },
   { key: "connections.jdbc.password", value: "", data_type: "password" },
+  { key: "connections.jdbc.connectionMode", value: "python", data_type: "string" },
+  { key: "connections.jdbc.driverDirectory", value: "", data_type: "string" },
+  { key: "connections.jdbc.driverClass", value: "", data_type: "string" },
+  { key: "connections.jdbc.odbcDriver", value: "", data_type: "string" },
+  { key: "connections.jdbc.authentication", value: "SQL Server Authentication", data_type: "string" },
+  { key: "connections.jdbc.encrypt", value: true, data_type: "boolean" },
+  { key: "connections.jdbc.trustServerCertificate", value: false, data_type: "boolean" },
+  { key: "connections.jdbc.serverHostname", value: "", data_type: "string" },
+  { key: "connections.jdbc.httpPath", value: "", data_type: "string" },
+  { key: "connections.jdbc.accessToken", value: "", data_type: "password" },
+  { key: "connections.jdbc.clientId", value: "", data_type: "string" },
+  { key: "connections.jdbc.clientSecret", value: "", data_type: "password" },
+  { key: "connections.jdbc.catalog", value: "", data_type: "string" },
+  { key: "connections.jdbc.useCloudFetch", value: true, data_type: "boolean" },
+  { key: "connections.jdbc.serviceName", value: "", data_type: "string" },
+  { key: "connections.jdbc.sid", value: "", data_type: "string" },
+  { key: "connections.jdbc.sslCaFile", value: "", data_type: "string" },
   { key: "connections.jdbc.timeoutSeconds", value: 30, data_type: "integer" },
   { key: "connections.jdbc.minimumPoolSize", value: 1, data_type: "integer" },
   { key: "connections.jdbc.maximumPoolSize", value: 10, data_type: "integer" },
@@ -566,14 +583,13 @@ const defaultProperties: Property[] = [
   { key: "connections.snowflake.maximumConnections", value: 8, data_type: "integer" },
   { key: "connections.snowflake.maximumConnectionWaitSeconds", value: 300, data_type: "integer" },
   { key: "connections.snowflake.serviceThreads", value: 8, data_type: "integer" },
-  { key: "connections.amqp.mode", value: "memory", data_type: "string" },
   { key: "connections.amqp.brokerType", value: "RabbitMQ", data_type: "string" },
   { key: "connections.amqp.amqpVersion", value: "AMQP-0-9-1", data_type: "string" },
   { key: "connections.amqp.hostPort", value: "localhost:5672", data_type: "string" },
   { key: "connections.amqp.virtualHost", value: "/", data_type: "string" },
   { key: "connections.amqp.username", value: "guest", data_type: "string" },
   { key: "connections.amqp.password", value: "guest", data_type: "password" },
-  { key: "connections.amqp.clientId", value: "integration-fabric", data_type: "string" },
+  { key: "connections.amqp.clientId", value: "", data_type: "string" },
   { key: "connections.amqp.authenticationType", value: "SAS", data_type: "string" },
   { key: "connections.amqp.connectionString", value: "", data_type: "password" },
   { key: "connections.amqp.tenantId", value: "", data_type: "string" },
@@ -599,9 +615,12 @@ const defaultProperties: Property[] = [
   { key: "connections.ems.host", value: "localhost", data_type: "string" },
   { key: "connections.ems.port", value: 7222, data_type: "integer" },
   { key: "connections.ems.serverUrl", value: "tcp://localhost:7222", data_type: "string" },
+  { key: "connections.ems.driverDirectory", value: "", data_type: "string" },
+  { key: "connections.ems.connectionFactoryClass", value: "com.tibco.tibjms.TibjmsConnectionFactory", data_type: "string" },
+  { key: "connections.ems.connectionTimeoutSeconds", value: 30, data_type: "integer" },
   { key: "connections.ems.username", value: "", data_type: "string" },
   { key: "connections.ems.password", value: "", data_type: "password" },
-  { key: "connections.ems.clientId", value: "integration-fabric", data_type: "string" },
+  { key: "connections.ems.clientId", value: "", data_type: "string" },
   { key: "connections.ems.connectionFactory", value: "ConnectionFactory", data_type: "string" },
   { key: "connections.ems.reconnectAttempts", value: 3, data_type: "integer" },
   { key: "connections.ems.connectionFactoryType", value: "Direct", data_type: "string" },
@@ -620,11 +639,15 @@ const defaultProperties: Property[] = [
   { key: "connections.ems.heartbeatOutgoingMs", value: 0, data_type: "integer" },
   { key: "connections.ems.heartbeatIncomingMs", value: 0, data_type: "integer" },
   { key: "connections.jms.provider", value: "Generic JMS 2.0", data_type: "string" },
+  { key: "connections.jms.serverUrl", value: "tcp://localhost:61613", data_type: "string" },
+  { key: "connections.jms.driverDirectory", value: "", data_type: "string" },
+  { key: "connections.jms.connectionFactoryClass", value: "", data_type: "string" },
+  { key: "connections.jms.connectionTimeoutSeconds", value: 30, data_type: "integer" },
   { key: "connections.jms.host", value: "localhost", data_type: "string" },
   { key: "connections.jms.port", value: 61613, data_type: "integer" },
   { key: "connections.jms.username", value: "", data_type: "string" },
   { key: "connections.jms.password", value: "", data_type: "password" },
-  { key: "connections.jms.clientId", value: "integration-fabric", data_type: "string" },
+  { key: "connections.jms.clientId", value: "", data_type: "string" },
   { key: "connections.jms.connectionFactoryType", value: "Direct", data_type: "string" },
   { key: "connections.jms.connectionFactory", value: "ConnectionFactory", data_type: "string" },
   { key: "connections.jms.jndiContextFactory", value: "", data_type: "string" },
@@ -636,7 +659,7 @@ const defaultProperties: Property[] = [
   { key: "connections.jms.reconnectAttempts", value: 3, data_type: "integer" },
   { key: "connections.jms.reconnectDelayMs", value: 5000, data_type: "integer" },
   { key: "connections.kafka.bootstrapServers", value: "localhost:9092", data_type: "string" },
-  { key: "connections.kafka.clientId", value: "integration-fabric", data_type: "string" },
+  { key: "connections.kafka.clientId", value: "", data_type: "string" },
   { key: "connections.kafka.groupId", value: "integration-fabric", data_type: "string" },
   { key: "connections.kafka.securityProtocol", value: "PLAINTEXT", data_type: "string" },
   { key: "connections.kafka.saslMechanism", value: "PLAIN", data_type: "string" },
@@ -662,6 +685,8 @@ const defaultProperties: Property[] = [
   { key: "connections.kafka.schemaRegistryVendor", value: "Confluent", data_type: "string" },
   { key: "connections.kafka.clientProperties", value: "{}", data_type: "json" },
   { key: "connections.pubsub.projectId", value: "my-gcp-project", data_type: "string" },
+  { key: "connections.pubsub.authenticationType", value: "Service Account JSON", data_type: "string" },
+  { key: "connections.pubsub.serviceAccountJson", value: "", data_type: "password" },
   { key: "connections.pubsub.credentialsFile", value: "", data_type: "string" },
   { key: "connections.pubsub.endpoint", value: "pubsub.googleapis.com:443", data_type: "string" },
   { key: "connections.pubsub.emulatorHost", value: "", data_type: "string" },
@@ -3573,10 +3598,28 @@ function TaskDialog({ kind, onClose, onCreate }: any) {
 const propertyExpression = (key: string) => `\${properties.${key}}`;
 const connectionFieldSets: Record<string, any[]> = {
   jdbc: [
-    { key: "driver", label: "Database", options: ["sqlite", "postgresql", "mysql", "mariadb", "sqlserver", "oracle", "db2", "snowflake"] },
+    { key: "driver", label: "Database", options: ["sqlite", "postgresql", "mysql", "mariadb", "sqlserver", "oracle", "db2", "snowflake", "databricks"] },
+    { key: "connectionMode", label: "Connection runtime", options: ["jdbc", "python"], when: (config: any) => ["sqlserver", "mssql", "oracle"].includes(config.driver) },
+    { key: "driverDirectory", label: "JDBC driver JAR directory", placeholder: "Blank uses the Integration Fabric driver directory", when: (config: any) => ["sqlserver", "mssql", "oracle"].includes(config.driver) && config.connectionMode !== "python" },
+    { key: "driverClass", label: "JDBC driver class (blank = vendor default)", when: (config: any) => ["sqlserver", "mssql", "oracle"].includes(config.driver) && config.connectionMode !== "python" },
     { key: "url", label: "JDBC URL" }, { key: "host", label: "Host" }, { key: "port", label: "Port" },
     { key: "database", label: "Database name" }, { key: "schema", label: "Schema" },
     { key: "username", label: "Username" }, { key: "password", label: "Password", password: true },
+    { key: "odbcDriver", label: "SQL Server ODBC driver (legacy Python mode)", when: (config: any) => ["sqlserver", "mssql"].includes(config.driver) && config.connectionMode === "python" },
+    { key: "authentication", label: "SQL Server authentication", options: ["SQL Server Authentication", "Windows Integrated"], when: (config: any) => ["sqlserver", "mssql"].includes(config.driver) },
+    { key: "encrypt", label: "Encrypt SQL Server connection", options: ["true", "false"], when: (config: any) => ["sqlserver", "mssql"].includes(config.driver) },
+    { key: "trustServerCertificate", label: "Trust SQL Server certificate", options: ["false", "true"], when: (config: any) => ["sqlserver", "mssql"].includes(config.driver) },
+    { key: "serviceName", label: "Oracle service name", when: (config: any) => config.driver === "oracle" },
+    { key: "sid", label: "Oracle SID (when service name is not used)", when: (config: any) => config.driver === "oracle" },
+    { key: "sslCaFile", label: "MySQL/MariaDB CA certificate file", when: (config: any) => ["mysql", "mariadb"].includes(config.driver) },
+    { key: "serverHostname", label: "Databricks server hostname", when: (config: any) => config.driver === "databricks" },
+    { key: "httpPath", label: "Databricks HTTP path", when: (config: any) => config.driver === "databricks" },
+    { key: "authentication", label: "Databricks authentication", options: ["Personal Access Token", "OAuth M2M", "OAuth U2M"], when: (config: any) => config.driver === "databricks" },
+    { key: "accessToken", label: "Databricks access token", password: true, when: (config: any) => config.driver === "databricks" && config.authentication === "Personal Access Token" },
+    { key: "clientId", label: "Databricks OAuth client ID", when: (config: any) => config.driver === "databricks" && config.authentication === "OAuth M2M" },
+    { key: "clientSecret", label: "Databricks OAuth client secret", password: true, when: (config: any) => config.driver === "databricks" && config.authentication === "OAuth M2M" },
+    { key: "catalog", label: "Databricks catalog", when: (config: any) => config.driver === "databricks" },
+    { key: "useCloudFetch", label: "Databricks CloudFetch", options: ["true", "false"], when: (config: any) => config.driver === "databricks" },
     { key: "timeoutSeconds", label: "Connection timeout (seconds)" },
     { key: "minimumPoolSize", label: "Minimum pool size" }, { key: "maximumPoolSize", label: "Maximum pool size" },
   ],
@@ -3601,19 +3644,18 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "maximumConnectionWaitSeconds", label: "Maximum connection wait (seconds)" }, { key: "serviceThreads", label: "Service number of threads" },
   ],
   amqp: [
-    { key: "mode", label: "Runtime mode", options: ["memory", "external"] },
     { key: "brokerType", label: "Broker type", options: ["Qpid-1-0", "RabbitMQ", "ActiveMQ-1-0", "AzureSB-1-0", "AMQ-1-0", "ActiveMQ-Artemis-1-0"] },
     { key: "amqpVersion", label: "AMQP version", options: ["AMQP-0-9-1", "AMQP-1-0"], when: (config: any) => config.brokerType === "RabbitMQ" },
-    { key: "hostPort", label: "Host:Port (comma-separated for failover)", when: (config: any) => config.brokerType !== "AzureSB-1-0" },
+    { key: "hostPort", label: "Host:Port (comma-separated for failover)", required: true, when: (config: any) => config.brokerType !== "AzureSB-1-0" },
     { key: "virtualHost", label: "Virtual host", when: (config: any) => ["RabbitMQ", "Qpid-1-0"].includes(config.brokerType) },
     { key: "username", label: "Username", when: (config: any) => config.brokerType !== "AzureSB-1-0" },
     { key: "password", label: "Password", password: true, when: (config: any) => config.brokerType !== "AzureSB-1-0" },
     { key: "clientId", label: "Client ID", when: (config: any) => !["RabbitMQ", "AzureSB-1-0"].includes(config.brokerType) },
     { key: "authenticationType", label: "Azure authentication", options: ["SAS", "OAuth", "ManagedIdentity"], when: (config: any) => config.brokerType === "AzureSB-1-0" },
-    { key: "connectionString", label: "Azure Service Bus endpoint", when: (config: any) => config.brokerType === "AzureSB-1-0" },
-    { key: "tenantId", label: "Azure tenant ID", when: (config: any) => config.brokerType === "AzureSB-1-0" && config.authenticationType === "OAuth" },
-    { key: "azureClientId", label: "Azure application/client ID", when: (config: any) => config.brokerType === "AzureSB-1-0" && ["OAuth", "ManagedIdentity"].includes(config.authenticationType) },
-    { key: "clientSecret", label: "Azure client secret", password: true, when: (config: any) => config.brokerType === "AzureSB-1-0" && config.authenticationType === "OAuth" },
+    { key: "connectionString", label: "Azure Service Bus endpoint / connection string", required: true, when: (config: any) => config.brokerType === "AzureSB-1-0" },
+    { key: "tenantId", label: "Azure tenant ID", required: true, when: (config: any) => config.brokerType === "AzureSB-1-0" && config.authenticationType === "OAuth" },
+    { key: "azureClientId", label: "Azure application/client ID", required: (config: any) => config.authenticationType === "OAuth", when: (config: any) => config.brokerType === "AzureSB-1-0" && ["OAuth", "ManagedIdentity"].includes(config.authenticationType) },
+    { key: "clientSecret", label: "Azure client secret", required: true, password: true, when: (config: any) => config.brokerType === "AzureSB-1-0" && config.authenticationType === "OAuth" },
     { key: "sharedAccessKeyName", label: "Shared access key name", when: (config: any) => config.brokerType === "AzureSB-1-0" && config.authenticationType === "SAS" },
     { key: "sharedAccessKey", label: "Shared access key", password: true, when: (config: any) => config.brokerType === "AzureSB-1-0" && config.authenticationType === "SAS" },
     { key: "entityType", label: "Default entity type", options: ["Queue", "Topic"], when: (config: any) => config.brokerType === "AzureSB-1-0" },
@@ -3659,37 +3701,43 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "timeoutSeconds", label: "Timeout (seconds)" },
   ],
   ems: [
-    { key: "mode", label: "Runtime mode", options: ["memory", "external"] }, { key: "serverUrl", label: "Server URL" },
+    { key: "serverUrl", label: "JMS connection URL", required: true, placeholder: "tcp://ems-host:7222" },
+    { key: "driverDirectory", label: "EMS/JMS driver JAR directory", placeholder: "Blank uses C:\\ProgramData\\Integration Fabric Studio\\drivers\\jms" },
+    { key: "connectionFactoryClass", label: "Native connection factory class", placeholder: "com.tibco.tibjms.TibjmsConnectionFactory" },
     { key: "connectionFactoryType", label: "Connection factory type", options: ["Direct", "JNDI"] },
     { key: "messagingStyle", label: "Messaging style", options: ["Generic", "Queue/Topic"] },
-    { key: "host", label: "Host" }, { key: "port", label: "Port" }, { key: "username", label: "Username" },
-    { key: "password", label: "Password", password: true }, { key: "clientId", label: "Client ID" },
-    { key: "connectionFactory", label: "Connection factory", options: ["ConnectionFactory", "QueueConnectionFactory", "TopicConnectionFactory"] },
-    { key: "queueConnectionFactory", label: "Queue connection factory" }, { key: "topicConnectionFactory", label: "Topic connection factory" },
-    { key: "jndiContextFactory", label: "JNDI context factory" }, { key: "jndiProviderUrl", label: "JNDI provider URL" },
-    { key: "jndiUsername", label: "JNDI username" }, { key: "jndiPassword", label: "JNDI password", password: true },
+    { key: "username", label: "Username", required: true }, { key: "password", label: "Password", required: true, password: true },
+    { key: "clientId", label: "Client ID", placeholder: "Generated automatically when blank" },
+    { key: "connectionFactory", label: "JNDI connection factory", required: true, when: (config: any) => config.connectionFactoryType === "JNDI", options: ["ConnectionFactory", "QueueConnectionFactory", "TopicConnectionFactory"] },
+    { key: "queueConnectionFactory", label: "Queue connection factory", when: (config: any) => config.connectionFactoryType === "JNDI" && config.messagingStyle === "Queue/Topic" }, { key: "topicConnectionFactory", label: "Topic connection factory", when: (config: any) => config.connectionFactoryType === "JNDI" && config.messagingStyle === "Queue/Topic" },
+    { key: "jndiContextFactory", label: "JNDI context factory", required: true, when: (config: any) => config.connectionFactoryType === "JNDI" }, { key: "jndiProviderUrl", label: "JNDI provider URL", required: true, when: (config: any) => config.connectionFactoryType === "JNDI" },
+    { key: "jndiUsername", label: "JNDI username", required: true, when: (config: any) => config.connectionFactoryType === "JNDI" }, { key: "jndiPassword", label: "JNDI password", required: true, password: true, when: (config: any) => config.connectionFactoryType === "JNDI" },
     { key: "useXa", label: "Use XA connection factory", options: ["false", "true"] }, { key: "useUfo", label: "Use EMS unshared failover", options: ["false", "true"] },
     { key: "sslEnabled", label: "Enable SSL", options: ["false", "true"] }, { key: "sslTrustedCertificates", label: "SSL trusted certificates" },
     { key: "reconnectAttempts", label: "Reconnect attempts" }, { key: "reconnectDelayMs", label: "Reconnect delay (ms)" },
     { key: "heartbeatOutgoingMs", label: "Outgoing heartbeat (ms)" }, { key: "heartbeatIncomingMs", label: "Incoming heartbeat (ms)" },
+    { key: "connectionTimeoutSeconds", label: "Connection timeout (seconds)" },
   ],
   jms: [
-    { key: "mode", label: "Runtime mode", options: ["memory", "external"] }, { key: "provider", label: "JMS provider" },
+    { key: "provider", label: "JMS provider" }, { key: "serverUrl", label: "JMS connection URL", required: true, placeholder: "tcp://jms-host:61613" },
+    { key: "driverDirectory", label: "JMS provider JAR directory", placeholder: "Blank uses C:\\ProgramData\\Integration Fabric Studio\\drivers\\jms" },
+    { key: "connectionFactoryClass", label: "Connection factory class", required: (config: any) => config.connectionFactoryType !== "JNDI" },
     { key: "connectionFactoryType", label: "Connection factory type", options: ["Direct", "JNDI"] },
-    { key: "connectionFactory", label: "Connection factory" }, { key: "host", label: "Host" }, { key: "port", label: "STOMP port" },
-    { key: "username", label: "Username" }, { key: "password", label: "Password", password: true }, { key: "clientId", label: "Client ID" },
-    { key: "jndiContextFactory", label: "JNDI initial context factory" }, { key: "jndiProviderUrl", label: "JNDI provider URL" },
-    { key: "jndiUsername", label: "JNDI username" }, { key: "jndiPassword", label: "JNDI password", password: true },
+    { key: "username", label: "Username", required: true }, { key: "password", label: "Password", required: true, password: true }, { key: "clientId", label: "Client ID", placeholder: "Generated automatically when blank" },
+    { key: "connectionFactory", label: "JNDI connection factory", required: true, when: (config: any) => config.connectionFactoryType === "JNDI" },
+    { key: "jndiContextFactory", label: "JNDI initial context factory", required: true, when: (config: any) => config.connectionFactoryType === "JNDI" }, { key: "jndiProviderUrl", label: "JNDI provider URL", required: true, when: (config: any) => config.connectionFactoryType === "JNDI" },
+    { key: "jndiUsername", label: "JNDI username", required: true, when: (config: any) => config.connectionFactoryType === "JNDI" }, { key: "jndiPassword", label: "JNDI password", required: true, password: true, when: (config: any) => config.connectionFactoryType === "JNDI" },
     { key: "sslEnabled", label: "Enable SSL", options: ["false", "true"] }, { key: "sslTrustedCertificates", label: "Trusted certificates" },
     { key: "reconnectAttempts", label: "Reconnect attempts" }, { key: "reconnectDelayMs", label: "Reconnect delay (ms)" },
+    { key: "connectionTimeoutSeconds", label: "Connection timeout (seconds)" },
   ],
   kafka: [
-    { key: "mode", label: "Runtime mode", options: ["memory", "external"] }, { key: "bootstrapServers", label: "Bootstrap servers" },
+    { key: "bootstrapServers", label: "Bootstrap servers", required: true },
     { key: "clientId", label: "Client ID" }, { key: "groupId", label: "Default consumer group" },
     { key: "securityProtocol", label: "Security protocol", options: ["PLAINTEXT", "SASL_PLAINTEXT", "SASL_SSL", "SSL"] },
     { key: "authenticationType", label: "Authentication type", options: ["None", "PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512", "GSSAPI", "OAUTHBEARER"] },
     { key: "saslMechanism", label: "SASL mechanism", options: ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512", "GSSAPI", "OAUTHBEARER"] },
-    { key: "username", label: "Username" }, { key: "password", label: "Password", password: true },
+    { key: "username", label: "Username", required: (config: any) => ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"].includes(config.saslMechanism) && config.securityProtocol?.includes("SASL") }, { key: "password", label: "Password", password: true, required: (config: any) => ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"].includes(config.saslMechanism) && config.securityProtocol?.includes("SASL") },
     { key: "sslCaLocation", label: "SSL CA location" }, { key: "sslCertificateLocation", label: "SSL certificate location" },
     { key: "sslKeyLocation", label: "SSL key location" }, { key: "sslKeyPassword", label: "SSL key password", password: true },
     { key: "schemaRegistryUrl", label: "Schema Registry URL" }, { key: "schemaRegistryUsername", label: "Schema Registry username" },
@@ -3702,9 +3750,11 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "clientProperties", label: "Advanced client properties (JSON)" },
   ],
   pubsub: [
-    { key: "mode", label: "Runtime mode", options: ["memory", "external"] }, { key: "projectId", label: "GCP project ID" },
-    { key: "credentialsFile", label: "Credentials file" }, { key: "endpoint", label: "Service endpoint" },
-    { key: "emulatorHost", label: "Emulator host" }, { key: "ackDeadlineSeconds", label: "Ack deadline (seconds)" },
+    { key: "authenticationType", label: "Authentication", required: true, options: ["Service Account JSON", "Application Default Credentials", "Emulator"] },
+    { key: "serviceAccountJson", label: "Service account JSON", required: (config: any) => config.authenticationType === "Service Account JSON", multiline: true, jsonFile: true, when: (config: any) => config.authenticationType === "Service Account JSON" },
+    { key: "projectId", label: "GCP project ID", required: (config: any) => config.authenticationType !== "Service Account JSON", placeholder: "Derived automatically from service-account JSON" },
+    { key: "endpoint", label: "Service endpoint", when: (config: any) => config.authenticationType !== "Emulator" },
+    { key: "emulatorHost", label: "Emulator host", required: (config: any) => config.authenticationType === "Emulator", when: (config: any) => config.authenticationType === "Emulator", placeholder: "localhost:8085" }, { key: "ackDeadlineSeconds", label: "Ack deadline (seconds)" },
     { key: "connectionTimeoutSeconds", label: "Connection timeout (seconds)" }, { key: "maxInboundMessageBytes", label: "Maximum inbound message bytes" },
     { key: "keepAliveSeconds", label: "Keep-alive time (seconds)" },
   ],
@@ -3728,12 +3778,14 @@ function connectionDefaults(type: string) {
   for (const field of connectionFieldSets[type] || []) {
     values[field.key] = propertyExpression(`${prefix}.${field.key}`);
   }
-  if (["ems", "jms", "kafka", "pubsub"].includes(type)) values.mode = "memory";
   if (type === "http") Object.assign(values, { connectorMode: "both", scheme: "http", authentication: "None", tlsEnabled: "false", clientAuthentication: "none", tlsVersion: "TLSv1.2", verifyTls: "true" });
   if (type === "sap") Object.assign(values, { mode: "mock", release: "current", connectionType: "dedicated" });
-  if (type === "jdbc") values.driver = "postgresql";
+  if (type === "jdbc") Object.assign(values, { driver: "postgresql", connectionMode: "python", authentication: "SQL Server Authentication", encrypt: "true", trustServerCertificate: "false" });
+  if (type === "ems") Object.assign(values, { connectionFactoryType: "Direct", connectionFactoryClass: "com.tibco.tibjms.TibjmsConnectionFactory", connectionTimeoutSeconds: 30 });
+  if (type === "jms") Object.assign(values, { connectionFactoryType: "Direct", connectionTimeoutSeconds: 30 });
   if (type === "snowflake") Object.assign(values, { mode: "external", authenticationType: "Username/Password", provider: "Snowflake" });
-  if (type === "amqp") Object.assign(values, { mode: "memory", brokerType: "RabbitMQ", amqpVersion: "AMQP-0-9-1", authenticationType: "SAS", connectionRecovery: "true", sslEnabled: "false" });
+  if (type === "amqp") Object.assign(values, { brokerType: "RabbitMQ", amqpVersion: "AMQP-0-9-1", authenticationType: "SAS", connectionRecovery: "true", sslEnabled: "false" });
+  if (type === "pubsub") Object.assign(values, { authenticationType: "Service Account JSON", projectId: "", serviceAccountJson: "" });
   return values;
 }
 function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }: any) {
@@ -3741,12 +3793,35 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
   const testOutputRef = useRef<HTMLDivElement>(null);
   const idocBrowserRef = useRef<HTMLElement>(null);
   const snowflakeBrowserRef = useRef<HTMLElement>(null);
-  const [draft, setDraft] = useState<any>(() => initial ? structuredClone(initial) : { id: `${type}-${Date.now()}`, type, name: `${type === "sap" ? "SAP ECC" : type.toUpperCase()} Connection`, config: connectionDefaults(type) });
-  const [status, setStatus] = useState(""), [statusOk, setStatusOk] = useState<boolean | null>(null), [copied, setCopied] = useState(false);
+  const [draft, setDraft] = useState<any>(() => {
+    const value = initial ? structuredClone(initial) : { id: `${type}-${Date.now()}`, type, name: `${type === "sap" ? "SAP ECC" : type.toUpperCase()} Connection`, config: connectionDefaults(type) };
+    // The old design-time memory/external selector is no longer part of real
+    // shared connections. Editing an older resource upgrades it automatically.
+    if (["ems", "jms", "kafka", "pubsub", "amqp"].includes(type)) delete value.config.mode;
+    if (type === "pubsub" && !value.config.authenticationType) value.config.authenticationType = "Service Account JSON";
+    return value;
+  });
+  const [status, setStatus] = useState(""), [statusOk, setStatusOk] = useState<boolean | null>(null), [copied, setCopied] = useState(false), [testing, setTesting] = useState(false);
   const [target, setTarget] = useState<string | null>(null), [propertySearch, setPropertySearch] = useState("");
   const [idocs, setIdocs] = useState<any[]>([]), [idocSearch, setIdocSearch] = useState(""), [idocLoading, setIdocLoading] = useState(false), [idocError, setIdocError] = useState("");
   const [snowflakeEntities, setSnowflakeEntities] = useState<any[]>([]), [snowflakeSearch, setSnowflakeSearch] = useState(""), [snowflakeLoading, setSnowflakeLoading] = useState(false), [snowflakeError, setSnowflakeError] = useState("");
   const set = (key: string, value: any) => setDraft((current: any) => ({ ...current, config: { ...current.config, [key]: value } }));
+  const setConnectionField = (key: string, value: any) => setDraft((current: any) => {
+    const config = { ...current.config, [key]: value };
+    if (type === "jdbc" && key === "driver") {
+      const defaults: Record<string, any> = {
+        sqlite: { url: "integration.db", host: "", port: "", database: "", schema: "main" },
+        postgresql: { url: "", port: 5432, schema: "public" }, mysql: { url: "", port: 3306, schema: "" },
+        mariadb: { url: "", port: 3306, schema: "" },
+        sqlserver: { url: "", port: 1433, schema: "dbo", connectionMode: "jdbc", driverClass: "com.microsoft.sqlserver.jdbc.SQLServerDriver", authentication: "SQL Server Authentication", encrypt: "true", trustServerCertificate: "false" },
+        oracle: { url: "", port: 1521, schema: "", connectionMode: "jdbc", driverClass: "oracle.jdbc.OracleDriver" }, db2: { url: "", port: 50000, schema: "" },
+        snowflake: { url: "", port: "", schema: "PUBLIC" },
+        databricks: { url: "", port: 443, schema: "default", authentication: "Personal Access Token", useCloudFetch: "true" },
+      };
+      Object.assign(config, defaults[value] || {});
+    }
+    return { ...current, config };
+  });
   const connectorPrefix = type === "sap_tid" ? "connections.sapTid." : `connections.${type}.`;
   const visibleProperties = [...(properties as Property[])]
     .filter((item) => item.key.toLowerCase().includes(propertySearch.toLowerCase()))
@@ -3758,6 +3833,25 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
       return [key, match ? values[match[1]] : value];
     }));
     return { ...draft, config: resolved };
+  };
+  const propertyBinding = (value: any) => typeof value === "string" ? value.match(/^\$\{properties\.([^}]+)\}$/)?.[1] : undefined;
+  const displayedValue = (value: any) => {
+    const key = propertyBinding(value);
+    return key ? (properties as Property[]).find((item) => item.key === key)?.value ?? "" : value ?? "";
+  };
+  const fieldIsRequired = (field: any, config = draft.config) => typeof field.required === "function" ? !!field.required(config) : !!field.required;
+  const missingRequiredFields = (resource: any) => fields.filter((field: any) => (!field.when || field.when(resource.config)) && fieldIsRequired(field, resource.config) && String(resource.config[field.key] ?? "").trim() === "").map((field: any) => field.label);
+  const configurationError = (resource: any) => {
+    if (type !== "pubsub" || resource.config.authenticationType !== "Service Account JSON") return "";
+    try {
+      const parsed = typeof resource.config.serviceAccountJson === "string" ? JSON.parse(resource.config.serviceAccountJson) : resource.config.serviceAccountJson;
+      if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") return "Service account JSON must contain one JSON object.";
+      const requiredKeys = ["type", "project_id", "client_email", "private_key", "token_uri"];
+      const missing = requiredKeys.filter((key) => !String(parsed[key] || "").trim());
+      if (parsed.type !== "service_account") return "Credential JSON type must be service_account.";
+      if (missing.length) return `Service account JSON is missing: ${missing.join(", ")}.`;
+      return "";
+    } catch (error: any) { return `Service account JSON is invalid: ${error.message}`; }
   };
   const fetchIdocs = async () => {
     setIdocLoading(true); setIdocError("");
@@ -3807,12 +3901,28 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
   };
   const clearSnowflakeMetadata = () => setDraft((current: any) => ({ ...current, config: { ...current.config, entityCatalog: [] } }));
   const test = async () => {
-    setStatus("Testing…"); setStatusOk(null); setCopied(false);
+    const resource = runtimeResource();
+    const missing = missingRequiredFields(resource);
+    if (missing.length) { setStatus(`Required connection values are missing: ${missing.join(", ")}`); setStatusOk(false); return; }
+    const invalid = configurationError(resource);
+    if (invalid) { setStatus(invalid); setStatusOk(false); return; }
+    setStatus("Testing connection…"); setStatusOk(null); setCopied(false); setTesting(true);
+    const controller = new AbortController();
+    const configuredTimeout = Number(resource.config.connectionTimeoutMilliseconds || resource.config.connectionTimeoutMsec || Number(resource.config.connectionTimeoutSeconds || 30) * 1000);
+    const timeout = window.setTimeout(() => controller.abort(), Math.min(65000, Math.max(5000, configuredTimeout + 3000)));
     try {
-      const response = await fetch("/api/connections/test", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(runtimeResource()) });
+      const response = await fetch("/api/connections/test", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(resource), signal: controller.signal });
       const output = await response.json();
       setStatus(output.message || output.detail || JSON.stringify(output, null, 2)); setStatusOk(response.ok && output.ok !== false);
-    } catch (error: any) { setStatus(error?.message || "Connection test failed"); setStatusOk(false); }
+    } catch (error: any) { setStatus(error?.name === "AbortError" ? "Connection test timed out. Verify the URL, port, firewall, and broker listener protocol." : error?.message || "Connection test failed"); setStatusOk(false); }
+    finally { window.clearTimeout(timeout); setTesting(false); }
+  };
+  const save = () => {
+    const resource = runtimeResource(), missing = missingRequiredFields(resource);
+    if (missing.length) { setStatus(`Required connection values are missing: ${missing.join(", ")}`); setStatusOk(false); return; }
+    const invalid = configurationError(resource);
+    if (invalid) { setStatus(invalid); setStatusOk(false); return; }
+    onCreate(draft);
   };
   const copyStatus = () => {
     setCopied(true);
@@ -3825,6 +3935,7 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
     const frame = requestAnimationFrame(() => testOutputRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
     return () => cancelAnimationFrame(frame);
   }, [status, statusOk]);
+  const resolvedConfig = runtimeResource().config;
   return <div className="modal-backdrop"><div className="runtime-modal connection-dialog">
     <header><span className="connection-dialog-title"><Cable/><span><b>{initial ? "Edit" : "Create"} {type === "sap" ? "SAP ECC" : type === "snowflake" ? "Snowflake JDBC" : type.toUpperCase()} shared connection</b><small>{initial ? "Update the reusable project connection" : "Reusable across every task in this project"}</small></span></span><span className="connection-header-actions">{type === "sap" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button>}{type === "snowflake" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchSnowflakeEntities} disabled={snowflakeLoading}><Download/> {snowflakeLoading ? "Retrieving…" : "Retrieve entities"}</button>}<button aria-label="Close" onClick={onClose}>×</button></span></header>
     <main>
@@ -3834,12 +3945,18 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
         <div className="property-picker-search"><Search/><input autoFocus aria-label="Find connection property" value={propertySearch} onChange={(event) => setPropertySearch(event.target.value)} placeholder="Search connector properties…"/></div>
         <div className="property-browser-list">{visibleProperties.map((item) => <button key={item.key} onClick={() => { set(target, propertyExpression(item.key)); setTarget(null); setPropertySearch(""); }}><span><b>{item.key}</b><small>{item.data_type}</small></span><code>{item.data_type === "password" ? "••••••" : String(item.value)}</code></button>)}{!visibleProperties.length && <p>No matching connector properties.</p>}</div>
       </section>}
-      {fields.filter((field: any) => !field.when || field.when(draft.config)).map((field: any) => <label key={field.key}>{field.label}{field.options ? <select value={draft.config[field.key] ?? ""} onChange={(event) => set(field.key, event.target.value)}>{field.options.map((option: string) => <option key={option} value={option}>{option}</option>)}</select> : <span className="property-field-wrap"><input type={field.password && !String(draft.config[field.key] || "").startsWith("${") ? "password" : "text"} value={draft.config[field.key] ?? ""} onChange={(event) => set(field.key, event.target.value)}/><button type="button" title={`Browse properties for ${field.label}`} aria-label={`Browse properties for ${field.label}`} onClick={() => { setTarget(field.key); setPropertySearch(""); }}><Braces/></button></span>}</label>)}
+      {fields.filter((field: any) => !field.when || field.when(resolvedConfig)).map((field: any) => {
+        const required = fieldIsRequired(field, resolvedConfig), binding = propertyBinding(draft.config[field.key]), value = displayedValue(draft.config[field.key]);
+        const title = <span className="connection-field-label"><span>{field.label}{required && <i>*</i>}</span><small>{required ? "Required" : "Optional"}</small></span>;
+        const mapped = binding && <small className="resolved-property-value">Value resolved from <code>{binding}</code></small>;
+        const textValue = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+        return <label className={required ? "connection-field-required" : "connection-field-optional"} key={`${field.key}-${field.label}`}>{title}{field.options ? <><select required={required} value={String(value)} onChange={(event) => setConnectionField(field.key, event.target.value)}>{field.options.map((option: string) => <option key={option} value={option}>{option}</option>)}</select>{mapped}</> : <span className={`property-field-wrap ${field.multiline ? "multiline" : ""}`}>{field.multiline ? <textarea required={required} rows={9} spellCheck={false} placeholder={field.placeholder || "Paste the complete service-account JSON object"} value={textValue} onChange={(event) => setConnectionField(field.key, event.target.value)}/> : <input required={required} placeholder={field.placeholder || (required ? "Required value" : "Optional")} type={field.password ? "password" : "text"} value={textValue} onChange={(event) => setConnectionField(field.key, event.target.value)}/>}<button type="button" title={`Browse properties for ${field.label}`} aria-label={`Browse properties for ${field.label}`} onClick={() => { setTarget(field.key); setPropertySearch(""); }}><Braces/></button>{field.jsonFile && <input className="service-account-file" aria-label="Upload service account JSON" type="file" accept="application/json,.json" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; const content = await file.text(); setDraft((current: any) => { const config = { ...current.config, [field.key]: content }; try { const parsed = JSON.parse(content); if (parsed.project_id) config.projectId = parsed.project_id; } catch {} return { ...current, config }; }); event.currentTarget.value = ""; }}/>} {mapped}</span>}</label>;
+      })}
       {type === "sap" && <section ref={idocBrowserRef} className="sap-idoc-browser"><header><span><b>SAP IDOC METADATA</b><small>Target release: {draft.config.release === "720" ? "SAP 7.20" : draft.config.release === "730" ? "SAP 7.30" : "Current / auto-detect"}. Retrieve and store the matching schema in this shared connection.</small></span><button type="button" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button></header><div className="sap-idoc-search"><Search/><input value={idocSearch} onChange={(event) => setIdocSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && fetchIdocs()} placeholder="Filter IDoc types, for example ORDERS…"/></div>{idocError && <p className="sap-idoc-error">{idocError}</p>}<div className="sap-idoc-list">{idocs.map((item) => { const selected = draft.config.selectedIdoc?.idocType === item.idocType; return <button type="button" className={selected ? "selected" : ""} key={`${item.idocType}-${item.release}`} onClick={() => selectIdoc(item)}><span><b>{item.idocType}</b><small>{item.description || "SAP IDoc"}</small></span><code>{item.extensionType || "basic"} · {item.release || "current"}</code>{selected && <i>Schema fetched</i>}</button>; })}{!idocs.length && <p>Test the SAP connection, then retrieve the available IDoc types.</p>}</div>{draft.config.selectedIdoc && <footer><CheckCircle2/><span><b>{draft.config.selectedIdoc.idocType}</b><small>{draft.config.selectedIdoc.segments?.length || 0} metadata rows · SAP release {draft.config.selectedIdoc.release || draft.config.release} · schema stored with shared connection</small></span></footer>}</section>}
       {type === "snowflake" && <section ref={snowflakeBrowserRef} className="sap-idoc-browser snowflake-entity-browser"><header><span><b>SNOWFLAKE SCHEMA METADATA</b><small>Retrieve TABLE and VIEW entities from the configured database and schema, then select each entity whose column metadata should be stored.</small></span><button type="button" onClick={fetchSnowflakeEntities} disabled={snowflakeLoading}><Download/> {snowflakeLoading ? "Retrieving…" : "Retrieve entities"}</button></header><div className="sap-idoc-search"><Search/><input value={snowflakeSearch} onChange={(event) => setSnowflakeSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && fetchSnowflakeEntities()} placeholder="Entity name pattern, for example ORDER_%…"/></div>{snowflakeError && <p className="sap-idoc-error">{snowflakeError}</p>}<div className="sap-idoc-list">{snowflakeEntities.map((item) => { const stored = (draft.config.entityCatalog || []).some((entry: any) => entry.database === item.database && entry.schema === item.schema && entry.name === item.name); return <button type="button" className={stored ? "selected" : ""} key={`${item.database}.${item.schema}.${item.name}`} onClick={() => selectSnowflakeEntity(item)}><span><b>{item.name}</b><small>{item.database}.{item.schema}</small></span><code>{item.entityType || "TABLE"}</code>{stored && <i>Metadata fetched</i>}</button>; })}{!snowflakeEntities.length && <p>Test the Snowflake connection, then retrieve tables and views.</p>}</div>{!!draft.config.entityCatalog?.length && <footer><CheckCircle2/><span><b>{draft.config.entityCatalog.length} entities stored</b><small>{draft.config.entityCatalog.reduce((count: number, item: any) => count + (item.columns?.length || 0), 0)} columns available to Snowflake activity input/output editors</small></span><button type="button" onClick={clearSnowflakeMetadata}>Remove metadata</button></footer>}</section>}
       {status && <div ref={testOutputRef} role="status" aria-live="polite" className={`connection-test-output ${statusOk === true ? "success" : statusOk === false ? "failure" : "pending"}`}><header><span><b>{statusOk === true ? "CONNECTION SUCCEEDED" : statusOk === false ? "CONNECTION FAILED" : "CONNECTION TEST"}</b><small>Selectable test response</small></span><button onClick={copyStatus}><ClipboardCopy/> {copied ? "Copied" : "Copy output"}</button></header><textarea aria-label="Connection test output" readOnly value={status} onFocus={(event) => event.currentTarget.select()}/></div>}
     </main>
-    <footer><button onClick={test}>Test Connection</button><button onClick={onClose}>Cancel</button><button className="primary" onClick={() => onCreate(draft)}>{initial ? "Save changes" : "Create connection"}</button></footer>
+    <footer><button onClick={test} disabled={testing}>{testing ? "Testing…" : "Test Connection"}</button><button onClick={onClose}>Cancel</button><button className="primary" onClick={save}>{initial ? "Save changes" : "Create connection"}</button></footer>
   </div></div>;
 }
 function ConnectionDialog({ type, onClose, onCreate }: any) {
@@ -3947,18 +4064,6 @@ function ConnectionDialog({ type, onClose, onCreate }: any) {
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             />
           </label>
-          {["ems", "jms", "kafka", "pubsub"].includes(type) && (
-            <label>
-              Runtime mode
-              <select
-                value={draft.config.mode}
-                onChange={(e) => set("mode", e.target.value)}
-              >
-                <option value="memory">Local in-memory test broker</option>
-                <option value="external">External system</option>
-              </select>
-            </label>
-          )}
           {type === "jdbc" && (
             <>
               <label>

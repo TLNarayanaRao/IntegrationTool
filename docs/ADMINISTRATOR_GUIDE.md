@@ -1,10 +1,22 @@
-# Integration Fabric Enterprise Administrator guide
+# Integration Fabric Control Plane guide
 
 ## Purpose and operating model
 
-Enterprise Administrator is the on-premises control plane for immutable Integration Fabric deployment packages. It validates and inventories packages, binds one packaged environment profile to a deployment, encrypts deployment secrets, assigns a runtime machine and desired instance count, starts and stops local runtime processes through a configured adapter, captures process logs, monitors instance PIDs, and records an audit trail.
+Integration Fabric Control Plane is the self-hosted management plane for Integration Fabric data planes, capabilities, applications, resources, access assignments, observability, and immutable deployment packages. A data plane represents an on-premises runtime host or Kubernetes runtime boundary. Capabilities are provisioned into a data-plane namespace, while applications are deployed to a selected data plane, namespace, and compatible Integration Runtime capability.
 
-Administrator does not rebuild a Studio project. A package already contains the selected starter tasks and every reachable called task, shared connection, XSD/JSON schema, resource, property profile, and deployment descriptor selected during packaging. Cloud packages can be inventoried, but their generated Docker/Kubernetes descriptors are the deployment mechanism; Administrator creates executable deployments only for `on-prem` packages.
+The implementation follows the main TIBCO Platform Control Plane concepts without copying its hosted service: separation of control and data planes, namespace-scoped capabilities and applications, platform resources, role assignments, health/heartbeat inventory, application lifecycle, audit, and observability dashboards.
+
+## Organization and delivery-team isolation
+
+The built-in **Technology Team** is the permanent Control Plane owner. It registers data planes, provisions capabilities, configures platform resources, creates delivery teams, assigns principals, issues or revokes delivery credentials, and can govern all assets. Set `FABRIC_ADMIN_API_KEY` for its production credential.
+
+Each data delivery team must be assigned one or more exclusive `{data plane, namespace}` scopes. The same namespace cannot be assigned to two active delivery teams. Packages, extracted package storage, deployments, environment requirements, encrypted secrets, runtime logs, lifecycle operations, and application observability carry an immutable `teamId`. Backend authorization returns `404` when another delivery team probes an asset identifier, preventing both access and asset discovery.
+
+Technology Team can upload a package on behalf of a delivery team by selecting its name beside **Upload package**. Delivery automation uses a one-time credential issued from **Delivery teams** and sends it in `X-Control-Plane-Key`. Only a SHA-256 hash of that credential is stored. An Application Manager token can upload, deploy, manage secrets, run lifecycle operations, and inspect its own team assets. An Application Viewer token is read-only. Delivery credentials cannot access Control Plane overview, data-plane registration, capabilities, resources, team/access administration, global monitoring, or audit APIs.
+
+For production, configure corporate identity-provider groups at the reverse proxy or identity gateway and exchange their authenticated team identity for scoped Control Plane credentials. Never expose the Technology Team key to delivery pipelines.
+
+Control Plane does not rebuild a Studio project. A package already contains the selected starter tasks and every reachable called task, shared connection, XSD/JSON schema, resource, property profile, and deployment descriptor selected during packaging. Cloud packages keep their generated Docker/Kubernetes descriptors and can be assigned only to a Kubernetes data plane. On-premises packages can run locally through the configured command adapter.
 
 ## Install and start
 
@@ -72,19 +84,31 @@ The runtime receives `FABRIC_APPLICATION_DIR`, `FABRIC_ENVIRONMENT`, `FABRIC_DEP
 
 Legal lifecycle transitions are enforced. Package deletion is blocked while any non-undeployed deployment references it.
 
-## Administrator screens
+## Control-plane model and screens
 
-- **Applications**: validated repository, deployments, legal actions, failure messages, instance details and logs.
-- **Machines**: local command adapter and remote agent registrations, capacities, heartbeat and readiness.
-- **Environments & secrets**: packaged profiles and required secret names. Values are never displayed.
-- **Monitoring**: deployment-state counts, running instances, online machines, adapter readiness and recent failures.
-- **Audit**: package, machine, secret and lifecycle operations with time, outcome, target and detail.
+- **Overview**: fleet, capability, deployment, request, and recent activity summaries.
+- **Data planes**: local, remote on-premises, and Kubernetes registrations; namespace, capacity, tag, tunnel, heartbeat, and health inventory.
+- **Capabilities**: namespace-scoped capability provisioning and status. Application deployment requires an Integration Runtime capability.
+- **Applications**: validated package repository, deployments, legal lifecycle actions, failure messages, instance details, and logs.
+- **Environments & secrets**: packaged profiles and required secret names. Secret values are encrypted and never displayed.
+- **Observability**: control-plane request/error totals plus data-plane and application CPU, memory, instance, and state telemetry.
+- **Resources**: reusable global or data-plane-scoped resource definitions. Secret-valued properties are masked in list responses and audit entries.
+- **Access control**: platform and team principals with Owner, Team Admin, Capability Manager, Application Manager, and Application Viewer roles, optionally scoped to a data plane and namespaces.
+- **Delivery teams**: exclusive namespace allocation, asset counts, and one-time scoped automation credentials. Control Plane access remains disabled for delivery teams.
+- **Audit trail**: provisioning, registration, deployment, resource, access, secret, and lifecycle operations with time, outcome, target, and detail.
 
 ## REST API summary
 
-- `GET /api/health`, `/api/monitoring`, `/api/audit`
+- `GET /api/health`, `/api/control-plane/overview`, `/api/monitoring`, `/api/observability`, `/api/audit`
+- `GET|POST /api/data-planes`; `GET|DELETE /api/data-planes/{id}`; `POST /api/data-planes/{id}/heartbeat`
+- `GET|POST /api/capabilities`; `DELETE /api/capabilities/{id}`
+- `GET|POST /api/resources`; `DELETE /api/resources/{id}`
+- `GET|POST /api/access/principals`
+- `GET|POST /api/teams`; `PUT|DELETE /api/teams/{id}`
+- `POST /api/teams/{id}/tokens`; `DELETE /api/teams/{id}/tokens/{tokenId}`
+- `GET /api/session`
+- `GET /api/applications`
 - `GET|POST /api/packages`; `GET|DELETE /api/packages/{artifact}/{version}`
-- `GET|POST /api/machines`; `POST /api/machines/{id}/heartbeat`
 - `GET|POST /api/deployments`; `GET /api/deployments/{id}`
 - `PUT /api/deployments/{id}/secrets`
 - `POST /api/deployments/{id}/{start|stop|restart|kill|undeploy}`
@@ -92,9 +116,10 @@ Legal lifecycle transitions are enforced. Package deletion is blocked while any 
 
 ## Security, recovery, and troubleshooting
 
-- Put Administrator behind TLS/reverse proxy and set an API key. Restrict the data directory to the service identity.
+- Put Control Plane behind TLS/reverse proxy and set an API key. Restrict the data directory to the service identity.
+- Permission enforcement is performed on every backend API call. UI filtering is informational and is not the security boundary.
 - Back up the entire data directory together with the external `FABRIC_ADMIN_SECRET_KEY`. Losing or changing the key makes stored secrets unreadable.
 - Rotate a secret with the secret API while stopped, then restart. The API returns secret names/configuration state only.
 - A `FAILED` deployment preserves its error and logs. Correct the adapter or configuration and select **Restart**.
 - `No runtime adapter is configured` means package validation and deployment creation are working, but `FABRIC_ADMIN_RUNTIME_COMMAND` has not been supplied.
-- Administrator PID reconciliation detects local processes that exited unexpectedly. A remote agent integration must post heartbeats and implement its runtime-side command polling before remote execution is enabled.
+- Control Plane PID reconciliation detects local processes that exited unexpectedly. Data-plane registration and heartbeat APIs provide the management-plane inventory. Remote command execution still requires a trusted data-plane agent/tunnel; this repository does not silently execute remote commands or claim a remote application is running without that adapter.

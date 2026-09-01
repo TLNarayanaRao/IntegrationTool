@@ -10,6 +10,8 @@ from .sap import sap_adapter
 from .snowflake import snowflake_adapter
 from .jdbc import jdbc_adapter
 from .amqp import amqp_adapter
+from .java_bridge import JavaBridgeError, execute_jms
+from .google_pubsub import client_configuration as pubsub_client_configuration
 
 class RuntimeErrorWithLogs(Exception): pass
 class FabricFault(Exception):
@@ -616,7 +618,10 @@ class WorkflowRuntime:
         envelope = {'id': str(uuid.uuid4()), 'data': payload, 'attributes': attributes, 'destination': destination, 'technology': technology, 'timestamp': timestamp, 'key': cfg.get('key'), 'correlationId': cfg.get('correlationId'), 'replyTo': cfg.get('replyTo'), 'type': cfg.get('type'), 'priority': int(cfg.get('priority', 4) or 4), 'deliveryMode': cfg.get('deliveryMode', 'Persistent'), 'expiration': int(cfg.get('expiration', 0) or 0)}
         receive_ops = {'receive', 'subscribe', 'get', 'queue_receiver', 'topic_subscriber', 'get_queue_message', 'receive_message', 'wait_request'}
         client_ack = str(cfg.get('acknowledgeMode', '')).lower() in ('client', 'manual', 'explicit client', 'explicit client dups ok') or cfg.get('acknowledge') is False
-        if rcfg.get('mode', 'memory') == 'memory':
+        # Existing projects that explicitly selected the local broker retain
+        # that behavior. New shared connections omit mode and use the real
+        # configured provider.
+        if rcfg.get('mode') == 'memory':
             queue = self.messages.setdefault(broker_key, [])
             if operation in receive_ops:
                 maximum = int(cfg.get('maxMessages', 1))
@@ -636,44 +641,30 @@ class WorkflowRuntime:
             envelope.update({'topic': destination, 'partition': int(cfg.get('partitionId', 0) or 0), 'offset': len(queue)-1})
             return {'messageId': envelope['id'], 'topic': destination, 'partition': envelope['partition'], 'offset': envelope['offset'], 'timestamp': envelope['timestamp'], 'published': True}
         if technology in ('ems', 'jms'):
-            try: import stomp
-            except ImportError: raise RuntimeError('External JMS mode requires the optional stomp.py package and a STOMP-enabled JMS provider')
-            host, port = rcfg.get('host', 'localhost'), int(rcfg.get('port', 7222 if technology == 'ems' else 61613))
-            username, password = rcfg.get('username', ''), rcfg.get('password', '')
+            required = {'JMS connection URL':rcfg.get('serverUrl'), 'Username':rcfg.get('username'), 'Password':rcfg.get('password')}
             if str(rcfg.get('connectionFactoryType', 'Direct')).lower() == 'jndi':
-                provider = str(rcfg.get('jndiProviderUrl') or '')
-                match = re.search(r'(?:\w+://)?([^:/]+)(?::(\d+))?', provider)
-                if match: host, port = match.group(1), int(match.group(2) or port)
-                username, password = rcfg.get('jndiUsername') or username, rcfg.get('jndiPassword') or password
-            connection = stomp.Connection12([(host, port)], heartbeats=(int(rcfg.get('heartbeatOutgoingMs', 0) or 0), int(rcfg.get('heartbeatIncomingMs', 0) or 0)))
-            connection.connect(username, password, wait=True, headers={'client-id': rcfg.get('clientId', '')} if rcfg.get('clientId') else {})
-            target = destination if str(destination).startswith('/') else f"/{'topic' if 'topic' in operation else 'queue'}/{destination}"
-            if operation in receive_ops:
-                import queue as queue_module
-                received_queue = queue_module.Queue()
-                class Listener(stomp.ConnectionListener):
-                    def on_message(self, frame): received_queue.put(frame)
-                    def on_error(self, frame): received_queue.put(RuntimeError(frame.body))
-                subscription_id = f'integration-fabric-{uuid.uuid4()}'
-                connection.set_listener(subscription_id, Listener()); connection.subscribe(target, id=subscription_id, ack='client-individual' if client_ack else 'auto', headers={'selector': cfg.get('messageSelector', '')} if cfg.get('messageSelector') else {})
-                frame = await asyncio.to_thread(received_queue.get, True, float(cfg.get('receiveTimeout', 30000) or 30000) / 1000)
-                if isinstance(frame, Exception): connection.disconnect(); raise frame
-                message_id = frame.headers.get('message-id') or str(uuid.uuid4())
-                ack_id = None
-                if client_ack:
-                    ack_id = self.register_acknowledgement(technology, message_id, lambda: (connection.ack(message_id, subscription_id), connection.disconnect()))
-                else: connection.disconnect()
-                try: body = json.loads(frame.body)
-                except (ValueError, TypeError): body = frame.body
-                return {'body': body, 'headers': frame.headers, 'properties': {k:v for k,v in frame.headers.items() if not k.startswith('JMS')}, 'ackId': ack_id, 'messages': [{'id':message_id,'data':body,'attributes':frame.headers,'ackId':ack_id}], 'count': 1}
-            headers = {**attributes, 'persistent': 'true' if str(cfg.get('deliveryMode','Persistent')).lower() == 'persistent' else 'false', 'priority': str(cfg.get('priority', 4)), 'correlation-id': str(cfg.get('correlationId',''))}
-            body = payload if isinstance(payload, str) else json.dumps(payload)
-            connection.send(target, body=body, headers=headers); connection.disconnect()
-            return {'messageId': envelope['id'], 'destination': destination, 'timestamp': envelope['timestamp'], 'published': True}
+                required.update({'JNDI context factory':rcfg.get('jndiContextFactory'), 'JNDI provider URL':rcfg.get('jndiProviderUrl'), 'JNDI username':rcfg.get('jndiUsername'), 'JNDI password':rcfg.get('jndiPassword'), 'JNDI connection factory':rcfg.get('connectionFactory')})
+            missing = [name for name, value in required.items() if not str(value or '').strip()]
+            if missing: raise FabricFault(f"Required connection values are missing: {', '.join(missing)}", fault_type='JMSConnectionException')
+            options = {**cfg, 'topic': 'topic' in operation or operation in ('publish', 'topic_subscriber'), 'clientAcknowledge': client_ack, 'properties': attributes}
+            try:
+                if operation in receive_ops:
+                    output = await asyncio.to_thread(execute_jms, rcfg, 'receive', str(destination), None, options)
+                    if not output.get('received'):
+                        return {'body': None, 'headers': {}, 'properties': {}, 'ackId': None, 'messages': [], 'count': 0}
+                    body = output.get('body')
+                    try: body = json.loads(body) if isinstance(body, str) else body
+                    except ValueError: pass
+                    message_id = output.get('headers', {}).get('JMSMessageID') or str(uuid.uuid4())
+                    return {**output, 'body': body, 'ackId': None, 'messages': [{'id':message_id, 'data':body, 'attributes':output.get('properties', {})}], 'count': 1}
+                output = await asyncio.to_thread(execute_jms, rcfg, 'send', str(destination), payload, options)
+                return {**output, 'destination':destination, 'timestamp':timestamp, 'published':True}
+            except JavaBridgeError as exc:
+                raise FabricFault(str(exc), fault_type='JMSConnectionException') from exc
         if technology == 'kafka':
             try: from confluent_kafka import Consumer, Producer, TopicPartition
             except ImportError: raise RuntimeError('External Kafka mode requires confluent-kafka')
-            common = {'bootstrap.servers': rcfg['bootstrapServers'], 'client.id': rcfg.get('clientId', 'integration-fabric'), 'request.timeout.ms': int(rcfg.get('requestTimeoutMilliseconds', 30000) or 30000), 'reconnect.backoff.ms': int(rcfg.get('reconnectBackoffMilliseconds', 50) or 50), 'retry.backoff.ms': int(rcfg.get('retryBackoffMilliseconds', 100) or 100), **mapping(rcfg.get('clientProperties'))}
+            common = {'bootstrap.servers': rcfg['bootstrapServers'], 'client.id': rcfg.get('clientId') or f'integration-fabric-{uuid.uuid4()}', 'request.timeout.ms': int(rcfg.get('requestTimeoutMilliseconds', 30000) or 30000), 'reconnect.backoff.ms': int(rcfg.get('reconnectBackoffMilliseconds', 50) or 50), 'retry.backoff.ms': int(rcfg.get('retryBackoffMilliseconds', 100) or 100), **mapping(rcfg.get('clientProperties'))}
             if rcfg.get('securityProtocol'): common['security.protocol'] = rcfg['securityProtocol']
             if rcfg.get('saslMechanism'): common['sasl.mechanism'] = rcfg['saslMechanism']
             if rcfg.get('username'): common['sasl.username'] = rcfg['username']
@@ -736,12 +727,7 @@ class WorkflowRuntime:
         if technology == 'pubsub':
             try: from google.cloud import pubsub_v1
             except ImportError: raise RuntimeError('External Google Pub/Sub mode requires google-cloud-pubsub')
-            project_id = cfg.get('projectId') or rcfg['projectId']; client_kwargs = {}
-            if rcfg.get('credentialsFile'):
-                from google.oauth2 import service_account
-                client_kwargs['credentials'] = service_account.Credentials.from_service_account_file(rcfg['credentialsFile'])
-            endpoint = rcfg.get('emulatorHost') or rcfg.get('endpoint')
-            if endpoint: client_kwargs['client_options'] = {'api_endpoint': endpoint}
+            client_kwargs, project_id = pubsub_client_configuration({**rcfg, 'projectId': cfg.get('projectId') or rcfg.get('projectId')})
             if operation in receive_ops:
                 subscriber = pubsub_v1.SubscriberClient(**client_kwargs); path = subscriber.subscription_path(project_id, destination); response = subscriber.pull(request={'subscription': path, 'max_messages': int(cfg.get('maxMessages', 1))}, timeout=float(cfg.get('receiveTimeout', cfg.get('timeout', 10))))
                 messages, native_ack_ids = [], []

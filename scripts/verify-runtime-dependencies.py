@@ -9,7 +9,6 @@ REQUIRED_MODULES = {
     "FastAPI": "fastapi",
     "HTTP client": "httpx",
     "SFTP": "paramiko",
-    "JMS/STOMP": "stomp",
     "Kafka": "confluent_kafka",
     "Kafka Avro": "fastavro",
     "GCP Pub/Sub": "google.cloud.pubsub_v1",
@@ -24,6 +23,9 @@ REQUIRED_MODULES = {
     "MySQL/MariaDB": "pymysql",
     "Oracle": "oracledb",
     "ODBC/SQL Server": "pyodbc",
+    "IBM Db2": "ibm_db_dbi",
+    "Databricks SQL": "databricks.sql",
+    "Databricks OAuth": "databricks.sdk",
 }
 
 

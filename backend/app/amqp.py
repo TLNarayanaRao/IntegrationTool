@@ -12,12 +12,18 @@ class AmqpAdapterError(RuntimeError):
         self.fault_type = fault_type
 
 
+def _as_bool(value: Any) -> bool:
+    return value is True or str(value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _host_port(config: dict) -> tuple[str, int]:
-    value = str(config.get("hostPort") or config.get("host") or "localhost:5672").split(",")[0].strip()
+    value = str(config.get("hostPort") or config.get("host") or "").split(",")[0].strip()
+    if not value:
+        raise AmqpAdapterError("AMQP Host:Port is required", "AMQPConnectionException")
     if ":" in value:
         host, port = value.rsplit(":", 1)
         return host, int(port)
-    return value, int(config.get("port") or (5671 if config.get("sslEnabled") else 5672))
+    return value, int(config.get("port") or (5671 if _as_bool(config.get("sslEnabled")) else 5672))
 
 
 def _rabbit_connection(config: dict):
@@ -28,7 +34,7 @@ def _rabbit_connection(config: dict):
     host, port = _host_port(config)
     credentials = pika.PlainCredentials(str(config.get("username") or "guest"), str(config.get("password") or "guest"))
     ssl_options = None
-    if config.get("sslEnabled"):
+    if _as_bool(config.get("sslEnabled")):
         context = ssl.create_default_context(cafile=config.get("caFile") or None)
         if config.get("clientCertificateFile") and config.get("clientKeyFile"):
             context.load_cert_chain(config.get("clientCertificateFile"), config.get("clientKeyFile"), config.get("clientKeyPassword") or None)
@@ -91,6 +97,10 @@ def test_connection(config: dict) -> dict:
     if config.get("mode") == "memory":
         return {"ok": True, "message": "Local in-memory AMQP broker is ready"}
     broker = str(config.get("brokerType") or "Qpid-1-0")
+    if broker != "AzureSB-1-0" and not str(config.get("hostPort") or config.get("host") or "").strip():
+        raise AmqpAdapterError("AMQP Host:Port is required", "AMQPConnectionException")
+    if broker == "AzureSB-1-0" and not str(config.get("connectionString") or "").strip():
+        raise AmqpAdapterError("Azure Service Bus endpoint or connection string is required", "AMQPConnectionException")
     if broker == "AzureSB-1-0":
         try:
             from azure.servicebus import ServiceBusReceiveMode
@@ -116,7 +126,7 @@ def test_connection(config: dict) -> dict:
     except ImportError as exc:
         raise AmqpAdapterError("AMQP 1.0 brokers require python-qpid-proton", "AMQPConnectionException") from exc
     host, port = _host_port(config)
-    scheme = "amqps" if config.get("sslEnabled") else "amqp"
+    scheme = "amqps" if _as_bool(config.get("sslEnabled")) else "amqp"
     connection = BlockingConnection(f"{scheme}://{host}:{port}", user=config.get("username") or None, password=config.get("password") or None, timeout=float(config.get("connectionTimeoutMsec") or 30000) / 1000)
     connection.close()
     return {"ok": True, "message": f"{broker} AMQP 1.0 connection succeeded"}

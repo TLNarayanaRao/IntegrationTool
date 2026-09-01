@@ -6,7 +6,6 @@ python-multipart==0.0.20
 aiofiles==24.1.0
 paramiko==3.5.1
 # External connector adapters (the local in-memory design-time broker also remains available):
-stomp.py>=8.2,<9                    # JMS providers exposing STOMP, including TIBCO EMS
 confluent-kafka>=2.6,<3            # Apache Kafka producer, consumer, security, and transactions
 fastavro>=1.9,<2                   # Kafka Avro/schema-registry payload support
 google-cloud-pubsub>=2.25,<3
@@ -25,4 +24,7 @@ psycopg[binary]>=3.2                # PostgreSQL JDBC-equivalent runtime
 PyMySQL>=1.1                        # MySQL and MariaDB
 oracledb>=2.5                       # Oracle Database
 pyodbc>=5.2                         # Microsoft SQL Server and ODBC
+ibm-db>=3.2.8                       # IBM Db2 DB-API runtime and bundled CLI driver
+databricks-sql-connector>=4,<5      # Databricks SQL warehouses and all-purpose compute
+databricks-sdk>=0.40,<1             # Databricks OAuth M2M credential provider
 # pyrfc>=3.3          # also requires the separately licensed SAP NetWeaver RFC SDK
