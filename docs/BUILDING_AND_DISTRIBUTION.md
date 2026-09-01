@@ -72,6 +72,8 @@ The desktop runtime is built with Python 3.11. The AMQP 1.0 connector uses the p
 
 After PyInstaller finishes, the build launches that exact packaged runtime on an isolated loopback port and requires a successful `/api/health` response before Electron Builder is allowed to create an installer. Installed Studio startup writes the runtime path, port, stdout, stderr, spawn errors, and exit status to `%APPDATA%\Integration Fabric Studio\logs\runtime-startup.log`. Startup errors include the log path and its latest output instead of only showing a generic readiness timeout.
 
+The PyInstaller analysis explicitly collects every module under the backend `app` package and verifies `app.main` both before and after freezing. This avoids environment-dependent namespace/package discovery producing an executable that fails with `ModuleNotFoundError: app.main`.
+
 The unpacked executable is:
 
 ```text
