@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title description">
+  <title id="title">End activity</title>
+  <desc id="description">Glossy red stop-board icon with End written in the center</desc>
+  <defs>
+    <linearGradient id="face" x1="48" y1="30" x2="204" y2="226" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff6674"/>
+      <stop offset=".32" stop-color="#ef253d"/>
+      <stop offset=".72" stop-color="#b90825"/>
+      <stop offset="1" stop-color="#710015"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="58" y1="35" x2="197" y2="222" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffd9dc"/>
+      <stop offset=".2" stop-color="#ff6571"/>
+      <stop offset=".58" stop-color="#bf071f"/>
+      <stop offset="1" stop-color="#5e0011"/>
+    </linearGradient>
+    <radialGradient id="shine" cx="0" cy="0" r="1" gradientTransform="translate(91 65) rotate(48) scale(116 72)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff" stop-opacity=".7"/>
+      <stop offset=".42" stop-color="#fff" stop-opacity=".13"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-28%" y="-25%" width="156%" height="165%">
+      <feDropShadow dx="0" dy="9" stdDeviation="9" flood-color="#02070d" flood-opacity=".72"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#ff173d" flood-opacity=".72"/>
+    </filter>
+    <filter id="textShadow" x="-20%" y="-30%" width="140%" height="170%">
+      <feDropShadow dx="0" dy="3" stdDeviation="2" flood-color="#55000e" flood-opacity=".9"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <path fill="url(#rim)" d="M79 12h98l67 67v98l-67 67H79l-67-67V79z"/>
+    <path fill="url(#face)" stroke="#fff" stroke-width="6" d="M84 25h88l59 59v88l-59 59H84l-59-59V84z"/>
+    <path fill="none" stroke="#ff95a0" stroke-opacity=".72" stroke-width="3" d="M88 36h80l52 52v80l-52 52H88l-52-52V88z"/>
+    <path fill="url(#shine)" d="M84 25h88l49 49c-39 31-104 45-181 24L25 84z"/>
+    <text x="128" y="147" fill="#fff" stroke="#fff" stroke-width="1" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="57" font-weight="800" letter-spacing="-1" filter="url(#textShadow)">End</text>
+  </g>
+</svg>

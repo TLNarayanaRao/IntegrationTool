@@ -1,5 +1,7 @@
 from __future__ import annotations
-import json, re
+import base64, calendar, hashlib, json, math, re, urllib.parse, uuid
+from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal, ROUND_HALF_EVEN
 from difflib import SequenceMatcher
 from typing import Any
 from xml.etree import ElementTree
@@ -124,22 +126,124 @@ def set_path(target: dict, path: str, value: Any):
     for part in parts[:-1]: current = current.setdefault(part, {})
     if parts: current[parts[-1]] = value
 
+def _values(value: Any, args: list[Any]) -> list[Any]:
+    return list(value) if isinstance(value, (list, tuple, set)) and not args else [value, *args]
+
+
+def _date_value(value: Any) -> datetime:
+    if isinstance(value, datetime): return value
+    if isinstance(value, date): return datetime.combine(value, time(), timezone.utc)
+    text = str(value or '').strip().replace('Z', '+00:00')
+    try: parsed = datetime.fromisoformat(text)
+    except ValueError: parsed = datetime.strptime(text, '%Y-%m-%d')
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _date_pattern(value: str) -> str:
+    pattern = str(value or '%Y-%m-%d')
+    for source, target in [('yyyy','%Y'),('MM','%m'),('dd','%d'),('HH','%H'),('mm','%M'),('ss','%S'),('XXX','%z')]: pattern = pattern.replace(source, target)
+    return pattern
+
+
+def apply_function(name: str, value: Any = None, args: list[Any] | None = None):
+    """Execute the built-in integration-mapper function catalog."""
+    args = list(args or []); key = str(name or '').lower().replace('-', '').replace('_', '')
+    text = '' if value is None else str(value)
+    if key == 'concat': return ''.join('' if item is None else str(item) for item in [value, *args])
+    if key in ('uppercase','upper'): return text.upper()
+    if key in ('lowercase','lower'): return text.lower()
+    if key == 'trim': return text.strip()
+    if key == 'normalizespace': return ' '.join(text.split())
+    if key == 'stringlength': return len(text)
+    if key == 'substring':
+        start = max(0, int(args[0]) - 1) if args else 0; end = start + int(args[1]) if len(args) > 1 else None
+        return text[start:end]
+    if key == 'substringbefore': return text.split(str(args[0]), 1)[0] if args and str(args[0]) in text else ''
+    if key == 'substringafter': return text.split(str(args[0]), 1)[1] if args and str(args[0]) in text else ''
+    if key == 'replace': return re.sub(str(args[0]), str(args[1]), text) if len(args) > 1 else text
+    if key in ('tokenize','split'): return re.split(str(args[0] if args else ','), text)
+    if key == 'join': return str(args[0] if args else ',').join(map(str, value or []))
+    if key == 'matches': return bool(re.search(str(args[0] if args else ''), text))
+    if key == 'startswith': return text.startswith(str(args[0] if args else ''))
+    if key == 'endswith': return text.endswith(str(args[0] if args else ''))
+    if key == 'contains': return str(args[0] if args else '') in text
+    if key == 'compare': return (text > str(args[0])) - (text < str(args[0])) if args else 0
+    if key == 'translate': return text.translate(str.maketrans(str(args[0]), str(args[1]))) if len(args) > 1 else text
+    if key == 'padleft': return text.rjust(int(args[0]), str(args[1] if len(args) > 1 else ' ')[:1])
+    if key == 'padright': return text.ljust(int(args[0]), str(args[1] if len(args) > 1 else ' ')[:1])
+    if key == 'capitalize': return text.capitalize()
+    if key == 'prefix': return str(args[0] if args else '') + text
+    if key == 'suffix': return text + str(args[0] if args else '')
+    if key in ('string','tostring'): return '' if value is None else str(value)
+    if key in ('number','decimal'): return float(value)
+    if key in ('integer','tointeger'): return int(float(value))
+    if key == 'boolean': return value if isinstance(value, bool) else str(value).strip().lower() in ('true','1','yes','on')
+    if key == 'round': return round(float(value), int(args[0]) if args else 0)
+    if key == 'roundhalftoeven': return float(Decimal(str(value)).quantize(Decimal(1).scaleb(-(int(args[0]) if args else 0)), rounding=ROUND_HALF_EVEN))
+    if key == 'floor': return math.floor(float(value))
+    if key in ('ceiling','ceil'): return math.ceil(float(value))
+    if key == 'abs': return abs(float(value))
+    if key == 'sqrt': return math.sqrt(float(value))
+    if key == 'power': return math.pow(float(value), float(args[0]))
+    if key in ('modulo','mod'): return float(value) % float(args[0])
+    if key == 'clamp': return max(float(args[0]), min(float(args[1]), float(value)))
+    if key in ('min','max','sum','average','avg','count'):
+        values = _values(value, args)
+        if key == 'count': return len(value) if isinstance(value, (list, tuple, dict, set, str)) and not args else len(values)
+        numeric = [float(item) for item in values]
+        if key == 'min': return min(numeric) if numeric else None
+        if key == 'max': return max(numeric) if numeric else None
+        if key == 'sum': return sum(numeric)
+        return sum(numeric) / len(numeric) if numeric else 0
+    now = datetime.now(timezone.utc)
+    if key == 'currentdate': return now.date().isoformat()
+    if key == 'currenttime': return now.time().isoformat(timespec='seconds')
+    if key in ('currentdatetime','now'): return now.isoformat()
+    if key in ('parsedate','parsedatetime'): return _date_value(value).isoformat()
+    if key in ('formatdate','formatdatetime'): return _date_value(value).strftime(_date_pattern(str(args[0] if args else 'yyyy-MM-dd')))
+    if key in ('adddays','addhours','addminutes','addseconds'):
+        amount = float(args[0] if args else 0); unit = {'adddays':'days','addhours':'hours','addminutes':'minutes','addseconds':'seconds'}[key]
+        return (_date_value(value) + timedelta(**{unit: amount})).isoformat()
+    if key == 'addmonths':
+        parsed = _date_value(value); total = parsed.year * 12 + parsed.month - 1 + int(args[0] if args else 0); year, month = divmod(total, 12)
+        return parsed.replace(year=year, month=month + 1, day=min(parsed.day, calendar.monthrange(year, month + 1)[1])).isoformat()
+    if key == 'datedifference': return (_date_value(args[0]) - _date_value(value)).total_seconds() / 86400 if args else 0
+    if key in ('year','month','day','hour','minute','second'): return getattr(_date_value(value), key)
+    if key == 'timezonefromdatetime': return _date_value(value).strftime('%z')
+    if key == 'not': return not bool(value)
+    if key in ('exists','isnotempty'): return value not in (None, '', [], {})
+    if key in ('empty','isempty'): return value in (None, '', [], {})
+    if key in ('default','coalesce'):
+        return next((item for item in [value, *args] if item not in (None, '')), None)
+    if key == 'ifthenelse': return args[0] if bool(value) and args else (args[1] if len(args) > 1 else None)
+    if key == 'distinctvalues': return list(dict.fromkeys(value or []))
+    if key == 'deepequal': return value == (args[0] if args else None)
+    if key == 'sort': return sorted(value or [], reverse=bool(args and str(args[0]).lower() in ('desc','true','1')))
+    if key == 'reverse': return list(reversed(value)) if isinstance(value, (list, tuple)) else text[::-1]
+    if key == 'first': return value[0] if value else None
+    if key == 'last': return value[-1] if value else None
+    if key == 'indexof':
+        try: return value.index(args[0])
+        except (ValueError, AttributeError, IndexError): return -1
+    if key == 'subsequence': return list(value or [])[int(args[0] if args else 0):int(args[1]) if len(args) > 1 else None]
+    if key == 'flatten': return [item for group in (value or []) for item in (group if isinstance(group, list) else [group])]
+    if key == 'jsonparse': return json.loads(text)
+    if key == 'jsonrender': return json.dumps(value, separators=(',', ':') if args and args[0] is False else None, default=str)
+    if key == 'base64encode': return base64.b64encode(text.encode()).decode()
+    if key == 'base64decode': return base64.b64decode(text).decode()
+    if key == 'hexencode': return text.encode().hex()
+    if key == 'hexdecode': return bytes.fromhex(text).decode()
+    if key == 'urlencode': return urllib.parse.quote(text, safe='')
+    if key == 'urldecode': return urllib.parse.unquote(text)
+    if key == 'uuid': return str(uuid.uuid4())
+    if key == 'hash': return hashlib.new(str(args[0] if args else 'sha256').replace('-', '').lower(), text.encode()).hexdigest()
+    raise ValueError(f'Unsupported mapper function {name!r}')
+
+
 def transform_value(value: Any, functions: list[Any]):
     for spec in functions or []:
         name, args = (spec, []) if isinstance(spec, str) else (spec.get('name'), spec.get('args', []))
-        if name == 'trim': value = str(value).strip()
-        elif name == 'upper': value = str(value).upper()
-        elif name == 'lower': value = str(value).lower()
-        elif name == 'string': value = '' if value is None else str(value)
-        elif name == 'number': value = float(value) if '.' in str(value) else int(value)
-        elif name == 'boolean': value = str(value).lower() in ('true','1','yes','on')
-        elif name == 'replace': value = str(value).replace(str(args[0]), str(args[1]))
-        elif name == 'prefix': value = str(args[0]) + str(value)
-        elif name == 'suffix': value = str(value) + str(args[0])
-        elif name == 'default' and (value is None or value == ''): value = args[0] if args else None
-        elif name == 'split': value = str(value).split(str(args[0] if args else ','))
-        elif name == 'join': value = str(args[0] if args else ',').join(map(str, value or []))
-        elif name == 'substring': value = str(value)[int(args[0]):int(args[1]) if len(args)>1 else None]
+        value = apply_function(name, value, args)
     return value
 
 
@@ -242,6 +346,19 @@ def _relative_path(path: str, parent: str) -> str | None:
     return None
 
 
+def _function_arguments(raw: str) -> list[str]:
+    arguments: list[str] = []; start = 0; depth = 0; quote = ''
+    for index, character in enumerate(raw):
+        if quote:
+            if character == quote and (index == 0 or raw[index - 1] != '\\'): quote = ''
+        elif character in ('"', "'"): quote = character
+        elif character == '(': depth += 1
+        elif character == ')': depth = max(0, depth - 1)
+        elif character == ',' and depth == 0: arguments.append(raw[start:index].strip()); start = index + 1
+    if raw[start:].strip(): arguments.append(raw[start:].strip())
+    return arguments
+
+
 def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
     """Execute BW-style mapping statements, including nested repeating targets."""
     options = options or {}
@@ -255,9 +372,22 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
 
     def resolve_value(rule: dict, scope: Any = None, scope_source: str = ''):
         if 'constant' in rule: return rule['constant']
-        source_path = _clean_path(rule.get('select') or rule.get('source', ''))
-        relative = _relative_path(source_path, scope_source) if scope is not None else None
-        return get_path(scope, relative) if relative is not None else get_path(document, source_path)
+        def evaluate_source(expression: Any):
+            if not isinstance(expression, str): return expression
+            text = expression.strip()
+            if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'"): return text[1:-1]
+            if text.lower() in ('true', 'true()'): return True
+            if text.lower() in ('false', 'false()'): return False
+            if text.lower() in ('null', '()'): return None
+            if re.fullmatch(r'-?\d+(?:\.\d+)?', text): return float(text) if '.' in text else int(text)
+            call = re.fullmatch(r'([\w-]+)\((.*)\)', text, re.S)
+            if call:
+                values = [evaluate_source(argument) for argument in _function_arguments(call.group(2))]
+                return apply_function(call.group(1), values[0] if values else None, values[1:])
+            source_path = _clean_path(text)
+            relative = _relative_path(source_path, scope_source) if scope is not None else None
+            return get_path(scope, relative) if relative is not None else get_path(document, source_path)
+        return evaluate_source(rule.get('select') or rule.get('source', ''))
 
     def condition_passes(rule: dict, scope: Any = None, scope_source: str = '') -> bool:
         condition = str(rule.get('condition', '')).strip()

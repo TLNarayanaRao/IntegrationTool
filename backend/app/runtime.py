@@ -5,7 +5,7 @@ from pathlib import Path
 import httpx
 from time import perf_counter
 from .models import Activity, ProcessDefinition, Project, RunResult
-from .mapper import execute as execute_mapping
+from .mapper import apply_function, execute as execute_mapping
 from .dataweave import DataWeaveError, execute as execute_dataweave
 from .sap import sap_adapter
 from .snowflake import snowflake_adapter
@@ -665,7 +665,13 @@ class WorkflowRuntime:
                     try: body = json.loads(body) if isinstance(body, str) else body
                     except ValueError: pass
                     message_id = output.get('headers', {}).get('JMSMessageID') or str(uuid.uuid4())
-                    return {**output, 'body': body, 'ackId': None, 'messages': [{'id':message_id, 'data':body, 'attributes':output.get('properties', {})}], 'count': 1}
+                    # The native bridge completes its provider receive before the
+                    # short-lived Java process exits. Preserve the client-ack
+                    # orchestration contract with a one-time confirmation token
+                    # so Confirm Message can be mapped consistently for native
+                    # EMS/JMS and the in-process providers.
+                    ack_id = self.register_acknowledgement(technology, message_id) if client_ack else None
+                    return {**output, 'body': body, 'ackId': ack_id, 'ackIds': [ack_id] if ack_id else [], 'messages': [{'id':message_id, 'data':body, 'attributes':output.get('properties', {}), 'ackId':ack_id}], 'count': 1}
                 output = await asyncio.to_thread(execute_jms, rcfg, 'send', str(destination), payload, options)
                 return {**output, 'destination':destination, 'timestamp':timestamp, 'published':True}
             except JavaBridgeError as exc:
@@ -849,30 +855,8 @@ class WorkflowRuntime:
             if not definition: raise RuntimeError(f'Custom function {function_name!r} was not found in this project')
             bindings = {f'${parameter}': args[index] if index < len(args) else None for index, parameter in enumerate(definition.parameters)}
             return self.evaluate_function_expression(definition.expression, ctx, bindings)
-        key = name.lower().replace('-', '')
-        if key == 'concat': return ''.join('' if value is None else str(value) for value in args)
-        if key in ('uppercase', 'upper'): return str(args[0] if args else '').upper()
-        if key in ('lowercase', 'lower'): return str(args[0] if args else '').lower()
-        if key in ('trim', 'normalizespace'): return ' '.join(str(args[0] if args else '').split())
-        if key == 'stringlength': return len(str(args[0] if args else ''))
-        if key == 'substring':
-            start = int(args[1]) - 1
-            return str(args[0])[start:start + int(args[2])] if len(args) > 2 else str(args[0])[start:]
-        if key == 'replace': return re.sub(str(args[1]), str(args[2]), str(args[0]))
-        if key == 'contains': return str(args[1]) in str(args[0])
-        if key == 'startswith': return str(args[0]).startswith(str(args[1]))
-        if key == 'endswith': return str(args[0]).endswith(str(args[1]))
-        if key == 'coalesce': return next((value for value in args if value not in (None, '')), None)
-        if key == 'count': return len(args[0]) if args and hasattr(args[0], '__len__') else len(args)
-        if key == 'sum': return sum(args[0] if len(args) == 1 and isinstance(args[0], list) else args)
-        if key in ('average', 'avg'):
-            values = args[0] if len(args) == 1 and isinstance(args[0], list) else args
-            return sum(values) / len(values) if values else 0
-        if key == 'ifthenelse': return args[1] if args and self.as_bool(args[0]) else (args[2] if len(args) > 2 else None)
-        if key == 'uuid': return str(uuid.uuid4())
-        if key == 'exists': return bool(args and args[0] not in (None, '', [], {}))
-        if key == 'empty': return not args or args[0] in (None, '', [], {})
-        raise RuntimeError(f'Unsupported mapper function {name!r}')
+        try: return apply_function(name, args[0] if args else None, args[1:])
+        except (TypeError, ValueError, IndexError) as exc: raise RuntimeError(str(exc)) from exc
 
     def resolve(self, value, ctx):
         if isinstance(value, dict): return {key: self.resolve(item, ctx) for key, item in value.items()}

@@ -132,10 +132,10 @@ def execute_jms(config: dict[str, Any], operation: str, destination: str, payloa
         **jms_values(config), "destination": destination, "topic": str(bool(options.get("topic"))).lower(),
         "jndiDestination": str(bool(options.get("jndiDestination"))).lower(), "body": payload if isinstance(payload, str) else json.dumps(payload),
         "selector": options.get("messageSelector"), "timeoutMs": options.get("receiveTimeout", 30000),
+        "sessionCount": options.get("maxSessions", options.get("sessionCount", 1)), "flowLimit": options.get("flowLimit", 0),
         "clientAcknowledge": str(bool(options.get("clientAcknowledge"))).lower(), "persistent": str(str(options.get("deliveryMode", "Persistent")).lower() == "persistent").lower(),
         "priority": options.get("priority", 4), "expiration": options.get("expiration", 0), "correlationId": options.get("correlationId"), "messageType": options.get("type"),
     }
     for key, value in (options.get("properties") or {}).items():
         values[f"messageProperty.{key}"] = value
     return invoke(f"jms.{operation}", config, values, family="jms", timeout=max(10, float(values["timeoutMs"] or 0) / 1000 + 10))
-

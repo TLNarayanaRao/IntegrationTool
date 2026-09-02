@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
-  Braces,
   Bug,
   Cable,
   CheckCircle2,
@@ -52,6 +51,7 @@ import {
 import SchemaStudio, { SchemaDoc } from "./SchemaStudio";
 import ActivityEditor from "./ActivityEditor";
 import ActivityPicker from "./ActivityPicker";
+import DataNodeIcon from "./DataNodeIcon";
 import "./styles.css";
 import "./designer.css";
 import "./properties.css";
@@ -70,6 +70,7 @@ import "./messaging-enhancements.css";
 import "./studio-ribbon.css";
 import "./packaging-target.css";
 import "./home-screen.css";
+const Braces = DataNodeIcon;
 type Kind =
   | "start"
   | "timer"
@@ -242,7 +243,7 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
         type: "end",
         operation: "end",
         label: "End",
-        asset: "end-stop",
+        asset: "end-stop.svg",
       },
     ],
   },
@@ -620,6 +621,10 @@ const defaultProperties: Property[] = [
   { key: "connections.ems.driverDirectory", value: "", data_type: "string" },
   { key: "connections.ems.connectionFactoryClass", value: "com.tibco.tibjms.TibjmsConnectionFactory", data_type: "string" },
   { key: "connections.ems.connectionTimeoutSeconds", value: 30, data_type: "integer" },
+  { key: "connections.ems.destination", value: "orders", data_type: "string" },
+  { key: "connections.ems.sessionCount", value: 1, data_type: "integer" },
+  { key: "connections.ems.flowLimit", value: 0, data_type: "integer" },
+  { key: "connections.ems.receiveTimeoutMs", value: 30000, data_type: "integer" },
   { key: "connections.ems.username", value: "", data_type: "string" },
   { key: "connections.ems.password", value: "", data_type: "password" },
   { key: "connections.ems.clientId", value: "", data_type: "string" },
@@ -1358,7 +1363,7 @@ function App() {
         groupId: "integration-fabric",
         maxMessages: 1,
       });
-    if (d.type === "ems") Object.assign(config, { messagingStyle: d.operation?.includes("topic") ? "Topic" : "Queue", messageType: "Text", acknowledgeMode: ["queue_receiver", "topic_subscriber"].includes(d.operation || "") ? "Auto" : undefined, deliveryMode: "Persistent", priority: 4, expiration: 0, maxSessions: 1, receiveTimeout: 30000, dynamicProperties: "{}" });
+    if (d.type === "ems") Object.assign(config, { messagingStyle: d.operation?.includes("topic") ? "Topic" : "Queue", messageType: "Text", acknowledgeMode: ["queue_receiver", "topic_subscriber"].includes(d.operation || "") ? "Auto" : undefined, deliveryMode: "Persistent", priority: 4, expiration: 0, queue: d.operation === "queue_receiver" ? "${properties.connections.ems.destination}" : undefined, topic: d.operation === "topic_subscriber" ? "${properties.connections.ems.destination}" : undefined, maxSessions: "${properties.connections.ems.sessionCount}", flowLimit: "${properties.connections.ems.flowLimit}", receiveTimeout: "${properties.connections.ems.receiveTimeoutMs}", dynamicProperties: "{}" });
     if (d.type === "jms") Object.assign(config, { messagingStyle: "Queue", messageType: "Text", acknowledgeMode: ["get_queue_message", "receive_message", "wait_request"].includes(d.operation || "") ? "Auto" : undefined, deliveryMode: "Persistent", priority: 4, expiration: 0, maxSessions: 1, receiveTimeout: 30000, requestTimeout: 30000, dynamicProperties: "{}" });
     if (d.type === "kafka") Object.assign(config, { acknowledgeMode: d.operation === "receive" || d.operation === "get" ? "Auto" : undefined, keySerializer: "String", valueSerializer: "String", keyDeserializer: "String", valueDeserializer: "String", acks: "all", compressionType: "none", retries: 3, bufferMemory: 33554432, batchSize: 16384, lingerMs: 0, maxRequestSize: 1048576, enableIdempotence: false, enableAutoCommit: true, autoOffsetReset: "earliest", fetchMinBytes: 1, maxPollRecords: 1, sessionTimeoutMs: 45000, heartbeatIntervalMs: 3000, additionalProperties: "{}" });
     if (d.type === "pubsub") Object.assign(config, { acknowledgeMode: d.operation === "subscribe" ? "Auto" : undefined, receiveTimeout: 10, publishTimeout: 60, attributes: {}, data: "${last}" });
@@ -2571,7 +2576,7 @@ function App() {
                       n.type === "start"
                         ? "start-play"
                         : n.type === "end"
-                          ? "end-stop"
+                          ? "end-stop.svg"
                           : ["mapper", "transform", "ai_transform"].includes(n.type)
                             ? "mapper.svg"
                             : n.type === "dataweave"
@@ -2581,7 +2586,6 @@ function App() {
                   </span>
                   {breakpoints.includes(n.id) && <i className="breakpoint" />}
                   <strong>{n.name}</strong>
-                  <small>{(n.config.operation || n.type).toUpperCase()}</small>
                   <span
                     className="connect-handle"
                     role="button"

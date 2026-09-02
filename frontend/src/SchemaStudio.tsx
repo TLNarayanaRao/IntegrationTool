@@ -1,5 +1,7 @@
 import React,{useMemo,useState}from'react';
-import{Braces,CheckCircle2,CodeXml,FileJson,Plus,Sparkles,Trash2,X}from'lucide-react';
+import{CheckCircle2,CodeXml,FileJson,Plus,Sparkles,Trash2,X}from'lucide-react';
+import DataNodeIcon from './DataNodeIcon';
+const Braces=DataNodeIcon;
 
 export type SchemaDoc={id:string;name:string;content:string};
 type Field={id:string;name:string;type:string;min:string;max:string};

@@ -29,6 +29,32 @@ class SapMapperTests(unittest.TestCase):
         })
         self.assertEqual(conditional.json()['output']['account']['givenName'], 'Ada')
 
+    def test_mapper_function_catalog_executes_string_date_number_collection_and_encoding(self):
+        tested = self.client.post('/api/mapper/test', json={
+            'input': {
+                'name':'  customer  ', 'created':'2026-01-30', 'amount':'42.567',
+                'tags':['a','b','a'], 'empty':'', 'plain':'hello',
+            },
+            'mappings': [
+                {'source':'name', 'target':'result.name', 'functions':['trim','upperCase', {'name':'replace','args':['CUSTOMER','ACCOUNT']}]},
+                {'source':'created', 'target':'result.deliveryDate', 'functions':[{'name':'addDays','args':[2]}, {'name':'formatDate','args':['yyyy-MM-dd']}]},
+                {'source':'amount', 'target':'result.amount', 'functions':['number', {'name':'round','args':[2]}]},
+                {'source':'tags', 'target':'result.tags', 'functions':['distinctValues','reverse']},
+                {'source':'empty', 'target':'result.fallback', 'functions':[{'name':'default','args':['UNKNOWN']}]},
+                {'source':'plain', 'target':'result.encoded', 'functions':['base64Encode']},
+                {'source':'upperCase(trim(name))', 'target':'result.expression'},
+            ],
+        })
+        self.assertEqual(tested.status_code, 200, tested.text)
+        self.assertEqual(tested.json()['output'], {'result': {
+            'name':'ACCOUNT', 'deliveryDate':'2026-02-01', 'amount':42.57,
+            'tags':['b','a'], 'fallback':'UNKNOWN', 'encoded':'aGVsbG8=', 'expression':'CUSTOMER',
+        }})
+        runtime = WorkflowRuntime()
+        context = {'input':{}, 'last':{}, 'vars':{}, 'resources':{}, 'properties':{}}
+        self.assertEqual(runtime.resolve('formatDate(addDays("2026-01-30", 2), "yyyy-MM-dd")', context), '2026-02-01')
+        self.assertEqual(runtime.resolve('padLeft("42", 5, "0")', context), '00042')
+
     def test_transform_accepts_typed_constants_and_dynamic_tree_mappings(self):
         runtime = WorkflowRuntime()
         context = {'input': {'order': {'id': 42}}, 'last': {'status': 'NEW'}, 'vars': {}, 'resources': {}, 'properties': {}, 'activities': {'source': {'output': {'amount': 19.5}}}}

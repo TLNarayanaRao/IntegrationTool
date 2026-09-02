@@ -238,6 +238,45 @@ class ActivityPackTests(unittest.TestCase):
                 self.assertEqual(confirmed['technologies'], [technology])
                 self.assertNotIn(ack_id, self.runtime.acknowledgements)
 
+    def test_native_ems_receiver_resolves_property_configuration_and_exposes_confirm_handle(self):
+        resource = SharedResource(id='ems-native', type='ems', name='EMS', config={
+            'serverUrl':'tcp://ems.example:7222', 'username':'admin', 'password':'secret',
+        })
+        context = {
+            'input': {}, 'last': {}, 'vars': {}, 'resources': {resource.id: resource},
+            'properties': {
+                'connections.ems.destination':'orders.dev', 'connections.ems.sessionCount':3,
+                'connections.ems.flowLimit':25, 'connections.ems.receiveTimeoutMs':4500,
+            },
+        }
+        bridge_output = {
+            'received': True, 'body': '{"orderId":42}',
+            'headers': {'JMSMessageID':'ID:orders-42'}, 'properties': {'source':'test'},
+        }
+        receiver = Activity(id='receive', type='ems', name='EMS Queue Receiver', config={
+            'operation':'queue_receiver', 'resourceId':resource.id,
+            'queue':'${properties.connections.ems.destination}',
+            'maxSessions':'${properties.connections.ems.sessionCount}',
+            'flowLimit':'${properties.connections.ems.flowLimit}',
+            'receiveTimeout':'${properties.connections.ems.receiveTimeoutMs}',
+            'acknowledgeMode':'Client',
+        })
+        with patch('app.runtime.execute_jms', return_value=bridge_output) as bridge:
+            received = asyncio.run(self.runtime.execute(receiver, context))
+        bridge.assert_called_once()
+        _, operation, destination, _, options = bridge.call_args.args
+        self.assertEqual((operation, destination), ('receive', 'orders.dev'))
+        self.assertEqual((options['maxSessions'], options['flowLimit'], options['receiveTimeout']), (3, 25, 4500))
+        self.assertEqual(received['body'], {'orderId':42})
+        self.assertIn(received['ackId'], self.runtime.acknowledgements)
+        context['last'] = received
+        confirmed = asyncio.run(self.runtime.execute(Activity(
+            id='confirm', type='confirm', name='Confirm Message',
+            config={'ackId':'${last.ackId}', 'failIfMissing':True},
+        ), context))
+        self.assertTrue(confirmed['confirmed'])
+        self.assertEqual(confirmed['technologies'], ['ems'])
+
     def test_confirm_reports_a_missing_acknowledgement_handle(self):
         context = {'input': {}, 'last': {}, 'vars': {}, 'resources': {}, 'properties': {}}
         with self.assertRaisesRegex(RuntimeError, 'requires an acknowledgement handle'):
