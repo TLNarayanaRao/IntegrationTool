@@ -15,6 +15,7 @@ from .java_bridge import JavaBridgeError, execute_jms
 from .google_pubsub import client_configuration as pubsub_client_configuration
 
 class RuntimeErrorWithLogs(Exception): pass
+_NO_EVENT_OUTPUT = object()
 class FabricFault(Exception):
     def __init__(self, message: str, *, fault_type='UserDefinedException', code='', details=None, cause=None):
         super().__init__(message); self.fault_type = fault_type; self.code = code; self.details = details or {}; self.cause = cause
@@ -43,7 +44,7 @@ class WorkflowRuntime:
             confirmed.append(str(handle)); technologies.append(pending['technology'])
         return {'confirmed': True, 'count': len(confirmed), 'ackIds': confirmed, 'technologies': sorted(set(technologies))}
 
-    async def run(self, process: ProcessDefinition, initial: dict, resources=None, properties=None, entry_activity_id=None, project: Project | None=None, execution_state: dict | None=None) -> RunResult:
+    async def run(self, process: ProcessDefinition, initial: dict, resources=None, properties=None, entry_activity_id=None, project: Project | None=None, execution_state: dict | None=None, event_output: Any = _NO_EVENT_OUTPUT) -> RunResult:
         run_id, logs = str(uuid.uuid4()), []
         started = datetime.now(timezone.utc)
         correlation_id = str(initial.get('correlationId') or initial.get('correlation_id') or run_id) if isinstance(initial, dict) else run_id
@@ -71,6 +72,7 @@ class WorkflowRuntime:
             self.log(logs, 'ERROR', 'Process must have exactly one Start activity')
             return finish('failed', {})
         current = starts[0]
+        triggered_event_pending = event_output is not _NO_EVENT_OUTPUT and current.id == entry_activity_id
         try:
             for _ in range(len(process.activities) + 1):
                 activity_started = perf_counter()
@@ -79,7 +81,12 @@ class WorkflowRuntime:
                 context['context']['activityId'] = current.id
                 error = None
                 try:
-                    context['last'] = await self.execute_with_policy(current, context)
+                    if triggered_event_pending:
+                        context['last'] = event_output
+                        triggered_event_pending = False
+                        self.log(logs, 'INFO', f'Event delivered: {process.name} / {current.name}', kind='event', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation)
+                    else:
+                        context['last'] = await self.execute_with_policy(current, context)
                     self.record_activity_output(current, context['last'], context)
                 except Exception as exc: error = exc
                 activity_duration = round((perf_counter() - activity_started) * 1000, 3)

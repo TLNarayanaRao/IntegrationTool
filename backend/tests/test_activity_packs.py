@@ -1,5 +1,6 @@
 import asyncio
 import tempfile
+import time
 import unittest
 import uuid
 from pathlib import Path
@@ -7,7 +8,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import app, runtime
 from app.models import Activity, EnvironmentProperty, ProcessDefinition, Project, SchemaAsset, SharedResource, Transition
 from app.runtime import WorkflowRuntime
 
@@ -19,6 +20,50 @@ class ActivityPackTests(unittest.TestCase):
     def execute(self, activity, payload):
         context = {'input': payload, 'last': payload, 'vars': {}, 'resources': {}, 'properties': {}}
         return asyncio.run(self.runtime.execute(activity, context))
+
+    def test_ems_queue_receiver_deploys_continuously_and_starts_each_event_automatically(self):
+        project_id = f'ems-listener-{uuid.uuid4()}'
+        project = Project(
+            id=project_id, name='EMS Continuous Listener',
+            resources=[SharedResource(id='ems', type='ems', name='Local EMS', config={'mode':'memory'})],
+            process=ProcessDefinition(activities=[
+                Activity(id='receive', type='ems', name='EMS Queue Receiver', config={'operation':'queue_receiver', 'resourceId':'ems', 'queue':'orders'}),
+                Activity(id='end', type='end', name='End'),
+            ], transitions=[Transition(id='success', source='receive', target='end')]),
+        )
+        with TestClient(app) as client:
+            self.assertEqual(client.post('/api/projects', json=project.model_dump(mode='json')).status_code, 200)
+            deployed = client.post(f'/api/projects/{project_id}/run', json={'environment':'local'}).json()
+            self.assertEqual(deployed['status'], 'listening')
+            self.assertEqual(deployed['endpoints'][0]['kind'], 'subscription')
+            for order_id in (101, 102):
+                context = {'input': {}, 'last': {'orderId':order_id}, 'vars': {}, 'resources': {'ems':project.resources[0]}, 'properties': {}}
+                asyncio.run(runtime.execute(Activity(id='send', type='ems', name='Send', config={'operation':'send', 'resourceId':'ems', 'queue':'orders', 'message':'${last}'}), context))
+                deadline = time.time() + 3
+                while time.time() < deadline:
+                    state = client.get(f'/api/projects/{project_id}/runtime-state').json()
+                    if len(state.get('executions', [])) >= order_id - 100: break
+                    time.sleep(.05)
+                self.assertGreaterEqual(len(state.get('executions', [])), order_id - 100)
+                self.assertEqual(state['activityOutputs']['receive']['output']['body']['orderId'], order_id)
+                self.assertEqual(state['status'], 'listening')
+            stopped = client.post(f'/api/projects/{project_id}/stop').json()
+            self.assertEqual(stopped['status'], 'stopped')
+            debug = client.post(f'/api/projects/{project_id}/debug', json={'environment':'local', 'breakpoints':[]}).json()
+            self.assertEqual(debug['status'], 'listening')
+            session_id = debug['sessionId']
+            context = {'input': {}, 'last': {'orderId':103}, 'vars': {}, 'resources': {'ems':project.resources[0]}, 'properties': {}}
+            asyncio.run(runtime.execute(Activity(id='send-debug', type='ems', name='Send', config={'operation':'send', 'resourceId':'ems', 'queue':'orders', 'message':'${last}'}), context))
+            deadline = time.time() + 3
+            while time.time() < deadline:
+                debug_state = client.get(f'/api/debug/{session_id}').json()
+                received = debug_state.get('activityOutputs', {}).get('receive', {}).get('output', {})
+                if received.get('body', {}).get('orderId') == 103: break
+                time.sleep(.05)
+            self.assertEqual(received['body']['orderId'], 103)
+            self.assertEqual(debug_state['status'], 'listening')
+            client.post(f'/api/debug/{session_id}/action', json={'action':'stop'})
+            client.delete(f'/api/projects/{project_id}')
 
     def test_ems_connection_requires_only_direct_fields_and_completes(self):
         client = TestClient(app)

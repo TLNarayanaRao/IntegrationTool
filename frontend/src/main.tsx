@@ -1133,15 +1133,16 @@ function App() {
     [],
   );
   useEffect(() => {
-    if (!endpoints.length || debugState) return;
+    if (!endpoints.length) return;
     let cancelled = false;
     const refreshRuntime = async () => {
       try {
-        const response = await fetch(`/api/projects/${project.id}/runtime-state`);
+        const response = await fetch(debugState?.sessionId ? `/api/debug/${debugState.sessionId}` : `/api/projects/${project.id}/runtime-state`);
         if (!response.ok) return;
         const state = await response.json();
         if (cancelled) return;
-        setRuntimeState(state);
+        if (debugState?.sessionId) setDebugState(state);
+        else setRuntimeState(state);
         setExecutionOutputs(state.activityOutputs || {});
         setLogs(state.logs || []);
         if (state.endpoints?.length) setEndpoints(state.endpoints);
@@ -1150,7 +1151,7 @@ function App() {
     void refreshRuntime();
     const timer = window.setInterval(refreshRuntime, 750);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [project.id, endpoints.length, debugState]);
+  }, [project.id, endpoints.length, debugState?.sessionId]);
   useEffect(() => {
     const move = (e: PointerEvent) => {
         if (!drag.current || !canvas.current || (drag.current.pointerId != null && drag.current.pointerId !== e.pointerId)) return;
@@ -2716,11 +2717,12 @@ function App() {
           <dl><div><dt>Correlation ID</dt><dd>{runtimeState.lastExecution.correlationId}</dd></div><div><dt>Started</dt><dd>{runtimeState.lastExecution.startedAt || "—"}</dd></div><div><dt>Ended</dt><dd>{runtimeState.lastExecution.endedAt || "—"}</dd></div><div><dt>Duration</dt><dd>{Number(runtimeState.lastExecution.durationMs || 0).toFixed(1)} ms</dd></div></dl>
         </section>}
         {!!endpoints.length && <section className="runtime-endpoints">
-          <strong>LIVE ENDPOINTS</strong>
+          <strong>{endpoints.some((endpoint: any) => endpoint.kind === "subscription") ? "LIVE EVENT RECEIVERS" : "LIVE ENDPOINTS"}</strong>
           {endpoints.map((endpoint: any) => <article key={endpoint.activityId}>
-            <span>{endpoint.methods?.join(", ")} · {endpoint.name}</span>
+            <span>{endpoint.kind === "subscription" ? `${String(endpoint.status || "ready").toUpperCase()} · ${endpoint.name}` : `${endpoint.methods?.join(", ")} · ${endpoint.name}`}</span>
             <code>{endpoint.url}</code>
-            <button title="Copy endpoint URL" onClick={() => navigator.clipboard.writeText(endpoint.url)}><ClipboardCopy/> Copy</button>
+            {endpoint.kind !== "subscription" && <button title="Copy endpoint URL" onClick={() => navigator.clipboard.writeText(endpoint.url)}><ClipboardCopy/> Copy</button>}
+            {endpoint.kind === "subscription" && <small>Waiting continuously for events on {endpoint.destination}</small>}
             {endpoint.configuredUrl && endpoint.configuredUrl !== endpoint.url && <small>Packaged deployment: {endpoint.configuredUrl}</small>}
           </article>)}
         </section>}
@@ -4676,27 +4678,28 @@ function ConnectionConfig({ resource, update }: any) {
   );
 }
 function DebugBar({ state, act, stop }: any) {
+  const waitingForEvent = state.status === "listening";
   return (
     <div className="debug-bar">
       <Bug />
-      <b>{state.status}</b>
-      <button onClick={() => act("continue")}>
+      <b>{waitingForEvent ? "ready · waiting for event" : state.status}</b>
+      <button disabled={waitingForEvent} onClick={() => act("continue")}>
         <CirclePlay /> Continue
       </button>
-      <button onClick={() => act("pause")}>
+      <button disabled={waitingForEvent} onClick={() => act("pause")}>
         <Pause /> Pause
       </button>
-      <button onClick={() => act("step_in")}>
+      <button disabled={waitingForEvent} onClick={() => act("step_in")}>
         <SkipForward /> Step In
       </button>
-      <button onClick={() => act("step_over")}>
+      <button disabled={waitingForEvent} onClick={() => act("step_over")}>
         <SkipForward /> Step Over
       </button>
-      <button onClick={() => act("step_out")}>
+      <button disabled={waitingForEvent} onClick={() => act("step_out")}>
         <SkipBack /> Step Out
       </button>
-      <button onClick={() => act("jump_in")}>Jump In</button>
-      <button onClick={() => act("jump_out")}>Jump Out</button>
+      <button disabled={waitingForEvent} onClick={() => act("jump_in")}>Jump In</button>
+      <button disabled={waitingForEvent} onClick={() => act("jump_out")}>Jump Out</button>
       <button className="debug-stop" onClick={stop}>
         <Square /> Stop
       </button>

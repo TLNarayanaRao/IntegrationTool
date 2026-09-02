@@ -29,6 +29,15 @@ runtime_states: dict[str, dict] = {}
 active_runs: dict[str, asyncio.Task] = {}
 
 INBOUND_OPERATIONS = {None, 'listen', 'receiver', 'service'}
+CONTINUOUS_EVENT_OPERATIONS = {
+    'timer': {'schedule'},
+    'file': {'poll'},
+    'ems': {'queue_receiver', 'topic_subscriber'},
+    'jms': {'receive_message'},
+    'amqp': {'receive'},
+    'kafka': {'receive', 'get'},
+    'pubsub': {'subscribe'},
+}
 
 def _environment_values(item: Project, environment: str) -> dict:
     return {prop.key: prop.value for prop in item.properties.get(environment, [])}
@@ -73,7 +82,7 @@ def _lifecycle_logs(item: Project, endpoints: list[dict]) -> list[dict]:
         {'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Application module loaded: {item.name} ({len(item.tasks)} task(s), {len(item.resources)} shared resource(s))'},
         {'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Application {item.name} started', 'startedAt': now},
     ]
-    logs.extend({'time': now, 'level': 'INFO', 'kind': 'endpoint', 'message': f'{", ".join(endpoint["methods"])} listener ready at {endpoint["url"]}'} for endpoint in endpoints)
+    logs.extend({'time': now, 'level': 'INFO', 'kind': 'endpoint', 'message': (f'{endpoint["name"]} is ready and waiting on {endpoint["url"]}' if endpoint.get('kind') == 'subscription' else f'{", ".join(endpoint["methods"])} listener ready at {endpoint["url"]}')} for endpoint in endpoints)
     return logs
 
 def _publish_runtime_state(project_id: str, *, status: str, logs: list[dict], endpoints=None, result=None, environment: str | None = None):
@@ -96,6 +105,127 @@ def _publish_runtime_state(project_id: str, *, status: str, logs: list[dict], en
     }
     runtime_states[project_id] = state
     return state
+
+def _is_continuous_event(activity) -> bool:
+    return activity.config.get('operation') in CONTINUOUS_EVENT_OPERATIONS.get(activity.type, set())
+
+def _event_subscription(item: Project, task, activity, environment: str) -> dict:
+    properties = _environment_values(item, environment)
+    context = {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}
+    config = runtime.resolve(activity.config, context)
+    destination = config.get('destination') or config.get('queue') or config.get('topic') or config.get('subscription') or config.get('path') or ('configured schedule' if activity.type == 'timer' else 'default')
+    resource = next((value for value in item.resources if value.id == config.get('resourceId')), None)
+    resource_name = resource.name if resource else str(config.get('resourceId') or 'unconfigured connection')
+    technology = activity.type.upper()
+    return {
+        'taskId': task.id, 'activityId': activity.id, 'name': activity.name, 'type': activity.type,
+        'kind': 'subscription', 'methods': ['EVENT'], 'status': 'ready', 'destination': str(destination),
+        'resourceName': resource_name, 'url': f'{technology} · {resource_name} · {destination}',
+    }
+
+def _event_available(output) -> bool:
+    if not isinstance(output, dict): return output is not None
+    if 'received' in output: return bool(output.get('received'))
+    if 'count' in output: return int(output.get('count') or 0) > 0
+    if output.get('messages'): return True
+    return bool(output.get('MessageID') or output.get('messageId') or output.get('body') is not None)
+
+def _listener_context(item: Project, task, resources: dict, properties: dict, environment: str) -> dict:
+    return {
+        'input': {}, 'vars': {}, 'last': {}, 'resources': resources, 'properties': properties,
+        'project': item, 'runtime': runtime, 'logs': [], 'activities': {},
+        'tasks': {task.id: {'name': task.name, 'activities': {}}},
+        'context': {'taskId': task.id, 'activityId': '', 'environment': environment},
+    }
+
+async def _continuous_event_loop(item: Project, task, activity, environment: str, debug_session_id: str | None = None):
+    project_id = item.id
+    resources = {resource.id: resource for resource in item.resources}
+    properties = _environment_values(item, environment)
+    retry_delay = 1.0
+    seen_files: dict[str, str] | None = None
+    current = asyncio.current_task()
+    try:
+        while True:
+            if debug_session_id:
+                session = debugger.sessions.get(debug_session_id)
+                if not session or session.get('status') == 'stopped': return
+                if session.get('status') not in ('listening',):
+                    await asyncio.sleep(.1)
+                    continue
+            context = _listener_context(item, task, resources, properties, environment)
+            try:
+                output = await runtime.execute_with_policy(activity, context)
+                retry_delay = 1.0
+                resolved_config = runtime.resolve(activity.config, context)
+                if activity.type == 'file' and activity.config.get('operation') == 'poll':
+                    current_files = {str(value.get('fullName')): str(value.get('lastModified')) for value in output.get('files', []) if value.get('fullName')}
+                    include_existing = runtime.as_bool(resolved_config.get('includeExisting', False))
+                    event_type = str(resolved_config.get('eventType') or 'Created').lower()
+                    if seen_files is None:
+                        changed = list(output.get('files', [])) if include_existing else []
+                    else:
+                        created = [value for value in output.get('files', []) if str(value.get('fullName')) not in seen_files]
+                        modified = [value for value in output.get('files', []) if str(value.get('fullName')) in seen_files and seen_files[str(value.get('fullName'))] != str(value.get('lastModified'))]
+                        deleted = [{'fullName': name, 'fileName': Path(name).name, 'eventType':'Deleted'} for name in seen_files if name not in current_files]
+                        changed = created if event_type == 'created' else modified if event_type == 'modified' else deleted if event_type == 'deleted' else created + modified + deleted
+                    seen_files = current_files
+                    output = {**output, 'files': changed, 'count': len(changed), 'eventType': resolved_config.get('eventType', 'Created')}
+                if not _event_available(output):
+                    await asyncio.sleep(max(.1, float(resolved_config.get('pollInterval', 1) or 1)) if activity.type == 'file' else .1)
+                    continue
+                if debug_session_id:
+                    await debugger.trigger_event(debug_session_id, output)
+                    session = debugger.sessions.get(debug_session_id)
+                    if session:
+                        cursor = int(session.get('persistedLogCount', 0))
+                        append_project_logs(project_id, item.name, session['logs'][cursor:], _project_log_directory(item, environment))
+                        session['persistedLogCount'] = len(session['logs'])
+                        _publish_runtime_state(project_id, status=session.get('status', 'listening'), logs=session['logs'][-500:], endpoints=session.get('endpoints', []), environment=environment)
+                    if activity.type == 'timer':
+                        repeat = runtime.as_bool(resolved_config.get('repeatEnabled', False))
+                        cron = str(resolved_config.get('scheduleMode') or '').lower() == 'cron'
+                        if not repeat and not cron: return
+                        if repeat and not cron:
+                            multiplier = {'seconds':1, 'minutes':60, 'hours':3600, 'days':86400}.get(str(resolved_config.get('unit') or 'minutes').lower(), 60)
+                            await asyncio.sleep(max(1.0, float(resolved_config.get('interval', 1) or 1) * multiplier))
+                    elif activity.type == 'file':
+                        await asyncio.sleep(max(.1, float(resolved_config.get('pollInterval', 1) or 1)))
+                    continue
+                result = await runtime.run(task, output, resources, properties, activity.id, item, event_output=output)
+                previous = runtime_states.get(project_id, {})
+                combined_logs = list(previous.get('logs', [])) + result.logs
+                append_project_logs(project_id, item.name, result.logs, _project_log_directory(item, environment))
+                _publish_runtime_state(project_id, status='listening', logs=combined_logs[-500:], result=result, environment=environment)
+                if activity.type == 'timer':
+                    repeat = runtime.as_bool(resolved_config.get('repeatEnabled', False))
+                    cron = str(resolved_config.get('scheduleMode') or '').lower() == 'cron'
+                    if not repeat and not cron: return
+                    if repeat and not cron:
+                        multiplier = {'seconds':1, 'minutes':60, 'hours':3600, 'days':86400}.get(str(resolved_config.get('unit') or 'minutes').lower(), 60)
+                        await asyncio.sleep(max(1.0, float(resolved_config.get('interval', 1) or 1) * multiplier))
+                elif activity.type == 'file':
+                    await asyncio.sleep(max(.1, float(resolved_config.get('pollInterval', 1) or 1)))
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                now = datetime.now(timezone.utc).isoformat()
+                entry = {'time': now, 'level': 'ERROR', 'kind': 'listener', 'message': f'{activity.name} listener error; reconnecting in {retry_delay:g} seconds: {exc}', 'activityId': activity.id, 'taskId': task.id}
+                previous = runtime_states.get(project_id, {})
+                logs = (list(previous.get('logs', [])) + [entry])[-500:]
+                append_project_logs(project_id, item.name, [entry], _project_log_directory(item, environment))
+                _publish_runtime_state(project_id, status='listening', logs=logs, environment=environment)
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(30.0, retry_delay * 2)
+    finally:
+        if active_runs.get(project_id) is current: active_runs.pop(project_id, None)
+
+def _start_continuous_listener(item: Project, task, activity, environment: str, debug_session_id: str | None = None):
+    previous = active_runs.get(item.id)
+    if previous and not previous.done(): previous.cancel()
+    listener = asyncio.create_task(_continuous_event_loop(item, task, activity, environment, debug_session_id))
+    active_runs[item.id] = listener
+    return listener
 
 @app.get('/api/health')
 def health(): return {'status': 'ok', 'runtime': 'python'}
@@ -163,8 +293,9 @@ async def run(project_id: str, http_request: Request, request: RunRequest):
     task = next((task for task in item.tasks if task.id == task_id), None)
     if not task: raise HTTPException(404, 'Task not found')
     if task.kind != 'starter': raise HTTPException(400, 'Sub Tasks are invoked by a Call Sub Task activity; run a Starter Task')
-    events = effective_event_activities(task.activities)
+    events = effective_event_activities(task.activities, task.transitions)
     if len(events) != 1: raise HTTPException(400, f'Starter Task requires exactly one event activity; found {len(events)}')
+    event = events[0]
     endpoints = _listener_endpoints(item, task, request.environment, str(http_request.base_url).rstrip('/'))
     if endpoints:
         lifecycle = _lifecycle_logs(item, endpoints)
@@ -172,6 +303,14 @@ async def run(project_id: str, http_request: Request, request: RunRequest):
         _publish_runtime_state(project_id, status='listening', logs=lifecycle, endpoints=endpoints, environment=request.environment)
         return {'status': 'listening', 'output': {}, 'logs': lifecycle,
                 'activity_outputs': {}, 'task_outputs': {}, 'endpoints': endpoints, 'executions': []}
+    if _is_continuous_event(event):
+        subscriptions = [_event_subscription(item, task, event, request.environment)]
+        lifecycle = _lifecycle_logs(item, subscriptions)
+        append_project_logs(project_id, item.name, lifecycle, _project_log_directory(item, request.environment))
+        _publish_runtime_state(project_id, status='listening', logs=lifecycle, endpoints=subscriptions, environment=request.environment)
+        _start_continuous_listener(item, task, event, request.environment)
+        return {'status': 'listening', 'output': {}, 'logs': lifecycle,
+                'activity_outputs': {}, 'task_outputs': {}, 'endpoints': subscriptions, 'executions': []}
     current_run = asyncio.current_task()
     if current_run: active_runs[project_id] = current_run
     runtime_states.setdefault(project_id, {})['environment'] = request.environment
@@ -833,7 +972,7 @@ def evaluate_condition(payload: dict):
     except Exception as exc: raise HTTPException(400, f'Condition evaluation failed: {exc}')
 
 @app.post('/api/projects/{project_id}/debug')
-def start_debug(project_id: str, http_request: Request, request: DebugRequest):
+async def start_debug(project_id: str, http_request: Request, request: DebugRequest):
     item = get_project(project_id)
     if not item: raise HTTPException(404, 'Project not found')
     task_id = request.task_id or item.active_task_id
@@ -842,12 +981,18 @@ def start_debug(project_id: str, http_request: Request, request: DebugRequest):
         view = debugger.start(item, task_id, request.input, {resource.id:resource for resource in item.resources}, properties, request.breakpoints, request.environment)
         task = next(value for value in item.tasks if value.id == task_id)
         endpoints = _listener_endpoints(item, task, request.environment, str(http_request.base_url).rstrip('/'))
+        events = effective_event_activities(task.activities, task.transitions)
+        event = events[0] if len(events) == 1 else None
+        if event and _is_continuous_event(event):
+            endpoints = [_event_subscription(item, task, event, request.environment)]
         state = debugger.sessions[view['sessionId']]
         runtime_states.setdefault(project_id, {})['environment'] = request.environment
         state['endpoints'] = endpoints
         state['logs'][:] = _lifecycle_logs(item, endpoints) + state['logs']
         append_project_logs(project_id, item.name, state['logs'], _project_log_directory(item, request.environment))
         state['persistedLogCount'] = len(state['logs'])
+        if event and _is_continuous_event(event):
+            _start_continuous_listener(item, task, event, request.environment, view['sessionId'])
         return debugger.view(state)
     except ValueError as exc: raise HTTPException(400, str(exc))
 
@@ -857,11 +1002,20 @@ async def debug_action(session_id: str, request: DebugAction):
         view = await debugger.action(session_id, request.action)
         state = debugger.sessions[session_id]
         project = state['project']
+        if request.action == 'stop':
+            active = active_runs.get(project.id)
+            if active and not active.done(): active.cancel()
         cursor = int(state.get('persistedLogCount', 0))
         append_project_logs(project.id, project.name, state['logs'][cursor:], _project_log_directory(project, state.get('environment', 'local')))
         state['persistedLogCount'] = len(state['logs'])
         return view
     except ValueError as exc: raise HTTPException(404, str(exc))
+
+@app.get('/api/debug/{session_id}')
+def debug_state(session_id: str):
+    state = debugger.sessions.get(session_id)
+    if not state: raise HTTPException(404, 'Debug session not found')
+    return debugger.view(state)
 
 HTTP_LISTENER_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'TRACE', 'CONNECT']
 

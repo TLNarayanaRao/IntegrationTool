@@ -258,16 +258,25 @@ def is_event_activity(activity: Activity) -> bool:
         (activity.type == 'rest' and operation == 'receiver') or \
         (activity.type == 'soap' and operation == 'service') or \
         (activity.type == 'file' and operation == 'poll') or \
+        (activity.type == 'amqp' and operation == 'receive') or \
         (activity.type == 'ems' and operation in ('queue_receiver', 'topic_subscriber')) or \
         (activity.type == 'jms' and operation == 'receive_message') or \
         (activity.type == 'kafka' and operation in ('receive', 'get')) or \
         (activity.type == 'pubsub' and operation == 'subscribe') or \
         (activity.type == 'sap' and operation in ('idoc_listener', 'rfc_bapi_listener'))
 
-def effective_event_activities(activities: list[Activity]) -> list[Activity]:
-    """Treat Start as the manual trigger only when no external listener exists."""
-    external = [activity for activity in activities if activity.type != 'start' and is_event_activity(activity)]
-    return external or [activity for activity in activities if activity.type == 'start']
+def effective_event_activities(activities: list[Activity], transitions: list[Transition] | None = None) -> list[Activity]:
+    """Return event activities that are actual task entry points.
+
+    Receiver/get activities may also be used deliberately in the middle of a
+    task. Those remain ordinary blocking/polling activities and must not replace
+    an explicit root Start activity as the deployed event source.
+    """
+    incoming = {transition.target for transition in (transitions or [])}
+    roots = [activity for activity in activities if activity.id not in incoming]
+    candidates = roots if transitions is not None else activities
+    external = [activity for activity in candidates if activity.type != 'start' and is_event_activity(activity)]
+    return external or [activity for activity in candidates if activity.type == 'start']
 
 class ProcessDefinition(BaseModel):
     id: str = 'main'
@@ -277,7 +286,7 @@ class ProcessDefinition(BaseModel):
 
     @model_validator(mode='after')
     def enforce_single_event_activity(self):
-        events = effective_event_activities(self.activities)
+        events = effective_event_activities(self.activities, self.transitions)
         if len(events) > 1:
             raise ValueError(f'A Task can contain only one event activity; found: {", ".join(activity.name for activity in events)}')
         catch_ids = {activity.id for activity in self.activities if activity.type == 'catch'}
