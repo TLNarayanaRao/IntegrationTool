@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
+  BookOpen,
   Bug,
   Cable,
   CheckCircle2,
@@ -1027,6 +1028,7 @@ function App() {
     >("configuration"),
     [propertyEditor, setPropertyEditor] = useState<string | null>(null),
     [renameOpen, setRenameOpen] = useState(false),
+    [sampleGalleryOpen, setSampleGalleryOpen] = useState(false),
     [helpDialog, setHelpDialog] = useState<"about" | "shortcuts" | null>(null),
     [treeHeight, setTreeHeight] = useState(305),
     [configHeight, setConfigHeight] = useState(285),
@@ -2037,7 +2039,7 @@ function App() {
           <Workflow /> IF
         </div>
         <div className="menu-root"><button className={menu === "file" ? "active" : ""} onClick={(e) => { e.stopPropagation(); setMenu(menu === "file" ? null : "file"); }}>File</button>
-          {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} save={save} saveJson={saveJsonFile} exportProject={exportProject} importProject={importFromFileSystem} openProjects={() => setClosed(true)} catchAI={openCatchAI} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
+          {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} save={save} saveJson={saveJsonFile} exportProject={exportProject} importProject={importFromFileSystem} openProjects={() => setClosed(true)} sampleProjects={() => setSampleGalleryOpen(true)} catchAI={openCatchAI} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
         <TopMenu label="Edit" open={menu === "edit"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "edit" ? null : "edit"); }} commands={[
           { label: "Undo", detail: "Restore an earlier Studio change · up to 100 levels", icon: Undo2, shortcut: "Ctrl+Z", action: undoStudio, disabled: history.current.past.length === 0 && !history.current.pendingBase },
           { label: "Redo", detail: "Restore the most recently undone change", icon: Redo2, shortcut: "Ctrl+Y", action: redoStudio, disabled: history.current.future.length === 0 },
@@ -2067,6 +2069,7 @@ function App() {
           { label: "Execution & Debug", detail: "Move focus to runtime output", icon: Bug, action: () => focusStudioPanel(".monitor") },
         ]}/>
         <TopMenu label="Help" open={menu === "help"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "help" ? null : "help"); }} commands={[
+          { label: "Installed Activity Guide", detail: "Offline product activity and runtime documentation", icon: BookOpen, action: () => window.open("/help/activity-reference.html", "_blank", "noopener") },
           { label: "Keyboard Shortcuts", detail: "Designer and runtime commands", icon: Settings2, action: () => setHelpDialog("shortcuts") },
           { label: "About Integration Fabric", detail: "Product and project information", icon: Workflow, action: () => setHelpDialog("about") },
         ]}/>
@@ -2082,6 +2085,7 @@ function App() {
         save={save}
         exportProject={exportProject}
         packageProject={() => setPackageOpen(true)}
+        sampleProjects={() => setSampleGalleryOpen(true)}
         closeProject={closeProject}
         run={run}
         debug={debug}
@@ -2890,6 +2894,10 @@ function App() {
         />
       )}
       {packageOpen && <PackageDialog packaging={project.packaging} environments={Object.keys(project.properties)} tasks={project.tasks} onClose={() => setPackageOpen(false)} onPackage={buildDeploymentPackage}/>}
+      {sampleGalleryOpen && <SampleGallery
+        onClose={() => setSampleGalleryOpen(false)}
+        onImport={async (file) => { const imported = await importProject(file); if (imported) setSampleGalleryOpen(false); }}
+      />}
       {aiBuilderOpen && <AIBuilderDialog currentTask={task} onClose={() => setAiBuilderOpen(false)} onApply={(proposal: any) => {
         const generated = proposal.project, scope = proposal.scope;
         if (scope === "task") {
@@ -3048,7 +3056,7 @@ function StudioRibbon(props: any) {
   const command = (label: string, Icon: any, action: () => void, disabled = false, emphasis = false) =>
     <button type="button" className={emphasis ? "emphasis" : ""} disabled={disabled} onClick={(event) => { event.stopPropagation(); action(); }} title={label}><Icon/><span>{label}</span></button>;
   return <section className="studio-ribbon" aria-label="Studio ribbon">
-    <div className="ribbon-group"><b>PROJECT</b><div>{command("New", FilePlus2, props.newProject)}{command("Open", FolderOpen, props.openProject)}{command("Import", Upload, props.importProject)}{command("Save", Save, props.save)}{command("Export", Download, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</div></div>
+    <div className="ribbon-group"><b>PROJECT</b><div>{command("New", FilePlus2, props.newProject)}{command("Open", FolderOpen, props.openProject)}{command("Import", Upload, props.importProject)}{command("Samples", BookOpen, props.sampleProjects, false, true)}{command("Save", Save, props.save)}{command("Export", Download, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</div></div>
     <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("AI Build", WandSparkles, props.aiBuild)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Run", CirclePlay, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}</div></div>
     <div className="ribbon-group"><b>EDIT</b><div>{command("Undo", Undo2, props.undo)}{command("Cut", Scissors, props.cut, !props.selectedCount)}{command("Copy", ClipboardCopy, props.copy, !props.selectedCount)}{command("Paste", ClipboardPaste, props.paste)}</div></div>
     <div className="ribbon-group layout-group"><b>ARRANGE · {props.selectedCount} SELECTED</b><div>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</div></div>
@@ -3341,6 +3349,7 @@ function FileMenu({
   exportProject,
   importProject,
   openProjects,
+  sampleProjects,
   catchAI,
   closeProject,
   deleteProject,
@@ -3382,6 +3391,12 @@ function FileMenu({
           Open Saved Project<small>Projects stored by the runtime</small>
         </span>
       </button>
+      <button onClick={go(sampleProjects)}>
+        <BookOpen />
+        <span>
+          Sample Projects<small>Open installed editable integration examples</small>
+        </span>
+      </button>
       <button onClick={go(catchAI)}>
         <WandSparkles />
         <span>
@@ -3418,8 +3433,36 @@ function ThemePicker({ theme, setTheme }: any) {
     </label>
   );
 }
+type SampleProject = { id: string; name: string; category: string; description: string; activities: string[]; file: string; ready: boolean };
+function SampleGallery({ onClose, onImport }: { onClose: () => void; onImport: (file: File) => Promise<any> }) {
+  const [samples, setSamples] = useState<SampleProject[]>([]), [search, setSearch] = useState(""), [loading, setLoading] = useState(true), [opening, setOpening] = useState(""), [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    fetch(`/samples/catalog.json?v=${encodeURIComponent(String(import.meta.env.VITE_APP_VERSION || "current"))}`, { cache: "no-store" }).then((response) => {
+      if (!response.ok) throw new Error("The installed sample catalog is unavailable.");
+      return response.json();
+    }).then((items) => active && setSamples(items)).catch((reason) => active && setError(reason.message)).finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, []);
+  const visible = samples.filter((sample) => `${sample.name} ${sample.category} ${sample.description} ${sample.activities.join(" ")}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const open = async (sample: SampleProject) => {
+    setOpening(sample.id); setError("");
+    try {
+      const response = await fetch(sample.file, { cache: "no-store" });
+      if (!response.ok) throw new Error(`Unable to load installed sample ${sample.name}.`);
+      await onImport(new File([await response.blob()], `${sample.id}.json`, { type: "application/json" }));
+    } catch (reason: any) { setError(reason?.message || "Unable to open sample project."); }
+    finally { setOpening(""); }
+  };
+  return <div className="modal-backdrop sample-gallery-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="sample-gallery">
+    <div className="sample-gallery-header"><span><BookOpen/><span><b>Installed sample projects</b><small>Learn with editable projects bundled with Integration Fabric Studio</small></span></span><button aria-label="Close samples" onClick={onClose}>×</button></div>
+    <div className="sample-gallery-search"><Search/><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search samples, activities, or technologies…"/></div>
+    <div className="sample-gallery-content">{loading ? <div className="sample-gallery-empty"><LoaderCircle/> Loading installed samples…</div> : visible.map((sample) => <article key={sample.id}><div className="sample-card-heading"><span><Package/></span><div><em>{sample.category}</em><h3>{sample.name}</h3></div><i className={sample.ready ? "ready" : "setup"}>{sample.ready ? "READY TO RUN" : "CONNECTION SETUP"}</i></div><p>{sample.description}</p><div className="sample-activities">{sample.activities.map((activity) => <code key={activity}>{activity}</code>)}</div><button disabled={!!opening} onClick={() => void open(sample)}>{opening === sample.id ? <><LoaderCircle/> Opening…</> : <><FolderOpen/> Open editable sample</>}</button></article>)}{!loading && !visible.length && <div className="sample-gallery-empty">No installed samples match your search.</div>}</div>
+    <div className="sample-gallery-footer"><span>Samples are copied into project storage when opened. Connection samples contain placeholders and never include credentials.</span><button onClick={onClose}>Close</button></div>{error && <p className="sample-gallery-error"><AlertTriangle/>{error}</p>}
+  </div></div>;
+}
 function ProjectWelcome({ createProject, importProject, importFromFileSystem, theme, setTheme }: any) {
-  const input = useRef<HTMLInputElement>(null), [createOpen, setCreateOpen] = useState(false), [name, setName] = useState("New Integration Application"), [importing, setImporting] = useState(false);
+  const input = useRef<HTMLInputElement>(null), [createOpen, setCreateOpen] = useState(false), [samplesOpen, setSamplesOpen] = useState(false), [name, setName] = useState("New Integration Application"), [importing, setImporting] = useState(false);
   const beginImport = async () => {
     if (!window.fabricDesktop && !(window as any).showOpenFilePicker) { input.current?.click(); return; }
     setImporting(true);
@@ -3495,11 +3538,17 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, th
         <div className="launch-buttons">
           <button className="create-project" onClick={() => setCreateOpen(true)}><span><FilePlus2/></span><b>Create new project<small>Start with the standard project structure</small></b><ChevronRight/></button>
           <button className="import-project" onClick={beginImport} disabled={importing}><span><Upload/></span><b>{importing ? "Importing project…" : "Import existing project"}<small>.ifproject, project folder, ZIP or compatible JSON</small></b><ChevronRight/></button>
+          <button className="sample-projects" onClick={() => setSamplesOpen(true)}><span><BookOpen/></span><b>Explore sample projects<small>Editable, installed examples for mapping, APIs, data, JDBC, and messaging</small></b><ChevronRight/></button>
+          <button className="installed-guide" onClick={() => window.open("/help/activity-reference.html", "_blank", "noopener")}><span><BookOpen/></span><b>Open installed activity guide<small>Offline configuration, mapping, runtime, and error reference</small></b><ChevronRight/></button>
         </div>
       </section>
     </main>
     <footer><span><ShieldCheck/> Enterprise integration development</span><span>DESIGN TIME <i/> RUNTIME <i/> DEPLOYMENT</span></footer>
     <input ref={input} hidden type="file" accept=".ifproject,.zip,.json" onChange={(event) => void importFile(event.target.files?.[0])}/>
+    {samplesOpen && <SampleGallery
+      onClose={() => setSamplesOpen(false)}
+      onImport={importProject}
+    />}
     {createOpen && <div className="modal-backdrop home-create-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setCreateOpen(false)}><form className="home-create-dialog" onSubmit={submitCreate}><header><span><FilePlus2/><b>Create Integration Fabric project</b></span><button type="button" aria-label="Close create project" onClick={() => setCreateOpen(false)}>×</button></header><main><div className="create-project-mark"><Workflow/><span><b>New application</b><small>A clean integration workspace with enterprise defaults</small></span></div><label>Application name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Customer Order Integration" required/></label><section><b>Project Explorer will include</b><div><span><Workflow/>Tasks</span><span><Cable/>Resources</span><span><Package/>Packaging</span><span><CodeXml/>Schemas</span><span><Braces/>Properties</span></div></section></main><footer><button type="button" onClick={() => setCreateOpen(false)}>Cancel</button><button className="primary" type="submit" disabled={!name.trim()}><FilePlus2/> Create project</button></footer></form></div>}
   </div>;
 }

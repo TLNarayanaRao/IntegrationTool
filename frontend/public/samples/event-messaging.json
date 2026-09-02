@@ -1,0 +1,27 @@
+{
+  "id":"sample-event-messaging","name":"Sample - Event Messaging Patterns","description":"Configure one or more shared connections, then run the corresponding continuously listening starter task.","active_environment":"local","active_task_id":"ems-task",
+  "resources":[
+    {"id":"ems-connection","type":"ems","name":"EMS Connection","config":{"serverUrl":"${properties.connections.ems.serverUrl}","username":"${properties.connections.ems.username}","password":"${properties.connections.ems.password}","connectionFactoryType":"Direct"}},
+    {"id":"kafka-connection","type":"kafka","name":"Kafka Connection","config":{"bootstrapServers":"${properties.connections.kafka.bootstrapServers}","securityProtocol":"PLAINTEXT"}},
+    {"id":"pubsub-connection","type":"pubsub","name":"Pub/Sub Connection","config":{"projectId":"${properties.connections.pubsub.projectId}","serviceAccountJson":"${properties.connections.pubsub.serviceAccountJson}"}}
+  ],
+  "tasks":[
+    {"id":"ems-task","name":"EMS Queue Consumer","kind":"starter","activities":[
+      {"id":"ems-receive","type":"ems","name":"Receive EMS Order","position":{"x":60,"y":160},"config":{"operation":"queue_receiver","resourceId":"ems-connection","destination":"${properties.messaging.ordersQueue}","acknowledgeMode":"Client"}},
+      {"id":"ems-log","type":"log","name":"Log EMS Message","position":{"x":300,"y":160},"config":{"level":"INFO","message":"EMS order received","includePayload":true}},
+      {"id":"ems-confirm","type":"confirm","name":"Confirm EMS Message","position":{"x":530,"y":160},"config":{"inputMappings":{"ackId":"${activities.ems-receive.output.ackId}"},"failIfMissing":true}},
+      {"id":"ems-end","type":"end","name":"End","position":{"x":760,"y":160},"config":{}}
+    ],"transitions":[{"id":"ee1","source":"ems-receive","target":"ems-log","type":"success"},{"id":"ee2","source":"ems-log","target":"ems-confirm","type":"success"},{"id":"ee3","source":"ems-confirm","target":"ems-end","type":"success"}]},
+    {"id":"kafka-task","name":"Kafka Topic Consumer","kind":"starter","activities":[
+      {"id":"kafka-receive","type":"kafka","name":"Receive Kafka Record","position":{"x":60,"y":160},"config":{"operation":"receive","resourceId":"kafka-connection","topic":"${properties.messaging.ordersTopic}","groupId":"integration-fabric-sample","enableAutoCommit":false}},
+      {"id":"kafka-log","type":"log","name":"Log Kafka Record","position":{"x":320,"y":160},"config":{"level":"INFO","message":"Kafka order received","includePayload":true}},
+      {"id":"kafka-end","type":"end","name":"End","position":{"x":570,"y":160},"config":{}}
+    ],"transitions":[{"id":"ke1","source":"kafka-receive","target":"kafka-log","type":"success"},{"id":"ke2","source":"kafka-log","target":"kafka-end","type":"success"}]},
+    {"id":"pubsub-task","name":"Pub/Sub Consumer","kind":"starter","activities":[
+      {"id":"pubsub-receive","type":"pubsub","name":"Subscribe to Orders","position":{"x":60,"y":160},"config":{"operation":"subscribe","resourceId":"pubsub-connection","subscription":"${properties.messaging.ordersSubscription}","acknowledgeMode":"Manual"}},
+      {"id":"pubsub-log","type":"log","name":"Log Pub/Sub Message","position":{"x":320,"y":160},"config":{"level":"INFO","message":"Pub/Sub order received","includePayload":true}},
+      {"id":"pubsub-confirm","type":"confirm","name":"Confirm Pub/Sub Message","position":{"x":570,"y":160},"config":{"inputMappings":{"ackId":"${activities.pubsub-receive.output.ackId}"},"failIfMissing":true}},
+      {"id":"pubsub-end","type":"end","name":"End","position":{"x":810,"y":160},"config":{}}
+    ],"transitions":[{"id":"pe1","source":"pubsub-receive","target":"pubsub-log","type":"success"},{"id":"pe2","source":"pubsub-log","target":"pubsub-confirm","type":"success"},{"id":"pe3","source":"pubsub-confirm","target":"pubsub-end","type":"success"}]}
+  ]
+}

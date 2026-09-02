@@ -7,7 +7,6 @@ import {
   CalendarClock,
   CheckCircle2,
   Database,
-  ExternalLink,
   FlaskConical,
   Plus,
   Pencil,
@@ -1207,24 +1206,23 @@ function runtimeMappableInputs(node: any, contract: Contract): DataField[] {
   return [...contract.input, ...jdbcParameters, ...dynamic];
 }
 
-const activityDocumentation: Record<string, { summary: string; behavior: string; url?: string }> = {
+const activityDocumentation: Record<string, { summary: string; behavior: string }> = {
   http_listener: {
     summary: "Starts a Starter Task when an inbound HTTP request matches its configured method and path.",
     behavior: "Run or Debug deploys the task and publishes its live Studio endpoint. The request body, headers, query parameters, method, path, and path parameters become the activity output. Host, port, authentication, and TLS are inherited from the selected HTTP shared connection.",
-    url: "https://docs.tibco.com/pub/activematrix_businessworks/6.11.0/doc/html/binding-palette/http-receiver2.htm",
   },
-  http: { summary: "Sends an outbound HTTP request and exposes the response to downstream activities.", behavior: "The shared HTTP connection supplies base address, security, TLS, proxy, and timeout defaults. Activity values and mapped inputs override defaults at execution time.", url: "https://docs.tibco.com/pub/activematrix_businessworks/6.11.0/doc/html/binding-palette/http-connector.htm" },
+  http: { summary: "Sends an outbound HTTP request and exposes the response to downstream activities.", behavior: "The shared HTTP connection supplies base address, security, TLS, proxy, and timeout defaults. Activity values and mapped inputs override defaults at execution time." },
   http_response: { summary: "Completes the active inbound HTTP exchange.", behavior: "Status, headers, and body are returned to the caller that triggered the listener. Place it on the same execution path as the inbound HTTP, REST, or SOAP event." },
-  rest: { summary: "Hosts or invokes a REST operation, depending on the selected operation.", behavior: "A Receiver starts the task from an inbound request. Invoke performs an outbound call. Request and response structures remain available as hierarchical mapping trees.", url: "https://docs.tibco.com/pub/activematrix_businessworks/6.11.0/doc/html/binding-palette/rest-binding2.htm" },
-  soap: { summary: "Hosts a SOAP service or invokes a request/reply web service.", behavior: "Service mode publishes the configured contract and begins the task for a matching SOAP request. Request/reply mode uses the selected HTTP connection and WSDL metadata for outbound invocation.", url: "https://docs.tibco.com/pub/activematrix_businessworks/6.11.0/doc/html/binding-palette/soap-service-binding2.htm" },
+  rest: { summary: "Hosts or invokes a REST operation, depending on the selected operation.", behavior: "A Receiver starts the task from an inbound request. Invoke performs an outbound call. Request and response structures remain available as hierarchical mapping trees." },
+  soap: { summary: "Hosts a SOAP service or invokes a request/reply web service.", behavior: "Service mode publishes the configured contract and begins the task for a matching SOAP request. Request/reply mode uses the selected HTTP connection and WSDL metadata for outbound invocation." },
   file: { summary: "Performs the selected filesystem operation.", behavior: "File paths and operation-specific values accept constants, property expressions, or mappings from earlier execution-path outputs. Runtime output contains operation-specific metadata and content." },
   ftp: { summary: "Performs the selected FTP operation through a shared FTP connection.", behavior: "Connection defaults come from the resource; paths, names, content, and transfer settings may be mapped dynamically for each invocation." },
   sftp: { summary: "Performs the selected secure file-transfer operation.", behavior: "Authentication and host-key policy come from the SFTP shared connection. Operation inputs remain dynamically mappable at runtime." },
-  jdbc: { summary: "Executes the documented JDBC Query, Update, Call Procedure, or SQL Direct contract.", behavior: "The JDBC designer runs and fetches SQL metadata, derives prepared parameters and result fields, supports dynamic SQL overrides, batching, subsets, NULL handling, maximum rows, transaction overrides, and database-specific drivers.", url: "https://docs.tibco.com/pub/activematrix_businessworks/6.13.0/doc/pdf/TIB_BW_6.13.0_bindings_palletes_reference.pdf?id=4" },
-  snowflake: { summary: "Runs Snowflake Insert, Query, Update, Delete, or staged Bulk Load operations.", behavior: "The Snowflake JDBC shared connection supplies authentication, warehouse, database, schema, pooling, and downloaded table/view metadata. Activity inputs and outputs follow the TIBCO BusinessWorks Snowflake 6.3.1 contracts.", url: "https://docs.tibco.com/pub/bwpluginsnowflake/6.3.1/doc/pdf/TIB_bwpluginsnowflake_6.3.1_user-guide.pdf?id=0" },
-  amqp: { summary: "Sends, receives, gets, or dead-letters AMQP messages.", behavior: "The shared connection supports RabbitMQ AMQP 0.9.1/1.0 and AMQP 1.0 broker profiles. Destinations, subscriptions, typed messages, properties, settlement handles, recovery, SSL, sessions, and Azure dead-letter behavior follow the TIBCO AMQP 6.5.3 contracts.", url: "https://docs.tibco.com/pub/bwpluginamqp/6.5.3/doc/pdf/TIB_bwpluginamqp_6.5.3_user-guide.pdf?id=1" },
+  jdbc: { summary: "Executes a JDBC Query, Update, Call Procedure, or SQL Direct contract.", behavior: "The JDBC designer runs and fetches SQL metadata, derives prepared parameters and result fields, supports dynamic SQL overrides, batching, subsets, NULL handling, maximum rows, transaction overrides, and database-specific drivers." },
+  snowflake: { summary: "Runs Snowflake Insert, Query, Update, Delete, or staged Bulk Load operations.", behavior: "The Snowflake JDBC shared connection supplies authentication, warehouse, database, schema, pooling, and downloaded table/view metadata. Activity inputs and outputs use Integration Fabric's schema-aware Snowflake contracts." },
+  amqp: { summary: "Sends, receives, gets, or dead-letters AMQP messages.", behavior: "The shared connection supports RabbitMQ AMQP 0.9.1/1.0 and AMQP 1.0 broker profiles. Destinations, subscriptions, typed messages, properties, settlement handles, recovery, SSL, sessions, and Azure dead-letter behavior are configured in Integration Fabric." },
   excel: { summary: "Reads an Excel workbook and publishes every selected worksheet as nested JSON.", behavior: "Leave Worksheet blank to read every tab. The configured header row becomes field names; dotted headers such as customer.address.city create nested objects. Formula cells can return their cached calculated values." },
-  basic: { summary: "Executes the selected BusinessWorks-style general activity.", behavior: "External Command runs an executable without a shell, accepts stdin/environment/working-directory overrides, can capture or persist stdout and stderr, applies documented line splitting, and publishes the process return code.", url: "https://docs.tibco.com/pub/activematrix_businessworks/6.13.0/doc/pdf/TIB_BW_6.13.0_bindings_palletes_reference.pdf?id=4" },
+  basic: { summary: "Executes the selected general-purpose activity.", behavior: "External Command runs an executable without a shell, accepts stdin/environment/working-directory overrides, can capture or persist stdout and stderr, applies configured line splitting, and publishes the process return code." },
   ems: { summary: "Sends, receives, browses, or acknowledges TIBCO EMS messages.", behavior: "Destination, delivery, selector, acknowledgement, and message properties follow the selected EMS operation. Client acknowledgement handles can be passed to Confirm Message." },
   kafka: { summary: "Produces, receives, or commits Apache Kafka records.", behavior: "Broker security comes from the shared Kafka connection. Topic, key, headers, value, partitions, offsets, and acknowledgement handles are available for hierarchical mapping." },
   pubsub: { summary: "Publishes, receives, or acknowledges Google Cloud Pub/Sub messages.", behavior: "Project and credential defaults come from the shared connection. Message data, attributes, ordering keys, and acknowledgement handles remain available on the execution path." },
@@ -1232,15 +1230,15 @@ const activityDocumentation: Record<string, { summary: string; behavior: string;
   mapper: { summary: "Maps execution-path data into a selected target schema.", behavior: "The consolidated Mapper includes schema trees, XPath-style functions, repeating For-Each/For-Each-Group rules, AI-assisted recommendations, validation, and an executable test surface." },
   transform: { summary: "Legacy Mapper activity retained for project compatibility.", behavior: "Existing Transform nodes continue to execute with Mapper behavior. New projects should use Mapper for visual/XPath mappings or Transform for DataWeave scripts." },
   ai_transform: { summary: "Legacy AI Mapper activity retained for project compatibility.", behavior: "Existing AI Transform nodes continue to use the consolidated Mapper and its AI recommendation/review workflow." },
-  dataweave: { summary: "Transforms payloads with an executable DataWeave 2.0-compatible integration subset.", behavior: "Scripts support payload/attributes/vars selectors, objects, arrays, defaults, conditionals, concatenation, common coercion/string/collection functions, map/filter/groupBy/orderBy/distinctBy, JSON, XML, and text output. The editor validates and runs the same engine used at runtime.", url: "https://docs.mulesoft.com/dataweave/latest/dataweave-language-introduction" },
+  dataweave: { summary: "Transforms payloads with Integration Fabric's executable DataWeave-compatible language subset.", behavior: "Scripts support payload/attributes/vars selectors, objects, arrays, defaults, conditionals, concatenation, common coercion/string/collection functions, map/filter/groupBy/orderBy/distinctBy, JSON, XML, and text output. The editor validates and runs the same engine used at runtime." },
   call_task: { summary: "Invokes a reusable Sub Task and waits for its result.", behavior: "Mapped values become the Sub Task Start input. Dynamic Sub Task ID/name is resolved per invocation; the selected Sub Task is its design-time schema and runtime fallback. The Sub Task End output returns to this activity." },
   confirm: { summary: "Acknowledges one or more client-managed messages.", behavior: "Map the acknowledgement handle emitted by an EMS, Kafka, Pub/Sub, or compatible future receiver. The runtime dispatches confirmation to the originating connector." },
   start: { summary: "Defines the task input boundary.", behavior: "For Sub Tasks, the Start schema is the callable input contract. Starter Tasks normally use one external event activity instead." },
   end: { summary: "Defines the task output boundary.", behavior: "Mapped values become the final task result. For a Sub Task, this result is returned to its Call Sub Task activity." },
   log: { summary: "Writes a structured application log event.", behavior: "Message, level, and payload accept constants or dynamic mappings. Advanced automatic payload logging can be used when a dedicated Log activity is unnecessary." },
-  xml: { summary: "Parses XML text into an XSD-defined tree or renders an XSD-defined tree as XML.", behavior: "Parse XML accepts serialized XML in Input and defines its published tree in Output Editor. Render XML defines and maps its source tree in Input Editor, then emits xmlString (or binary output when selected).", url: "https://docs.tibco.com/pub/activematrix_businessworks/6.11.0/doc/html/binding-palette/render-xml.htm" },
-  json: { summary: "Converts between serialized JSON and a schema-defined activity tree.", behavior: "Parse JSON accepts jsonString and publishes the structure selected in Output Editor. Render JSON maps the structure selected in Input Editor and emits jsonString.", url: "https://docs.tibco.com/pub/activematrix_businessworks/6.8.0/doc/html/binding-palette/render-json.htm" },
-  flat: { summary: "Parses delimited/fixed-width text into records or renders records as formatted text.", behavior: "The schema contract defines record fields; Configuration controls separators, widths, headers, trimming, and line endings. Parse Data publishes records while Render Data accepts mapped records and emits text.", url: "https://docs.tibco.com/pub/activematrix_businessworks/6.11.0/doc/html/binding-palette/render-data.htm" },
+  xml: { summary: "Parses XML text into an XSD-defined tree or renders an XSD-defined tree as XML.", behavior: "Parse XML accepts serialized XML in Input and defines its published tree in Output Editor. Render XML defines and maps its source tree in Input Editor, then emits xmlString (or binary output when selected)." },
+  json: { summary: "Converts between serialized JSON and a schema-defined activity tree.", behavior: "Parse JSON accepts jsonString and publishes the structure selected in Output Editor. Render JSON maps the structure selected in Input Editor and emits jsonString." },
+  flat: { summary: "Parses delimited/fixed-width text into records or renders records as formatted text.", behavior: "The schema contract defines record fields; Configuration controls separators, widths, headers, trimming, and line endings. Parse Data publishes records while Render Data accepts mapped records and emits text." },
 };
 
 function DocumentationStructure({ title, fields }: { title: string; fields: DataField[] }) {
@@ -1254,7 +1252,7 @@ function ActivityDocumentation({ node, contract }: { node: any; contract: Contra
     behavior: "Configuration supplies design-time defaults. Input mappings, constants, property expressions, outputs, advanced policies, and documented errors are evaluated by the runtime.",
   };
   return <div className="activity-tab activity-documentation">
-    <header><BookOpen/><span><h2>{node.name}</h2><small>{node.type} / {node.config?.operation || "default"}</small></span>{doc.url && <a href={doc.url} target="_blank" rel="noreferrer"><ExternalLink/> Official reference</a>}</header>
+    <header><BookOpen/><span><h2>{node.name}</h2><small>{node.type} / {node.config?.operation || "default"}</small></span><a href={`/help/activity-reference.html#${encodeURIComponent(node.type)}`} target="_blank" rel="noreferrer"><BookOpen/> Installed activity guide</a></header>
     <section><h3>Purpose</h3><p>{doc.summary}</p><p>{doc.behavior}</p></section>
     {node.type === "jdbc" && <section className="jdbc-documentation"><h3>Prepared SQL examples</h3><p>Use named parameters in the SQL editor. Each <code>:name</code> is automatically created as a typed field under <b>Input → parameters</b>.</p><pre>{`SELECT id, customer_name, status\nFROM orders\nWHERE status = :status AND created_at >= :fromDate;\n\nUPDATE orders SET status = :status WHERE id = :orderId;`}</pre><p>Choose the JDBC datatype beside every derived parameter. Runtime mappings and constants are converted to that datatype before the prepared statement is executed.</p></section>}
     <section><h3>Configuration reference</h3>{contract.configuration.length ? <div className="documentation-fields">{contract.configuration.map((field) => <article key={field.key}><b>{field.label}{field.required && " *"}</b><code>{field.type || "text"}</code><p>{field.help || `Sets the ${field.label.toLowerCase()} used by this activity.`}</p></article>)}</div> : <p>This boundary activity has no additional operation configuration.</p>}</section>
@@ -2119,6 +2117,8 @@ function OutputEditor({ fields, config, set, before }: any) {
   );
 }
 function AdvancedEditor({ node, value, properties, set }: any) {
+  const [logPropertySearch, setLogPropertySearch] = useState("");
+  const logPropertyPanel = useRef<HTMLDetailsElement>(null);
   const propertyRows = dataTreeRows(properties.filter((p: any) => p.key.startsWith("advanced.")).map((p: any) => d(p.key, p.key.split(".").pop() || p.key, p.data_type)));
   const propertyTree = useTreeCollapse();
   const defaults = {
@@ -2129,6 +2129,12 @@ function AdvancedEditor({ node, value, properties, set }: any) {
     },
     advanced = { ...defaults, ...value },
     change = (key: string, next: any) => set({ ...advanced, [key]: next }),
+    mappedLogPropertyKey = String(advanced.logPayload).match(/^\$\{properties\.([^}]+)\}$/)?.[1] || "",
+    mappedLogProperty = properties.find((property: any) => property.key === mappedLogPropertyKey),
+    visibleLogProperties = properties.filter((property: any) => {
+      const query = logPropertySearch.trim().toLowerCase();
+      return !query || property.key.toLowerCase().includes(query) || String(property.value ?? "").toLowerCase().includes(query);
+    }),
     operation = node.config?.operation || "",
     outbound =
       ["http", "jdbc", "snowflake", "amqp", "ftp", "sftp"].includes(
@@ -2190,12 +2196,23 @@ function AdvancedEditor({ node, value, properties, set }: any) {
           </header>
           <label className="advanced-tree-field">
             Log Payload{" "}
-            <input
-              list="advanced-property-values"
-              value={advanced.logPayload}
-              onChange={(e) => change("logPayload", e.target.value)}
-            />
-            <small>Boolean or global property expression</small>
+            <span className="configuration-property-field advanced-property-input">
+              <input
+                list="advanced-property-values"
+                value={advanced.logPayload}
+                onChange={(e) => change("logPayload", e.target.value)}
+              />
+              <details ref={logPropertyPanel} className="configuration-property-picker" onToggle={(event) => { if (event.currentTarget.open) { setLogPropertySearch(""); window.setTimeout(() => event.currentTarget.querySelector<HTMLInputElement>("input")?.focus(), 0); } }}>
+                <summary aria-label="Browse environment properties for Log Payload" title="Browse environment properties for Log Payload"><DataNodeIcon/></summary>
+                <div>
+                  <header><DataNodeIcon/><span><b>ENVIRONMENT PROPERTY</b><small>Configure Log Payload from the active environment</small></span></header>
+                  <input aria-label="Search properties for Log Payload" value={logPropertySearch} onChange={(event) => setLogPropertySearch(event.target.value)} placeholder="Search active environment…"/>
+                  <section>{visibleLogProperties.map((property: any) => <button type="button" key={property.key} onClick={() => { change("logPayload", `\${properties.${property.key}}`); if (logPropertyPanel.current) logPropertyPanel.current.open = false; }}><DataNodeIcon/><span><b>{property.key}</b><small>{property.data_type} · {String(property.value ?? "") || "empty"}</small></span></button>)}{!visibleLogProperties.length && <p>No matching environment properties.</p>}</section>
+                </div>
+              </details>
+              {mappedLogProperty && <small className="configuration-property-resolution">{mappedLogProperty.key} = {String(mappedLogProperty.value ?? "") || "empty"}</small>}
+            </span>
+            <small>Defaults to advanced.logPayload; browse to select another environment property.</small>
           </label>
         </article>
         {outbound && <article className="advanced-tree-branch">

@@ -1,0 +1,15 @@
+{
+  "id":"sample-subtask-composition","name":"Sample - Reusable Sub Task Composition","description":"Runnable parent/child task invocation and mapping example.","active_environment":"local","active_task_id":"main",
+  "tasks":[
+    {"id":"main","name":"Process Customer","kind":"starter","input_schema":{"type":"object","properties":{"customerId":{"type":"string"},"name":{"type":"string"}}},"activities":[
+      {"id":"start","type":"start","name":"Start","position":{"x":55,"y":160},"config":{}},
+      {"id":"call","type":"call_task","name":"Create Canonical Customer","position":{"x":280,"y":160},"config":{"operation":"call","taskId":"canonical-customer","spawn":false,"inputMappings":{"customerId":"${input.customerId}","name":"${input.name}"}}},
+      {"id":"end","type":"end","name":"End","position":{"x":560,"y":160},"config":{"inputMappings":{"result":"${activities.call.output}"}}}
+    ],"transitions":[{"id":"e1","source":"start","target":"call","type":"success"},{"id":"e2","source":"call","target":"end","type":"success"}]},
+    {"id":"canonical-customer","name":"Canonical Customer","kind":"subtask","input_schema":{"type":"object","properties":{"customerId":{"type":"string"},"name":{"type":"string"}}},"activities":[
+      {"id":"child-start","type":"start","name":"Start","position":{"x":55,"y":160},"config":{}},
+      {"id":"child-map","type":"mapper","name":"Map Canonical Customer","position":{"x":280,"y":160},"config":{"targetSchema":{"type":"object","properties":{"id":{"type":"string"},"displayName":{"type":"string"},"source":{"type":"string"}}},"mappings":[{"source":"${input.customerId}","target":"id","targetType":"string","functions":[],"enabled":true},{"source":"${input.name}","target":"displayName","targetType":"string","functions":["upperCase"],"enabled":true},{"constant":"integration-fabric","target":"source","targetType":"string","functions":[],"enabled":true}]}},
+      {"id":"child-end","type":"end","name":"End","position":{"x":560,"y":160},"config":{"inputMappings":{"customer":"${activities.child-map.output}"}}}
+    ],"transitions":[{"id":"ce1","source":"child-start","target":"child-map","type":"success"},{"id":"ce2","source":"child-map","target":"child-end","type":"success"}]}
+  ]
+}

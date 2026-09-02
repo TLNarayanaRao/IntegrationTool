@@ -1,0 +1,137 @@
+[
+  {
+    "id": "mapper-foundations",
+    "name": "Mapper Foundations",
+    "category": "Transformation",
+    "description": "Manual field mappings, typed constants, functions, target schema, Map & Test, logging, and task output.",
+    "activities": ["Start", "Mapper", "Log", "End"],
+    "file": "/samples/mapper-foundations.json",
+    "ready": true
+  },
+  {
+    "id": "xml-json-mediation",
+    "name": "XML and JSON Mediation",
+    "category": "Data formats",
+    "description": "Parse an XML order, map its fields, and render a JSON response.",
+    "activities": ["Start", "Parse XML", "Mapper", "Render JSON", "End"],
+    "file": "/samples/xml-json-mediation.json",
+    "ready": true
+  },
+  {
+    "id": "rest-service",
+    "name": "REST Service Mediation",
+    "category": "APIs",
+    "description": "Continuous REST receiver, request mapping, structured logging, and HTTP response.",
+    "activities": ["REST Receiver", "Mapper", "Log", "HTTP Response"],
+    "file": "/samples/rest-service.json",
+    "ready": true
+  },
+  {
+    "id": "jdbc-prepared-query",
+    "name": "JDBC Prepared Query",
+    "category": "Database",
+    "description": "Typed named SQL parameters, result publication, logging, and environment-driven database connection.",
+    "activities": ["Start", "JDBC Query", "Log", "End"],
+    "file": "/samples/jdbc-prepared-query.json",
+    "ready": false
+  },
+  {
+    "id": "event-messaging",
+    "name": "Event Messaging Patterns",
+    "category": "Messaging",
+    "description": "Separate EMS, Kafka, and Pub/Sub starter tasks with automatic continuous receiving and acknowledgement patterns.",
+    "activities": ["EMS Receiver", "Kafka Receive", "Pub/Sub Subscribe", "Mapper", "Confirm Message"],
+    "file": "/samples/event-messaging.json",
+    "ready": false
+  },
+  {
+    "id": "scheduler-logging",
+    "name": "Scheduled Integration",
+    "category": "Automation",
+    "description": "A scheduler starter that runs immediately in local Run/Debug, writes structured logs, and returns execution metadata.",
+    "activities": ["Scheduler", "Log", "End"],
+    "file": "/samples/scheduler-logging.json",
+    "ready": true
+  },
+  {
+    "id": "flat-file-mediation",
+    "name": "CSV to XML Mediation",
+    "category": "Data formats",
+    "description": "Parse typed CSV records into the XML output contract, log the record count, and publish the result.",
+    "activities": ["Start", "Parse Data", "Log", "End"],
+    "file": "/samples/flat-file-mediation.json",
+    "ready": true
+  },
+  {
+    "id": "dataweave-orders",
+    "name": "Transform Order Collection",
+    "category": "Transformation",
+    "description": "Use the executable DataWeave-compatible Transform language to normalize and enrich an order collection.",
+    "activities": ["Start", "Transform", "Log", "End"],
+    "file": "/samples/dataweave-orders.json",
+    "ready": true
+  },
+  {
+    "id": "subtask-composition",
+    "name": "Reusable Sub Task Composition",
+    "category": "Orchestration",
+    "description": "Map input into a reusable Sub Task, execute it synchronously, and return the child task output to the caller.",
+    "activities": ["Start", "Call Sub Task", "Mapper", "End"],
+    "file": "/samples/subtask-composition.json",
+    "ready": true
+  },
+  {
+    "id": "general-activities",
+    "name": "Variables and Process Context",
+    "category": "General",
+    "description": "Assign a process variable, update process context, create a checkpoint, and inspect structured execution output.",
+    "activities": ["Start", "Assign", "Set Context", "Checkpoint", "End"],
+    "file": "/samples/general-activities.json",
+    "ready": true
+  },
+  {
+    "id": "excel-multisheet",
+    "name": "Excel Multi-sheet Reader",
+    "category": "Data formats",
+    "description": "Read every worksheet from an Excel workbook and publish nested JSON keyed by worksheet name.",
+    "activities": ["Start", "Read Excel Workbook", "Log", "End"],
+    "file": "/samples/excel-multisheet.json",
+    "ready": false
+  },
+  {
+    "id": "outbound-rest-client",
+    "name": "Outbound REST Client",
+    "category": "APIs",
+    "description": "Invoke an environment-configured HTTP API, map its response, and retain request/response diagnostics.",
+    "activities": ["Start", "HTTP Request", "Mapper", "End"],
+    "file": "/samples/outbound-rest-client.json",
+    "ready": false
+  },
+  {
+    "id": "amqp-reliable-consumer",
+    "name": "AMQP Reliable Consumer",
+    "category": "Messaging",
+    "description": "Continuously receive from an AMQP queue, log the message, and confirm successful processing.",
+    "activities": ["AMQP Receive", "Log", "Confirm Message", "End"],
+    "file": "/samples/amqp-reliable-consumer.json",
+    "ready": false
+  },
+  {
+    "id": "snowflake-analytics",
+    "name": "Snowflake Analytics Query",
+    "category": "Database",
+    "description": "Run a parameterized Snowflake query through a shared connection and publish the selected rows.",
+    "activities": ["Start", "Snowflake Query", "Log", "End"],
+    "file": "/samples/snowflake-analytics.json",
+    "ready": false
+  },
+  {
+    "id": "sap-idoc-inbound",
+    "name": "SAP IDoc Inbound Mediation",
+    "category": "Enterprise applications",
+    "description": "Listen for an SAP IDoc, parse its metadata-backed document, map a canonical message, and finish the transaction.",
+    "activities": ["IDoc Listener", "IDoc Parser", "Mapper", "End"],
+    "file": "/samples/sap-idoc-inbound.json",
+    "ready": false
+  }
+]

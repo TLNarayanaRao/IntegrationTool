@@ -1,0 +1,18 @@
+{
+  "id": "sample-xml-json-mediation",
+  "name": "Sample - XML and JSON Mediation",
+  "description": "Runnable XML parse, mapping, and JSON render example.",
+  "active_environment": "local",
+  "active_task_id": "main",
+  "tasks": [{
+    "id":"main","name":"Mediate Order","kind":"starter","activities":[
+      {"id":"start","type":"start","name":"Start","position":{"x":50,"y":160},"config":{}},
+      {"id":"parse","type":"xml","name":"Parse XML","position":{"x":240,"y":160},"config":{"operation":"parse","xmlString":"<order id=\"A-100\"><customer>Ada</customer><total>42.50</total></order>"}},
+      {"id":"map","type":"mapper","name":"Map Order","position":{"x":430,"y":160},"config":{"targetSchema":{"type":"object","properties":{"orderId":{"type":"string"},"customerName":{"type":"string"},"total":{"type":"number"}}},"mappings":[{"source":"${last.value.@id}","target":"orderId","targetType":"string","functions":[],"enabled":true},{"source":"${last.value.customer}","target":"customerName","targetType":"string","functions":[],"enabled":true},{"source":"${last.value.total}","target":"total","targetType":"number","functions":["number"],"enabled":true}]}},
+      {"id":"render","type":"json","name":"Render JSON","position":{"x":620,"y":160},"config":{"operation":"render","source":"${last}","prettyPrint":true}},
+      {"id":"end","type":"end","name":"End","position":{"x":810,"y":160},"config":{"inputMappings":{"result":"${last}"}}}
+    ],"transitions":[
+      {"id":"e1","source":"start","target":"parse","type":"success"},{"id":"e2","source":"parse","target":"map","type":"success"},{"id":"e3","source":"map","target":"render","type":"success"},{"id":"e4","source":"render","target":"end","type":"success"}
+    ]
+  }]
+}

@@ -1,0 +1,9 @@
+{
+  "id":"sample-dataweave-orders","name":"Sample - Transform Order Collection","description":"Runnable collection transformation using the embedded DataWeave-compatible engine.","active_environment":"local","active_task_id":"main",
+  "tasks":[{"id":"main","name":"Normalize Orders","kind":"starter","input_schema":{"type":"object","properties":{"orders":{"type":"array"}}},"activities":[
+    {"id":"start","type":"start","name":"Start","position":{"x":55,"y":160},"config":{}},
+    {"id":"transform","type":"dataweave","name":"Normalize Orders","position":{"x":270,"y":160},"config":{"operation":"transform","inputMimeType":"application/json","outputMimeType":"application/json","payload":"${input}","script":"%dw 2.0\noutput application/json\nfun normalize(value) = upper(trim(value))\n---\n{\n  orderCount: sizeOf(payload.orders),\n  orders: payload.orders map (order) -> {\n    id: order.id as String,\n    customer: normalize(order.customer default \"UNKNOWN\"),\n    total: order.total as Number,\n    status: order.status default \"NEW\"\n  }\n}"}},
+    {"id":"log","type":"log","name":"Log Normalized Orders","position":{"x":520,"y":160},"config":{"level":"INFO","message":"Order collection transformed","includePayload":true}},
+    {"id":"end","type":"end","name":"End","position":{"x":750,"y":160},"config":{"inputMappings":{"result":"${activities.transform.output}"}}}
+  ],"transitions":[{"id":"e1","source":"start","target":"transform","type":"success"},{"id":"e2","source":"transform","target":"log","type":"success"},{"id":"e3","source":"log","target":"end","type":"success"}]}]
+}

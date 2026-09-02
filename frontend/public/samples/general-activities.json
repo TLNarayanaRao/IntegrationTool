@@ -1,0 +1,10 @@
+{
+  "id":"sample-general-activities","name":"Sample - Variables and Process Context","description":"Runnable general activity state and checkpoint example.","active_environment":"local","active_task_id":"main",
+  "tasks":[{"id":"main","name":"Manage Process State","kind":"starter","activities":[
+    {"id":"start","type":"start","name":"Start","position":{"x":45,"y":160},"config":{}},
+    {"id":"assign","type":"basic","name":"Assign Correlation","position":{"x":240,"y":160},"config":{"operation":"assign","variable":"businessKey","value":"${input.businessKey}"}},
+    {"id":"context","type":"basic","name":"Set Process Context","position":{"x":455,"y":160},"config":{"operation":"set_context","values":{"sample":"general-activities","businessKey":"${input.businessKey}"}}},
+    {"id":"checkpoint","type":"basic","name":"Create Checkpoint","position":{"x":680,"y":160},"config":{"operation":"checkpoint","checkpointName":"after-context","includeProcessState":true}},
+    {"id":"end","type":"end","name":"End","position":{"x":900,"y":160},"config":{"inputMappings":{"checkpoint":"${activities.checkpoint.output}","context":"${activities.context.output.context}"}}}
+  ],"transitions":[{"id":"e1","source":"start","target":"assign","type":"success"},{"id":"e2","source":"assign","target":"context","type":"success"},{"id":"e3","source":"context","target":"checkpoint","type":"success"},{"id":"e4","source":"checkpoint","target":"end","type":"success"}]}]
+}

@@ -1,0 +1,10 @@
+{
+  "id":"sample-jdbc-prepared-query","name":"Sample - JDBC Prepared Query","description":"Configure the database properties, then run a typed prepared query.","active_environment":"local","active_task_id":"main",
+  "resources":[{"id":"orders-db","type":"jdbc","name":"Orders Database","config":{"driver":"postgresql","connectionMode":"python","url":"${properties.connections.jdbc.url}","username":"${properties.connections.jdbc.username}","password":"${properties.connections.jdbc.password}","minimumPoolSize":1,"maximumPoolSize":5}}],
+  "tasks":[{"id":"main","name":"Find Orders","kind":"starter","activities":[
+    {"id":"start","type":"start","name":"Start","position":{"x":55,"y":160},"config":{}},
+    {"id":"query","type":"jdbc","name":"Query Orders","position":{"x":270,"y":160},"config":{"operation":"query","resourceId":"orders-db","sql":"SELECT id, customer_name, status FROM orders WHERE status = :status AND created_at >= :fromDate","preparedParameters":[{"name":"status","type":"string"},{"name":"fromDate","type":"dateTime"}],"inputMappings":{"parameters.status":"${input.status}","parameters.fromDate":"${input.fromDate}"},"maximumRows":100}},
+    {"id":"log","type":"log","name":"Log Query Result","position":{"x":500,"y":160},"config":{"level":"INFO","message":"JDBC sample query completed","includePayload":true}},
+    {"id":"end","type":"end","name":"End","position":{"x":720,"y":160},"config":{"inputMappings":{"result":"${last}"}}}
+  ],"transitions":[{"id":"e1","source":"start","target":"query","type":"success"},{"id":"e2","source":"query","target":"log","type":"success"},{"id":"e3","source":"log","target":"end","type":"success"}]}]
+}

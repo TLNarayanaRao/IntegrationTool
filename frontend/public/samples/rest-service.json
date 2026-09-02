@@ -1,0 +1,10 @@
+{
+  "id":"sample-rest-service","name":"Sample - REST Service Mediation","description":"Local continuous REST endpoint with mapping and response.","active_environment":"local","active_task_id":"api",
+  "resources":[{"id":"http-local","type":"http","name":"Local HTTP Listener","config":{"connectorMode":"server","host":"127.0.0.1","port":8090,"basePath":"/samples","tlsEnabled":false,"authentication":"None"}}],
+  "tasks":[{"id":"api","name":"Customer API","kind":"starter","activities":[
+    {"id":"receive","type":"rest","name":"Receive Customer Request","position":{"x":55,"y":160},"config":{"operation":"receiver","resourceId":"http-local","method":"POST","path":"/customers"}},
+    {"id":"map","type":"mapper","name":"Map Response","position":{"x":270,"y":160},"config":{"targetSchema":{"type":"object","properties":{"status":{"type":"string"},"customer":{"type":"object"}}},"mappings":[{"constant":"accepted","target":"status","targetType":"string","functions":[],"enabled":true},{"source":"${last.body}","target":"customer","targetType":"object","functions":[],"enabled":true}]}},
+    {"id":"log","type":"log","name":"Log API Request","position":{"x":490,"y":160},"config":{"level":"INFO","message":"Customer request accepted","includePayload":true}},
+    {"id":"respond","type":"http_response","name":"Return Response","position":{"x":710,"y":160},"config":{"statusCode":202,"body":"${last}"}}
+  ],"transitions":[{"id":"e1","source":"receive","target":"map","type":"success"},{"id":"e2","source":"map","target":"log","type":"success"},{"id":"e3","source":"log","target":"respond","type":"success"}]}]
+}

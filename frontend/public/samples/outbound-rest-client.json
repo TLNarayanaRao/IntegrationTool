@@ -1,0 +1,10 @@
+{
+  "id":"sample-outbound-rest-client","name":"Sample - Outbound REST Client","description":"Configure the HTTP base URL property, then invoke and map an external API.","active_environment":"local","active_task_id":"main",
+  "resources":[{"id":"partner-api","type":"http","name":"Partner API","config":{"baseUrl":"${properties.connections.partnerApi.baseUrl}","connectTimeout":10,"readTimeout":30,"verifyTls":true}}],
+  "tasks":[{"id":"main","name":"Get Partner Order","kind":"starter","activities":[
+    {"id":"start","type":"start","name":"Start","position":{"x":45,"y":160},"config":{}},
+    {"id":"request","type":"http","name":"Get Order","position":{"x":250,"y":160},"config":{"operation":"request","resourceId":"partner-api","method":"GET","path":"/orders/${input.orderId}","headers":{"Accept":"application/json"},"expectedStatus":"200-299"}},
+    {"id":"map","type":"mapper","name":"Map Partner Response","position":{"x":480,"y":160},"config":{"targetSchema":{"type":"object","properties":{"order":{"type":"object"},"statusCode":{"type":"integer"}}},"mappings":[{"source":"${activities.request.output.body}","target":"order","targetType":"object","functions":[],"enabled":true},{"source":"${activities.request.output.status}","target":"statusCode","targetType":"integer","functions":[],"enabled":true}]}},
+    {"id":"end","type":"end","name":"End","position":{"x":720,"y":160},"config":{"inputMappings":{"response":"${activities.map.output}"}}}
+  ],"transitions":[{"id":"e1","source":"start","target":"request","type":"success"},{"id":"e2","source":"request","target":"map","type":"success"},{"id":"e3","source":"map","target":"end","type":"success"}]}]
+}

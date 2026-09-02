@@ -1,0 +1,9 @@
+{
+  "id":"sample-excel-multisheet","name":"Sample - Excel Multi-sheet Reader","description":"Set the workbook path property, then read all tabs into nested JSON.","active_environment":"local","active_task_id":"main",
+  "tasks":[{"id":"main","name":"Read Workbook","kind":"starter","activities":[
+    {"id":"start","type":"start","name":"Start","position":{"x":55,"y":160},"config":{}},
+    {"id":"excel","type":"excel","name":"Read All Worksheets","position":{"x":280,"y":160},"config":{"operation":"read","filePath":"${properties.samples.excel.workbookPath}","sheetSelection":"All sheets","firstRowHeaders":true,"includeEmptyRows":false,"includeFormulas":false}},
+    {"id":"log","type":"log","name":"Log Workbook Summary","position":{"x":520,"y":160},"config":{"level":"INFO","message":"Excel workbook loaded","includePayload":true}},
+    {"id":"end","type":"end","name":"End","position":{"x":750,"y":160},"config":{"inputMappings":{"workbook":"${activities.excel.output}"}}}
+  ],"transitions":[{"id":"e1","source":"start","target":"excel","type":"success"},{"id":"e2","source":"excel","target":"log","type":"success"},{"id":"e3","source":"log","target":"end","type":"success"}]}]
+}

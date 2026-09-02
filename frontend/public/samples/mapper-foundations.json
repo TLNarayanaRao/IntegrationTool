@@ -1,0 +1,23 @@
+{
+  "id": "sample-mapper-foundations",
+  "name": "Sample - Mapper Foundations",
+  "description": "Runnable manual mapping and function example.",
+  "active_environment": "local",
+  "active_task_id": "main",
+  "tasks": [{
+    "id": "main", "name": "Map Customer", "kind": "starter",
+    "input_schema": {"type":"object","properties":{"customer":{"type":"object","properties":{"id":{"type":"string"},"firstName":{"type":"string"},"lastName":{"type":"string"}}},"amount":{"type":"number"}}},
+    "output_schema": {"type":"object"},
+    "activities": [
+      {"id":"start","type":"start","name":"Start","position":{"x":70,"y":160},"config":{}},
+      {"id":"map","type":"mapper","name":"Map Customer","position":{"x":270,"y":160},"config":{"targetSchema":{"type":"object","properties":{"account":{"type":"object","properties":{"identifier":{"type":"string"},"displayName":{"type":"string"}}},"amount":{"type":"number"},"source":{"type":"string"}}},"mappings":[{"source":"${input.customer.id}","target":"account.identifier","targetType":"string","functions":[],"enabled":true},{"source":"${input.customer.firstName}","target":"account.displayName","targetType":"string","functions":["upperCase"],"enabled":true},{"source":"${input.amount}","target":"amount","targetType":"number","functions":[{"name":"round","args":[2]}],"enabled":true},{"constant":"studio-sample","target":"source","targetType":"string","functions":[],"enabled":true}]}},
+      {"id":"log","type":"log","name":"Log Mapped Customer","position":{"x":500,"y":160},"config":{"level":"INFO","message":"Mapper sample produced customer output","includePayload":true}},
+      {"id":"end","type":"end","name":"End","position":{"x":720,"y":160},"config":{"inputMappings":{"result":"${last}"}}}
+    ],
+    "transitions": [
+      {"id":"e1","source":"start","target":"map","type":"success","label":"success"},
+      {"id":"e2","source":"map","target":"log","type":"success","label":"success"},
+      {"id":"e3","source":"log","target":"end","type":"success","label":"success"}
+    ]
+  }]
+}
