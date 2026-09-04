@@ -13,6 +13,7 @@ from .jdbc import jdbc_adapter
 from .amqp import amqp_adapter
 from .java_bridge import JavaBridgeError, execute_jms
 from .google_pubsub import client_configuration as pubsub_client_configuration
+from .time_utils import log_timestamp
 
 class RuntimeErrorWithLogs(Exception): pass
 _NO_EVENT_OUTPUT = object()
@@ -28,7 +29,7 @@ class WorkflowRuntime:
 
     def register_acknowledgement(self, technology: str, message_id: str, callback=None) -> str:
         ack_id = f'{technology}:{message_id}:{uuid.uuid4()}'
-        self.acknowledgements[ack_id] = {'technology': technology, 'messageId': message_id, 'callback': callback, 'created': datetime.now(timezone.utc).isoformat()}
+        self.acknowledgements[ack_id] = {'technology': technology, 'messageId': message_id, 'callback': callback, 'created': log_timestamp()}
         return ack_id
 
     async def confirm_messages(self, handles) -> dict:
@@ -58,13 +59,13 @@ class WorkflowRuntime:
             'activities': activity_outputs, 'tasks': task_outputs,
             'context': {'taskId': process.id, 'activityId': '', 'environment': getattr(project, 'active_environment', '') if project else '', 'correlationId': correlation_id, 'runId': run_id},
         }
-        self.log(logs, 'INFO', f'Job started: {process.name}', kind='lifecycle', correlationId=correlation_id, runId=run_id, startedAt=started.isoformat())
+        self.log(logs, 'INFO', f'Job started: {process.name}', kind='lifecycle', correlationId=correlation_id, runId=run_id, startedAt=log_timestamp(started))
         def finish(status: str, output: dict) -> RunResult:
             ended = datetime.now(timezone.utc); duration = round((ended - started).total_seconds() * 1000, 3)
-            self.log(logs, 'INFO' if status == 'completed' else 'ERROR', f'Job {status}: {process.name} in {duration:.3f} ms', kind='lifecycle', correlationId=correlation_id, runId=run_id, endedAt=ended.isoformat(), durationMs=duration)
+            self.log(logs, 'INFO' if status == 'completed' else 'ERROR', f'Job {status}: {process.name} in {duration:.3f} ms', kind='lifecycle', correlationId=correlation_id, runId=run_id, endedAt=log_timestamp(ended), durationMs=duration)
             for entry in logs:
                 entry.setdefault('correlationId', correlation_id); entry.setdefault('runId', run_id)
-            return RunResult(run_id=run_id, correlation_id=correlation_id, started_at=started.isoformat(), ended_at=ended.isoformat(), duration_ms=duration, status=status, output=output, logs=logs, activity_outputs=activity_outputs, task_outputs=task_outputs)
+            return RunResult(run_id=run_id, correlation_id=correlation_id, started_at=log_timestamp(started), ended_at=log_timestamp(ended), duration_ms=duration, status=status, output=output, logs=logs, activity_outputs=activity_outputs, task_outputs=task_outputs)
         activity_by_id = {a.id: a for a in process.activities}
         incoming = {t.target for t in process.transitions}
         starts = [activity_by_id[entry_activity_id]] if entry_activity_id in activity_by_id else ([a for a in process.activities if a.type == 'start'] or [a for a in process.activities if a.id not in incoming and a.type != 'catch'])
@@ -143,7 +144,7 @@ class WorkflowRuntime:
         return {'type': getattr(error, 'fault_type', error.__class__.__name__), 'code': str(getattr(error, 'code', '') or ''), 'message': str(error), 'stackTrace': stack_trace, 'activityId': activity_id, 'details': getattr(error, 'details', {}) or {}, 'cause': getattr(error, 'cause', None)}
 
     def log(self, logs, level, message, activity_id=None, **details):
-        logs.append({'time': datetime.now(timezone.utc).isoformat(), 'level': level, 'message': message, 'activityId': activity_id, **details})
+        logs.append({'time': log_timestamp(), 'level': level, 'message': message, 'activityId': activity_id, **details})
 
     @staticmethod
     def _cron_field_matches(expression: str, value: int, minimum: int, maximum: int) -> bool:
@@ -217,6 +218,16 @@ class WorkflowRuntime:
 
     @staticmethod
     def payload_text(value):
+        # IDoc listener/parser results carry the canonical wire representation
+        # in IDocXML (or payload). Do not turn that XML into a JSON object just
+        # because the surrounding application log is JSON-lines formatted.
+        if isinstance(value, dict):
+            for key in ('IDocXML', 'xmlString', 'xml', 'payload'):
+                candidate = value.get(key)
+                if isinstance(candidate, str) and candidate.lstrip().startswith('<'):
+                    return candidate
+        if isinstance(value, str) and value.lstrip().startswith('<'):
+            return value
         try: return json.dumps(value, ensure_ascii=False, default=str)
         except (TypeError, ValueError): return str(value)
 
@@ -283,7 +294,7 @@ class WorkflowRuntime:
                 if not name: raise RuntimeError('Assign Variable requires a process variable name')
                 ctx['vars'][name] = value; return {'name': name, 'value': value}
             if operation == 'checkpoint':
-                checkpoint_id, created = str(uuid.uuid4()), datetime.now(timezone.utc).isoformat()
+                checkpoint_id, created = str(uuid.uuid4()), log_timestamp()
                 checkpoint = {'checkpointId': checkpoint_id, 'name': str(cfg.get('checkpointName') or activity.name), 'timestamp': created, 'activityId': activity.id}
                 if self.as_bool(cfg.get('includeProcessState', True)):
                     checkpoint['state'] = {'last': ctx.get('last'), 'vars': dict(ctx.get('vars', {})), 'context': dict(ctx.get('context', {}))}
@@ -359,10 +370,30 @@ class WorkflowRuntime:
             if message in (None, ''): message = f'{activity.name} payload'
             if not isinstance(message, str): message = self.payload_text(message)
             payload = cfg.get('payload', ctx['last'])
+            # Treat an untouched empty payload editor as "current activity
+            # payload". This keeps a Log activity useful after an inbound
+            # listener/parser without requiring a redundant mapping, while
+            # still honoring an explicit payload mapping.
+            if payload in (None, '') and 'payload' not in activity.config.get('inputMappings', {}):
+                payload = ctx['last']
+            # Existing projects commonly mapped a parser branch such as
+            # `${activities.<id>.output.SAPIDoc.ARTMAS05}`. That branch is the
+            # JSON view of the IDoc, while the parser also publishes IDocXML
+            # as the canonical XML view. Preserve the old mapping and log the
+            # requested IDoc in the configured output format.
+            payload_mapping = activity.config.get('inputMappings', {}).get('payload')
+            if isinstance(payload_mapping, str) and '.output.' in payload_mapping and isinstance(payload, dict):
+                match = re.search(r'\$\{activities\.([^\.}]+)\.output(?:\.|\})', payload_mapping)
+                source_record = ctx.get('activities', {}).get(match.group(1)) if match else None
+                source_output = source_record.get('output') if isinstance(source_record, dict) else None
+                if isinstance(source_output, dict) and str(source_output.get('format', '')).upper() == 'XML' and source_output.get('IDocXML'):
+                    payload = source_output['IDocXML']
             include_payload = self.as_bool(cfg.get('includePayload', False)) or 'payload' in activity.config.get('inputMappings', {})
             event = {'level': level, 'message': message, 'activityId': activity.id, 'activityName': activity.name}
-            if include_payload: event['payload'] = payload
-            self.log(ctx.setdefault('logs', []), level, message, activity.id, activityName=activity.name, **({'payload': payload} if include_payload else {}))
+            if include_payload:
+                event['payload'] = payload
+                event['payloadFormat'] = 'XML' if isinstance(payload, str) and payload.lstrip().startswith('<') else 'JSON' if isinstance(payload, (dict, list)) else 'TEXT'
+            self.log(ctx.setdefault('logs', []), level, message, activity.id, activityName=activity.name, **({'payload': payload, 'payloadFormat': event['payloadFormat']} if include_payload else {}))
             ctx['_activityMetadata'] = {'logEvent': event}
             return ctx['last']
         if activity.type == 'confirm':
@@ -424,6 +455,8 @@ class WorkflowRuntime:
             if selected_idoc:
                 sap_cfg = {**sap_cfg, 'selectedIdoc': selected_idoc, 'idocType': sap_cfg.get('idocType') or selected_idoc.get('idocType'), 'extensionType': sap_cfg.get('extensionType') or selected_idoc.get('extensionType',''), 'release': sap_cfg.get('release') or selected_idoc.get('release',''), 'idocSchema': selected_idoc.get('schema')}
             payload = cfg.get('payload', ctx['last'])
+            if cfg.get('operation', 'invoke_rfc_bapi') == 'idoc_listener':
+                return await sap_adapter.receive_idoc(sap_cfg)
             return await asyncio.to_thread(sap_adapter.execute, cfg.get('operation','invoke_rfc_bapi'), sap_cfg, payload)
         if activity.type == 'http':
             method, url = cfg.get('method','GET'), self.resolve(cfg.get('url',''), ctx)
@@ -630,7 +663,7 @@ class WorkflowRuntime:
             if kind == 'avro schema': raise FabricFault('Avro Schema deserialization requires the configured Schema Registry runtime', fault_type='KafkaSchemaRegistryException')
             return raw.decode(errors='replace')
         attributes = {str(key): str(value) for key, value in {**mapping(cfg.get('dynamicProperties')), **mapping(cfg.get('attributes')), **mapping(cfg.get('headers'))}.items()}
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = log_timestamp()
         envelope = {'id': str(uuid.uuid4()), 'data': payload, 'attributes': attributes, 'destination': destination, 'technology': technology, 'timestamp': timestamp, 'key': cfg.get('key'), 'correlationId': cfg.get('correlationId'), 'replyTo': cfg.get('replyTo'), 'type': cfg.get('type'), 'priority': int(cfg.get('priority', 4) or 4), 'deliveryMode': cfg.get('deliveryMode', 'Persistent'), 'expiration': int(cfg.get('expiration', 0) or 0)}
         receive_ops = {'receive', 'subscribe', 'get', 'queue_receiver', 'topic_subscriber', 'get_queue_message', 'receive_message', 'wait_request'}
         client_ack = str(cfg.get('acknowledgeMode', '')).lower() in ('client', 'manual', 'explicit client', 'explicit client dups ok') or cfg.get('acknowledge') is False

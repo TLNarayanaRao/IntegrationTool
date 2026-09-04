@@ -872,6 +872,7 @@ export function activityContract(n: any): Contract {
         resource,
         f("sourceDestination", "IDoc source destination"),
         ...idoc,
+        { ...f("idocOutputMode", "IDoc output format", "select"), options: ["JSON", "XML"] },
       ],
       idoc_reader: [
         resource,
@@ -963,12 +964,12 @@ export function activityContract(n: any): Contract {
       output: listener
         ? [
             d("SAPIDoc", "IDoc/RFC metadata", "object"),
-            d("payload", "Inbound SAP payload", "object"),
+            d("payload", "Inbound SAP payload (XML)", "string"),
             d("TID", "Transaction ID"),
           ]
         : converter
           ? [
-              d("SAPIDoc", "Converted IDoc XML", "object"),
+              ...(n.config?.idocOutputMode === "XML" ? [d("IDocXML", "Parsed IDoc XML", "string")] : [d("SAPIDoc", "Parsed IDoc JSON", "object")]),
               d("format", "Output format"),
             ]
           : op === "read_table"
@@ -1139,8 +1140,21 @@ function boundaryFields(task: any, boundaryType: "start" | "end", schemas: any[]
   return schemaDataFields(configured || modelSchema);
 }
 
-function resolvedActivityContract(node: any, task: any, tasks: any[], schemas: any[]): Contract {
+function resolvedActivityContract(node: any, task: any, tasks: any[], schemas: any[], resources: any[] = []): Contract {
   const contract = activityContract(node);
+  if (node.type === "sap" && node.config?.operation === "idoc_parser") {
+    const resource = resources.find((item: any) => item.id === node.config?.resourceId);
+    const selected = resource?.config?.idocCatalog?.find((item: any) => item.idocType === node.config?.idocType) || resource?.config?.selectedIdoc;
+    const mode = String(node.config?.idocOutputMode || "JSON").toUpperCase();
+    if (mode === "JSON" && selected?.schema) {
+      const fields = schemaDataFields(selected.schema);
+      if (fields.length) return { ...contract, output: [...fields.map((field: any) => ({ ...field, key: `SAPIDoc.${field.key}` })), d("format", "Output format")] };
+    }
+    if (mode === "XML") {
+      const fields = selected?.schema ? schemaDataFields(selected.schema) : [];
+      return { ...contract, output: [...fields.map((field: any) => ({ ...field, key: `SAPIDoc.${field.key}` })), d("SAPIDoc", "Structured IDoc XML tree", "object"), d("IDocXML", "Serialized IDoc XML", "string"), d("format", "Output format")] };
+    }
+  }
   if (["xml", "json", "flat"].includes(node.type)) {
     const schemaFields = schemaDataFields(activitySchemaText(node, schemas));
     if (!schemaFields.length) return contract;
@@ -1276,9 +1290,9 @@ export default function ActivityEditor({
   tab,
   update,
 }: any) {
-  const contract = resolvedActivityContract(node, task, tasks, schemas || []),
+  const contract = resolvedActivityContract(node, task, tasks, schemas || [], resources || []),
     cfg = node.config || {},
-    upstreamSources = upstreamActivitySources(node, task, tasks, schemas || []),
+    upstreamSources = upstreamActivitySources(node, task, tasks, schemas || [], resources || []),
     [mapperOpen, setMapperOpen] = useState(false),
     set = (key: string, value: any) =>
       update({ config: { ...cfg, [key]: value } });
@@ -1751,7 +1765,7 @@ function useSourcePaneWidth(initial = 250) {
   return { width, begin: (event: React.PointerEvent) => { const box = event.currentTarget.parentElement!.getBoundingClientRect(); drag.current = box.left; event.preventDefault(); } };
 }
 type ActivitySource = { activity: any; distance: number; fields: DataField[] };
-function upstreamActivitySources(node: any, task: any, tasks: any[] = [], schemas: any[] = []): ActivitySource[] {
+function upstreamActivitySources(node: any, task: any, tasks: any[] = [], schemas: any[] = [], resources: any[] = []): ActivitySource[] {
   if (!node || !task) return [];
   const reverse = new Map<string, string[]>();
   (task.transitions || []).forEach((edge: any) => reverse.set(edge.target, [...(reverse.get(edge.target) || []), edge.source]));
@@ -1769,7 +1783,7 @@ function upstreamActivitySources(node: any, task: any, tasks: any[] = [], schema
     if (!activity) return null;
     const fields = isMapperActivity(activity.type)
       ? transformSchemaFields(activity.config || {}).map((field) => ({ key: field.path, label: field.name, type: field.type }))
-      : resolvedActivityContract(activity, task, tasks, schemas).output;
+      : resolvedActivityContract(activity, task, tasks, schemas, resources).output;
     return { activity, distance: pathDistance, fields };
   }).filter(Boolean).sort((a: any, b: any) => a.distance - b.distance) as ActivitySource[];
 }

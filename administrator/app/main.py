@@ -27,6 +27,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from .time_utils import log_timestamp
 
 def administrator_version() -> str:
     override = os.environ.get("FABRIC_ADMIN_VERSION", "").strip()
@@ -62,11 +63,11 @@ STATE_LOCK = threading.RLock()
 PROCESS_HANDLES: dict[str, subprocess.Popen] = {}
 
 app = FastAPI(title="Integration Fabric Control Plane", version=ADMIN_VERSION)
-REQUEST_METRICS = {"startedAt": now() if "now" in globals() else datetime.now(timezone.utc).isoformat(), "total": 0, "errors": 0, "routes": {}}
+REQUEST_METRICS = {"startedAt": log_timestamp(), "total": 0, "errors": 0, "routes": {}}
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return log_timestamp()
 
 
 def read_json(path: Path, default: Any) -> Any:

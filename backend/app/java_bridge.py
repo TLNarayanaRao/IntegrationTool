@@ -5,12 +5,63 @@ import os
 import subprocess
 import sys
 import tempfile
+import asyncio
+import queue
+import threading
 from pathlib import Path
 from typing import Any
 
 
 class JavaBridgeError(RuntimeError):
     pass
+
+
+class SapJcoListener:
+    def __init__(self, process: subprocess.Popen, descriptor: Path):
+        self.process = process
+        self.descriptor = descriptor
+        # Drain the Java bridge continuously.  A large IDoc can be hundreds
+        # of KB of JSON; reading stdout only after the previous IDoc finishes
+        # processing can fill the Windows pipe and block JCo/SAP callbacks.
+        self._events: queue.Queue[dict[str, Any]] = queue.Queue()
+        self._reader = threading.Thread(target=self._read_events, name="sap-jco-stdout", daemon=True)
+        self._reader.start()
+
+    def _read_events(self) -> None:
+        try:
+            while True:
+                line = self.process.stdout.readline() if self.process.stdout else ""
+                if not line:
+                    detail = (self.process.stderr.read() if self.process.stderr else "").strip()
+                    self._events.put({"event": "bridge_error", "message": detail or f"SAP JCo listener stopped with exit code {self.process.poll()}"})
+                    return
+                try:
+                    output = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    self._events.put({"event": "bridge_error", "message": f"SAP JCo listener returned invalid output: {line.strip()}", "cause": str(exc)})
+                    return
+                self._events.put(output)
+        except Exception as exc:
+            self._events.put({"event": "bridge_error", "message": f"SAP JCo listener reader failed: {exc}"})
+
+    async def next_event(self, timeout: float | None = None) -> dict[str, Any]:
+        try:
+            event = await asyncio.wait_for(asyncio.to_thread(self._events.get), timeout=timeout) if timeout else await asyncio.to_thread(self._events.get)
+        except asyncio.TimeoutError as exc:
+            raise JavaBridgeError("SAP JCo listener timed out while waiting for an IDoc") from exc
+        output = event
+        if output.get("event") == "bridge_error":
+            raise JavaBridgeError(str(output.get("message") or "SAP JCo listener failed"))
+        if not output.get("ok", True) and output.get("event") != "idoc":
+            raise JavaBridgeError(str(output.get("message") or "SAP JCo listener failed"))
+        return output
+
+    def close(self) -> None:
+        if self.process.poll() is None:
+            self.process.terminate()
+            try: self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired: self.process.kill()
+        self.descriptor.unlink(missing_ok=True)
 
 
 def _application_root() -> Path:
@@ -79,6 +130,13 @@ def _escape_property(value: Any) -> str:
 
 def invoke(command: str, config: dict[str, Any], values: dict[str, Any] | None = None, *, family: str, timeout: float | None = None) -> dict[str, Any]:
     classpath, jars = _classpath(config, family)
+    process_env = os.environ.copy()
+    if family == "sap":
+        # JCo loads sapjco3.dll/lib sapjco3.so natively; keep the licensed
+        # driver outside the application and make its directory discoverable.
+        native_directories = [str(path) for path in driver_directories(config, family) if path.exists()]
+        if native_directories:
+            process_env["PATH"] = os.pathsep.join(native_directories + [process_env.get("PATH", "")])
     properties = {"command": command, **(values or {})}
     descriptor = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".properties", delete=False)
     try:
@@ -88,7 +146,8 @@ def invoke(command: str, config: dict[str, Any], values: dict[str, Any] | None =
                     descriptor.write(f"{_escape_property(key)}={_escape_property(value)}\n")
         completed = subprocess.run(
             [str(_java_executable()), "-cp", classpath, "com.integrationfabric.bridge.FabricJavaBridge", descriptor.name],
-            capture_output=True, text=True, encoding="utf-8", timeout=timeout or float(config.get("timeoutSeconds") or 30) + 5,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout or float(config.get("timeoutSeconds") or 30) + 5,
+            env=process_env,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except FileNotFoundError as exc:
@@ -97,18 +156,42 @@ def invoke(command: str, config: dict[str, Any], values: dict[str, Any] | None =
         raise JavaBridgeError(f"Java connector timed out after {exc.timeout:g} seconds") from exc
     finally:
         Path(descriptor.name).unlink(missing_ok=True)
-    lines = [line for line in completed.stdout.splitlines() if line.strip()]
+    stdout = completed.stdout or ""
+    stderr = completed.stderr or ""
+    lines = [line for line in stdout.splitlines() if line.strip()]
     if not lines:
-        detail = completed.stderr.strip() or f"Java bridge exited with code {completed.returncode}"
+        detail = stderr.strip() or f"Java bridge exited with code {completed.returncode}"
         raise JavaBridgeError(detail)
     try:
         output = json.loads(lines[-1])
     except json.JSONDecodeError as exc:
         raise JavaBridgeError(f"Java bridge returned invalid output: {lines[-1]}") from exc
     if completed.returncode or not output.get("ok", False):
-        raise JavaBridgeError(str(output.get("message") or completed.stderr.strip() or "Java connector failed"))
+        raise JavaBridgeError(str(output.get("message") or stderr.strip() or "Java connector failed"))
     output["loadedJars"] = [jar.name for jar in jars]
     return output
+
+
+def start_sap_listener(config: dict[str, Any], values: dict[str, Any]) -> SapJcoListener:
+    classpath, _ = _classpath(config, "sap")
+    process_env = os.environ.copy()
+    native_directories = [str(path) for path in driver_directories(config, "sap") if path.exists()]
+    if native_directories:
+        process_env["PATH"] = os.pathsep.join(native_directories + [process_env.get("PATH", "")])
+    descriptor = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".properties", delete=False)
+    with descriptor:
+        for key, value in {"command": "sap.listen", **values}.items():
+            if value is not None: descriptor.write(f"{_escape_property(key)}={_escape_property(value)}\n")
+    try:
+        process = subprocess.Popen(
+            [str(_java_executable()), "-cp", classpath, "com.integrationfabric.bridge.FabricJavaBridge", descriptor.name],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env=process_env,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), bufsize=1,
+        )
+    except FileNotFoundError as exc:
+        Path(descriptor.name).unlink(missing_ok=True)
+        raise JavaBridgeError("Java runtime is unavailable for the SAP JCo listener") from exc
+    return SapJcoListener(process, Path(descriptor.name))
 
 
 def jms_values(config: dict[str, Any]) -> dict[str, Any]:

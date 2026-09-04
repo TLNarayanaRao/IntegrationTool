@@ -14,6 +14,11 @@ Relative values are resolved beneath the Fabric data directory. Environment vari
 
 `<Fabric data directory>/logs/<project-id>/application.log`
 
+Log and audit timestamps use Arizona time by default (`America/Phoenix`, shown
+with the `-07:00` offset). Set `FABRIC_LOG_TIMEZONE` to another IANA timezone
+when a deployment requires a different display timezone. Scheduler and token
+expiry calculations continue to use UTC internally.
+
 The active file automatically rolls at 10 MB. Four numbered archives are retained by default (`application.log.1` through `application.log.4`), so an individual file never grows without bound. Each line is UTF-8 JSON and includes the project, timestamp, level, message, and available run, correlation, task, activity, duration, and exception context.
 
 Packaged desktop installations place the Fabric data directory under the Studio user-data location configured through `FABRIC_DATA_DIR`. Administrators may override logging without changing code:

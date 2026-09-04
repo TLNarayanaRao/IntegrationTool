@@ -27,4 +27,6 @@ pyodbc>=5.2                         # Microsoft SQL Server and ODBC
 ibm-db>=3.2.8                       # IBM Db2 DB-API runtime and bundled CLI driver
 databricks-sql-connector>=4,<5      # Databricks SQL warehouses and all-purpose compute
 databricks-sdk>=0.40,<1             # Databricks OAuth M2M credential provider
-# pyrfc>=3.3          # also requires the separately licensed SAP NetWeaver RFC SDK
+opentelemetry-api>=1.30,<2
+opentelemetry-sdk>=1.30,<2
+opentelemetry-exporter-otlp-proto-http>=1.30,<2

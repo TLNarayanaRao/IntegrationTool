@@ -18,4 +18,18 @@
 @media(max-width:1050px){.fabric-launch-home>main{grid-template-columns:1fr!important;padding:25px!important}.fabric-live-map{min-height:500px}.launch-actions{padding-bottom:35px}.fabric-launch-home{overflow:auto}}
 @media(max-width:650px){.fabric-launch-home>header{padding:0 16px}.fabric-launch-home .brand small{display:none}.fabric-launch-home>main{padding:16px!important}.fabric-live-map{min-height:420px}.system-node{min-width:110px;padding:8px}.system-node small{display:none}.fabric-core{width:140px;height:140px}.launch-actions h1{font-size:34px}.home-create-dialog section>div{grid-template-columns:repeat(3,1fr)}.fabric-launch-home>footer{padding:0 16px}.fabric-launch-home>footer span:last-child{display:none}}
 @media(prefers-reduced-motion:reduce){.fabric-launch-home *{animation-duration:.001ms!important;animation-iteration-count:1!important}.fabric-routes .flow-packet{display:none}}
+
+/* Shared supplied Integration Studio artwork for the two product headers.  The
+   artwork is clipped to the header height, while the overlay particle keeps
+   the requested motion without adding a second logo or duplicate wording. */
+.integration-brand-art{position:relative;display:block;flex:0 0 auto;overflow:hidden;background:#061126;border:1px solid #1559a0;border-radius:5px;box-shadow:0 0 18px #0874e833,inset 0 0 14px #00143d99}
+.integration-brand-art img{display:block;width:100%;height:100%;object-fit:contain;object-position:left center}
+.integration-brand-particle{position:absolute;z-index:2;left:7%;top:76%;width:5px;height:5px;border-radius:50%;background:#eaffff;box-shadow:0 0 5px 2px #38d8ff,0 0 14px 4px #0874e8;offset-path:path("M 0 0 C 42 -26 78 -28 116 -4 S 185 10 258 -29");offset-rotate:0deg;animation:brand-particle-flight 3.8s cubic-bezier(.42,0,.58,1) infinite}
+.home-brand-art{width:min(520px,48vw);height:60px;border:0;border-radius:0;box-shadow:none;background:transparent}
+.studio-brand-art{width:276px;height:50px;border:0;border-radius:0;box-shadow:none;background:transparent}
+@keyframes brand-particle-flight{0%{opacity:0;transform:scale(.7)}8%,88%{opacity:1}100%{opacity:0;transform:scale(1.35)}}
+@media(max-width:900px){.studio-brand-art{width:230px}.home-brand-art{width:min(440px,55vw)}}
+@media(max-width:650px){.home-brand-art{width:280px;height:54px}.studio-brand-art{width:190px;height:46px}}
+
+.integration-brand-svg{display:block;width:min(520px,100%);height:52px;object-fit:contain;object-position:left center}.fabric-launch-home .integration-brand-svg{width:520px;height:58px}
 .launch-actions h1{margin-bottom:25px;font-size:clamp(34px,3.2vw,50px)}.launch-actions h1>span{white-space:nowrap}

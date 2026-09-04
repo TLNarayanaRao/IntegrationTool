@@ -1,0 +1,3 @@
+# SAP JCo is a licensed vendor driver. Place sapjco3.jar and the matching
+# sapjco3.dll in the configured SAP driver directory. No Python package is
+# required for the SAP connector.

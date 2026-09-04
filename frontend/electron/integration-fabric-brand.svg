@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 70" role="img" aria-label="Integration Fabric Studio">
+  <defs>
+    <linearGradient id="brand-blue" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#0874e8"/><stop offset=".55" stop-color="#1bc7f2"/><stop offset="1" stop-color="#91efff"/></linearGradient>
+    <filter id="brand-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect x="1" y="1" width="50" height="50" rx="13" fill="#0a2138" stroke="#1bc7f2" stroke-width="1.2"/>
+  <path d="M10 39 C16 39 16 17 24 17 S31 39 37 39 C43 39 42 12 47 11" fill="none" stroke="#0874e8" stroke-width="5" opacity=".28" filter="url(#brand-glow)"/>
+  <path id="brand-path" d="M10 39 C16 39 16 17 24 17 S31 39 37 39 C43 39 42 12 47 11" fill="none" stroke="url(#brand-blue)" stroke-width="2.4" stroke-linecap="round" filter="url(#brand-glow)"/>
+  <circle cx="10" cy="39" r="2.2" fill="#082849" stroke="#53e5ff"/><circle cx="24" cy="17" r="2.2" fill="#082849" stroke="#53e5ff"/><circle cx="37" cy="39" r="2.2" fill="#082849" stroke="#53e5ff"/>
+  <circle r="3" fill="#ff3652" stroke="#ffd8dd" stroke-width=".7" filter="url(#brand-glow)"><animateMotion dur="3.6s" repeatCount="indefinite" path="M10 39 C16 39 16 17 24 17 S31 39 37 39 C43 39 42 12 47 11"/></circle>
+  <text x="67" y="29" fill="#f4f8ff" font-family="Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="2.1">INTEGRATION</text>
+  <text x="235" y="29" fill="#16d6a3" font-family="Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="2.1">FABRIC</text>
+  <line x1="335" y1="17" x2="335" y2="38" stroke="#284158"/>
+  <text x="352" y="30" fill="#90a7bb" font-family="monospace" font-size="9" letter-spacing="1.8">ENTERPRISE INTEGRATION STUDIO</text>
+</svg>

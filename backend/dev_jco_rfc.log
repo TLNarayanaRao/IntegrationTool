@@ -1,0 +1,899 @@
+
+**** Log file opened at 2026-09-02 09:11:22 MST (GMT-07:00 Mountain Standard Time) Rel. 3.1.13 (2025-10-31) [754.623]
+Error:     >Wed Sep 02 09:11:22,076<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: TYPE=A DESTINATION=integration-fabric-sap ASHOST=sap-ecc.example.com SYSNR=00 PCS=1
+
+LOCATION    CPIC (TCP/IP) on local host with Unicode
+ERROR       hostname 'sap-ecc.example.com' unknown
+TIME        Wed Sep  2 09:11:22 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -2
+MODULE      D:/depot/bas/754_REL/src/base/ni/ninti.c
+LINE        898
+DETAIL      NiPGetHostByName: 'sap-ecc.example.com' not found
+SYSTEM CALL getaddrinfo
+COUNTER     2
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+
+**** Log file opened at 2026-09-02 09:11:49 MST (GMT-07:00 Mountain Standard Time) Rel. 3.1.13 (2025-10-31) [754.623]
+Error: [1]    >Wed Sep 02 09:11:49,766<    RfcException raised by system [QA2|sapqa2|00] for user [TIBCO]:
+	message: Password logon no longer possible - too many failed attempts
+	return code: RFC_SYS_EXCEPTION (RFC_SYS_EXCEPTION)
+	error group: RFC_ERROR_LOGON_FAILURE
+
+
+**** Log file opened at 2026-09-02 09:30:48 MST (GMT-07:00 Mountain Standard Time) Rel. 3.1.13 (2025-10-31) [754.623]
+Error: [1]    >Wed Sep 02 09:30:48,178<    RfcException raised by system [QA2|sapqa2|00] for user [TIBCO]:
+	message: Password logon no longer possible - too many failed attempts
+	return code: RFC_SYS_EXCEPTION (RFC_SYS_EXCEPTION)
+	error group: RFC_ERROR_LOGON_FAILURE
+
+
+**** Log file opened at 2026-09-03 10:16:32 MST (GMT-07:00 Mountain Standard Time) Rel. 3.1.13 (2025-10-31) [754.623]
+Error:     >Thu Sep 03 10:16:32,156<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: TYPE=A DESTINATION=int-fabric-sap-ecc ASHOST=sapqa2 SYSNR=00 PCS=1
+
+LOCATION    CPIC (TCP/IP) on local host with Unicode
+ERROR       partner '172.17.88.86:3300' not reached
+TIME        Thu Sep  3 10:16:32 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     2
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 10:16:53,375<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 10:16:53 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     1
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 10:17:06,353<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 10:17:06 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10053
+ERRNO TEXT  WSAECONNABORTED: Software caused connection abort
+COUNTER     2
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 10:17:27,468<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 10:17:27 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     3
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 10:17:49,547<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 10:17:49 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     4
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+
+**** Log file opened at 2026-09-03 11:10:52 MST (GMT-07:00 Mountain Standard Time) Rel. 3.1.13 (2025-10-31) [754.623]
+Error:     >Thu Sep 03 11:10:52,572<    >RfcIoException:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58319
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFCIO_ERROR_SYSERROR<
+
+
+Error:     >Thu Sep 03 11:10:52,639<    >RfcIoException:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58323
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFCIO_ERROR_SYSERROR<
+
+
+Error:     >Thu Sep 03 11:10:52,639<    >RfcIoException:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58324
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFCIO_ERROR_SYSERROR<
+
+
+Error:     >Thu Sep 03 11:10:52,639<    >RfcIoException:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58322
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFCIO_ERROR_SYSERROR<
+
+
+Error:     >Thu Sep 03 11:10:52,639<    >RfcIoException:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58321
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFCIO_ERROR_SYSERROR<
+
+
+Error:     >Thu Sep 03 11:10:52,639<    >RfcIoException:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58320
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFCIO_ERROR_SYSERROR<
+
+
+Error:     >Thu Sep 03 11:10:52,639<    >RfcIoException:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58318
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFCIO_ERROR_SYSERROR<
+
+
+Error:     >Thu Sep 03 11:10:52,639<    >RfcIoException:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58325
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFCIO_ERROR_SYSERROR<
+
+
+Error:     >Thu Sep 03 11:10:52,667<    >RfcIoException:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58322
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFCIO_ERROR_SYSERROR<
+
+
+Error:     >Thu Sep 03 11:10:52,667<    >RfcIoException:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58320
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFCIO_ERROR_SYSERROR<
+
+
+Error:     >Thu Sep 03 11:10:52,667<    >RfcIoException:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58321
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFCIO_ERROR_SYSERROR<
+
+
+Error:     >Thu Sep 03 11:10:52,669<    >RfcIoException:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58319
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFCIO_ERROR_SYSERROR<
+
+
+Error:     >Thu Sep 03 11:10:52,669<    >RfcIoException:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58325
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFCIO_ERROR_SYSERROR<
+
+
+Error:     >Thu Sep 03 11:10:52,669<    >RfcIoException:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58318
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFCIO_ERROR_SYSERROR<
+
+
+Error:     >Thu Sep 03 11:10:52,669<    >RfcIoException:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58324
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFCIO_ERROR_SYSERROR<
+
+
+Error:     >Thu Sep 03 11:10:52,669<    >RfcIoException:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58323
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFCIO_ERROR_SYSERROR<
+
+
+Error: [9]    >Thu Sep 03 11:10:52,669<    RfcException raised by system [JCoServer@PETM11-ApiRwlFm<-<noSID>|<unknown>|tibcooutartmas]:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58325
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error: [2]    >Thu Sep 03 11:10:52,669<    RfcException raised by system [JCoServer@PETM11-ApiRwlFm<-<noSID>|<unknown>|tibcooutartmas]:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58318
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error: [6]    >Thu Sep 03 11:10:52,669<    RfcException raised by system [JCoServer@PETM11-ApiRwlFm<-<noSID>|<unknown>|tibcooutartmas]:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58322
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error: [5]    >Thu Sep 03 11:10:52,669<    RfcException raised by system [JCoServer@PETM11-ApiRwlFm<-<noSID>|<unknown>|tibcooutartmas]:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58321
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error: [3]    >Thu Sep 03 11:10:52,669<    RfcException raised by system [JCoServer@PETM11-ApiRwlFm<-<noSID>|<unknown>|tibcooutartmas]:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58319
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error: [4]    >Thu Sep 03 11:10:52,669<    RfcException raised by system [JCoServer@PETM11-ApiRwlFm<-<noSID>|<unknown>|tibcooutartmas]:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58320
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error: [8]    >Thu Sep 03 11:10:52,669<    RfcException raised by system [JCoServer@PETM11-ApiRwlFm<-<noSID>|<unknown>|tibcooutartmas]:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58324
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error: [7]    >Thu Sep 03 11:10:52,669<    RfcException raised by system [JCoServer@PETM11-ApiRwlFm<-<noSID>|<unknown>|tibcooutartmas]:
+	message: CPIC-CALL: SAP_CMACCPTP3 on convId:          with rc: 20
+
+ERROR       connection to partner '172.17.88.86:sapgw00' broken
+TIME        Thu Sep  3 11:10:52 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -6
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        5481
+DETAIL      NiIRead: P=172.17.88.86:3300; L=192.168.113.249:58323
+SYSTEM CALL recv
+ERRNO       10054
+ERRNO TEXT  WSAECONNRESET: Connection reset by peer
+COUNTER     1
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 11:11:15,600<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 11:11:15 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     1
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 11:11:37,685<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 11:11:37 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     2
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 11:11:59,724<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 11:11:59 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     3
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 11:12:21,796<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 11:12:21 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     4
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 11:12:43,851<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 11:12:43 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     5
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 11:13:05,952<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 11:13:05 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     6
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 11:13:38,065<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 11:13:38 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     7
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 11:14:42,267<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 11:14:42 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     8
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 11:16:50,687<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 11:16:50 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     9
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 11:21:07,381<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 11:21:07 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     10
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 11:29:41,019<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 11:29:41 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     11
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 11:46:46,837<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 11:46:46 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     12
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+
+Error:     >Thu Sep 03 12:20:56,325<    RfcException raised by system [<unknown>]:
+	message: Connect to SAP gateway failed
+	connection parameters: PROGID=tibcooutartmas GWHOST=sapqa2 GWSERV=sapgw00
+
+ERROR       partner '172.17.88.86:sapgw00' not reached
+TIME        Thu Sep  3 12:20:56 2026
+RELEASE     754
+COMPONENT   NI (network interface)
+VERSION     40
+RC          -10
+MODULE      D:/depot/bas/754_REL/src/base/ni/nixxi.cpp
+LINE        3458
+DETAIL      NiPConnect2: 172.17.88.86:3300
+SYSTEM CALL connect
+ERRNO       10060
+ERRNO TEXT  WSAETIMEDOUT: Connection timed out
+COUNTER     13
+
+	return code: RFC_FAILURE (RFC_FAILURE)
+	error group: RFC_ERROR_COMMUNICATION
+

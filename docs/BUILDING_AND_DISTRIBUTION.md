@@ -74,6 +74,14 @@ The desktop runtime is built with Python 3.11. Install the standard x64 distribu
 
 Database shared connections accept either the Studio host/port/database fields or vendor JDBC URLs and translate them to the corresponding native Python adapter. The packaged runtime includes adapters for SQLite, PostgreSQL, MySQL/MariaDB, Oracle, IBM Db2, Databricks SQL, Snowflake, and SQL Server. SQL Server additionally requires Microsoft ODBC Driver 18 (or 17) to be installed on the runtime machine; the Studio detects installed drivers and reports the available names. Databricks supports personal access tokens, OAuth machine-to-machine, and interactive OAuth user-to-machine authentication with SQL warehouse hostname, HTTP path, catalog, and schema configuration.
 
+### Real SAP ECC connections
+
+SAP shared connections use the licensed SAP Java Connector (JCo). New SAP connections use the external adapter by default; the local mock remains available as an explicit design-time option. JCo is not included in the installer. Place `sapjco3.jar` and its matching `sapjco3.dll` in the configured SAP driver directory (or the default `C:\ProgramData\Integration Fabric Studio\drivers\sap`). No Python SAP package or separate NW RFC SDK installation is required.
+
+The repository includes `requirements-sap.txt` as a reminder. The Java bridge loads JCo at runtime, so the JCo JAR and DLL remain outside source control and are reported in the connection-test response.
+
+Ensure the SDK's native library directory is on `PATH` before starting Studio. For an application-server connection, configure `ashost`, `sysnr`, `client`, `user`, and `passwd`; for a message-server/logon-group connection, configure `mshost`, `sysid`, `group`, `client`, `user`, and `passwd`. SNC connections additionally require the SNC partner name and SAP Cryptographic Library path. The Test Connection action calls `STFC_CONNECTION` and reports the native RFC error when authentication, routing, authorization, or network setup fails.
+
 After PyInstaller finishes, the build launches that exact packaged runtime on an isolated loopback port and requires a successful `/api/health` response before Electron Builder is allowed to create an installer. Installed Studio startup writes the runtime path, port, stdout, stderr, spawn errors, and exit status to `%APPDATA%\Integration Fabric Studio\logs\runtime-startup.log`. Startup errors include the log path and its latest output instead of only showing a generic readiness timeout.
 
 The build compiles the complete backend with Python 3.11 before freezing it. PyInstaller then explicitly collects every module under the backend `app` package and verifies `app.main` both before and after freezing. This catches incompatible Python syntax early and avoids environment-dependent namespace/package discovery producing an executable that fails with `ModuleNotFoundError: app.main`.

@@ -4,6 +4,7 @@ from time import perf_counter
 from uuid import uuid4
 from .models import Project
 from .runtime import WorkflowRuntime
+from .time_utils import log_timestamp
 
 class DebugManager:
     def __init__(self, runtime: WorkflowRuntime):
@@ -20,10 +21,10 @@ class DebugManager:
         if not starters: raise ValueError('Task has no starting activity')
         session_id = str(uuid4())
         execution_state = {'activities': {}, 'tasks': {task.id: {'name': task.name, 'activities': {}}}}
-        logs = [{'time': datetime.now(timezone.utc).isoformat(), 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Debug session started: {project.name} / {task.name}', 'taskId': task.id, 'sessionId': session_id}]
+        logs = [{'time': log_timestamp(), 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Debug session started: {project.name} / {task.name}', 'taskId': task.id, 'sessionId': session_id}]
         context = {'input': initial, 'vars': {}, 'last': initial, 'resources': resources, 'properties': properties, 'project': project, 'runtime': self.runtime, 'logs': logs, 'activities': execution_state['activities'], 'tasks': execution_state['tasks'], 'context': {'taskId': task.id, 'activityId': starters[0].id, 'environment': environment}}
         operation = starters[0].config.get('operation')
-        continuous_listener = starters[0].type in ('timer', 'file', 'ems', 'jms', 'amqp', 'kafka', 'pubsub') and operation in ('schedule', 'poll', 'queue_receiver', 'topic_subscriber', 'receive_message', 'receive', 'get', 'subscribe')
+        continuous_listener = starters[0].type in ('timer', 'file', 'ems', 'jms', 'amqp', 'kafka', 'pubsub', 'sap') and operation in ('schedule', 'poll', 'queue_receiver', 'topic_subscriber', 'receive_message', 'receive', 'get', 'subscribe', 'idoc_listener', 'rfc_bapi_listener')
         self.sessions[session_id] = {
             'id': session_id, 'project': project, 'environment': environment, 'executionState': execution_state,
             'frames': [{'taskId': task.id, 'activityId': starters[0].id, 'context': context}],
@@ -32,7 +33,7 @@ class DebugManager:
             'initial': initial, 'resources': resources, 'properties': properties,
         }
         if continuous_listener:
-            logs.append({'time': datetime.now(timezone.utc).isoformat(), 'level': 'INFO', 'kind': 'listener', 'message': f'{starters[0].name} is ready and waiting for events', 'activityId': starters[0].id, 'taskId': task.id, 'sessionId': session_id})
+            logs.append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'listener', 'message': f'{starters[0].name} is ready and waiting for events', 'activityId': starters[0].id, 'taskId': task.id, 'sessionId': session_id})
         return self.view(self.sessions[session_id])
 
     def rearm_listener(self, state: dict):
@@ -57,7 +58,7 @@ class DebugManager:
         task = next(item for item in state['project'].tasks if item.id == frame['taskId'])
         activity = next(item for item in task.activities if item.id == frame['activityId'])
         ctx = frame['context']; ctx['last'] = output; ctx['context']['activityId'] = activity.id
-        now = datetime.now(timezone.utc).isoformat()
+        now = log_timestamp()
         state['logs'].append({'time': now, 'level': 'INFO', 'kind': 'event', 'message': f'Event received: {task.name} / {activity.name}', 'activityId': activity.id, 'taskId': task.id, 'sessionId': session_id})
         self.runtime.record_activity_output(activity, output, ctx)
         outgoing = [edge for edge in task.transitions if edge.source == activity.id]
@@ -82,7 +83,7 @@ class DebugManager:
         if not state: raise ValueError('Debug session not found')
         if action == 'stop':
             state['status'] = 'stopped'
-            state['logs'].append({'time': datetime.now(timezone.utc).isoformat(), 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Debug session stopped: {state["project"].name}', 'sessionId': session_id})
+            state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Debug session stopped: {state["project"].name}', 'sessionId': session_id})
             return self.view(state)
         if action == 'pause': state['status'] = 'paused'; return self.view(state)
         if state.get('listenerMode') and state['status'] == 'listening': return self.view(state)
@@ -106,7 +107,7 @@ class DebugManager:
             if state['status'] == 'running': state['status'] = 'paused'
             if state.get('listenerMode') and state['status'] == 'completed': self.rearm_listener(state)
         except Exception as exc:
-            state['logs'].append({'time': datetime.now(timezone.utc).isoformat(), 'level': 'ERROR', 'message': str(exc), 'activityId': self.current_activity(state).id if self.current_activity(state) else None})
+            state['logs'].append({'time': log_timestamp(), 'level': 'ERROR', 'message': str(exc), 'activityId': self.current_activity(state).id if self.current_activity(state) else None})
             state['status'] = 'failed'
         return self.view(state)
 
@@ -114,7 +115,7 @@ class DebugManager:
         if not state['frames']: state['status'] = 'completed'; return
         frame = state['frames'][-1]; project = state['project']; task = next(item for item in project.tasks if item.id == frame['taskId'])
         activity = next(item for item in task.activities if item.id == frame['activityId']); ctx = frame['context']
-        state['logs'].append({'time': datetime.now(timezone.utc).isoformat(), 'level': 'INFO', 'kind': 'activity', 'message': f'Activity started: {task.name} / {activity.name}', 'activityId': activity.id, 'taskId': task.id, 'activityType': activity.type, 'operation': activity.config.get('operation') or activity.type})
+        state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'activity', 'message': f'Activity started: {task.name} / {activity.name}', 'activityId': activity.id, 'taskId': task.id, 'activityType': activity.type, 'operation': activity.config.get('operation') or activity.type})
         activity_started = perf_counter()
         if enter_subtask and activity.type == 'call_task':
             dynamic_id = self.runtime.resolve(activity.config.get('dynamicTaskId', ''), ctx)
@@ -132,10 +133,10 @@ class DebugManager:
             ctx['last'] = await self.runtime.execute_with_policy(activity, ctx)
         except Exception as exc:
             duration = round((perf_counter() - activity_started) * 1000, 3)
-            state['logs'].append({'time': datetime.now(timezone.utc).isoformat(), 'level': 'ERROR', 'kind': 'activity', 'message': f'Activity failed: {task.name} / {activity.name} in {duration:.3f} ms: {exc}', 'activityId': activity.id, 'taskId': task.id, 'durationMs': duration})
+            state['logs'].append({'time': log_timestamp(), 'level': 'ERROR', 'kind': 'activity', 'message': f'Activity failed: {task.name} / {activity.name} in {duration:.3f} ms: {exc}', 'activityId': activity.id, 'taskId': task.id, 'durationMs': duration})
             raise
         duration = round((perf_counter() - activity_started) * 1000, 3)
-        state['logs'].append({'time': datetime.now(timezone.utc).isoformat(), 'level': 'INFO', 'kind': 'activity', 'message': f'Activity completed: {task.name} / {activity.name} in {duration:.3f} ms', 'activityId': activity.id, 'taskId': task.id, 'durationMs': duration})
+        state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'activity', 'message': f'Activity completed: {task.name} / {activity.name} in {duration:.3f} ms', 'activityId': activity.id, 'taskId': task.id, 'durationMs': duration})
         self.runtime.record_activity_output(activity, ctx['last'], ctx)
         outgoing = [edge for edge in task.transitions if edge.source == activity.id]
         chosen = next((edge for edge in outgoing if edge.type == 'success_condition' and self.runtime.condition(edge.condition, ctx)), None) or next((edge for edge in outgoing if edge.type == 'success'), None) or next((edge for edge in outgoing if edge.type == 'success_no_match'), None)
@@ -144,7 +145,7 @@ class DebugManager:
             completed['context']['tasks'].setdefault(completed['taskId'], {'activities': {}})['output'] = completed['context']['last']
             if not state['frames']:
                 state['output'] = completed['context']['last']; state['status'] = 'completed'
-                state['logs'].append({'time': datetime.now(timezone.utc).isoformat(), 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Debug job completed: {project.name} / {task.name}'})
+                state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Debug job completed: {project.name} / {task.name}'})
                 return
             parent = state['frames'][-1]; parent['context']['last'] = completed['context']['last']
             parent_task = next(item for item in project.tasks if item.id == parent['taskId']); call = next(item for item in parent_task.activities if item.id == parent['activityId'])

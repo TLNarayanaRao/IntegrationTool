@@ -9,18 +9,22 @@ import java.util.*;
 import javax.naming.Context;
 import javax.naming.InitialContext;
 
-/** Vendor-neutral process bridge for licensed JMS providers and JDBC drivers. */
+/** Vendor-neutral process bridge for licensed SAP JCo, JMS providers, and JDBC drivers. */
 public final class FabricJavaBridge {
     private FabricJavaBridge() {}
 
     public static void main(String[] args) {
         Map<String, Object> output = new LinkedHashMap<>();
         try {
+            // SAP text can contain characters outside the Windows console
+            // code page. The Python side consumes one UTF-8 JSON line.
+            System.setOut(new PrintStream(new FileOutputStream(FileDescriptor.out), true, StandardCharsets.UTF_8));
             if (args.length != 1) throw new IllegalArgumentException("A bridge properties file is required");
             Properties p = new Properties();
             try (Reader reader = new InputStreamReader(new FileInputStream(args[0]), StandardCharsets.UTF_8)) { p.load(reader); }
             String command = required(p, "command");
-            if (command.startsWith("jms.")) output = jms(command.substring(4), p);
+            if (command.startsWith("sap.")) output = sap(command.substring(4), p);
+            else if (command.startsWith("jms.")) output = jms(command.substring(4), p);
             else if (command.startsWith("jdbc.")) output = jdbc(command.substring(5), p);
             else throw new IllegalArgumentException("Unsupported bridge command: " + command);
             output.putIfAbsent("ok", true);
@@ -30,6 +34,333 @@ public final class FabricJavaBridge {
             output.clear(); output.put("ok", false); output.put("errorType", cause.getClass().getName()); output.put("message", String.valueOf(cause.getMessage() == null ? cause : cause.getMessage()));
         }
         System.out.println(json(output));
+    }
+
+    /** SAP JCo is loaded reflectively because sapjco3.jar is a user-supplied, licensed driver. */
+    private static Map<String, Object> sap(String operation, Properties p) throws Exception {
+        Class<?> environment = Class.forName("com.sap.conn.jco.ext.Environment");
+        Class<?> providerType = Class.forName("com.sap.conn.jco.ext.DestinationDataProvider");
+        String destinationName = p.getProperty("destinationName", "integration-fabric-sap");
+        Properties destination = new Properties();
+        for (String key : p.stringPropertyNames()) if (key.startsWith("jco.client.")) destination.setProperty(key, p.getProperty(key));
+        Object provider = Proxy.newProxyInstance(providerType.getClassLoader(), new Class<?>[]{providerType}, (proxy, method, args) -> {
+            if (method.getName().equals("getDestinationProperties")) return destination;
+            if (method.getName().equals("supportsEvents")) return false;
+            if (method.getName().equals("setDestinationData")) return null;
+            throw new UnsupportedOperationException(method.getName());
+        });
+        Method isRegistered = environment.getMethod("isDestinationDataProviderRegistered");
+        Method register = environment.getMethod("registerDestinationDataProvider", providerType);
+        if (!(Boolean) isRegistered.invoke(null)) register.invoke(null, provider);
+
+        // An inbound IDoc listener is an RFC server. It uses only
+        // jco.server.* properties and must not initialize a client
+        // destination, otherwise JCo rejects the empty client Properties.
+        if (operation.equals("listen")) return listen(destinationName, p);
+
+        Class<?> manager = Class.forName("com.sap.conn.jco.JCoDestinationManager");
+        Object destinationObject = manager.getMethod("getDestination", String.class).invoke(null, destinationName);
+        try {
+            if (operation.equals("test")) {
+                destinationObject.getClass().getMethod("ping").invoke(destinationObject);
+                Object function = function(destinationObject, "STFC_CONNECTION");
+                setValue(function, "REQUTEXT", p.getProperty("requestText", "Integration Fabric connection test"));
+                invoke(function, "execute", destinationObject);
+                return map("message", "SAP JCo connection succeeded", "destination", destinationName);
+            }
+            if (operation.equals("call")) {
+                String functionName = required(p, "functionName");
+                Object function = function(destinationObject, functionName);
+                for (String key : p.stringPropertyNames()) if (key.startsWith("argument.")) setValue(function, key.substring(9), p.getProperty(key));
+                fillTables(function, p);
+                if (functionName.equals("RFC_READ_TABLE")) fillReadTable(function, p);
+                invoke(function, "execute", destinationObject);
+                return functionResult(function);
+            }
+            throw new IllegalArgumentException("Unsupported SAP JCo operation: " + operation);
+        } finally { close(destinationObject); }
+    }
+
+    private static Object function(Object destination, String name) throws Exception {
+        Object repository = invoke(destination, "getRepository");
+        Object function = invoke(repository, "getFunction", name);
+        if (function == null) throw new IllegalArgumentException("SAP function was not found: " + name);
+        return function;
+    }
+
+    private static void setValue(Object function, String name, Object value) throws Exception {
+        Object imports = invoke(function, "getImportParameterList");
+        if (imports == null) throw new IllegalArgumentException("SAP function has no import parameter list");
+        invoke(imports, "setValue", name, value);
+    }
+
+    private static Map<String, Object> functionResult(Object function) throws Exception {
+        Map<String, Object> output = new LinkedHashMap<>();
+        Object exports = invoke(function, "getExportParameterList");
+        if (exports != null) output.put("exports", parameterValues(exports));
+        Object tables = invoke(function, "getTableParameterList");
+        if (tables != null) output.put("tables", tableValues(tables));
+        return output;
+    }
+
+    private static Map<String, Object> listenerFunctionResult(Object function) throws Exception {
+        Map<String, Object> output = functionResult(function);
+        Object imports = invoke(function, "getImportParameterList");
+        if (imports != null) output.put("imports", parameterValues(imports));
+        return output;
+    }
+
+    /** Run a real JCo RFC server and emit one UTF-8 JSON event per inbound call. */
+    private static Map<String, Object> listen(String serverName, Properties p) throws Exception {
+        System.out.println(json(map("event", "jco_log", "level", "INFO", "phase", "server_initialization", "message", "Initializing SAP JCo RFC server", "serverName", serverName, "programId", p.getProperty("jco.server.progid"), "gatewayHost", p.getProperty("jco.server.gwhost"), "gatewayService", p.getProperty("jco.server.gwserv"))));
+        System.out.flush();
+        Class<?> environment = Class.forName("com.sap.conn.jco.ext.Environment");
+        Class<?> providerType = Class.forName("com.sap.conn.jco.ext.ServerDataProvider");
+        Properties server = new Properties();
+        for (String key : p.stringPropertyNames()) if (key.startsWith("jco.server.")) server.setProperty(key, p.getProperty(key));
+        Object provider = Proxy.newProxyInstance(providerType.getClassLoader(), new Class<?>[]{providerType}, (proxy, method, args) -> {
+            if (method.getName().equals("getServerProperties")) return server;
+            if (method.getName().equals("supportsEvents")) return false;
+            if (method.getName().equals("setServerData")) return null;
+            throw new UnsupportedOperationException(method.getName());
+        });
+        Method isRegistered = environment.getMethod("isServerDataProviderRegistered");
+        Method register = environment.getMethod("registerServerDataProvider", providerType);
+        if (!(Boolean) isRegistered.invoke(null)) register.invoke(null, provider);
+        System.out.println(json(map("event", "jco_log", "level", "INFO", "phase", "server_provider", "message", "SAP JCo server data provider registered")));
+        System.out.flush();
+
+        Class<?> factory = Class.forName("com.sap.conn.jco.server.JCoServerFactory");
+        Object jcoServer = factory.getMethod("getServer", String.class).invoke(null, serverName);
+        Class<?> serverType = Class.forName("com.sap.conn.jco.server.JCoServer");
+        String repositoryName = p.getProperty("jco.server.repository_destination", "").trim();
+        if (!repositoryName.isEmpty()) {
+            Class<?> manager = Class.forName("com.sap.conn.jco.JCoDestinationManager");
+            Object repositoryDestination = manager.getMethod("getDestination", String.class).invoke(null, repositoryName);
+            Class<?> destinationType = Class.forName("com.sap.conn.jco.JCoDestination");
+            serverType.getMethod("setRepository", destinationType).invoke(jcoServer, repositoryDestination);
+            System.out.println(json(map("event", "jco_log", "level", "INFO", "phase", "repository", "message", "SAP JCo repository destination bound", "repositoryDestination", repositoryName)));
+            System.out.flush();
+        }
+        Class<?> tidHandlerType = Class.forName("com.sap.conn.jco.server.JCoServerTIDHandler");
+        Object tidHandler = tidHandler(p.getProperty("jco.server.tid_store"));
+        serverType.getMethod("setTIDHandler", tidHandlerType).invoke(jcoServer, tidHandler);
+        System.out.println(json(map("event", "jco_log", "level", "INFO", "phase", "tid_handler", "message", "SAP JCo TID handler installed", "tidStore", p.getProperty("jco.server.tid_store"))));
+        System.out.flush();
+        Class<?> handlerType = Class.forName("com.sap.conn.jco.server.JCoServerFunctionHandler");
+        Object handler = Proxy.newProxyInstance(handlerType.getClassLoader(), new Class<?>[]{handlerType}, (proxy, method, args) -> {
+            if (!method.getName().equals("handleRequest")) return null;
+            Object function = args != null && args.length > 1 ? args[1] : null;
+            if (function != null) {
+                try {
+                    String functionName = String.valueOf(invoke(function, "getName"));
+                    Map<String, Object> event = map("event", "idoc", "functionName", functionName, "payload", listenerFunctionResult(function));
+                    System.out.println(json(event));
+                    System.out.flush();
+                } catch (Throwable error) {
+                    Throwable cause = error;
+                    while (cause instanceof InvocationTargetException && ((InvocationTargetException) cause).getCause() != null) cause = ((InvocationTargetException) cause).getCause();
+                    System.out.println(json(map("event", "jco_log", "level", "ERROR", "phase", "idoc_callback", "message", "SAP JCo IDoc callback could not be serialized", "errorType", cause.getClass().getName(), "error", String.valueOf(cause.getMessage() == null ? cause : cause.getMessage()))));
+                    System.out.flush();
+                }
+            }
+            return null;
+        });
+        String functionName = p.getProperty("listenerFunction", "IDOC_INBOUND_ASYNCHRONOUS");
+        // JCo 3 uses a DefaultServerHandlerFactory; JCoServer does not have
+        // a setCallHandler(function, handler) method.
+        Class<?> factoryType = Class.forName("com.sap.conn.jco.server.DefaultServerHandlerFactory$FunctionHandlerFactory");
+        Object handlerFactory = factoryType.getConstructor().newInstance();
+        Method registerHandler = Arrays.stream(factoryType.getMethods())
+                .filter(method -> method.getName().equals("registerHandler") && method.getParameterCount() == 2
+                        && method.getParameterTypes()[0].isAssignableFrom(String.class)
+                        && method.getParameterTypes()[1].isAssignableFrom(handler.getClass()))
+                .findFirst().orElseGet(() -> Arrays.stream(factoryType.getDeclaredMethods())
+                        .filter(method -> method.getName().equals("registerHandler") && method.getParameterCount() == 2)
+                        .findFirst().orElse(null));
+        if (registerHandler == null) throw new NoSuchMethodException("JCo FunctionHandlerFactory.registerHandler");
+        registerHandler.setAccessible(true);
+        registerHandler.invoke(handlerFactory, functionName, handler);
+        System.out.println(json(map("event", "jco_log", "level", "INFO", "phase", "function_handler", "message", "SAP JCo function handler registered", "functionName", functionName)));
+        System.out.flush();
+        Method setFactory = Arrays.stream(serverType.getMethods())
+                .filter(method -> method.getName().equals("setCallHandlerFactory") && method.getParameterCount() == 1 && method.getParameterTypes()[0].isAssignableFrom(factoryType))
+                .findFirst().orElseThrow(() -> new NoSuchMethodException("JCoServer.setCallHandlerFactory"));
+        setFactory.invoke(jcoServer, handlerFactory);
+        serverType.getMethod("start").invoke(jcoServer);
+        System.out.println(json(map("event", "jco_log", "level", "INFO", "phase", "server_started", "message", "SAP JCo RFC server started", "programId", server.getProperty("jco.server.progid"), "gatewayHost", server.getProperty("jco.server.gwhost"), "gatewayService", server.getProperty("jco.server.gwserv"), "connectionCount", server.getProperty("jco.server.connection_count"))));
+        System.out.flush();
+        System.out.println(json(map("event", "listening", "serverName", serverName, "programId", server.getProperty("jco.server.progid"), "gatewayHost", server.getProperty("jco.server.gwhost"), "gatewayService", server.getProperty("jco.server.gwserv"), "repositoryDestination", repositoryName, "javaVersion", System.getProperty("java.version"), "javaVendor", System.getProperty("java.vendor"), "jcoServerClass", jcoServer.getClass().getName())));
+        System.out.flush();
+        synchronized (FabricJavaBridge.class) { FabricJavaBridge.class.wait(); }
+        return map("message", "SAP JCo listener stopped");
+    }
+
+    /** Durable tRFC TID state prevents duplicate IDoc delivery after retries. */
+    private static Object tidHandler(String fileName) throws Exception {
+        Class<?> type = Class.forName("com.sap.conn.jco.server.JCoServerTIDHandler");
+        File store = new File(fileName == null || fileName.isBlank() ? "sap-tids.properties" : fileName);
+        File parent = store.getAbsoluteFile().getParentFile();
+        if (parent != null) parent.mkdirs();
+        Properties states = new Properties();
+        if (store.isFile()) {
+            try (InputStream input = new FileInputStream(store)) { states.load(input); }
+            catch (IOException error) { System.err.println("SAP JCo TID store could not be loaded: " + error); }
+        }
+        Object lock = new Object();
+        return Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, (proxy, method, args) -> {
+            try {
+                String tid = null;
+                if (args != null) {
+                    for (Object argument : args) {
+                        if (argument instanceof String) { tid = (String) argument; break; }
+                    }
+                }
+                if (tid == null || tid.isBlank()) return null;
+                synchronized (lock) {
+                    if (method.getName().equals("checkTID")) {
+                        String state = states.getProperty(tid, "");
+                        if ("COMMITTED".equals(state) || "CONFIRMED".equals(state)) return false;
+                        states.setProperty(tid, "RECEIVED");
+                        persistTidState(store, states);
+                        return true;
+                    }
+                    if (method.getName().equals("commit")) states.setProperty(tid, "COMMITTED");
+                    else if (method.getName().equals("rollback")) states.setProperty(tid, "ROLLED_BACK");
+                    else if (method.getName().equals("confirmTID")) states.remove(tid);
+                    else return null;
+                    persistTidState(store, states);
+                }
+                return null;
+            } catch (Throwable error) {
+                Throwable cause = error;
+                while (cause instanceof InvocationTargetException && cause.getCause() != null) cause = cause.getCause();
+                // JCo calls this interface through a Java Proxy. Never throw from
+                // the callback: a checked exception becomes UndeclaredThrowableException
+                // and SAP records the inbound IDoc as a TID fault. Keep delivery alive
+                // and log the real cause for diagnostics.
+                System.err.println("SAP JCo TID handler failed in " + method.getName() + ": " + cause);
+                if (method.getName().equals("checkTID")) return true;
+                return null;
+            }
+        });
+    }
+
+    private static void persistTidState(File store, Properties states) {
+        File temporary = new File(store.getPath() + ".tmp");
+        try (OutputStream output = new FileOutputStream(temporary)) {
+            states.store(output, "Integration Fabric SAP JCo tRFC transaction state");
+            if (store.exists() && !store.delete()) throw new IOException("Unable to replace SAP TID store " + store);
+            if (!temporary.renameTo(store)) throw new IOException("Unable to commit SAP TID store " + store);
+        } catch (IOException error) {
+            // Persistence failure must not escape the JCo callback. The callback
+            // logs the problem and keeps the SAP transaction callable.
+            System.err.println("Unable to persist SAP TID state at " + store + ": " + error);
+        }
+    }
+
+    private static Map<String, Object> parameterValues(Object list) throws Exception {
+        Map<String, Object> values = new LinkedHashMap<>();
+        Object metadata = invoke(list, "getMetaData");
+        int count = ((Number) invoke(metadata, "getFieldCount")).intValue();
+        for (int index = 0; index < count; index++) {
+            String name = String.valueOf(invoke(metadata, "getName", index));
+            values.put(name, jsonValue(invoke(list, "getValue", name)));
+        }
+        return values;
+    }
+
+    private static Map<String, Object> tableValues(Object list) throws Exception {
+        Map<String, Object> values = new LinkedHashMap<>();
+        Object metadata = invoke(list, "getMetaData");
+        int count = ((Number) invoke(metadata, "getFieldCount")).intValue();
+        for (int index = 0; index < count; index++) {
+            String name = String.valueOf(invoke(metadata, "getName", index));
+            Object table = invoke(list, "getTable", name);
+            values.put(name, tableRows(table));
+        }
+        return values;
+    }
+
+    private static List<Object> tableRows(Object table) throws Exception {
+        List<Object> rows = new ArrayList<>();
+        int count = ((Number) invoke(table, "getNumRows")).intValue();
+        Object metadata = invoke(table, "getMetaData");
+        int fields = ((Number) invoke(metadata, "getFieldCount")).intValue();
+        for (int row = 0; row < count; row++) {
+            invoke(table, "setRow", row);
+            Map<String, Object> item = new LinkedHashMap<>();
+            for (int field = 0; field < fields; field++) {
+                String name = String.valueOf(invoke(metadata, "getName", field));
+                item.put(name, jsonValue(invoke(table, "getValue", name)));
+            }
+            rows.add(item);
+        }
+        return rows;
+    }
+
+    private static void fillTables(Object function, Properties p) throws Exception {
+        // In JCo, RFC table parameters (for example RFC_READ_TABLE's FIELDS
+        // and OPTIONS) live in the function table-parameter list, not in the
+        // scalar import record.
+        Object tables = invoke(function, "getTableParameterList");
+        for (String key : p.stringPropertyNames()) {
+            if (!key.startsWith("tableArg.")) continue;
+            String[] parts = key.split("\\.", 4);
+            if (parts.length != 4) continue;
+            Object table = invoke(tables, "getTable", parts[1]);
+            if (table == null) continue;
+            int row = Integer.parseInt(parts[2]);
+            while (((Number) invoke(table, "getNumRows")).intValue() <= row) invoke(table, "appendRow");
+            invoke(table, "setValue", parts[3], p.getProperty(key));
+        }
+    }
+
+    private static void fillReadTable(Object function, Properties p) throws Exception {
+        Object tables = invoke(function, "getTableParameterList");
+        for (String key : p.stringPropertyNames()) {
+            if (!key.startsWith("readTable.")) continue;
+            String[] parts = key.split("\\.", 4);
+            if (parts.length != 4) continue;
+            Object table = invoke(tables, "getTable", parts[1]);
+            int row = Integer.parseInt(parts[2]);
+            while (((Number) invoke(table, "getNumRows")).intValue() <= row) invoke(table, "appendRow");
+            invoke(table, "setValue", parts[3], p.getProperty(key));
+        }
+    }
+
+    private static Object jsonValue(Object value) {
+        if (value == null || value instanceof String || value instanceof Number || value instanceof Boolean) return value;
+        try {
+            // JCo import/export structures expose metadata and getValue but
+            // do not expose getNumRows like a JCoTable does.
+            Object metadata = value.getClass().getMethod("getMetaData").invoke(value);
+            int fields = ((Number) metadata.getClass().getMethod("getFieldCount").invoke(metadata)).intValue();
+            Map<String, Object> structure = new LinkedHashMap<>();
+            for (int field = 0; field < fields; field++) {
+                String name = String.valueOf(metadata.getClass().getMethod("getName", int.class).invoke(metadata, field));
+                structure.put(name, jsonValue(value.getClass().getMethod("getValue", String.class).invoke(value, name)));
+            }
+            return structure;
+        } catch (Exception ignored) { }
+        try {
+            int rows = ((Number) value.getClass().getMethod("getNumRows").invoke(value)).intValue();
+            List<Object> result = new ArrayList<>();
+            if (rows > 0) {
+                Object metadata = value.getClass().getMethod("getMetaData").invoke(value);
+                int fields = ((Number) metadata.getClass().getMethod("getFieldCount").invoke(metadata)).intValue();
+                for (int row = 0; row < rows; row++) {
+                    value.getClass().getMethod("setRow", int.class).invoke(value, row);
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    for (int field = 0; field < fields; field++) {
+                        String name = String.valueOf(metadata.getClass().getMethod("getName", int.class).invoke(metadata, field));
+                        item.put(name, value.getClass().getMethod("getValue", String.class).invoke(value, name));
+                    }
+                    result.add(item);
+                }
+            }
+            return result;
+        } catch (Exception ignored) { return String.valueOf(value); }
     }
 
     private static Map<String, Object> jms(String operation, Properties p) throws Exception {

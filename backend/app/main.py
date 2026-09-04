@@ -1,5 +1,7 @@
 import asyncio, io, json, os, socket, sys, tarfile, zipfile
 import re
+import platform
+import threading
 import httpx
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,7 +10,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from .models import AIBuildRequest, DebugAction, DebugRequest, Project, RunRequest, SharedResource, effective_event_activities
-from .store import delete_project, get_project, list_projects, project_dir, save_project
+from .store import delete_project, get_project, list_projects, project_dir, save_project, safe_component
 from .runtime import WorkflowRuntime
 from .debugger import DebugManager
 from .mapper import execute as execute_mapping, recommend, validate_output
@@ -21,6 +23,8 @@ from .java_bridge import JavaBridgeError, test_jms
 from .google_pubsub import client_configuration as pubsub_client_configuration, credential_summary as pubsub_credential_summary
 from .ai_builder import generate as generate_ai_design
 from .project_logging import append_project_logs, project_log_info, read_project_logs
+from .observability import telemetry_status, span
+from .time_utils import log_timestamp
 
 app = FastAPI(title='Integration Fabric Runtime', version='0.1.0')
 runtime = WorkflowRuntime()
@@ -37,6 +41,7 @@ CONTINUOUS_EVENT_OPERATIONS = {
     'amqp': {'receive'},
     'kafka': {'receive', 'get'},
     'pubsub': {'subscribe'},
+    'sap': {'idoc_listener', 'rfc_bapi_listener'},
 }
 
 def _environment_values(item: Project, environment: str) -> dict:
@@ -76,7 +81,7 @@ def _listener_endpoints(item: Project, task, environment: str, base_url: str = '
     return endpoints
 
 def _lifecycle_logs(item: Project, endpoints: list[dict]) -> list[dict]:
-    now = datetime.now(timezone.utc).isoformat()
+    now = log_timestamp()
     logs = [
         {'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Integration Fabric runtime initializing application {item.name}', 'startedAt': now},
         {'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Application module loaded: {item.name} ({len(item.tasks)} task(s), {len(item.resources)} shared resource(s))'},
@@ -84,6 +89,58 @@ def _lifecycle_logs(item: Project, endpoints: list[dict]) -> list[dict]:
     ]
     logs.extend({'time': now, 'level': 'INFO', 'kind': 'endpoint', 'message': (f'{endpoint["name"]} is ready and waiting on {endpoint["url"]}' if endpoint.get('kind') == 'subscription' else f'{", ".join(endpoint["methods"])} listener ready at {endpoint["url"]}')} for endpoint in endpoints)
     return logs
+
+def _startup_diagnostics(item: Project, task, resources: dict, properties: dict, environment: str, mode: str) -> list[dict]:
+    """Create production-safe startup diagnostics without logging secrets."""
+    now = log_timestamp()
+    entries: list[dict] = []
+    emit = lambda phase, message, **details: entries.append({'time': now, 'level': 'INFO', 'kind': 'startup', 'phase': phase, 'message': message, **details})
+    emit('application', f'Integration solution kickoff: {item.name}', mode=mode, buildVersion=os.getenv('FABRIC_BUILD_VERSION', 'source'), taskId=task.id, environment=environment)
+    loaded_modules = []
+    for name, module in sorted(sys.modules.items()):
+        if module is None: continue
+        loaded_modules.append({'name': name, 'package': getattr(module, '__package__', '') or '', 'file': str(getattr(module, '__file__', '') or '')})
+    emit('python', 'Python runtime modules loaded at startup', pythonVersion=platform.python_version(), executable=sys.executable, frozen=bool(getattr(sys, '_MEIPASS', None)), moduleCount=len(loaded_modules), modules=loaded_modules)
+    property_source = project_dir(item.id) / 'properties' / f'{safe_component(environment)}.json'
+    emit('properties', 'Environment properties loaded', source=str(property_source) if property_source.exists() else 'project model / environment store', propertyCount=len(properties), secretValuesRedacted=True)
+    configured_threads = os.getenv('FABRIC_WORKER_THREADS') or properties.get('advanced.workerThreads') or properties.get('advanced.threadCount') or 'auto'
+    emit('threads', 'Runtime thread configuration resolved', configuredWorkers=str(configured_threads), processThreads=threading.active_count(), cpuCount=os.cpu_count() or 1)
+    otel = telemetry_status()
+    emit('telemetry', 'OpenTelemetry status inspected', **otel, status='registered' if otel.get('registered') else 'not_registered')
+    used_ids = {activity.config.get('resourceId') for solution_task in item.tasks for activity in solution_task.activities if activity.config.get('resourceId')}
+    connector_inventory = []
+    for resource in resources.values():
+        if resource.id not in used_ids: continue
+        context = {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}
+        resolved = {key: runtime.resolve(value, context) for key, value in resource.config.items()}
+        endpoint = _connector_endpoint(resource.type, resolved)
+        connector_inventory.append({'id': resource.id, 'name': resource.name, 'type': resource.type, 'status': 'pending', 'connectionPolicy': 'lazy / opened when the activity executes', 'endpoint': endpoint})
+    emit('connectors', 'Connectors used by the integration solution discovered', count=len(connector_inventory), connectors=connector_inventory, unusedResourceCount=len(resources) - len(connector_inventory))
+    errors = []
+    for resource in resources.values():
+        if resource.type == 'sap' and str(resource.config.get('mode') or 'external').lower() == 'external':
+            if not str(resource.config.get('driverDirectory') or '').strip(): errors.append(f'{resource.name}: SAP JCo driver directory uses default search locations')
+    if errors:
+        entries.append({'time': now, 'level': 'WARN', 'kind': 'configuration', 'phase': 'validation', 'message': 'Application configuration warnings detected', 'issues': errors})
+    emit('configuration', 'Application configuration validation completed', status='warnings' if errors else 'valid', taskCount=len(item.tasks), resourceCount=len(resources), activityCount=sum(len(value.activities) for value in item.tasks))
+    emit('application', f'Application startup sequence prepared for {mode} mode', status='starting')
+    return entries
+
+def _connector_endpoint(connector_type: str, config: dict) -> dict:
+    """Return connection targets without credentials or secret query values."""
+    kind = str(connector_type or '').lower()
+    if kind in ('http', 'rest', 'soap'):
+        scheme = config.get('scheme') or ('https' if config.get('tlsEnabled') else 'http')
+        host, port = config.get('host') or config.get('hostname') or '', config.get('port')
+        base = f'{scheme}://{host}{f":{port}" if port and str(port) not in ("80", "443") else ""}'
+        return {'protocol': scheme, 'url': base + str(config.get('basePath') or config.get('path') or '')}
+    if kind in ('sap', 'sap_tid'):
+        return {'protocol': 'sap-jco', 'applicationServer': config.get('applicationServerHost'), 'systemNumber': config.get('systemNumber'), 'gateway': f'{config.get("gatewayHost") or ""}:{config.get("gatewayService") or ""}', 'programId': config.get('programId')}
+    if kind in ('kafka',): return {'protocol': 'kafka', 'bootstrapServers': config.get('bootstrapServers') or config.get('serverUrl'), 'topic': config.get('topic')}
+    if kind in ('ems', 'jms', 'amqp'): return {'protocol': kind, 'url': config.get('serverUrl') or config.get('brokerUrl'), 'destination': config.get('destination') or config.get('queue') or config.get('topic')}
+    if kind in ('jdbc', 'snowflake'): return {'protocol': 'jdbc', 'url': config.get('url') or config.get('serverUrl') or config.get('account'), 'database': config.get('database'), 'schema': config.get('schema')}
+    if kind == 'pubsub': return {'protocol': 'gcp-pubsub', 'project': config.get('projectId'), 'subscription': config.get('subscription'), 'topic': config.get('topic')}
+    return {'protocol': kind}
 
 def _publish_runtime_state(project_id: str, *, status: str, logs: list[dict], endpoints=None, result=None, environment: str | None = None):
     previous = runtime_states.get(project_id, {})
@@ -96,7 +153,7 @@ def _publish_runtime_state(project_id: str, *, status: str, logs: list[dict], en
         }
         executions = ([execution] + executions)[:100]
     state = {
-        'status': status, 'updatedAt': datetime.now(timezone.utc).isoformat(),
+        'status': status, 'updatedAt': log_timestamp(),
         'environment': environment or previous.get('environment', 'local'),
         'logs': logs, 'endpoints': endpoints if endpoints is not None else previous.get('endpoints', []),
         'activityOutputs': result.activity_outputs if result is not None else previous.get('activityOutputs', {}),
@@ -113,8 +170,18 @@ def _event_subscription(item: Project, task, activity, environment: str) -> dict
     properties = _environment_values(item, environment)
     context = {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}
     config = runtime.resolve(activity.config, context)
-    destination = config.get('destination') or config.get('queue') or config.get('topic') or config.get('subscription') or config.get('path') or ('configured schedule' if activity.type == 'timer' else 'default')
     resource = next((value for value in item.resources if value.id == config.get('resourceId')), None)
+    resource_config = _resolved_resource_config(item, activity, properties)
+    # Display and runtime diagnostics must use the effective configuration:
+    # SAP gateway/program settings usually live on the shared resource, not
+    # on the listener activity itself.
+    effective = {**resource_config, **config}
+    if activity.type == 'sap':
+        gateway = f"{effective.get('gatewayHost') or effective.get('gwhost') or 'unknown-host'}:{effective.get('gatewayService') or effective.get('gwserv') or 'unknown-service'}"
+        program_id = effective.get('programId') or effective.get('progid') or 'unconfigured-program-id'
+        destination = f"{program_id} · gateway {gateway}"
+    else:
+        destination = effective.get('destination') or effective.get('queue') or effective.get('topic') or effective.get('subscription') or effective.get('programId') or effective.get('path') or ('configured schedule' if activity.type == 'timer' else 'default')
     resource_name = resource.name if resource else str(config.get('resourceId') or 'unconfigured connection')
     technology = activity.type.upper()
     return {
@@ -171,6 +238,19 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
                         changed = created if event_type == 'created' else modified if event_type == 'modified' else deleted if event_type == 'deleted' else created + modified + deleted
                     seen_files = current_files
                     output = {**output, 'files': changed, 'count': len(changed), 'eventType': resolved_config.get('eventType', 'Created')}
+                jco_diagnostics = output.pop('jcoDiagnostics', []) if isinstance(output, dict) else []
+                if jco_diagnostics:
+                    diagnostic_logs = []
+                    for detail in jco_diagnostics:
+                        diagnostic_logs.append({'time': log_timestamp(), 'level': detail.get('level', 'INFO'), 'kind': 'connector', 'phase': detail.get('phase'), 'message': detail.get('message'), 'connector': 'SAP JCo', **{key: detail[key] for key in ('serverName', 'programId', 'gatewayHost', 'gatewayService', 'repositoryDestination', 'tidStore', 'functionName', 'connectionCount') if key in detail}, 'activityId': activity.id, 'taskId': task.id})
+                    if debug_session_id:
+                        session = debugger.sessions.get(debug_session_id)
+                        if session: session['logs'].extend(diagnostic_logs)
+                    else:
+                        previous = runtime_states.get(project_id, {})
+                        logs = (list(previous.get('logs', [])) + diagnostic_logs)[-500:]
+                        _publish_runtime_state(project_id, status='listening', logs=logs, environment=environment)
+                    append_project_logs(project_id, item.name, diagnostic_logs, _project_log_directory(item, environment))
                 if not _event_available(output):
                     await asyncio.sleep(max(.1, float(resolved_config.get('pollInterval', 1) or 1)) if activity.type == 'file' else .1)
                     continue
@@ -209,7 +289,7 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                now = datetime.now(timezone.utc).isoformat()
+                now = log_timestamp()
                 entry = {'time': now, 'level': 'ERROR', 'kind': 'listener', 'message': f'{activity.name} listener error; reconnecting in {retry_delay:g} seconds: {exc}', 'activityId': activity.id, 'taskId': task.id}
                 previous = runtime_states.get(project_id, {})
                 logs = (list(previous.get('logs', [])) + [entry])[-500:]
@@ -218,11 +298,32 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
                 await asyncio.sleep(retry_delay)
                 retry_delay = min(30.0, retry_delay * 2)
     finally:
+        if activity.type == 'sap':
+            # Cancelling the Python listener task does not automatically stop
+            # the persistent Java/JCo process. Close it when a Debug session
+            # ends so a restarted session cannot share the old stdout stream.
+            try:
+                cfg = runtime.resolve(activity.config, {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}})
+                resource = resources.get(cfg.get('resourceId'))
+                if resource: cfg = {**runtime.resolve(resource.config, {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}), **cfg}
+                sap_adapter.stop_listener(cfg)
+            except Exception:
+                pass
         if active_runs.get(project_id) is current: active_runs.pop(project_id, None)
 
 def _start_continuous_listener(item: Project, task, activity, environment: str, debug_session_id: str | None = None):
     previous = active_runs.get(item.id)
     if previous and not previous.done(): previous.cancel()
+    if activity.type == 'sap':
+        # Close an existing JCo server before starting the replacement. This
+        # avoids two reader threads competing for one inbound event stream
+        # when Debug is stopped and started quickly.
+        properties = _environment_values(item, environment)
+        context = {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}
+        cfg = runtime.resolve(activity.config, context)
+        resource = next((value for value in item.resources if value.id == cfg.get('resourceId')), None)
+        if resource: cfg = {**runtime.resolve(resource.config, context), **cfg}
+        sap_adapter.stop_listener(cfg)
     listener = asyncio.create_task(_continuous_event_loop(item, task, activity, environment, debug_session_id))
     active_runs[item.id] = listener
     return listener
@@ -296,16 +397,17 @@ async def run(project_id: str, http_request: Request, request: RunRequest):
     events = effective_event_activities(task.activities, task.transitions)
     if len(events) != 1: raise HTTPException(400, f'Starter Task requires exactly one event activity; found {len(events)}')
     event = events[0]
+    diagnostics = _startup_diagnostics(item, task, resources, properties, request.environment, 'RUN')
     endpoints = _listener_endpoints(item, task, request.environment, str(http_request.base_url).rstrip('/'))
     if endpoints:
-        lifecycle = _lifecycle_logs(item, endpoints)
+        lifecycle = diagnostics + _lifecycle_logs(item, endpoints)
         append_project_logs(project_id, item.name, lifecycle, _project_log_directory(item, request.environment))
         _publish_runtime_state(project_id, status='listening', logs=lifecycle, endpoints=endpoints, environment=request.environment)
         return {'status': 'listening', 'output': {}, 'logs': lifecycle,
                 'activity_outputs': {}, 'task_outputs': {}, 'endpoints': endpoints, 'executions': []}
     if _is_continuous_event(event):
         subscriptions = [_event_subscription(item, task, event, request.environment)]
-        lifecycle = _lifecycle_logs(item, subscriptions)
+        lifecycle = diagnostics + _lifecycle_logs(item, subscriptions)
         append_project_logs(project_id, item.name, lifecycle, _project_log_directory(item, request.environment))
         _publish_runtime_state(project_id, status='listening', logs=lifecycle, endpoints=subscriptions, environment=request.environment)
         _start_continuous_listener(item, task, event, request.environment)
@@ -317,7 +419,7 @@ async def run(project_id: str, http_request: Request, request: RunRequest):
     try:
         result = await runtime.run(task, request.input, resources, properties, project=item)
     except asyncio.CancelledError:
-        now = datetime.now(timezone.utc).isoformat()
+        now = log_timestamp()
         logs = list(runtime_states.get(project_id, {}).get('logs', [])) + [{'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Application {item.name} stopped by user', 'endedAt': now}]
         state = _publish_runtime_state(project_id, status='stopped', logs=logs[-500:], endpoints=[])
         return {'status': 'stopped', 'output': {}, 'logs': state['logs'], 'activity_outputs': state['activityOutputs'], 'task_outputs': state['taskOutputs'], 'endpoints': []}
@@ -338,7 +440,7 @@ async def stop_project(project_id: str):
     if active and not active.done(): active.cancel()
     previous = runtime_states.get(project_id, {})
     environment = str(previous.get('environment') or item.active_environment or 'local')
-    now = datetime.now(timezone.utc).isoformat()
+    now = log_timestamp()
     logs = list(previous.get('logs', []))
     if not logs or logs[-1].get('message') != f'Application {item.name} stopped by user':
         stopped_entry = {'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Application {item.name} stopped by user', 'endedAt': now}
@@ -980,6 +1082,7 @@ async def start_debug(project_id: str, http_request: Request, request: DebugRequ
     try:
         view = debugger.start(item, task_id, request.input, {resource.id:resource for resource in item.resources}, properties, request.breakpoints, request.environment)
         task = next(value for value in item.tasks if value.id == task_id)
+        diagnostics = _startup_diagnostics(item, task, {resource.id: resource for resource in item.resources}, properties, request.environment, 'DEBUG')
         endpoints = _listener_endpoints(item, task, request.environment, str(http_request.base_url).rstrip('/'))
         events = effective_event_activities(task.activities, task.transitions)
         event = events[0] if len(events) == 1 else None
@@ -988,7 +1091,7 @@ async def start_debug(project_id: str, http_request: Request, request: DebugRequ
         state = debugger.sessions[view['sessionId']]
         runtime_states.setdefault(project_id, {})['environment'] = request.environment
         state['endpoints'] = endpoints
-        state['logs'][:] = _lifecycle_logs(item, endpoints) + state['logs']
+        state['logs'][:] = diagnostics + _lifecycle_logs(item, endpoints) + state['logs']
         append_project_logs(project_id, item.name, state['logs'], _project_log_directory(item, request.environment))
         state['persistedLogCount'] = len(state['logs'])
         if event and _is_continuous_event(event):

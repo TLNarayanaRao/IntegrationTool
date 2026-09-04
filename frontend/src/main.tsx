@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { Component, ErrorInfo, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
@@ -179,6 +179,32 @@ type Project = {
   active_task_id: string;
   process?: any;
 };
+
+class StudioErrorBoundary extends Component<React.PropsWithChildren, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("Integration Fabric Studio render failure", error, info.componentStack);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 32, background: "#08131f", color: "#d9efff", fontFamily: "system-ui, sans-serif" }}>
+        <section style={{ maxWidth: 680, width: "100%", padding: 28, border: "1px solid #d35c68", borderRadius: 14, background: "#102333", boxShadow: "0 18px 60px #0008" }}>
+          <h1 style={{ marginTop: 0 }}>Studio recovered from a screen error</h1>
+          <p>The editor stopped rendering, but the saved project remains in the local runtime. Reload the Studio and use Project → Refresh or Open to continue.</p>
+          <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", color: "#ffb7bd" }}>{this.state.error.message}</pre>
+          <button type="button" onClick={() => window.location.reload()} style={{ padding: "10px 16px", borderRadius: 8, cursor: "pointer" }}>Reload Studio</button>
+        </section>
+      </main>
+    );
+  }
+}
 type Def = { type: Kind; operation?: string; label: string; asset: string };
 type ValidationIssue = {
   id: string;
@@ -855,6 +881,47 @@ const initial: Project = {
   tasks: [starter()],
   active_task_id: "main",
 };
+// Projects can be loaded from older versions or interrupted autosaves. Keep
+// malformed optional values out of the render path; one bad activity must not
+// bring down the entire editor.
+const normalizeProject = (value: any): Project => {
+  const source = value && typeof value === "object" ? value : {};
+  const tasks = Array.isArray(source.tasks) ? source.tasks : [];
+  const normalizedTasks = tasks.map((rawTask: any, taskIndex: number) => {
+    const task = rawTask && typeof rawTask === "object" ? rawTask : {};
+    const activities = Array.isArray(task.activities) ? task.activities : [];
+    return ensureTaskEnd({
+      ...task,
+      id: String(task.id || `task-${taskIndex + 1}`),
+      name: String(task.name || `Task ${taskIndex + 1}`),
+      kind: task.kind === "subtask" ? "subtask" : "starter",
+      activities: activities.map((rawActivity: any, activityIndex: number) => {
+        const activity = rawActivity && typeof rawActivity === "object" ? rawActivity : {};
+        const position = activity.position && typeof activity.position === "object" ? activity.position : {};
+        return {
+          ...activity,
+          id: String(activity.id || `activity-${taskIndex + 1}-${activityIndex + 1}`),
+          type: String(activity.type || "log"),
+          name: String(activity.name || "Activity"),
+          position: {
+            x: Number.isFinite(Number(position.x)) ? Number(position.x) : 80 + activityIndex * 190,
+            y: Number.isFinite(Number(position.y)) ? Number(position.y) : 150,
+          },
+          config: activity.config && typeof activity.config === "object" ? activity.config : {},
+        };
+      }),
+      transitions: Array.isArray(task.transitions) ? task.transitions : [],
+    });
+  });
+  const fallback = structuredClone(initial);
+  const next = { ...fallback, ...source, tasks: normalizedTasks.length ? normalizedTasks : fallback.tasks } as Project;
+  next.active_task_id = next.tasks.some((task) => task.id === source.active_task_id) ? source.active_task_id : next.tasks[0].id;
+  next.resources = Array.isArray(source.resources) ? source.resources : [];
+  next.schemas = Array.isArray(source.schemas) ? source.schemas : [];
+  next.custom_functions = Array.isArray(source.custom_functions) ? source.custom_functions : [];
+  next.properties = source.properties && typeof source.properties === "object" ? source.properties : structuredClone(envs);
+  return next;
+};
 const propertyReferences = (value: any) => [...JSON.stringify(value ?? {}).matchAll(/\$\{properties\.([^}]+)\}/g)].map((match) => match[1]);
 const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[] => {
   const issues: ValidationIssue[] = [], ids = new Set(task.activities.map((item) => item.id));
@@ -939,7 +1006,7 @@ const validateProjectDefinition = (project: Project) => {
   return issues;
 };
 function App() {
-  const [project, setProject] = useState(initial),
+  const [project, setProject] = useState<Project>(initial),
     [selected, setSelected] = useState("main-start"),
     [selectedIds, setSelectedIds] = useState<string[]>(["main-start"]),
     [selectedEdge, setSelectedEdge] = useState<string | null>(null),
@@ -991,6 +1058,7 @@ function App() {
   }>({ past: [], future: [], current: structuredClone(initial), pendingBase: null, timer: null, restoring: false });
   const latestProject = useRef(project);
   latestProject.current = project;
+  const autosaveTimer = useRef<number | null>(null);
   const canvas = useRef<HTMLDivElement>(null),
     fileInput = useRef<HTMLInputElement>(null),
     drag = useRef<any>(null),
@@ -1034,6 +1102,21 @@ function App() {
     [configHeight, setConfigHeight] = useState(285),
     [explorerWidth, setExplorerWidth] = useState(Number(localStorage.getItem("integration-fabric-explorer-width")) || 245),
     [paletteOpen, setPaletteOpen] = useState(true);
+  useEffect(() => {
+    if (closed) return;
+    if (autosaveTimer.current !== null) window.clearTimeout(autosaveTimer.current);
+    const snapshot = structuredClone(project);
+    autosaveTimer.current = window.setTimeout(() => {
+      autosaveTimer.current = null;
+      void fetch(`/api/projects/${snapshot.id}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json", "x-fabric-autosave": "true" },
+        body: JSON.stringify(snapshot),
+        keepalive: true,
+      }).catch((error) => console.warn("Integration Fabric autosave failed", error));
+    }, 700);
+    return () => { if (autosaveTimer.current !== null) { window.clearTimeout(autosaveTimer.current); autosaveTimer.current = null; } };
+  }, [project, closed]);
   const split = useRef<{ y: number; height: number } | null>(null),
     configSplit = useRef<{ y: number; height: number } | null>(null),
     explorerSplit = useRef<{ x: number; width: number } | null>(null);
@@ -1140,7 +1223,18 @@ function App() {
     const refreshRuntime = async () => {
       try {
         const response = await fetch(debugState?.sessionId ? `/api/debug/${debugState.sessionId}` : `/api/projects/${project.id}/runtime-state`);
-        if (!response.ok) return;
+        if (!response.ok) {
+          // Uvicorn restarts clear in-memory debugger sessions. The browser
+          // may still have the old session id and must not poll it forever.
+          if (debugState?.sessionId && response.status === 404) {
+            setDebugState(null);
+            setEndpoints([]);
+            setExecutionOutputs({});
+            setRuntimeState(null);
+            setLogs((current) => [...current, { level: "WARN", message: "The previous debug session expired when the runtime restarted. Start Debug again to create a new session." }]);
+          }
+          return;
+        }
         const state = await response.json();
         if (cancelled) return;
         if (debugState?.sessionId) setDebugState(state);
@@ -1156,18 +1250,19 @@ function App() {
   }, [project.id, endpoints.length, debugState?.sessionId]);
   useEffect(() => {
     const move = (e: PointerEvent) => {
-        if (!drag.current || !canvas.current || (drag.current.pointerId != null && drag.current.pointerId !== e.pointerId)) return;
-        const deltaX = (e.clientX - drag.current.startX) / zoom;
-        const deltaY = (e.clientY - drag.current.startY) / zoom;
+        const activeDrag = drag.current;
+        if (!activeDrag || !activeDrag.positions || !canvas.current || (activeDrag.pointerId != null && activeDrag.pointerId !== e.pointerId)) return;
+        const deltaX = (e.clientX - activeDrag.startX) / zoom;
+        const deltaY = (e.clientY - activeDrag.startY) / zoom;
         mutateTask((t) => ({
           ...t,
           activities: t.activities.map((n) =>
-            drag.current.positions[n.id]
+            activeDrag.positions[n.id]
               ? {
                   ...n,
                   position: {
-                    x: Math.max(0, drag.current.positions[n.id].x + deltaX),
-                    y: Math.max(0, drag.current.positions[n.id].y + deltaY),
+                    x: Math.max(0, activeDrag.positions[n.id].x + deltaX),
+                    y: Math.max(0, activeDrag.positions[n.id].y + deltaY),
                   },
                 }
               : n,
@@ -1680,7 +1775,7 @@ function App() {
     if (!contentType.includes("application/json")) throw new Error("The project API returned HTML instead of project JSON. Verify the local runtime is running on port 8787.");
     const output = await response.json();
     if (!response.ok) throw new Error(output.detail || "Project save failed");
-    setProject(output);
+    setProject(normalizeProject(output));
     return output;
   };
   const fetchProjectFile = async (format: "package" | "json") => {
@@ -1739,7 +1834,11 @@ function App() {
         return;
       }
       const picker = (window as any).showDirectoryPicker;
-      if (!picker) { setLogs([{ level: "WARNING", message: "Folder-based Save requires the desktop Studio. Use Export for a portable .ifproject file in this browser." }]); return; }
+      if (!picker) {
+        setLogs([{ level: "INFO", message: "Browser mode cannot write a project folder directly. Downloading a portable .ifproject package instead." }]);
+        await saveProjectFile("package", true);
+        return;
+      }
       const root = await picker({ mode: "readwrite" });
       const folder = await root.getDirectoryHandle(folderName, { create: true });
       const write = async (parts: string[], value: string) => {
@@ -1779,7 +1878,7 @@ function App() {
       const next = { ...project, packaging: { ...project.packaging, ...settings } };
       const saved = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
       if (!saved.ok) throw new Error("Unable to save packaging configuration.");
-      setProject(await saved.json());
+      setProject(normalizeProject(await saved.json()));
       const selectedEnvironments = settings.environments?.length ? settings.environments : [settings.environment || project.active_environment];
       const query = new URLSearchParams({ target: settings.target, environments: selectedEnvironments.join(","), starters: (settings.starterTaskIds || []).join(","), archive: settings.format, artifacts: settings.artifacts.join(",") });
       const response = await fetch(`/api/projects/${project.id}/package?${query}`);
@@ -1877,6 +1976,18 @@ function App() {
       setLogs((current) => [...current, { level: "ERROR", message: error?.message || "Unable to load saved logs" }]);
     } finally { setWorkStatus(""); }
   };
+  const downloadSystemLogs = async () => {
+    try {
+      const response = await fetch(`/api/projects/${project.id}/logs?limit=10000&environment=${encodeURIComponent(project.active_environment)}`);
+      const output = await response.json();
+      if (!response.ok) throw new Error(output.detail || "Unable to download saved logs");
+      const blob = new Blob([(output.entries || []).map((entry: any) => JSON.stringify(entry)).join("\n") + "\n"], { type: "application/x-ndjson" });
+      browserDownload(blob, `${project.id}-${project.active_environment}-application.log`);
+      setLogs((current) => [...current, { level: "INFO", message: "Downloaded saved application logs to the browser Downloads folder." }]);
+    } catch (error: any) {
+      setLogs((current) => [...current, { level: "ERROR", message: error?.message || "Unable to download saved logs" }]);
+    }
+  };
   const executionActive = busy || (!!debugState && !["completed", "failed", "stopped"].includes(debugState.status)) || endpoints.length > 0 || ["running", "listening", "paused"].includes(runtimeState?.status);
   const visibleWorkStatus = workStatus || (busy ? "Starting and running task…" : debugState?.status === "paused" ? "Debugger paused" : debugState ? `Debugger ${debugState.status || "working"}…` : runtimeState?.status === "listening" ? "Application is listening" : "");
   const stopExecution = async () => {
@@ -1903,7 +2014,7 @@ function App() {
       if (!contentType.includes("application/json")) { setLogs([{ level: "ERROR", message: "Import failed because the runtime returned HTML instead of project JSON." }]); return; }
       const out = await r.json();
       if (r.ok) {
-        setProject(out);
+        setProject(normalizeProject(out));
         setClosed(false);
         const first = out.tasks?.[0]?.activities?.[0]?.id || "";
         setSelected(first); setSelectedIds(first ? [first] : []);
@@ -1929,7 +2040,7 @@ function App() {
         const response = await fetch(`/api/projects/${(selectedFile.project as any).id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(selectedFile.project) });
         const imported = await response.json();
         if (!response.ok) { setLogs([{ level: "ERROR", message: imported.detail || "Unable to open project folder" }]); return; }
-        setProject(imported); setClosed(false); const first = imported.tasks?.[0]?.activities?.[0]?.id || ""; setSelected(first); setSelectedIds(first ? [first] : []);
+        const normalized = normalizeProject(imported); setProject(normalized); setClosed(false); const first = normalized.tasks?.[0]?.activities?.[0]?.id || ""; setSelected(first); setSelectedIds(first ? [first] : []);
         projectFileHandle.current = selectedFile.path; localStorage.setItem(`integration-fabric-project-path:${imported.id}`, selectedFile.path);
         setLogs([{ level: "INFO", message: `Opened project folder ${selectedFile.path}.` }]); return;
       }
@@ -2011,7 +2122,7 @@ function App() {
     if (type === "schema") setProject((current) => ({ ...current, schemas: current.schemas.filter((item) => item.id !== id) }));
     if (type === "property" && id) setProject((current) => { const properties = { ...current.properties }; delete properties[id]; return { ...current, properties, active_environment: current.active_environment === id ? Object.keys(properties)[0] || "local" : current.active_environment }; });
   };
-  const explorerRefresh = async () => { setWorkStatus("Refreshing project workspace…"); try { const response = await fetch(`/api/projects/${project.id}`); if (response.ok) { setProject(await response.json()); setLogs([{ level: "INFO", message: "Project Explorer refreshed from saved project storage." }]); } } finally { setWorkStatus(""); } };
+  const explorerRefresh = async () => { setWorkStatus("Refreshing project workspace…"); try { const response = await fetch(`/api/projects/${project.id}`); if (response.ok) { setProject(normalizeProject(await response.json())); setLogs([{ level: "INFO", message: "Project Explorer refreshed from saved project storage." }]); } } finally { setWorkStatus(""); } };
   useEffect(() => {
     const projectFileShortcuts = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") return;
@@ -2104,14 +2215,8 @@ function App() {
         moveUp={() => moveSelection(-24)}
         moveDown={() => moveSelection(24)}
       />
-      <header>
-        <div className="brand">
-          <Workflow />
-          <span>
-            INTEGRATION <b>FABRIC</b>
-          </span>
-          <small>STUDIO</small>
-        </div>
+       <header>
+         <IntegrationBrandArtwork className="studio-brand-art" />
         <div className="crumb">
           Projects <ChevronRight />
           {project.name}
@@ -2135,7 +2240,7 @@ function App() {
       </header>
       <aside className="explorer">
         <div className="explorer-width-splitter" title="Drag left or right to resize Project Explorer" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); explorerSplit.current = { x: event.clientX, width: explorerWidth }; }}><span /></div>
-        <div className="pane-title">PROJECT EXPLORER</div>
+         <div className="pane-title">PROJECT EXPLORER</div>
         <div className="tree project-tree" style={{ height: treeHeight }}>
           <button
             className="tree-row application-row"
@@ -2706,6 +2811,7 @@ function App() {
       <aside className={`monitor monitor-${monitorMode}`}>
         <div className="pane-title"><span>EXECUTION / DEBUG</span><span className="monitor-actions">
           <button title="Load saved project logs" onClick={loadSystemLogs}><HardDrive/></button>
+          <button title="Download saved project logs" onClick={downloadSystemLogs}><Download/></button>
           <button title={monitorMode === "expanded" ? "Restore execution panel" : "Expand execution panel"} onClick={() => setMonitorMode((mode) => mode === "expanded" ? "normal" : "expanded")}><Maximize2/></button>
           <button title={monitorMode === "fullscreen" ? "Exit full screen" : "Open execution panel full screen"} onClick={() => setMonitorMode((mode) => mode === "fullscreen" ? "normal" : "fullscreen")}>{monitorMode === "fullscreen" ? <Minimize2/> : <Square/>}</button>
         </span></div>
@@ -3056,7 +3162,7 @@ function StudioRibbon(props: any) {
   const command = (label: string, Icon: any, action: () => void, disabled = false, emphasis = false) =>
     <button type="button" className={emphasis ? "emphasis" : ""} disabled={disabled} onClick={(event) => { event.stopPropagation(); action(); }} title={label}><Icon/><span>{label}</span></button>;
   return <section className="studio-ribbon" aria-label="Studio ribbon">
-    <div className="ribbon-group"><b>PROJECT</b><div>{command("New", FilePlus2, props.newProject)}{command("Open", FolderOpen, props.openProject)}{command("Import", Upload, props.importProject)}{command("Samples", BookOpen, props.sampleProjects, false, true)}{command("Save", Save, props.save)}{command("Export", Download, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</div></div>
+    <div className="ribbon-group"><b>PROJECT</b><div>{command("New", FilePlus2, props.newProject)}{command("Open", FolderOpen, props.openProject)}{command("Import", Upload, props.importProject)}{command("Samples", BookOpen, props.sampleProjects)}{command("Save", Save, props.save)}{command("Export", Download, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</div></div>
     <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("AI Build", WandSparkles, props.aiBuild)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Run", CirclePlay, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}</div></div>
     <div className="ribbon-group"><b>EDIT</b><div>{command("Undo", Undo2, props.undo)}{command("Cut", Scissors, props.cut, !props.selectedCount)}{command("Copy", ClipboardCopy, props.copy, !props.selectedCount)}{command("Paste", ClipboardPaste, props.paste)}</div></div>
     <div className="ribbon-group layout-group"><b>ARRANGE · {props.selectedCount} SELECTED</b><div>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</div></div>
@@ -3461,6 +3567,12 @@ function SampleGallery({ onClose, onImport }: { onClose: () => void; onImport: (
     <div className="sample-gallery-footer"><span>Samples are copied into project storage when opened. Connection samples contain placeholders and never include credentials.</span><button onClick={onClose}>Close</button></div>{error && <p className="sample-gallery-error"><AlertTriangle/>{error}</p>}
   </div></div>;
 }
+function IntegrationBrandArtwork({ className = "" }: { className?: string }) {
+  return <div className={`integration-brand-art ${className}`.trim()} aria-label="Integration Studio">
+    <img src="/branding/integration-studio-art.png" alt="Integration Studio" />
+    <span className="integration-brand-particle" aria-hidden="true" />
+  </div>;
+}
 function ProjectWelcome({ createProject, importProject, importFromFileSystem, theme, setTheme }: any) {
   const input = useRef<HTMLInputElement>(null), [createOpen, setCreateOpen] = useState(false), [samplesOpen, setSamplesOpen] = useState(false), [name, setName] = useState("New Integration Application"), [importing, setImporting] = useState(false);
   const beginImport = async () => {
@@ -3479,11 +3591,8 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, th
     if (value) createProject(value);
   };
   return <div className="project-home fabric-launch-home">
-    <header>
-      <div className="brand"><span className="brand-orbit"><Workflow/></span><span>INTEGRATION <b>FABRIC</b></span><small>ENTERPRISE INTEGRATION STUDIO</small></div>
-      <ThemePicker theme={theme} setTheme={setTheme}/>
-    </header>
-    <main>
+     <header><IntegrationBrandArtwork className="home-brand-art"/><ThemePicker theme={theme} setTheme={setTheme}/></header>
+     <main>
       <section className="fabric-live-map" aria-label="Animated system integration fabric">
         <div className="home-grid"/><div className="home-aurora one"/><div className="home-aurora two"/>
         <svg className="fabric-routes" viewBox="0 0 1000 620" preserveAspectRatio="none" aria-hidden="true">
@@ -3890,12 +3999,18 @@ const connectionFieldSets: Record<string, any[]> = {
   ],
   sap: [
     { key: "mode", label: "Runtime adapter", options: ["mock", "external"] },
+    { key: "driverDirectory", label: "SAP JCo driver directory", placeholder: "Blank uses C:\\ProgramData\\Integration Fabric Studio\\drivers\\sap" },
+    { key: "destinationName", label: "JCo destination name", placeholder: "integration-fabric-sap" },
     { key: "release", label: "SAP release", options: ["current", "720", "730"] },
     { key: "connectionType", label: "Connection type", options: ["dedicated", "logongroup", "snc", "sncwithlogongroup", "websocket"] },
     { key: "applicationServerHost", label: "Application server host" }, { key: "systemNumber", label: "System number" },
     { key: "client", label: "Client number" }, { key: "language", label: "Language" }, { key: "username", label: "Username" },
     { key: "password", label: "Password", password: true }, { key: "messageServerHost", label: "Message server host" },
     { key: "systemId", label: "System ID" }, { key: "logonGroup", label: "Logon group" }, { key: "sapRouter", label: "SAP Router" },
+    { key: "sncPartnerName", label: "SNC partner name", when: (config: any) => ["snc", "sncwithlogongroup"].includes(config.connectionType) },
+    { key: "sncLibraryPath", label: "SNC library path", when: (config: any) => ["snc", "sncwithlogongroup"].includes(config.connectionType) },
+    { key: "sncMyName", label: "SNC own name", when: (config: any) => ["snc", "sncwithlogongroup"].includes(config.connectionType) },
+    { key: "sncQop", label: "SNC quality of protection", when: (config: any) => ["snc", "sncwithlogongroup"].includes(config.connectionType), options: ["", "1", "2", "3", "8", "9"] },
     { key: "programId", label: "Program ID (inbound)" }, { key: "gatewayHost", label: "Gateway host" },
     { key: "gatewayService", label: "Gateway service" }, { key: "maximumConnections", label: "Maximum connections" },
     { key: "timeoutMilliseconds", label: "Timeout (ms)" },
@@ -3909,7 +4024,7 @@ function connectionDefaults(type: string) {
     values[field.key] = propertyExpression(`${prefix}.${field.key}`);
   }
   if (type === "http") Object.assign(values, { connectorMode: "both", scheme: "http", authentication: "None", tlsEnabled: "false", clientAuthentication: "none", tlsVersion: "TLSv1.2", verifyTls: "true" });
-  if (type === "sap") Object.assign(values, { mode: "mock", release: "current", connectionType: "dedicated" });
+  if (type === "sap") Object.assign(values, { mode: "external", release: "current", connectionType: "dedicated" });
   if (type === "jdbc") Object.assign(values, { driver: "postgresql", connectionMode: "python", authentication: "SQL Server Authentication", encrypt: "true", trustServerCertificate: "false" });
   if (type === "ems") Object.assign(values, { connectionFactoryType: "Direct", connectionFactoryClass: "com.tibco.tibjms.TibjmsConnectionFactory", connectionTimeoutSeconds: 30 });
   if (type === "jms") Object.assign(values, { connectionFactoryType: "Direct", connectionTimeoutSeconds: 30 });
@@ -3933,7 +4048,7 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
   });
   const [status, setStatus] = useState(""), [statusOk, setStatusOk] = useState<boolean | null>(null), [copied, setCopied] = useState(false), [testing, setTesting] = useState(false);
   const [target, setTarget] = useState<string | null>(null), [propertySearch, setPropertySearch] = useState("");
-  const [idocs, setIdocs] = useState<any[]>([]), [idocSearch, setIdocSearch] = useState(""), [idocLoading, setIdocLoading] = useState(false), [idocError, setIdocError] = useState("");
+  const [idocs, setIdocs] = useState<any[]>([]), [idocSearch, setIdocSearch] = useState(""), [idocLoading, setIdocLoading] = useState(false), [idocError, setIdocError] = useState(""), [idocPickerOpen, setIdocPickerOpen] = useState(false);
   const [snowflakeEntities, setSnowflakeEntities] = useState<any[]>([]), [snowflakeSearch, setSnowflakeSearch] = useState(""), [snowflakeLoading, setSnowflakeLoading] = useState(false), [snowflakeError, setSnowflakeError] = useState("");
   const set = (key: string, value: any) => setDraft((current: any) => ({ ...current, config: { ...current.config, [key]: value } }));
   const setConnectionField = (key: string, value: any) => setDraft((current: any) => {
@@ -3984,6 +4099,7 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
     } catch (error: any) { return `Service account JSON is invalid: ${error.message}`; }
   };
   const fetchIdocs = async () => {
+    setIdocPickerOpen(true);
     setIdocLoading(true); setIdocError("");
     requestAnimationFrame(() => idocBrowserRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
     try {
@@ -4004,6 +4120,7 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
       if (!response.ok) throw new Error(output.detail || "IDoc metadata download failed");
       const selected = output.idoc;
       setDraft((current: any) => ({ ...current, config: { ...current.config, selectedIdoc: selected, idocCatalog: [...(current.config.idocCatalog || []).filter((entry: any) => entry.idocType !== selected.idocType), selected] } }));
+      setIdocPickerOpen(false);
     } catch (error: any) { setIdocError(error?.message || "IDoc metadata download failed"); }
     finally { setIdocLoading(false); }
   };
@@ -4085,6 +4202,7 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
       {type === "sap" && <section ref={idocBrowserRef} className="sap-idoc-browser"><header><span><b>SAP IDOC METADATA</b><small>Target release: {draft.config.release === "720" ? "SAP 7.20" : draft.config.release === "730" ? "SAP 7.30" : "Current / auto-detect"}. Retrieve and store the matching schema in this shared connection.</small></span><button type="button" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button></header><div className="sap-idoc-search"><Search/><input value={idocSearch} onChange={(event) => setIdocSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && fetchIdocs()} placeholder="Filter IDoc types, for example ORDERS…"/></div>{idocError && <p className="sap-idoc-error">{idocError}</p>}<div className="sap-idoc-list">{idocs.map((item) => { const selected = draft.config.selectedIdoc?.idocType === item.idocType; return <button type="button" className={selected ? "selected" : ""} key={`${item.idocType}-${item.release}`} onClick={() => selectIdoc(item)}><span><b>{item.idocType}</b><small>{item.description || "SAP IDoc"}</small></span><code>{item.extensionType || "basic"} · {item.release || "current"}</code>{selected && <i>Schema fetched</i>}</button>; })}{!idocs.length && <p>Test the SAP connection, then retrieve the available IDoc types.</p>}</div>{draft.config.selectedIdoc && <footer><CheckCircle2/><span><b>{draft.config.selectedIdoc.idocType}</b><small>{draft.config.selectedIdoc.segments?.length || 0} metadata rows · SAP release {draft.config.selectedIdoc.release || draft.config.release} · schema stored with shared connection</small></span></footer>}</section>}
       {type === "snowflake" && <section ref={snowflakeBrowserRef} className="sap-idoc-browser snowflake-entity-browser"><header><span><b>SNOWFLAKE SCHEMA METADATA</b><small>Retrieve TABLE and VIEW entities from the configured database and schema, then select each entity whose column metadata should be stored.</small></span><button type="button" onClick={fetchSnowflakeEntities} disabled={snowflakeLoading}><Download/> {snowflakeLoading ? "Retrieving…" : "Retrieve entities"}</button></header><div className="sap-idoc-search"><Search/><input value={snowflakeSearch} onChange={(event) => setSnowflakeSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && fetchSnowflakeEntities()} placeholder="Entity name pattern, for example ORDER_%…"/></div>{snowflakeError && <p className="sap-idoc-error">{snowflakeError}</p>}<div className="sap-idoc-list">{snowflakeEntities.map((item) => { const stored = (draft.config.entityCatalog || []).some((entry: any) => entry.database === item.database && entry.schema === item.schema && entry.name === item.name); return <button type="button" className={stored ? "selected" : ""} key={`${item.database}.${item.schema}.${item.name}`} onClick={() => selectSnowflakeEntity(item)}><span><b>{item.name}</b><small>{item.database}.{item.schema}</small></span><code>{item.entityType || "TABLE"}</code>{stored && <i>Metadata fetched</i>}</button>; })}{!snowflakeEntities.length && <p>Test the Snowflake connection, then retrieve tables and views.</p>}</div>{!!draft.config.entityCatalog?.length && <footer><CheckCircle2/><span><b>{draft.config.entityCatalog.length} entities stored</b><small>{draft.config.entityCatalog.reduce((count: number, item: any) => count + (item.columns?.length || 0), 0)} columns available to Snowflake activity input/output editors</small></span><button type="button" onClick={clearSnowflakeMetadata}>Remove metadata</button></footer>}</section>}
       {status && <div ref={testOutputRef} role="status" aria-live="polite" className={`connection-test-output ${statusOk === true ? "success" : statusOk === false ? "failure" : "pending"}`}><header><span><b>{statusOk === true ? "CONNECTION SUCCEEDED" : statusOk === false ? "CONNECTION FAILED" : "CONNECTION TEST"}</b><small>Selectable test response</small></span><button onClick={copyStatus}><ClipboardCopy/> {copied ? "Copied" : "Copy output"}</button></header><textarea aria-label="Connection test output" readOnly value={status} onFocus={(event) => event.currentTarget.select()}/></div>}
+      {type === "sap" && idocPickerOpen && <div className="sap-idoc-picker" role="dialog" aria-modal="true" aria-label="Select SAP IDoc type" onMouseDown={(event) => { if (event.target === event.currentTarget) setIdocPickerOpen(false); }}><div className="sap-idoc-picker-card"><header><span><b>SELECT SAP IDOC TYPE</b><small>Search SAP and select one type to retrieve its structure and schema.</small></span><button type="button" aria-label="Close IDoc picker" onClick={() => setIdocPickerOpen(false)}>×</button></header><div className="sap-idoc-picker-search"><Search/><input autoFocus value={idocSearch} onChange={(event) => setIdocSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && fetchIdocs()} placeholder="Search IDoc types, for example ORDERS…"/><button type="button" onClick={fetchIdocs} disabled={idocLoading}>{idocLoading ? "Searching…" : "Search"}</button></div>{idocError && <p className="sap-idoc-error">{idocError}</p>}<div className="sap-idoc-picker-list">{idocs.map((item) => { const selected = draft.config.selectedIdoc?.idocType === item.idocType; return <button type="button" className={selected ? "selected" : ""} key={`${item.idocType}-${item.release}`} onClick={() => selectIdoc(item)} disabled={idocLoading}><span><b>{item.idocType}</b><small>{item.description || "SAP IDoc"}</small></span><code>{item.extensionType || "basic"} · {item.release || "current"}</code>{selected && <i>Schema fetched</i>}</button>; })}{!idocs.length && !idocLoading && <p>No IDoc types found. Adjust the search and try again.</p>}</div><footer><small>{idocs.length} IDoc type(s) found · Select one to retrieve metadata</small></footer></div></div>}
     </main>
     <footer><button onClick={test} disabled={testing}>{testing ? "Testing…" : "Test Connection"}</button><button onClick={onClose}>Cancel</button><button className="primary" onClick={save}>{initial ? "Save changes" : "Create connection"}</button></footer>
   </div></div>;
@@ -4098,7 +4216,7 @@ function ConnectionDialog({ type, onClose, onCreate }: any) {
         mode: ["ems", "jms", "kafka", "pubsub"].includes(type)
           ? "memory"
           : type === "sap"
-            ? "mock"
+            ? "external"
             : "external",
         driver: "sqlite",
         url: type === "jdbc" ? "${properties.connections.jdbc.url}" : "integration.db",
@@ -4129,11 +4247,15 @@ function ConnectionDialog({ type, onClose, onCreate }: any) {
           type === "pubsub" ? "${properties.connections.pubsub.projectId}" : undefined,
         applicationServerHost:
           type === "sap" ? "${properties.connections.sap.applicationServerHost}" : undefined,
+        driverDirectory:
+          type === "sap" ? "${properties.connections.sap.driverDirectory}" : undefined,
+        destinationName: type === "sap" ? "integration-fabric-sap" : undefined,
         systemNumber:
           type === "sap" ? "${properties.connections.sap.systemNumber}" : undefined,
         client: type === "sap" ? "${properties.connections.sap.client}" : undefined,
         language: "EN",
         connectionType: "dedicated",
+        sncQop: "",
         maxConnections: 8,
       },
     }),
@@ -4429,16 +4551,16 @@ function ConnectionDialog({ type, onClose, onCreate }: any) {
                   onChange={(e) => set("gatewayService", e.target.value)}
                 />
               </label>
-              <label>
-                Maximum connections
-                <input
-                  type="number"
-                  value={draft.config.maxConnections}
-                  onChange={(e) =>
-                    set("maxConnections", Number(e.target.value))
+                <label>
+                  Maximum connections
+                  <input
+                    type="number"
+                    value={draft.config.maximumConnections ?? 8}
+                    onChange={(e) =>
+                    set("maximumConnections", Number(e.target.value))
                   }
-                />
-              </label>
+                  />
+                </label>
               <label>
                 <input
                   type="checkbox"
@@ -4755,4 +4877,4 @@ function DebugBar({ state, act, stop }: any) {
     </div>
   );
 }
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(<StudioErrorBoundary><App /></StudioErrorBoundary>);

@@ -81,6 +81,7 @@ function startRuntime(port) {
     FABRIC_PORT: String(port),
     FABRIC_DATA_DIR: path.join(app.getPath('userData'), 'workspace-data'),
     FABRIC_LOG_LEVEL: process.env.FABRIC_LOG_LEVEL || 'info',
+    FABRIC_BUILD_VERSION: app.getVersion(),
     PYTHONUTF8: '1',
   };
   let executable;
@@ -131,6 +132,7 @@ async function createWindow() {
     minHeight: 720,
     backgroundColor: '#071522',
     title: 'Integration Fabric Studio',
+    icon: path.join(__dirname, '..', 'dist', 'branding', 'integration-fabric-brand.svg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
