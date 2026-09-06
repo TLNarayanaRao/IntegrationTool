@@ -214,6 +214,8 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
     current = asyncio.current_task()
     try:
         while True:
+            sap_delivery_id = None
+            sap_listener_key = None
             if debug_session_id:
                 session = debugger.sessions.get(debug_session_id)
                 if not session or session.get('status') == 'stopped': return
@@ -254,9 +256,25 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
                 if not _event_available(output):
                     await asyncio.sleep(max(.1, float(resolved_config.get('pollInterval', 1) or 1)) if activity.type == 'file' else .1)
                     continue
+                if activity.type == 'sap' and isinstance(output, dict):
+                    # These are transport-control values, not business payload.
+                    # Keep them out of mappings and logs while retaining them
+                    # until the workflow has committed or rolled back the SAP
+                    # transaction.
+                    sap_delivery_id = output.pop('_sapDeliveryId', None)
+                    sap_listener_key = output.pop('_sapListenerKey', None)
                 if debug_session_id:
                     await debugger.trigger_event(debug_session_id, output)
                     session = debugger.sessions.get(debug_session_id)
+                    if sap_delivery_id and sap_listener_key:
+                        if session and session.get('status') == 'listening':
+                            sap_adapter.acknowledge_idoc(sap_listener_key, sap_delivery_id, True)
+                        elif session and session.get('status') in ('failed', 'stopped'):
+                            sap_adapter.acknowledge_idoc(sap_listener_key, sap_delivery_id, False)
+                        elif session:
+                            # A breakpoint pauses before completion. Hold the
+                            # SAP transaction until the user resumes or stops.
+                            session['pendingSapDelivery'] = {'listenerKey': sap_listener_key, 'deliveryId': sap_delivery_id}
                     if session:
                         cursor = int(session.get('persistedLogCount', 0))
                         append_project_logs(project_id, item.name, session['logs'][cursor:], _project_log_directory(item, environment))
@@ -272,7 +290,15 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
                     elif activity.type == 'file':
                         await asyncio.sleep(max(.1, float(resolved_config.get('pollInterval', 1) or 1)))
                     continue
-                result = await runtime.run(task, output, resources, properties, activity.id, item, event_output=output)
+                try:
+                    result = await runtime.run(task, output, resources, properties, activity.id, item, event_output=output)
+                    if sap_delivery_id and sap_listener_key:
+                        sap_adapter.acknowledge_idoc(sap_listener_key, sap_delivery_id, result.status == 'completed')
+                except Exception:
+                    if sap_delivery_id and sap_listener_key:
+                        try: sap_adapter.acknowledge_idoc(sap_listener_key, sap_delivery_id, False)
+                        except Exception: pass
+                    raise
                 previous = runtime_states.get(project_id, {})
                 combined_logs = list(previous.get('logs', [])) + result.logs
                 append_project_logs(project_id, item.name, result.logs, _project_log_directory(item, environment))
@@ -311,6 +337,88 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
                 pass
         if active_runs.get(project_id) is current: active_runs.pop(project_id, None)
 
+async def _continuous_sap_event_loop(item: Project, task, activity, environment: str):
+    """Process SAP IDocs concurrently while keeping one TID per workflow.
+
+    JCo invokes callbacks concurrently.  The old deployment loop consumed one
+    callback only after the complete workflow finished, which could leave SAP
+    callbacks waiting long enough to hit CPIC/tRFC timeouts during a batch.
+    Each worker below owns one delivery and acknowledges it only after the
+    workflow succeeds; the bounded worker count provides backpressure without
+    dropping IDocs.
+    """
+    project_id = item.id
+    resources = {resource.id: resource for resource in item.resources}
+    properties = _environment_values(item, environment)
+    sap_config = {}
+    try:
+        configured = runtime.resolve(activity.config, {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}})
+        resource = resources.get(configured.get('resourceId'))
+        sap_config = {**(runtime.resolve(resource.config, {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}) if resource else {}), **configured}
+        worker_count = max(1, min(64, int(sap_config.get('maxConcurrentIdocs') or sap_config.get('maximumConnections') or 8)))
+    except (TypeError, ValueError):
+        worker_count = 8
+    retry_delay = 1.0
+    stop = asyncio.Event()
+
+    async def worker(index: int):
+        nonlocal retry_delay
+        while not stop.is_set():
+            context = _listener_context(item, task, resources, properties, environment)
+            delivery_id = None
+            listener_key = None
+            try:
+                output = await runtime.execute_with_policy(activity, context)
+                diagnostics = output.pop('jcoDiagnostics', []) if isinstance(output, dict) else []
+                if diagnostics:
+                    entries = [{'time': log_timestamp(), 'level': detail.get('level', 'INFO'), 'kind': 'connector', 'phase': detail.get('phase'), 'message': detail.get('message'), 'connector': 'SAP JCo', **{key: detail[key] for key in ('serverName', 'programId', 'gatewayHost', 'gatewayService', 'repositoryDestination', 'tidStore', 'functionName', 'connectionCount') if key in detail}, 'activityId': activity.id, 'taskId': task.id} for detail in diagnostics]
+                    previous = runtime_states.get(project_id, {})
+                    combined = (list(previous.get('logs', [])) + entries)[-500:]
+                    append_project_logs(project_id, item.name, entries, _project_log_directory(item, environment))
+                    _publish_runtime_state(project_id, status='listening', logs=combined, environment=environment)
+                if not _event_available(output):
+                    await asyncio.sleep(.1)
+                    continue
+                delivery_id = output.pop('_sapDeliveryId', None)
+                listener_key = output.pop('_sapListenerKey', None)
+                result = await runtime.run(task, output, resources, properties, activity.id, item, event_output=output)
+                if delivery_id and listener_key:
+                    sap_adapter.acknowledge_idoc(listener_key, delivery_id, result.status == 'completed')
+                previous = runtime_states.get(project_id, {})
+                combined_logs = (list(previous.get('logs', [])) + result.logs)[-500:]
+                append_project_logs(project_id, item.name, result.logs, _project_log_directory(item, environment))
+                _publish_runtime_state(project_id, status='listening', logs=combined_logs, result=result, environment=environment)
+                retry_delay = 1.0
+            except asyncio.CancelledError:
+                if delivery_id and listener_key:
+                    try: sap_adapter.acknowledge_idoc(listener_key, delivery_id, False)
+                    except Exception: pass
+                raise
+            except Exception as exc:
+                if delivery_id and listener_key:
+                    try: sap_adapter.acknowledge_idoc(listener_key, delivery_id, False)
+                    except Exception: pass
+                entry = {'time': log_timestamp(), 'level': 'ERROR', 'kind': 'listener', 'message': f'{activity.name} worker {index} failed; retrying in {retry_delay:g} seconds: {exc}', 'activityId': activity.id, 'taskId': task.id, 'worker': index, 'deliveryId': delivery_id}
+                previous = runtime_states.get(project_id, {})
+                logs = (list(previous.get('logs', [])) + [entry])[-500:]
+                append_project_logs(project_id, item.name, [entry], _project_log_directory(item, environment))
+                _publish_runtime_state(project_id, status='listening', logs=logs, environment=environment)
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(30.0, retry_delay * 2)
+
+    workers = [asyncio.create_task(worker(index), name=f'sap-idoc-worker-{index}') for index in range(worker_count)]
+    try:
+        await asyncio.gather(*workers)
+    finally:
+        stop.set()
+        for task_handle in workers:
+            if not task_handle.done(): task_handle.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)
+        try:
+            sap_adapter.stop_listener(sap_config)
+        except Exception:
+            pass
+
 def _start_continuous_listener(item: Project, task, activity, environment: str, debug_session_id: str | None = None):
     previous = active_runs.get(item.id)
     if previous and not previous.done(): previous.cancel()
@@ -324,7 +432,12 @@ def _start_continuous_listener(item: Project, task, activity, environment: str, 
         resource = next((value for value in item.resources if value.id == cfg.get('resourceId')), None)
         if resource: cfg = {**runtime.resolve(resource.config, context), **cfg}
         sap_adapter.stop_listener(cfg)
-    listener = asyncio.create_task(_continuous_event_loop(item, task, activity, environment, debug_session_id))
+    listener = asyncio.create_task(
+        _continuous_event_loop(item, task, activity, environment, debug_session_id)
+        if debug_session_id or activity.type != 'sap'
+        else _continuous_sap_event_loop(item, task, activity, environment),
+        name=f'{item.id}-{task.id}-{activity.id}-listener',
+    )
     active_runs[item.id] = listener
     return listener
 
@@ -1105,6 +1218,10 @@ async def debug_action(session_id: str, request: DebugAction):
         view = await debugger.action(session_id, request.action)
         state = debugger.sessions[session_id]
         project = state['project']
+        pending = state.get('pendingSapDelivery')
+        if pending and state.get('status') in ('listening', 'failed', 'stopped'):
+            sap_adapter.acknowledge_idoc(pending['listenerKey'], pending['deliveryId'], state.get('status') == 'listening')
+            state.pop('pendingSapDelivery', None)
         if request.action == 'stop':
             active = active_runs.get(project.id)
             if active and not active.done(): active.cancel()

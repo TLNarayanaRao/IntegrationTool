@@ -1,8 +1,10 @@
 import asyncio, unittest
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 from app.main import app
 from app.models import Activity, ProcessDefinition, Project, SharedResource
 from app.runtime import WorkflowRuntime
+from app.sap import SapAdapter
 
 class SapMapperTests(unittest.TestCase):
     def setUp(self): self.client = TestClient(app)
@@ -192,6 +194,45 @@ class SapMapperTests(unittest.TestCase):
     def test_sap_connection_design_time_test(self):
         result = self.client.post('/api/connections/test',json={'id':'sap','type':'sap','name':'ECC','config':{'mode':'mock'}})
         self.assertTrue(result.json()['ok'])
+
+    def test_sap_idoc_transaction_contract_selects_tids_and_bounded_listener_settings(self):
+        adapter = SapAdapter()
+        values = adapter._listener_values({'mode':'mock', 'programId':'FABRIC_IDOC', 'gatewayHost':'sapqa2', 'gatewayService':'sapgw00', 'maximumConnections':12, 'ackTimeoutSeconds':420})
+        self.assertEqual(values['jco.server.connection_count'], 12)
+        self.assertEqual(values['jco.server.ack_timeout_seconds'], 420)
+        self.assertEqual(values['jco.server.tid_management'], 'active')
+
+        with patch('app.sap.invoke_java', return_value={'ok':True}) as invoke:
+            adapter._jco_call({'mode':'mock', 'transactional':True, 'transactionProtocol':'qRFC', 'queueName':'ARTMAS_QUEUE'}, 'IDOC_INBOUND_ASYNCHRONOUS')
+        sent = invoke.call_args.args[2]
+        self.assertEqual(sent['transactional'], 'true')
+        self.assertEqual(sent['transactionProtocol'], 'qrfc')
+        self.assertEqual(sent['queueName'], 'ARTMAS_QUEUE')
+
+    def test_idoc_parser_decodes_physical_segments_to_named_bounded_fields(self):
+        adapter = SapAdapter()
+        selected = {
+            'idocType': 'ARTMAS05',
+            'segments': [{'SEGMENTTYP': 'E1BPE1MATHEAD', 'SEGMENTDEF': 'E2BPE1MATHEAD002', 'SEGLEN': '24'}],
+            'fields': [
+                {'SEGMENTTYP': 'E1BPE1MATHEAD', 'FIELDNAME': 'FUNCTION', 'BYTE_FIRST': '000064', 'BYTE_LAST': '000066', 'INTLEN': '000003'},
+                {'SEGMENTTYP': 'E1BPE1MATHEAD', 'FIELDNAME': 'MATERIAL', 'BYTE_FIRST': '000067', 'BYTE_LAST': '000084', 'INTLEN': '000018'},
+            ],
+        }
+        # The physical E2 name is what SAP supplies in the row; the output
+        # must use the logical E1 name and must not retain SDATA.
+        raw = {'E2BPE1MATHEAD002': {'SDATA': '005' + '5370119HAWA'.ljust(18) + 'ignored-overflow-data', '_attributes': {'SEGMENT': '1'}}}
+        result = adapter.execute('idoc_parser', {'idocType': 'ARTMAS05', 'selectedIdoc': selected, 'idocOutputMode': 'JSON'}, raw)
+        self.assertEqual(result['SAPIDoc']['E1BPE1MATHEAD']['FUNCTION'], '005')
+        self.assertEqual(result['SAPIDoc']['E1BPE1MATHEAD']['MATERIAL'], '5370119HAWA')
+        self.assertNotIn('SDATA', str(result['SAPIDoc']))
+
+        rendered = adapter.execute('idoc_renderer', {'idocType': 'ARTMAS05', 'selectedIdoc': selected}, result['SAPIDoc'])
+        row = rendered['rawIDoc']['data'][0]
+        self.assertEqual(row['SEGNAM'], 'E2BPE1MATHEAD002')
+        self.assertEqual(len(row['SDATA']), 24)
+        self.assertEqual(row['SDATA'][:3], '005')
+        self.assertEqual(row['SDATA'][3:21], '5370119HAWA'.ljust(18))
 
     def test_sap_connection_can_browse_and_download_idoc_metadata(self):
         resource = {'id':'sap','type':'sap','name':'ECC','config':{'mode':'mock','release':'720'}}

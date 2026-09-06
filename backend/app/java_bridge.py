@@ -24,6 +24,7 @@ class SapJcoListener:
         # of KB of JSON; reading stdout only after the previous IDoc finishes
         # processing can fill the Windows pipe and block JCo/SAP callbacks.
         self._events: queue.Queue[dict[str, Any]] = queue.Queue()
+        self._command_lock = threading.Lock()
         self._reader = threading.Thread(target=self._read_events, name="sap-jco-stdout", daemon=True)
         self._reader.start()
 
@@ -56,11 +57,28 @@ class SapJcoListener:
             raise JavaBridgeError(str(output.get("message") or "SAP JCo listener failed"))
         return output
 
+    def acknowledge(self, delivery_id: str, success: bool) -> None:
+        """Release one SAP tRFC callback only after workflow processing finishes."""
+        if not delivery_id or not self.process.stdin or self.process.poll() is not None:
+            raise JavaBridgeError("SAP JCo listener is not available to acknowledge the IDoc")
+        command = ("commit" if success else "rollback") + "\t" + str(delivery_id) + "\n"
+        try:
+            with self._command_lock:
+                self.process.stdin.write(command)
+                self.process.stdin.flush()
+        except (BrokenPipeError, OSError) as exc:
+            raise JavaBridgeError(f"SAP JCo listener acknowledgement failed: {exc}") from exc
+
     def close(self) -> None:
         if self.process.poll() is None:
             self.process.terminate()
             try: self.process.wait(timeout=5)
             except subprocess.TimeoutExpired: self.process.kill()
+        for stream in (self.process.stdin, self.process.stdout, self.process.stderr):
+            try:
+                if stream: stream.close()
+            except OSError: pass
+        if self._reader.is_alive(): self._reader.join(timeout=1)
         self.descriptor.unlink(missing_ok=True)
 
 
@@ -185,7 +203,7 @@ def start_sap_listener(config: dict[str, Any], values: dict[str, Any]) -> SapJco
     try:
         process = subprocess.Popen(
             [str(_java_executable()), "-cp", classpath, "com.integrationfabric.bridge.FabricJavaBridge", descriptor.name],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env=process_env,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env=process_env,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), bufsize=1,
         )
     except FileNotFoundError as exc:

@@ -129,8 +129,8 @@
     "id": "sap-idoc-inbound",
     "name": "SAP IDoc Inbound Mediation",
     "category": "Enterprise applications",
-    "description": "Listen for an SAP IDoc, parse its metadata-backed document, map a canonical message, and finish the transaction.",
-    "activities": ["IDoc Listener", "IDoc Parser", "Mapper", "End"],
+    "description": "Receive an ARTMAS05 IDoc, log the canonical XML, parse its fetched SAP fields into complete JSON, log the JSON, and publish it to a TIBCO EMS queue.",
+    "activities": ["IDoc Listener", "Log XML", "IDoc Parser", "Log JSON", "EMS Queue Sender", "End"],
     "file": "/samples/sap-idoc-inbound.json",
     "ready": false
   }

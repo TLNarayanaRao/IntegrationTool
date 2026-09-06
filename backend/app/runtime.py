@@ -451,6 +451,22 @@ class WorkflowRuntime:
             resource = ctx['resources'].get(cfg.get('resourceId'))
             if not resource or resource.type != 'sap': raise RuntimeError('SAP activity requires an SAP ECC shared connection')
             sap_cfg = {**self.resolve(resource.config, ctx), **cfg}
+            # SAP's TID manager is a separate shared resource in the reference
+            # plug-in. Resolve it here so the listener uses the configured
+            # durable store instead of silently falling back to a process-local
+            # file. Keep the fallback for older projects that never selected a
+            # TID resource.
+            if cfg.get('operation', 'invoke_rfc_bapi') == 'idoc_listener':
+                tid_resource_id = cfg.get('tidManagerId')
+                tid_resource = ctx['resources'].get(tid_resource_id) if tid_resource_id else None
+                if tid_resource and tid_resource.type == 'sap_tid':
+                    tid_cfg = self.resolve(tid_resource.config, ctx)
+                    if str(tid_cfg.get('mode') or 'active').lower() not in ('none', 'disabled', 'off', 'false', '0'):
+                        configured_store = tid_cfg.get('storageFile') or tid_cfg.get('tidStorePath') or tid_cfg.get('url')
+                        if configured_store:
+                            sap_cfg['tidStorePath'] = configured_store
+                    else:
+                        sap_cfg['tidManagement'] = 'disabled'
             selected_idoc = next((item for item in sap_cfg.get('idocCatalog', []) if item.get('idocType') == sap_cfg.get('idocType')), None) or sap_cfg.get('selectedIdoc')
             if selected_idoc:
                 sap_cfg = {**sap_cfg, 'selectedIdoc': selected_idoc, 'idocType': sap_cfg.get('idocType') or selected_idoc.get('idocType'), 'extensionType': sap_cfg.get('extensionType') or selected_idoc.get('extensionType',''), 'release': sap_cfg.get('release') or selected_idoc.get('release',''), 'idocSchema': selected_idoc.get('schema')}

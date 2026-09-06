@@ -43,6 +43,7 @@ type Field = {
   required?: boolean;
   help?: string;
   propertyBrowse?: boolean;
+  readOnly?: boolean;
 };
 type DataField = {
   key: string;
@@ -856,17 +857,13 @@ export function activityContract(n: any): Contract {
       ],
       idoc_listener: [
         resource,
-        {
-          ...f("messagingSource", "Messaging source", "select"),
-          options: ["NoMessaging", "JMS", "Kafka"],
-        },
-        {
-          ...f("tidManagerId", "SAP TIDManager resource", "resource"),
-          resourceType: "sap_tid",
-        },
-        ...idoc,
-        f("programId", "Program ID"),
-        protocol,
+        { ...f("messagingSource", "Messaging source", "text", "Managed by the SAP JCo RFC server."), readOnly: true },
+        { ...f("tidManagerId", "SAP TID Manager resource", "text", "Managed by the SAP JCo durable TID store."), readOnly: true },
+        { ...f("idocType", "IDoc type fetched from SAP", "idoc", "Inherited from the SAP shared connection metadata.") },
+        { ...f("extensionType", "Extension / CIM type", "text", "Read from the selected SAP IDoc metadata."), readOnly: true },
+        { ...f("release", "SAP release", "text", "Read from the selected SAP shared connection."), readOnly: true },
+        { ...f("programId", "Program ID", "text", "Read from the selected SAP shared connection."), readOnly: true },
+        { ...f("invocationProtocol", "Invocation protocol", "text", "IDoc inbound delivery uses transactional RFC (tRFC)."), readOnly: true },
       ],
       idoc_parser: [
         resource,
@@ -964,6 +961,7 @@ export function activityContract(n: any): Contract {
       output: listener
         ? [
             d("SAPIDoc", "IDoc/RFC metadata", "object"),
+            d("controlRecord", "SAP IDoc control record", "object"),
             d("payload", "Inbound SAP payload (XML)", "string"),
             d("TID", "Transaction ID"),
           ]
@@ -1292,10 +1290,39 @@ export default function ActivityEditor({
 }: any) {
   const contract = resolvedActivityContract(node, task, tasks, schemas || [], resources || []),
     cfg = node.config || {},
+    selectedSapConnection = node.type === "sap" ? resources.find((resource: any) => resource.id === cfg.resourceId) : null,
+    selectedSapConfig = selectedSapConnection?.config || {},
+    derivedConfiguration = node.type === "sap" && cfg.operation === "idoc_listener" ? {
+      ...cfg,
+      release: cfg.release || selectedSapConfig.release || selectedSapConfig.selectedIdoc?.release || "",
+      programId: cfg.programId || selectedSapConfig.programId || "",
+      messagingSource: "SAP JCo RFC / IDOC_INBOUND_ASYNCHRONOUS",
+      tidManagerId: selectedSapConfig.tidStorePath || "Managed by SAP JCo durable TID store",
+      extensionType: cfg.extensionType || selectedSapConfig.selectedIdoc?.extensionType || "",
+      invocationProtocol: "tRFC",
+    } : cfg,
     upstreamSources = upstreamActivitySources(node, task, tasks, schemas || [], resources || []),
     [mapperOpen, setMapperOpen] = useState(false),
-    set = (key: string, value: any) =>
+    set = (key: string, value: any) => {
+      if (node.type === "sap" && key === "resourceId") {
+        const connection = resources.find((resource: any) => resource.id === value);
+        const connectionConfig = connection?.config || {};
+        update({ config: {
+          ...cfg,
+          resourceId: value,
+          ...(cfg.operation === "idoc_listener" ? {
+            release: connectionConfig.release || connectionConfig.selectedIdoc?.release || "",
+            programId: connectionConfig.programId || "",
+            messagingSource: "SAP JCo RFC / IDOC_INBOUND_ASYNCHRONOUS",
+            tidManagerId: connectionConfig.tidStorePath || "Managed by SAP JCo durable TID store",
+            extensionType: connectionConfig.selectedIdoc?.extensionType || "",
+            invocationProtocol: "tRFC",
+          } : {}),
+        } });
+        return;
+      }
       update({ config: { ...cfg, [key]: value } });
+    };
   const exceptionTypes = possibleTaskExceptions(task, tasks, schemas || []);
   if (tab === "documentation") return <ActivityDocumentation node={node} contract={contract} />;
   if (tab === "configuration")
@@ -1313,17 +1340,20 @@ export default function ActivityEditor({
             <input
               value={node.name}
               onChange={(e) => update({ name: e.target.value })}
+              onBlur={() => {
+                const base = node.name.trim() || "Activity";
+                const used = new Set((task.activities || []).filter((activity: any) => activity.id !== node.id).map((activity: any) => String(activity.name || "").trim().toLowerCase()).filter(Boolean));
+                let candidate = base, suffix = 2;
+                while (used.has(candidate.toLowerCase())) candidate = `${base} ${suffix++}`;
+                if (candidate !== node.name) update({ name: candidate });
+              }}
             />
-          </label>
-          <label>
-            Activity kind
-            <input value={`${node.type} / ${cfg.operation || ""}`} disabled />
           </label>
           {node.type !== "timer" && contract.configuration.filter((field) => !(node.type === "call_task" && field.key === "dynamicTaskId")).map((field) => (
             <FieldEditor
               key={field.key}
               field={node.type === "catch" && field.key === "errorType" ? { ...field, type: "select", options: ["", ...exceptionTypes] } : field}
-              value={cfg[field.key]}
+              value={derivedConfiguration[field.key]}
               set={set}
               resources={resources}
               tasks={tasks}
@@ -1350,7 +1380,6 @@ export default function ActivityEditor({
         {(node.type === "start" || node.type === "end") && (
           <TaskBoundarySchemaEditor node={node} config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>
         )}
-        {!(["xml", "json", "flat", "timer"].includes(node.type)) && <ExpressionHelp properties={properties} />}
         {mapperOpen && (
           <MapperStudio
             config={cfg}
@@ -1633,6 +1662,7 @@ function FieldEditor({ field, value, set, resources, tasks, properties = [], sel
       {field.type === "textarea" ? (
         <textarea
           value={value || ""}
+          readOnly={field.readOnly}
           onChange={(e) => change(e.target.value)}
         />
       ) : field.type === "boolean" ? (
@@ -1735,6 +1765,7 @@ function FieldEditor({ field, value, set, resources, tasks, properties = [], sel
           <input
             type={field.type === "number" && !mappedKey ? "number" : "text"}
             value={value ?? ""}
+            readOnly={field.readOnly}
             onChange={(e) => change(field.type === "number" && !e.target.value.startsWith("${") ? (e.target.value === "" ? "" : Number(e.target.value)) : e.target.value)}
           />
           <details ref={propertyPanel} className="configuration-property-picker" onToggle={(event) => { if (event.currentTarget.open) { setPropertySearch(""); window.setTimeout(() => event.currentTarget.querySelector<HTMLInputElement>("input")?.focus(), 0); } }}>
@@ -1745,9 +1776,10 @@ function FieldEditor({ field, value, set, resources, tasks, properties = [], sel
           </details>
           {mappedProperty && <small className="configuration-property-resolution">{mappedProperty.key} = {String(mappedProperty.value ?? "") || "empty"}</small>}
         </span> : <input
-          type={field.type === "number" ? "number" : "text"}
-          value={value ?? ""}
-          onChange={(e) => change(field.type === "number" ? Number(e.target.value) : e.target.value)}
+        type={field.type === "number" ? "number" : "text"}
+        value={value ?? ""}
+        readOnly={field.readOnly}
+        onChange={(e) => change(field.type === "number" ? Number(e.target.value) : e.target.value)}
         />
       )}{" "}
       {field.help && <small>{field.help}</small>}
@@ -1840,7 +1872,9 @@ function describeMapping(expression: any, sources: ActivitySource[]): string {
 }
 function isComplexSchemaType(fieldType: any): boolean {
   const type = String(fieldType || "").toLowerCase();
-  return type === "object" || type === "complex" || type === "json" || type.includes("array") || type.endsWith("[]") || type.includes("complex[]") || type.includes("object[]");
+  // A leaf object can be assigned from a complete object source. Only
+  // complex schema branches with child fields remain structural nodes.
+  return type === "complex" || type === "json" || type.includes("array") || type.endsWith("[]") || type.includes("complex[]") || type.includes("object[]");
 }
 function MappingBinding({ expression, sources, onChange, onConstantChange, fieldType = "string", structural = false }: any) {
   const hasValue = expression !== undefined && expression !== null && expression !== "";
@@ -1863,7 +1897,7 @@ function MappingBinding({ expression, sources, onChange, onConstantChange, field
   useEffect(() => { setLiteralDraft(literalValue); setLiteralError(""); }, [literalValue]);
 
   if (structural || isComplexSchemaType(fieldType)) {
-    return <div className={`mapping-binding structural-binding ${hasValue ? "mapped" : ""}`}><Braces/><span>{hasValue ? describeMapping(expression, sources) : "Structure is populated through its child elements"}</span>{hasValue && <button type="button" title="Clear structural statement" onClick={(event) => { event.stopPropagation(); onChange(""); }}>×</button>}</div>;
+    return <div className={`mapping-binding structural-binding ${hasValue ? "mapped" : ""}`}><Braces/><input aria-label="Object mapping expression" value={typeof editableExpression === "string" ? editableExpression : ""} placeholder="Drop an object source or enter an expression" onChange={(event) => onChange(event.target.value)} />{hasValue && <button type="button" title="Clear structural statement" onClick={(event) => { event.stopPropagation(); onChange(""); }}>×</button>}</div>;
   }
 
   const commitConstant = (raw: string): boolean => {
@@ -2364,19 +2398,5 @@ function SettingsTitle({ title, text }: any) {
         </span>
       </div>
     </>
-  );
-}
-function ExpressionHelp({ properties }: any) {
-  return (
-    <div className="expression-strip">
-      <AlertTriangle />
-      <span>
-        Dynamic expressions are supported in every text field:{" "}
-        <code>${"{input.id}"}</code> <code>${"{last.value}"}</code>
-        {properties.slice(0, 2).map((p: any) => (
-          <code key={p.key}>${"{properties." + p.key + "}"}</code>
-        ))}
-      </span>
-    </div>
   );
 }

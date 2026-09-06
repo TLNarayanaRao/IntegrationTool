@@ -527,6 +527,7 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
 ];
 const defaultProperties: Property[] = [
   { key: "runtime.logDirectory", value: "", data_type: "string" },
+  { key: "messaging.artmasQueue", value: "ARTMAS05.IN", data_type: "string" },
   { key: "advanced.logPayload", value: false, data_type: "boolean" },
   { key: "advanced.retryEnabled", value: false, data_type: "boolean" },
   { key: "advanced.retryCount", value: 3, data_type: "integer" },
@@ -744,6 +745,7 @@ const defaultProperties: Property[] = [
   { key: "connections.sap.gatewayService", value: "", data_type: "string" },
   { key: "connections.sap.maximumConnections", value: 8, data_type: "integer" },
   { key: "connections.sap.timeoutMilliseconds", value: 30000, data_type: "integer" },
+  { key: "connections.sap.ackTimeoutSeconds", value: 300, data_type: "integer" },
   { key: "connections.sapTid.storageFile", value: "data/sap-tids.json", data_type: "string" },
 ];
 const newEnvironmentProperties = () => defaultProperties.map((item) => ({ ...item }));
@@ -884,12 +886,21 @@ const initial: Project = {
 // Projects can be loaded from older versions or interrupted autosaves. Keep
 // malformed optional values out of the render path; one bad activity must not
 // bring down the entire editor.
+const uniqueActivityName = (requested: unknown, used: Set<string>, fallback = "Activity") => {
+  const base = String(requested || "").trim() || fallback;
+  let candidate = base;
+  let suffix = 2;
+  while (used.has(candidate.toLowerCase())) candidate = `${base} ${suffix++}`;
+  used.add(candidate.toLowerCase());
+  return candidate;
+};
 const normalizeProject = (value: any): Project => {
   const source = value && typeof value === "object" ? value : {};
   const tasks = Array.isArray(source.tasks) ? source.tasks : [];
   const normalizedTasks = tasks.map((rawTask: any, taskIndex: number) => {
     const task = rawTask && typeof rawTask === "object" ? rawTask : {};
     const activities = Array.isArray(task.activities) ? task.activities : [];
+    const usedActivityNames = new Set<string>();
     return ensureTaskEnd({
       ...task,
       id: String(task.id || `task-${taskIndex + 1}`),
@@ -902,7 +913,7 @@ const normalizeProject = (value: any): Project => {
           ...activity,
           id: String(activity.id || `activity-${taskIndex + 1}-${activityIndex + 1}`),
           type: String(activity.type || "log"),
-          name: String(activity.name || "Activity"),
+          name: uniqueActivityName(activity.name, usedActivityNames),
           position: {
             x: Number.isFinite(Number(position.x)) ? Number(position.x) : 80 + activityIndex * 190,
             y: Number.isFinite(Number(position.y)) ? Number(position.y) : 150,
@@ -928,6 +939,14 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
   const add = (severity: ValidationIssue["severity"], category: string, message: string, remedy: string, activityId?: string) =>
     issues.push({ id: `${task.id}-${issues.length}`, severity, category, message, remedy, taskId: task.id, activityId });
   const events = task.activities.filter(isEventActivity);
+  const activityNames = new Map<string, string[]>();
+  task.activities.forEach((item) => {
+    const name = String(item.name || "").trim().toLowerCase();
+    if (name) activityNames.set(name, [...(activityNames.get(name) || []), item.id]);
+  });
+  activityNames.forEach((activityIds) => {
+    if (activityIds.length > 1) add("error", "Activity", `${task.name} contains duplicate activity names.`, "Give each activity a unique display name within this Task.", activityIds[1]);
+  });
   if (events.length !== 1) add("error", "Flow", `${task.name} has ${events.length} event activities.`, "Each task must contain exactly one starter/event activity.");
   if (!task.activities.some((item) => item.type === "end")) add("error", "Flow", `${task.name} has no End activity.`, "Add an End activity and connect every successful execution path.");
   task.transitions.forEach((transition) => {
@@ -1429,6 +1448,7 @@ function App() {
   };
   const addActivity = (d: Def, pos?: { x: number; y: number; connectFrom?: string }) => {
     const id = `${d.type}-${Date.now()}`,
+      usedActivityNames = new Set(nodes.map((activity) => String(activity.name || "").trim().toLowerCase()).filter(Boolean)),
       config: any = {
         operation: d.operation,
         advanced: advancedDefaults(d.type, d.operation || ""),
@@ -1552,7 +1572,7 @@ function App() {
     const n: Node = {
       id,
       type: d.type,
-      name: d.label,
+      name: uniqueActivityName(d.label, usedActivityNames),
       position: pos ? { x: pos.x, y: pos.y } : {
         x: 160 + (nodes.length % 4) * 180,
         y: 270 + Math.floor(nodes.length / 4) * 105,
@@ -1713,9 +1733,9 @@ function App() {
     const clipboard = activityClipboard.current;
     if (!clipboard?.activities.length) { setLogs([{ level: "WARN", message: "The Studio activity clipboard is empty." }]); return; }
     if (clipboard.activities.some(isEventActivity) && nodes.some(isEventActivity)) { setLogs([{ level: "WARN", message: "Paste blocked: a Task can contain only one event activity. Copy downstream activities without the starter/event." }]); return; }
-    const now = Date.now(), idMap: Record<string, string> = {};
+    const now = Date.now(), idMap: Record<string, string> = {}, usedActivityNames = new Set(nodes.map((activity) => String(activity.name || "").trim().toLowerCase()).filter(Boolean));
     clipboard.activities.forEach((item, index) => { idMap[item.id] = `${item.type}-${now}-${index}`; });
-    const pasted = clipboard.activities.map((item) => ({ ...structuredClone(item), id: idMap[item.id], name: `${item.name} Copy`, position: { x: item.position.x + 34, y: item.position.y + 34 } }));
+    const pasted = clipboard.activities.map((item) => ({ ...structuredClone(item), id: idMap[item.id], name: uniqueActivityName(`${item.name} Copy`, usedActivityNames), position: { x: item.position.x + 34, y: item.position.y + 34 } }));
     const pastedEdges = clipboard.transitions.map((item, index) => ({ ...structuredClone(item), id: `edge-${now}-${index}`, source: idMap[item.source], target: idMap[item.target] }));
     mutateTask((current) => ({ ...current, activities: [...current.activities, ...pasted], transitions: [...current.transitions, ...pastedEdges] }));
     setSelected(pasted[0].id); setSelectedIds(pasted.map((item) => item.id)); setSelectedEdge(null); setSelectedResource(null);
@@ -2186,7 +2206,6 @@ function App() {
         ]}/>
         <span className="menu-spacer" />
         <ThemePicker theme={theme} setTheme={setTheme} />
-        {executionActive ? <button className="global-stop" onClick={stopExecution}><Square/> Stop</button> : <><button onClick={run}><CirclePlay /> Run</button><button onClick={debug}><Bug /> Debug</button></>}
       </nav>
       <StudioRibbon
         selectedCount={selectedIds.length}
@@ -4013,9 +4032,12 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "sncQop", label: "SNC quality of protection", when: (config: any) => ["snc", "sncwithlogongroup"].includes(config.connectionType), options: ["", "1", "2", "3", "8", "9"] },
     { key: "programId", label: "Program ID (inbound)" }, { key: "gatewayHost", label: "Gateway host" },
     { key: "gatewayService", label: "Gateway service" }, { key: "maximumConnections", label: "Maximum connections" },
-    { key: "timeoutMilliseconds", label: "Timeout (ms)" },
+    { key: "timeoutMilliseconds", label: "Timeout (ms)" }, { key: "ackTimeoutSeconds", label: "Inbound IDoc acknowledgment timeout (seconds)" },
   ],
-  sap_tid: [{ key: "storageFile", label: "Transaction ID storage file" }],
+  sap_tid: [
+    { key: "mode", label: "TID management", options: ["active", "disabled"] },
+    { key: "storageFile", label: "Transaction ID storage file", placeholder: "Durable path shared by the deployed runtime" },
+  ],
 };
 function connectionDefaults(type: string) {
   const prefix = type === "sap_tid" ? "connections.sapTid" : `connections.${type}`;
@@ -4025,6 +4047,7 @@ function connectionDefaults(type: string) {
   }
   if (type === "http") Object.assign(values, { connectorMode: "both", scheme: "http", authentication: "None", tlsEnabled: "false", clientAuthentication: "none", tlsVersion: "TLSv1.2", verifyTls: "true" });
   if (type === "sap") Object.assign(values, { mode: "external", release: "current", connectionType: "dedicated" });
+  if (type === "sap_tid") Object.assign(values, { mode: "active", storageFile: "data/sap-tids.properties" });
   if (type === "jdbc") Object.assign(values, { driver: "postgresql", connectionMode: "python", authentication: "SQL Server Authentication", encrypt: "true", trustServerCertificate: "false" });
   if (type === "ems") Object.assign(values, { connectionFactoryType: "Direct", connectionFactoryClass: "com.tibco.tibjms.TibjmsConnectionFactory", connectionTimeoutSeconds: 30 });
   if (type === "jms") Object.assign(values, { connectionFactoryType: "Direct", connectionTimeoutSeconds: 30 });
@@ -4101,6 +4124,10 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
   const fetchIdocs = async () => {
     setIdocPickerOpen(true);
     setIdocLoading(true); setIdocError("");
+    // A new retrieval is authoritative. Remove the currently selected
+    // metadata/schema before discovery so a failed or changed SAP response
+    // cannot leave an old IDoc definition attached to the connection.
+    setDraft((current: any) => ({ ...current, config: { ...current.config, selectedIdoc: undefined, idocCatalog: [] } }));
     requestAnimationFrame(() => idocBrowserRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
     try {
       const response = await fetch("/api/sap/idocs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ resource: runtimeResource(), search: idocSearch, limit: 250 }) });
@@ -4119,7 +4146,7 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
       const output = await response.json();
       if (!response.ok) throw new Error(output.detail || "IDoc metadata download failed");
       const selected = output.idoc;
-      setDraft((current: any) => ({ ...current, config: { ...current.config, selectedIdoc: selected, idocCatalog: [...(current.config.idocCatalog || []).filter((entry: any) => entry.idocType !== selected.idocType), selected] } }));
+      setDraft((current: any) => ({ ...current, config: { ...current.config, selectedIdoc: selected, idocCatalog: [...(current.config.idocCatalog || []).filter((entry: any) => !(entry.idocType === selected.idocType && (entry.extensionType || "") === (selected.extensionType || "") && (entry.release || "") === (selected.release || ""))), selected] } }));
       setIdocPickerOpen(false);
     } catch (error: any) { setIdocError(error?.message || "IDoc metadata download failed"); }
     finally { setIdocLoading(false); }

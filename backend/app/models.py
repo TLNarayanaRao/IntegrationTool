@@ -48,6 +48,7 @@ def default_environment_properties() -> list[EnvironmentProperty]:
     """Project-global defaults available to every task and shared resource."""
     values = [
         ('runtime.logDirectory', '', 'string'),
+        ('messaging.artmasQueue', 'ARTMAS05.IN', 'string'),
         ('advanced.logPayload', False, 'boolean'),
         ('advanced.retryEnabled', False, 'boolean'),
         ('advanced.retryCount', 3, 'integer'),
@@ -243,6 +244,7 @@ def default_environment_properties() -> list[EnvironmentProperty]:
         ('connections.sap.gatewayService', '', 'string'),
         ('connections.sap.maximumConnections', 8, 'integer'),
         ('connections.sap.timeoutMilliseconds', 30000, 'integer'),
+        ('connections.sap.ackTimeoutSeconds', 300, 'integer'),
         ('connections.sapTid.storageFile', 'data/sap-tids.json', 'string'),
     ]
     return [EnvironmentProperty(key=key, value=value, data_type=data_type) for key, value, data_type in values]

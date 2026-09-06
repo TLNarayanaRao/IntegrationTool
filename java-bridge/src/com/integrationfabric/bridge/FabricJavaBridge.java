@@ -3,9 +3,15 @@ package com.integrationfabric.bridge;
 import java.io.*;
 import java.lang.reflect.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
 import java.sql.*;
 import java.time.temporal.TemporalAccessor;
 import java.util.*;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import javax.naming.Context;
 import javax.naming.InitialContext;
 
@@ -74,8 +80,25 @@ public final class FabricJavaBridge {
                 for (String key : p.stringPropertyNames()) if (key.startsWith("argument.")) setValue(function, key.substring(9), p.getProperty(key));
                 fillTables(function, p);
                 if (functionName.equals("RFC_READ_TABLE")) fillReadTable(function, p);
-                invoke(function, "execute", destinationObject);
-                return functionResult(function);
+                boolean transactional = bool(p, "transactional", false);
+                String protocol = p.getProperty("transactionProtocol", "sRFC").trim().toLowerCase(Locale.ROOT);
+                String tid = null;
+                if (transactional || protocol.equals("trfc") || protocol.equals("qrfc")) {
+                    tid = String.valueOf(invoke(destinationObject, "createTID"));
+                    String queueName = p.getProperty("queueName", "").trim();
+                    if (protocol.equals("qrfc") && !queueName.isEmpty()) invoke(function, "execute", destinationObject, tid, queueName);
+                    else invoke(function, "execute", destinationObject, tid);
+                    // SAP considers the transaction complete only after the
+                    // client confirms the TID. If this fails, propagate the
+                    // exception so the caller can retry instead of reporting
+                    // a false success.
+                    invoke(destinationObject, "confirmTID", tid);
+                } else {
+                    invoke(function, "execute", destinationObject);
+                }
+                Map<String, Object> result = functionResult(function);
+                if (tid != null) { result.put("TID", tid); result.put("transactional", true); result.put("transactionProtocol", protocol); result.put("confirmed", true); }
+                return result;
             }
             throw new IllegalArgumentException("Unsupported SAP JCo operation: " + operation);
         } finally { close(destinationObject); }
@@ -142,11 +165,52 @@ public final class FabricJavaBridge {
             System.out.println(json(map("event", "jco_log", "level", "INFO", "phase", "repository", "message", "SAP JCo repository destination bound", "repositoryDestination", repositoryName)));
             System.out.flush();
         }
-        Class<?> tidHandlerType = Class.forName("com.sap.conn.jco.server.JCoServerTIDHandler");
-        Object tidHandler = tidHandler(p.getProperty("jco.server.tid_store"));
-        serverType.getMethod("setTIDHandler", tidHandlerType).invoke(jcoServer, tidHandler);
-        System.out.println(json(map("event", "jco_log", "level", "INFO", "phase", "tid_handler", "message", "SAP JCo TID handler installed", "tidStore", p.getProperty("jco.server.tid_store"))));
+        boolean tidEnabled = !"disabled".equalsIgnoreCase(p.getProperty("jco.server.tid_management", "active"));
+        if (tidEnabled) {
+            Class<?> tidHandlerType = Class.forName("com.sap.conn.jco.server.JCoServerTIDHandler");
+            Object tidHandler = tidHandler(p.getProperty("jco.server.tid_store"));
+            serverType.getMethod("setTIDHandler", tidHandlerType).invoke(jcoServer, tidHandler);
+            System.out.println(json(map("event", "jco_log", "level", "INFO", "phase", "tid_handler", "message", "SAP JCo TID handler installed", "tidStore", p.getProperty("jco.server.tid_store"), "mode", "active")));
+        } else {
+            System.out.println(json(map("event", "jco_log", "level", "INFO", "phase", "tid_handler", "message", "SAP JCo TID handler disabled by configuration", "mode", "disabled")));
+        }
         System.out.flush();
+        // Do not serialize/write a complete (often multi-megabyte) IDoc while
+        // SAP's CPIC callback is still on the stack. A blocked stdout pipe or
+        // JSON serialization pause can make SAP reset the connection after a
+        // few large IDocs. Queue the extracted event and emit it from a
+        // dedicated writer so callbacks return as quickly as possible.
+        int connectionCount = Math.max(1, integer(p, "jco.server.connection_count", 8));
+        BlockingQueue<Map<String, Object>> idocEvents = new LinkedBlockingQueue<>(Math.max(2, connectionCount * 2));
+        Map<String, CompletableFuture<Boolean>> pendingDeliveries = new ConcurrentHashMap<>();
+        Thread commandReader = new Thread(() -> {
+            try (BufferedReader commands = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = commands.readLine()) != null) {
+                    String[] parts = line.split("\\t", 2);
+                    if (parts.length != 2) continue;
+                    CompletableFuture<Boolean> decision = pendingDeliveries.get(parts[1].trim());
+                    if (decision != null) decision.complete("commit".equalsIgnoreCase(parts[0].trim()));
+                }
+            } catch (IOException error) {
+                System.err.println("SAP JCo acknowledgement channel stopped: " + error);
+            }
+        }, "sap-idoc-ack-reader");
+        commandReader.setDaemon(true);
+        commandReader.start();
+        Thread idocWriter = new Thread(() -> {
+            try {
+                while (!Thread.currentThread().isInterrupted()) {
+                    Map<String, Object> event = idocEvents.take();
+                    System.out.println(json(event));
+                    System.out.flush();
+                }
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        }, "sap-idoc-event-writer");
+        idocWriter.setDaemon(true);
+        idocWriter.start();
         Class<?> handlerType = Class.forName("com.sap.conn.jco.server.JCoServerFunctionHandler");
         Object handler = Proxy.newProxyInstance(handlerType.getClassLoader(), new Class<?>[]{handlerType}, (proxy, method, args) -> {
             if (!method.getName().equals("handleRequest")) return null;
@@ -154,14 +218,25 @@ public final class FabricJavaBridge {
             if (function != null) {
                 try {
                     String functionName = String.valueOf(invoke(function, "getName"));
-                    Map<String, Object> event = map("event", "idoc", "functionName", functionName, "payload", listenerFunctionResult(function));
-                    System.out.println(json(event));
-                    System.out.flush();
+                    String deliveryId = UUID.randomUUID().toString();
+                    CompletableFuture<Boolean> decision = new CompletableFuture<>();
+                    pendingDeliveries.put(deliveryId, decision);
+                    Map<String, Object> event = map("event", "idoc", "deliveryId", deliveryId, "functionName", functionName, "payload", listenerFunctionResult(function));
+                    idocEvents.put(event);
+                    try {
+                        long timeout = Math.max(1L, (long) (number(p, "jco.server.ack_timeout_seconds", 300) * 1000));
+                        if (!Boolean.TRUE.equals(decision.get(timeout, TimeUnit.MILLISECONDS))) {
+                            throw new IllegalStateException("Integration Fabric rolled back the SAP IDoc transaction");
+                        }
+                    } finally {
+                        pendingDeliveries.remove(deliveryId);
+                    }
                 } catch (Throwable error) {
                     Throwable cause = error;
                     while (cause instanceof InvocationTargetException && ((InvocationTargetException) cause).getCause() != null) cause = ((InvocationTargetException) cause).getCause();
                     System.out.println(json(map("event", "jco_log", "level", "ERROR", "phase", "idoc_callback", "message", "SAP JCo IDoc callback could not be serialized", "errorType", cause.getClass().getName(), "error", String.valueOf(cause.getMessage() == null ? cause : cause.getMessage()))));
                     System.out.flush();
+                    throw new RuntimeException(cause);
                 }
             }
             return null;
@@ -220,42 +295,54 @@ public final class FabricJavaBridge {
                 synchronized (lock) {
                     if (method.getName().equals("checkTID")) {
                         String state = states.getProperty(tid, "");
-                        if ("COMMITTED".equals(state) || "CONFIRMED".equals(state)) return false;
+                        // RECEIVED means another callback is already handling
+                        // this transaction. Reject the duplicate rather than
+                        // allowing concurrent delivery of the same IDoc.
+                        if ("RECEIVED".equals(state) || "COMMITTED".equals(state) || "CONFIRMED".equals(state)) return false;
                         states.setProperty(tid, "RECEIVED");
-                        persistTidState(store, states);
+                        if (!persistTidState(store, states)) {
+                            states.remove(tid);
+                            return false;
+                        }
                         return true;
                     }
+                    String previous = states.getProperty(tid);
                     if (method.getName().equals("commit")) states.setProperty(tid, "COMMITTED");
                     else if (method.getName().equals("rollback")) states.setProperty(tid, "ROLLED_BACK");
                     else if (method.getName().equals("confirmTID")) states.remove(tid);
                     else return null;
-                    persistTidState(store, states);
+                    if (!persistTidState(store, states)) {
+                        if (previous == null) states.remove(tid); else states.setProperty(tid, previous);
+                    }
                 }
                 return null;
             } catch (Throwable error) {
                 Throwable cause = error;
                 while (cause instanceof InvocationTargetException && cause.getCause() != null) cause = cause.getCause();
                 // JCo calls this interface through a Java Proxy. Never throw from
-                // the callback: a checked exception becomes UndeclaredThrowableException
-                // and SAP records the inbound IDoc as a TID fault. Keep delivery alive
-                // and log the real cause for diagnostics.
+                // A persistence failure must not be reported as a successful
+                // checkTID; SAP must retry after the local store is healthy.
                 System.err.println("SAP JCo TID handler failed in " + method.getName() + ": " + cause);
-                if (method.getName().equals("checkTID")) return true;
+                if (method.getName().equals("checkTID")) return false;
                 return null;
             }
         });
     }
 
-    private static void persistTidState(File store, Properties states) {
+    private static boolean persistTidState(File store, Properties states) {
         File temporary = new File(store.getPath() + ".tmp");
         try (OutputStream output = new FileOutputStream(temporary)) {
             states.store(output, "Integration Fabric SAP JCo tRFC transaction state");
-            if (store.exists() && !store.delete()) throw new IOException("Unable to replace SAP TID store " + store);
-            if (!temporary.renameTo(store)) throw new IOException("Unable to commit SAP TID store " + store);
+            Path source = temporary.toPath(), target = store.toPath();
+            try {
+                Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException unsupported) {
+                Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return true;
         } catch (IOException error) {
-            // Persistence failure must not escape the JCo callback. The callback
-            // logs the problem and keeps the SAP transaction callable.
             System.err.println("Unable to persist SAP TID state at " + store + ": " + error);
+            return false;
         }
     }
 
