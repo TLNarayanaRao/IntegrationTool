@@ -550,9 +550,13 @@ class SapAdapter:
         if isinstance(tables, dict):
             for key, value in tables.items():
                 normalized = re.sub(r'[^A-Z0-9]', '', str(key).upper())
+                if 'IDOCCONTROLREC' in normalized:
+                    if isinstance(value, list) and value and isinstance(value[0], dict):
+                        control = value[0]
+                    elif isinstance(value, dict):
+                        control = value
                 if 'IDOCDATAREC' in normalized and isinstance(value, list):
                     data = value
-                    break
         return control, data
 
     def _listener_values(self, cfg: dict) -> dict:
@@ -721,7 +725,15 @@ class SapAdapter:
         if self._mode(cfg) == 'mock': return {'ok':True,'message':f'SAP ECC {release_label} mock connection is ready for design-time execution'}
         try:
             result = invoke_java('sap.test', cfg, self._jco_values(cfg), family='sap', timeout=float(cfg.get('timeoutSeconds') or 30) + 5)
-            return {'ok': True, 'message': result.get('message', 'SAP JCo connection succeeded'), 'destination': result.get('destination')}
+            return {
+                'ok': True,
+                'message': result.get('message', 'SAP JCo connection succeeded'),
+                'destination': result.get('destination'),
+                'jcoVersion': result.get('jcoVersion'),
+                'javaVersion': result.get('javaVersion'),
+                'architecture': result.get('architecture'),
+                'loadedJars': result.get('loadedJars', []),
+            }
         except JavaBridgeError as exc: return {'ok': False, 'message': f'SAP JCo connection failed: {exc}'}
 
     @staticmethod
@@ -909,7 +921,10 @@ class SapAdapter:
                         metadata_fields, metadata_segments = self._metadata_for_idoc(selected_idoc)
                         xml_text = self._expand_sdata_xml(raw, metadata_fields, metadata_segments, selected_idoc.get('schema'))
                         json_value = self._xml_to_json(ET.fromstring(xml_text))
-                    except ET.ParseError: json_value = {'rawIDoc': raw, 'segments': [line for line in raw.splitlines() if line]}
+                    except ET.ParseError as exc:
+                        if raw.lstrip().startswith('<'):
+                            raise RuntimeError(f'Malformed SAP IDoc XML: {exc}') from exc
+                        json_value = {'rawIDoc': raw, 'segments': [line for line in raw.splitlines() if line]}
             else:
                 json_value = raw
                 if isinstance(raw, dict) and ('control' in raw or 'data' in raw):
@@ -941,6 +956,17 @@ class SapAdapter:
                     except ET.ParseError:
                         json_value = raw
             idoc_type = cfg.get('idocType') or cfg.get('selectedIdoc',{}).get('idocType')
+            if idoc_type and cfg.get('validateIdocType', True) and isinstance(json_value, dict):
+                envelope = json_value.get('IDOC') if isinstance(json_value.get('IDOC'), dict) else json_value
+                control_record = envelope.get('EDI_DC40') if isinstance(envelope, dict) else None
+                if isinstance(control_record, dict):
+                    actual_type = str(control_record.get('IDOCTYP') or '').strip()
+                    actual_extension = str(control_record.get('CIMTYP') or '').strip()
+                    expected_extension = str(cfg.get('extensionType') or cfg.get('selectedIdoc',{}).get('extensionType') or '').strip()
+                    if actual_type and actual_type.upper() != str(idoc_type).strip().upper():
+                        raise RuntimeError(f'IDoc type mismatch: parser expects {idoc_type}, received {actual_type}')
+                    if expected_extension and actual_extension.upper() != expected_extension.upper():
+                        raise RuntimeError(f'IDoc extension mismatch: parser expects {expected_extension}, received {actual_extension or "none"}')
             if not idoc_type and xml_text.lstrip().startswith('<'):
                 try: idoc_type = self._xml_name(ET.fromstring(xml_text).tag)
                 except ET.ParseError: pass

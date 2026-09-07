@@ -869,6 +869,7 @@ export function activityContract(n: any): Contract {
         resource,
         f("sourceDestination", "IDoc source destination"),
         ...idoc,
+        f("validateIdocType", "Reject mismatched IDoc type or extension", "boolean"),
         { ...f("idocOutputMode", "IDoc output format", "select"), options: ["JSON", "XML"] },
       ],
       idoc_reader: [

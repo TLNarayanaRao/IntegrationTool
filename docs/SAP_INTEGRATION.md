@@ -5,11 +5,17 @@ customer. The connector is not redistributed with Studio. This implementation
 interoperates with SAP ECC through public RFC/JCo contracts; it is not SAP or
 TIBCO software and does not include either vendor's proprietary implementation.
 
+Integration Fabric itself is **not SAP-certified** merely because it uses JCo.
+SAP permits JCo to connect external applications to SAP in both directions, but
+the customer must download it from SAP, comply with named-user/solution licensing,
+and must not redistribute the connector. Record the JCo, Java, OS, and CPU
+architecture reported by Test Connection as part of every production approval.
+
 ## Supported integration patterns
 
 | Pattern | Runtime behavior |
 | --- | --- |
-| IDoc Listener | Persistent registered JCo server, tRFC TID duplicate protection, bounded delivery queue, success commit only after the task completes |
+| IDoc Listener | Persistent registered JCo server, tRFC TID duplicate protection, bounded delivery queue, one workflow per IDoc in a package, enclosing transaction commit only after every IDoc succeeds |
 | RFC/BAPI Listener | Persistent registered JCo server for the selected function, request/reply export and table response mapping, rollback when the task fails or omits Reply |
 | Invoke RFC/BAPI | Import, changing, nested structure, and table parameters; request/reply, tRFC, and qRFC transport |
 | Post IDoc / IDoc Reader posting | XML or rendered input is converted to EDI_DC40 and EDI_DD40 and sent with `IDOC_INBOUND_ASYNCHRONOUS`; tRFC or qRFC is selected at transport level |
@@ -35,6 +41,10 @@ On Linux use `libsapjco3.so` next to `sapjco3.jar`, or select an explicit SAP
 driver directory in the shared connection. The packaged Java runtime and JCo
 native library must have the same architecture. Do not mix files from different
 JCo releases.
+
+Use a currently supported SAP JCo 3.1 patch and a JDK/JRE listed for that patch
+in SAP Note 2786882. As of September 2026 SAP publishes JCo 3.1.14 and lists
+Java 8, 11, 17, 21, and 25; re-check SAP's support page when qualifying a build.
 
 ## ECC configuration checklist
 

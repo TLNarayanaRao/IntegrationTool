@@ -195,6 +195,23 @@ class SapMapperTests(unittest.TestCase):
         result = self.client.post('/api/connections/test',json={'id':'sap','type':'sap','name':'ECC','config':{'mode':'mock'}})
         self.assertTrue(result.json()['ok'])
 
+    def test_idoc_response_extracts_control_and_data_rfc_tables(self):
+        control = {'DOCNUM':'0000000000000042', 'IDOCTYP':'ORDERS05'}
+        data = [{'DOCNUM':'0000000000000042', 'SEGNAM':'E1EDK01', 'SDATA':'value'}]
+        extracted_control, extracted_data = SapAdapter._idoc_response_parts({'tables': {
+            'IDOC_CONTROL_REC_40':[control], 'IDOC_DATA_REC_40':data,
+        }})
+        self.assertEqual(extracted_control, control)
+        self.assertEqual(extracted_data, data)
+
+    def test_idoc_parser_rejects_malformed_xml_and_wrong_basic_type(self):
+        adapter = SapAdapter()
+        with self.assertRaisesRegex(RuntimeError, 'Malformed SAP IDoc XML'):
+            adapter.execute('idoc_parser', {'mode':'mock', 'idocType':'ORDERS05'}, '<ORDERS05><IDOC>')
+        wrong = '<MATMAS05><IDOC><EDI_DC40><IDOCTYP>MATMAS05</IDOCTYP></EDI_DC40></IDOC></MATMAS05>'
+        with self.assertRaisesRegex(RuntimeError, 'parser expects ORDERS05'):
+            adapter.execute('idoc_parser', {'mode':'mock', 'idocType':'ORDERS05'}, wrong)
+
     def test_sap_idoc_transaction_contract_selects_tids_and_bounded_listener_settings(self):
         adapter = SapAdapter()
         values = adapter._listener_values({'mode':'mock', 'programId':'FABRIC_IDOC', 'gatewayHost':'sapqa2', 'gatewayService':'sapgw00', 'maximumConnections':12, 'ackTimeoutSeconds':420})

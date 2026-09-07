@@ -1,4 +1,5 @@
 import json, os, re, shutil, sqlite3
+from contextlib import closing
 from pathlib import Path
 from .models import Project
 
@@ -84,16 +85,17 @@ def delete_project(project_id: str) -> bool:
     if deleted: shutil.rmtree(folder)
     if LEGACY_DB.exists():
         try:
-            with sqlite3.connect(LEGACY_DB) as conn:
+            with closing(sqlite3.connect(LEGACY_DB)) as conn:
                 cursor = conn.execute('DELETE FROM projects WHERE id = ?', (project_id,))
                 deleted = deleted or cursor.rowcount > 0
+                conn.commit()
         except sqlite3.Error: pass
     return deleted
 
 def legacy_projects() -> list[Project]:
     if not LEGACY_DB.exists(): return []
     try:
-        with sqlite3.connect(LEGACY_DB) as conn:
+        with closing(sqlite3.connect(LEGACY_DB)) as conn:
             return [Project.model_validate_json(row[0]) for row in conn.execute('SELECT body FROM projects')]
     except (sqlite3.Error, ValueError): return []
 

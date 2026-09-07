@@ -72,7 +72,10 @@ public final class FabricJavaBridge {
                 Object function = function(destinationObject, "STFC_CONNECTION");
                 setValue(function, "REQUTEXT", p.getProperty("requestText", "Integration Fabric connection test"));
                 invoke(function, "execute", destinationObject);
-                return map("message", "SAP JCo connection succeeded", "destination", destinationName);
+                Class<?> jcoType = Class.forName("com.sap.conn.jco.JCo");
+                String jcoVersion = optionalStaticString(jcoType, "getVersion");
+                if (jcoVersion.isBlank() && jcoType.getPackage() != null) jcoVersion = String.valueOf(jcoType.getPackage().getImplementationVersion());
+                return map("message", "SAP JCo connection succeeded", "destination", destinationName, "jcoVersion", jcoVersion, "javaVersion", System.getProperty("java.version"), "architecture", System.getProperty("os.arch"));
             }
             if (operation.equals("call")) {
                 String functionName = required(p, "functionName");
@@ -185,6 +188,48 @@ public final class FabricJavaBridge {
         Object imports = invoke(function, "getImportParameterList");
         if (imports != null) output.put("imports", parameterValues(imports));
         return output;
+    }
+
+    /** Split one transactional IDoc package into one workflow event per IDoc.
+     * The enclosing JCo callback is committed only after every child event
+     * succeeds, preserving the atomic tRFC/qRFC transaction contract. */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> splitIdocPackage(Map<String, Object> payload) {
+        Object rawTables = payload.get("tables");
+        if (!(rawTables instanceof Map<?, ?>)) return List.of(payload);
+        Map<String, Object> tables = (Map<String, Object>) rawTables;
+        String controlName = null, dataName = null;
+        List<Object> controls = null, records = null;
+        for (Map.Entry<String, Object> entry : tables.entrySet()) {
+            String normalized = entry.getKey().toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]", "");
+            if (normalized.contains("IDOCCONTROLREC") && entry.getValue() instanceof List<?>) {
+                controlName = entry.getKey(); controls = (List<Object>) entry.getValue();
+            }
+            if (normalized.contains("IDOCDATAREC") && entry.getValue() instanceof List<?>) {
+                dataName = entry.getKey(); records = (List<Object>) entry.getValue();
+            }
+        }
+        if (controls == null || controls.size() <= 1 || controlName == null || dataName == null) return List.of(payload);
+        List<Map<String, Object>> children = new ArrayList<>();
+        for (Object rawControl : controls) {
+            if (!(rawControl instanceof Map<?, ?>)) continue;
+            Map<String, Object> control = (Map<String, Object>) rawControl;
+            String documentNumber = String.valueOf(control.getOrDefault("DOCNUM", "")).trim();
+            List<Object> documentRecords = new ArrayList<>();
+            for (Object rawRecord : records == null ? List.of() : records) {
+                if (!(rawRecord instanceof Map<?, ?>)) continue;
+                Map<String, Object> record = (Map<String, Object>) rawRecord;
+                String recordNumber = String.valueOf(record.getOrDefault("DOCNUM", "")).trim();
+                if (!documentNumber.isEmpty() && documentNumber.equals(recordNumber)) documentRecords.add(record);
+            }
+            Map<String, Object> childTables = new LinkedHashMap<>(tables);
+            childTables.put(controlName, List.of(control));
+            childTables.put(dataName, documentRecords);
+            Map<String, Object> child = new LinkedHashMap<>(payload);
+            child.put("tables", childTables);
+            children.add(child);
+        }
+        return children.isEmpty() ? List.of(payload) : children;
     }
 
     /** Populate an RFC/BAPI listener response before returning to SAP. */
@@ -300,25 +345,38 @@ public final class FabricJavaBridge {
             if (function != null) {
                 try {
                     String functionName = String.valueOf(invoke(function, "getName"));
-                    String deliveryId = UUID.randomUUID().toString();
-                    CompletableFuture<Boolean> decision = new CompletableFuture<>();
-                    pendingDeliveries.put(deliveryId, decision);
-                    Properties response = new Properties();
-                    pendingResponses.put(deliveryId, response);
                     Object serverContext = args != null && args.length > 0 ? args[0] : null;
                     String transactionId = optionalString(serverContext, "getTID");
                     String connectionId = optionalString(serverContext, "getConnectionID");
-                    Map<String, Object> event = map("event", "sap_request", "deliveryId", deliveryId, "functionName", functionName, "TID", transactionId, "CPIC_ID", connectionId, "payload", listenerFunctionResult(function));
-                    idocEvents.put(event);
+                    Map<String, Object> requestPayload = listenerFunctionResult(function);
+                    List<Map<String, Object>> requests = functionName.toUpperCase(Locale.ROOT).startsWith("IDOC_INBOUND") ? splitIdocPackage(requestPayload) : List.of(requestPayload);
+                    List<String> deliveryIds = new ArrayList<>();
+                    List<CompletableFuture<Boolean>> decisions = new ArrayList<>();
+                    List<Properties> responses = new ArrayList<>();
                     try {
-                        long timeout = Math.max(1L, (long) (number(p, "jco.server.ack_timeout_seconds", 300) * 1000));
-                        if (!Boolean.TRUE.equals(decision.get(timeout, TimeUnit.MILLISECONDS))) {
-                            throw new IllegalStateException("Integration Fabric rolled back the SAP request");
+                        for (Map<String, Object> request : requests) {
+                            String deliveryId = UUID.randomUUID().toString();
+                            CompletableFuture<Boolean> decision = new CompletableFuture<>();
+                            Properties response = new Properties();
+                            deliveryIds.add(deliveryId); decisions.add(decision); responses.add(response);
+                            pendingDeliveries.put(deliveryId, decision);
+                            pendingResponses.put(deliveryId, response);
+                            idocEvents.put(map("event", "sap_request", "deliveryId", deliveryId, "functionName", functionName, "TID", transactionId, "CPIC_ID", connectionId, "packageSize", requests.size(), "payload", request));
                         }
-                        applyListenerResponse(function, response);
+                        long timeoutMillis = Math.max(1L, (long) (number(p, "jco.server.ack_timeout_seconds", 300) * 1000));
+                        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+                        for (CompletableFuture<Boolean> decision : decisions) {
+                            long remaining = deadline - System.nanoTime();
+                            if (remaining <= 0 || !Boolean.TRUE.equals(decision.get(remaining, TimeUnit.NANOSECONDS))) {
+                                throw new IllegalStateException("Integration Fabric rolled back the SAP request or IDoc package");
+                            }
+                        }
+                        if (responses.size() == 1) applyListenerResponse(function, responses.get(0));
                     } finally {
-                        pendingDeliveries.remove(deliveryId);
-                        pendingResponses.remove(deliveryId);
+                        for (String deliveryId : deliveryIds) {
+                            pendingDeliveries.remove(deliveryId);
+                            pendingResponses.remove(deliveryId);
+                        }
                     }
                 } catch (Throwable error) {
                     Throwable cause = error;
@@ -708,6 +766,15 @@ public final class FabricJavaBridge {
         if (target == null) return "";
         try {
             Object value = invoke(target, method);
+            return value == null ? "" : String.valueOf(value);
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private static String optionalStaticString(Class<?> target, String method) {
+        try {
+            Object value = target.getMethod(method).invoke(null);
             return value == null ? "" : String.valueOf(value);
         } catch (Exception ignored) {
             return "";
