@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import base64
 import os
 import subprocess
 import sys
@@ -17,39 +18,86 @@ class JavaBridgeError(RuntimeError):
 
 
 class SapJcoListener:
-    def __init__(self, process: subprocess.Popen, descriptor: Path):
+    def __init__(self, process: subprocess.Popen, descriptor: Path, max_pending_events: int = 32):
         self.process = process
         self.descriptor = descriptor
         # Drain the Java bridge continuously.  A large IDoc can be hundreds
         # of KB of JSON; reading stdout only after the previous IDoc finishes
         # processing can fill the Windows pipe and block JCo/SAP callbacks.
-        self._events: queue.Queue[dict[str, Any]] = queue.Queue()
+        # A bounded queue is deliberate.  Under a burst of large IDocs/RFCs
+        # the Java process and SAP gateway apply backpressure instead of
+        # allowing Python heap usage to grow without a limit.
+        self._events: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=max(2, min(4096, int(max_pending_events))))
         self._command_lock = threading.Lock()
+        self._closed = threading.Event()
+        self._stderr_tail: queue.Queue[str] = queue.Queue(maxsize=100)
         self._reader = threading.Thread(target=self._read_events, name="sap-jco-stdout", daemon=True)
+        self._stderr_reader = threading.Thread(target=self._read_stderr, name="sap-jco-stderr", daemon=True)
         self._reader.start()
+        self._stderr_reader.start()
+
+    def _read_stderr(self) -> None:
+        try:
+            while True:
+                line = self.process.stderr.readline() if self.process.stderr else ""
+                if not line:
+                    return
+                line = line.rstrip()
+                if not line:
+                    continue
+                if self._stderr_tail.full():
+                    try: self._stderr_tail.get_nowait()
+                    except queue.Empty: pass
+                self._stderr_tail.put_nowait(line)
+        except Exception:
+            return
+
+    def _stderr_detail(self) -> str:
+        with self._stderr_tail.mutex:
+            return "\n".join(list(self._stderr_tail.queue)[-20:]).strip()
 
     def _read_events(self) -> None:
         try:
             while True:
                 line = self.process.stdout.readline() if self.process.stdout else ""
                 if not line:
-                    detail = (self.process.stderr.read() if self.process.stderr else "").strip()
-                    self._events.put({"event": "bridge_error", "message": detail or f"SAP JCo listener stopped with exit code {self.process.poll()}"})
+                    detail = self._stderr_detail()
+                    self._put_event({"event": "bridge_error", "message": detail or f"SAP JCo listener stopped with exit code {self.process.poll()}"})
                     return
                 try:
                     output = json.loads(line)
                 except json.JSONDecodeError as exc:
-                    self._events.put({"event": "bridge_error", "message": f"SAP JCo listener returned invalid output: {line.strip()}", "cause": str(exc)})
+                    self._put_event({"event": "bridge_error", "message": f"SAP JCo listener returned invalid output: {line.strip()}", "cause": str(exc)})
                     return
-                self._events.put(output)
+                if not self._put_event(output): return
         except Exception as exc:
-            self._events.put({"event": "bridge_error", "message": f"SAP JCo listener reader failed: {exc}"})
+            self._put_event({"event": "bridge_error", "message": f"SAP JCo listener reader failed: {exc}"})
+
+    def _put_event(self, event: dict[str, Any]) -> bool:
+        while not self._closed.is_set():
+            try:
+                self._events.put(event, timeout=.2)
+                return True
+            except queue.Full:
+                continue
+        return False
 
     async def next_event(self, timeout: float | None = None) -> dict[str, Any]:
-        try:
-            event = await asyncio.wait_for(asyncio.to_thread(self._events.get), timeout=timeout) if timeout else await asyncio.to_thread(self._events.get)
-        except asyncio.TimeoutError as exc:
-            raise JavaBridgeError("SAP JCo listener timed out while waiting for an IDoc") from exc
+        # Do not park queue.get() in asyncio.to_thread: cancelling a listener
+        # would leave that worker thread blocked forever.  Polling a bounded
+        # in-memory queue keeps cancellation immediate and thread counts flat.
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout if timeout else None
+        while True:
+            try:
+                event = self._events.get_nowait()
+                break
+            except queue.Empty:
+                if self.process.poll() is not None:
+                    raise JavaBridgeError(self._stderr_detail() or f"SAP JCo listener stopped with exit code {self.process.returncode}")
+                if deadline is not None and loop.time() >= deadline:
+                    raise JavaBridgeError("SAP JCo listener timed out while waiting for registration")
+                await asyncio.sleep(.05)
         output = event
         if output.get("event") == "bridge_error":
             raise JavaBridgeError(str(output.get("message") or "SAP JCo listener failed"))
@@ -57,19 +105,42 @@ class SapJcoListener:
             raise JavaBridgeError(str(output.get("message") or "SAP JCo listener failed"))
         return output
 
-    def acknowledge(self, delivery_id: str, success: bool) -> None:
-        """Release one SAP tRFC callback only after workflow processing finishes."""
+    def acknowledge(self, delivery_id: str, success: bool, response: dict[str, Any] | None = None) -> None:
+        """Release one SAP callback, optionally populating RFC reply fields."""
         if not delivery_id or not self.process.stdin or self.process.poll() is not None:
             raise JavaBridgeError("SAP JCo listener is not available to acknowledge the IDoc")
         command = ("commit" if success else "rollback") + "\t" + str(delivery_id) + "\n"
         try:
             with self._command_lock:
+                if success and isinstance(response, dict):
+                    exports = response.get("exports") if isinstance(response.get("exports"), dict) else {key: value for key, value in response.items() if key not in ("tables", "imports", "RfcRequest")}
+                    tables = response.get("tables") if isinstance(response.get("tables"), dict) else {}
+                    flattened_exports: list[tuple[str, Any]] = []
+                    def flatten_export(prefix: str, value: Any) -> None:
+                        if isinstance(value, dict):
+                            for child_key, child_value in value.items():
+                                flatten_export(f"{prefix}.{child_key}", child_value)
+                        else:
+                            flattened_exports.append((prefix, value))
+                    for key, value in exports.items():
+                        flatten_export(str(key), value)
+                    for key, value in flattened_exports:
+                        encoded = base64.b64encode(str(value if value is not None else "").encode("utf-8")).decode("ascii")
+                        self.process.stdin.write(f"set\t{delivery_id}\texport.{key}\t{encoded}\n")
+                    for table_name, rows in tables.items():
+                        rows = rows if isinstance(rows, list) else [rows]
+                        for index, row in enumerate(rows):
+                            if not isinstance(row, dict): continue
+                            for key, value in row.items():
+                                encoded = base64.b64encode(str(value if value is not None else "").encode("utf-8")).decode("ascii")
+                                self.process.stdin.write(f"set\t{delivery_id}\ttable.{table_name}.{index}.{key}\t{encoded}\n")
                 self.process.stdin.write(command)
                 self.process.stdin.flush()
         except (BrokenPipeError, OSError) as exc:
             raise JavaBridgeError(f"SAP JCo listener acknowledgement failed: {exc}") from exc
 
     def close(self) -> None:
+        self._closed.set()
         if self.process.poll() is None:
             self.process.terminate()
             try: self.process.wait(timeout=5)
@@ -79,6 +150,7 @@ class SapJcoListener:
                 if stream: stream.close()
             except OSError: pass
         if self._reader.is_alive(): self._reader.join(timeout=1)
+        if self._stderr_reader.is_alive(): self._stderr_reader.join(timeout=1)
         self.descriptor.unlink(missing_ok=True)
 
 
@@ -101,6 +173,17 @@ def _java_executable() -> Path | str:
         return override
     bundled = _bridge_home() / "runtime" / "bin" / ("java.exe" if os.name == "nt" else "java")
     return bundled if bundled.exists() else "java"
+
+
+def _java_command(config: dict[str, Any], classpath: str, descriptor: str) -> list[str]:
+    """Build a bounded JVM command for native connector bridge processes."""
+    initial = max(16, min(4096, int(config.get("jvmInitialHeapMb") or 64)))
+    maximum = max(initial, min(8192, int(config.get("jvmMaximumHeapMb") or 512)))
+    return [
+        str(_java_executable()), f"-Xms{initial}m", f"-Xmx{maximum}m",
+        "-XX:+ExitOnOutOfMemoryError", "-cp", classpath,
+        "com.integrationfabric.bridge.FabricJavaBridge", descriptor,
+    ]
 
 
 def default_driver_home() -> Path:
@@ -163,7 +246,7 @@ def invoke(command: str, config: dict[str, Any], values: dict[str, Any] | None =
                 if value is not None:
                     descriptor.write(f"{_escape_property(key)}={_escape_property(value)}\n")
         completed = subprocess.run(
-            [str(_java_executable()), "-cp", classpath, "com.integrationfabric.bridge.FabricJavaBridge", descriptor.name],
+            _java_command(config, classpath, descriptor.name),
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout or float(config.get("timeoutSeconds") or 30) + 5,
             env=process_env,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
@@ -202,14 +285,15 @@ def start_sap_listener(config: dict[str, Any], values: dict[str, Any]) -> SapJco
             if value is not None: descriptor.write(f"{_escape_property(key)}={_escape_property(value)}\n")
     try:
         process = subprocess.Popen(
-            [str(_java_executable()), "-cp", classpath, "com.integrationfabric.bridge.FabricJavaBridge", descriptor.name],
+            _java_command(config, classpath, descriptor.name),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env=process_env,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), bufsize=1,
         )
     except FileNotFoundError as exc:
         Path(descriptor.name).unlink(missing_ok=True)
         raise JavaBridgeError("Java runtime is unavailable for the SAP JCo listener") from exc
-    return SapJcoListener(process, Path(descriptor.name))
+    maximum = int(values.get("jco.server.max_pending_events") or max(4, int(values.get("jco.server.connection_count") or 8) * 2))
+    return SapJcoListener(process, Path(descriptor.name), maximum)
 
 
 def jms_values(config: dict[str, Any]) -> dict[str, Any]:

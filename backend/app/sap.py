@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, os, re, uuid
+import json, os, re, uuid, time, threading
 from xml.etree import ElementTree as ET
 from typing import Any
 from xml.sax.saxutils import escape
@@ -7,7 +7,26 @@ from .java_bridge import JavaBridgeError, invoke as invoke_java, start_sap_liste
 
 class SapAdapter:
     """SAP ECC adapter. External mode uses SAP's separately licensed Java Connector (JCo)."""
-    def __init__(self): self.sessions: dict[str, Any] = {}; self.listeners: dict[str, SapJcoListener] = {}; self._listener_start_lock = __import__('asyncio').Lock()
+    def __init__(self):
+        self.sessions: dict[str, dict[str, Any]] = {}
+        self.listeners: dict[str, SapJcoListener] = {}
+        self._state_lock = threading.RLock()
+        self._listener_start_lock = __import__('asyncio').Lock()
+
+    def _prune_sessions(self) -> None:
+        now = time.monotonic()
+        with self._state_lock:
+            for session_id in [key for key, value in self.sessions.items() if float(value.get('expiresAt') or 0) <= now]:
+                self.sessions.pop(session_id, None)
+
+    def close_all(self) -> None:
+        """Close every native listener and discard expiring logical sessions."""
+        with self._state_lock:
+            listeners = list(self.listeners.values())
+            self.listeners.clear()
+            self.sessions.clear()
+        for listener in listeners:
+            listener.close()
 
     @staticmethod
     def _mode(cfg: dict) -> str:
@@ -465,16 +484,40 @@ class SapAdapter:
         return {'destinationName': str(cfg.get('destinationName') or 'integration-fabric-sap'),
                 **{f'jco.client.{key}': value for key, value in params.items()}}
 
-    def _jco_call(self, cfg: dict, function_name: str, arguments: dict | None = None, tables: dict | None = None) -> dict:
+    def _jco_call(self, cfg: dict, function_name: str, arguments: dict | None = None, tables: dict | None = None, changing: dict | None = None) -> dict:
         protocol = str(cfg.get('transactionProtocol') or cfg.get('idocInputMode') or '').strip().lower()
         transactional = bool(cfg.get('transactional')) or protocol in ('trfc', 'qrfc', 't-rfc', 'q-rfc')
         if protocol in ('qrfc', 'q-rfc') and not str(cfg.get('queueName') or '').strip():
             raise ValueError('qRFC IDoc delivery requires a SAP queue name')
-        values = {**self._jco_values(cfg), 'functionName': function_name, 'transactional': str(transactional).lower(), 'transactionProtocol': protocol or 'srfc'}
+        values = {
+            **self._jco_values(cfg),
+            'functionName': function_name,
+            'transactional': str(transactional).lower(),
+            'transactionProtocol': protocol or 'srfc',
+            'autoCommit': str(bool(cfg.get('autoCommit'))).lower(),
+            'contextEnd': str(bool(cfg.get('contextEnd'))).lower(),
+        }
         if cfg.get('queueName'): values['queueName'] = cfg.get('queueName')
-        for key, value in (arguments or {}).items(): values[f'argument.{key}'] = value
-        for table_name, rows in (tables or {}).items():
+        table_values = dict(tables or {})
+        def flatten_argument(prefix: str, value: Any) -> None:
+            if isinstance(value, dict):
+                for child_key, child_value in value.items(): flatten_argument(f'{prefix}.{child_key}', child_value)
+            elif isinstance(value, list) and all(isinstance(row, dict) for row in value):
+                table_values[prefix.split('.', 1)[0]] = value
+            else:
+                values[f'argument.{prefix}'] = '' if value is None else value
+        for key, value in (arguments or {}).items(): flatten_argument(str(key), value)
+        changing_values: dict[str, Any] = {}
+        def flatten_changing(prefix: str, value: Any) -> None:
+            if isinstance(value, dict):
+                for child_key, child_value in value.items(): flatten_changing(f'{prefix}.{child_key}', child_value)
+            else: changing_values[f'changing.{prefix}'] = '' if value is None else value
+        for key, value in (changing or {}).items(): flatten_changing(str(key), value)
+        values.update(changing_values)
+        for table_name, rows in table_values.items():
+            rows = rows if isinstance(rows, list) else [rows]
             for row_index, row in enumerate(rows):
+                if not isinstance(row, dict): continue
                 prefix = 'readTable' if function_name == 'RFC_READ_TABLE' else 'tableArg'
                 for field, value in row.items(): values[f'{prefix}.{table_name}.{row_index}.{field}'] = value
         try: return invoke_java('sap.call', cfg, values, family='sap', timeout=float(cfg.get('timeoutSeconds') or 30) + 5)
@@ -482,7 +525,8 @@ class SapAdapter:
 
     @staticmethod
     def _listener_key(cfg: dict) -> str:
-        return '|'.join(str(cfg.get(key) or '').strip().lower() for key in ('gatewayHost', 'gatewayService', 'programId', 'driverDirectory'))
+        listener_function = cfg.get('listenerFunction') or cfg.get('functionName') or ('IDOC_INBOUND_ASYNCHRONOUS' if cfg.get('operation') == 'idoc_listener' else '')
+        return '|'.join([*(str(cfg.get(key) or '').strip().lower() for key in ('gatewayHost', 'gatewayService', 'programId', 'driverDirectory')), str(listener_function).strip().lower()])
 
     @staticmethod
     def _idoc_response_parts(payload: dict) -> tuple[dict, list]:
@@ -527,7 +571,8 @@ class SapAdapter:
             'jco.server.tid_store': cfg.get('tidStorePath') or default_tid_store,
             'jco.server.connection_count': int(cfg.get('maximumConnections') or cfg.get('connectionCount') or 8),
             'jco.server.ack_timeout_seconds': max(1, int(float(cfg.get('ackTimeoutSeconds') or cfg.get('sapAckTimeoutSeconds') or 300))),
-            'listenerFunction': 'IDOC_INBOUND_ASYNCHRONOUS',
+            'jco.server.max_pending_events': max(2, min(4096, int(cfg.get('maxPendingEvents') or int(cfg.get('maximumConnections') or cfg.get('connectionCount') or 8) * 2))),
+            'listenerFunction': str(cfg.get('listenerFunction') or cfg.get('functionName') or 'IDOC_INBOUND_ASYNCHRONOUS').strip(),
         }
         # Preserve the existing durable default, while allowing an explicitly
         # disabled SAP TIDManager resource to opt out for non-transactional
@@ -539,7 +584,20 @@ class SapAdapter:
         return values
 
     async def receive_idoc(self, cfg: dict) -> dict:
+        """Receive an IDoc or RFC/BAPI request from a persistent JCo server."""
+        listener_operation = str(cfg.get('operation') or 'idoc_listener').strip().lower()
+        rfc_listener = listener_operation == 'rfc_bapi_listener'
+        if rfc_listener:
+            function_name = str(cfg.get('functionName') or cfg.get('listenerFunction') or '').strip()
+            if not function_name:
+                raise RuntimeError('RFC/BAPI Listener requires a fetched function module name')
+            cfg = {**cfg, 'listenerFunction': function_name}
+        else:
+            cfg = {**cfg, 'listenerFunction': 'IDOC_INBOUND_ASYNCHRONOUS'}
         if self._mode(cfg) == 'mock':
+            if rfc_listener:
+                request = cfg.get('mockInput') or {'imports': {'REQUEST': 'Integration Fabric mock RFC'}, 'tables': {}}
+                return {'RfcRequest': request, 'functionName': cfg.get('listenerFunction'), 'invocationProtocol': cfg.get('invocationProtocol', 'Request/Reply'), 'received': True, 'mock': True, 'jcoDiagnostics': []}
             idoc_type = str(cfg.get('idocType') or (cfg.get('selectedIdoc') or {}).get('idocType') or 'MOCKIDOC')
             xml_payload = f'<{re.sub(r"[^A-Za-z0-9_.-]", "_", idoc_type)}><IDOC><EDI_DC40><TABNAM>EDI_DC40</TABNAM><IDOCTYP>{idoc_type}</IDOCTYP></EDI_DC40></IDOC></{re.sub(r"[^A-Za-z0-9_.-]", "_", idoc_type)}>'
             parsed = self._xml_to_json(ET.fromstring(xml_payload))
@@ -589,6 +647,20 @@ class SapAdapter:
                     event = await listener.next_event()
             payload = event.get('payload') or {}
             delivery_id = str(event.get('deliveryId') or '').strip() or None
+            if rfc_listener:
+                return {
+                    'RfcRequest': payload,
+                    'imports': payload.get('imports', {}) if isinstance(payload, dict) else {},
+                    'tables': payload.get('tables', {}) if isinstance(payload, dict) else {},
+                    'functionName': event.get('functionName') or cfg.get('listenerFunction'),
+                    'invocationProtocol': cfg.get('invocationProtocol', 'Request/Reply'),
+                    'TID': event.get('TID'),
+                    'CPIC_ID': event.get('CPIC_ID'),
+                    'received': True,
+                    'jcoDiagnostics': diagnostics,
+                    '_sapDeliveryId': delivery_id,
+                    '_sapListenerKey': listener_key,
+                }
             # IDOC_INBOUND_ASYNCHRONOUS carries control data as an import
             # structure and IDoc segments as table rows.
             control, data = self._idoc_response_parts(payload)
@@ -619,7 +691,7 @@ class SapAdapter:
             # Keep the named SAPIDoc JSON view for mappings/debugging, while
             # `payload` is deliberately XML because that is the listener
             # contract. The raw RFC representation is retained separately.
-            return {'SAPIDoc': parsed_payload, 'controlRecord': control_record, 'rawSAPIDoc': structured, 'payload': xml_payload, 'IDocXML': xml_payload, 'format': 'XML', 'received': True, 'jcoDiagnostics': diagnostics, '_sapDeliveryId': delivery_id, '_sapListenerKey': listener_key}
+            return {'SAPIDoc': parsed_payload, 'controlRecord': control_record, 'rawSAPIDoc': structured, 'payload': xml_payload, 'IDocXML': xml_payload, 'format': 'XML', 'received': True, 'TID': event.get('TID'), 'CPIC_ID': event.get('CPIC_ID'), 'jcoDiagnostics': diagnostics, '_sapDeliveryId': delivery_id, '_sapListenerKey': listener_key}
         except JavaBridgeError as exc:
             if delivery_id:
                 try: listener.acknowledge(delivery_id, False)
@@ -633,11 +705,11 @@ class SapAdapter:
                 except Exception: pass
             raise
 
-    def acknowledge_idoc(self, listener_key: str, delivery_id: str, success: bool) -> None:
+    def acknowledge_idoc(self, listener_key: str, delivery_id: str, success: bool, response: dict | None = None) -> None:
         listener = self.listeners.get(listener_key)
         if not listener:
             raise RuntimeError(f'SAP JCo listener is unavailable for delivery {delivery_id}')
-        listener.acknowledge(delivery_id, success)
+        listener.acknowledge(delivery_id, success, response)
 
     def stop_listener(self, cfg: dict) -> None:
         listener = self.listeners.pop(self._listener_key(cfg), None)
@@ -792,14 +864,29 @@ class SapAdapter:
         if operation == 'idoc_listener': return payload if isinstance(payload, dict) else {'payload':payload}
         if operation == 'rfc_bapi_listener': return payload if isinstance(payload, dict) else {'payload':payload}
         if operation == 'dynamic_connection':
+            self._prune_sessions()
             session_id = cfg.get('sessionID') or str(uuid.uuid4())
             if cfg.get('terminateConnection'):
-                conn = self.sessions.pop(session_id, None)
-                if conn: conn.close()
+                with self._state_lock: self.sessions.pop(session_id, None)
                 return {'sessionID':session_id,'terminated':True,'transactional':bool(cfg.get('transactional'))}
-            if self._mode(cfg) != 'mock': self.test(cfg)
-            self.sessions[session_id] = None
+            if self._mode(cfg) != 'mock':
+                tested = self.test(cfg)
+                if not tested.get('ok'): raise RuntimeError(tested.get('message') or 'SAP dynamic connection failed')
+            timeout_ms = max(1000, int(float(cfg.get('contextTimeout') or cfg.get('timeout') or 600000)))
+            maximum_sessions = max(1, min(10000, int(cfg.get('maximumDynamicSessions') or 1024)))
+            with self._state_lock:
+                if session_id not in self.sessions and len(self.sessions) >= maximum_sessions:
+                    raise RuntimeError(f'SAP dynamic connection limit ({maximum_sessions}) has been reached')
+                self.sessions[session_id] = {'config': dict(cfg), 'transactional': bool(cfg.get('transactional')), 'expiresAt': time.monotonic() + timeout_ms / 1000}
             return {'sessionID':session_id,'connected':True,'transactional':bool(cfg.get('transactional'))}
+        session_id = cfg.get('sessionID') or (payload.get('sessionID') if isinstance(payload, dict) else None)
+        if session_id:
+            self._prune_sessions()
+            with self._state_lock: session = self.sessions.get(str(session_id))
+            if not session:
+                raise RuntimeError(f'SAP dynamic connection session {session_id!r} is missing or expired')
+            cfg = {**session['config'], **cfg, 'sessionID': str(session_id)}
+            session['expiresAt'] = time.monotonic() + max(1, int(float(cfg.get('commitExpiry') or cfg.get('contextTimeout') or 600000))) / 1000
         if operation in ('idoc_converter','idoc_parser'):
             # Prefer explicit parser input mappings when present. This makes
             # the Input tab contract executable instead of merely visual,
@@ -890,21 +977,78 @@ class SapAdapter:
         if self._mode(cfg) == 'mock':
             return cfg.get('mockOutput') or {'operation':operation,'function':cfg.get('functionName'),'table':cfg.get('tableName'),'input':payload,'successful':True}
         if operation == 'read_table':
-            result = self._jco_call(cfg, 'RFC_READ_TABLE', {'QUERY_TABLE': cfg['tableName'], 'DELIMITER': cfg.get('delimiter', '|'), 'ROWCOUNT': int(cfg.get('rowCount', 0)), 'ROWSKIPS': int(cfg.get('rowSkip', 0))},
-                                    {'OPTIONS': [{'TEXT': x} for x in cfg.get('where', [])], 'FIELDS': [{'FIELDNAME': x} for x in cfg.get('fields', [])]})
+            table_name = str(cfg.get('tableName') or '').strip()
+            if not table_name: raise RuntimeError('Read Table requires an SAP table or view name')
+            requested_fields = cfg.get('fields', [])
+            if isinstance(requested_fields, str): requested_fields = [item.strip() for item in requested_fields.split(',') if item.strip()]
+            where = cfg.get('where', [])
+            if isinstance(where, str): where = [where] if where.strip() else []
+            result = self._jco_call(cfg, 'RFC_READ_TABLE', {'QUERY_TABLE': table_name, 'DELIMITER': cfg.get('delimiter', '|'), 'ROWCOUNT': int(cfg.get('rowCount', 0)), 'ROWSKIPS': int(cfg.get('rowSkip', 0))},
+                                    {'OPTIONS': [{'TEXT': x} for x in where], 'FIELDS': [{'FIELDNAME': x} for x in requested_fields]})
             delimiter = cfg.get('delimiter', '|'); data = result.get('tables', {})
-            return {'rows': [str(row.get('WA', '')).split(delimiter) for row in data.get('DATA', [])], 'fields': data.get('FIELDS', [])}
+            metadata = data.get('FIELDS', [])
+            names = [str(field.get('FIELDNAME') or '').strip() for field in metadata if isinstance(field, dict)] or list(requested_fields)
+            rows = []
+            for row in data.get('DATA', []):
+                raw = str(row.get('WA', '')) if isinstance(row, dict) else str(row)
+                values = raw.split(str(delimiter))
+                rows.append({name: values[index].rstrip() if index < len(values) else '' for index, name in enumerate(names)})
+            return {'rows': rows, 'fields': metadata, 'rowCount': len(rows), 'tableName': table_name}
         function = cfg.get('functionName') or ('IDOC_INBOUND_ASYNCHRONOUS' if operation in ('post_idoc', 'idoc_reader') else '')
         if not function: raise RuntimeError(f'{operation} requires a functionName')
         args = payload if isinstance(payload, dict) else {'DATA': payload}
+        changing = {}
+        tables = {}
+        if operation == 'invoke_rfc_bapi' and isinstance(payload, dict):
+            args = payload.get('importParameters') if isinstance(payload.get('importParameters'), dict) else {key: value for key, value in payload.items() if key not in ('changingParameters', 'tableParameters', 'sessionID', 'timeout')}
+            changing = payload.get('changingParameters') if isinstance(payload.get('changingParameters'), dict) else {}
+            tables = payload.get('tableParameters') if isinstance(payload.get('tableParameters'), dict) else {}
         call_cfg = dict(cfg)
         if operation in ('post_idoc', 'idoc_reader'):
+            # IDOC_INBOUND_ASYNCHRONOUS does not accept an arbitrary DATA
+            # string.  SAP expects EDI_DC40 rows in IDOC_CONTROL_REC_40 and
+            # EDI_DD40 rows in IDOC_DATA_REC_40. Convert XML/named input with
+            # the fetched IDoc metadata and preserve an already-rendered
+            # control/data envelope without modification.
+            selected_idoc = cfg.get('selectedIdoc') or {}
+            metadata_fields, metadata_segments = self._metadata_for_idoc(selected_idoc)
+            source = payload
+            if isinstance(source, dict):
+                for wrapper in ('ProcessInput', 'IDocReaderInput', 'PostIDocInput', 'SAPIDoc'):
+                    if wrapper in source and len(source) == 1:
+                        source = source[wrapper]
+                        break
+                if isinstance(source, dict) and 'payload' in source and not ('control' in source or 'data' in source):
+                    source = source['payload']
+            idoc_type = str(cfg.get('idocType') or selected_idoc.get('idocType') or 'IDoc')
+            rendered = self._xml_to_raw_idoc(
+                source,
+                idoc_type,
+                metadata_fields,
+                metadata_segments,
+                selected_idoc.get('schema'),
+            )
+            control = rendered.get('control') or {}
+            data = rendered.get('data') or []
+            if not isinstance(control, dict) or not control:
+                raise RuntimeError('Post IDoc requires an EDI_DC40 control record')
+            if not isinstance(data, list) or not data:
+                raise RuntimeError('Post IDoc requires at least one EDI_DD40 data segment')
+            # This standard RFC uses table parameters for both the control
+            # record and data records. qRFC ordering is selected on the JCo
+            # execute overload; the function signature remains unchanged.
+            args = {}
+            tables = {
+                'IDOC_CONTROL_REC_40': [control],
+                'IDOC_DATA_REC_40': data,
+            }
             # TIBCO's sender uses transactional RFC by default for Post IDoc;
             # IDoc Reader defaults to queued RFC so ordering can be retained.
             call_cfg.setdefault('transactional', True)
-            call_cfg.setdefault('transactionProtocol', 'qRFC' if operation == 'idoc_reader' else 'tRFC')
-        result = self._jco_call(call_cfg, function, args)
-        if cfg.get('autoCommit'): self._jco_call(cfg, 'BAPI_TRANSACTION_COMMIT', {'WAIT': 'X'})
-        return result
+            configured_protocol = str(call_cfg.get('transactionProtocol') or call_cfg.get('idocInputMode') or '').strip().lower()
+            if configured_protocol not in ('trfc', 't-rfc', 'qrfc', 'q-rfc'):
+                configured_protocol = 'qrfc' if operation == 'idoc_reader' else 'trfc'
+            call_cfg['transactionProtocol'] = configured_protocol
+        return self._jco_call(call_cfg, function, args, tables, changing)
 
 sap_adapter = SapAdapter()

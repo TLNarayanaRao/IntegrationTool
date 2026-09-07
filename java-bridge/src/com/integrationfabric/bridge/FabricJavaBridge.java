@@ -77,16 +77,22 @@ public final class FabricJavaBridge {
             if (operation.equals("call")) {
                 String functionName = required(p, "functionName");
                 Object function = function(destinationObject, functionName);
-                for (String key : p.stringPropertyNames()) if (key.startsWith("argument.")) setValue(function, key.substring(9), p.getProperty(key));
+                for (String key : p.stringPropertyNames()) {
+                    if (key.startsWith("argument.")) setParameterPath(invoke(function, "getImportParameterList"), key.substring(9), p.getProperty(key));
+                    else if (key.startsWith("changing.")) setParameterPath(invoke(function, "getChangingParameterList"), key.substring(9), p.getProperty(key));
+                }
                 fillTables(function, p);
                 if (functionName.equals("RFC_READ_TABLE")) fillReadTable(function, p);
-                boolean transactional = bool(p, "transactional", false);
                 String protocol = p.getProperty("transactionProtocol", "sRFC").trim().toLowerCase(Locale.ROOT);
+                boolean asynchronous = protocol.equals("trfc") || protocol.equals("t-rfc") || protocol.equals("qrfc") || protocol.equals("q-rfc");
+                boolean transactionalContext = bool(p, "transactional", false) && !asynchronous;
                 String tid = null;
-                if (transactional || protocol.equals("trfc") || protocol.equals("qrfc")) {
+                boolean contextStarted = false;
+                try {
+                if (asynchronous) {
                     tid = String.valueOf(invoke(destinationObject, "createTID"));
                     String queueName = p.getProperty("queueName", "").trim();
-                    if (protocol.equals("qrfc") && !queueName.isEmpty()) invoke(function, "execute", destinationObject, tid, queueName);
+                    if ((protocol.equals("qrfc") || protocol.equals("q-rfc")) && !queueName.isEmpty()) invoke(function, "execute", destinationObject, tid, queueName);
                     else invoke(function, "execute", destinationObject, tid);
                     // SAP considers the transaction complete only after the
                     // client confirms the TID. If this fails, propagate the
@@ -94,11 +100,46 @@ public final class FabricJavaBridge {
                     // a false success.
                     invoke(destinationObject, "confirmTID", tid);
                 } else {
+                    if (transactionalContext || bool(p, "autoCommit", false)) {
+                        Class<?> contextType = Class.forName("com.sap.conn.jco.JCoContext");
+                        Method begin = Arrays.stream(contextType.getMethods())
+                                .filter(method -> method.getName().equals("begin") && method.getParameterCount() == 1 && method.getParameterTypes()[0].isInstance(destinationObject))
+                                .findFirst().orElseThrow(() -> new NoSuchMethodException("JCoContext.begin(JCoDestination)"));
+                        begin.invoke(null, destinationObject);
+                        contextStarted = true;
+                    }
                     invoke(function, "execute", destinationObject);
+                    if (bool(p, "autoCommit", false)) {
+                        Object commit = function(destinationObject, "BAPI_TRANSACTION_COMMIT");
+                        setValue(commit, "WAIT", "X");
+                        invoke(commit, "execute", destinationObject);
+                    }
                 }
                 Map<String, Object> result = functionResult(function);
                 if (tid != null) { result.put("TID", tid); result.put("transactional", true); result.put("transactionProtocol", protocol); result.put("confirmed", true); }
+                if (bool(p, "autoCommit", false) && !asynchronous) result.put("committed", true);
                 return result;
+                } catch (Exception callError) {
+                    if (contextStarted) {
+                        try {
+                            Object rollback = function(destinationObject, "BAPI_TRANSACTION_ROLLBACK");
+                            invoke(rollback, "execute", destinationObject);
+                        } catch (Throwable rollbackError) {
+                            callError.addSuppressed(rollbackError);
+                        }
+                    }
+                    throw callError;
+                } finally {
+                    if (contextStarted) {
+                        Class<?> contextType = Class.forName("com.sap.conn.jco.JCoContext");
+                        try {
+                            Method end = Arrays.stream(contextType.getMethods()).filter(method -> method.getName().equals("end") && method.getParameterCount() == 1).findFirst().orElseThrow();
+                            end.invoke(null, destinationObject);
+                        } catch (Throwable endError) {
+                            System.err.println("SAP JCo context cleanup failed: " + endError);
+                        }
+                    }
+                }
             }
             throw new IllegalArgumentException("Unsupported SAP JCo operation: " + operation);
         } finally { close(destinationObject); }
@@ -117,10 +158,23 @@ public final class FabricJavaBridge {
         invoke(imports, "setValue", name, value);
     }
 
+    private static void setParameterPath(Object parameters, String path, Object value) throws Exception {
+        if (parameters == null) throw new IllegalArgumentException("SAP function has no parameter list for " + path);
+        String[] parts = path.split("\\.");
+        Object current = parameters;
+        for (int index = 0; index < parts.length - 1; index++) {
+            current = invoke(current, "getStructure", parts[index]);
+            if (current == null) throw new IllegalArgumentException("SAP structure parameter was not found: " + String.join(".", Arrays.copyOf(parts, index + 1)));
+        }
+        invoke(current, "setValue", parts[parts.length - 1], value);
+    }
+
     private static Map<String, Object> functionResult(Object function) throws Exception {
         Map<String, Object> output = new LinkedHashMap<>();
         Object exports = invoke(function, "getExportParameterList");
         if (exports != null) output.put("exports", parameterValues(exports));
+        Object changing = invoke(function, "getChangingParameterList");
+        if (changing != null) output.put("changing", parameterValues(changing));
         Object tables = invoke(function, "getTableParameterList");
         if (tables != null) output.put("tables", tableValues(tables));
         return output;
@@ -131,6 +185,26 @@ public final class FabricJavaBridge {
         Object imports = invoke(function, "getImportParameterList");
         if (imports != null) output.put("imports", parameterValues(imports));
         return output;
+    }
+
+    /** Populate an RFC/BAPI listener response before returning to SAP. */
+    private static void applyListenerResponse(Object function, Properties response) throws Exception {
+        Object exports = invoke(function, "getExportParameterList");
+        Object tables = invoke(function, "getTableParameterList");
+        for (String key : response.stringPropertyNames()) {
+            if (key.startsWith("export.") && exports != null) {
+                setParameterPath(exports, key.substring(7), response.getProperty(key));
+                continue;
+            }
+            if (!key.startsWith("table.") || tables == null) continue;
+            String[] parts = key.split("\\.", 4);
+            if (parts.length != 4) continue;
+            Object table = invoke(tables, "getTable", parts[1]);
+            if (table == null) continue;
+            int row = Integer.parseInt(parts[2]);
+            while (((Number) invoke(table, "getNumRows")).intValue() <= row) invoke(table, "appendRow");
+            invoke(table, "setValue", parts[3], response.getProperty(key));
+        }
     }
 
     /** Run a real JCo RFC server and emit one UTF-8 JSON event per inbound call. */
@@ -181,16 +255,24 @@ public final class FabricJavaBridge {
         // few large IDocs. Queue the extracted event and emit it from a
         // dedicated writer so callbacks return as quickly as possible.
         int connectionCount = Math.max(1, integer(p, "jco.server.connection_count", 8));
-        BlockingQueue<Map<String, Object>> idocEvents = new LinkedBlockingQueue<>(Math.max(2, connectionCount * 2));
+        int maxPendingEvents = Math.max(connectionCount, integer(p, "jco.server.max_pending_events", connectionCount * 2));
+        BlockingQueue<Map<String, Object>> idocEvents = new LinkedBlockingQueue<>(maxPendingEvents);
         Map<String, CompletableFuture<Boolean>> pendingDeliveries = new ConcurrentHashMap<>();
+        Map<String, Properties> pendingResponses = new ConcurrentHashMap<>();
         Thread commandReader = new Thread(() -> {
             try (BufferedReader commands = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = commands.readLine()) != null) {
-                    String[] parts = line.split("\\t", 2);
-                    if (parts.length != 2) continue;
-                    CompletableFuture<Boolean> decision = pendingDeliveries.get(parts[1].trim());
-                    if (decision != null) decision.complete("commit".equalsIgnoreCase(parts[0].trim()));
+                    String[] parts = line.split("\\t", 4);
+                    if (parts.length < 2) continue;
+                    String action = parts[0].trim(), deliveryId = parts[1].trim();
+                    if ("set".equalsIgnoreCase(action) && parts.length == 4) {
+                        Properties response = pendingResponses.get(deliveryId);
+                        if (response != null) response.setProperty(parts[2], new String(Base64.getDecoder().decode(parts[3]), StandardCharsets.UTF_8));
+                        continue;
+                    }
+                    CompletableFuture<Boolean> decision = pendingDeliveries.get(deliveryId);
+                    if (decision != null) decision.complete("commit".equalsIgnoreCase(action));
                 }
             } catch (IOException error) {
                 System.err.println("SAP JCo acknowledgement channel stopped: " + error);
@@ -221,20 +303,27 @@ public final class FabricJavaBridge {
                     String deliveryId = UUID.randomUUID().toString();
                     CompletableFuture<Boolean> decision = new CompletableFuture<>();
                     pendingDeliveries.put(deliveryId, decision);
-                    Map<String, Object> event = map("event", "idoc", "deliveryId", deliveryId, "functionName", functionName, "payload", listenerFunctionResult(function));
+                    Properties response = new Properties();
+                    pendingResponses.put(deliveryId, response);
+                    Object serverContext = args != null && args.length > 0 ? args[0] : null;
+                    String transactionId = optionalString(serverContext, "getTID");
+                    String connectionId = optionalString(serverContext, "getConnectionID");
+                    Map<String, Object> event = map("event", "sap_request", "deliveryId", deliveryId, "functionName", functionName, "TID", transactionId, "CPIC_ID", connectionId, "payload", listenerFunctionResult(function));
                     idocEvents.put(event);
                     try {
                         long timeout = Math.max(1L, (long) (number(p, "jco.server.ack_timeout_seconds", 300) * 1000));
                         if (!Boolean.TRUE.equals(decision.get(timeout, TimeUnit.MILLISECONDS))) {
-                            throw new IllegalStateException("Integration Fabric rolled back the SAP IDoc transaction");
+                            throw new IllegalStateException("Integration Fabric rolled back the SAP request");
                         }
+                        applyListenerResponse(function, response);
                     } finally {
                         pendingDeliveries.remove(deliveryId);
+                        pendingResponses.remove(deliveryId);
                     }
                 } catch (Throwable error) {
                     Throwable cause = error;
                     while (cause instanceof InvocationTargetException && ((InvocationTargetException) cause).getCause() != null) cause = ((InvocationTargetException) cause).getCause();
-                    System.out.println(json(map("event", "jco_log", "level", "ERROR", "phase", "idoc_callback", "message", "SAP JCo IDoc callback could not be serialized", "errorType", cause.getClass().getName(), "error", String.valueOf(cause.getMessage() == null ? cause : cause.getMessage()))));
+                    System.out.println(json(map("event", "jco_log", "level", "ERROR", "phase", "request_callback", "message", "SAP JCo request callback failed", "errorType", cause.getClass().getName(), "error", String.valueOf(cause.getMessage() == null ? cause : cause.getMessage()))));
                     System.out.flush();
                     throw new RuntimeException(cause);
                 }
@@ -613,6 +702,16 @@ public final class FabricJavaBridge {
             throw new IllegalAccessException("Cannot access " + selected + " through " + target.getClass().getName());
         }
         return selected.invoke(target, args);
+    }
+
+    private static String optionalString(Object target, String method) {
+        if (target == null) return "";
+        try {
+            Object value = invoke(target, method);
+            return value == null ? "" : String.valueOf(value);
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 
     private static Method publicContractMethod(Class<?> type, String name, Object[] args) {

@@ -32,6 +32,15 @@ debugger = DebugManager(runtime)
 runtime_states: dict[str, dict] = {}
 active_runs: dict[str, asyncio.Task] = {}
 
+@app.on_event('shutdown')
+async def shutdown_native_connectors():
+    """Stop persistent JCo processes before the runtime exits/reloads."""
+    pending = [task for task in active_runs.values() if task and not task.done()]
+    for task in pending: task.cancel()
+    if pending: await asyncio.gather(*pending, return_exceptions=True)
+    active_runs.clear()
+    sap_adapter.close_all()
+
 INBOUND_OPERATIONS = {None, 'listen', 'receiver', 'service'}
 CONTINUOUS_EVENT_OPERATIONS = {
     'timer': {'schedule'},
@@ -264,17 +273,31 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
                     sap_delivery_id = output.pop('_sapDeliveryId', None)
                     sap_listener_key = output.pop('_sapListenerKey', None)
                 if debug_session_id:
+                    delivery_transport = {
+                        'deliveryId': sap_delivery_id,
+                        'listenerKey': sap_listener_key,
+                        'functionName': output.get('functionName') if isinstance(output, dict) else None,
+                        'operation': activity.config.get('operation'),
+                        'invocationProtocol': output.get('invocationProtocol') if isinstance(output, dict) else None,
+                    }
+                    session = debugger.sessions.get(debug_session_id)
+                    if session and session.get('frames'):
+                        session['frames'][-1]['context']['transport'] = delivery_transport
                     await debugger.trigger_event(debug_session_id, output)
                     session = debugger.sessions.get(debug_session_id)
-                    if sap_delivery_id and sap_listener_key:
+                    if sap_delivery_id and sap_listener_key and not delivery_transport.get('completed'):
                         if session and session.get('status') == 'listening':
-                            sap_adapter.acknowledge_idoc(sap_listener_key, sap_delivery_id, True)
+                            request_reply = activity.config.get('operation') == 'rfc_bapi_listener' and str(delivery_transport.get('invocationProtocol') or 'Request/Reply').lower().replace('-', '').replace('/', '') in ('requestreply', 'srfc')
+                            sap_adapter.acknowledge_idoc(sap_listener_key, sap_delivery_id, not request_reply)
+                            if request_reply:
+                                session['status'] = 'failed'
+                                session['logs'].append({'time': log_timestamp(), 'level': 'ERROR', 'kind': 'connector', 'message': 'RFC/BAPI request completed without a Reply from RFC/BAPI activity; SAP request was rolled back.', 'activityId': activity.id, 'taskId': task.id})
                         elif session and session.get('status') in ('failed', 'stopped'):
                             sap_adapter.acknowledge_idoc(sap_listener_key, sap_delivery_id, False)
                         elif session:
                             # A breakpoint pauses before completion. Hold the
                             # SAP transaction until the user resumes or stops.
-                            session['pendingSapDelivery'] = {'listenerKey': sap_listener_key, 'deliveryId': sap_delivery_id}
+                            session['pendingSapDelivery'] = {'listenerKey': sap_listener_key, 'deliveryId': sap_delivery_id, 'transport': delivery_transport}
                     if session:
                         cursor = int(session.get('persistedLogCount', 0))
                         append_project_logs(project_id, item.name, session['logs'][cursor:], _project_log_directory(item, environment))
@@ -381,8 +404,20 @@ async def _continuous_sap_event_loop(item: Project, task, activity, environment:
                     continue
                 delivery_id = output.pop('_sapDeliveryId', None)
                 listener_key = output.pop('_sapListenerKey', None)
-                result = await runtime.run(task, output, resources, properties, activity.id, item, event_output=output)
-                if delivery_id and listener_key:
+                transport = {
+                    'deliveryId': delivery_id,
+                    'listenerKey': listener_key,
+                    'functionName': output.get('functionName') if isinstance(output, dict) else None,
+                    'operation': activity.config.get('operation'),
+                    'invocationProtocol': output.get('invocationProtocol') if isinstance(output, dict) else None,
+                }
+                result = await runtime.run(task, output, resources, properties, activity.id, item, event_output=output, transport=transport)
+                request_reply = activity.config.get('operation') == 'rfc_bapi_listener' and str(transport.get('invocationProtocol') or 'Request/Reply').lower().replace('-', '').replace('/', '') in ('requestreply', 'srfc')
+                if delivery_id and listener_key and request_reply and result.status == 'completed' and not transport.get('completed'):
+                    result.status = 'failed'
+                    result.output = {}
+                    result.logs.append({'time': log_timestamp(), 'level': 'ERROR', 'kind': 'connector', 'message': 'RFC/BAPI request completed without a Reply from RFC/BAPI activity; SAP request was rolled back.', 'activityId': activity.id, 'taskId': task.id})
+                if delivery_id and listener_key and not transport.get('completed'):
                     sap_adapter.acknowledge_idoc(listener_key, delivery_id, result.status == 'completed')
                 previous = runtime_states.get(project_id, {})
                 combined_logs = (list(previous.get('logs', [])) + result.logs)[-500:]
@@ -1220,7 +1255,8 @@ async def debug_action(session_id: str, request: DebugAction):
         project = state['project']
         pending = state.get('pendingSapDelivery')
         if pending and state.get('status') in ('listening', 'failed', 'stopped'):
-            sap_adapter.acknowledge_idoc(pending['listenerKey'], pending['deliveryId'], state.get('status') == 'listening')
+            if not pending.get('transport', {}).get('completed'):
+                sap_adapter.acknowledge_idoc(pending['listenerKey'], pending['deliveryId'], state.get('status') == 'listening')
             state.pop('pendingSapDelivery', None)
         if request.action == 'stop':
             active = active_runs.get(project.id)

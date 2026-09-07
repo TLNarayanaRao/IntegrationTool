@@ -45,7 +45,7 @@ class WorkflowRuntime:
             confirmed.append(str(handle)); technologies.append(pending['technology'])
         return {'confirmed': True, 'count': len(confirmed), 'ackIds': confirmed, 'technologies': sorted(set(technologies))}
 
-    async def run(self, process: ProcessDefinition, initial: dict, resources=None, properties=None, entry_activity_id=None, project: Project | None=None, execution_state: dict | None=None, event_output: Any = _NO_EVENT_OUTPUT) -> RunResult:
+    async def run(self, process: ProcessDefinition, initial: dict, resources=None, properties=None, entry_activity_id=None, project: Project | None=None, execution_state: dict | None=None, event_output: Any = _NO_EVENT_OUTPUT, transport: dict | None = None) -> RunResult:
         run_id, logs = str(uuid.uuid4()), []
         started = datetime.now(timezone.utc)
         correlation_id = str(initial.get('correlationId') or initial.get('correlation_id') or run_id) if isinstance(initial, dict) else run_id
@@ -58,6 +58,7 @@ class WorkflowRuntime:
             'properties': properties or {}, 'project': project, 'runtime': self, 'logs': logs,
             'activities': activity_outputs, 'tasks': task_outputs,
             'context': {'taskId': process.id, 'activityId': '', 'environment': getattr(project, 'active_environment', '') if project else '', 'correlationId': correlation_id, 'runId': run_id},
+            'transport': transport or {},
         }
         self.log(logs, 'INFO', f'Job started: {process.name}', kind='lifecycle', correlationId=correlation_id, runId=run_id, startedAt=log_timestamp(started))
         def finish(status: str, output: dict) -> RunResult:
@@ -456,7 +457,8 @@ class WorkflowRuntime:
             # durable store instead of silently falling back to a process-local
             # file. Keep the fallback for older projects that never selected a
             # TID resource.
-            if cfg.get('operation', 'invoke_rfc_bapi') == 'idoc_listener':
+            operation = cfg.get('operation', 'invoke_rfc_bapi')
+            if operation == 'idoc_listener':
                 tid_resource_id = cfg.get('tidManagerId')
                 tid_resource = ctx['resources'].get(tid_resource_id) if tid_resource_id else None
                 if tid_resource and tid_resource.type == 'sap_tid':
@@ -471,9 +473,18 @@ class WorkflowRuntime:
             if selected_idoc:
                 sap_cfg = {**sap_cfg, 'selectedIdoc': selected_idoc, 'idocType': sap_cfg.get('idocType') or selected_idoc.get('idocType'), 'extensionType': sap_cfg.get('extensionType') or selected_idoc.get('extensionType',''), 'release': sap_cfg.get('release') or selected_idoc.get('release',''), 'idocSchema': selected_idoc.get('schema')}
             payload = cfg.get('payload', ctx['last'])
-            if cfg.get('operation', 'invoke_rfc_bapi') == 'idoc_listener':
+            if operation in ('idoc_listener', 'rfc_bapi_listener'):
                 return await sap_adapter.receive_idoc(sap_cfg)
-            return await asyncio.to_thread(sap_adapter.execute, cfg.get('operation','invoke_rfc_bapi'), sap_cfg, payload)
+            if operation == 'reply_rfc_bapi' and sap_adapter._mode(sap_cfg) != 'mock':
+                delivery = ctx.get('transport') or {}
+                delivery_id, listener_key = delivery.get('deliveryId'), delivery.get('listenerKey')
+                if not delivery_id or not listener_key:
+                    raise RuntimeError('Reply from RFC/BAPI must run in the flow started by an RFC/BAPI Listener request')
+                response = payload if isinstance(payload, dict) else {'RESULT': payload}
+                sap_adapter.acknowledge_idoc(listener_key, delivery_id, True, response)
+                delivery['completed'] = True
+                return {'replied': True, 'functionName': delivery.get('functionName'), 'response': response}
+            return await asyncio.to_thread(sap_adapter.execute, operation, sap_cfg, payload)
         if activity.type == 'http':
             method, url = cfg.get('method','GET'), self.resolve(cfg.get('url',''), ctx)
             async with httpx.AsyncClient(timeout=float(cfg.get('timeout', 30))) as client:

@@ -243,8 +243,12 @@ def default_environment_properties() -> list[EnvironmentProperty]:
         ('connections.sap.gatewayHost', '', 'string'),
         ('connections.sap.gatewayService', '', 'string'),
         ('connections.sap.maximumConnections', 8, 'integer'),
+        ('connections.sap.maxPendingEvents', 16, 'integer'),
+        ('connections.sap.jvmInitialHeapMb', 64, 'integer'),
+        ('connections.sap.jvmMaximumHeapMb', 512, 'integer'),
         ('connections.sap.timeoutMilliseconds', 30000, 'integer'),
         ('connections.sap.ackTimeoutSeconds', 300, 'integer'),
+        ('connections.sap.maximumDynamicSessions', 1024, 'integer'),
         ('connections.sapTid.storageFile', 'data/sap-tids.json', 'string'),
     ]
     return [EnvironmentProperty(key=key, value=value, data_type=data_type) for key, value, data_type in values]

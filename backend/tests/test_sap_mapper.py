@@ -209,6 +209,92 @@ class SapMapperTests(unittest.TestCase):
         self.assertEqual(sent['transactionProtocol'], 'qrfc')
         self.assertEqual(sent['queueName'], 'ARTMAS_QUEUE')
 
+        with patch('app.sap.invoke_java', return_value={'exports':{}, 'committed':True}) as invoke:
+            result = adapter._jco_call({'mode':'mock', 'transactional':True, 'transactionProtocol':'Request/Reply', 'autoCommit':True}, 'BAPI_SALESORDER_CREATEFROMDAT2')
+        sent = invoke.call_args.args[2]
+        self.assertEqual(sent['transactionProtocol'].lower(), 'request/reply')
+        self.assertEqual(sent['transactional'], 'true')
+        self.assertEqual(sent['autoCommit'], 'true')
+        self.assertTrue(result['committed'])
+
+    def test_rfc_bapi_listener_and_reply_are_executable_runtime_contracts(self):
+        adapter = SapAdapter()
+        received = asyncio.run(adapter.receive_idoc({
+            'mode':'mock', 'operation':'rfc_bapi_listener', 'functionName':'Z_GET_ORDER',
+            'invocationProtocol':'Request/Reply', 'mockInput':{'imports':{'ORDER_ID':'42'}, 'tables':{}},
+        }))
+        self.assertEqual(received['functionName'], 'Z_GET_ORDER')
+        self.assertEqual(received['RfcRequest']['imports']['ORDER_ID'], '42')
+
+        runtime = WorkflowRuntime()
+        resource = SharedResource(id='sap-ecc', type='sap', name='ECC', config={'mode':'external'})
+        context = {
+            'input':{}, 'last':{'exports':{'STATUS':'OK'}, 'tables':{'MESSAGES':[{'TYPE':'S'}]}},
+            'vars':{}, 'resources':{'sap-ecc':resource}, 'properties':{}, 'activities':{}, 'tasks':{},
+            'context':{'taskId':'main'}, 'logs':[],
+            'transport':{'listenerKey':'server|z_get_order', 'deliveryId':'delivery-1', 'functionName':'Z_GET_ORDER'},
+        }
+        with patch('app.runtime.sap_adapter.acknowledge_idoc') as reply:
+            result = asyncio.run(runtime.execute(Activity(id='reply', type='sap', name='Reply', config={
+                'operation':'reply_rfc_bapi', 'resourceId':'sap-ecc',
+            }), context))
+        self.assertTrue(result['replied'])
+        reply.assert_called_once_with('server|z_get_order', 'delivery-1', True, context['last'])
+        self.assertTrue(context['transport']['completed'])
+
+    def test_sap_rfc_complex_parameters_are_flattened_without_python_repr(self):
+        adapter = SapAdapter()
+        config = {'mode':'mock', 'transactionProtocol':'sRFC'}
+        with patch('app.sap.invoke_java', return_value={'ok':True}) as invoke:
+            adapter._jco_call(config, 'Z_COMPLEX', {
+                'HEADER': {'ORDER_ID':'42', 'CUSTOMER':{'ID':'C1'}},
+            }, {'ITEMS':[{'POS':'10', 'MATERIAL':'A'}]}, {'STATE':{'CODE':'NEW'}})
+        values = invoke.call_args.args[2]
+        self.assertEqual(values['argument.HEADER.ORDER_ID'], '42')
+        self.assertEqual(values['argument.HEADER.CUSTOMER.ID'], 'C1')
+        self.assertEqual(values['changing.STATE.CODE'], 'NEW')
+        self.assertEqual(values['tableArg.ITEMS.0.MATERIAL'], 'A')
+        self.assertNotIn("{'ORDER_ID'", str(values))
+
+    def test_post_idoc_uses_standard_control_and_data_tables(self):
+        adapter = SapAdapter()
+        payload = {
+            'control': {'TABNAM':'EDI_DC40', 'IDOCTYP':'ORDERS05', 'MESTYP':'ORDERS'},
+            'data': [{'SEGNAM':'E1EDK01', 'SEGNUM':'1', 'PSGNUM':'0', 'SDATA':'0001'}],
+        }
+        with patch.object(adapter, '_jco_call', return_value={'TID':'T1'}) as call:
+            result = adapter.execute('post_idoc', {
+                'mode':'external', 'idocType':'ORDERS05', 'idocInputMode':'tRFC',
+            }, payload)
+        self.assertEqual(result['TID'], 'T1')
+        config, function, arguments, tables, changing = call.call_args.args
+        self.assertEqual(function, 'IDOC_INBOUND_ASYNCHRONOUS')
+        self.assertEqual(config['transactionProtocol'], 'trfc')
+        self.assertEqual(arguments, {})
+        self.assertEqual(tables['IDOC_CONTROL_REC_40'][0]['IDOCTYP'], 'ORDERS05')
+        self.assertEqual(tables['IDOC_DATA_REC_40'][0]['SEGNAM'], 'E1EDK01')
+        self.assertEqual(changing, {})
+
+    def test_dynamic_sap_sessions_expire_and_are_bounded(self):
+        adapter = SapAdapter()
+        created = adapter.execute('dynamic_connection', {'mode':'mock', 'maximumDynamicSessions':1, 'timeout':60000}, {})
+        with self.assertRaisesRegex(RuntimeError, 'limit'):
+            adapter.execute('dynamic_connection', {'mode':'mock', 'maximumDynamicSessions':1, 'timeout':60000}, {})
+        terminated = adapter.execute('dynamic_connection', {'mode':'mock', 'sessionID':created['sessionID'], 'terminateConnection':True}, {})
+        self.assertTrue(terminated['terminated'])
+        self.assertFalse(adapter.sessions)
+
+    def test_read_table_publishes_named_rows(self):
+        adapter = SapAdapter()
+        response = {'tables': {
+            'FIELDS':[{'FIELDNAME':'MANDT'}, {'FIELDNAME':'MTEXT'}],
+            'DATA':[{'WA':'100|Production'}, {'WA':'200|Quality'}],
+        }}
+        with patch.object(adapter, '_jco_call', return_value=response):
+            result = adapter.execute('read_table', {'mode':'external', 'tableName':'T000', 'fields':'MANDT,MTEXT'}, {})
+        self.assertEqual(result['rows'][0], {'MANDT':'100', 'MTEXT':'Production'})
+        self.assertEqual(result['rowCount'], 2)
+
     def test_idoc_parser_decodes_physical_segments_to_named_bounded_fields(self):
         adapter = SapAdapter()
         selected = {

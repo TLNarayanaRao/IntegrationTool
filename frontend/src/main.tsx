@@ -744,8 +744,12 @@ const defaultProperties: Property[] = [
   { key: "connections.sap.gatewayHost", value: "", data_type: "string" },
   { key: "connections.sap.gatewayService", value: "", data_type: "string" },
   { key: "connections.sap.maximumConnections", value: 8, data_type: "integer" },
+  { key: "connections.sap.maxPendingEvents", value: 16, data_type: "integer" },
+  { key: "connections.sap.jvmInitialHeapMb", value: 64, data_type: "integer" },
+  { key: "connections.sap.jvmMaximumHeapMb", value: 512, data_type: "integer" },
   { key: "connections.sap.timeoutMilliseconds", value: 30000, data_type: "integer" },
   { key: "connections.sap.ackTimeoutSeconds", value: 300, data_type: "integer" },
+  { key: "connections.sap.maximumDynamicSessions", value: 1024, data_type: "integer" },
   { key: "connections.sapTid.storageFile", value: "data/sap-tids.json", data_type: "string" },
 ];
 const newEnvironmentProperties = () => defaultProperties.map((item) => ({ ...item }));
@@ -1002,11 +1006,32 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
     if (item.type === "basic" && operation === "external_command" && !String(item.config.command || item.config.inputMappings?.command || "").trim()) add("error", "External Command", `${item.name} has no executable command.`, "Enter a command or map it in Input.", item.id);
     if ((item.type === "file" || item.type === "ftp" || item.type === "sftp") && !String(item.config.path || item.config.remotePath || "").trim()) add("warning", "Configuration", `${item.name} has no file path.`, "Configure the source or target path.", item.id);
     if (item.type === "sap" && operation.includes("idoc") && !item.config.idocType) add("mapping", "SAP IDoc", `${item.name} has no IDoc type/schema.`, "Retrieve an IDoc type from the SAP shared connection and select it here.", item.id);
+    if (item.type === "sap" && ["post_idoc", "idoc_reader", "invoke_rfc_bapi"].includes(operation)) {
+      const protocol = String(item.config.transactionProtocol || item.config.idocInputMode || item.config.invocationProtocol || "").toLowerCase().replace(/[-/]/g, "");
+      if (protocol === "qrfc" && !String(item.config.queueName || "").trim()) add("error", "SAP qRFC", `${item.name} uses qRFC without a queue name.`, "Configure the SAP outbound queue name so exactly-once-in-order delivery can be established.", item.id);
+    }
+    if (item.type === "sap" && operation === "rfc_bapi_listener") {
+      if (!String(item.config.functionName || "").trim()) add("error", "SAP RFC/BAPI", `${item.name} has no fetched RFC/BAPI function.`, "Select the released SAP RFC/BAPI function handled by this listener.", item.id);
+      const protocol = String(item.config.invocationProtocol || "Request/Reply").toLowerCase().replace(/[-/]/g, "");
+      const downstream = new Set<string>(), pending = [item.id];
+      while (pending.length) {
+        const current = pending.shift()!;
+        task.transitions.filter((edge) => edge.source === current).forEach((edge) => { if (!downstream.has(edge.target)) { downstream.add(edge.target); pending.push(edge.target); } });
+      }
+      if (["requestreply", "srfc"].includes(protocol) && !task.activities.some((candidate) => downstream.has(candidate.id) && candidate.type === "sap" && candidate.config.operation === "reply_rfc_bapi")) add("error", "SAP RFC/BAPI", `${item.name} is Request/Reply but has no Reply from RFC/BAPI activity.`, "Add and connect Reply from RFC/BAPI so SAP receives export and table parameters.", item.id);
+    }
   });
   return issues;
 };
 const validateProjectDefinition = (project: Project) => {
   const issues = project.tasks.flatMap((task) => validateTaskDefinition(project, task));
+  const sapRegistrations = new Map<string, { taskId: string; activityId: string; name: string }>();
+  project.tasks.forEach((task) => task.activities.filter((activity) => activity.type === "sap" && activity.config.operation === "rfc_bapi_listener").forEach((activity) => {
+    const key = `${activity.config.resourceId || ""}|${String(activity.config.functionName || "").trim().toUpperCase()}`;
+    const previous = sapRegistrations.get(key);
+    if (previous && activity.config.functionName) issues.push({ id: `sap-listener-${task.id}-${activity.id}`, severity: "error", category: "SAP RFC/BAPI", message: `${activity.name} duplicates ${previous.name} for the same SAP connection and RFC/BAPI.`, remedy: "Use one listener registration for each RFC/BAPI and SAP server connection.", taskId: task.id, activityId: activity.id });
+    else sapRegistrations.set(key, { taskId: task.id, activityId: activity.id, name: activity.name });
+  }));
   const environments = Object.entries(project.properties);
   const canonical = new Set((project.properties.local || environments[0]?.[1] || []).map((item) => item.key));
   environments.forEach(([environment, properties]) => {
@@ -1489,6 +1514,8 @@ function App() {
       Object.assign(config, {
         resourceId: project.resources.find((r) => r.type === "sap")?.id || "",
         invocationProtocol: "Request/Reply",
+        idocInputMode: d.operation === "idoc_reader" ? "qRFC" : "tRFC",
+        inputFormat: "XML",
         payload: "${last}",
         idocOutputMode: "XML",
         messagingSource: "NoMessaging",
@@ -4032,7 +4059,11 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "sncQop", label: "SNC quality of protection", when: (config: any) => ["snc", "sncwithlogongroup"].includes(config.connectionType), options: ["", "1", "2", "3", "8", "9"] },
     { key: "programId", label: "Program ID (inbound)" }, { key: "gatewayHost", label: "Gateway host" },
     { key: "gatewayService", label: "Gateway service" }, { key: "maximumConnections", label: "Maximum connections" },
-    { key: "timeoutMilliseconds", label: "Timeout (ms)" }, { key: "ackTimeoutSeconds", label: "Inbound IDoc acknowledgment timeout (seconds)" },
+    { key: "maxPendingEvents", label: "Maximum buffered SAP requests" },
+    { key: "jvmInitialHeapMb", label: "JCo bridge initial heap (MB)" },
+    { key: "jvmMaximumHeapMb", label: "JCo bridge maximum heap (MB)" },
+    { key: "timeoutMilliseconds", label: "Startup timeout (ms)" }, { key: "ackTimeoutSeconds", label: "Inbound processing/reply timeout (seconds)" },
+    { key: "maximumDynamicSessions", label: "Maximum dynamic sessions" },
   ],
   sap_tid: [
     { key: "mode", label: "TID management", options: ["active", "disabled"] },
@@ -4046,7 +4077,7 @@ function connectionDefaults(type: string) {
     values[field.key] = propertyExpression(`${prefix}.${field.key}`);
   }
   if (type === "http") Object.assign(values, { connectorMode: "both", scheme: "http", authentication: "None", tlsEnabled: "false", clientAuthentication: "none", tlsVersion: "TLSv1.2", verifyTls: "true" });
-  if (type === "sap") Object.assign(values, { mode: "external", release: "current", connectionType: "dedicated" });
+  if (type === "sap") Object.assign(values, { mode: "external", release: "current", connectionType: "dedicated", maximumConnections: 8, maxPendingEvents: 16, jvmInitialHeapMb: 64, jvmMaximumHeapMb: 512, ackTimeoutSeconds: 300 });
   if (type === "sap_tid") Object.assign(values, { mode: "active", storageFile: "data/sap-tids.properties" });
   if (type === "jdbc") Object.assign(values, { driver: "postgresql", connectionMode: "python", authentication: "SQL Server Authentication", encrypt: "true", trustServerCertificate: "false" });
   if (type === "ems") Object.assign(values, { connectionFactoryType: "Direct", connectionFactoryClass: "com.tibco.tibjms.TibjmsConnectionFactory", connectionTimeoutSeconds: 30 });

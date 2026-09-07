@@ -80,6 +80,9 @@ SAP shared connections use the licensed SAP Java Connector (JCo). New SAP connec
 
 The repository includes `requirements-sap.txt` as a reminder. The Java bridge loads JCo at runtime, so the JCo JAR and DLL remain outside source control and are reported in the connection-test response.
 
+See [SAP_INTEGRATION.md](SAP_INTEGRATION.md) for the supported IDoc/ALE,
+RFC/BAPI, transaction, lifecycle, and production certification behavior.
+
 Ensure the SDK's native library directory is on `PATH` before starting Studio. For an application-server connection, configure `ashost`, `sysnr`, `client`, `user`, and `passwd`; for a message-server/logon-group connection, configure `mshost`, `sysid`, `group`, `client`, `user`, and `passwd`. SNC connections additionally require the SNC partner name and SAP Cryptographic Library path. The Test Connection action calls `STFC_CONNECTION` and reports the native RFC error when authentication, routing, authorization, or network setup fails.
 
 After PyInstaller finishes, the build launches that exact packaged runtime on an isolated loopback port and requires a successful `/api/health` response before Electron Builder is allowed to create an installer. Installed Studio startup writes the runtime path, port, stdout, stderr, spawn errors, and exit status to `%APPDATA%\Integration Fabric Studio\logs\runtime-startup.log`. Startup errors include the log path and its latest output instead of only showing a generic readiness timeout.

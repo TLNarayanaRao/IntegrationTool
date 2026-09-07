@@ -881,9 +881,10 @@ export function activityContract(n: any): Contract {
         resource,
         ...idoc,
         {
-          ...f("idocInputMode", "IDoc input mode", "select"),
-          options: ["XML", "Raw", "qRFC"],
+          ...f("idocInputMode", "IDoc delivery protocol", "select"),
+          options: ["tRFC", "qRFC"],
         },
+        { ...f("inputFormat", "IDoc payload format", "select"), options: ["XML", "Raw"] },
         f("confirmationMode", "Confirmation mode"),
         f("queueName", "SAP queue name"),
       ],
@@ -891,8 +892,8 @@ export function activityContract(n: any): Contract {
         resource,
         ...idoc,
         {
-          ...f("idocInputMode", "IDoc input mode", "select"),
-          options: ["XML", "Raw"],
+          ...f("idocInputMode", "IDoc delivery protocol", "select"),
+          options: ["tRFC", "qRFC"],
         },
       ],
       rfc_bapi_listener: [
@@ -900,6 +901,11 @@ export function activityContract(n: any): Contract {
         f("functionName", "RFC / BAPI name"),
         protocol,
         f("programId", "Program ID"),
+        f("gatewayHost", "Gateway host override"),
+        f("gatewayService", "Gateway service override"),
+        f("maximumConnections", "Maximum concurrent requests", "number"),
+        f("maxPendingEvents", "Maximum buffered requests", "number"),
+        f("ackTimeoutSeconds", "Reply / acknowledgement timeout (seconds)", "number"),
         {
           ...f("tidManagerId", "SAP TIDManager resource", "resource"),
           resourceType: "sap_tid",
@@ -937,6 +943,26 @@ export function activityContract(n: any): Contract {
       configuration: configs[op] || [resource],
       input: listener
         ? []
+        : op === "dynamic_connection"
+          ? [
+              d("sessionID", "Session ID (required only when terminating)"),
+              d("contextTimeout", "Transaction context timeout in milliseconds", "integer"),
+              d("connectionType", "dedicated, logongroup, snc, sncwithlogongroup, or websocket"),
+              d("applicationServerHost", "Application server host"),
+              d("systemNumber", "System number"),
+              d("messageServerHost", "Message server host"),
+              d("systemId", "SAP system ID"),
+              d("logonGroup", "SAP logon group"),
+              d("client", "SAP client"),
+              d("username", "SAP user"),
+              d("password", "SAP password"),
+              d("language", "Logon language"),
+              d("sapRouter", "SAProuter string"),
+              d("sncPartnerName", "SNC partner name"),
+              d("sncLibraryPath", "SNC library path"),
+              d("sncMyName", "SNC own name"),
+              d("sncQop", "SNC quality of protection"),
+            ]
         : converter
           ? [
               d("SAPIDoc", "SAP IDoc control record", "object", true),
@@ -959,7 +985,15 @@ export function activityContract(n: any): Contract {
                   d("sessionID", "Dynamic connection session ID"),
                 ],
       output: listener
-        ? [
+        ? op === "rfc_bapi_listener" ? [
+            d("RfcRequest", "RFC/BAPI request", "object"),
+            d("imports", "RFC import parameters", "object"),
+            d("tables", "RFC table parameters", "object"),
+            d("functionName", "Invoked RFC/BAPI"),
+            d("invocationProtocol", "Invocation protocol"),
+            d("TID", "Transaction ID"),
+            d("CPIC_ID", "SAP connection ID"),
+          ] : [
             d("SAPIDoc", "IDoc/RFC metadata", "object"),
             d("controlRecord", "SAP IDoc control record", "object"),
             d("payload", "Inbound SAP payload (XML)", "string"),
@@ -1264,7 +1298,7 @@ function ActivityDocumentation({ node, contract }: { node: any; contract: Contra
     behavior: "Configuration supplies design-time defaults. Input mappings, constants, property expressions, outputs, advanced policies, and documented errors are evaluated by the runtime.",
   };
   return <div className="activity-tab activity-documentation">
-    <header><BookOpen/><span><h2>{node.name}</h2><small>{node.type} / {node.config?.operation || "default"}</small></span><a href={`/help/activity-reference.html#${encodeURIComponent(node.type)}`} target="_blank" rel="noreferrer"><BookOpen/> Installed activity guide</a></header>
+    <header><BookOpen/><span><h2>{node.name}</h2><small>{node.type} / {node.config?.operation || "default"}</small></span><a href={node.type === "sap" ? "/help/sap-integration.html" : `/help/activity-reference.html#${encodeURIComponent(node.type)}`} target="_blank" rel="noreferrer"><BookOpen/> Installed activity guide</a></header>
     <section><h3>Purpose</h3><p>{doc.summary}</p><p>{doc.behavior}</p></section>
     {node.type === "jdbc" && <section className="jdbc-documentation"><h3>Prepared SQL examples</h3><p>Use named parameters in the SQL editor. Each <code>:name</code> is automatically created as a typed field under <b>Input → parameters</b>.</p><pre>{`SELECT id, customer_name, status\nFROM orders\nWHERE status = :status AND created_at >= :fromDate;\n\nUPDATE orders SET status = :status WHERE id = :orderId;`}</pre><p>Choose the JDBC datatype beside every derived parameter. Runtime mappings and constants are converted to that datatype before the prepared statement is executed.</p></section>}
     <section><h3>Configuration reference</h3>{contract.configuration.length ? <div className="documentation-fields">{contract.configuration.map((field) => <article key={field.key}><b>{field.label}{field.required && " *"}</b><code>{field.type || "text"}</code><p>{field.help || `Sets the ${field.label.toLowerCase()} used by this activity.`}</p></article>)}</div> : <p>This boundary activity has no additional operation configuration.</p>}</section>
