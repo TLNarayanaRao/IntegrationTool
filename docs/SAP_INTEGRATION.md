@@ -17,11 +17,11 @@ architecture reported by Test Connection as part of every production approval.
 | --- | --- |
 | IDoc Listener | Persistent registered JCo server, tRFC TID duplicate protection, bounded delivery queue, one workflow per IDoc in a package, enclosing transaction commit only after every IDoc succeeds |
 | RFC/BAPI Listener | Persistent registered JCo server for the selected function, request/reply export and table response mapping, rollback when the task fails or omits Reply |
-| Invoke RFC/BAPI | Import, changing, nested structure, and table parameters; request/reply, tRFC, and qRFC transport |
+| Invoke RFC/BAPI | Persistent, bounded JVM worker pool; JCo destination pooling; import, changing, nested structure, and table parameters; request/reply, tRFC, and qRFC transport |
 | Post IDoc / IDoc Reader posting | XML or rendered input is converted to EDI_DC40 and EDI_DD40 and sent with `IDOC_INBOUND_ASYNCHRONOUS`; tRFC or qRFC is selected at transport level |
-| IDoc Parser / Converter / Renderer | Metadata-driven fixed-width segment conversion with physical E2 to logical E1 segment normalization |
+| IDoc Parser / Converter / Renderer | Metadata-driven, byte-position fixed-width conversion with physical E2 to logical E1 normalization, configurable code page, strict/replace invalid-byte policy, and delimiter-safe flat records |
 | Read Table | `RFC_READ_TABLE` field, filter, paging, and named-record output |
-| Dynamic Connection | Runtime connection overrides and bounded, expiring session identifiers |
+| Dynamic Connection | A dedicated persistent JVM and thread-bound JCo context across activities; explicit commit/end, rollback on failure/expiry, bounded session count, and duplicate-session rejection |
 | IDoc acknowledgment / confirmation | Invokes the customer-configured SAP acknowledgment RFC because this function is solution-specific |
 
 ALE distribution is implemented through the IDoc listener/posting paths. SAP
@@ -73,6 +73,47 @@ Java 8, 11, 17, 21, and 25; re-check SAP's support page when qualifying a build.
   rejected as a duplicate; SAP confirmation removes it.
 - Single-call BAPI auto-commit executes `BAPI_TRANSACTION_COMMIT` in the same
   JCo context as the BAPI call.
+- A Dynamic Connection with `transactional=true` pins all calls carrying its
+  `sessionID` to one worker/JCo context. `contextEnd=true` closes the context;
+  with `autoCommit=true` it first executes `BAPI_TRANSACTION_COMMIT`. Failure,
+  expiry, or normal termination without `commitOnTerminate=true` rolls back.
+- External outbound calls use persistent JVM workers. `outboundWorkerCount`
+  controls Python-side worker concurrency; `poolCapacity`, `peakLimit`, and
+  `connectionExpirationMilliseconds` configure the JCo destination pool in
+  each worker. Changing any connection setting, including credentials, creates
+  a distinct pool identity without storing plaintext credentials in its key.
+
+## Flat IDoc and messaging modes
+
+The built-in parser reads canonical EDI_DD40 byte fields (`SEGNAM`, `MANDT`,
+`DOCNUM`, `SEGNUM`, `PSGNUM`, `HLEVEL`, and `SDATA`) and EDI_DC40 control fields.
+Set `idocEncoding` to the actual sender code page. Keep
+`invalidCharacterPolicy=strict` for production unless replacement characters
+are an accepted business rule. When SDATA may contain CR/LF, configure a unique
+`idocRecordDelimiter`; that delimiter is authoritative and embedded line breaks
+remain data. With no delimiter, canonical 1063-byte records are split by width.
+
+If the separately licensed `sapidoc3.jar` is installed, Test Connection reports
+its presence and version. Selecting the SAP JIDocLib parser engine validates
+IDoc XML with SAP's repository-backed `IDocXMLProcessor`; flat EDI_DD40 input
+continues to use the built-in byte parser because SAP documents the public IDoc
+class-library processor as an XML processor.
+
+IDoc Listener supports these sources:
+
+- `NoMessaging`: the direct persistent JCo RFC server, including durable TID
+  handling and SAP transaction acknowledgment.
+- `EMS` or `JMS`: consumes one queue message through the selected shared
+  connection and publishes its body to the parser. Client acknowledgment is
+  exposed through the standard Confirm Message activity.
+- `Kafka`: consumes one topic record through the selected Kafka resource and
+  publishes its value to the parser. Manual offset confirmation uses the same
+  Confirm Message contract.
+
+For broker-backed modes, select `messagingResourceId` and
+`messagingDestination`. SAP-to-broker transaction atomicity is owned by the
+upstream bridge; Integration Fabric does not claim an XA transaction spanning
+SAP tRFC and an independent EMS/JMS/Kafka broker.
 
 ## Production certification
 
@@ -90,3 +131,20 @@ production, run an environment test with the exact JCo version and architecture:
 
 Do not accept the connector for production until those measurements remain
 stable and every failed transaction is demonstrably recoverable.
+
+The repository includes a repeatable qualification runner and an intentionally
+non-secret example configuration:
+
+```powershell
+Copy-Item docs\sap-soak-config.example.json sap-soak-config.local.json
+# Edit the local copy with QA-only credentials and parameters, then run:
+backend\.venv\Scripts\python.exe scripts\sap-production-soak.py `
+  --config sap-soak-config.local.json --output sap-soak-report.json
+```
+
+Set `terminateWorkerEveryCalls` to a positive number for controlled worker-JVM
+failure injection. Run separate 24–72 hour profiles for sRFC, transactional
+BAPI, tRFC/qRFC IDoc posting, and inbound listeners. The generated report holds
+throughput, failures, latency percentiles, and worker process IDs; correlate
+those IDs with OS/JVM monitoring and SAP SM58/SMQ1/SMQ2 evidence. Never commit
+the local configuration because it contains credentials.

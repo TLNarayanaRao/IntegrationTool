@@ -1,10 +1,11 @@
 import asyncio, unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 from app.main import app
 from app.models import Activity, ProcessDefinition, Project, SharedResource
 from app.runtime import WorkflowRuntime
 from app.sap import SapAdapter
+from app.java_bridge import SapJcoWorker
 
 class SapMapperTests(unittest.TestCase):
     def setUp(self): self.client = TestClient(app)
@@ -300,6 +301,69 @@ class SapMapperTests(unittest.TestCase):
         terminated = adapter.execute('dynamic_connection', {'mode':'mock', 'sessionID':created['sessionID'], 'terminateConnection':True}, {})
         self.assertTrue(terminated['terminated'])
         self.assertFalse(adapter.sessions)
+
+    def test_flat_idoc_parser_uses_byte_offsets_codepage_and_custom_delimiter(self):
+        adapter = SapAdapter()
+        selected = {
+            'idocType':'ARTMAS05',
+            'segments':[{'SEGMENTTYP':'E1TEST', 'SEGMENTDEF':'E2TEST001'}],
+            'fields':[
+                {'SEGMENTTYP':'E1TEST','FIELDNAME':'FUNCTION','BYTE_FIRST':'000064','BYTE_LAST':'000066','INTLEN':'000003'},
+                {'SEGMENTTYP':'E1TEST','FIELDNAME':'TEXT','BYTE_FIRST':'000067','BYTE_LAST':'000078','INTLEN':'000012'},
+            ],
+        }
+        def record(number: int, text: str) -> bytes:
+            header = 'E2TEST001'.ljust(30) + '100' + '42'.zfill(16) + str(number).zfill(6) + '0'.zfill(6) + '01'
+            return header.encode('ascii') + ('005' + text).ljust(1000).encode('windows-1252')
+        raw = record(1, 'Café\nLine') + b'~|~' + record(2, 'Deuxième')
+        result = adapter.execute('idoc_parser', {
+            'mode':'mock', 'idocType':'ARTMAS05', 'selectedIdoc':selected,
+            'idocEncoding':'windows-1252', 'idocRecordDelimiter':'~|~', 'idocOutputMode':'JSON',
+        }, raw)
+        segments = result['SAPIDoc']['IDOC']['E1TEST']
+        self.assertEqual(len(segments), 2)
+        self.assertEqual(segments[0]['FUNCTION'], '005')
+        self.assertEqual(segments[0]['TEXT'], 'Café\nLine')
+        self.assertEqual(segments[1]['TEXT'], 'Deuxième')
+        rendered = adapter.execute('idoc_renderer', {
+            'mode':'mock', 'idocType':'ARTMAS05', 'selectedIdoc':selected, 'idocEncoding':'windows-1252',
+        }, '<ARTMAS05><IDOC><E1TEST><FUNCTION>005</FUNCTION><TEXT>Café</TEXT></E1TEST></IDOC></ARTMAS05>')
+        encoded = rendered['rawIDoc']['data'][0]['SDATA'].encode('windows-1252')
+        self.assertEqual(encoded[:3], b'005')
+        self.assertEqual(encoded[3:7], b'Caf\xe9')
+
+    def test_dynamic_connection_keeps_one_worker_context_until_commit_boundary(self):
+        adapter = SapAdapter()
+        worker = object.__new__(SapJcoWorker)
+        worker.process = Mock(); worker.process.poll.return_value = None
+        worker.request = Mock(side_effect=lambda action, *args, **kwargs: {'ok':True, 'result':'done'} if action == 'call' else {'ok':True, 'committed':action == 'commit'})
+        worker.close = Mock()
+        connection = {'mode':'external','applicationServerHost':'sap','systemNumber':'00','client':'100','username':'user','password':'secret','transactional':True,'sessionID':'luw-1'}
+        with patch('app.sap.start_sap_worker', return_value=worker):
+            created = adapter.execute('dynamic_connection', connection, {})
+            self.assertEqual(created['sessionID'], 'luw-1')
+            result = adapter.execute('invoke_rfc_bapi', {**connection, 'functionName':'BAPI_TEST', 'contextEnd':True, 'autoCommit':True}, {'VALUE':'1'})
+        actions = [call.args[0] for call in worker.request.call_args_list]
+        self.assertEqual(actions, ['ping', 'begin', 'call', 'commit'])
+        call_values = worker.request.call_args_list[2].args[1]
+        self.assertEqual(call_values['autoCommit'], 'false')
+        self.assertTrue(result['committed'])
+        self.assertNotIn('luw-1', adapter.sessions)
+        worker.close.assert_called_once()
+
+    def test_idoc_listener_can_consume_from_kafka_bridge(self):
+        runtime = WorkflowRuntime()
+        sap = SharedResource(id='sap-ecc', type='sap', name='ECC', config={'mode':'mock'})
+        kafka = SharedResource(id='kafka-idoc', type='kafka', name='Kafka', config={'mode':'memory'})
+        context = {'input':{}, 'last':{}, 'vars':{}, 'resources':{'sap-ecc':sap, 'kafka-idoc':kafka}, 'properties':{}, 'activities':{}, 'tasks':{}, 'context':{}, 'logs':[]}
+        asyncio.run(runtime.messaging('kafka', {'resourceId':'kafka-idoc','operation':'publish','topic':'sap.idoc','data':'flat-idoc'}, context))
+        result = asyncio.run(runtime.execute(Activity(id='listen', type='sap', name='IDoc Listener', config={
+            'operation':'idoc_listener', 'resourceId':'sap-ecc', 'messagingSource':'Kafka',
+            'messagingResourceId':'kafka-idoc', 'messagingDestination':'sap.idoc',
+        }), context))
+        self.assertEqual(result['payload'], 'flat-idoc')
+        self.assertEqual(result['messagingSource'], 'KAFKA')
+        self.assertEqual(result['count'], 1)
 
     def test_read_table_publishes_named_rows(self):
         adapter = SapAdapter()

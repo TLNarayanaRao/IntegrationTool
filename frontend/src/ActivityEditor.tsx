@@ -39,11 +39,13 @@ type Field = {
     | "task";
   options?: string[];
   resourceType?: string;
+  resourceTypes?: string[];
   artifactType?: "java" | "python";
   required?: boolean;
   help?: string;
   propertyBrowse?: boolean;
   readOnly?: boolean;
+  when?: (config: any) => boolean;
 };
 type DataField = {
   key: string;
@@ -833,6 +835,8 @@ export function activityContract(n: any): Contract {
         },
         f("transactional", "Transactional", "boolean"),
         f("terminateConnection", "Terminate connection", "boolean"),
+        { ...f("commitOnTerminate", "Commit before termination", "boolean", "Otherwise a transactional session is rolled back when terminated."), when: (config: any) => !!config.terminateConnection },
+        f("contextTimeout", "Session idle timeout (ms)", "number"),
         f("timeout", "Timeout (ms)", "number"),
       ],
       idoc_acknowledgment: [
@@ -857,7 +861,9 @@ export function activityContract(n: any): Contract {
       ],
       idoc_listener: [
         resource,
-        { ...f("messagingSource", "Messaging source", "text", "Managed by the SAP JCo RFC server."), readOnly: true },
+        { ...f("messagingSource", "Messaging source", "select", "Receive directly from SAP JCo or through an EMS/JMS/Kafka bridge."), options: ["NoMessaging", "EMS", "JMS", "Kafka"] },
+        { ...f("messagingResourceId", "Messaging shared connection", "resource"), resourceTypes: [String(n.config?.messagingSource || "").toLowerCase()].filter((value) => ["ems", "jms", "kafka"].includes(value)), when: (config: any) => !["", "NoMessaging"].includes(config.messagingSource || "NoMessaging") },
+        { ...f("messagingDestination", "Queue or topic", "text"), when: (config: any) => !["", "NoMessaging"].includes(config.messagingSource || "NoMessaging") },
         { ...f("tidManagerId", "SAP TID Manager resource", "text", "Managed by the SAP JCo durable TID store."), readOnly: true },
         { ...f("idocType", "IDoc type fetched from SAP", "idoc", "Inherited from the SAP shared connection metadata.") },
         { ...f("extensionType", "Extension / CIM type", "text", "Read from the selected SAP IDoc metadata."), readOnly: true },
@@ -869,6 +875,10 @@ export function activityContract(n: any): Contract {
         resource,
         f("sourceDestination", "IDoc source destination"),
         ...idoc,
+        { ...f("idocEncoding", "Flat IDoc encoding", "text", "Java/Python charset name, for example UTF-8, windows-1252, or ISO-8859-1.") },
+        { ...f("idocRecordDelimiter", "Flat record delimiter", "text", "Use an escaped delimiter such as \\r\\n or a custom token when SDATA can contain line breaks.") },
+        { ...f("invalidCharacterPolicy", "Invalid byte policy", "select"), options: ["strict", "replace"] },
+        { ...f("parserEngine", "Parser engine", "select", "Built-in is always available; SAP JIDocLib requires the licensed sapidoc3.jar."), options: ["Built-in", "SAP JIDocLib (when installed)"] },
         f("validateIdocType", "Reject mismatched IDoc type or extension", "boolean"),
         { ...f("idocOutputMode", "IDoc output format", "select"), options: ["JSON", "XML"] },
       ],
@@ -1331,7 +1341,7 @@ export default function ActivityEditor({
       ...cfg,
       release: cfg.release || selectedSapConfig.release || selectedSapConfig.selectedIdoc?.release || "",
       programId: cfg.programId || selectedSapConfig.programId || "",
-      messagingSource: "SAP JCo RFC / IDOC_INBOUND_ASYNCHRONOUS",
+      messagingSource: cfg.messagingSource || "NoMessaging",
       tidManagerId: selectedSapConfig.tidStorePath || "Managed by SAP JCo durable TID store",
       extensionType: cfg.extensionType || selectedSapConfig.selectedIdoc?.extensionType || "",
       invocationProtocol: "tRFC",
@@ -1339,6 +1349,10 @@ export default function ActivityEditor({
     upstreamSources = upstreamActivitySources(node, task, tasks, schemas || [], resources || []),
     [mapperOpen, setMapperOpen] = useState(false),
     set = (key: string, value: any) => {
+      if (node.type === "sap" && cfg.operation === "idoc_listener" && key === "messagingSource") {
+        update({ config: { ...cfg, messagingSource: value, messagingResourceId: "", messagingDestination: value === "NoMessaging" ? "" : cfg.messagingDestination || "" } });
+        return;
+      }
       if (node.type === "sap" && key === "resourceId") {
         const connection = resources.find((resource: any) => resource.id === value);
         const connectionConfig = connection?.config || {};
@@ -1348,7 +1362,7 @@ export default function ActivityEditor({
           ...(cfg.operation === "idoc_listener" ? {
             release: connectionConfig.release || connectionConfig.selectedIdoc?.release || "",
             programId: connectionConfig.programId || "",
-            messagingSource: "SAP JCo RFC / IDOC_INBOUND_ASYNCHRONOUS",
+            messagingSource: cfg.messagingSource || "NoMessaging",
             tidManagerId: connectionConfig.tidStorePath || "Managed by SAP JCo durable TID store",
             extensionType: connectionConfig.selectedIdoc?.extensionType || "",
             invocationProtocol: "tRFC",
@@ -1384,7 +1398,7 @@ export default function ActivityEditor({
               }}
             />
           </label>
-          {node.type !== "timer" && contract.configuration.filter((field) => !(node.type === "call_task" && field.key === "dynamicTaskId")).map((field) => (
+          {node.type !== "timer" && contract.configuration.filter((field) => !(node.type === "call_task" && field.key === "dynamicTaskId") && (!field.when || field.when(derivedConfiguration))).map((field) => (
             <FieldEditor
               key={field.key}
               field={node.type === "catch" && field.key === "errorType" ? { ...field, type: "select", options: ["", ...exceptionTypes] } : field}
@@ -1754,7 +1768,7 @@ function FieldEditor({ field, value, set, resources, tasks, properties = [], sel
         <select value={value || ""} onChange={(e) => change(e.target.value)}>
           <option value="">Select shared connection…</option>
           {resources
-            .filter((r: any) => r.type === field.resourceType)
+            .filter((r: any) => field.resourceTypes ? field.resourceTypes.includes(r.type) : r.type === field.resourceType)
             .map((r: any) => (
               <option value={r.id} key={r.id}>
                 {r.name}

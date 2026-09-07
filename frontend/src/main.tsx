@@ -744,6 +744,12 @@ const defaultProperties: Property[] = [
   { key: "connections.sap.gatewayHost", value: "", data_type: "string" },
   { key: "connections.sap.gatewayService", value: "", data_type: "string" },
   { key: "connections.sap.maximumConnections", value: 8, data_type: "integer" },
+  { key: "connections.sap.outboundWorkerCount", value: 2, data_type: "integer" },
+  { key: "connections.sap.poolCapacity", value: 1, data_type: "integer" },
+  { key: "connections.sap.peakLimit", value: 1, data_type: "integer" },
+  { key: "connections.sap.connectionExpirationMilliseconds", value: 600000, data_type: "integer" },
+  { key: "connections.sap.outboundPoolIdleSeconds", value: 1800, data_type: "integer" },
+  { key: "connections.sap.maximumOutboundPools", value: 16, data_type: "integer" },
   { key: "connections.sap.maxPendingEvents", value: 16, data_type: "integer" },
   { key: "connections.sap.jvmInitialHeapMb", value: 64, data_type: "integer" },
   { key: "connections.sap.jvmMaximumHeapMb", value: 512, data_type: "integer" },
@@ -1006,6 +1012,11 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
     if (item.type === "basic" && operation === "external_command" && !String(item.config.command || item.config.inputMappings?.command || "").trim()) add("error", "External Command", `${item.name} has no executable command.`, "Enter a command or map it in Input.", item.id);
     if ((item.type === "file" || item.type === "ftp" || item.type === "sftp") && !String(item.config.path || item.config.remotePath || "").trim()) add("warning", "Configuration", `${item.name} has no file path.`, "Configure the source or target path.", item.id);
     if (item.type === "sap" && operation.includes("idoc") && !item.config.idocType) add("mapping", "SAP IDoc", `${item.name} has no IDoc type/schema.`, "Retrieve an IDoc type from the SAP shared connection and select it here.", item.id);
+    if (item.type === "sap" && operation === "idoc_listener" && !["", "nomessaging", "direct"].includes(String(item.config.messagingSource || "NoMessaging").toLowerCase().replace(/\s/g, ""))) {
+      if (!item.config.messagingResourceId) add("error", "SAP IDoc messaging", `${item.name} has no messaging shared connection.`, "Select the EMS, JMS, or Kafka connection used by the IDoc bridge.", item.id);
+      else if (project.resources.find((resource) => resource.id === item.config.messagingResourceId)?.type !== String(item.config.messagingSource).toLowerCase()) add("error", "SAP IDoc messaging", `${item.name} has a mismatched messaging connection.`, `Select a ${item.config.messagingSource} shared connection.`, item.id);
+      if (!String(item.config.messagingDestination || "").trim()) add("error", "SAP IDoc messaging", `${item.name} has no queue or topic.`, "Configure the bridge queue/topic carrying the flat or XML IDoc.", item.id);
+    }
     if (item.type === "sap" && ["post_idoc", "idoc_reader", "invoke_rfc_bapi"].includes(operation)) {
       const protocol = String(item.config.transactionProtocol || item.config.idocInputMode || item.config.invocationProtocol || "").toLowerCase().replace(/[-/]/g, "");
       if (protocol === "qrfc" && !String(item.config.queueName || "").trim()) add("error", "SAP qRFC", `${item.name} uses qRFC without a queue name.`, "Configure the SAP outbound queue name so exactly-once-in-order delivery can be established.", item.id);
@@ -4059,6 +4070,10 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "sncQop", label: "SNC quality of protection", when: (config: any) => ["snc", "sncwithlogongroup"].includes(config.connectionType), options: ["", "1", "2", "3", "8", "9"] },
     { key: "programId", label: "Program ID (inbound)" }, { key: "gatewayHost", label: "Gateway host" },
     { key: "gatewayService", label: "Gateway service" }, { key: "maximumConnections", label: "Maximum connections" },
+    { key: "outboundWorkerCount", label: "Persistent outbound JVM workers" },
+    { key: "poolCapacity", label: "JCo destination pool capacity" }, { key: "peakLimit", label: "JCo destination peak limit" },
+    { key: "connectionExpirationMilliseconds", label: "Idle connection expiration (ms)" },
+    { key: "outboundPoolIdleSeconds", label: "Outbound pool idle timeout (seconds)" }, { key: "maximumOutboundPools", label: "Maximum distinct outbound pools" },
     { key: "maxPendingEvents", label: "Maximum buffered SAP requests" },
     { key: "jvmInitialHeapMb", label: "JCo bridge initial heap (MB)" },
     { key: "jvmMaximumHeapMb", label: "JCo bridge maximum heap (MB)" },
@@ -4077,7 +4092,7 @@ function connectionDefaults(type: string) {
     values[field.key] = propertyExpression(`${prefix}.${field.key}`);
   }
   if (type === "http") Object.assign(values, { connectorMode: "both", scheme: "http", authentication: "None", tlsEnabled: "false", clientAuthentication: "none", tlsVersion: "TLSv1.2", verifyTls: "true" });
-  if (type === "sap") Object.assign(values, { mode: "external", release: "current", connectionType: "dedicated", maximumConnections: 8, maxPendingEvents: 16, jvmInitialHeapMb: 64, jvmMaximumHeapMb: 512, ackTimeoutSeconds: 300 });
+  if (type === "sap") Object.assign(values, { mode: "external", release: "current", connectionType: "dedicated", maximumConnections: 8, outboundWorkerCount: 2, poolCapacity: 1, peakLimit: 1, connectionExpirationMilliseconds: 600000, outboundPoolIdleSeconds: 1800, maximumOutboundPools: 16, maxPendingEvents: 16, jvmInitialHeapMb: 64, jvmMaximumHeapMb: 512, ackTimeoutSeconds: 300 });
   if (type === "sap_tid") Object.assign(values, { mode: "active", storageFile: "data/sap-tids.properties" });
   if (type === "jdbc") Object.assign(values, { driver: "postgresql", connectionMode: "python", authentication: "SQL Server Authentication", encrypt: "true", trustServerCertificate: "false" });
   if (type === "ems") Object.assign(values, { connectionFactoryType: "Direct", connectionFactoryClass: "com.tibco.tibjms.TibjmsConnectionFactory", connectionTimeoutSeconds: 30 });

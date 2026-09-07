@@ -48,7 +48,7 @@ public final class FabricJavaBridge {
         Class<?> providerType = Class.forName("com.sap.conn.jco.ext.DestinationDataProvider");
         String destinationName = p.getProperty("destinationName", "integration-fabric-sap");
         Properties destination = new Properties();
-        for (String key : p.stringPropertyNames()) if (key.startsWith("jco.client.")) destination.setProperty(key, p.getProperty(key));
+        for (String key : p.stringPropertyNames()) if (key.startsWith("jco.client.") || key.startsWith("jco.destination.")) destination.setProperty(key, p.getProperty(key));
         Object provider = Proxy.newProxyInstance(providerType.getClassLoader(), new Class<?>[]{providerType}, (proxy, method, args) -> {
             if (method.getName().equals("getDestinationProperties")) return destination;
             if (method.getName().equals("supportsEvents")) return false;
@@ -75,75 +75,19 @@ public final class FabricJavaBridge {
                 Class<?> jcoType = Class.forName("com.sap.conn.jco.JCo");
                 String jcoVersion = optionalStaticString(jcoType, "getVersion");
                 if (jcoVersion.isBlank() && jcoType.getPackage() != null) jcoVersion = String.valueOf(jcoType.getPackage().getImplementationVersion());
-                return map("message", "SAP JCo connection succeeded", "destination", destinationName, "jcoVersion", jcoVersion, "javaVersion", System.getProperty("java.version"), "architecture", System.getProperty("os.arch"));
-            }
-            if (operation.equals("call")) {
-                String functionName = required(p, "functionName");
-                Object function = function(destinationObject, functionName);
-                for (String key : p.stringPropertyNames()) {
-                    if (key.startsWith("argument.")) setParameterPath(invoke(function, "getImportParameterList"), key.substring(9), p.getProperty(key));
-                    else if (key.startsWith("changing.")) setParameterPath(invoke(function, "getChangingParameterList"), key.substring(9), p.getProperty(key));
-                }
-                fillTables(function, p);
-                if (functionName.equals("RFC_READ_TABLE")) fillReadTable(function, p);
-                String protocol = p.getProperty("transactionProtocol", "sRFC").trim().toLowerCase(Locale.ROOT);
-                boolean asynchronous = protocol.equals("trfc") || protocol.equals("t-rfc") || protocol.equals("qrfc") || protocol.equals("q-rfc");
-                boolean transactionalContext = bool(p, "transactional", false) && !asynchronous;
-                String tid = null;
-                boolean contextStarted = false;
+                boolean jidocAvailable = false; String jidocVersion = "";
                 try {
-                if (asynchronous) {
-                    tid = String.valueOf(invoke(destinationObject, "createTID"));
-                    String queueName = p.getProperty("queueName", "").trim();
-                    if ((protocol.equals("qrfc") || protocol.equals("q-rfc")) && !queueName.isEmpty()) invoke(function, "execute", destinationObject, tid, queueName);
-                    else invoke(function, "execute", destinationObject, tid);
-                    // SAP considers the transaction complete only after the
-                    // client confirms the TID. If this fails, propagate the
-                    // exception so the caller can retry instead of reporting
-                    // a false success.
-                    invoke(destinationObject, "confirmTID", tid);
-                } else {
-                    if (transactionalContext || bool(p, "autoCommit", false)) {
-                        Class<?> contextType = Class.forName("com.sap.conn.jco.JCoContext");
-                        Method begin = Arrays.stream(contextType.getMethods())
-                                .filter(method -> method.getName().equals("begin") && method.getParameterCount() == 1 && method.getParameterTypes()[0].isInstance(destinationObject))
-                                .findFirst().orElseThrow(() -> new NoSuchMethodException("JCoContext.begin(JCoDestination)"));
-                        begin.invoke(null, destinationObject);
-                        contextStarted = true;
-                    }
-                    invoke(function, "execute", destinationObject);
-                    if (bool(p, "autoCommit", false)) {
-                        Object commit = function(destinationObject, "BAPI_TRANSACTION_COMMIT");
-                        setValue(commit, "WAIT", "X");
-                        invoke(commit, "execute", destinationObject);
-                    }
-                }
-                Map<String, Object> result = functionResult(function);
-                if (tid != null) { result.put("TID", tid); result.put("transactional", true); result.put("transactionProtocol", protocol); result.put("confirmed", true); }
-                if (bool(p, "autoCommit", false) && !asynchronous) result.put("committed", true);
-                return result;
-                } catch (Exception callError) {
-                    if (contextStarted) {
-                        try {
-                            Object rollback = function(destinationObject, "BAPI_TRANSACTION_ROLLBACK");
-                            invoke(rollback, "execute", destinationObject);
-                        } catch (Throwable rollbackError) {
-                            callError.addSuppressed(rollbackError);
-                        }
-                    }
-                    throw callError;
-                } finally {
-                    if (contextStarted) {
-                        Class<?> contextType = Class.forName("com.sap.conn.jco.JCoContext");
-                        try {
-                            Method end = Arrays.stream(contextType.getMethods()).filter(method -> method.getName().equals("end") && method.getParameterCount() == 1).findFirst().orElseThrow();
-                            end.invoke(null, destinationObject);
-                        } catch (Throwable endError) {
-                            System.err.println("SAP JCo context cleanup failed: " + endError);
-                        }
-                    }
-                }
+                    Class<?> jidocType = Class.forName("com.sap.conn.idoc.IDocFactory");
+                    jidocAvailable = true;
+                    if (jidocType.getPackage() != null) jidocVersion = String.valueOf(jidocType.getPackage().getImplementationVersion());
+                } catch (ClassNotFoundException ignored) { }
+                return map("message", "SAP JCo connection succeeded", "destination", destinationName, "jcoVersion", jcoVersion,
+                        "jidocLibAvailable", jidocAvailable, "jidocLibVersion", jidocVersion,
+                        "javaVersion", System.getProperty("java.version"), "architecture", System.getProperty("os.arch"));
             }
+            if (operation.equals("call")) return executeSapFunction(destinationObject, p, false);
+            if (operation.equals("idoc_validate")) return validateIdocXml(destinationObject, required(p, "idocXml"));
+            if (operation.equals("worker")) return sapWorker(destinationObject);
             throw new IllegalArgumentException("Unsupported SAP JCo operation: " + operation);
         } finally { close(destinationObject); }
     }
@@ -159,6 +103,118 @@ public final class FabricJavaBridge {
         Object imports = invoke(function, "getImportParameterList");
         if (imports == null) throw new IllegalArgumentException("SAP function has no import parameter list");
         invoke(imports, "setValue", name, value);
+    }
+
+    /** Validate IDoc XML against the repository exposed by the optional,
+     * separately licensed SAP Java IDoc Class Library (sapidoc3.jar). */
+    private static Map<String, Object> validateIdocXml(Object destination, String xml) throws Exception {
+        Class<?> jcoIdoc = Class.forName("com.sap.conn.idoc.jco.JCoIDoc");
+        Method repositoryMethod = Arrays.stream(jcoIdoc.getMethods()).filter(method -> method.getName().equals("getIDocRepository") && method.getParameterCount() == 1 && method.getParameterTypes()[0].isInstance(destination)).findFirst().orElseThrow();
+        Object repository = repositoryMethod.invoke(null, destination);
+        Object factory = jcoIdoc.getMethod("getIDocFactory").invoke(null);
+        Object processor = invoke(factory, "getIDocXMLProcessor");
+        Object documents = invoke(processor, "parse", repository, xml);
+        String version = optionalString(factory, "getVersion");
+        return map("validated", true, "jidocLibVersion", version, "documentClass", documents.getClass().getName());
+    }
+
+    private static void jcoContext(Object destination, String action) throws Exception {
+        Class<?> contextType = Class.forName("com.sap.conn.jco.JCoContext");
+        Method method = Arrays.stream(contextType.getMethods())
+                .filter(candidate -> candidate.getName().equals(action) && candidate.getParameterCount() == 1 && candidate.getParameterTypes()[0].isInstance(destination))
+                .findFirst().orElseThrow(() -> new NoSuchMethodException("JCoContext." + action + "(JCoDestination)"));
+        method.invoke(null, destination);
+    }
+
+    private static Map<String, Object> executeSapFunction(Object destination, Properties p, boolean existingContext) throws Exception {
+        String functionName = required(p, "functionName");
+        Object function = function(destination, functionName);
+        for (String key : p.stringPropertyNames()) {
+            if (key.startsWith("argument.")) setParameterPath(invoke(function, "getImportParameterList"), key.substring(9), p.getProperty(key));
+            else if (key.startsWith("changing.")) setParameterPath(invoke(function, "getChangingParameterList"), key.substring(9), p.getProperty(key));
+        }
+        fillTables(function, p);
+        if (functionName.equals("RFC_READ_TABLE")) fillReadTable(function, p);
+        String protocol = p.getProperty("transactionProtocol", "sRFC").trim().toLowerCase(Locale.ROOT);
+        boolean asynchronous = Set.of("trfc", "t-rfc", "qrfc", "q-rfc").contains(protocol);
+        boolean localContext = !existingContext && bool(p, "transactional", false) && !asynchronous;
+        String tid = null;
+        if (localContext) jcoContext(destination, "begin");
+        try {
+            if (asynchronous) {
+                tid = String.valueOf(invoke(destination, "createTID"));
+                String queueName = p.getProperty("queueName", "").trim();
+                if ((protocol.equals("qrfc") || protocol.equals("q-rfc")) && !queueName.isEmpty()) invoke(function, "execute", destination, tid, queueName);
+                else invoke(function, "execute", destination, tid);
+                invoke(destination, "confirmTID", tid);
+            } else {
+                invoke(function, "execute", destination);
+                if (bool(p, "autoCommit", false)) {
+                    Object commit = function(destination, "BAPI_TRANSACTION_COMMIT");
+                    setValue(commit, "WAIT", "X");
+                    invoke(commit, "execute", destination);
+                }
+            }
+            Map<String, Object> result = functionResult(function);
+            if (tid != null) { result.put("TID", tid); result.put("transactional", true); result.put("transactionProtocol", protocol); result.put("confirmed", true); }
+            if (bool(p, "autoCommit", false) && !asynchronous) result.put("committed", true);
+            return result;
+        } catch (Exception error) {
+            if (localContext) try { invoke(function(destination, "BAPI_TRANSACTION_ROLLBACK"), "execute", destination); } catch (Throwable rollback) { error.addSuppressed(rollback); }
+            throw error;
+        } finally {
+            if (localContext) try { jcoContext(destination, "end"); } catch (Throwable error) { System.err.println("SAP JCo context cleanup failed: " + error); }
+        }
+    }
+
+    /** Persistent client process. JCo's destination pool and optional stateful
+     * context remain alive across calls instead of being recreated per RFC. */
+    private static Map<String, Object> sapWorker(Object destination) throws Exception {
+        System.out.println(json(map("event", "ready", "ok", true, "pid", ProcessHandle.current().pid()))); System.out.flush();
+        boolean contextOpen = false;
+        try (BufferedReader commands = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = commands.readLine()) != null) {
+                String[] parts = line.split("\\t", 3);
+                String action = parts.length > 0 ? parts[0] : "", requestId = parts.length > 1 ? parts[1] : "";
+                Map<String, Object> result = new LinkedHashMap<>();
+                try {
+                    if (action.equals("begin")) { if (!contextOpen) { jcoContext(destination, "begin"); contextOpen = true; } result.put("contextOpen", true); }
+                    else if (action.equals("end")) { if (contextOpen) { jcoContext(destination, "end"); contextOpen = false; } result.put("contextOpen", false); }
+                    else if (action.equals("commit")) {
+                        if (!contextOpen) throw new IllegalStateException("No SAP JCo context is open");
+                        Object commit = function(destination, "BAPI_TRANSACTION_COMMIT");
+                        setValue(commit, "WAIT", "X");
+                        invoke(commit, "execute", destination);
+                        jcoContext(destination, "end"); contextOpen = false;
+                        result.put("committed", true); result.put("contextOpen", false);
+                    }
+                    else if (action.equals("rollback")) {
+                        if (contextOpen) {
+                            invoke(function(destination, "BAPI_TRANSACTION_ROLLBACK"), "execute", destination);
+                            jcoContext(destination, "end"); contextOpen = false;
+                        }
+                        result.put("rolledBack", true); result.put("contextOpen", false);
+                    }
+                    else if (action.equals("call") && parts.length == 3) {
+                        Properties call = new Properties();
+                        String decoded = new String(Base64.getDecoder().decode(parts[2]), StandardCharsets.UTF_8);
+                        call.load(new StringReader(decoded));
+                        result.putAll(executeSapFunction(destination, call, contextOpen));
+                    } else if (action.equals("ping")) { invoke(destination, "ping"); result.put("healthy", true); }
+                    else if (action.equals("stop")) break;
+                    else throw new IllegalArgumentException("Unsupported SAP worker action: " + action);
+                    result.put("ok", true);
+                } catch (Throwable error) {
+                    Throwable cause = error; while (cause instanceof InvocationTargetException && cause.getCause() != null) cause = cause.getCause();
+                    result.clear(); result.put("ok", false); result.put("message", String.valueOf(cause.getMessage() == null ? cause : cause.getMessage())); result.put("errorType", cause.getClass().getName());
+                }
+                result.put("requestId", requestId); System.out.println(json(result)); System.out.flush();
+            }
+        } finally {
+            if (contextOpen) try { jcoContext(destination, "end"); } catch (Throwable ignored) { }
+        }
+        return map("stopped", true);
     }
 
     private static void setParameterPath(Object parameters, String path, Object value) throws Exception {

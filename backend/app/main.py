@@ -185,13 +185,19 @@ def _event_subscription(item: Project, task, activity, environment: str) -> dict
     # SAP gateway/program settings usually live on the shared resource, not
     # on the listener activity itself.
     effective = {**resource_config, **config}
+    resource_name = resource.name if resource else str(config.get('resourceId') or 'unconfigured connection')
     if activity.type == 'sap':
-        gateway = f"{effective.get('gatewayHost') or effective.get('gwhost') or 'unknown-host'}:{effective.get('gatewayService') or effective.get('gwserv') or 'unknown-service'}"
-        program_id = effective.get('programId') or effective.get('progid') or 'unconfigured-program-id'
-        destination = f"{program_id} · gateway {gateway}"
+        messaging_source = str(effective.get('messagingSource') or 'NoMessaging')
+        if messaging_source.lower().replace(' ', '') not in ('', 'nomessaging', 'direct'):
+            destination = f"{messaging_source} · {effective.get('messagingDestination') or 'unconfigured destination'}"
+            messaging_resource = next((value for value in item.resources if value.id == effective.get('messagingResourceId')), None)
+            if messaging_resource: resource_name = f'{resource.name if resource else "SAP"} / {messaging_resource.name}'
+        else:
+            gateway = f"{effective.get('gatewayHost') or effective.get('gwhost') or 'unknown-host'}:{effective.get('gatewayService') or effective.get('gwserv') or 'unknown-service'}"
+            program_id = effective.get('programId') or effective.get('progid') or 'unconfigured-program-id'
+            destination = f"{program_id} · gateway {gateway}"
     else:
         destination = effective.get('destination') or effective.get('queue') or effective.get('topic') or effective.get('subscription') or effective.get('programId') or effective.get('path') or ('configured schedule' if activity.type == 'timer' else 'default')
-    resource_name = resource.name if resource else str(config.get('resourceId') or 'unconfigured connection')
     technology = activity.type.upper()
     return {
         'taskId': task.id, 'activityId': activity.id, 'name': activity.name, 'type': activity.type,

@@ -474,6 +474,25 @@ class WorkflowRuntime:
                 sap_cfg = {**sap_cfg, 'selectedIdoc': selected_idoc, 'idocType': sap_cfg.get('idocType') or selected_idoc.get('idocType'), 'extensionType': sap_cfg.get('extensionType') or selected_idoc.get('extensionType',''), 'release': sap_cfg.get('release') or selected_idoc.get('release',''), 'idocSchema': selected_idoc.get('schema')}
             payload = cfg.get('payload', ctx['last'])
             if operation in ('idoc_listener', 'rfc_bapi_listener'):
+                source = str(sap_cfg.get('messagingSource') or 'NoMessaging').strip().lower().replace(' ', '')
+                if operation == 'idoc_listener' and source not in ('', 'nomessaging', 'direct', 'sapjcorfc/idoc_inbound_asynchronous'):
+                    technology = {'ems':'ems', 'jms':'jms', 'kafka':'kafka'}.get(source)
+                    if not technology:
+                        raise RuntimeError(f'Unsupported SAP IDoc messaging source {sap_cfg.get("messagingSource")!r}')
+                    broker_cfg = {
+                        **sap_cfg,
+                        'resourceId': sap_cfg.get('messagingResourceId'),
+                        'operation': 'queue_receiver' if technology == 'ems' else 'receive_message' if technology == 'jms' else 'receive',
+                        'destination': sap_cfg.get('messagingDestination') or sap_cfg.get('destination') or sap_cfg.get('topic'),
+                        'topic': sap_cfg.get('messagingDestination') or sap_cfg.get('topic'),
+                        'maxMessages': 1,
+                    }
+                    received = await self.messaging(technology, broker_cfg, ctx)
+                    messages = received.get('messages') if isinstance(received, dict) else []
+                    first = messages[0] if isinstance(messages, list) and messages else {}
+                    broker_payload = received.get('body') if technology in ('ems', 'jms') else first.get('data')
+                    properties = received.get('properties', {}) if isinstance(received, dict) else {}
+                    return {**received, 'payload': broker_payload, 'SAPIDoc': properties.get('SAPIDoc', {}) if isinstance(properties, dict) else {}, 'messagingSource': technology.upper()}
                 return await sap_adapter.receive_idoc(sap_cfg)
             if operation == 'reply_rfc_bapi' and sap_adapter._mode(sap_cfg) != 'mock':
                 delivery = ctx.get('transport') or {}

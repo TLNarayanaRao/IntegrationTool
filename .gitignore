@@ -21,3 +21,5 @@ administrator/*.spec
 *.pyc
 __pycache__/
 .env
+sap-soak-config.local.json
+sap-soak-report.json

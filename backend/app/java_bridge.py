@@ -154,6 +154,83 @@ class SapJcoListener:
         self.descriptor.unlink(missing_ok=True)
 
 
+class SapJcoWorker:
+    """One persistent SAP client JVM with a live JCo destination pool."""
+    def __init__(self, process: subprocess.Popen, descriptor: Path, loaded_jars: list[str], startup_timeout: float = 30):
+        self.process, self.descriptor, self.loaded_jars = process, descriptor, loaded_jars
+        self._lock, self._closed = threading.Lock(), threading.Event()
+        self._responses: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=256)
+        self._stderr: queue.Queue[str] = queue.Queue(maxsize=100)
+        self._stdout_thread = threading.Thread(target=self._read_stdout, name="sap-jco-client-stdout", daemon=True)
+        self._stderr_thread = threading.Thread(target=self._read_stderr, name="sap-jco-client-stderr", daemon=True)
+        self._stdout_thread.start(); self._stderr_thread.start()
+        try: ready = self._responses.get(timeout=startup_timeout)
+        except queue.Empty as exc:
+            detail = '; '.join(list(self._stderr.queue)[-5:])
+            self.close()
+            raise JavaBridgeError(f"SAP JCo worker startup timed out{': ' + detail if detail else ''}") from exc
+        if ready.get("event") != "ready" or not ready.get("ok", False):
+            self.close(); raise JavaBridgeError(str(ready.get("message") or "SAP JCo worker did not become ready"))
+
+    def _read_stdout(self) -> None:
+        try:
+            while not self._closed.is_set():
+                line = self.process.stdout.readline() if self.process.stdout else ""
+                if not line: return
+                try: value = json.loads(line)
+                except json.JSONDecodeError: value = {"ok":False, "message":f"Invalid SAP worker output: {line.strip()}"}
+                self._responses.put(value)
+        except Exception as exc:
+            if not self._closed.is_set():
+                try: self._responses.put_nowait({"ok":False, "message":f"SAP worker reader failed: {exc}"})
+                except queue.Full: pass
+
+    def _read_stderr(self) -> None:
+        try:
+            while not self._closed.is_set():
+                line = self.process.stderr.readline() if self.process.stderr else ""
+                if not line: return
+                if self._stderr.full():
+                    try: self._stderr.get_nowait()
+                    except queue.Empty: pass
+                self._stderr.put_nowait(line.rstrip())
+        except Exception: return
+
+    def request(self, action: str, values: dict[str, Any] | None = None, timeout: float = 35) -> dict[str, Any]:
+        if self.process.poll() is not None or not self.process.stdin: raise JavaBridgeError("SAP JCo worker is not running")
+        request_id = str(__import__('uuid').uuid4())
+        encoded = ""
+        if values is not None:
+            body = "".join(f"{_escape_property(key)}={_escape_property(value)}\n" for key, value in values.items() if value is not None)
+            encoded = base64.b64encode(body.encode("utf-8")).decode("ascii")
+        with self._lock:
+            try:
+                self.process.stdin.write(f"{action}\t{request_id}" + (f"\t{encoded}" if values is not None else "") + "\n"); self.process.stdin.flush()
+                while True:
+                    response = self._responses.get(timeout=timeout)
+                    if response.get("requestId") == request_id: break
+            except (OSError, queue.Empty) as exc:
+                raise JavaBridgeError(f"SAP JCo worker request failed or timed out: {exc}") from exc
+        if not response.get("ok", False): raise JavaBridgeError(str(response.get("message") or "SAP JCo worker call failed"))
+        response["loadedJars"] = self.loaded_jars
+        return response
+
+    def close(self) -> None:
+        if self._closed.is_set(): return
+        self._closed.set()
+        try:
+            if self.process.poll() is None and self.process.stdin:
+                self.process.stdin.write("stop\tshutdown\n"); self.process.stdin.flush(); self.process.wait(timeout=5)
+        except Exception:
+            if self.process.poll() is None: self.process.terminate()
+        for stream in (self.process.stdin, self.process.stdout, self.process.stderr):
+            try:
+                if stream: stream.close()
+            except OSError: pass
+        self._stdout_thread.join(timeout=1); self._stderr_thread.join(timeout=1)
+        self.descriptor.unlink(missing_ok=True)
+
+
 def _application_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -294,6 +371,24 @@ def start_sap_listener(config: dict[str, Any], values: dict[str, Any]) -> SapJco
         raise JavaBridgeError("Java runtime is unavailable for the SAP JCo listener") from exc
     maximum = int(values.get("jco.server.max_pending_events") or max(4, int(values.get("jco.server.connection_count") or 8) * 2))
     return SapJcoListener(process, Path(descriptor.name), maximum)
+
+
+def start_sap_worker(config: dict[str, Any], values: dict[str, Any]) -> SapJcoWorker:
+    classpath, jars = _classpath(config, "sap")
+    process_env = os.environ.copy()
+    native_directories = [str(path) for path in driver_directories(config, "sap") if path.exists()]
+    if native_directories: process_env["PATH"] = os.pathsep.join(native_directories + [process_env.get("PATH", "")])
+    descriptor = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".properties", delete=False)
+    with descriptor:
+        for key, value in {"command":"sap.worker", **values}.items():
+            if value is not None: descriptor.write(f"{_escape_property(key)}={_escape_property(value)}\n")
+    try:
+        process = subprocess.Popen(_java_command(config, classpath, descriptor.name), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace", env=process_env, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), bufsize=1)
+        return SapJcoWorker(process, Path(descriptor.name), [jar.name for jar in jars], float(config.get("timeoutSeconds") or 30) + 5)
+    except Exception:
+        Path(descriptor.name).unlink(missing_ok=True)
+        raise
 
 
 def jms_values(config: dict[str, Any]) -> dict[str, Any]:

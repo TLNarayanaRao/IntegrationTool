@@ -1,0 +1,27 @@
+{
+  "connection": {
+    "driverDirectory": "C:/ProgramData/Integration Fabric Studio/drivers/sap",
+    "applicationServerHost": "sap-qa.example.internal",
+    "systemNumber": "00",
+    "client": "100",
+    "language": "EN",
+    "username": "SET_WITH_A_PROTECTED_LOCAL_COPY",
+    "password": "SET_WITH_A_PROTECTED_LOCAL_COPY",
+    "outboundWorkerCount": 4,
+    "poolCapacity": 1,
+    "peakLimit": 1,
+    "jvmMaximumHeapMb": 512
+  },
+  "operation": "invoke_rfc_bapi",
+  "activity": {
+    "functionName": "STFC_CONNECTION",
+    "transactionProtocol": "sRFC",
+    "timeoutSeconds": 30
+  },
+  "payload": {
+    "REQUTEXT": "Integration Fabric SAP qualification"
+  },
+  "durationSeconds": 3600,
+  "concurrency": 8,
+  "terminateWorkerEveryCalls": 0
+}

@@ -1,32 +1,44 @@
 from __future__ import annotations
-import json, os, re, uuid, time, threading
+import hashlib, json, os, re, uuid, time, threading
 from xml.etree import ElementTree as ET
 from typing import Any
 from xml.sax.saxutils import escape
-from .java_bridge import JavaBridgeError, invoke as invoke_java, start_sap_listener, SapJcoListener
+from .java_bridge import JavaBridgeError, invoke as invoke_java, start_sap_listener, start_sap_worker, SapJcoListener, SapJcoWorker
 
 class SapAdapter:
     """SAP ECC adapter. External mode uses SAP's separately licensed Java Connector (JCo)."""
     def __init__(self):
         self.sessions: dict[str, dict[str, Any]] = {}
         self.listeners: dict[str, SapJcoListener] = {}
+        self.client_pools: dict[str, list[SapJcoWorker]] = {}
+        self._pool_cursor: dict[str, int] = {}
+        self._pool_last_used: dict[str, float] = {}
         self._state_lock = threading.RLock()
         self._listener_start_lock = __import__('asyncio').Lock()
 
     def _prune_sessions(self) -> None:
         now = time.monotonic()
         with self._state_lock:
-            for session_id in [key for key, value in self.sessions.items() if float(value.get('expiresAt') or 0) <= now]:
-                self.sessions.pop(session_id, None)
+            expired = [self.sessions.pop(key) for key, value in list(self.sessions.items()) if float(value.get('expiresAt') or 0) <= now]
+        for session in expired:
+            worker = session.get('worker')
+            if worker:
+                try: worker.request('rollback' if session.get('transactional') else 'end', timeout=5)
+                except Exception: pass
+                worker.close()
 
     def close_all(self) -> None:
         """Close every native listener and discard expiring logical sessions."""
         with self._state_lock:
             listeners = list(self.listeners.values())
+            workers = [worker for pool in self.client_pools.values() for worker in pool]
+            workers.extend(value.get('worker') for value in self.sessions.values() if value.get('worker'))
             self.listeners.clear()
+            self.client_pools.clear(); self._pool_cursor.clear(); self._pool_last_used.clear()
             self.sessions.clear()
         for listener in listeners:
             listener.close()
+        for worker in workers: worker.close()
 
     @staticmethod
     def _mode(cfg: dict) -> str:
@@ -119,8 +131,8 @@ class SapAdapter:
         return names
 
     @classmethod
-    def _decode_segment_fields(cls, segment_name: str, sdata: Any, row: dict, field_index: dict[str, list[dict]]) -> dict[str, str]:
-        raw = '' if sdata is None else str(sdata)
+    def _decode_segment_fields(cls, segment_name: str, sdata: Any, row: dict, field_index: dict[str, list[dict]], encoding: str = 'utf-8') -> dict[str, str]:
+        raw = sdata if isinstance(sdata, bytes) else ('' if sdata is None else str(sdata)).encode(encoding, errors='strict')
         definitions = field_index.get(str(segment_name or '').strip().upper(), [])
         if not definitions:
             return {}
@@ -129,10 +141,11 @@ class SapAdapter:
         # Remove it using the row value when available, with a conservative
         # 16-digit fallback for flattened listener payloads.
         docnum = str(row.get('DOCNUM') or '').strip()
+        docnum_bytes = docnum.encode(encoding, errors='strict')
         leading = len(raw) - len(raw.lstrip())
-        if docnum and raw[leading:].startswith(docnum):
-            raw = raw[leading + len(docnum):]
-        if docnum and raw[3:21] == docnum:
+        if docnum_bytes and raw[leading:].startswith(docnum_bytes):
+            raw = raw[leading + len(docnum_bytes):]
+        if docnum_bytes and raw[3:21] == docnum_bytes:
             raw = raw[:3] + raw[21:]
         # Do not strip a numeric prefix heuristically. Valid IDoc fields often
         # begin with digits (for example ARTMAS FUNCTION=005 and MATERIAL).
@@ -161,10 +174,77 @@ class SapAdapter:
                 # Emit every field defined for the segment. Empty values are
                 # meaningful in an IDoc schema and must remain addressable by
                 # mappings even when SAP sends a shorter/non-padded SDATA row.
-                values[name] = raw[start:min(end, len(raw))].rstrip() if start < len(raw) else ''
+                values[name] = raw[start:min(end, len(raw))].rstrip(b' ').decode(encoding, errors='strict') if start < len(raw) else ''
             except (TypeError, ValueError):
                 continue
         return values
+
+    @staticmethod
+    def _escaped_delimiter(value: Any, encoding: str = 'utf-8') -> bytes:
+        text = str(value or '')
+        if not text:
+            return b''
+        try: text = bytes(text, 'utf-8').decode('unicode_escape')
+        except UnicodeDecodeError: pass
+        return text.encode(encoding, errors='strict')
+
+    @classmethod
+    def _parse_flat_idoc(cls, value: str | bytes, cfg: dict, fields: list[dict], segments: list[dict]) -> dict:
+        """Parse EDI_DC40/EDI_DD40 flat records without corrupting SDATA.
+
+        Record positions are byte positions, not Python character positions.
+        A configured record delimiter is authoritative and therefore permits
+        embedded CR/LF characters inside SDATA. With no delimiter, canonical
+        1063-byte EDI_DD40 records are split by width before line fallback.
+        """
+        encoding = str(cfg.get('idocEncoding') or cfg.get('encoding') or 'utf-8').strip() or 'utf-8'
+        errors = 'replace' if str(cfg.get('invalidCharacterPolicy') or 'strict').lower() == 'replace' else 'strict'
+        raw = value if isinstance(value, bytes) else str(value).encode(encoding, errors=errors)
+        delimiter = cls._escaped_delimiter(cfg.get('idocRecordDelimiter') or cfg.get('customDelimiter'), encoding)
+        if delimiter:
+            records = [record for record in raw.split(delimiter) if record]
+        elif raw[:10].rstrip(b' ').upper() in (b'EDI_DC40', b'EDI_DC30') and len(raw) >= 524 and (len(raw) - 524) % 1063 == 0:
+            records = [raw[:524], *(raw[offset:offset + 1063] for offset in range(524, len(raw), 1063))]
+        elif len(raw) >= 1063 and len(raw) % 1063 == 0:
+            records = [raw[offset:offset + 1063] for offset in range(0, len(raw), 1063)]
+        else:
+            records = [record for record in raw.splitlines() if record]
+        control_names = [
+            ('TABNAM',10),('MANDT',3),('DOCNUM',16),('DOCREL',4),('STATUS',2),('DIRECT',1),('OUTMOD',1),('EXPRSS',1),('TEST',1),
+            ('IDOCTYP',30),('CIMTYP',30),('MESTYP',30),('MESCOD',3),('MESFCT',3),('STD',1),('STDVRS',6),('STDMES',6),
+            ('SNDPOR',10),('SNDPRT',2),('SNDPFC',2),('SNDPRN',10),('SNDSAD',21),('SNDLAD',70),('RCVPOR',10),('RCVPRT',2),
+            ('RCVPFC',2),('RCVPRN',10),('RCVSAD',21),('RCVLAD',70),('CREDAT',8),('CRETIM',6),('REFINT',14),('REFGRP',14),
+            ('REFMES',14),('ARCKEY',70),('SERIAL',20),
+        ]
+        control: dict[str, str] = {}
+        rows: list[dict[str, Any]] = []
+        for index, record in enumerate(records):
+            if record[:10].rstrip(b' ').upper() in (b'EDI_DC40', b'EDI_DC30'):
+                offset = 0
+                for name, width in control_names:
+                    control[name] = record[offset:offset + width].rstrip(b' ').decode(encoding, errors=errors)
+                    offset += width
+                continue
+            if len(record) < 63:
+                raise RuntimeError(f'Flat IDoc record {index + 1} is only {len(record)} bytes; EDI_DD40 requires a 63-byte header')
+            row = {
+                'SEGNAM': record[0:30].rstrip(b' ').decode(encoding, errors=errors),
+                'MANDT': record[30:33].rstrip(b' ').decode(encoding, errors=errors),
+                'DOCNUM': record[33:49].rstrip(b' ').decode(encoding, errors=errors),
+                'SEGNUM': record[49:55].rstrip(b' ').decode(encoding, errors=errors),
+                'PSGNUM': record[55:61].rstrip(b' ').decode(encoding, errors=errors),
+                'HLEVEL': record[61:63].rstrip(b' ').decode(encoding, errors=errors),
+                'SDATA': record[63:1063].rstrip(b' ').decode(encoding, errors=errors),
+            }
+            if not row['SEGNAM']:
+                raise RuntimeError(f'Flat IDoc record {index + 1} has no segment name')
+            rows.append(row)
+        if not rows:
+            raise RuntimeError('Flat IDoc payload contains no EDI_DD40 data records')
+        if not control:
+            supplied = cfg.get('controlRecord') or cfg.get('SAPIDoc') or {}
+            control = dict(supplied) if isinstance(supplied, dict) else {}
+        return {'control': control, 'data': rows, 'encoding': encoding, 'recordCount': len(records)}
 
     @classmethod
     def _schema_metadata(cls, schema: str | None) -> tuple[list[dict], list[dict]]:
@@ -231,7 +311,7 @@ class SapAdapter:
         return fields or schema_fields, segments or schema_segments
 
     @classmethod
-    def _expand_sdata_xml(cls, xml_text: str, fields: list[dict] | None, segments: list[dict] | None, schema: str | None = None) -> str:
+    def _expand_sdata_xml(cls, xml_text: str, fields: list[dict] | None, segments: list[dict] | None, schema: str | None = None, encoding: str = 'utf-8') -> str:
         """Upgrade an older XML IDoc containing SDATA into named fields."""
         root = ET.fromstring(xml_text)
         if not fields or not segments:
@@ -267,7 +347,7 @@ class SapAdapter:
                 raw = str(sdata_node.text or '')
                 if legacy_docnum and (raw.startswith(legacy_docnum[0]) if legacy_docnum[1] == 0 else raw[3:21] == legacy_docnum[0]):
                     row['DOCNUM'] = legacy_docnum[0]
-                decoded = cls._decode_segment_fields(original_name, sdata_node.text, row, field_index)
+                decoded = cls._decode_segment_fields(original_name, sdata_node.text, row, field_index, encoding)
                 if decoded:
                     node.remove(sdata_node)
                     for field_name, value in decoded.items():
@@ -282,7 +362,7 @@ class SapAdapter:
         return ET.tostring(root, encoding='unicode')
 
     @classmethod
-    def _xml_to_raw_idoc(cls, value: Any, idoc_type: str, fields: list[dict] | None, segments: list[dict] | None, schema: str | None = None) -> dict:
+    def _xml_to_raw_idoc(cls, value: Any, idoc_type: str, fields: list[dict] | None, segments: list[dict] | None, schema: str | None = None, encoding: str = 'utf-8') -> dict:
         """Render named XML/JSON fields back into SAP fixed-width IDoc rows.
 
         The renderer is deliberately metadata-driven.  A field is truncated
@@ -346,10 +426,14 @@ class SapAdapter:
                 definitions = field_index.get(logical.upper()) or field_index.get(physical.upper()) or []
                 max_end = max([int(str(field.get('BYTE_LAST') or '0')) - 63 for field in definitions if str(field.get('BYTE_LAST') or '').isdigit()] or [0])
                 segment_length = definition_lengths.get(physical.upper()) or definition_lengths.get(logical.upper()) or max_end
-                chars = [' '] * max(0, segment_length)
+                bytes_out = bytearray(b' ' * max(0, segment_length))
                 supplied_sdata = next((child.text or '' for child in list(node) if cls._xml_name(child.tag) == 'SDATA'), '')
                 if supplied_sdata:
-                    chars[:min(len(chars), len(supplied_sdata))] = list(supplied_sdata[:len(chars)])
+                    supplied = supplied_sdata.encode(encoding, errors='strict')[:len(bytes_out)]
+                    while supplied:
+                        try: supplied.decode(encoding, errors='strict'); break
+                        except UnicodeDecodeError: supplied = supplied[:-1]
+                    bytes_out[:len(supplied)] = supplied
                 child_values = {cls._xml_name(child.tag).upper(): (child.text or '') for child in list(node) if cls._xml_name(child.tag) != 'SDATA'}
                 for field in definitions:
                     name = str(field.get('FIELDNAME') or field.get('FIELDNAM') or field.get('FIELD') or '').strip()
@@ -360,16 +444,21 @@ class SapAdapter:
                         end = int(str(field.get('BYTE_LAST') or '63')) - 63
                     except (TypeError, ValueError):
                         continue
-                    if end <= start or start >= len(chars):
+                    if end <= start or start >= len(bytes_out):
                         continue
-                    text = child_values[name.upper()][:max(0, end - start)]
-                    chars[start:min(end, len(chars))] = list(text.ljust(min(end, len(chars)) - start))
-                rows.append({'SEGNAM': physical, 'SEGNUM': number, 'PSGNUM': parent_number, 'SDATA': ''.join(chars)})
+                    width = min(end, len(bytes_out)) - start
+                    encoded = child_values[name.upper()].encode(encoding, errors='strict')
+                    encoded = encoded[:width]
+                    while encoded:
+                        try: encoded.decode(encoding, errors='strict'); break
+                        except UnicodeDecodeError: encoded = encoded[:-1]
+                    bytes_out[start:start + width] = encoded.ljust(width, b' ')
+                rows.append({'SEGNAM': physical, 'SEGNUM': number, 'PSGNUM': parent_number, 'SDATA': bytes(bytes_out).decode(encoding, errors='strict')})
             return {'control': control, 'data': rows}
         return {'control': document.get('control') or {}, 'data': document.get('data') or []}
 
     @classmethod
-    def _idoc_structured_to_xml(cls, structured: dict, idoc_type: str = '', fields: list[dict] | None = None, segments: list[dict] | None = None, schema: str | None = None) -> str:
+    def _idoc_structured_to_xml(cls, structured: dict, idoc_type: str = '', fields: list[dict] | None = None, segments: list[dict] | None = None, schema: str | None = None, encoding: str = 'utf-8') -> str:
         """Convert the JCo IDOC_INBOUND_ASYNCHRONOUS result to IDoc XML.
 
         JCo exposes an inbound IDoc as an import structure plus rows in
@@ -415,7 +504,7 @@ class SapAdapter:
             parent_number = str(row.get('PSGNUM') or '').strip().lstrip('0') or '0'
             node = ET.Element(tag, {'SEGMENT': '1'})
             sdata = row.get('SDATA')
-            decoded = cls._decode_segment_fields(name, sdata, row, field_index)
+            decoded = cls._decode_segment_fields(name, sdata, row, field_index, encoding)
             if decoded:
                 for field_name, value in decoded.items():
                     child = ET.SubElement(node, field_name)
@@ -482,7 +571,10 @@ class SapAdapter:
         self._validate_config(cfg)
         params = self._params(cfg)
         return {'destinationName': str(cfg.get('destinationName') or 'integration-fabric-sap'),
-                **{f'jco.client.{key}': value for key, value in params.items()}}
+                **{f'jco.client.{key}': value for key, value in params.items()},
+                'jco.destination.pool_capacity': max(1, int(cfg.get('poolCapacity') or cfg.get('maximumConnections') or 8)),
+                'jco.destination.peak_limit': max(1, int(cfg.get('peakLimit') or cfg.get('maximumConnections') or 8)),
+                'jco.destination.expiration_time': max(1000, int(cfg.get('connectionExpirationMilliseconds') or 600000))}
 
     def _jco_call(self, cfg: dict, function_name: str, arguments: dict | None = None, tables: dict | None = None, changing: dict | None = None) -> dict:
         protocol = str(cfg.get('transactionProtocol') or cfg.get('idocInputMode') or '').strip().lower()
@@ -520,7 +612,59 @@ class SapAdapter:
                 if not isinstance(row, dict): continue
                 prefix = 'readTable' if function_name == 'RFC_READ_TABLE' else 'tableArg'
                 for field, value in row.items(): values[f'{prefix}.{table_name}.{row_index}.{field}'] = value
-        try: return invoke_java('sap.call', cfg, values, family='sap', timeout=float(cfg.get('timeoutSeconds') or 30) + 5)
+        try:
+            # Deterministic mock/unit-test calls remain single-shot and never
+            # require an installed SAP runtime. External calls use the pool.
+            if self._mode(cfg) == 'mock':
+                return invoke_java('sap.call', cfg, values, family='sap', timeout=float(cfg.get('timeoutSeconds') or 30) + 5)
+            session_worker = cfg.get('__sessionWorker')
+            if isinstance(session_worker, SapJcoWorker):
+                try:
+                    # A stateful context commits only at its explicit boundary;
+                    # individual activities must not commit the shared LUW.
+                    values['autoCommit'] = 'false'
+                    result = session_worker.request('call', values, float(cfg.get('timeoutSeconds') or 30) + 5)
+                    if cfg.get('contextEnd'):
+                        result.update(session_worker.request('commit' if cfg.get('autoCommit') else 'end', timeout=15))
+                        with self._state_lock: self.sessions.pop(str(cfg.get('sessionID') or ''), None)
+                        session_worker.close()
+                    return result
+                except Exception:
+                    session_id = str(cfg.get('sessionID') or '')
+                    with self._state_lock: session = self.sessions.pop(session_id, None) if session_id else None
+                    if session and session.get('transactional'):
+                        try: session_worker.request('rollback', timeout=15)
+                        except Exception: pass
+                    if session: session_worker.close()
+                    raise
+            # Never retain plaintext credentials in the pool index, but include
+            # their fingerprint so distinct users/passwords cannot share a JVM.
+            identity = {**self._jco_values(cfg), 'driverDirectory': str(cfg.get('driverDirectory') or '')}
+            key = hashlib.sha256(json.dumps(identity, sort_keys=True, default=str).encode('utf-8')).hexdigest()
+            size = max(1, min(16, int(cfg.get('outboundWorkerCount') or 2)))
+            retired: list[SapJcoWorker] = []
+            with self._state_lock:
+                now = time.monotonic()
+                idle_seconds = max(60, int(cfg.get('outboundPoolIdleSeconds') or 1800))
+                maximum_pools = max(1, min(128, int(cfg.get('maximumOutboundPools') or 16)))
+                for pool_key in list(self.client_pools):
+                    alive = []
+                    for candidate in self.client_pools[pool_key]:
+                        if candidate.process.poll() is None: alive.append(candidate)
+                        else: retired.append(candidate)
+                    self.client_pools[pool_key] = alive
+                    if not alive or (pool_key != key and now - self._pool_last_used.get(pool_key, now) > idle_seconds):
+                        retired.extend(self.client_pools.pop(pool_key, [])); self._pool_cursor.pop(pool_key, None); self._pool_last_used.pop(pool_key, None)
+                if key not in self.client_pools and len(self.client_pools) >= maximum_pools:
+                    oldest = min(self.client_pools, key=lambda item: self._pool_last_used.get(item, 0))
+                    retired.extend(self.client_pools.pop(oldest)); self._pool_cursor.pop(oldest, None); self._pool_last_used.pop(oldest, None)
+                pool = self.client_pools.setdefault(key, [])
+                while len(pool) < size:
+                    worker_values = {**self._jco_values(cfg), 'destinationName': f"{values['destinationName']}-{len(pool)}-{uuid.uuid4().hex[:8]}"}
+                    pool.append(start_sap_worker(cfg, worker_values))
+                cursor = self._pool_cursor.get(key, 0) % len(pool); worker = pool[cursor]; self._pool_cursor[key] = cursor + 1; self._pool_last_used[key] = now
+            for old_worker in retired: old_worker.close()
+            return worker.request('call', values, float(cfg.get('timeoutSeconds') or 30) + 5)
         except JavaBridgeError as exc: raise RuntimeError(f'SAP JCo call failed: {exc}') from exc
 
     @staticmethod
@@ -681,6 +825,7 @@ class SapAdapter:
                 metadata_fields,
                 metadata_segments,
                 selected_idoc.get('schema'),
+                str(cfg.get('idocEncoding') or cfg.get('encoding') or 'utf-8'),
             )
             # Expose the same named-field representation in both formats.  The
             # raw RFC rows remain available separately for low-level JCo
@@ -879,17 +1024,32 @@ class SapAdapter:
             self._prune_sessions()
             session_id = cfg.get('sessionID') or str(uuid.uuid4())
             if cfg.get('terminateConnection'):
-                with self._state_lock: self.sessions.pop(session_id, None)
-                return {'sessionID':session_id,'terminated':True,'transactional':bool(cfg.get('transactional'))}
+                with self._state_lock: session = self.sessions.pop(session_id, None)
+                if session and session.get('worker'):
+                    action = 'commit' if cfg.get('commitOnTerminate') and session.get('transactional') else ('rollback' if session.get('transactional') else 'end')
+                    try: session['worker'].request(action, timeout=15)
+                    finally: session['worker'].close()
+                return {'sessionID':session_id,'terminated':True,'transactional':bool(session and session.get('transactional')),
+                        'committed': bool(session and session.get('transactional') and cfg.get('commitOnTerminate'))}
+            worker = None
             if self._mode(cfg) != 'mock':
-                tested = self.test(cfg)
-                if not tested.get('ok'): raise RuntimeError(tested.get('message') or 'SAP dynamic connection failed')
+                worker_values = {**self._jco_values(cfg), 'destinationName': f"dynamic-{session_id}"}
+                worker = start_sap_worker(cfg, worker_values)
+                try:
+                    worker.request('ping', timeout=float(cfg.get('timeoutSeconds') or 30) + 5)
+                    if cfg.get('transactional'): worker.request('begin', timeout=10)
+                except Exception:
+                    worker.close(); raise
             timeout_ms = max(1000, int(float(cfg.get('contextTimeout') or cfg.get('timeout') or 600000)))
             maximum_sessions = max(1, min(10000, int(cfg.get('maximumDynamicSessions') or 1024)))
             with self._state_lock:
+                if session_id in self.sessions:
+                    if worker: worker.close()
+                    raise RuntimeError(f'SAP dynamic connection session {session_id!r} already exists')
                 if session_id not in self.sessions and len(self.sessions) >= maximum_sessions:
+                    if worker: worker.close()
                     raise RuntimeError(f'SAP dynamic connection limit ({maximum_sessions}) has been reached')
-                self.sessions[session_id] = {'config': dict(cfg), 'transactional': bool(cfg.get('transactional')), 'expiresAt': time.monotonic() + timeout_ms / 1000}
+                self.sessions[session_id] = {'config': dict(cfg), 'worker':worker, 'transactional': bool(cfg.get('transactional')), 'expiresAt': time.monotonic() + timeout_ms / 1000}
             return {'sessionID':session_id,'connected':True,'transactional':bool(cfg.get('transactional'))}
         session_id = cfg.get('sessionID') or (payload.get('sessionID') if isinstance(payload, dict) else None)
         if session_id:
@@ -897,7 +1057,7 @@ class SapAdapter:
             with self._state_lock: session = self.sessions.get(str(session_id))
             if not session:
                 raise RuntimeError(f'SAP dynamic connection session {session_id!r} is missing or expired')
-            cfg = {**session['config'], **cfg, 'sessionID': str(session_id)}
+            cfg = {**session['config'], **cfg, 'sessionID': str(session_id), '__sessionWorker':session.get('worker')}
             session['expiresAt'] = time.monotonic() + max(1, int(float(cfg.get('commitExpiry') or cfg.get('contextTimeout') or 600000))) / 1000
         if operation in ('idoc_converter','idoc_parser'):
             # Prefer explicit parser input mappings when present. This makes
@@ -911,20 +1071,36 @@ class SapAdapter:
                 raw = {**raw, 'control': mapped_control}
             mode = str(cfg.get('idocOutputMode') or cfg.get('outputFormat') or 'JSON').strip().upper()
             if mode not in ('JSON', 'XML', 'RAW'): mode = 'JSON'
-            xml_text = raw.decode('utf-8', errors='replace') if isinstance(raw, bytes) else str(raw or '') if isinstance(raw, str) else ''
+            encoding = str(cfg.get('idocEncoding') or cfg.get('encoding') or 'utf-8').strip() or 'utf-8'
+            invalid_policy = 'replace' if str(cfg.get('invalidCharacterPolicy') or 'strict').lower() == 'replace' else 'strict'
+            xml_text = raw.decode(encoding, errors=invalid_policy) if isinstance(raw, bytes) else str(raw or '') if isinstance(raw, str) else ''
+            if str(cfg.get('parserEngine') or '').lower().startswith('sap jidoc'):
+                if not xml_text.lstrip().startswith('<'):
+                    raise RuntimeError('SAP JIDocLib validates IDoc XML; select the built-in byte parser for flat EDI_DC40/EDI_DD40 records')
+                try:
+                    invoke_java('sap.idoc_validate', cfg, {**self._jco_values(cfg), 'idocXml': xml_text}, family='sap', timeout=float(cfg.get('timeoutSeconds') or 30) + 5)
+                except JavaBridgeError as exc:
+                    raise RuntimeError(f'SAP JIDocLib validation failed: {exc}') from exc
             json_value: Any
-            if isinstance(raw, str):
-                try: json_value = json.loads(raw)
+            if isinstance(raw, (str, bytes)):
+                textual = raw.decode(encoding, errors=invalid_policy) if isinstance(raw, bytes) else raw
+                try: json_value = json.loads(textual)
                 except ValueError:
                     try:
                         selected_idoc = cfg.get('selectedIdoc') or {}
                         metadata_fields, metadata_segments = self._metadata_for_idoc(selected_idoc)
-                        xml_text = self._expand_sdata_xml(raw, metadata_fields, metadata_segments, selected_idoc.get('schema'))
+                        xml_text = self._expand_sdata_xml(textual, metadata_fields, metadata_segments, selected_idoc.get('schema'), encoding)
                         json_value = self._xml_to_json(ET.fromstring(xml_text))
                     except ET.ParseError as exc:
-                        if raw.lstrip().startswith('<'):
+                        if textual.lstrip().startswith('<'):
                             raise RuntimeError(f'Malformed SAP IDoc XML: {exc}') from exc
-                        json_value = {'rawIDoc': raw, 'segments': [line for line in raw.splitlines() if line]}
+                        try:
+                            flat = self._parse_flat_idoc(raw, cfg, metadata_fields, metadata_segments)
+                            xml_text = self._idoc_structured_to_xml(flat, str(cfg.get('idocType') or selected_idoc.get('idocType') or 'IDoc'), metadata_fields, metadata_segments, selected_idoc.get('schema'), encoding)
+                            json_value = self._xml_to_json(ET.fromstring(xml_text))
+                        except RuntimeError:
+                            if self._mode(cfg) != 'mock': raise
+                            json_value = {'rawIDoc': textual, 'segments': [line for line in textual.splitlines() if line]}
             else:
                 json_value = raw
                 if isinstance(raw, dict) and ('control' in raw or 'data' in raw):
@@ -937,6 +1113,7 @@ class SapAdapter:
                         metadata_fields,
                         metadata_segments,
                         selected_idoc.get('schema'),
+                        encoding,
                     )
                     try: json_value = self._xml_to_json(ET.fromstring(xml_text))
                     except ET.ParseError: json_value = raw
@@ -951,7 +1128,7 @@ class SapAdapter:
                     metadata_fields, metadata_segments = self._metadata_for_idoc(selected_idoc)
                     xml_text = self._json_to_xml(raw, str(idoc_type_hint))
                     try:
-                        xml_text = self._expand_sdata_xml(xml_text, metadata_fields, metadata_segments, selected_idoc.get('schema'))
+                        xml_text = self._expand_sdata_xml(xml_text, metadata_fields, metadata_segments, selected_idoc.get('schema'), encoding)
                         json_value = self._xml_to_json(ET.fromstring(xml_text))
                     except ET.ParseError:
                         json_value = raw
@@ -988,7 +1165,7 @@ class SapAdapter:
             selected_idoc = cfg.get('selectedIdoc') or {}
             metadata_fields, metadata_segments = self._metadata_for_idoc(selected_idoc)
             idoc_type = str(cfg.get('idocType') or selected_idoc.get('idocType') or 'IDoc')
-            rendered = self._xml_to_raw_idoc(payload, idoc_type, metadata_fields, metadata_segments, selected_idoc.get('schema'))
+            rendered = self._xml_to_raw_idoc(payload, idoc_type, metadata_fields, metadata_segments, selected_idoc.get('schema'), str(cfg.get('idocEncoding') or cfg.get('encoding') or 'utf-8'))
             return {'rawIDoc': rendered, 'SAPIDoc': rendered, 'format': 'RAW', 'idocType': idoc_type, 'schema': selected_idoc.get('schema')}
         if operation in ('idoc_acknowledgment','idoc_confirmation'):
             if self._mode(cfg) == 'mock':
@@ -1053,6 +1230,7 @@ class SapAdapter:
                 metadata_fields,
                 metadata_segments,
                 selected_idoc.get('schema'),
+                str(cfg.get('idocEncoding') or cfg.get('encoding') or 'utf-8'),
             )
             control = rendered.get('control') or {}
             data = rendered.get('data') or []
