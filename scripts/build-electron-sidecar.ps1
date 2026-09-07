@@ -22,6 +22,29 @@ Push-Location "$root\frontend"
 try {
     npm.cmd run build
     Assert-CommandSucceeded 'Frontend production build' $LASTEXITCODE
+
+    # Fail early if an interrupted or partially-cleaned Vite build leaves
+    # index.html pointing at an asset that was not written to dist. Without
+    # this check the backend can start successfully while the Studio renders
+    # a blank page after the browser receives a 404 for the entry module.
+    $distPath = Join-Path $root 'frontend\dist'
+    $indexPath = Join-Path $distPath 'index.html'
+    if (!(Test-Path -LiteralPath $indexPath)) {
+        throw "Frontend build did not produce $indexPath."
+    }
+    $indexHtml = Get-Content -LiteralPath $indexPath -Raw
+    $assetReferences = [regex]::Matches($indexHtml, '(?:src|href)="(/assets/[^"]+)"') |
+        ForEach-Object { $_.Groups[1].Value }
+    if (!$assetReferences -or $assetReferences.Count -eq 0) {
+        throw "Frontend entry point contains no generated asset references: $indexPath"
+    }
+    foreach ($assetReference in $assetReferences) {
+        $assetPath = Join-Path $distPath ($assetReference.TrimStart('/') -replace '/', '\')
+        if (!(Test-Path -LiteralPath $assetPath)) {
+            throw "Frontend entry point references a missing asset '$assetReference'. Re-run the build before packaging."
+        }
+    }
+    Write-Host "Frontend asset manifest verified ($($assetReferences.Count) assets)."
 } finally { Pop-Location }
 
 & "$root\scripts\build-java-bridge.ps1"
