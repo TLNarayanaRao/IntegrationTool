@@ -75,12 +75,15 @@ The runtime receives `FABRIC_APPLICATION_DIR`, `FABRIC_ENVIRONMENT`, `FABRIC_DEP
 
 ## Package and deployment workflow
 
-1. In Studio Packaging, select the starter tasks, environments, target, and deployment files.
-2. Upload the `.ifpkg` in **Applications**. Administrator rejects traversal paths, links/devices, duplicate paths, oversized expansion, unsupported formats, missing project/task artifacts, and invalid manifests.
-3. Review checksum, target, profiles, selected task metadata, and secret requirements.
-4. Select **Create deployment**, then choose one packaged environment, a registered machine, desired instances, and all required secret values.
-5. Select **Start**. If the command adapter is not configured, the request fails visibly rather than reporting a false running state.
-6. Use **Details** for instance PIDs and logs. **Stop** performs normal termination; **Kill** is forced; **Restart** stops and recreates desired instances; **Undeploy** removes deployment secrets and the active inventory record.
+1. In Studio Packaging, select the starter tasks, environments, target, archive format (`.ifpkg`, `.zip`, `.tar.gz`, or `.ear`), and deployment files. Only selected starter tasks and their recursively called Sub Tasks are packaged.
+2. Select **Export archive** for an offline bundle, or enter the Control Plane URL, credential, team, data plane, namespace, capability, deployment environment, and required secrets and select **Deploy to Control Plane**. Studio builds the archive once, uploads those exact bytes, creates the deployment, and reports the Control Plane deployment ID/state. Credentials and secret values are transient and are not saved in the project or package.
+3. Alternatively, upload an exported archive in **Applications**. Administrator rejects traversal paths, links/devices, duplicate paths, oversized expansion, unsupported formats, missing project/task artifacts, and invalid manifests.
+4. Review checksum, target, profiles, selected task metadata, and secret requirements.
+5. For local on-premises deployment, **Start** uses `FABRIC_ADMIN_RUNTIME_COMMAND`. Generated packages contain Linux `install.sh`/`deploy.sh` and Windows `install.ps1`/`deploy.ps1`/`start.ps1` assets. If the command adapter is not configured, startup fails visibly rather than reporting a false running state.
+6. For cloud deployment, the Control Plane records the desired application, environment, replicas, namespace, and capability. The registered Kubernetes data-plane agent applies the generated Dockerfile, ConfigMap, Secret, Deployment, Service, HPA, and Kustomize assets; Studio does not incorrectly invoke the local command adapter for cloud targets.
+7. Use **Details** for instance PIDs and logs. **Stop** performs normal termination; **Kill** is forced; **Restart** stops and recreates desired instances; **Undeploy** removes deployment secrets and the active inventory record.
+
+For a private CA, keep TLS verification enabled and supply the CA PEM path in Studio. Disabling verification is provided only for isolated development systems.
 
 Legal lifecycle transitions are enforced. Package deletion is blocked while any non-undeployed deployment references it.
 

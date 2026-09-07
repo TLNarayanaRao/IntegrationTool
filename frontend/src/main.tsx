@@ -1933,7 +1933,8 @@ function App() {
         setValidation({ title: `Validate Project · ${project.name}`, issues });
         throw new Error(`Package blocked by ${blocking.length} project validation error${blocking.length === 1 ? "" : "s"}.`);
       }
-      const next = { ...project, packaging: { ...project.packaging, ...settings } };
+      const { credential, secretsText, controlPlaneUrl, caCertificatePath, ...persistedSettings } = settings;
+      const next = { ...project, packaging: { ...project.packaging, ...persistedSettings } };
       const saved = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
       if (!saved.ok) throw new Error("Unable to save packaging configuration.");
       setProject(normalizeProject(await saved.json()));
@@ -1951,6 +1952,43 @@ function App() {
       setPackageOpen(false);
     } catch (error: any) {
       setLogs([{ level: "ERROR", message: error?.message || "Package generation failed" }]);
+      throw error;
+    } finally { setWorkStatus(""); }
+  };
+  const deployDeploymentPackage = async (settings: Record<string, any>) => {
+    setWorkStatus("Packaging and deploying through the Control Plane…");
+    try {
+      const issues = validateProjectDefinition(project), blocking = issues.filter((item) => item.severity === "error");
+      if (blocking.length) {
+        setValidation({ title: `Validate Project · ${project.name}`, issues });
+        throw new Error(`Deployment blocked by ${blocking.length} project validation error${blocking.length === 1 ? "" : "s"}.`);
+      }
+      let secrets: Record<string, string> = {};
+      try { secrets = settings.secretsText?.trim() ? JSON.parse(settings.secretsText) : {}; }
+      catch { throw new Error("Deployment secrets must be a JSON object of property names and values."); }
+      if (!secrets || Array.isArray(secrets) || typeof secrets !== "object") throw new Error("Deployment secrets must be a JSON object.");
+      const { credential, secretsText, controlPlaneUrl, caCertificatePath, ...persistedSettings } = settings;
+      const next = { ...project, packaging: { ...project.packaging, ...persistedSettings } };
+      const saved = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
+      if (!saved.ok) throw new Error("Unable to save packaging configuration.");
+      setProject(normalizeProject(await saved.json()));
+      const response = await fetch(`/api/projects/${project.id}/package/deploy`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
+          target: settings.target, environments: settings.environments, starterTaskIds: settings.starterTaskIds,
+          archive: settings.format, artifacts: settings.artifacts, controlPlaneUrl, credential,
+          verifyTls: settings.verifyTls, caCertificatePath, teamId: settings.teamId || null,
+          deploymentEnvironment: settings.deploymentEnvironment, dataPlaneId: settings.dataPlaneId,
+          capabilityId: settings.capabilityId || null, namespace: settings.namespace,
+          instances: settings.target === "cloud" ? settings.replicas : settings.instances,
+          secrets, start: settings.target === "cloud" ? true : !!settings.startOnBoot,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || "Control Plane deployment failed.");
+      setLogs([{ level: "INFO", message: `${result.archiveName} uploaded; deployment ${result.deployment?.id || "created"} is ${result.deployment?.state || "submitted"}.` }]);
+      setPackageOpen(false);
+    } catch (error: any) {
+      setLogs([{ level: "ERROR", message: error?.message || "Control Plane deployment failed" }]);
       throw error;
     } finally { setWorkStatus(""); }
   };
@@ -3056,7 +3094,7 @@ function App() {
           }}
         />
       )}
-      {packageOpen && <PackageDialog packaging={project.packaging} environments={Object.keys(project.properties)} tasks={project.tasks} onClose={() => setPackageOpen(false)} onPackage={buildDeploymentPackage}/>}
+      {packageOpen && <PackageDialog packaging={project.packaging} environments={Object.keys(project.properties)} tasks={project.tasks} onClose={() => setPackageOpen(false)} onPackage={buildDeploymentPackage} onDeploy={deployDeploymentPackage}/>}
       {sampleGalleryOpen && <SampleGallery
         onClose={() => setSampleGalleryOpen(false)}
         onImport={async (file) => { const imported = await importProject(file); if (imported) setSampleGalleryOpen(false); }}
@@ -3131,7 +3169,7 @@ const deploymentArtifactChoices: Record<string, { key: string; label: string; de
     { key: "readme", label: "Deployment guide", detail: "Generated on-premises deployment steps" },
   ],
 };
-function PackageDialog({ packaging, environments, tasks, onClose, onPackage }: any) {
+function PackageDialog({ packaging, environments, tasks, onClose, onPackage, onDeploy }: any) {
   const initialTarget = packaging?.target || "on-prem";
   const starterTasks = (tasks || []).filter((task: Task) => task.kind === "starter");
   const initialChoices = deploymentArtifactChoices[initialTarget] || deploymentArtifactChoices["on-prem"];
@@ -3155,24 +3193,55 @@ function PackageDialog({ packaging, environments, tasks, onClose, onPackage }: a
     startOnBoot: packaging?.startOnBoot || false,
     gracefulShutdownSeconds: packaging?.gracefulShutdownSeconds || 60,
     installRoot: packaging?.installRoot || "",
+    windowsInstallRoot: packaging?.windowsInstallRoot || "",
+    controlPlaneUrl: "http://127.0.0.1:9080",
+    credential: "",
+    verifyTls: true,
+    caCertificatePath: "",
+    teamId: "",
+    deploymentEnvironment: packaging?.environment || environments[0] || "local",
+    dataPlaneId: initialTarget === "cloud" ? "" : "localhost",
+    capabilityId: "",
+    namespace: "default",
+    secretsText: "{}",
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [targetCatalog, setTargetCatalog] = useState<any>({ dataPlanes: [], capabilities: [] });
+  const [discovering, setDiscovering] = useState(false);
   const update = (key: string, value: any) => setDraft((current: any) => ({ ...current, [key]: value }));
   const chooseTarget = (target: string) => setDraft((current: any) => ({ ...current, target, artifacts: deploymentArtifactChoices[target].map((choice) => choice.key) }));
   const toggleArtifact = (key: string) => setDraft((current: any) => ({ ...current, artifacts: current.artifacts.includes(key) ? current.artifacts.filter((value: string) => value !== key) : [...current.artifacts, key] }));
   const toggleEnvironment = (name: string) => setDraft((current: any) => ({ ...current, environments: current.environments.includes(name) ? current.environments.filter((value: string) => value !== name) : [...current.environments, name] }));
   const toggleStarter = (id: string) => setDraft((current: any) => ({ ...current, starterTaskIds: current.starterTaskIds.includes(id) ? current.starterTaskIds.filter((value: string) => value !== id) : [...current.starterTaskIds, id] }));
   const extension = draft.format === "ifpkg" ? "ifpkg" : draft.format;
-  const build = async () => {
+  const compatiblePlanes = targetCatalog.dataPlanes.filter((plane: any) => draft.target === "cloud" ? plane.type === "kubernetes" : plane.type !== "kubernetes");
+  const compatibleCapabilities = targetCatalog.capabilities.filter((capability: any) => capability.type === "integration-runtime" && capability.dataPlaneId === draft.dataPlaneId && capability.namespace === draft.namespace);
+  const discoverTargets = async () => {
+    setError(""); setDiscovering(true);
+    try {
+      const response = await fetch("/api/control-plane/deployment-targets", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ controlPlaneUrl: draft.controlPlaneUrl, credential: draft.credential, verifyTls: draft.verifyTls, caCertificatePath: draft.caCertificatePath }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || "Unable to load Control Plane targets.");
+      setTargetCatalog(result);
+      const planes = result.dataPlanes.filter((plane: any) => draft.target === "cloud" ? plane.type === "kubernetes" : plane.type !== "kubernetes");
+      const selected = planes.find((plane: any) => plane.id === draft.dataPlaneId) || planes[0];
+      if (selected) setDraft((current: any) => ({ ...current, dataPlaneId: selected.id, namespace: selected.namespaces?.includes(current.namespace) ? current.namespace : selected.namespaces?.[0] || "default", capabilityId: "" }));
+    } catch (failure: any) { setError(failure?.message || "Unable to load Control Plane targets."); }
+    finally { setDiscovering(false); }
+  };
+  const build = async (deploy = false) => {
     setError("");
     if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(draft.artifact_name.trim())) { setError("Artifact name may contain letters, numbers, dots, dashes, and underscores."); return; }
     if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(draft.version.trim())) { setError("Use a semantic version such as 1.0.0 or 1.0.0-beta.1."); return; }
     if (!draft.artifacts.length) { setError("Select at least one deployment artifact."); return; }
     if (!draft.environments.length) { setError("Select at least one environment profile."); return; }
     if (!draft.starterTaskIds.length) { setError("Select at least one Starter Task to package."); return; }
+    if (deploy && !/^https?:\/\//i.test(draft.controlPlaneUrl.trim())) { setError("Enter the Control Plane URL, including http:// or https://."); return; }
+    if (deploy && !draft.dataPlaneId.trim()) { setError("Enter the target data-plane ID."); return; }
+    if (deploy && !draft.environments.includes(draft.deploymentEnvironment)) { setError("Choose one of the packaged environment profiles for deployment."); return; }
     setBusy(true);
-    try { await onPackage(draft); }
+    try { await (deploy ? onDeploy(draft) : onPackage(draft)); }
     catch (failure: any) { setError(failure?.message || "Package generation failed."); }
     finally { setBusy(false); }
   };
@@ -3182,12 +3251,12 @@ function PackageDialog({ packaging, environments, tasks, onClose, onPackage }: a
       <label>Artifact name<input value={draft.artifact_name} onChange={(event) => update("artifact_name", event.target.value)}/></label>
       <label>Version<input value={draft.version} onChange={(event) => update("version", event.target.value)}/></label>
       <div className="package-targets">
-        <button className={draft.target === "on-prem" ? "selected" : ""} onClick={() => chooseTarget("on-prem")}><HardDrive/><span><b>On-premises Linux</b><small>Administrator and runtime-agent deployment without containers</small></span></button>
+        <button className={draft.target === "on-prem" ? "selected" : ""} onClick={() => chooseTarget("on-prem")}><HardDrive/><span><b>On-premises Windows / Linux</b><small>Administrator, PowerShell, systemd, and runtime deployment assets</small></span></button>
         <button className={draft.target === "cloud" ? "selected" : ""} onClick={() => chooseTarget("cloud")}><Cloud/><span><b>Cloud / Kubernetes</b><small>OCI image inputs and Kubernetes deployment descriptors</small></span></button>
       </div>
       <section className="package-starters"><header><span><b>TASK STARTERS</b><small>Select the deployable entry points. Called Sub Tasks are discovered recursively and included automatically; unrelated Sub Tasks are excluded.</small></span><button type="button" onClick={() => update("starterTaskIds", starterTasks.map((task: Task) => task.id))}>Select all</button></header><div>{starterTasks.map((task: Task) => <label key={task.id} className={draft.starterTaskIds.includes(task.id) ? "selected" : ""}><input type="checkbox" checked={draft.starterTaskIds.includes(task.id)} onChange={() => toggleStarter(task.id)}/><span><b>{task.name}</b><small>{task.description || "Starter Task"}</small></span></label>)}</div>{!starterTasks.length && <p>No Starter Tasks are available. Create a Starter Task before packaging.</p>}</section>
       <section className="package-environments"><header><span><b>ENVIRONMENT PROFILES</b><small>The application is common; configuration and secret files are generated separately for every selected profile.</small></span><button type="button" onClick={() => update("environments", environments)}>Select all</button></header><div>{environments.map((name: string) => <label key={name} className={draft.environments.includes(name) ? "selected" : ""}><input type="checkbox" checked={draft.environments.includes(name)} onChange={() => toggleEnvironment(name)}/><span><b>{name}</b><small>{draft.environments.includes(name) ? "Included" : "Not packaged"}</small></span></label>)}</div></section>
-      <label>Archive format<select value={draft.format} onChange={(event) => update("format", event.target.value)}><option value="ifpkg">Integration package (.ifpkg)</option><option value="tar.gz">Compressed TAR (.tar.gz)</option><option value="ear">EAR-compatible ZIP (.ear)</option></select></label>
+      <label>Archive format<select value={draft.format} onChange={(event) => update("format", event.target.value)}><option value="ifpkg">Integration package (.ifpkg)</option><option value="zip">ZIP archive (.zip)</option><option value="tar.gz">Compressed TAR (.tar.gz)</option><option value="ear">EAR-compatible ZIP (.ear)</option></select></label>
       <section className="package-artifacts">
         <header><span><b>SELECT DEPLOYMENT FILES</b><small>Core application, tasks, resources, schemas, and secret requirements are always included.</small></span><button type="button" onClick={() => update("artifacts", deploymentArtifactChoices[draft.target].map((choice) => choice.key))}>Select all</button></header>
         <div>{deploymentArtifactChoices[draft.target].map((choice) => <label key={choice.key} className={draft.artifacts.includes(choice.key) ? "selected" : ""}><input type="checkbox" checked={draft.artifacts.includes(choice.key)} onChange={() => toggleArtifact(choice.key)}/><span><b>{choice.label}</b><small>{choice.detail}</small></span></label>)}</div>
@@ -3206,13 +3275,27 @@ function PackageDialog({ packaging, environments, tasks, onClose, onPackage }: a
         <label>Runtime instances<input type="number" min="1" value={draft.instances} onChange={(event) => update("instances", Number(event.target.value))}/></label>
         <label>Graceful shutdown (seconds)<input type="number" min="1" value={draft.gracefulShutdownSeconds} onChange={(event) => update("gracefulShutdownSeconds", Number(event.target.value))}/></label>
         <label>Install root<input value={draft.installRoot} onChange={(event) => update("installRoot", event.target.value)} placeholder={`/opt/integration-fabric/apps/${draft.artifact_name}`}/></label>
+        <label>Windows install root<input value={draft.windowsInstallRoot} onChange={(event) => update("windowsInstallRoot", event.target.value)} placeholder={`C:\\ProgramData\\Integration Fabric\\apps\\${draft.artifact_name}`}/></label>
         <label className="package-toggle"><input type="checkbox" checked={!!draft.startOnBoot} onChange={(event) => update("startOnBoot", event.target.checked)}/> Start application after Administrator deployment</label>
       </section>}
+      <section className="package-runtime-options package-control-plane">
+        <h3>Direct Control Plane deployment <button type="button" onClick={discoverTargets} disabled={discovering}>{discovering ? "Loading…" : "Load deployment targets"}</button></h3>
+        <label>Control Plane URL<input value={draft.controlPlaneUrl} onChange={(event) => update("controlPlaneUrl", event.target.value)} placeholder="https://control-plane.example.com"/></label>
+        <label>Access key<input type="password" value={draft.credential} onChange={(event) => update("credential", event.target.value)} placeholder="Not saved in the project"/></label>
+        <label>Delivery team ID (optional)<input value={draft.teamId} onChange={(event) => update("teamId", event.target.value)} placeholder="technology-team"/></label>
+        <label>Deployment environment<select value={draft.deploymentEnvironment} onChange={(event) => update("deploymentEnvironment", event.target.value)}>{draft.environments.map((name: string) => <option key={name}>{name}</option>)}</select></label>
+        <label>Data plane{compatiblePlanes.length ? <select value={draft.dataPlaneId} onChange={(event) => { const plane = compatiblePlanes.find((item: any) => item.id === event.target.value); setDraft((current: any) => ({ ...current, dataPlaneId: event.target.value, namespace: plane?.namespaces?.[0] || "default", capabilityId: "" })); }}>{compatiblePlanes.map((plane: any) => <option key={plane.id} value={plane.id}>{plane.name} · {plane.id}</option>)}</select> : <input value={draft.dataPlaneId} onChange={(event) => update("dataPlaneId", event.target.value)} placeholder={draft.target === "cloud" ? "kubernetes-prod" : "localhost"}/>}</label>
+        <label>Runtime capability{compatibleCapabilities.length ? <select value={draft.capabilityId} onChange={(event) => update("capabilityId", event.target.value)}><option value="">Auto-select</option>{compatibleCapabilities.map((capability: any) => <option key={capability.id} value={capability.id}>{capability.name} · {capability.version}</option>)}</select> : <input value={draft.capabilityId} onChange={(event) => update("capabilityId", event.target.value)} placeholder="Auto-select in namespace"/>}</label>
+        <label>Namespace{(compatiblePlanes.find((plane: any) => plane.id === draft.dataPlaneId)?.namespaces || []).length ? <select value={draft.namespace} onChange={(event) => setDraft((current: any) => ({ ...current, namespace: event.target.value, capabilityId: "" }))}>{compatiblePlanes.find((plane: any) => plane.id === draft.dataPlaneId).namespaces.map((name: string) => <option key={name}>{name}</option>)}</select> : <input value={draft.namespace} onChange={(event) => update("namespace", event.target.value)} placeholder="default"/>}</label>
+        <label>CA certificate path (optional)<input value={draft.caCertificatePath} onChange={(event) => update("caCertificatePath", event.target.value)} placeholder="Corporate CA PEM file"/></label>
+        <label className="package-toggle"><input type="checkbox" checked={!!draft.verifyTls} onChange={(event) => update("verifyTls", event.target.checked)}/> Verify Control Plane TLS certificate</label>
+        <label className="package-secrets">Deployment secrets (JSON)<textarea value={draft.secretsText} onChange={(event) => update("secretsText", event.target.value)} spellCheck={false} placeholder={'{"database.password":"value"}'}/><small>Sent securely to the Control Plane and never written to the project or archive.</small></label>
+      </section>
       <div className="package-preview"><Package/><span><b>{draft.artifact_name}-{draft.version}-{draft.target}.{extension}</b><small>{draft.starterTaskIds.length} starter{draft.starterTaskIds.length === 1 ? "" : "s"} · {draft.environments.length} environment profile{draft.environments.length === 1 ? "" : "s"} · related Sub Tasks resolved automatically</small></span></div>
       <p className="package-security"><ShieldCheck/> Password values are removed. The target Administrator or Kubernetes secret provider supplies credentials during deployment.</p>
       {error && <p className="package-error"><AlertTriangle/>{error}</p>}
     </main>
-    <footer><button disabled={busy} onClick={onClose}>Cancel</button><button className="primary" disabled={busy || !draft.artifact_name.trim() || !draft.version.trim()} onClick={build}>{busy ? "Validating and building…" : "Validate and package"}</button></footer>
+    <footer><button disabled={busy} onClick={onClose}>Cancel</button><button disabled={busy || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false)}>{busy ? "Working…" : "Export archive"}</button><button className="primary" disabled={busy || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(true)}>{busy ? "Working…" : "Deploy to Control Plane"}</button></footer>
   </div></div>;
 }
 function StudioRibbon(props: any) {

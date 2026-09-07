@@ -1,6 +1,8 @@
 import io, json, tarfile, unittest, zipfile
+import httpx
 from fastapi.testclient import TestClient
 from app.main import app
+from unittest.mock import patch
 
 class TaskRuntimeTests(unittest.TestCase):
     def setUp(self): self.client = TestClient(app)
@@ -89,6 +91,9 @@ class TaskRuntimeTests(unittest.TestCase):
             self.assertIsNotNone(archive.getmember('deployment/on-prem/environment.properties'))
             self.assertIsNotNone(archive.getmember('deployment/on-prem/deploy.sh'))
             self.assertIsNotNone(archive.getmember('deployment/on-prem/install.sh'))
+            self.assertIsNotNone(archive.getmember('deployment/on-prem/deploy.ps1'))
+            self.assertIsNotNone(archive.getmember('deployment/on-prem/install.ps1'))
+            self.assertIsNotNone(archive.getmember('deployment/on-prem/start.ps1'))
         deleted = self.client.delete('/api/projects/task-runtime-test')
         self.assertEqual(deleted.status_code, 200)
         self.assertEqual(self.client.get('/api/projects/task-runtime-test').status_code, 404)
@@ -148,6 +153,38 @@ class TaskRuntimeTests(unittest.TestCase):
             manifest = json.loads(archive.read('manifest.json'))
             self.assertEqual(manifest['starterTaskIds'], ['main'])
             self.assertEqual(manifest['includedTaskIds'], ['main', 'child'])
+        self.client.delete('/api/projects/task-runtime-test')
+
+    def test_direct_control_plane_deployment_uploads_generated_archive_then_creates_deployment(self):
+        payload = self.project()
+        self.assertEqual(self.client.post('/api/projects', json=payload).status_code, 200)
+        calls = []
+        class ControlPlaneClient:
+            def __init__(self, *args, **kwargs): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *args): pass
+            async def post(self, url, **kwargs):
+                calls.append((url, kwargs))
+                request = httpx.Request('POST', url)
+                if url.endswith('/api/packages'):
+                    archive = kwargs['files']['file'][1]
+                    with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+                        self_outer.assertIn('deployment/cloud/Dockerfile', bundle.namelist())
+                        self_outer.assertEqual(json.loads(bundle.read('manifest.json'))['starterTaskIds'], ['main'])
+                    return httpx.Response(200, request=request, json={'packageId':'integration-application:1.0.0'})
+                return httpx.Response(200, request=request, json={'id':'deployment-1','state':'DEPLOYED'})
+        self_outer = self
+        with patch('app.main.httpx.AsyncClient', ControlPlaneClient):
+            response = self.client.post('/api/projects/task-runtime-test/package/deploy', json={
+                'target':'cloud', 'environments':['dev'], 'starterTaskIds':['main'], 'archive':'ifpkg',
+                'controlPlaneUrl':'https://control.example', 'credential':'token',
+                'deploymentEnvironment':'dev', 'dataPlaneId':'kubernetes-dev', 'namespace':'team-a',
+            })
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['deployment']['id'], 'deployment-1')
+        self.assertTrue(response.json()['submittedToDataPlane'])
+        self.assertEqual([url.rsplit('/', 1)[-1] for url, _ in calls], ['packages', 'deployments'])
+        self.assertEqual(calls[0][1]['headers']['x-control-plane-key'], 'token')
         self.client.delete('/api/projects/task-runtime-test')
 
     def test_project_save_removes_retry_from_non_outbound_activities_only(self):

@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 from .models import AIBuildRequest, DebugAction, DebugRequest, Project, RunRequest, SharedResource, effective_event_activities
 from .store import delete_project, get_project, list_projects, project_dir, save_project, safe_component
 from .runtime import WorkflowRuntime
@@ -860,6 +861,7 @@ commonLabels:
         start_on_boot = str(item.packaging.get('startOnBoot') or 'false').lower() in ('true', '1', 'yes', 'on')
         shutdown_seconds = max(1, int(item.packaging.get('gracefulShutdownSeconds') or 60))
         install_root = str(item.packaging.get('installRoot') or f'/opt/integration-fabric/apps/{artifact}')
+        windows_install_root = str(item.packaging.get('windowsInstallRoot') or f'C:\\ProgramData\\Integration Fabric\\apps\\{artifact}')
         if 'application' in selected_artifacts:
             files['deployment/on-prem/application.json'] = json.dumps({
                 'application': artifact, 'version': version, 'environment': environment,
@@ -875,6 +877,12 @@ set -eu
 fabric-admin deploy --application {artifact} --version {version} --environment {environment} --package "$1"
 fabric-admin scale --application {artifact} --instances {instances}
 {'fabric-admin start --application ' + artifact if start_on_boot else '# Start manually with: fabric-admin start --application ' + artifact}
+'''.encode()
+            files['deployment/on-prem/deploy.ps1'] = f'''param([Parameter(Mandatory=$true)][string]$PackagePath)
+$ErrorActionPreference = "Stop"
+fabric-admin deploy --application "{artifact}" --version "{version}" --environment "{environment}" --package $PackagePath
+fabric-admin scale --application "{artifact}" --instances {instances}
+{'fabric-admin start --application "' + artifact + '"' if start_on_boot else '# Start manually with: fabric-admin start --application "' + artifact + '"'}
 '''.encode()
         if 'systemd' in selected_artifacts:
             files[f'deployment/on-prem/{deployment_name}.service'] = f'''[Unit]
@@ -898,6 +906,17 @@ install -d -m 0750 "{install_root}"
 cp -R application environments "{install_root}/"
 echo "Install required secrets listed in deployment/secrets.required.json before starting."
 '''.encode()
+            files['deployment/on-prem/install.ps1'] = f'''param([string]$InstallRoot = "{windows_install_root.replace(chr(34), chr(34) * 2)}")
+$ErrorActionPreference = "Stop"
+New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
+Copy-Item -Recurse -Force application,environments -Destination $InstallRoot
+Write-Host "Installed {artifact} {version} to $InstallRoot. Configure deployment/secrets.required.json values in Control Plane before starting."
+'''.encode()
+            files['deployment/on-prem/start.ps1'] = f'''param([string]$InstallRoot = "{windows_install_root.replace(chr(34), chr(34) * 2)}")
+$env:FABRIC_ENVIRONMENT = "{environment}"
+$env:FABRIC_APPLICATION_DIR = Join-Path $InstallRoot "application"
+& integration-fabric-runtime --application $env:FABRIC_APPLICATION_DIR
+'''.encode()
         if 'readme' in selected_artifacts:
             files['deployment/on-prem/README.txt'] = f'''Integration Fabric on-premises deployment
 Application: {artifact}
@@ -909,6 +928,12 @@ Install root: {install_root}
 1. Supply values listed in deployment/secrets.required.json through Administrator.
 2. Run install.sh, or import application.json through Integration Fabric Administrator.
 3. Run deploy.sh with this package path and start the application when ready.
+
+Windows PowerShell:
+1. Run: .\\install.ps1
+2. Deploy through Control Plane, or run: .\\deploy.ps1 -PackagePath <archive-path>
+3. For a standalone foreground runtime, run: .\\start.ps1
+Windows install root: {windows_install_root}
 '''.encode()
     return files
 
@@ -948,33 +973,136 @@ def multi_environment_package_files(item: Project, target: str, environments: li
     files['manifest.json'] = json.dumps(manifest, indent=2).encode()
     return files
 
-@app.get('/api/projects/{project_id}/package')
-def package_project(project_id: str, target: str = 'on-prem', environment: str = 'local', environments: str = '', starters: str = '', archive: str = 'ifpkg', artifacts: str = ''):
-    item = get_project(project_id)
-    if not item: raise HTTPException(404, 'Project not found')
-    selected_starters = [value.strip() for value in starters.split(',') if value.strip()] if starters else None
-    item, root_tasks, included_tasks = packaging_task_closure(item, selected_starters)
-    selected_artifacts = {value.strip() for value in artifacts.split(',') if value.strip()} if artifacts else None
-    selected_environments = [value.strip() for value in environments.split(',') if value.strip()] if environments else [environment]
-    files = multi_environment_package_files(item, target, selected_environments, selected_artifacts)
-    manifest = json.loads(files['manifest.json']); manifest['starterTaskIds'] = root_tasks; manifest['includedTaskIds'] = included_tasks
+def build_deployment_archive(item: Project, target: str, environments: list[str], starter_ids: list[str] | None,
+                             archive: str, artifacts: set[str] | None) -> tuple[bytes, str, str, dict]:
+    """Build the exact archive used by both download and direct Control Plane deployment."""
+    selected, root_tasks, included_tasks = packaging_task_closure(item, starter_ids)
+    files = multi_environment_package_files(selected, target, environments, artifacts)
+    manifest = json.loads(files['manifest.json'])
+    manifest['starterTaskIds'], manifest['includedTaskIds'] = root_tasks, included_tasks
     files['manifest.json'] = json.dumps(manifest, indent=2).encode()
-    artifact = re.sub(r'[^A-Za-z0-9_.-]+', '-', item.packaging.get('artifact_name') or item.id).strip('-')
-    version = re.sub(r'[^A-Za-z0-9_.-]+', '-', item.packaging.get('version') or '1.0.0').strip('-')
+    artifact = re.sub(r'[^A-Za-z0-9_.-]+', '-', selected.packaging.get('artifact_name') or selected.id).strip('-')
+    version = re.sub(r'[^A-Za-z0-9_.-]+', '-', selected.packaging.get('version') or '1.0.0').strip('-')
     stream = io.BytesIO()
     if archive == 'tar.gz':
         with tarfile.open(fileobj=stream, mode='w:gz') as bundle:
             for name, body in files.items():
                 info = tarfile.TarInfo(name); info.size = len(body); bundle.addfile(info, io.BytesIO(body))
         extension, media = 'tar.gz', 'application/gzip'
-    else:
+    elif archive in {'ifpkg', 'ear', 'zip'}:
         with zipfile.ZipFile(stream, 'w', zipfile.ZIP_DEFLATED) as bundle:
             for name, body in files.items(): bundle.writestr(name, body)
-        extension = 'ear' if archive == 'ear' else 'ifpkg'
+        extension = 'ear' if archive == 'ear' else ('zip' if archive == 'zip' else 'ifpkg')
         media = 'application/java-archive' if archive == 'ear' else 'application/zip'
-    stream.seek(0)
-    filename = f'{artifact}-{version}-{target}.{extension}'
-    return StreamingResponse(stream, media_type=media, headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+    else:
+        raise HTTPException(400, 'Archive must be ifpkg, zip, ear, or tar.gz')
+    return stream.getvalue(), f'{artifact}-{version}-{target}.{extension}', media, manifest
+
+class ControlPlaneDeployRequest(BaseModel):
+    target: str = 'on-prem'
+    environments: list[str] = Field(default_factory=list)
+    starterTaskIds: list[str] = Field(default_factory=list)
+    archive: str = 'ifpkg'
+    artifacts: list[str] = Field(default_factory=list)
+    controlPlaneUrl: str
+    credential: str = ''
+    verifyTls: bool = True
+    caCertificatePath: str = ''
+    teamId: str | None = None
+    deploymentEnvironment: str
+    dataPlaneId: str = 'localhost'
+    capabilityId: str | None = None
+    namespace: str = 'default'
+    instances: int = Field(default=1, ge=1, le=100)
+    secrets: dict[str, str] = Field(default_factory=dict)
+    start: bool = True
+
+class ControlPlaneConnectionRequest(BaseModel):
+    controlPlaneUrl: str
+    credential: str = ''
+    verifyTls: bool = True
+    caCertificatePath: str = ''
+
+def _control_plane_client_options(payload: ControlPlaneDeployRequest | ControlPlaneConnectionRequest) -> tuple[str, dict, bool | str]:
+    base_url = payload.controlPlaneUrl.strip().rstrip('/')
+    if not re.match(r'^https?://', base_url, re.I):
+        raise HTTPException(400, 'Control Plane URL must begin with http:// or https://')
+    headers = {'x-control-plane-key': payload.credential.strip()} if payload.credential.strip() else {}
+    verify: bool | str = payload.verifyTls
+    if payload.caCertificatePath.strip():
+        certificate = Path(payload.caCertificatePath).expanduser()
+        if not certificate.is_file(): raise HTTPException(400, 'Control Plane CA certificate file was not found')
+        verify = str(certificate.resolve())
+    return base_url, headers, verify
+
+@app.post('/api/control-plane/deployment-targets')
+async def control_plane_deployment_targets(payload: ControlPlaneConnectionRequest):
+    base_url, headers, verify = _control_plane_client_options(payload)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=10.0), verify=verify, follow_redirects=False) as client:
+            planes_response = await client.get(f'{base_url}/api/data-planes', headers=headers)
+            planes_response.raise_for_status()
+            capabilities_response = await client.get(f'{base_url}/api/capabilities', headers=headers)
+            capabilities_response.raise_for_status()
+        return {'dataPlanes': planes_response.json(), 'capabilities': capabilities_response.json()}
+    except httpx.HTTPStatusError as exc:
+        try: detail = exc.response.json().get('detail')
+        except Exception: detail = exc.response.text[:500]
+        raise HTTPException(502, f'Control Plane rejected target discovery: {detail or exc.response.reason_phrase}') from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(502, f'Unable to reach Control Plane at {base_url}: {exc}') from exc
+
+@app.get('/api/projects/{project_id}/package')
+def package_project(project_id: str, target: str = 'on-prem', environment: str = 'local', environments: str = '', starters: str = '', archive: str = 'ifpkg', artifacts: str = ''):
+    item = get_project(project_id)
+    if not item: raise HTTPException(404, 'Project not found')
+    selected_starters = [value.strip() for value in starters.split(',') if value.strip()] if starters else None
+    selected_artifacts = {value.strip() for value in artifacts.split(',') if value.strip()} if artifacts else None
+    selected_environments = [value.strip() for value in environments.split(',') if value.strip()] if environments else [environment]
+    body, filename, media, _ = build_deployment_archive(item, target, selected_environments, selected_starters, archive, selected_artifacts)
+    return StreamingResponse(io.BytesIO(body), media_type=media, headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+
+@app.post('/api/projects/{project_id}/package/deploy')
+async def package_and_deploy_project(project_id: str, payload: ControlPlaneDeployRequest):
+    item = get_project(project_id)
+    if not item: raise HTTPException(404, 'Project not found')
+    environments = payload.environments or [payload.deploymentEnvironment]
+    if payload.deploymentEnvironment not in environments:
+        raise HTTPException(400, 'Deployment environment must be one of the packaged environment profiles')
+    artifacts = set(payload.artifacts) if payload.artifacts else None
+    body, filename, media, _ = build_deployment_archive(item, payload.target, environments, payload.starterTaskIds or None, payload.archive, artifacts)
+    base_url, headers, verify = _control_plane_client_options(payload)
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0), verify=verify, follow_redirects=False) as client:
+            upload = await client.post(f'{base_url}/api/packages', params={'teamId': payload.teamId} if payload.teamId else None,
+                                       headers=headers, files={'file': (filename, body, media)})
+            upload.raise_for_status()
+            package_record = upload.json()
+            deployment_payload = {
+                'packageId': package_record['packageId'], 'teamId': payload.teamId,
+                'environment': payload.deploymentEnvironment, 'machine': payload.dataPlaneId,
+                'dataPlaneId': payload.dataPlaneId, 'capabilityId': payload.capabilityId,
+                'namespace': payload.namespace, 'instances': payload.instances, 'secrets': payload.secrets,
+            }
+            deployed = await client.post(f'{base_url}/api/deployments', headers={**headers, 'content-type': 'application/json'}, json=deployment_payload)
+            deployed.raise_for_status()
+            deployment = deployed.json()
+            # Kubernetes deployments are reconciled by the selected data-plane
+            # agent as soon as the desired deployment is created. The lifecycle
+            # start endpoint is reserved for the local command runtime adapter.
+            if payload.start and payload.target == 'on-prem' and payload.dataPlaneId == 'localhost':
+                started = await client.post(f'{base_url}/api/deployments/{deployment["id"]}/start', headers=headers)
+                started.raise_for_status()
+                deployment = started.json()
+        return {'package': package_record, 'deployment': deployment, 'archiveName': filename,
+                'started': payload.start and payload.target == 'on-prem' and payload.dataPlaneId == 'localhost',
+                'submittedToDataPlane': payload.target == 'cloud'}
+    except httpx.HTTPStatusError as exc:
+        try: detail = exc.response.json().get('detail')
+        except Exception: detail = exc.response.text[:500]
+        raise HTTPException(502, f'Control Plane rejected the deployment: {detail or exc.response.reason_phrase}') from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(502, f'Unable to reach Control Plane at {base_url}: {exc}') from exc
 
 @app.post('/api/projects/import', response_model=Project)
 async def import_project(file: UploadFile = File(...)):
