@@ -23,9 +23,11 @@ def package_bytes(*, unsafe=False, target="on-prem"):
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
         archive.writestr("manifest.json", json.dumps(manifest))
-        archive.writestr("application/project.json", json.dumps({"id": "orders"}))
-        archive.writestr("application/tasks/main.json", json.dumps({"id": "main"}))
-        archive.writestr("application/tasks/shared.json", json.dumps({"id": "shared"}))
+        archive.writestr("application/project.json", json.dumps({"id": "orders", "properties":{"dev":[], "production":[]}}))
+        archive.writestr("application/tasks/main.json", json.dumps({"id": "main", "name":"Orders Receiver", "kind":"starter", "activities":[{"id":"start", "name":"Start", "type":"start"}]}))
+        archive.writestr("application/tasks/shared.json", json.dumps({"id": "shared", "name":"Shared Mapping", "kind":"subtask", "activities":[]}))
+        archive.writestr("environments/dev.json", json.dumps([]))
+        archive.writestr("environments/production.json", json.dumps([]))
         if unsafe:
             archive.writestr("../outside.txt", "unsafe")
     return output.getvalue()
@@ -46,6 +48,7 @@ class AdministratorTests(unittest.TestCase):
         main.AUDIT_FILE, main.KEY_FILE = root / "audit.json", root / ".secret.key"
         main.CAPABILITIES_FILE, main.RESOURCES_FILE, main.PRINCIPALS_FILE = root / "capabilities.json", root / "resources.json", root / "principals.json"
         main.TEAMS_FILE, main.TOKENS_FILE = root / "teams.json", root / "access-tokens.json"
+        main.REVISIONS_FILE = root / "revisions.json"
         main.API_KEY = ""
         main.RUNTIME_COMMAND = f'"{sys.executable}" -c "import time; time.sleep(60)"'
         self.client_context = TestClient(main.app)
@@ -106,6 +109,30 @@ class AdministratorTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("Kubernetes", response.json()["detail"])
 
+    def test_package_tasks_profile_revision_configuration_health_and_starter_lifecycle(self):
+        self.assertEqual(self.upload().status_code, 200)
+        package = self.client.get("/api/packages/orders/1.2.3").json()
+        self.assertEqual([task["name"] for task in package["tasks"]], ["Orders Receiver", "Shared Mapping"])
+        self.assertTrue(next(task for task in package["tasks"] if task["id"] == "main")["starter"])
+        profile = [{"key":"orders.batchSize", "value":25, "data_type":"integer"}, {"key":"DB_PASSWORD", "value":"", "data_type":"password"}]
+        updated = self.client.put("/api/packages/orders/1.2.3/environments/dev", json={"values":profile})
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertGreaterEqual(updated.json()["revision"], 2)
+        exported = self.client.get("/api/packages/orders/1.2.3/environments/dev")
+        self.assertEqual(exported.json(), profile)
+        created = self.client.post("/api/deployments", json={"packageId":"orders:1.2.3", "environment":"dev", "machine":"localhost", "secrets":{"DB_PASSWORD":"secret"}})
+        self.assertEqual(created.status_code, 200, created.text)
+        deployment_id = created.json()["id"]
+        configured = self.client.put(f"/api/deployments/{deployment_id}/configuration", json={"instances":2, "healthCheckEnabled":False, "redeploy":False})
+        self.assertEqual(configured.status_code, 200, configured.text)
+        self.assertEqual(configured.json()["desiredInstances"], 2)
+        self.assertEqual(self.client.get(f"/api/deployments/{deployment_id}/health").json()["status"], "DISABLED")
+        stopped = self.client.post(f"/api/deployments/{deployment_id}/starters/main/stop")
+        self.assertEqual(stopped.status_code, 200, stopped.text)
+        self.assertEqual(stopped.json()["state"], "STOPPED")
+        revisions = self.client.get(f"/api/revisions/deployment/{deployment_id}").json()
+        self.assertGreaterEqual(len(revisions), 3)
+
     def test_control_plane_data_planes_capabilities_resources_access_and_observability(self):
         overview = self.client.get("/api/control-plane/overview")
         self.assertEqual(overview.status_code, 200, overview.text)
@@ -117,6 +144,10 @@ class AdministratorTests(unittest.TestCase):
         plane_id = registered.json()["id"]
         heartbeat = self.client.post(f"/api/data-planes/{plane_id}/heartbeat", json={"cpuPercent":21, "memoryPercent":38, "agentVersion":"1.0.0"})
         self.assertEqual(heartbeat.json()["status"], "ONLINE")
+        main.write_json(main.DEPLOYMENTS_FILE, [{"id":"remote-health", "teamId":main.TECHNOLOGY_TEAM_ID, "packageId":"orders:1.2.3", "application":"Orders", "environment":"dev", "dataPlaneId":plane_id, "machine":plane_id, "namespace":"integration", "desiredInstances":1, "instances":[], "state":"RUNNING", "healthCheckEnabled":True}])
+        reported = self.client.post(f"/api/data-planes/{plane_id}/heartbeat", json={"deploymentHealth":{"remote-health":{"status":"HEALTHY", "message":"readiness probe passed"}}})
+        self.assertEqual(reported.status_code, 200, reported.text)
+        self.assertEqual(self.client.get("/api/deployments/remote-health/health").json()["status"], "HEALTHY")
         capability = self.client.post("/api/capabilities", json={"name":"Production Runtime", "type":"integration-runtime", "version":"1.0.0", "dataPlaneId":plane_id, "namespace":"integration"})
         self.assertEqual(capability.status_code, 200, capability.text)
         resource = self.client.post("/api/resources", json={"name":"Global telemetry", "type":"observability", "dataPlaneId":"*", "scope":"global", "configuration":{"metrics":"http://metrics"}})

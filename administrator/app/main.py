@@ -25,6 +25,7 @@ from uuid import uuid4
 
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from .time_utils import log_timestamp
@@ -53,6 +54,7 @@ DEPLOYMENTS_FILE, PACKAGES_FILE = DATA_DIR / "deployments.json", DATA_DIR / "pac
 MACHINES_FILE, SECRETS_FILE, AUDIT_FILE, KEY_FILE = DATA_DIR / "machines.json", DATA_DIR / "secrets.json", DATA_DIR / "audit.json", DATA_DIR / ".secret.key"
 CAPABILITIES_FILE, RESOURCES_FILE, PRINCIPALS_FILE = DATA_DIR / "capabilities.json", DATA_DIR / "resources.json", DATA_DIR / "principals.json"
 TEAMS_FILE, TOKENS_FILE = DATA_DIR / "teams.json", DATA_DIR / "access-tokens.json"
+REVISIONS_FILE = DATA_DIR / "revisions.json"
 TECHNOLOGY_TEAM_ID = "technology-team"
 MAX_PACKAGE_BYTES = int(os.environ.get("FABRIC_ADMIN_MAX_PACKAGE_MB", "250")) * 1024 * 1024
 MAX_EXPANDED_BYTES = int(os.environ.get("FABRIC_ADMIN_MAX_EXPANDED_MB", "1024")) * 1024 * 1024
@@ -103,6 +105,16 @@ def audit(action: str, target: str = "administrator", outcome: str = "success", 
     events = read_json(AUDIT_FILE, [])
     events.append({"id": str(uuid4()), "time": now(), "actor": actor, "teamId": team_id, "action": action, "target": target, "outcome": outcome, "detail": detail})
     write_json(AUDIT_FILE, events[-5000:])
+
+def record_revision(asset_type: str, asset_id: str, action: str, snapshot: dict, *, actor: str, team_id: str, detail: str = "") -> dict:
+    values = read_json(REVISIONS_FILE, [])
+    revision = {
+        "id": str(uuid4()), "revision": len([item for item in values if item.get("assetType") == asset_type and item.get("assetId") == asset_id]) + 1,
+        "time": now(), "assetType": asset_type, "assetId": asset_id, "teamId": team_id,
+        "action": action, "actor": actor, "detail": detail, "snapshot": snapshot,
+    }
+    values.append(revision); write_json(REVISIONS_FILE, values[-10000:])
+    return revision
 
 
 def token_hash(value: str) -> str:
@@ -329,6 +341,25 @@ def package_inventory() -> list[dict]:
         write_json(PACKAGES_FILE, values)
     return sorted(values, key=lambda value: value.get("receivedAt", ""), reverse=True)
 
+def stored_package_path(item: dict) -> Path:
+    target = (PACKAGES_DIR / item.get("storagePath", "")).resolve()
+    root = PACKAGES_DIR.resolve()
+    if target != root and root not in target.parents: raise HTTPException(400, "Invalid package storage path")
+    return target
+
+def package_task_inventory(item: dict) -> list[dict]:
+    root, tasks = stored_package_path(item) / "application" / "tasks", []
+    if not root.exists(): return tasks
+    starter_ids = set(item.get("starterTaskIds") or [])
+    for descriptor in sorted(root.glob("*.json")):
+        value = read_json(descriptor, {})
+        task_id = str(value.get("id") or descriptor.stem)
+        activities = value.get("activities") if isinstance(value.get("activities"), list) else []
+        tasks.append({"id":task_id, "name":value.get("name") or task_id, "kind":value.get("kind") or ("starter" if task_id in starter_ids else "subtask"),
+                      "starter":task_id in starter_ids or value.get("kind") == "starter", "activityCount":len(activities),
+                      "activities":[{"id":activity.get("id"), "name":activity.get("name"), "type":activity.get("type")} for activity in activities]})
+    return tasks
+
 
 def ensure_local_machine() -> None:
     machines = read_json(MACHINES_FILE, [])
@@ -448,6 +479,17 @@ class TeamTokenRequest(BaseModel):
 class SecretRequest(BaseModel):
     values: dict[str, str]
 
+class ProfileUpdateRequest(BaseModel):
+    values: list[dict[str, Any]]
+    redeploy: bool = False
+
+class DeploymentConfigurationRequest(BaseModel):
+    environment: str | None = None
+    instances: int | None = Field(default=None, ge=1, le=100)
+    secrets: dict[str, str] = Field(default_factory=dict)
+    redeploy: bool = True
+    healthCheckEnabled: bool | None = None
+
 
 @app.on_event("startup")
 def initialize() -> None:
@@ -493,7 +535,7 @@ def get_package(artifact: str, version: str, request: Request, teamId: str | Non
     item = next((value for value in candidates if value.get("packageId") == package_id), None)
     if not item:
         raise HTTPException(404, "Package not found")
-    return item
+    return {**item, "tasks": package_task_inventory(item)}
 
 
 @app.delete("/api/packages/{artifact}/{version}")
@@ -512,6 +554,7 @@ def delete_package(artifact: str, version: str, request: Request, teamId: str | 
         shutil.rmtree(destination)
     write_json(PACKAGES_FILE, [item for item in package_inventory() if not (item.get("packageId") == package_id and item.get("teamId", TECHNOLOGY_TEAM_ID) == asset_team)])
     caller = identity(request); audit("package.delete", package_id, actor=caller["name"], team_id=asset_team)
+    record_revision("package", package_id, "package.delete", {"deleted":True}, actor=caller["name"], team_id=asset_team)
     return {"deleted": True, "packageId": package_id}
 
 
@@ -549,6 +592,7 @@ async def upload_package(request: Request, file: UploadFile = File(...), teamId:
         record = {**manifest, "packageId": f"{artifact}:{version}", "teamId":asset_team, "storagePath":str(Path(asset_team) / artifact / version), "receivedAt": now(), "status": "VALIDATED", "sha256": hashlib.sha256(body).hexdigest(), "archiveBytes": len(body), "expandedBytes": sum(len(value) for _, value in entries), "fileCount": len(entries), "sourceFile": file.filename or "deployment.ifpkg"}
         write_json(PACKAGES_FILE, [item for item in package_inventory() if not (item.get("packageId") == record["packageId"] and item.get("teamId", TECHNOLOGY_TEAM_ID) == asset_team)] + [record])
         caller = identity(request); audit("package.upload", record["packageId"], detail=f"Validated {len(entries)} files; sha256={record['sha256']}", actor=caller["name"], team_id=asset_team)
+        record_revision("package", record["packageId"], "package.upload", {"sha256":record["sha256"], "environments":record.get("environments", []), "starterTaskIds":record.get("starterTaskIds", []), "fileCount":record.get("fileCount")}, actor=caller["name"], team_id=asset_team, detail=file.filename or "deployment.ifpkg")
         return record
     except HTTPException:
         raise
@@ -657,6 +701,19 @@ def data_plane_heartbeat(plane_id: str, request: Request, payload: dict[str, Any
         if key in payload: item[key] = payload[key]
     machines = read_json(MACHINES_FILE, [])
     stored = next(value for value in machines if value.get("id") == plane_id); stored.update(item); write_json(MACHINES_FILE, machines)
+    reports = payload.get("deploymentHealth") or {}
+    if isinstance(reports, list): reports = {str(value.get("deploymentId")):value for value in reports if isinstance(value, dict) and value.get("deploymentId")}
+    if isinstance(reports, dict) and reports:
+        deployments, changed = read_json(DEPLOYMENTS_FILE, []), False
+        for deployment in deployments:
+            report = reports.get(deployment.get("id"))
+            if not isinstance(report, dict) or (deployment.get("dataPlaneId") or deployment.get("machine")) != plane_id: continue
+            health_status = str(report.get("status") or "UNKNOWN").upper()
+            if health_status not in {"HEALTHY", "DEGRADED", "UNHEALTHY", "UNKNOWN"}: continue
+            deployment["healthReport"] = {"status":health_status, "message":str(report.get("message") or "Data-plane application health report"), "checkedAt":now()}
+            if isinstance(report.get("starterStates"), dict): deployment["reportedStarterStates"] = report["starterStates"]
+            changed = True
+        if changed: write_json(DEPLOYMENTS_FILE, deployments)
     return item
 
 
@@ -873,11 +930,23 @@ def deployment_inventory():
     if changed: write_json(DEPLOYMENTS_FILE, values)
     return values
 
+def deployment_health(item: dict) -> dict:
+    if not item.get("healthCheckEnabled", True): return {"status":"DISABLED", "checkedAt":now(), "message":"Health checks are disabled"}
+    if item.get("state") == "FAILED": return {"status":"UNHEALTHY", "checkedAt":now(), "message":item.get("lastError") or "Deployment failed"}
+    if item.get("state") != "RUNNING": return {"status":"PENDING", "checkedAt":now(), "message":f"Deployment is {item.get('state', 'UNKNOWN')}"}
+    if (item.get("dataPlaneId") or item.get("machine")) == "localhost":
+        instances = item.get("instances") or []
+        healthy = bool(instances) and all(process_alive(int(instance.get("pid") or 0)) for instance in instances)
+        return {"status":"HEALTHY" if healthy else "UNHEALTHY", "checkedAt":now(), "message":f"{len(instances)} local runtime instance(s) checked"}
+    report = item.get("healthReport")
+    if isinstance(report, dict): return report
+    return {"status":"UNKNOWN", "checkedAt":now(), "message":"Awaiting an application health report from the data-plane agent"}
+
 
 @app.get("/api/deployments")
 def list_deployments(request: Request, teamId: str | None = None):
     if teamId: requested_asset_team(request, teamId)
-    return visible_assets(request, deployment_inventory(), teamId)
+    return [{**item, "health":deployment_health(item)} for item in visible_assets(request, deployment_inventory(), teamId)]
 
 
 @app.get("/api/deployments/{deployment_id}")
@@ -888,7 +957,7 @@ def get_deployment(deployment_id: str, request: Request):
         raise HTTPException(404, "Deployment not found")
     require_asset(request, item)
     configured = set(read_json(SECRETS_FILE, {}).get(deployment_id, {}))
-    return {**item, "secrets": [{"name": name, "configured": name in configured} for name in item.get("requiredSecrets", [])]}
+    return {**item, "health":deployment_health(item), "secrets": [{"name": name, "configured": name in configured} for name in item.get("requiredSecrets", [])]}
 
 
 @app.post("/api/deployments")
@@ -916,12 +985,14 @@ def create_deployment(payload: DeploymentRequest, request: Request):
     if missing:
         raise HTTPException(422, f"Required secrets are missing: {', '.join(missing)}")
     deployment_id = str(uuid4())
-    item = {"id": deployment_id, "packageId": payload.packageId, "packageStoragePath":package.get("storagePath"), "teamId":asset_team, "application": package.get("applicationName"), "environment": payload.environment, "machine": data_plane_id, "dataPlaneId": data_plane_id, "capabilityId": capability["id"], "namespace": payload.namespace, "desiredInstances": payload.instances, "instances": [], "requiredSecrets": required, "state": "DEPLOYED", "createdAt": now(), "updatedAt": now(), "message": "Validated and ready to start." if data_plane_id == "localhost" else "Deployment created; awaiting the data-plane runtime agent.", "lastError": None}
+    starter_states = {task_id:"STARTED" for task_id in package.get("starterTaskIds") or []}
+    item = {"id": deployment_id, "packageId": payload.packageId, "packageStoragePath":package.get("storagePath"), "teamId":asset_team, "application": package.get("applicationName"), "environment": payload.environment, "machine": data_plane_id, "dataPlaneId": data_plane_id, "capabilityId": capability["id"], "namespace": payload.namespace, "desiredInstances": payload.instances, "instances": [], "requiredSecrets": required, "starterStates":starter_states, "healthCheckEnabled":True, "health":"PENDING", "state": "DEPLOYED", "createdAt": now(), "updatedAt": now(), "message": "Validated and ready to start." if data_plane_id == "localhost" else "Deployment created; awaiting the data-plane runtime agent.", "lastError": None}
     deployments = read_json(DEPLOYMENTS_FILE, [])
     deployments.append(item)
     write_json(DEPLOYMENTS_FILE, deployments)
     save_deployment_secrets(deployment_id, payload.secrets)
     caller = identity(request); audit("application.deploy", deployment_id, detail=f"{payload.packageId} / {payload.environment} / {data_plane_id} / {payload.namespace}", actor=caller["name"], team_id=asset_team)
+    record_revision("deployment", deployment_id, "application.deploy", {"packageId":payload.packageId, "environment":payload.environment, "dataPlaneId":data_plane_id, "namespace":payload.namespace, "instances":payload.instances, "starterStates":starter_states}, actor=caller["name"], team_id=asset_team)
     return item
 
 
@@ -944,6 +1015,7 @@ def update_secrets(deployment_id: str, payload: SecretRequest, request: Request)
     current.update(payload.values)
     save_deployment_secrets(deployment_id, current)
     caller = identity(request); audit("deployment.secrets.update", deployment_id, detail=f"Updated {len(payload.values)} secret values", actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID))
+    record_revision("deployment", deployment_id, "deployment.secrets.update", {"configuredSecretKeys":sorted(current)}, actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID), detail=f"Updated {len(payload.values)} secret values")
     return {"updated": sorted(payload.values), "valuesExposed": False}
 
 
@@ -975,7 +1047,8 @@ def start_instances(item: dict) -> None:
         instance_id = f"{item['id'][:8]}-{ordinal + 1}"
         log_path = LOGS_DIR / f"{instance_id}.log"
         environment = os.environ.copy()
-        environment.update({"FABRIC_DEPLOYMENT_ID": item["id"], "FABRIC_INSTANCE_ID": instance_id, "FABRIC_ENVIRONMENT": item["environment"], "FABRIC_APPLICATION_DIR": str(deployment_package_path(item) / "application"), **deployment_secret_values(item["id"])})
+        enabled_starters = [task_id for task_id, state in (item.get("starterStates") or {}).items() if state != "STOPPED"]
+        environment.update({"FABRIC_DEPLOYMENT_ID": item["id"], "FABRIC_INSTANCE_ID": instance_id, "FABRIC_ENVIRONMENT": item["environment"], "FABRIC_APPLICATION_DIR": str(deployment_package_path(item) / "application"), "FABRIC_ENABLED_STARTERS": json.dumps(enabled_starters), **deployment_secret_values(item["id"])})
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW") else 0
         with log_path.open("ab") as log_handle:
             process = subprocess.Popen(runtime_arguments(item, instance_id), cwd=deployment_package_path(item), env=environment, stdout=log_handle, stderr=subprocess.STDOUT, creationflags=flags)
@@ -1061,6 +1134,7 @@ def lifecycle(deployment_id: str, action: str, request: Request):
         item["updatedAt"] = now()
         write_json(DEPLOYMENTS_FILE, deployments)
         audit(f"deployment.{action}", deployment_id, detail=item["message"], actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID))
+        record_revision("deployment", deployment_id, f"deployment.{action}", {"state":item.get("state"), "environment":item.get("environment"), "instances":item.get("desiredInstances"), "starterStates":item.get("starterStates", {})}, actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID), detail=item["message"])
         return item
     except HTTPException as exc:
         item.update(state="FAILED" if action in {"start", "restart"} else item.get("state"), updatedAt=now(), lastError=str(exc.detail), message=f"{action.title()} failed")
@@ -1072,6 +1146,157 @@ def lifecycle(deployment_id: str, action: str, request: Request):
         write_json(DEPLOYMENTS_FILE, deployments)
         audit(f"deployment.{action}", deployment_id, "failure", str(exc), actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID))
         raise HTTPException(500, f"Runtime adapter failed: {exc}") from exc
+
+def package_for_request(artifact: str, version: str, request: Request, team_id: str | None = None) -> dict:
+    package_id = f"{safe(artifact)}:{safe(version)}"
+    item = next((value for value in visible_assets(request, package_inventory(), team_id) if value.get("packageId") == package_id), None)
+    if not item: raise HTTPException(404, "Package not found")
+    return item
+
+def public_profile_values(values: list[dict]) -> list[dict]:
+    output, keys = [], set()
+    supported = {"string", "integer", "long", "number", "boolean", "dateTime", "password", "json"}
+    for entry in values:
+        if not isinstance(entry, dict) or not str(entry.get("key") or "").strip(): raise HTTPException(400, "Every profile property requires a key")
+        key, data_type = str(entry["key"]).strip(), str(entry.get("data_type") or "string")
+        if key in keys: raise HTTPException(400, f"Duplicate profile property: {key}")
+        if data_type not in supported: raise HTTPException(400, f"Unsupported profile data type for {key}: {data_type}")
+        value = entry.get("value", "")
+        if data_type == "password" and str(value): raise HTTPException(400, f"Secret property {key} must be configured on the deployment, not uploaded in a profile")
+        keys.add(key); output.append({"key":key, "value":"" if data_type == "password" else value, "data_type":data_type})
+    return output
+
+def update_stored_profile(package: dict, environment: str, values: list[dict]) -> None:
+    root = stored_package_path(package)
+    profile = root / "environments" / f"{safe(environment)}.json"
+    if not profile.exists(): raise HTTPException(404, "Environment profile was not found in the package")
+    write_json(profile, values)
+    project_file = root / "application" / "project.json"
+    project = read_json(project_file, {})
+    project.setdefault("properties", {})[environment] = values
+    write_json(project_file, project)
+    manifest_file = root / "manifest.json"; manifest = read_json(manifest_file, {})
+    manifest.setdefault("secretKeysByEnvironment", {})[environment] = sorted(value["key"] for value in values if value.get("data_type") == "password")
+    write_json(manifest_file, manifest)
+    public = [value for value in values if value.get("data_type") != "password"]
+    if package.get("target") == "cloud":
+        candidates = [root / "deployment" / "cloud" / "profiles" / environment / "configmap.yaml", root / "deployment" / "cloud" / "configmap.yaml"]
+        descriptor = next((path for path in candidates if path.exists()), None)
+        if descriptor:
+            text = descriptor.read_text(encoding="utf-8")
+            prefix = text.split("\ndata:\n", 1)[0]
+            data = "\n".join(f'  {value["key"]}: {json.dumps(str(value.get("value", "")))}' for value in public) or "  {}"
+            descriptor.write_text(prefix + "\ndata:\n" + data + "\n", encoding="utf-8")
+    else:
+        candidates = [root / "deployment" / "on-prem" / "profiles" / environment / "environment.properties", root / "deployment" / "on-prem" / "environment.properties"]
+        descriptor = next((path for path in candidates if path.exists()), None)
+        if descriptor: descriptor.write_text("\n".join(f'{value["key"]}={value.get("value", "")}' for value in public) + "\n", encoding="utf-8")
+
+@app.get("/api/packages/{artifact}/{version}/tasks")
+def get_package_tasks(artifact: str, version: str, request: Request, teamId: str | None = None):
+    return package_task_inventory(package_for_request(artifact, version, request, teamId))
+
+@app.get("/api/packages/{artifact}/{version}/environments/{environment}")
+def export_environment_profile(artifact: str, version: str, environment: str, request: Request, teamId: str | None = None):
+    package = package_for_request(artifact, version, request, teamId)
+    if environment not in package_environments(package): raise HTTPException(404, "Environment profile not found")
+    profile = stored_package_path(package) / "environments" / f"{safe(environment)}.json"
+    if not profile.exists(): raise HTTPException(404, "Environment profile artifact not found")
+    return Response(profile.read_bytes(), media_type="application/json", headers={"Content-Disposition":f'attachment; filename="{safe(package.get("artifact", artifact))}-{safe(environment)}.json"'})
+
+@app.put("/api/packages/{artifact}/{version}/environments/{environment}")
+def update_environment_profile(artifact: str, version: str, environment: str, payload: ProfileUpdateRequest, request: Request, teamId: str | None = None):
+    require_application_manager(request)
+    package = package_for_request(artifact, version, request, teamId)
+    if environment not in package_environments(package): raise HTTPException(404, "Environment profile not found")
+    values = public_profile_values(payload.values)
+    new_required = sorted(value["key"] for value in values if value.get("data_type") == "password")
+    affected = [item for item in read_json(DEPLOYMENTS_FILE, []) if item.get("packageId") == package["packageId"] and item.get("teamId", TECHNOLOGY_TEAM_ID) == package.get("teamId", TECHNOLOGY_TEAM_ID) and item.get("environment") == environment]
+    if payload.redeploy:
+        for deployment in affected:
+            missing = [key for key in new_required if not deployment_secret_values(deployment["id"]).get(key)]
+            if missing: raise HTTPException(422, f"Deployment {deployment['id']} requires new secret values before redeploy: {', '.join(missing)}")
+    update_stored_profile(package, environment, values)
+    caller, asset_team = identity(request), package.get("teamId", TECHNOLOGY_TEAM_ID)
+    revision = record_revision("package", package["packageId"], "environment.update", {"environment":environment, "values":values}, actor=caller["name"], team_id=asset_team, detail=f"{len(values)} properties")
+    packages = package_inventory()
+    stored = next((item for item in packages if item.get("packageId") == package["packageId"] and item.get("teamId", TECHNOLOGY_TEAM_ID) == asset_team), None)
+    if stored:
+        stored.setdefault("secretKeysByEnvironment", {})[environment] = sorted(value["key"] for value in values if value.get("data_type") == "password")
+        stored.update(status="CONFIGURED", configurationRevision=revision["revision"], updatedAt=now()); write_json(PACKAGES_FILE, packages)
+    audit("environment.update", package["packageId"], detail=f"{environment} / revision {revision['revision']}", actor=caller["name"], team_id=asset_team)
+    redeployed = []
+    if payload.redeploy:
+        deployments = read_json(DEPLOYMENTS_FILE, [])
+        for item in deployments:
+            if item.get("packageId") != package["packageId"] or item.get("teamId", TECHNOLOGY_TEAM_ID) != asset_team or item.get("environment") != environment: continue
+            item["requiredSecrets"] = new_required
+            if item.get("state") != "RUNNING": continue
+            if (item.get("dataPlaneId") or item.get("machine")) == "localhost": terminate_instances(item); start_instances(item)
+            item.update(updatedAt=now(), message=f"Environment revision {revision['revision']} redeployed")
+            redeployed.append(item["id"])
+        write_json(DEPLOYMENTS_FILE, deployments)
+    return {"packageId":package["packageId"], "environment":environment, "revision":revision["revision"], "redeployed":redeployed, "values":values}
+
+@app.put("/api/deployments/{deployment_id}/configuration")
+def update_deployment_configuration(deployment_id: str, payload: DeploymentConfigurationRequest, request: Request):
+    require_application_manager(request)
+    deployments = read_json(DEPLOYMENTS_FILE, []); item = next((value for value in deployments if value.get("id") == deployment_id), None)
+    if not item: raise HTTPException(404, "Deployment not found")
+    require_application_write(request, item)
+    package = next((value for value in package_inventory() if value.get("packageId") == item.get("packageId") and value.get("teamId", TECHNOLOGY_TEAM_ID) == item.get("teamId", TECHNOLOGY_TEAM_ID)), None)
+    if not package: raise HTTPException(404, "Deployment package not found")
+    environment = payload.environment or item["environment"]
+    if environment not in package_environments(package): raise HTTPException(400, "Environment is not available in this package")
+    required = required_secrets(package, environment)
+    unknown = set(payload.secrets) - set(required)
+    if unknown: raise HTTPException(400, f"Unknown secret keys: {', '.join(sorted(unknown))}")
+    secret_values = deployment_secret_values(deployment_id); secret_values.update(payload.secrets)
+    missing = [key for key in required if not secret_values.get(key)]
+    if missing: raise HTTPException(422, f"Required secrets are missing: {', '.join(missing)}")
+    was_running = item.get("state") == "RUNNING"
+    if was_running and payload.redeploy and (item.get("dataPlaneId") or item.get("machine")) == "localhost": terminate_instances(item)
+    item.update(environment=environment, requiredSecrets=required, updatedAt=now())
+    if payload.instances is not None: item["desiredInstances"] = payload.instances
+    if payload.healthCheckEnabled is not None: item["healthCheckEnabled"] = payload.healthCheckEnabled
+    save_deployment_secrets(deployment_id, secret_values)
+    if was_running and payload.redeploy and (item.get("dataPlaneId") or item.get("machine")) == "localhost": start_instances(item)
+    item["message"] = "Configuration saved and redeployed" if payload.redeploy else "Configuration saved; redeploy pending"
+    write_json(DEPLOYMENTS_FILE, deployments)
+    caller = identity(request); snapshot = {"environment":environment, "instances":item["desiredInstances"], "healthCheckEnabled":item.get("healthCheckEnabled", True), "configuredSecretKeys":sorted(secret_values)}
+    revision = record_revision("deployment", deployment_id, "deployment.configuration", snapshot, actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID), detail=item["message"])
+    audit("deployment.configuration", deployment_id, detail=f"revision {revision['revision']}", actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID))
+    return {**item, "health":deployment_health(item), "revision":revision["revision"]}
+
+@app.post("/api/deployments/{deployment_id}/starters/{task_id}/{action}")
+def starter_lifecycle(deployment_id: str, task_id: str, action: str, request: Request):
+    if action not in {"start", "stop"}: raise HTTPException(400, "Starter action must be start or stop")
+    require_application_manager(request)
+    deployments = read_json(DEPLOYMENTS_FILE, []); item = next((value for value in deployments if value.get("id") == deployment_id), None)
+    if not item: raise HTTPException(404, "Deployment not found")
+    require_application_write(request, item)
+    package = next((value for value in package_inventory() if value.get("packageId") == item.get("packageId") and value.get("teamId", TECHNOLOGY_TEAM_ID) == item.get("teamId", TECHNOLOGY_TEAM_ID)), None)
+    if not package or task_id not in (package.get("starterTaskIds") or []): raise HTTPException(404, "Starter Task not found in this deployment package")
+    item.setdefault("starterStates", {})[task_id] = "STARTED" if action == "start" else "STOPPED"
+    if item.get("state") == "RUNNING" and (item.get("dataPlaneId") or item.get("machine")) == "localhost": terminate_instances(item); start_instances(item)
+    item.update(updatedAt=now(), message=f"Starter {task_id} {action}ed")
+    write_json(DEPLOYMENTS_FILE, deployments)
+    caller = identity(request); record_revision("deployment", deployment_id, f"starter.{action}", {"starterStates":item["starterStates"]}, actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID), detail=task_id)
+    audit(f"starter.{action}", deployment_id, detail=task_id, actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID))
+    return {"deploymentId":deployment_id, "starterTaskId":task_id, "state":item["starterStates"][task_id], "starterStates":item["starterStates"]}
+
+@app.get("/api/deployments/{deployment_id}/health")
+def get_deployment_health(deployment_id: str, request: Request):
+    item = next((value for value in deployment_inventory() if value.get("id") == deployment_id), None)
+    if not item: raise HTTPException(404, "Deployment not found")
+    require_asset(request, item); return deployment_health(item)
+
+@app.get("/api/revisions/{asset_type}/{asset_id}")
+def revision_history(asset_type: str, asset_id: str, request: Request):
+    if asset_type not in {"package", "deployment"}: raise HTTPException(400, "Unsupported revision asset type")
+    values = [value for value in read_json(REVISIONS_FILE, []) if value.get("assetType") == asset_type and value.get("assetId") == asset_id]
+    visible = visible_assets(request, values)
+    return list(reversed(visible))
 
 
 @app.get("/api/deployments/{deployment_id}/logs")

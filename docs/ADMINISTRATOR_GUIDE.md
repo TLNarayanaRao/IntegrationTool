@@ -87,13 +87,17 @@ For a private CA, keep TLS verification enabled and supply the CA PEM path in St
 
 Legal lifecycle transitions are enforced. Package deletion is blocked while any non-undeployed deployment references it.
 
+Application health is evaluated per deployment. For the local command adapter, Control Plane verifies each managed runtime PID. Remote and Kubernetes agents report `HEALTHY`, `DEGRADED`, `UNHEALTHY`, or `UNKNOWN` in the `deploymentHealth` object of their data-plane heartbeat; Control Plane does not infer application health merely because the data plane is online. Health checks can be disabled per deployment.
+
+Starter Task start/stop changes the deployment's desired starter set. A running local deployment is restarted with `FABRIC_ENABLED_STARTERS` containing only enabled task IDs. Remote and Kubernetes runtime agents reconcile the same desired state and may report their observed task state with the health heartbeat. Whole-application lifecycle state and individual Starter Task state remain separate.
+
 ## Control-plane model and screens
 
 - **Overview**: fleet, capability, deployment, request, and recent activity summaries.
 - **Data planes**: local, remote on-premises, and Kubernetes registrations; namespace, capacity, tag, tunnel, heartbeat, and health inventory.
 - **Capabilities**: namespace-scoped capability provisioning and status. Application deployment requires an Integration Runtime capability.
-- **Applications**: validated package repository, deployments, legal lifecycle actions, failure messages, instance details, and logs.
-- **Environments & secrets**: packaged profiles and required secret names. Secret values are encrypted and never displayed.
+- **Applications**: searchable package/deployment repository; archive task and Starter Task inventory; health, instance details and logs; deploy, start, stop, configure, redeploy, undeploy, and safe package deletion; deployment and configuration revision history; individual Starter Task desired-state controls.
+- **Environments & secrets**: exportable packaged profiles, JSON profile editing/upload, optional immediate redeployment, and required secret names. Password values are rejected from profile uploads because secret values remain encrypted and deployment-scoped.
 - **Observability**: control-plane request/error totals plus data-plane and application CPU, memory, instance, and state telemetry.
 - **Resources**: reusable global or data-plane-scoped resource definitions. Secret-valued properties are masked in list responses and audit entries.
 - **Access control**: platform and team principals with Owner, Team Admin, Capability Manager, Application Manager, and Application Viewer roles, optionally scoped to a data plane and namespaces.
@@ -112,10 +116,15 @@ Legal lifecycle transitions are enforced. Package deletion is blocked while any 
 - `GET /api/session`
 - `GET /api/applications`
 - `GET|POST /api/packages`; `GET|DELETE /api/packages/{artifact}/{version}`
+- `GET /api/packages/{artifact}/{version}/tasks`
+- `GET|PUT /api/packages/{artifact}/{version}/environments/{environment}`
 - `GET|POST /api/deployments`; `GET /api/deployments/{id}`
+- `PUT /api/deployments/{id}/configuration`; `GET /api/deployments/{id}/health`
+- `POST /api/deployments/{id}/starters/{taskId}/{start|stop}`
 - `PUT /api/deployments/{id}/secrets`
 - `POST /api/deployments/{id}/{start|stop|restart|kill|undeploy}`
 - `GET /api/deployments/{id}/logs`
+- `GET /api/revisions/{package|deployment}/{id}`
 
 ## Security, recovery, and troubleshooting
 
