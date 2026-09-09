@@ -59,7 +59,7 @@
       }
     ],
     "win": {
-      "icon": "electron/integration-fabric-brand.svg",
+      "icon": "electron/integration-fabric-icon.svg",
       "target": [
         "nsis"
       ],

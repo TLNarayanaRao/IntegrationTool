@@ -767,7 +767,8 @@ class WorkflowRuntime:
             except ImportError: raise RuntimeError('External Kafka mode requires confluent-kafka')
             common = {'bootstrap.servers': rcfg['bootstrapServers'], 'client.id': rcfg.get('clientId') or f'integration-fabric-{uuid.uuid4()}', 'request.timeout.ms': int(rcfg.get('requestTimeoutMilliseconds', 30000) or 30000), 'reconnect.backoff.ms': int(rcfg.get('reconnectBackoffMilliseconds', 50) or 50), 'retry.backoff.ms': int(rcfg.get('retryBackoffMilliseconds', 100) or 100), **mapping(rcfg.get('clientProperties'))}
             if rcfg.get('securityProtocol'): common['security.protocol'] = rcfg['securityProtocol']
-            if rcfg.get('saslMechanism'): common['sasl.mechanism'] = rcfg['saslMechanism']
+            sasl_mechanism = rcfg.get('saslMechanism') or ('PLAIN' if str(rcfg.get('authenticationType') or '').strip().lower() == 'api key / secret' else '')
+            if sasl_mechanism: common['sasl.mechanism'] = sasl_mechanism
             if rcfg.get('username'): common['sasl.username'] = rcfg['username']
             if rcfg.get('password'): common['sasl.password'] = rcfg['password']
             if rcfg.get('sslCaLocation'): common['ssl.ca.location'] = rcfg['sslCaLocation']

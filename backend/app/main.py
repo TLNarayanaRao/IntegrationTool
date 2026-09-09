@@ -33,6 +33,22 @@ debugger = DebugManager(runtime)
 runtime_states: dict[str, dict] = {}
 active_runs: dict[str, asyncio.Task] = {}
 
+@app.middleware('http')
+async def prevent_stale_studio_entry(request: Request, call_next):
+    """Always revalidate the HTML shell while allowing hashed assets to cache.
+
+    Vite changes the JS/CSS filenames on every production build. Caching
+    index.html can therefore leave the browser requesting hashes from an old
+    build and produce a blank Studio after a 404. Static hashed assets remain
+    cacheable; only the entry document is marked as non-cacheable.
+    """
+    response = await call_next(request)
+    if request.url.path in {'/', '/index.html'}:
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
+
 @app.on_event('shutdown')
 async def shutdown_native_connectors():
     """Stop persistent JCo processes before the runtime exits/reloads."""
@@ -208,6 +224,10 @@ def _event_subscription(item: Project, task, activity, environment: str) -> dict
 
 def _event_available(output) -> bool:
     if not isinstance(output, dict): return output is not None
+    # A timer emits a schedule event rather than a transport envelope. Its
+    # payload intentionally has no messageId/body/count, so it must still
+    # enter the workflow and trigger the downstream activities.
+    if output.get('scheduledTime'): return True
     if 'received' in output: return bool(output.get('received'))
     if 'count' in output: return int(output.get('count') or 0) > 0
     if output.get('messages'): return True
@@ -675,7 +695,15 @@ def deployment_package_files(item: Project, target: str, environment: str, artif
     artifact = item.packaging.get('artifact_name') or item.id
     version = item.packaging.get('version') or '1.0.0'
     properties = [value.model_dump() for value in item.properties[environment]]
-    secret_keys = [value['key'] for value in properties if value.get('data_type') == 'password']
+    # Only configured secret values are deployment requirements. Environment
+    # profiles contain many connector-specific password placeholders; marking
+    # every placeholder as required makes the Control Plane reject otherwise
+    # valid deployments with "required secrets are missing".
+    secret_keys = [
+        value['key'] for value in properties
+        if value.get('data_type') == 'password'
+        and value.get('value') not in (None, '')
+    ]
     for value in properties:
         if value.get('data_type') == 'password': value['value'] = ''
     sensitive = re.compile(r'(password|passwd|secret|token|private.?key|credential|service.?account)', re.I)
@@ -1111,8 +1139,15 @@ async def import_project(file: UploadFile = File(...)):
         if raw[:2] == b'PK':
             with zipfile.ZipFile(io.BytesIO(raw)) as archive:
                 manifest = json.loads(archive.read('manifest.json'))
-                if manifest.get('format') != 'integration-fabric-project': raise ValueError('Unsupported project package')
-                payload = archive.read('project.json')
+                package_format = manifest.get('format')
+                if package_format == 'integration-fabric-project':
+                    payload = archive.read('project.json')
+                elif package_format == 'integration-fabric-deployment':
+                    # Deployment .ifpkg archives keep the importable project
+                    # under application/project.json.
+                    payload = archive.read('application/project.json')
+                else:
+                    raise ValueError('Unsupported project package')
         else: payload = raw
         item = Project.model_validate_json(payload)
     except Exception as exc: raise HTTPException(400, f'Invalid Integration Fabric project: {exc}')
@@ -1170,7 +1205,8 @@ async def test_connection(resource: SharedResource):
             if not str(cfg.get('bootstrapServers') or '').strip(): return {'ok':False,'message':'Kafka bootstrap servers are required'}
             settings = {'bootstrap.servers':cfg['bootstrapServers'], 'client.id':cfg.get('clientId') or f'integration-fabric-{uuid4()}'}
             if cfg.get('securityProtocol'): settings['security.protocol'] = cfg['securityProtocol']
-            if cfg.get('saslMechanism'): settings['sasl.mechanism'] = cfg['saslMechanism']
+            sasl_mechanism = cfg.get('saslMechanism') or ('PLAIN' if str(cfg.get('authenticationType') or '').strip().lower() == 'api key / secret' else '')
+            if sasl_mechanism: settings['sasl.mechanism'] = sasl_mechanism
             if cfg.get('username'): settings['sasl.username'] = cfg['username']
             if cfg.get('password'): settings['sasl.password'] = cfg['password']
             metadata = await __import__('asyncio').to_thread(AdminClient(settings).list_topics, None, float(cfg.get('requestTimeoutMilliseconds',30000))/1000)

@@ -39,6 +39,7 @@ import {
   Scissors,
   Settings2,
   ShieldCheck,
+  ShieldAlert,
   SkipBack,
   SkipForward,
   Square,
@@ -225,6 +226,9 @@ const themeOptions = [
   { value: "sunset", label: "Sunset Copper", detail: "Warm copper and plum workspace" },
   { value: "classic", label: "Classic Office", detail: "Square, bright desktop application" },
   { value: "contrast", label: "High Contrast", detail: "Maximum clarity and accessibility" },
+  { value: "cyber", label: "Cyber Neon", detail: "Electric cyan, magenta, and deep-space canvas" },
+  { value: "lavender", label: "Lavender Mist", detail: "Soft violet workspace with calm teal accents" },
+  { value: "terminal", label: "Terminal Green", detail: "Monospace operator console with phosphor highlights" },
 ];
 const isEventActivity = (item: { type: Kind; operation?: string; config?: Record<string, any> }) => {
   const operation = item.operation || item.config?.operation || "";
@@ -1084,6 +1088,7 @@ function App() {
     [editingConnection, setEditingConnection] = useState<Resource | null>(null),
     [schemaEditor, setSchemaEditor] = useState<SchemaDoc | "new" | null>(null),
     [aiBuilderOpen, setAiBuilderOpen] = useState(false),
+    [catchAIOpen, setCatchAIOpen] = useState<string | null>(null),
     [packageOpen, setPackageOpen] = useState(false),
     [debugState, setDebugState] = useState<any>(null),
     [executionOutputs, setExecutionOutputs] = useState<Record<string, any>>({}),
@@ -1718,7 +1723,7 @@ function App() {
       setLogs([{ level: "INFO", message: "Added a Catch block and opened Catch AI. Select task exceptions to generate mapped handlers." }]);
     }
     setSelected(catchId); setSelectedIds([catchId]); setSelectedEdge(null); setSelectedResource(null);
-    setActiveTab("configuration"); setConfigHeight((height) => Math.max(height, 390)); setMenu(null);
+    setCatchAIOpen(catchId); setMenu(null);
   };
   const deleteSelectedActivity = () => {
     const targets = selectedIds.length ? nodes.filter((item) => selectedIds.includes(item.id)) : node ? [node] : [];
@@ -2149,7 +2154,7 @@ function App() {
     const picker = (window as any).showOpenFilePicker;
     if (!picker) { fileInput.current?.click(); return; }
     try {
-      const [handle] = await picker({ multiple: false, types: [{ description: "Integration Fabric Project", accept: { "application/zip": [".ifproject", ".zip"], "application/json": [".json"] } }] });
+      const [handle] = await picker({ multiple: false, types: [{ description: "Integration Fabric Project", accept: { "application/zip": [".ifproject", ".ifpkg", ".zip"], "application/json": [".json"] } }] });
       const file = await handle.getFile();
       await importProject(file);
       projectFileHandle.current = handle;
@@ -2689,9 +2694,9 @@ function App() {
         >
           <div
             className="canvas-content"
-            style={{ transform: `scale(${zoom})` }}
+            style={{ transform: `scale(${zoom})`, width: Math.max(1400, ...nodes.map((n) => n.position.x + 260)), height: Math.max(750, ...nodes.map((n) => n.position.y + 150)) }}
           >
-            <svg className="wires">
+            <svg className="wires" style={{ width: Math.max(1400, ...nodes.map((n) => n.position.x + 260)), height: Math.max(750, ...nodes.map((n) => n.position.y + 150)) }}>
               <defs><marker id="transition-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>
               {edges.map((e) => {
                 const a = byId[e.source],
@@ -2711,13 +2716,8 @@ function App() {
                     }}
                   >
                     <path className="edge-hit" d={d} />
-                    <path className="edge-line" d={d} markerEnd="url(#transition-arrow)" />
-                    <text
-                      x={(a.position.x + b.position.x + 104) / 2}
-                      y={(a.position.y + b.position.y) / 2 + 31}
-                    >
-                      {e.type || "success"}
-                    </text>
+                    <path id={`edge-path-${e.id}`} className="edge-line" d={d} markerEnd="url(#transition-arrow)" />
+                    <text><textPath href={`#edge-path-${e.id}`} startOffset="50%" textAnchor="middle">{e.type || "success"}</textPath></text>
                     {selectedEdge === e.id && <><circle className="edge-rewire-handle source" cx={a.position.x + 104} cy={a.position.y + 38} r="7" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setEdgeRewire({ edgeId: e.id, endpoint: "source", fixedId: e.target, x: a.position.x + 104, y: a.position.y + 38 }); }}/><circle className="edge-rewire-handle target" cx={b.position.x} cy={b.position.y + 38} r="7" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setEdgeRewire({ edgeId: e.id, endpoint: "target", fixedId: e.source, x: b.position.x, y: b.position.y + 38 }); }}/></>}
                   </g>
                 );
@@ -2960,7 +2960,7 @@ function App() {
         hidden
         ref={fileInput}
         type="file"
-        accept=".ifproject,.zip,.json"
+        accept=".ifproject,.ifpkg,.zip,.json"
         onChange={(e) =>
           e.target.files?.[0] && importProject(e.target.files[0])
         }
@@ -3094,7 +3094,7 @@ function App() {
           }}
         />
       )}
-      {packageOpen && <PackageDialog packaging={project.packaging} environments={Object.keys(project.properties)} tasks={project.tasks} onClose={() => setPackageOpen(false)} onPackage={buildDeploymentPackage} onDeploy={deployDeploymentPackage}/>}
+      {packageOpen && <PackageDialog packaging={project.packaging} environments={Object.keys(project.properties)} properties={project.properties} tasks={project.tasks} onClose={() => setPackageOpen(false)} onPackage={buildDeploymentPackage} onDeploy={deployDeploymentPackage}/>}
       {sampleGalleryOpen && <SampleGallery
         onClose={() => setSampleGalleryOpen(false)}
         onImport={async (file) => { const imported = await importProject(file); if (imported) setSampleGalleryOpen(false); }}
@@ -3113,9 +3113,10 @@ function App() {
       {helpDialog && <HelpDialog mode={helpDialog} onClose={() => setHelpDialog(null)}/>} 
       {validation && <ValidationDialog result={validation} onClose={() => setValidation(null)} onOpen={(issue: ValidationIssue) => {
         if (issue.taskId) selectTask(issue.taskId);
-        if (issue.activityId) { setSelected(issue.activityId); setSelectedIds([issue.activityId]); setSelectedEdge(null); setSelectedResource(null); }
+        if (issue.activityId) { setSelected(issue.activityId); setSelectedIds([issue.activityId]); setSelectedEdge(null); setSelectedResource(null); setActiveTab("configuration"); }
         setValidation(null);
-      }}/>} 
+      }}/>}
+      {catchAIOpen && <CatchAIDialog onClose={() => setCatchAIOpen(null)} onApply={(types: string[]) => { createExceptionHandlers(catchAIOpen, types); setCatchAIOpen(null); }}/>}
       {renameOpen && (
         <RenameApplication
           name={project.name}
@@ -3137,6 +3138,12 @@ function App() {
       )}
     </div>
   );
+}
+function CatchAIDialog({ onClose, onApply }: any) {
+  const options = ["RUNTIME", "VALIDATION", "CONNECTION", "TIMEOUT", "SAPConnectionException", "KafkaException", "JMSException", "UserDefinedException", "RethrowException"];
+  const [selected, setSelected] = useState<string[]>([]);
+  const toggle = (value: string) => setSelected((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
+  return <div className="modal-backdrop"><div className="runtime-modal catch-ai-dialog"><header><span><WandSparkles/><b>AI Catch · Select exceptions</b></span><button aria-label="Close AI Catch" onClick={onClose}>×</button></header><main><p>Select the exception types to handle. The Studio will create Catch → Throw mappings automatically.</p><div className="catch-ai-modal-list">{options.map((value) => <label key={value} className={selected.includes(value) ? "selected" : ""}><input type="checkbox" checked={selected.includes(value)} onChange={() => toggle(value)}/><ShieldAlert/><span><b>{value}</b><small>Map type, code, message, details, and stack trace</small></span></label>)}</div></main><footer><button onClick={() => setSelected(options)}>Select all</button><button onClick={onClose}>Cancel</button><button className="primary" disabled={!selected.length} onClick={() => onApply(selected)}><WandSparkles/> Handle selected</button></footer></div></div>;
 }
 function AIBuilderDialog({ currentTask, onClose, onApply }: any) {
   const [requirement, setRequirement] = useState(""), [scope, setScope] = useState<"task" | "project">("task"), [proposal, setProposal] = useState<any>(null), [status, setStatus] = useState<any>(null), [busy, setBusy] = useState(false), [error, setError] = useState("");
@@ -3169,11 +3176,13 @@ const deploymentArtifactChoices: Record<string, { key: string; label: string; de
     { key: "readme", label: "Deployment guide", detail: "Generated on-premises deployment steps" },
   ],
 };
-function PackageDialog({ packaging, environments, tasks, onClose, onPackage, onDeploy }: any) {
+function PackageDialog({ packaging, environments, properties, tasks, onClose, onPackage, onDeploy }: any) {
   const initialTarget = packaging?.target || "on-prem";
   const starterTasks = (tasks || []).filter((task: Task) => task.kind === "starter");
   const initialChoices = deploymentArtifactChoices[initialTarget] || deploymentArtifactChoices["on-prem"];
   const savedArtifacts = Array.isArray(packaging?.artifacts) ? packaging.artifacts.filter((key: string) => initialChoices.some((choice) => choice.key === key)) : [];
+  const secretValuesFor = (environment: string) => Object.fromEntries((properties?.[environment] || []).filter((property: any) => /password|passwd|secret|token|private.?key|credential|service.?account/i.test(String(property.key)) && property.value !== undefined && property.value !== null && String(property.value) !== "").map((property: any) => [property.key, String(property.value)]));
+  const initialDeploymentEnvironment = packaging?.environment || environments[0] || "local";
   const [draft, setDraft] = useState<any>({
     artifact_name: packaging?.artifact_name || "integration-application",
     version: packaging?.version || "1.0.0",
@@ -3203,13 +3212,14 @@ function PackageDialog({ packaging, environments, tasks, onClose, onPackage, onD
     dataPlaneId: initialTarget === "cloud" ? "" : "localhost",
     capabilityId: "",
     namespace: "default",
-    secretsText: "{}",
+    secretsText: JSON.stringify(secretValuesFor(initialDeploymentEnvironment), null, 2),
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [targetCatalog, setTargetCatalog] = useState<any>({ dataPlanes: [], capabilities: [] });
   const [discovering, setDiscovering] = useState(false);
   const update = (key: string, value: any) => setDraft((current: any) => ({ ...current, [key]: value }));
+  const updateDeploymentEnvironment = (value: string) => setDraft((current: any) => ({ ...current, deploymentEnvironment: value, secretsText: JSON.stringify(secretValuesFor(value), null, 2) }));
   const chooseTarget = (target: string) => setDraft((current: any) => ({ ...current, target, artifacts: deploymentArtifactChoices[target].map((choice) => choice.key) }));
   const toggleArtifact = (key: string) => setDraft((current: any) => ({ ...current, artifacts: current.artifacts.includes(key) ? current.artifacts.filter((value: string) => value !== key) : [...current.artifacts, key] }));
   const toggleEnvironment = (name: string) => setDraft((current: any) => ({ ...current, environments: current.environments.includes(name) ? current.environments.filter((value: string) => value !== name) : [...current.environments, name] }));
@@ -3283,7 +3293,7 @@ function PackageDialog({ packaging, environments, tasks, onClose, onPackage, onD
         <label>Control Plane URL<input value={draft.controlPlaneUrl} onChange={(event) => update("controlPlaneUrl", event.target.value)} placeholder="https://control-plane.example.com"/></label>
         <label>Access key<input type="password" value={draft.credential} onChange={(event) => update("credential", event.target.value)} placeholder="Not saved in the project"/></label>
         <label>Delivery team ID (optional)<input value={draft.teamId} onChange={(event) => update("teamId", event.target.value)} placeholder="technology-team"/></label>
-        <label>Deployment environment<select value={draft.deploymentEnvironment} onChange={(event) => update("deploymentEnvironment", event.target.value)}>{draft.environments.map((name: string) => <option key={name}>{name}</option>)}</select></label>
+        <label>Deployment environment<select value={draft.deploymentEnvironment} onChange={(event) => updateDeploymentEnvironment(event.target.value)}>{draft.environments.map((name: string) => <option key={name}>{name}</option>)}</select></label>
         <label>Data plane{compatiblePlanes.length ? <select value={draft.dataPlaneId} onChange={(event) => { const plane = compatiblePlanes.find((item: any) => item.id === event.target.value); setDraft((current: any) => ({ ...current, dataPlaneId: event.target.value, namespace: plane?.namespaces?.[0] || "default", capabilityId: "" })); }}>{compatiblePlanes.map((plane: any) => <option key={plane.id} value={plane.id}>{plane.name} · {plane.id}</option>)}</select> : <input value={draft.dataPlaneId} onChange={(event) => update("dataPlaneId", event.target.value)} placeholder={draft.target === "cloud" ? "kubernetes-prod" : "localhost"}/>}</label>
         <label>Runtime capability{compatibleCapabilities.length ? <select value={draft.capabilityId} onChange={(event) => update("capabilityId", event.target.value)}><option value="">Auto-select</option>{compatibleCapabilities.map((capability: any) => <option key={capability.id} value={capability.id}>{capability.name} · {capability.version}</option>)}</select> : <input value={draft.capabilityId} onChange={(event) => update("capabilityId", event.target.value)} placeholder="Auto-select in namespace"/>}</label>
         <label>Namespace{(compatiblePlanes.find((plane: any) => plane.id === draft.dataPlaneId)?.namespaces || []).length ? <select value={draft.namespace} onChange={(event) => setDraft((current: any) => ({ ...current, namespace: event.target.value, capabilityId: "" }))}>{compatiblePlanes.find((plane: any) => plane.id === draft.dataPlaneId).namespaces.map((name: string) => <option key={name}>{name}</option>)}</select> : <input value={draft.namespace} onChange={(event) => update("namespace", event.target.value)} placeholder="default"/>}</label>
@@ -3292,7 +3302,7 @@ function PackageDialog({ packaging, environments, tasks, onClose, onPackage, onD
         <label className="package-secrets">Deployment secrets (JSON)<textarea value={draft.secretsText} onChange={(event) => update("secretsText", event.target.value)} spellCheck={false} placeholder={'{"database.password":"value"}'}/><small>Sent securely to the Control Plane and never written to the project or archive.</small></label>
       </section>
       <div className="package-preview"><Package/><span><b>{draft.artifact_name}-{draft.version}-{draft.target}.{extension}</b><small>{draft.starterTaskIds.length} starter{draft.starterTaskIds.length === 1 ? "" : "s"} · {draft.environments.length} environment profile{draft.environments.length === 1 ? "" : "s"} · related Sub Tasks resolved automatically</small></span></div>
-      <p className="package-security"><ShieldCheck/> Password values are removed. The target Administrator or Kubernetes secret provider supplies credentials during deployment.</p>
+      <p className="package-security"><ShieldCheck/> Direct Control Plane deployment securely sends configured environment secrets. Downloaded archives remain sanitized and contain only the required secret-key manifest.</p>
       {error && <p className="package-error"><AlertTriangle/>{error}</p>}
     </main>
     <footer><button disabled={busy} onClick={onClose}>Cancel</button><button disabled={busy || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false)}>{busy ? "Working…" : "Export archive"}</button><button className="primary" disabled={busy || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(true)}>{busy ? "Working…" : "Deploy to Control Plane"}</button></footer>
@@ -3310,7 +3320,9 @@ function StudioRibbon(props: any) {
 }
 function ValidationDialog({ result, onClose, onOpen }: any) {
   const counts = result.issues.reduce((value: any, issue: ValidationIssue) => ({ ...value, [issue.severity]: (value[issue.severity] || 0) + 1 }), {});
-  return <div className="modal-backdrop"><div className="runtime-modal validation-dialog"><header><span><ShieldCheck/><b>{result.title}</b></span><button aria-label="Close validation" onClick={onClose}>×</button></header><div className="validation-summary"><span className="error">{counts.error || 0} errors</span><span className="warning">{counts.warning || 0} warnings</span><span className="mapping">{counts.mapping || 0} mappings needed</span></div><main>{!result.issues.length ? <div className="validation-clean"><CheckCircle2/><h2>Validation successful</h2><p>No errors or missing mappings were found.</p></div> : result.issues.map((issue: ValidationIssue) => <button key={issue.id} className={`validation-issue ${issue.severity}`} onClick={() => onOpen(issue)}><span>{issue.severity === "error" ? "ERROR" : issue.severity === "mapping" ? "MAPPING" : "WARNING"}</span><div><b>{issue.category}</b><p>{issue.message}</p><small>{issue.remedy}</small></div>{(issue.taskId || issue.activityId) && <ChevronRight/>}</button>)}</main><footer><span>Click a task/activity finding to open it in the designer.</span><button className="primary" onClick={onClose}>Close</button></footer></div></div>;
+  const [filter, setFilter] = useState<"all" | ValidationIssue["severity"]>("all");
+  const filtered = filter === "all" ? result.issues : result.issues.filter((issue: ValidationIssue) => issue.severity === filter);
+  return <div className="modal-backdrop"><div className="runtime-modal validation-dialog"><header><span><ShieldCheck/><b>{result.title}</b></span><button aria-label="Close validation" onClick={onClose}>×</button></header><div className="validation-summary"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>{result.issues.length} all</button><button className={filter === "error" ? "active error" : "error"} onClick={() => setFilter("error")}>{counts.error || 0} errors</button><button className={filter === "warning" ? "active warning" : "warning"} onClick={() => setFilter("warning")}>{counts.warning || 0} warnings</button><button className={filter === "mapping" ? "active mapping" : "mapping"} onClick={() => setFilter("mapping")}>{counts.mapping || 0} mappings</button></div><main>{!result.issues.length ? <div className="validation-clean"><CheckCircle2/><h2>Validation successful</h2><p>No errors or missing mappings were found.</p></div> : !filtered.length ? <div className="validation-clean"><CheckCircle2/><h2>No findings in this category</h2><p>Select another validation filter.</p></div> : filtered.map((issue: ValidationIssue) => <button key={issue.id} className={`validation-issue ${issue.severity}`} onClick={() => onOpen(issue)}><span>{issue.severity === "error" ? "ERROR" : issue.severity === "mapping" ? "MAPPING" : "WARNING"}</span><div><b>{issue.category}</b><p>{issue.message}</p><small>{issue.remedy}</small></div>{(issue.taskId || issue.activityId) && <ChevronRight/>}</button>)}</main><footer><span>Click a finding to open its task and activity configuration.</span><button className="primary" onClick={onClose}>Close</button></footer></div></div>;
 }
 function RenameApplication({ name, onClose, onSave }: any) {
   const [value, setValue] = useState(name);
@@ -3710,7 +3722,19 @@ function SampleGallery({ onClose, onImport }: { onClose: () => void; onImport: (
 function IntegrationBrandArtwork({ className = "" }: { className?: string }) {
   return <div className={`integration-brand-art ${className}`.trim()} aria-label="Integration Studio">
     <img src="/branding/integration-studio-art.png" alt="Integration Studio" />
-    <span className="integration-brand-particle" aria-hidden="true" />
+    <svg className="integration-brand-motion" viewBox="0 0 2002 786" preserveAspectRatio="none" aria-hidden="true">
+      <path className="integration-brand-motion-path" d="M643 398 C762 158 1011 158 1131 398 C1279 70 1456 66 1653 88" />
+      <path className="integration-brand-static-track-mask" pathLength="1" d="M643 398 C762 158 1011 158 1131 398 C1279 70 1456 66 1653 88" />
+      <path className="integration-brand-static-track-mask artwork-alignment" d="M657 447 C782 177 1032 177 1154 447 C1300 70 1490 65 1692 103" />
+      <path className="integration-brand-live-track" pathLength="1" d="M643 398 C762 158 1011 158 1131 398 C1279 70 1456 66 1653 88">
+        <animate attributeName="stroke-dashoffset" dur="4.8s" repeatCount="indefinite" values="1;1;.86;0;0" keyTimes="0;.08;.14;.88;1" />
+      </path>
+      <circle className="integration-brand-static-ball" r="57" cx="1653" cy="88" />
+      <circle className="integration-brand-motion-ball" r="58" cx="0" cy="0">
+        <animate attributeName="opacity" dur="4.8s" repeatCount="indefinite" values="0;0;1;1;1" keyTimes="0;.08;.14;.88;1" />
+        <animateMotion dur="4.8s" repeatCount="indefinite" path="M643 398 C762 158 1011 158 1131 398 C1279 70 1456 66 1653 88" />
+      </circle>
+    </svg>
   </div>;
 }
 function ProjectWelcome({ createProject, importProject, importFromFileSystem, theme, setTheme }: any) {
@@ -3793,7 +3817,7 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, th
       </section>
     </main>
     <footer><span><ShieldCheck/> Enterprise integration development</span><span>DESIGN TIME <i/> RUNTIME <i/> DEPLOYMENT</span></footer>
-    <input ref={input} hidden type="file" accept=".ifproject,.zip,.json" onChange={(event) => void importFile(event.target.files?.[0])}/>
+    <input ref={input} hidden type="file" accept=".ifproject,.ifpkg,.zip,.json" onChange={(event) => void importFile(event.target.files?.[0])}/>
     {samplesOpen && <SampleGallery
       onClose={() => setSamplesOpen(false)}
       onImport={importProject}
@@ -4114,16 +4138,17 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "bootstrapServers", label: "Bootstrap servers", required: true },
     { key: "clientId", label: "Client ID" }, { key: "groupId", label: "Default consumer group" },
     { key: "securityProtocol", label: "Security protocol", options: ["PLAINTEXT", "SASL_PLAINTEXT", "SASL_SSL", "SSL"] },
-    { key: "authenticationType", label: "Authentication type", options: ["None", "PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512", "GSSAPI", "OAUTHBEARER"] },
-    { key: "saslMechanism", label: "SASL mechanism", options: ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512", "GSSAPI", "OAUTHBEARER"] },
-    { key: "username", label: "Username", required: (config: any) => ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"].includes(config.saslMechanism) && config.securityProtocol?.includes("SASL") }, { key: "password", label: "Password", password: true, required: (config: any) => ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"].includes(config.saslMechanism) && config.securityProtocol?.includes("SASL") },
-    { key: "sslCaLocation", label: "SSL CA location" }, { key: "sslCertificateLocation", label: "SSL certificate location" },
-    { key: "sslKeyLocation", label: "SSL key location" }, { key: "sslKeyPassword", label: "SSL key password", password: true },
+    { key: "authenticationType", label: "Authentication type", options: ["None", "API Key / Secret", "PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512", "GSSAPI", "OAUTHBEARER"] },
+    { key: "saslMechanism", label: "SASL mechanism", options: ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512", "GSSAPI", "OAUTHBEARER"], when: (config: any) => String(config.securityProtocol || "").includes("SASL") && config.authenticationType !== "None" },
+    { key: "username", label: "Username / API key", required: (config: any) => ["API Key / Secret", "PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"].includes(config.authenticationType) && String(config.securityProtocol || "").includes("SASL"), when: (config: any) => ["API Key / Secret", "PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"].includes(config.authenticationType) && String(config.securityProtocol || "").includes("SASL") },
+    { key: "password", label: "Password / API secret", password: true, required: (config: any) => ["API Key / Secret", "PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"].includes(config.authenticationType) && String(config.securityProtocol || "").includes("SASL"), when: (config: any) => ["API Key / Secret", "PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"].includes(config.authenticationType) && String(config.securityProtocol || "").includes("SASL") },
+    { key: "sslCaLocation", label: "SSL CA location", when: (config: any) => ["SSL", "SASL_SSL"].includes(config.securityProtocol) }, { key: "sslCertificateLocation", label: "SSL certificate location", when: (config: any) => ["SSL", "SASL_SSL"].includes(config.securityProtocol) },
+    { key: "sslKeyLocation", label: "SSL key location", when: (config: any) => ["SSL", "SASL_SSL"].includes(config.securityProtocol) }, { key: "sslKeyPassword", label: "SSL key password", password: true, when: (config: any) => ["SSL", "SASL_SSL"].includes(config.securityProtocol) },
     { key: "schemaRegistryUrl", label: "Schema Registry URL" }, { key: "schemaRegistryUsername", label: "Schema Registry username" },
     { key: "schemaRegistryPassword", label: "Schema Registry password", password: true },
     { key: "schemaRegistryVendor", label: "Schema Registry vendor", options: ["Confluent", "TIBCO", "Apicurio"] },
-    { key: "useTicketCache", label: "Use Kerberos ticket cache", options: ["false", "true"] }, { key: "keytabFile", label: "Kerberos keytab file" }, { key: "principalName", label: "Kerberos principal" },
-    { key: "jaasConfigFile", label: "OAuth JAAS config file" }, { key: "loginCallbackHandler", label: "OAuth login callback handler" },
+    { key: "useTicketCache", label: "Use Kerberos ticket cache", options: ["false", "true"], when: (config: any) => config.authenticationType === "GSSAPI" }, { key: "keytabFile", label: "Kerberos keytab file", when: (config: any) => config.authenticationType === "GSSAPI" }, { key: "principalName", label: "Kerberos principal", when: (config: any) => config.authenticationType === "GSSAPI" },
+    { key: "jaasConfigFile", label: "OAuth JAAS config file", when: (config: any) => config.authenticationType === "OAUTHBEARER" }, { key: "loginCallbackHandler", label: "OAuth login callback handler", when: (config: any) => config.authenticationType === "OAUTHBEARER" },
     { key: "requestTimeoutMilliseconds", label: "Request timeout (ms)" }, { key: "connectionTimeoutMilliseconds", label: "Connection timeout (ms)" },
     { key: "reconnectBackoffMilliseconds", label: "Reconnect backoff (ms)" }, { key: "retryBackoffMilliseconds", label: "Retry backoff (ms)" },
     { key: "clientProperties", label: "Advanced client properties (JSON)" },
@@ -4205,6 +4230,14 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
   const set = (key: string, value: any) => setDraft((current: any) => ({ ...current, config: { ...current.config, [key]: value } }));
   const setConnectionField = (key: string, value: any) => setDraft((current: any) => {
     const config = { ...current.config, [key]: value };
+    if (type === "kafka" && key === "authenticationType") {
+      config.saslMechanism = value === "API Key / Secret" ? "PLAIN" : ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512", "GSSAPI", "OAUTHBEARER"].includes(value) ? value : "";
+      if (value !== "None" && !String(config.securityProtocol || "").includes("SASL")) config.securityProtocol = "SASL_SSL";
+    }
+    if (type === "kafka" && key === "securityProtocol" && !String(value).includes("SASL")) {
+      config.authenticationType = "None";
+      config.saslMechanism = "";
+    }
     if (type === "jdbc" && key === "driver") {
       const defaults: Record<string, any> = {
         sqlite: { url: "integration.db", host: "", port: "", database: "", schema: "main" },
@@ -4584,13 +4617,68 @@ function ConnectionDialog({ type, onClose, onCreate }: any) {
               <label>
                 Security protocol
                 <select
-                  onChange={(e) => set("securityProtocol", e.target.value)}
+                  value={draft.config.securityProtocol || "SASL_SSL"}
+                  onChange={(e) => {
+                    const securityProtocol = e.target.value;
+                    setDraft((current: any) => ({
+                      ...current,
+                      config: {
+                        ...current.config,
+                        securityProtocol,
+                        ...(securityProtocol.includes("SASL") ? {} : { authenticationType: "None", saslMechanism: "" }),
+                      },
+                    }));
+                  }}
                 >
                   <option>PLAINTEXT</option>
                   <option>SASL_SSL</option>
+                  <option>SASL_PLAINTEXT</option>
                   <option>SSL</option>
                 </select>
               </label>
+              <label>
+                Authentication type
+                <select
+                  value={draft.config.authenticationType || "API Key / Secret"}
+                  onChange={(e) => {
+                    const authenticationType = e.target.value;
+                    setDraft((current: any) => {
+                      const config = { ...current.config, authenticationType };
+                      config.saslMechanism = authenticationType === "API Key / Secret" ? "PLAIN" : ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512", "GSSAPI", "OAUTHBEARER"].includes(authenticationType) ? authenticationType : "";
+                      if (authenticationType !== "None" && !String(config.securityProtocol || "").includes("SASL")) config.securityProtocol = "SASL_SSL";
+                      if (authenticationType === "None") config.securityProtocol = "PLAINTEXT";
+                      return { ...current, config };
+                    });
+                  }}
+                >
+                  <option>None</option>
+                  <option>API Key / Secret</option>
+                  <option>PLAIN</option>
+                  <option>SCRAM-SHA-256</option>
+                  <option>SCRAM-SHA-512</option>
+                  <option>GSSAPI</option>
+                  <option>OAUTHBEARER</option>
+                </select>
+              </label>
+              {["API Key / Secret", "PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"].includes(draft.config.authenticationType || "API Key / Secret") && <>
+                <label>
+                  API key / username
+                  <input value={draft.config.username || ""} onChange={(e) => set("username", e.target.value)} placeholder="Vendor-provided key" />
+                </label>
+                <label>
+                  API secret / password
+                  <input type="password" value={draft.config.password || ""} onChange={(e) => set("password", e.target.value)} placeholder="Vendor-provided secret" />
+                </label>
+              </>}
+              {draft.config.authenticationType === "GSSAPI" && <>
+                <label>Kerberos principal<input value={draft.config.principalName || ""} onChange={(e) => set("principalName", e.target.value)} /></label>
+                <label>Kerberos keytab file<input value={draft.config.keytabFile || ""} onChange={(e) => set("keytabFile", e.target.value)} /></label>
+                <label>Use Kerberos ticket cache<select value={draft.config.useTicketCache || "false"} onChange={(e) => set("useTicketCache", e.target.value)}><option>false</option><option>true</option></select></label>
+              </>}
+              {draft.config.authenticationType === "OAUTHBEARER" && <>
+                <label>OAuth JAAS config file<input value={draft.config.jaasConfigFile || ""} onChange={(e) => set("jaasConfigFile", e.target.value)} /></label>
+                <label>OAuth login callback handler<input value={draft.config.loginCallbackHandler || ""} onChange={(e) => set("loginCallbackHandler", e.target.value)} /></label>
+              </>}
             </>
           )}
           {type === "pubsub" && (

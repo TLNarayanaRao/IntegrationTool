@@ -3,6 +3,9 @@ package com.integrationfabric.bridge;
 import java.io.*;
 import java.lang.reflect.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.*;
 import java.sql.*;
 import java.time.temporal.TemporalAccessor;
@@ -18,6 +21,8 @@ import javax.naming.InitialContext;
 /** Vendor-neutral process bridge for licensed SAP JCo, JMS providers, and JDBC drivers. */
 public final class FabricJavaBridge {
     private FabricJavaBridge() {}
+    private static FileChannel listenerLockChannel;
+    private static FileLock listenerLock;
 
     public static void main(String[] args) {
         Map<String, Object> output = new LinkedHashMap<>();
@@ -310,6 +315,7 @@ public final class FabricJavaBridge {
 
     /** Run a real JCo RFC server and emit one UTF-8 JSON event per inbound call. */
     private static Map<String, Object> listen(String serverName, Properties p) throws Exception {
+        acquireListenerLock(p.getProperty("jco.server.progid", "sap-listener"));
         System.out.println(json(map("event", "jco_log", "level", "INFO", "phase", "server_initialization", "message", "Initializing SAP JCo RFC server", "serverName", serverName, "programId", p.getProperty("jco.server.progid"), "gatewayHost", p.getProperty("jco.server.gwhost"), "gatewayService", p.getProperty("jco.server.gwserv"))));
         System.out.flush();
         Class<?> environment = Class.forName("com.sap.conn.jco.ext.Environment");
@@ -338,6 +344,14 @@ public final class FabricJavaBridge {
             Class<?> destinationType = Class.forName("com.sap.conn.jco.JCoDestination");
             serverType.getMethod("setRepository", destinationType).invoke(jcoServer, repositoryDestination);
             System.out.println(json(map("event", "jco_log", "level", "INFO", "phase", "repository", "message", "SAP JCo repository destination bound", "repositoryDestination", repositoryName)));
+            System.out.flush();
+            // IDoc RFC callbacks need the client destination to resolve the
+            // function metadata and repository. Binding the destination alone
+            // is lazy in JCo and can leave the server looking healthy while
+            // the first SAP request fails with CPIC-CALL/ThSAPOCMINIT. Verify
+            // the client channel before registering the listener as ready.
+            invoke(repositoryDestination, "ping");
+            System.out.println(json(map("event", "jco_log", "level", "INFO", "phase", "repository_connection", "message", "SAP JCo repository connection verified", "repositoryDestination", repositoryName)));
             System.out.flush();
         }
         boolean tidEnabled = !"disabled".equalsIgnoreCase(p.getProperty("jco.server.tid_management", "active"));
@@ -406,6 +420,12 @@ public final class FabricJavaBridge {
                     String connectionId = optionalString(serverContext, "getConnectionID");
                     Map<String, Object> requestPayload = listenerFunctionResult(function);
                     List<Map<String, Object>> requests = functionName.toUpperCase(Locale.ROOT).startsWith("IDOC_INBOUND") ? splitIdocPackage(requestPayload) : List.of(requestPayload);
+                    // Keep this diagnostic separate from the payload event so
+                    // operations teams can distinguish SAP routing/network
+                    // failures from extraction or workflow failures without
+                    // logging business data.
+                    System.out.println(json(map("event", "jco_log", "level", "INFO", "phase", "request_received", "message", "SAP JCo request callback received", "functionName", functionName, "TID", transactionId, "CPIC_ID", connectionId, "packageSize", requests.size())));
+                    System.out.flush();
                     List<String> deliveryIds = new ArrayList<>();
                     List<CompletableFuture<Boolean>> decisions = new ArrayList<>();
                     List<Properties> responses = new ArrayList<>();
@@ -474,6 +494,28 @@ public final class FabricJavaBridge {
         return map("message", "SAP JCo listener stopped");
     }
 
+    /**
+     * A SAP registered-server program ID must have one active owner on a
+     * machine. Without a process-level guard, running the browser backend and
+     * the installed Studio together can register the same TP; SAP then routes
+     * IDocs to either process and the operator may watch the wrong one.
+     */
+    private static void acquireListenerLock(String programId) throws IOException {
+        String safe = programId.replaceAll("[^A-Za-z0-9_.-]", "_");
+        Path path = Paths.get(System.getProperty("java.io.tmpdir"), "integration-fabric-sap-" + safe + ".lock");
+        listenerLockChannel = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+        try {
+            listenerLock = listenerLockChannel.tryLock();
+        } catch (OverlappingFileLockException error) {
+            listenerLock = null;
+        }
+        if (listenerLock == null) {
+            try { listenerLockChannel.close(); } catch (IOException ignored) { }
+            listenerLockChannel = null;
+            throw new IOException("SAP JCo program ID '" + programId + "' is already owned by another Integration Fabric listener on this machine");
+        }
+    }
+
     /** Durable tRFC TID state prevents duplicate IDoc delivery after retries. */
     private static Object tidHandler(String fileName) throws Exception {
         Class<?> type = Class.forName("com.sap.conn.jco.server.JCoServerTIDHandler");
@@ -486,6 +528,11 @@ public final class FabricJavaBridge {
             catch (IOException error) { System.err.println("SAP JCo TID store could not be loaded: " + error); }
         }
         Object lock = new Object();
+        // RECEIVED is only an in-flight marker.  It must not permanently
+        // suppress a transaction after the bridge or host is restarted.
+        // Keep the in-process lease separately so a live duplicate is still
+        // rejected while an interrupted transaction remains retryable.
+        Set<String> activeTids = new HashSet<>();
         return Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, (proxy, method, args) -> {
             try {
                 String tid = null;
@@ -498,15 +545,19 @@ public final class FabricJavaBridge {
                 synchronized (lock) {
                     if (method.getName().equals("checkTID")) {
                         String state = states.getProperty(tid, "");
-                        // RECEIVED means another callback is already handling
-                        // this transaction. Reject the duplicate rather than
-                        // allowing concurrent delivery of the same IDoc.
-                        if ("RECEIVED".equals(state) || "COMMITTED".equals(state) || "CONFIRMED".equals(state)) return false;
+                        // Only reject a duplicate while this JVM is actively
+                        // handling it, or after it has been committed. A
+                        // RECEIVED marker can be left behind by a crash or a
+                        // forced restart and must therefore be retryable.
+                        if (activeTids.contains(tid) || "COMMITTED".equals(state) || "CONFIRMED".equals(state)) return false;
+                        activeTids.add(tid);
                         states.setProperty(tid, "RECEIVED");
-                        if (!persistTidState(store, states)) {
-                            states.remove(tid);
-                            return false;
-                        }
+                        // Persistence is best effort at this point. Never
+                        // return false merely because a Windows file rename,
+                        // antivirus scan, or transient disk issue prevented a
+                        // state write; that would make SAP discard the IDoc
+                        // before the function handler can receive it.
+                        persistTidState(store, states);
                         return true;
                     }
                     String previous = states.getProperty(tid);
@@ -514,6 +565,7 @@ public final class FabricJavaBridge {
                     else if (method.getName().equals("rollback")) states.setProperty(tid, "ROLLED_BACK");
                     else if (method.getName().equals("confirmTID")) states.remove(tid);
                     else return null;
+                    activeTids.remove(tid);
                     if (!persistTidState(store, states)) {
                         if (previous == null) states.remove(tid); else states.setProperty(tid, previous);
                     }

@@ -10,6 +10,8 @@ CATALOG = {
     'file poller': ('file', 'poll', 'File Poller'), 'timer': ('timer', 'schedule', 'Timer / Scheduler'),
     'ems receiver': ('ems', 'queue_receiver', 'EMS Queue Receiver'), 'jms receiver': ('ems', 'queue_receiver', 'EMS Queue Receiver'),
     'kafka receiver': ('kafka', 'receive', 'Kafka Receive Message'), 'pubsub subscriber': ('pubsub', 'subscribe', 'GCP Pub/Sub Subscriber'),
+    'sap idoc parser': ('sap', 'idoc_parser', 'SAP IDoc Parser'), 'parse sap idoc': ('sap', 'idoc_parser', 'SAP IDoc Parser'),
+    'sap idoc publisher': ('sap', 'post_idoc', 'SAP IDoc Publisher'), 'send sap idoc': ('sap', 'post_idoc', 'SAP IDoc Publisher'),
     'parse xml': ('xml', 'parse', 'Parse XML'), 'render xml': ('xml', 'render', 'Render XML'),
     'parse json': ('json', 'parse', 'Parse JSON'), 'render json': ('json', 'render', 'Render JSON'),
     'parse data': ('flat', 'parse', 'Parse Data'), 'render data': ('flat', 'render', 'Render Data'),
@@ -26,12 +28,16 @@ def _slug(value: str, fallback='activity') -> str:
 
 def local_proposal(requirement: str, scope: str, current_task: dict | None = None) -> dict[str, Any]:
     lower = requirement.lower(); selected = []
-    if 'rest' in lower and any(word in lower for word in ('receive','receiver','expose','host')): selected.append(CATALOG['rest receiver'])
-    elif 'http' in lower and any(word in lower for word in ('receive','receiver','listen','host')): selected.append(CATALOG['http listener'])
-    for phrase, definition in CATALOG.items():
-        if phrase in lower and definition not in selected: selected.append(definition)
+    special_kafka_sap_idoc = 'kafka' in lower and 'sap' in lower and ('artmas' in lower or 'idoc' in lower)
+    if special_kafka_sap_idoc:
+        selected = [('kafka', 'receive', 'Kafka Receive Message'), ('log', 'write', 'Log Kafka Message'), ('sap', 'idoc_parser', 'Parse ARTMAS05 IDoc'), ('log', 'write', 'Log SAP Response'), ('sap', 'post_idoc', 'Send ARTMAS05 IDoc to SAP'), ('end', 'end', 'End')]
+    else:
+        if 'rest' in lower and any(word in lower for word in ('receive','receiver','expose','host')): selected.append(CATALOG['rest receiver'])
+        elif 'http' in lower and any(word in lower for word in ('receive','receiver','listen','host')): selected.append(CATALOG['http listener'])
+        for phrase, definition in CATALOG.items():
+            if phrase in lower and definition not in selected: selected.append(definition)
     if ('response' in lower or 'reply' in lower) and any(item[0] in ('rest','http_listener') for item in selected) and CATALOG['send response'] not in selected: selected.append(CATALOG['send response'])
-    events = [item for item in selected if item[0] in EVENT_TYPES and (item[0] != 'file' or item[1] == 'poll')]
+    events = [item for item in selected if item[0] in EVENT_TYPES and (item[0] != 'file' or item[1] == 'poll') and (item[0] != 'sap' or item[1] in ('idoc_listener', 'rfc_bapi_listener'))]
     if not events: selected.insert(0, ('start', 'start', 'Manual Start'))
     elif len(events) > 1:
         keep = events[0]; selected = [item for item in selected if item not in events or item == keep]
@@ -41,6 +47,10 @@ def local_proposal(requirement: str, scope: str, current_task: dict | None = Non
     for index, (kind, operation, label) in enumerate(selected):
         activity_id = f'{_slug(label)}-{index + 1}'
         config: dict[str, Any] = {'operation': operation}
+        if kind == 'kafka' and operation == 'receive': config.update({'topic': '${properties.connections.kafka.topic}', 'groupId': 'integration-fabric', 'maxMessages': 1, 'valueDeserializer': 'String'})
+        if kind == 'log': config.update({'level': 'INFO', 'message': '${last}', 'includePayload': True})
+        if kind == 'sap' and operation == 'idoc_parser': config.update({'idocType': 'ARTMAS05', 'idocOutputMode': 'JSON', 'parserEngine': 'Built-in', 'validateIdocType': True, 'inputMappings': {'IDoc': '${last}'}})
+        if kind == 'sap' and operation == 'post_idoc': config.update({'idocType': 'ARTMAS05', 'inputFormat': 'XML', 'idocInputMode': 'tRFC', 'inputMappings': {'payload': '${activities.parse-artmas05-idoc-3.output.SAPIDoc}'}})
         if kind in ('http_listener','rest') and operation == 'receiver': config.update({'path':'/api/resource','methods':'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS,TRACE,CONNECT'})
         if kind == 'http_listener': config.update({'path':'/api/resource','method':'POST'})
         if kind == 'catch': config['catchAll'] = True
@@ -52,7 +62,7 @@ def local_proposal(requirement: str, scope: str, current_task: dict | None = Non
     task = {'id':(current_task or {}).get('id','ai-main-task'),'name':task_name or 'AI Generated Task','kind':(current_task or {}).get('kind','starter'),'description':requirement,'activities':activities,'transitions':transitions,'input_schema':{},'output_schema':{}}
     resource_types = []
     for activity in activities:
-        candidate = {'jdbc':'jdbc','http':'http','http_listener':'http','rest':'http','ems':'ems','kafka':'kafka','pubsub':'pubsub'}.get(activity['type'])
+        candidate = {'jdbc':'jdbc','http':'http','http_listener':'http','rest':'http','ems':'ems','kafka':'kafka','pubsub':'pubsub','sap':'sap'}.get(activity['type'])
         if candidate:
             activity['config']['resourceId'] = f'ai-{candidate}-connection'
             if candidate not in resource_types: resource_types.append(candidate)

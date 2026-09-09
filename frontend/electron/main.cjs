@@ -132,7 +132,7 @@ async function createWindow() {
     minHeight: 720,
     backgroundColor: '#071522',
     title: 'Integration Fabric Studio',
-    icon: path.join(__dirname, '..', 'dist', 'branding', 'integration-fabric-brand.svg'),
+    icon: path.join(__dirname, 'integration-fabric-icon.svg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -216,7 +216,7 @@ ipcMain.handle('fabric:save-project-folder', async (_event, options) => {
 ipcMain.handle('fabric:open-file', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile', 'openDirectory'],
-    filters: [{ name: 'Integration Fabric Project', extensions: ['ifproject', 'zip', 'json'] }],
+    filters: [{ name: 'Integration Fabric Project', extensions: ['ifproject', 'ifpkg', 'zip', 'json'] }],
   });
   if (result.canceled || !result.filePaths[0]) return null;
   const filePath = result.filePaths[0];
