@@ -1,0 +1,11 @@
+I see the applications that were uploaded can see here. 
+1. we should have option to have search the applications to deploy or undeploy or delete the apps, 
+2. Option to delete or undeploy, 
+3. option to see the archive tasks and starter tasks
+4. Options to do the configuration changes and redeploy 
+5. Option to start or stop the applications after deployment 
+6. Option to export the environment profiles to review 
+7. option to upload the environment profile and redeploy the apps 
+8. Options to see the revision history of deployment changes / config changes
+9. Option to stop / start only Task starters. 
+10. Should have a health checks enable for each individual app to get the status of the apps
