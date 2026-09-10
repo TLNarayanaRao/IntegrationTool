@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-FABRIC_ADMIN_HOME="${FABRIC_ADMIN_HOME:-/opt/integration-fabric/administrator}"
-PID_DIR="${FABRIC_ADMIN_PID_DIR:-/var/run/integration-fabric}"
-LOG_DIR="${FABRIC_ADMIN_LOG_DIR:-/var/log/integration-fabric}"
+FABRIC_ADMIN_HOME="${FABRIC_ADMIN_HOME:-/opt/integrationfabric/control-plane}"
+PID_DIR="${FABRIC_ADMIN_PID_DIR:-/opt/integrationfabric/run}"
+LOG_DIR="${FABRIC_ADMIN_LOG_DIR:-/opt/integrationfabric/logs/control-plane}"
 EXECUTABLE="$FABRIC_ADMIN_HOME/IntegrationFabricAdministrator"
 PID_FILE="$PID_DIR/fabricadmin.pid"
 mkdir -p "$PID_DIR" "$LOG_DIR"

@@ -1,0 +1,19 @@
+{
+  "info":{"name":"Integration Fabric - Complete Platform Management","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "variable":[{"key":"baseUrl","value":"http://127.0.0.1:9080"},{"key":"adminKey","value":""}],
+  "item":[
+    {"name":"Health","request":{"method":"GET","url":"{{baseUrl}}/api/health"}},
+    {"name":"Session","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/session"}},
+    {"name":"Platform overview","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/control-plane/overview"}},
+    {"name":"Data planes","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/data-planes"}},
+    {"name":"Capabilities","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/capabilities"}},
+    {"name":"Resources","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/resources"}},
+    {"name":"Delivery teams","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/teams"}},
+    {"name":"Access principals","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/access/principals"}},
+    {"name":"Applications","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/applications"}},
+    {"name":"Deployments","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/deployments"}},
+    {"name":"Monitoring","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/monitoring"}},
+    {"name":"Observability","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/observability"}},
+    {"name":"Audit trail","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/audit"}}
+  ]
+}

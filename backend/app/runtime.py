@@ -12,7 +12,7 @@ from .snowflake import snowflake_adapter
 from .jdbc import jdbc_adapter
 from .amqp import amqp_adapter
 from .java_bridge import JavaBridgeError, execute_jms
-from .google_pubsub import client_configuration as pubsub_client_configuration
+from .google_pubsub import client_configuration as pubsub_client_configuration, create_client as create_pubsub_client
 from .time_utils import log_timestamp
 
 class RuntimeErrorWithLogs(Exception): pass
@@ -112,12 +112,34 @@ class WorkflowRuntime:
                         current = caught
                         continue
                 else:
-                    chosen = next((t for t in outgoing if t.type == 'success_condition' and self.condition(t.condition, context)), None)
-                    chosen = chosen or next((t for t in outgoing if t.type == 'success'), None)
-                    chosen = chosen or next((t for t in outgoing if t.type == 'success_no_match'), None)
-                if not chosen: raise RuntimeErrorWithLogs(f'{current.name} has no matching outgoing transition')
-                self.log(logs, 'DEBUG', f'Transition selected: {current.name} -> {activity_by_id[chosen.target].name} ({chosen.type})', kind='trace', runtimeActivityId=current.id, transitionId=chosen.id)
-                current = activity_by_id[chosen.target]
+                    chosen_edges = self.eligible_success_transitions(outgoing, context)
+                if error:
+                    chosen_edges = [chosen] if chosen else []
+                if not chosen_edges: raise RuntimeErrorWithLogs(f'{current.name} has no matching outgoing transition')
+                for edge in chosen_edges:
+                    self.log(logs, 'DEBUG', f'Transition selected: {current.name} -> {activity_by_id[edge.target].name} ({edge.type})', kind='trace', runtimeActivityId=current.id, transitionId=edge.id, parallel=len(chosen_edges) > 1)
+                if len(chosen_edges) == 1:
+                    current = activity_by_id[chosen_edges[0].target]
+                else:
+                    # A task may have multiple eligible success edges.  They are
+                    # a fan-out, not an ordered if/else chain. Run every branch
+                    # and share execution state so all outputs remain mappable.
+                    branch_initial = context['last']
+                    if not isinstance(branch_initial, dict): branch_initial = {'payload': branch_initial}
+                    branch_initial = {**branch_initial, 'correlationId': correlation_id}
+                    results = await asyncio.gather(*(
+                        self.run(process, branch_initial, resources=resources, properties=properties,
+                                 entry_activity_id=edge.target, project=project,
+                                 execution_state=execution_state, transport=transport)
+                        for edge in chosen_edges
+                    ))
+                    for result in results:
+                        logs.extend(result.logs)
+                    failed = next((result for result in results if result.status != 'completed'), None)
+                    if failed: raise RuntimeErrorWithLogs(f'Parallel branch failed from {current.name}')
+                    final_output = results[-1].output if results else context['last']
+                    task_state['output'] = final_output
+                    return finish('completed', final_output)
             final_output = context['last'] if isinstance(context['last'], dict) else {'result': context['last']}
             task_state['output'] = final_output
             return finish('completed', final_output)
@@ -125,6 +147,20 @@ class WorkflowRuntime:
             self.log(logs, 'ERROR', str(exc), current.id)
             task_state['error'] = {'message': str(exc), 'activityId': current.id}
             return finish('failed', {})
+
+    def eligible_success_transitions(self, outgoing, context: dict):
+        """Return every success edge eligible after an activity completes.
+
+        The old implementation used ``next`` and therefore silently discarded
+        every second success edge. Conditional edges retain their precedence;
+        when one or more conditions match, all matching conditions are fanned
+        out. Otherwise all normal success edges (or all success_no_match edges)
+        are returned.
+        """
+        conditional = [edge for edge in outgoing if edge.type == 'success_condition' and self.condition(edge.condition, context)]
+        if conditional: return conditional
+        success = [edge for edge in outgoing if edge.type == 'success']
+        return success or [edge for edge in outgoing if edge.type == 'success_no_match']
 
     @staticmethod
     def record_activity_output(activity: Activity, result, ctx: dict):
@@ -265,7 +301,12 @@ class WorkflowRuntime:
         if activity.type == 'timer':
             now = datetime.now(timezone.utc)
             environment = str(ctx.get('context', {}).get('environment') or '').lower()
-            run_once = environment == 'local' and self.as_bool(cfg.get('runOnceOnLocalStart', True))
+            # The designer's Run once option is intended for local Run/Debug.
+            # Debug sessions may execute against a named environment profile
+            # (for example production), so identify Debug explicitly rather
+            # than accidentally making it wait for the production schedule.
+            is_debug = bool(ctx.get('context', {}).get('debugSessionId'))
+            run_once = self.as_bool(cfg.get('runOnceOnLocalStart', True)) and (environment == 'local' or is_debug)
             mode = str(cfg.get('scheduleMode') or 'dateTime')
             if run_once:
                 scheduled = now
@@ -831,7 +872,7 @@ class WorkflowRuntime:
             except ImportError: raise RuntimeError('External Google Pub/Sub mode requires google-cloud-pubsub')
             client_kwargs, project_id = pubsub_client_configuration({**rcfg, 'projectId': cfg.get('projectId') or rcfg.get('projectId')})
             if operation in receive_ops:
-                subscriber = pubsub_v1.SubscriberClient(**client_kwargs); path = subscriber.subscription_path(project_id, destination); response = subscriber.pull(request={'subscription': path, 'max_messages': int(cfg.get('maxMessages', 1))}, timeout=float(cfg.get('receiveTimeout', cfg.get('timeout', 10))))
+                subscriber = create_pubsub_client(pubsub_v1.SubscriberClient, {**rcfg, 'projectId': cfg.get('projectId') or rcfg.get('projectId')}); path = subscriber.subscription_path(project_id, destination); response = subscriber.pull(request={'subscription': path, 'max_messages': int(cfg.get('maxMessages', 1))}, timeout=float(cfg.get('receiveTimeout', cfg.get('timeout', 10))))
                 messages, native_ack_ids = [], []
                 for item in response.received_messages:
                     record = {'id':item.message.message_id,'messageId':item.message.message_id,'data':item.message.data.decode(errors='replace'),'attributes':dict(item.message.attributes),'publishTime':item.message.publish_time.isoformat() if item.message.publish_time else None}
@@ -850,7 +891,30 @@ class WorkflowRuntime:
                     subscriber.close()
                 first = messages[0] if messages else {}
                 return {'MessageID':first.get('messageId'),'PublishTime':first.get('publishTime'),'Data':first.get('data'),'Attributes':first.get('attributes',{}),'AckID':first.get('ackId'),'ackId':first.get('ackId'),'messages':messages,'count':len(messages)}
-            publisher = pubsub_v1.PublisherClient(**client_kwargs); path = publisher.topic_path(project_id, destination); raw = payload if isinstance(payload, bytes) else (payload.encode() if isinstance(payload, str) else json.dumps(payload).encode()); message_id = publisher.publish(path, raw, ordering_key=str(cfg.get('orderingKey','')), **attributes).result(timeout=float(cfg.get('publishTimeout', 60))); publisher.transport.close(); return {**envelope, 'TopicName':path, 'MessageID':message_id, 'messageId':message_id, 'published':True}
+            publisher = create_pubsub_client(pubsub_v1.PublisherClient, {**rcfg, 'projectId': cfg.get('projectId') or rcfg.get('projectId')})
+            publish_timeout = max(1.0, float(cfg.get('publishTimeout', 60) or 60))
+            try:
+                path = publisher.topic_path(project_id, destination)
+                raw = payload if isinstance(payload, bytes) else (payload.encode() if isinstance(payload, str) else json.dumps(payload).encode())
+                try:
+                    from google.api_core.retry import Retry
+                    publish_future = publisher.publish(
+                        path, raw, ordering_key=str(cfg.get('orderingKey', '')),
+                        retry=Retry(deadline=publish_timeout),
+                        timeout=publish_timeout, **attributes,
+                    )
+                    message_id = publish_future.result(timeout=publish_timeout + 2)
+                except TimeoutError as exc:
+                    raise RuntimeError(f'Google Pub/Sub publish timed out after {publish_timeout:g} seconds. Verify the topic, IAM permission, endpoint, proxy, and firewall settings.') from exc
+                return {**envelope, 'TopicName': path, 'MessageID': message_id, 'messageId': message_id, 'published': True}
+            finally:
+                # Stop the batching/sequencer threads before closing gRPC.
+                # Closing the channel first causes the Google batch thread to
+                # raise "Cannot invoke RPC on closed channel" during retries.
+                try: publisher.stop()
+                except Exception: pass
+                try: publisher.transport.close()
+                except Exception: pass
         raise RuntimeError(f'Unsupported messaging technology {technology}')
 
     @staticmethod

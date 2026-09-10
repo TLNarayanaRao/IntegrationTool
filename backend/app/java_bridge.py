@@ -269,7 +269,7 @@ def default_driver_home() -> Path:
         return Path(override).expanduser().resolve()
     if os.name == "nt" and os.environ.get("PROGRAMDATA"):
         return Path(os.environ["PROGRAMDATA"]) / "Integration Fabric Studio" / "drivers"
-    return Path.home() / ".integration-fabric" / "drivers"
+    return Path("/opt/integrationfabric/drivers") if os.name != "nt" else Path.home() / ".integration-fabric" / "drivers"
 
 
 def driver_directories(config: dict[str, Any], family: str) -> list[Path]:

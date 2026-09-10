@@ -1,0 +1,11 @@
+{
+  "info":{"name":"Integration Fabric - Capabilities Management","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "variable":[{"key":"baseUrl","value":"http://127.0.0.1:9080"},{"key":"adminKey","value":""},{"key":"dataPlaneId","value":"customer-data-delivery-plane"},{"key":"namespace","value":"customer-data-delivery"},{"key":"capabilityId","value":"integration-runtime-customer-data-delivery-plane-customer-data-delivery"}],
+  "item":[
+    {"name":"List capabilities","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/capabilities"}},
+    {"name":"Create capability","event":[{"listen":"test","script":{"exec":["const body=pm.response.json(); if(body.id) pm.collectionVariables.set('capabilityId', body.id);"]}}],"request":{"method":"POST","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"name\":\"Integration Runtime\",\"type\":\"integration-runtime\",\"version\":\"1.0.0\",\"dataPlaneId\":\"{{dataPlaneId}}\",\"namespace\":\"{{namespace}}\",\"tags\":[\"core\"]}"},"url":"{{baseUrl}}/api/capabilities"}},
+    {"name":"Get capabilities for data plane","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/capabilities?dataPlaneId={{dataPlaneId}}"}},
+    {"name":"Modify capability","request":{"method":"PUT","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"name\":\"Integration Runtime Updated\",\"type\":\"integration-runtime\",\"version\":\"1.0.1\",\"dataPlaneId\":\"{{dataPlaneId}}\",\"namespace\":\"{{namespace}}\",\"tags\":[\"core\",\"updated\"]}"},"url":"{{baseUrl}}/api/capabilities/{{capabilityId}}"}},
+    {"name":"Delete capability","request":{"method":"DELETE","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/capabilities/{{capabilityId}}"}}
+  ]
+}

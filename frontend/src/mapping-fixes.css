@@ -13,6 +13,18 @@
   min-width: 0;
   max-width: 100%;
 }
+.resizable-mapper > .source-pane {
+  height: 100%;
+  overflow: hidden;
+}
+.resizable-mapper > .source-pane > .source-list {
+  height: 0;
+  flex: 1 1 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
 .resizable-mapper > section {
   overflow-x: hidden !important;
   overflow-y: auto !important;

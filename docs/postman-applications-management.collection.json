@@ -1,0 +1,18 @@
+{
+  "info":{"name":"Integration Fabric - Applications Management","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "variable":[{"key":"baseUrl","value":"http://127.0.0.1:9080"},{"key":"adminKey","value":""},{"key":"packageArtifact","value":"petm-publisher-artmas05"},{"key":"packageVersion","value":"1.0.0"},{"key":"teamId","value":"technology-team"},{"key":"dataPlaneId","value":"localhost"},{"key":"capabilityId","value":"integration-runtime-local"},{"key":"namespace","value":"default"},{"key":"environment","value":"dev"},{"key":"deploymentId","value":""}],
+  "item":[
+    {"name":"List applications","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/applications"}},
+    {"name":"List packages","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/packages"}},
+    {"name":"Create deployment","event":[{"listen":"test","script":{"exec":["const body=pm.response.json(); if(body.id) pm.collectionVariables.set('deploymentId', body.id);"]}}],"request":{"method":"POST","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"packageId\":\"{{packageArtifact}}:{{packageVersion}}\",\"teamId\":\"{{teamId}}\",\"environment\":\"{{environment}}\",\"dataPlaneId\":\"{{dataPlaneId}}\",\"capabilityId\":\"{{capabilityId}}\",\"namespace\":\"{{namespace}}\",\"instances\":1,\"secrets\":{}}"},"url":"{{baseUrl}}/api/deployments"}},
+    {"name":"Get deployment status","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/deployments/{{deploymentId}}"}},
+    {"name":"Get deployment health","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/deployments/{{deploymentId}}/health"}},
+    {"name":"Modify deployment configuration","request":{"method":"PUT","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"instances\":1,\"redeploy\":false,\"healthCheckEnabled\":true,\"secrets\":{}}"},"url":"{{baseUrl}}/api/deployments/{{deploymentId}}/configuration"}},
+    {"name":"Start deployment","request":{"method":"POST","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{}"},"url":"{{baseUrl}}/api/deployments/{{deploymentId}}/start"}},
+    {"name":"Stop deployment","request":{"method":"POST","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{}"},"url":"{{baseUrl}}/api/deployments/{{deploymentId}}/stop"}},
+    {"name":"Restart deployment","request":{"method":"POST","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{}"},"url":"{{baseUrl}}/api/deployments/{{deploymentId}}/restart"}},
+    {"name":"Undeploy application","request":{"method":"POST","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{}"},"url":"{{baseUrl}}/api/deployments/{{deploymentId}}/undeploy"}},
+    {"name":"Delete application","request":{"method":"DELETE","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/deployments/{{deploymentId}}"}},
+    {"name":"List deployment logs","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/deployments/{{deploymentId}}/logs"}}
+  ]
+}

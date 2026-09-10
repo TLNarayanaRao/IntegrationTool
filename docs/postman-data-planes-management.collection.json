@@ -1,0 +1,12 @@
+{
+  "info":{"name":"Integration Fabric - Data Planes Management","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "variable":[{"key":"baseUrl","value":"http://127.0.0.1:9080"},{"key":"adminKey","value":""},{"key":"dataPlaneId","value":"customer-data-delivery-plane"}],
+  "item":[
+    {"name":"List data planes","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/data-planes"}},
+    {"name":"Create data plane","event":[{"listen":"test","script":{"exec":["const body=pm.response.json(); if(body.id) pm.collectionVariables.set('dataPlaneId', body.id);"]}}],"request":{"method":"POST","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"id\": \"{{dataPlaneId}}\",\n  \"name\": \"Customer Data Delivery Plane\",\n  \"type\": \"on-premises\",\n  \"host\": \"127.0.0.1\",\n  \"region\": \"local\",\n  \"namespaces\": [\"customer-data-delivery\"],\n  \"tags\": [\"customer-data\"],\n  \"capacity\": 20,\n  \"driver\": \"agent\"\n}"},"url":"{{baseUrl}}/api/data-planes"}},
+    {"name":"Get data-plane status","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/data-planes/{{dataPlaneId}}"}},
+    {"name":"Modify data plane","request":{"method":"PUT","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\n  \"id\": \"{{dataPlaneId}}\",\n  \"name\": \"Customer Data Delivery Plane\",\n  \"type\": \"on-premises\",\n  \"host\": \"127.0.0.1\",\n  \"region\": \"local\",\n  \"namespaces\": [\"customer-data-delivery\"],\n  \"tags\": [\"customer-data\", \"updated\"],\n  \"capacity\": 20,\n  \"driver\": \"agent\"\n}"},"url":"{{baseUrl}}/api/data-planes/{{dataPlaneId}}"}},
+    {"name":"Send heartbeat","request":{"method":"POST","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"},{"key":"Content-Type","value":"application/json"}],"body":{"mode":"raw","raw":"{\"agentVersion\":\"1.0.0\",\"namespaces\":[\"customer-data-delivery\"],\"availableCapacity\":20}"},"url":"{{baseUrl}}/api/data-planes/{{dataPlaneId}}/heartbeat"}},
+    {"name":"Delete data plane","request":{"method":"DELETE","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/data-planes/{{dataPlaneId}}?force=true"}}
+  ]
+}

@@ -21,7 +21,7 @@ from .snowflake import snowflake_adapter
 from .jdbc import jdbc_adapter
 from .amqp import amqp_adapter
 from .java_bridge import JavaBridgeError, test_jms
-from .google_pubsub import client_configuration as pubsub_client_configuration, credential_summary as pubsub_credential_summary
+from .google_pubsub import client_configuration as pubsub_client_configuration, create_client as create_pubsub_client, credential_summary as pubsub_credential_summary
 from .ai_builder import generate as generate_ai_design
 from .project_logging import append_project_logs, project_log_info, read_project_logs
 from .observability import telemetry_status, span
@@ -233,12 +233,12 @@ def _event_available(output) -> bool:
     if output.get('messages'): return True
     return bool(output.get('MessageID') or output.get('messageId') or output.get('body') is not None)
 
-def _listener_context(item: Project, task, resources: dict, properties: dict, environment: str) -> dict:
+def _listener_context(item: Project, task, resources: dict, properties: dict, environment: str, debug_session_id: str | None = None) -> dict:
     return {
         'input': {}, 'vars': {}, 'last': {}, 'resources': resources, 'properties': properties,
         'project': item, 'runtime': runtime, 'logs': [], 'activities': {},
         'tasks': {task.id: {'name': task.name, 'activities': {}}},
-        'context': {'taskId': task.id, 'activityId': '', 'environment': environment},
+        'context': {'taskId': task.id, 'activityId': '', 'environment': environment, 'debugSessionId': debug_session_id},
     }
 
 async def _continuous_event_loop(item: Project, task, activity, environment: str, debug_session_id: str | None = None):
@@ -258,7 +258,7 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
                 if session.get('status') not in ('listening',):
                     await asyncio.sleep(.1)
                     continue
-            context = _listener_context(item, task, resources, properties, environment)
+            context = _listener_context(item, task, resources, properties, environment, debug_session_id)
             try:
                 output = await runtime.execute_with_policy(activity, context)
                 retry_delay = 1.0
@@ -410,6 +410,12 @@ async def _continuous_sap_event_loop(item: Project, task, activity, environment:
         worker_count = 8
     retry_delay = 1.0
     stop = asyncio.Event()
+    # A JCo server is one registered RFC listener, not one listener per
+    # application worker.  Reading its event stream concurrently lets workers
+    # consume each other's startup/log events and can make the bridge appear
+    # to exit while SAP is still connected.  Serialize only the receive call;
+    # the workflow itself remains concurrently processed below.
+    receive_lock = asyncio.Lock()
 
     async def worker(index: int):
         nonlocal retry_delay
@@ -418,7 +424,8 @@ async def _continuous_sap_event_loop(item: Project, task, activity, environment:
             delivery_id = None
             listener_key = None
             try:
-                output = await runtime.execute_with_policy(activity, context)
+                async with receive_lock:
+                    output = await runtime.execute_with_policy(activity, context)
                 diagnostics = output.pop('jcoDiagnostics', []) if isinstance(output, dict) else []
                 if diagnostics:
                     entries = [{'time': log_timestamp(), 'level': detail.get('level', 'INFO'), 'kind': 'connector', 'phase': detail.get('phase'), 'message': detail.get('message'), 'connector': 'SAP JCo', **{key: detail[key] for key in ('serverName', 'programId', 'gatewayHost', 'gatewayService', 'repositoryDestination', 'tidStore', 'functionName', 'connectionCount') if key in detail}, 'activityId': activity.id, 'taskId': task.id} for detail in diagnostics]
@@ -682,6 +689,46 @@ def packaging_task_closure(item: Project, starter_ids: list[str] | None = None) 
     selected.packaging = {**selected.packaging, 'starterTaskIds': roots, 'includedTaskIds': included}
     return selected, roots, included
 
+PROPERTY_REFERENCE = re.compile(r"\$\{properties\.([^}]+)\}")
+
+def deployment_property_profile(item: Project, environment: str) -> list[dict]:
+    """Return only properties needed by the selected application package.
+
+    References are discovered from the selected tasks and shared resources,
+    then followed through property-to-property expressions. The runtime log
+    directory is retained because the runtime consumes it outside activity
+    configuration. Unreferenced connector defaults are intentionally omitted.
+    """
+    source = [value.model_dump() for value in item.properties[environment]]
+    by_key = {str(value.get('key')): value for value in source}
+    task_models = [task.model_dump() for task in item.tasks]
+    referenced_resource_ids: set[str] = set()
+    def collect_resource_ids(value):
+        if isinstance(value, dict):
+            resource_id = value.get('resourceId')
+            if isinstance(resource_id, str) and resource_id.strip(): referenced_resource_ids.add(resource_id.strip())
+            for child in value.values(): collect_resource_ids(child)
+        elif isinstance(value, list):
+            for child in value: collect_resource_ids(child)
+    for task in task_models: collect_resource_ids(task)
+    resources = [resource.model_dump() for resource in item.resources if resource.id in referenced_resource_ids]
+    searchable = task_models + resources
+    referenced: set[str] = set()
+    for value in searchable:
+        referenced.update(match.group(1) for match in PROPERTY_REFERENCE.finditer(json.dumps(value, ensure_ascii=False)))
+    if 'runtime.logDirectory' in by_key:
+        referenced.add('runtime.logDirectory')
+    # Resolve property aliases such as ${properties.connections.sap.host}.
+    pending = list(referenced)
+    while pending:
+        key = pending.pop()
+        value = by_key.get(key)
+        if not value: continue
+        for alias in PROPERTY_REFERENCE.findall(str(value.get('value', ''))):
+            if alias not in referenced:
+                referenced.add(alias); pending.append(alias)
+    return [value for value in source if value.get('key') in referenced]
+
 def deployment_package_files(item: Project, target: str, environment: str, artifacts: set[str] | None = None) -> dict[str, bytes]:
     if target not in {'on-prem', 'cloud'}:
         raise HTTPException(400, 'Target must be on-prem or cloud')
@@ -694,7 +741,7 @@ def deployment_package_files(item: Project, target: str, environment: str, artif
         raise HTTPException(400, f'Unsupported {target} deployment artifacts: {", ".join(sorted(unknown_artifacts))}')
     artifact = item.packaging.get('artifact_name') or item.id
     version = item.packaging.get('version') or '1.0.0'
-    properties = [value.model_dump() for value in item.properties[environment]]
+    properties = deployment_property_profile(item, environment)
     # Only configured secret values are deployment requirements. Environment
     # profiles contain many connector-specific password placeholders; marking
     # every placeholder as required makes the Control Plane reject otherwise
@@ -764,9 +811,9 @@ def deployment_package_files(item: Project, target: str, environment: str, artif
         if 'dockerfile' in selected_artifacts:
             files['deployment/cloud/Dockerfile'] = (f'''FROM integration-fabric-runtime:latest
 LABEL org.opencontainers.image.title="{artifact}" org.opencontainers.image.version="{version}"
-COPY application /opt/integration-fabric/application
-COPY environments /opt/integration-fabric/environments
-ENV FABRIC_ENVIRONMENT={environment} FABRIC_APPLICATION_DIR=/opt/integration-fabric/application
+COPY application /opt/integrationfabric/application
+COPY environments /opt/integrationfabric/environments
+ENV FABRIC_ENVIRONMENT={environment} FABRIC_APPLICATION_DIR=/opt/integrationfabric/application
 EXPOSE {container_port}
 USER 10001
 ENTRYPOINT ["integration-fabric-runtime"]
@@ -825,7 +872,7 @@ spec:
             - name: FABRIC_ENVIRONMENT
               value: {json.dumps(environment)}
             - name: FABRIC_APPLICATION_DIR
-              value: /opt/integration-fabric/application
+              value: /opt/integrationfabric/application
           envFrom:
 {env_from_yaml}          readinessProbe:
             tcpSocket:
@@ -888,7 +935,7 @@ commonLabels:
         instances = max(1, int(item.packaging.get('instances') or 1))
         start_on_boot = str(item.packaging.get('startOnBoot') or 'false').lower() in ('true', '1', 'yes', 'on')
         shutdown_seconds = max(1, int(item.packaging.get('gracefulShutdownSeconds') or 60))
-        install_root = str(item.packaging.get('installRoot') or f'/opt/integration-fabric/apps/{artifact}')
+        install_root = str(item.packaging.get('installRoot') or f'/opt/integrationfabric/apps/{artifact}')
         windows_install_root = str(item.packaging.get('windowsInstallRoot') or f'C:\\ProgramData\\Integration Fabric\\apps\\{artifact}')
         if 'application' in selected_artifacts:
             files['deployment/on-prem/application.json'] = json.dumps({
@@ -1098,10 +1145,16 @@ async def package_and_deploy_project(project_id: str, payload: ControlPlaneDeplo
     if payload.deploymentEnvironment not in environments:
         raise HTTPException(400, 'Deployment environment must be one of the packaged environment profiles')
     artifacts = set(payload.artifacts) if payload.artifacts else None
-    body, filename, media, _ = build_deployment_archive(item, payload.target, environments, payload.starterTaskIds or None, payload.archive, artifacts)
+    # Archive creation can include many tasks, resources, schemas, and
+    # environment profiles. Keep CPU/file work off the async API loop so the
+    # Studio remains responsive while the package is assembled.
+    body, filename, media, _ = await asyncio.to_thread(
+        build_deployment_archive, item, payload.target, environments,
+        payload.starterTaskIds or None, payload.archive, artifacts,
+    )
     base_url, headers, verify = _control_plane_client_options(payload)
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0), verify=verify, follow_redirects=False) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=10.0), verify=verify, follow_redirects=False) as client:
             upload = await client.post(f'{base_url}/api/packages', params={'teamId': payload.teamId} if payload.teamId else None,
                                        headers=headers, files={'file': (filename, body, media)})
             upload.raise_for_status()
@@ -1218,9 +1271,30 @@ async def test_connection(resource: SharedResource):
             from google.cloud import pubsub_v1
             def test_pubsub():
                 kwargs, project_id = pubsub_client_configuration(cfg)
-                publisher = pubsub_v1.PublisherClient(**kwargs)
+                publisher = create_pubsub_client(pubsub_v1.PublisherClient, cfg)
                 try:
-                    iterator = publisher.list_topics(request={'project':f"projects/{project_id}", 'page_size':1}, timeout=float(cfg.get('connectionTimeoutSeconds') or 30)); next(iter(iterator), None)
+                    timeout_seconds = max(1.0, float(cfg.get('connectionTimeoutSeconds') or 30))
+                    # A list_topics iterator can wait for a second page or an
+                    # IAM response after the underlying channel is usable. A
+                    # connection test should first verify the actual gRPC
+                    # channel with a hard deadline and avoid false timeouts.
+                    channel = getattr(getattr(publisher, 'transport', None), '_grpc_channel', None)
+                    if channel is not None:
+                        try:
+                            import grpc
+                            ready_future = getattr(channel, 'channel_ready_future', None)
+                            if callable(ready_future):
+                                ready_future().result(timeout=timeout_seconds)
+                            else:
+                                grpc.channel_ready_future(channel).result(timeout=timeout_seconds)
+                        except Exception as exc:
+                            if exc.__class__.__name__ in ('FutureTimeoutError', 'TimeoutError'):
+                                raise TimeoutError(f'Pub/Sub gRPC channel was not ready within {timeout_seconds:g} seconds') from exc
+                            raise
+                    else:
+                        # Compatibility fallback for older client releases.
+                        iterator = publisher.list_topics(request={'project':f"projects/{project_id}", 'page_size':1}, timeout=timeout_seconds)
+                        next(iter(iterator), None)
                 finally: publisher.transport.close()
                 return pubsub_credential_summary(cfg)
             timeout = min(60.0, max(3.0, float(cfg.get('connectionTimeoutSeconds') or 30)))

@@ -2020,8 +2020,11 @@ function App() {
       } finally { setBusy(false); }
     },
     debug = async (requestedTaskId?: unknown) => {
-      await persistProject();
-      const r = await fetch(`/api/projects/${project.id}/debug`, {
+      setBusy(true);
+      setWorkStatus("Starting debugger…");
+      try {
+        await persistProject();
+        const r = await fetch(`/api/projects/${project.id}/debug`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -2031,20 +2034,36 @@ function App() {
             breakpoints,
           }),
         }),
-        out = await r.json();
-      if (out.status === "stopped") {
+          out = await r.json();
+        if (!r.ok) {
+          const message = out?.detail || out?.message || `Debug startup failed (HTTP ${r.status})`;
+          setDebugState(null);
+          setLogs([{ level: "ERROR", kind: "debug", message }]);
+          setRuntimeState({ status: "failed", error: message });
+          return;
+        }
+        if (out.status === "stopped") {
+          setDebugState(null);
+          setExecutionOutputs({});
+          setEndpoints([]);
+          setRuntimeState(null);
+          setLogs(out.logs || []);
+          return;
+        }
+        setDebugState(out);
+        setExecutionOutputs(out.activityOutputs || {});
+        setLogs(out.logs || [{ level: "ERROR", message: out.detail }]);
+        setEndpoints(out.endpoints || []);
+        setRuntimeState(out);
+      } catch (error: any) {
+        const message = error?.message || "Debug startup failed";
         setDebugState(null);
-        setExecutionOutputs({});
-        setEndpoints([]);
-        setRuntimeState(null);
-        setLogs(out.logs || []);
-        return;
+        setLogs([{ level: "ERROR", kind: "debug", message }]);
+        setRuntimeState({ status: "failed", error: message });
+      } finally {
+        setBusy(false);
+        setWorkStatus("");
       }
-      setDebugState(out);
-      setExecutionOutputs(out.activityOutputs || {});
-      setLogs(out.logs || [{ level: "ERROR", message: out.detail }]);
-      setEndpoints(out.endpoints || []);
-      setRuntimeState(out);
     },
     debugAction = async (action: string) => {
       if (!debugState) return;
@@ -3229,16 +3248,17 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
   const compatibleCapabilities = targetCatalog.capabilities.filter((capability: any) => capability.type === "integration-runtime" && capability.dataPlaneId === draft.dataPlaneId && capability.namespace === draft.namespace);
   const discoverTargets = async () => {
     setError(""); setDiscovering(true);
+    const controller = new AbortController(), timeout = window.setTimeout(() => controller.abort(), 20000);
     try {
-      const response = await fetch("/api/control-plane/deployment-targets", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ controlPlaneUrl: draft.controlPlaneUrl, credential: draft.credential, verifyTls: draft.verifyTls, caCertificatePath: draft.caCertificatePath }) });
+      const response = await fetch("/api/control-plane/deployment-targets", { method: "POST", signal: controller.signal, headers: { "content-type": "application/json" }, body: JSON.stringify({ controlPlaneUrl: draft.controlPlaneUrl, credential: draft.credential, verifyTls: draft.verifyTls, caCertificatePath: draft.caCertificatePath }) });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.detail || "Unable to load Control Plane targets.");
       setTargetCatalog(result);
       const planes = result.dataPlanes.filter((plane: any) => draft.target === "cloud" ? plane.type === "kubernetes" : plane.type !== "kubernetes");
       const selected = planes.find((plane: any) => plane.id === draft.dataPlaneId) || planes[0];
       if (selected) setDraft((current: any) => ({ ...current, dataPlaneId: selected.id, namespace: selected.namespaces?.includes(current.namespace) ? current.namespace : selected.namespaces?.[0] || "default", capabilityId: "" }));
-    } catch (failure: any) { setError(failure?.message || "Unable to load Control Plane targets."); }
-    finally { setDiscovering(false); }
+    } catch (failure: any) { setError(failure?.name === "AbortError" ? "Control Plane target discovery timed out after 20 seconds." : failure?.message || "Unable to load Control Plane targets."); }
+    finally { window.clearTimeout(timeout); setDiscovering(false); }
   };
   const build = async (deploy = false) => {
     setError("");
@@ -3247,6 +3267,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
     if (!draft.artifacts.length) { setError("Select at least one deployment artifact."); return; }
     if (!draft.environments.length) { setError("Select at least one environment profile."); return; }
     if (!draft.starterTaskIds.length) { setError("Select at least one Starter Task to package."); return; }
+    if (deploy && discovering) { setError("Wait for deployment target discovery to finish before deploying."); return; }
     if (deploy && !/^https?:\/\//i.test(draft.controlPlaneUrl.trim())) { setError("Enter the Control Plane URL, including http:// or https://."); return; }
     if (deploy && !draft.dataPlaneId.trim()) { setError("Enter the target data-plane ID."); return; }
     if (deploy && !draft.environments.includes(draft.deploymentEnvironment)) { setError("Choose one of the packaged environment profiles for deployment."); return; }
@@ -3284,7 +3305,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
         <h3>On-premises runtime configuration</h3>
         <label>Runtime instances<input type="number" min="1" value={draft.instances} onChange={(event) => update("instances", Number(event.target.value))}/></label>
         <label>Graceful shutdown (seconds)<input type="number" min="1" value={draft.gracefulShutdownSeconds} onChange={(event) => update("gracefulShutdownSeconds", Number(event.target.value))}/></label>
-        <label>Install root<input value={draft.installRoot} onChange={(event) => update("installRoot", event.target.value)} placeholder={`/opt/integration-fabric/apps/${draft.artifact_name}`}/></label>
+        <label>Install root<input value={draft.installRoot} onChange={(event) => update("installRoot", event.target.value)} placeholder={`/opt/integrationfabric/apps/${draft.artifact_name}`}/></label>
         <label>Windows install root<input value={draft.windowsInstallRoot} onChange={(event) => update("windowsInstallRoot", event.target.value)} placeholder={`C:\\ProgramData\\Integration Fabric\\apps\\${draft.artifact_name}`}/></label>
         <label className="package-toggle"><input type="checkbox" checked={!!draft.startOnBoot} onChange={(event) => update("startOnBoot", event.target.checked)}/> Start application after Administrator deployment</label>
       </section>}
@@ -3305,7 +3326,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
       <p className="package-security"><ShieldCheck/> Direct Control Plane deployment securely sends configured environment secrets. Downloaded archives remain sanitized and contain only the required secret-key manifest.</p>
       {error && <p className="package-error"><AlertTriangle/>{error}</p>}
     </main>
-    <footer><button disabled={busy} onClick={onClose}>Cancel</button><button disabled={busy || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false)}>{busy ? "Working…" : "Export archive"}</button><button className="primary" disabled={busy || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(true)}>{busy ? "Working…" : "Deploy to Control Plane"}</button></footer>
+    <footer><button disabled={busy} onClick={onClose}>Cancel</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false)}>{busy ? "Working…" : "Export archive"}</button><button className="primary" disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(true)}>{busy ? "Working…" : "Deploy to Control Plane"}</button></footer>
   </div></div>;
 }
 function StudioRibbon(props: any) {
@@ -4155,9 +4176,11 @@ const connectionFieldSets: Record<string, any[]> = {
   ],
   pubsub: [
     { key: "authenticationType", label: "Authentication", required: true, options: ["Service Account JSON", "Application Default Credentials", "Emulator"] },
-    { key: "serviceAccountJson", label: "Service account JSON", required: (config: any) => config.authenticationType === "Service Account JSON", multiline: true, jsonFile: true, when: (config: any) => config.authenticationType === "Service Account JSON" },
-    { key: "projectId", label: "GCP project ID", required: (config: any) => config.authenticationType !== "Service Account JSON", placeholder: "Derived automatically from service-account JSON" },
-    { key: "endpoint", label: "Service endpoint", when: (config: any) => config.authenticationType !== "Emulator" },
+    { key: "serviceAccountJson", label: "Service account JSON (inline)", required: (config: any) => config.authenticationType === "Service Account JSON" && !String(config.credentialsFile || "").trim(), multiline: true, jsonFile: true, when: (config: any) => config.authenticationType === "Service Account JSON" && !String(config.credentialsFile || "").trim() },
+    { key: "credentialsFile", label: "Service account JSON file", required: (config: any) => config.authenticationType === "Service Account JSON" && !String(config.serviceAccountJson || "").trim(), when: (config: any) => config.authenticationType === "Service Account JSON" && !String(config.serviceAccountJson || "").trim(), placeholder: "Environment property resolving to the complete .json file path" },
+    { key: "projectId", label: "GCP project ID", required: (config: any) => config.authenticationType !== "Service Account JSON", when: (config: any) => config.authenticationType !== "Service Account JSON", placeholder: "Derived automatically from service-account JSON" },
+    { key: "endpoint", label: "Service endpoint", when: (config: any) => config.authenticationType === "Application Default Credentials" },
+    { key: "caCertificateFile", label: "Corporate CA certificate file (optional)", when: (config: any) => config.authenticationType !== "Emulator", placeholder: "Only required when TLS inspection uses an internal CA" },
     { key: "emulatorHost", label: "Emulator host", required: (config: any) => config.authenticationType === "Emulator", when: (config: any) => config.authenticationType === "Emulator", placeholder: "localhost:8085" }, { key: "ackDeadlineSeconds", label: "Ack deadline (seconds)" },
     { key: "connectionTimeoutSeconds", label: "Connection timeout (seconds)" }, { key: "maxInboundMessageBytes", label: "Maximum inbound message bytes" },
     { key: "keepAliveSeconds", label: "Keep-alive time (seconds)" },
@@ -4273,6 +4296,8 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
   const missingRequiredFields = (resource: any) => fields.filter((field: any) => (!field.when || field.when(resource.config)) && fieldIsRequired(field, resource.config) && String(resource.config[field.key] ?? "").trim() === "").map((field: any) => field.label);
   const configurationError = (resource: any) => {
     if (type !== "pubsub" || resource.config.authenticationType !== "Service Account JSON") return "";
+    if (String(resource.config.credentialsFile || "").trim() && !String(resource.config.serviceAccountJson || "").trim()) return "";
+    if (!String(resource.config.serviceAccountJson || "").trim()) return "Provide an inline service-account JSON document or bind a service-account JSON file property.";
     try {
       const parsed = typeof resource.config.serviceAccountJson === "string" ? JSON.parse(resource.config.serviceAccountJson) : resource.config.serviceAccountJson;
       if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") return "Service account JSON must contain one JSON object.";

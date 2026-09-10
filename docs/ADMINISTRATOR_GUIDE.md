@@ -38,7 +38,7 @@ Build with `scripts/build-administrator.ps1 -Version 2.4.0`, extract the generat
 
 ### Linux distribution
 
-Build on Linux with `scripts/build-administrator.sh 2.4.0`, extract the generated tarball under `/opt/integration-fabric/administrator`, set `FABRIC_ADMIN_HOME`, and use `bin/fabricadmin start|stop|status|run`. PyInstaller output is operating-system specific: build the Linux bundle on Linux and deploy the entire extracted directory.
+Build on Linux with `scripts/build-administrator.sh 2.4.0`, extract the generated tarball under `/opt/integrationfabric/control-plane`, set `FABRIC_ADMIN_HOME`, and use `bin/fabricadmin start|stop|status|run`. PyInstaller output is operating-system specific: build the Linux bundle on Linux and deploy the entire extracted directory.
 
 ### Container
 
@@ -65,10 +65,18 @@ docker run -d --name fabric-admin -p 9080:9080 \
 | `FABRIC_ADMIN_MAX_EXPANDED_MB` | `1024` | Maximum expanded package size |
 | `FABRIC_ADMIN_MAX_PACKAGE_FILES` | `10000` | Maximum archive members |
 
-The runtime command supports `{application}`, `{package}`, `{environment}`, `{deployment_id}`, and `{instance_id}` placeholders. Example:
+The runtime command supports `{application}`, `{package}`, `{environment}`, `{deployment_id}`, and `{instance_id}` placeholders. The desktop installer includes a separate `IntegrationFabricWorker` executable for this purpose. Example:
 
 ```bash
 export FABRIC_ADMIN_RUNTIME_COMMAND='integration-fabric-runtime --application {application} --environment {environment}'
+```
+
+On Windows desktop installations, configure the worker executable rather than the Studio sidecar:
+
+```powershell
+$worker = 'C:\Program Files\Integration Fabric Studio\resources\runtime\IntegrationFabricWorker\IntegrationFabricWorker.exe'
+$command = "`\"$worker`\" --application `\"{application}`\" --environment `\"{environment}`\""
+[Environment]::SetEnvironmentVariable('FABRIC_ADMIN_RUNTIME_COMMAND', $command, 'Machine')
 ```
 
 The runtime receives `FABRIC_APPLICATION_DIR`, `FABRIC_ENVIRONMENT`, `FABRIC_DEPLOYMENT_ID`, `FABRIC_INSTANCE_ID`, and decrypted deployment secret values in its process environment. The command comes only from trusted Administrator configuration; package contents cannot provide an executable command.

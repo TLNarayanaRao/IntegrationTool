@@ -60,9 +60,9 @@ The Linux service wrapper also recognizes:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `FABRIC_ADMIN_HOME` | `/opt/integration-fabric/administrator` | Installed Control Plane directory. |
-| `FABRIC_ADMIN_PID_DIR` | `/var/run/integration-fabric` | PID file directory used by `bin/fabricadmin`. |
-| `FABRIC_ADMIN_LOG_DIR` | `/var/log/integration-fabric` | Service-wrapper stdout/stderr log directory. |
+| `FABRIC_ADMIN_HOME` | `/opt/integrationfabric/control-plane` | Installed Control Plane directory. |
+| `FABRIC_ADMIN_PID_DIR` | `/opt/integrationfabric/run` | PID file directory used by `bin/fabricadmin`. |
+| `FABRIC_ADMIN_LOG_DIR` | `/opt/integrationfabric/logs/control-plane` | Service-wrapper stdout/stderr log directory. |
 
 ## Build and packaging variables
 
@@ -105,10 +105,10 @@ Create a root-readable environment file such as
 `/etc/integration-fabric/runtime.env`:
 
 ```text
-FABRIC_DATA_DIR=/var/lib/integration-fabric/runtime
-FABRIC_RUNTIME_LOG_DIR=/var/log/integration-fabric/runtime
+FABRIC_DATA_DIR=/opt/integrationfabric/runtime/data
+FABRIC_RUNTIME_LOG_DIR=/opt/integrationfabric/logs/runtime
 FABRIC_LOG_TIMEZONE=America/Phoenix
-FABRIC_DRIVER_HOME=/opt/sap/jco
+FABRIC_DRIVER_HOME=/opt/integrationfabric/drivers
 FABRIC_ENVIRONMENT=dev
 ```
 

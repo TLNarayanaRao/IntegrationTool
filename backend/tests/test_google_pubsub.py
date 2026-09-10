@@ -55,6 +55,19 @@ class GooglePubSubConnectionTests(unittest.TestCase):
             _, project_id = client_configuration({"credentialsFile": str(path)})
         self.assertEqual(project_id, "orders-project")
 
+    @patch("app.google_pubsub._credentials_from_info")
+    def test_property_resolved_service_account_field_can_be_a_json_file(self, create_credentials):
+        create_credentials.return_value = object()
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "service-account.json"
+            path.write_text(json.dumps(SERVICE_ACCOUNT), encoding="utf-8")
+            _, project_id = client_configuration({
+                "authenticationType": "Service Account JSON",
+                "serviceAccountJson": str(path),
+            })
+        self.assertEqual(project_id, "orders-project")
+        create_credentials.assert_called_once_with(SERVICE_ACCOUNT)
+
     def test_service_account_json_is_removed_from_deployment_packages(self):
         project = Project(
             id="pubsub-package",

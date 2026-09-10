@@ -62,12 +62,13 @@ class DebugManager:
         state['logs'].append({'time': now, 'level': 'INFO', 'kind': 'event', 'message': f'Event received: {task.name} / {activity.name}', 'activityId': activity.id, 'taskId': task.id, 'sessionId': session_id})
         self.runtime.record_activity_output(activity, output, ctx)
         outgoing = [edge for edge in task.transitions if edge.source == activity.id]
-        chosen = next((edge for edge in outgoing if edge.type == 'success_condition' and self.runtime.condition(edge.condition, ctx)), None) or next((edge for edge in outgoing if edge.type == 'success'), None) or next((edge for edge in outgoing if edge.type == 'success_no_match'), None)
-        if not chosen:
+        chosen_edges = self.runtime.eligible_success_transitions(outgoing, ctx)
+        if not chosen_edges:
             state['logs'].append({'time': now, 'level': 'ERROR', 'kind': 'event', 'message': f'{activity.name} has no matching outgoing transition', 'activityId': activity.id, 'taskId': task.id})
             self.rearm_listener(state)
             return self.view(state)
-        frame['activityId'] = chosen.target
+        frame['parallelQueue'] = [edge.target for edge in chosen_edges[1:]]
+        frame['activityId'] = chosen_edges[0].target
         state['status'] = 'running'
         while state['status'] == 'running':
             current = self.current_activity(state)
@@ -139,8 +140,13 @@ class DebugManager:
         state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'activity', 'message': f'Activity completed: {task.name} / {activity.name} in {duration:.3f} ms', 'activityId': activity.id, 'taskId': task.id, 'durationMs': duration})
         self.runtime.record_activity_output(activity, ctx['last'], ctx)
         outgoing = [edge for edge in task.transitions if edge.source == activity.id]
-        chosen = next((edge for edge in outgoing if edge.type == 'success_condition' and self.runtime.condition(edge.condition, ctx)), None) or next((edge for edge in outgoing if edge.type == 'success'), None) or next((edge for edge in outgoing if edge.type == 'success_no_match'), None)
-        if activity.type == 'end' or not chosen:
+        chosen_edges = self.runtime.eligible_success_transitions(outgoing, ctx)
+        if activity.type == 'end' or not chosen_edges:
+            pending = frame.get('parallelQueue') or []
+            if activity.type == 'end' and pending:
+                frame['activityId'] = pending.pop(0)
+                frame['parallelQueue'] = pending
+                return
             completed = state['frames'].pop()
             completed['context']['tasks'].setdefault(completed['taskId'], {'activities': {}})['output'] = completed['context']['last']
             if not state['frames']:
@@ -153,7 +159,9 @@ class DebugManager:
             edge = next((item for item in parent_task.transitions if item.source == call.id and item.type == 'success'), None)
             if edge: parent['activityId'] = edge.target
             return
-        frame['activityId'] = chosen.target
+        pending = frame.get('parallelQueue') or []
+        frame['parallelQueue'] = pending + [edge.target for edge in chosen_edges[1:]]
+        frame['activityId'] = chosen_edges[0].target
 
     def current_activity(self, state):
         if not state['frames']: return None

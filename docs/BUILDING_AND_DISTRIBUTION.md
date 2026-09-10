@@ -164,14 +164,14 @@ administrator/release/IntegrationFabricAdministrator-2.4.0-Linux-x64.tar.gz
 Install and start:
 
 ```bash
-sudo mkdir -p /opt/integration-fabric/administrator
+sudo mkdir -p /opt/integrationfabric/control-plane
 sudo tar -xzf administrator/release/IntegrationFabricAdministrator-2.4.0-Linux-x64.tar.gz \
-  -C /opt/integration-fabric/administrator --strip-components=1
-sudo chmod +x /opt/integration-fabric/administrator/IntegrationFabricAdministrator
-sudo chmod +x /opt/integration-fabric/administrator/bin/fabricadmin
-export FABRIC_ADMIN_HOME=/opt/integration-fabric/administrator
-./administrator/bin/fabricadmin start
-./administrator/bin/fabricadmin status
+  -C /opt/integrationfabric/control-plane --strip-components=1
+sudo chmod +x /opt/integrationfabric/control-plane/IntegrationFabricAdministrator
+sudo chmod +x /opt/integrationfabric/control-plane/bin/fabricadmin
+export FABRIC_ADMIN_HOME=/opt/integrationfabric/control-plane
+/opt/integrationfabric/control-plane/bin/fabricadmin start
+/opt/integrationfabric/control-plane/bin/fabricadmin status
 ```
 
 The default Administrator URL is `http://linux-host:9080`. A Windows Administrator build cannot run on Linux. Build the Linux tarball on Linux (or a Linux CI runner), or use the container image. In either operating system, deploy the entire generated bundle rather than copying only the executable.

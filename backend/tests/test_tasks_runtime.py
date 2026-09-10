@@ -98,6 +98,40 @@ class TaskRuntimeTests(unittest.TestCase):
         self.assertEqual(deleted.status_code, 200)
         self.assertEqual(self.client.get('/api/projects/task-runtime-test').status_code, 404)
 
+    def test_success_fans_out_to_all_parallel_branches(self):
+        payload = self.project()
+        task = payload['tasks'][0]
+        task['activities'] = [
+            {'id':'s','type':'start','name':'Start','config':{}},
+            {'id':'fan','type':'log','name':'Fan out','config':{'message':'fan'}},
+            {'id':'a','type':'log','name':'Branch A','config':{'message':'a'}},
+            {'id':'b','type':'log','name':'Branch B','config':{'message':'b'}},
+            {'id':'e','type':'end','name':'End','config':{}},
+        ]
+        task['transitions'] = [
+            {'id':'1','source':'s','target':'fan'},
+            {'id':'2','source':'fan','target':'a','type':'success'},
+            {'id':'3','source':'fan','target':'b','type':'success'},
+            {'id':'4','source':'a','target':'e'},
+            {'id':'5','source':'b','target':'e'},
+        ]
+        self.assertEqual(self.client.post('/api/projects', json=payload).status_code, 200)
+        result = self.client.post('/api/projects/task-runtime-test/run', json={'task_id':'main','input':{},'environment':'local'})
+        self.assertEqual(result.status_code, 200)
+        body = result.json()
+        self.assertEqual(body['status'], 'completed')
+        self.assertIn('a', body['activity_outputs'])
+        self.assertIn('b', body['activity_outputs'])
+        self.assertIsNotNone(body['activity_outputs']['a']['output'])
+        self.assertIsNotNone(body['activity_outputs']['b']['output'])
+        debug = self.client.post('/api/projects/task-runtime-test/debug', json={'task_id':'main','input':{}})
+        self.assertEqual(debug.status_code, 200)
+        debug_run = self.client.post(f"/api/debug/{debug.json()['sessionId']}/action", json={'action':'continue'})
+        self.assertEqual(debug_run.status_code, 200)
+        self.assertEqual(debug_run.json()['status'], 'completed')
+        self.assertIn('a', debug_run.json()['activityOutputs'])
+        self.assertIn('b', debug_run.json()['activityOutputs'])
+
     def test_dynamic_subtask_override_is_resolved_from_environment_properties(self):
         payload = self.project()
         payload['properties']['local'] = [{'key':'routing.targetTask','value':'Child','data_type':'string'}]

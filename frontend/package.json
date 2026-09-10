@@ -56,6 +56,10 @@
       {
         "from": "../backend/dist/IntegrationFabricRuntime",
         "to": "runtime/IntegrationFabricRuntime"
+      },
+      {
+        "from": "../backend/dist/IntegrationFabricWorker",
+        "to": "runtime/IntegrationFabricWorker"
       }
     ],
     "win": {

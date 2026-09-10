@@ -692,6 +692,22 @@ def get_data_plane(plane_id: str, request: Request):
     return {**item, "capabilities":[value for value in read_json(CAPABILITIES_FILE, []) if value.get("dataPlaneId") == plane_id], "resources":[value for value in read_json(RESOURCES_FILE, []) if value.get("dataPlaneId") in (plane_id, "*")]}
 
 
+@app.put("/api/data-planes/{plane_id}")
+def update_data_plane(plane_id: str, payload: DataPlaneRequest, request: Request):
+    require_technology(request)
+    machines = read_json(MACHINES_FILE, [])
+    item = next((value for value in machines if value.get("id") == plane_id), None)
+    if not item: raise HTTPException(404, "Data plane not found")
+    if payload.id and safe(payload.id) != plane_id: raise HTTPException(400, "The data-plane id cannot be changed")
+    if payload.type not in {"kubernetes", "on-premises", "agent"}: raise HTTPException(400, "Data plane type must be kubernetes, on-premises, or agent")
+    removed = set(item.get("namespaces", [])) - set(payload.namespaces)
+    active = [value for value in read_json(DEPLOYMENTS_FILE, []) if (value.get("dataPlaneId") or value.get("machine")) == plane_id and value.get("state") != "UNDEPLOYED" and value.get("namespace") in removed]
+    if active: raise HTTPException(409, "Cannot remove namespaces used by active deployments")
+    item.update(name=payload.name, type=payload.type, host=payload.host, region=payload.region, namespaces=payload.namespaces, tags=payload.tags, capacity=payload.capacity, driver=payload.driver, updatedAt=now())
+    write_json(MACHINES_FILE, machines); audit("data-plane.update", plane_id)
+    return item
+
+
 @app.post("/api/data-planes/{plane_id}/heartbeat")
 def data_plane_heartbeat(plane_id: str, request: Request, payload: dict[str, Any] | None = None):
     require_technology(request)
@@ -747,6 +763,21 @@ def provision_capability(payload: CapabilityRequest, request: Request):
     if any(item.get("id") == capability_id for item in values): raise HTTPException(409, "Capability is already provisioned")
     item = payload.model_dump(); item.update(id=capability_id, state="PROVISIONED", health="RUNNING" if plane.get("status") == "ONLINE" else "PENDING", createdAt=now(), updatedAt=now())
     values.append(item); write_json(CAPABILITIES_FILE, values); audit("capability.provision", capability_id, detail=payload.dataPlaneId)
+    return item
+
+
+@app.put("/api/capabilities/{capability_id}")
+def update_capability(capability_id: str, payload: CapabilityRequest, request: Request):
+    require_technology(request)
+    values = read_json(CAPABILITIES_FILE, [])
+    item = next((value for value in values if value.get("id") == capability_id), None)
+    if not item: raise HTTPException(404, "Capability not found")
+    if safe(f"{payload.type}-{payload.dataPlaneId}-{payload.namespace}") != capability_id: raise HTTPException(400, "Capability type, data plane, and namespace are immutable; delete and provision a new capability")
+    plane = next((value for value in data_plane_inventory() if value.get("id") == payload.dataPlaneId), None)
+    if not plane: raise HTTPException(404, "Data plane not found")
+    if payload.namespace not in plane.get("namespaces", ["default"]): raise HTTPException(400, "Namespace is not registered on the selected data plane")
+    item.update(name=payload.name, version=payload.version, tags=payload.tags, updatedAt=now())
+    write_json(CAPABILITIES_FILE, values); audit("capability.update", capability_id)
     return item
 
 
@@ -960,6 +991,20 @@ def get_deployment(deployment_id: str, request: Request):
     return {**item, "health":deployment_health(item), "secrets": [{"name": name, "configured": name in configured} for name in item.get("requiredSecrets", [])]}
 
 
+@app.delete("/api/deployments/{deployment_id}")
+def delete_application(deployment_id: str, request: Request):
+    deployments = read_json(DEPLOYMENTS_FILE, [])
+    item = next((value for value in deployments if value.get("id") == deployment_id), None)
+    if not item: raise HTTPException(404, "Deployment not found")
+    require_application_write(request, item)
+    if item.get("state") == "RUNNING": raise HTTPException(409, "Stop or undeploy the application before deleting it")
+    write_json(DEPLOYMENTS_FILE, [value for value in deployments if value.get("id") != deployment_id])
+    secrets_store = read_json(SECRETS_FILE, {}); secrets_store.pop(deployment_id, None); write_json(SECRETS_FILE, secrets_store)
+    caller = identity(request); audit("application.delete", deployment_id, actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID))
+    record_revision("deployment", deployment_id, "application.delete", {"deleted":True}, actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID))
+    return {"deleted":True, "deploymentId":deployment_id}
+
+
 @app.post("/api/deployments")
 def create_deployment(payload: DeploymentRequest, request: Request):
     require_application_manager(request)
@@ -1031,9 +1076,14 @@ def runtime_arguments(item: dict, instance_id: str) -> list[str] | str:
     command = RUNTIME_COMMAND
     for marker, value in {"{application}": str(package_path / "application"), "{package}": str(package_path), "{environment}": item["environment"], "{deployment_id}": item["id"], "{instance_id}": instance_id}.items():
         command = command.replace(marker, value)
-    # CreateProcess performs Windows command-line parsing itself; passing the
-    # configured string preserves quoted executable paths. POSIX requires argv.
-    return command if os.name == "nt" else shlex.split(command)
+    # Tokenize the configured template before CreateProcess sees it. Passing
+    # a raw Windows command string allowed quoted placeholder values to merge
+    # (for example, ``...\application--environment\project.json``). Strip
+    # only the protective outer quotes; embedded quotes remain part of values.
+    if os.name == "nt":
+        arguments = shlex.split(command, posix=False)
+        return [value[1:-1] if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'") else value for value in arguments]
+    return shlex.split(command)
 
 
 def start_instances(item: dict) -> None:

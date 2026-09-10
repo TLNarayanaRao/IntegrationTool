@@ -1,0 +1,87 @@
+{
+  "info": {
+    "name": "Integration Fabric - Data Plane Heartbeat",
+    "description": "Test and maintain the heartbeat for a registered Integration Fabric data plane.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "controlPlaneUrl",
+      "value": "http://127.0.0.1:9080"
+    },
+    {
+      "key": "dataPlaneId",
+      "value": "customer-data-delivery-plane"
+    },
+    {
+      "key": "adminKey",
+      "value": ""
+    },
+    {
+      "key": "namespace",
+      "value": "customer-data-delivery"
+    }
+  ],
+  "item": [
+    {
+      "name": "Send data-plane heartbeat",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-Admin-Key",
+            "value": "{{adminKey}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"agentVersion\": \"1.0.0\",\n  \"namespaces\": [\"{{namespace}}\"],\n  \"availableCapacity\": 20\n}"
+        },
+        "url": {
+          "raw": "{{controlPlaneUrl}}/api/data-planes/{{dataPlaneId}}/heartbeat",
+          "host": [
+            "{{controlPlaneUrl}}"
+          ],
+          "path": [
+            "api",
+            "data-planes",
+            "{{dataPlaneId}}",
+            "heartbeat"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Check data-plane status",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Admin-Key",
+            "value": "{{adminKey}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{controlPlaneUrl}}/api/data-planes/{{dataPlaneId}}",
+          "host": [
+            "{{controlPlaneUrl}}"
+          ],
+          "path": [
+            "api",
+            "data-planes",
+            "{{dataPlaneId}}"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

@@ -91,12 +91,19 @@ try {
     # analysis, which can otherwise produce an EXE without app.main.
     & $buildPython -m PyInstaller --noconfirm --clean --name IntegrationFabricRuntime --add-data "$root\frontend\dist;frontend\dist" --paths "$root\backend" --hidden-import app.main --hidden-import ibm_db --hidden-import ibm_db_dbi --collect-submodules app --collect-submodules databricks run_sidecar.py
     Assert-CommandSucceeded 'Runtime executable build' $LASTEXITCODE
+    & $buildPython -m PyInstaller --noconfirm --clean --name IntegrationFabricWorker --paths "$root\backend" --hidden-import app.main --hidden-import ibm_db --hidden-import ibm_db_dbi --collect-submodules app --collect-submodules databricks run_deployment.py
+    Assert-CommandSucceeded 'Deployment worker executable build' $LASTEXITCODE
 } finally { Pop-Location }
 
 if (!(Test-Path "$root\backend\dist\IntegrationFabricRuntime\IntegrationFabricRuntime.exe")) {
     throw "Runtime executable output was not created."
 }
+if (!(Test-Path "$root\backend\dist\IntegrationFabricWorker\IntegrationFabricWorker.exe")) {
+    throw "Deployment worker executable output was not created."
+}
 Copy-Item -Recurse -Force "$root\java-bridge\build" "$root\backend\dist\IntegrationFabricRuntime\java-bridge"
+Copy-Item -Recurse -Force "$root\java-bridge\build" "$root\backend\dist\IntegrationFabricWorker\java-bridge"
 & $buildPython "$root\scripts\smoke-test-packaged-runtime.py" "$root\backend\dist\IntegrationFabricRuntime\IntegrationFabricRuntime.exe"
 Assert-CommandSucceeded 'Packaged runtime health check' $LASTEXITCODE
 Write-Host "Electron sidecar ready: $root\backend\dist\IntegrationFabricRuntime"
+Write-Host "Deployment worker ready: $root\backend\dist\IntegrationFabricWorker"
