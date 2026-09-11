@@ -62,6 +62,15 @@ class WorkflowRuntime:
         for group in process.groups:
             if group.type == 'pick_first':
                 raise FabricFault(f'Group {group.name} uses Pick First, which is not runtime-qualified yet', fault_type='GROUP_UNSUPPORTED')
+            config = group.config or {}
+            if group.type in ('if', 'while') and not str(config.get('condition') or '').strip():
+                raise FabricFault(f'Group {group.name} requires a boolean condition', fault_type='GROUP_VALIDATION')
+            if group.type in ('iterate', 'for_each') and config.get('source') in (None, '') and config.get('collection') in (None, '') and not (group.type == 'for_each' and config.get('start') is not None and config.get('end') is not None):
+                raise FabricFault(f'Group {group.name} requires a collection expression', fault_type='GROUP_VALIDATION')
+            if group.type == 'repeat' and not str(config.get('condition') or '').strip() and config.get('count') is None and config.get('iterations') is None:
+                raise FabricFault(f'Group {group.name} requires a Repeat Until True condition', fault_type='GROUP_VALIDATION')
+            if group.type == 'repeat_on_error' and not str(config.get('stopCondition') or '').strip():
+                raise FabricFault(f'Group {group.name} requires a Repeat-on-Error stop condition', fault_type='GROUP_VALIDATION')
             members = descendants(group.id)
             if not members: raise FabricFault(f'Group {group.name} is empty', fault_type='GROUP_VALIDATION')
             internal_incoming = {edge.target for edge in process.transitions if edge.source in members and edge.target in members}
@@ -138,6 +147,7 @@ class WorkflowRuntime:
             state['resourceId'] = resource_id
             state['connection'] = await asyncio.to_thread(jdbc_adapter.connect, connection_config)
             ctx.setdefault('jdbcTransactions', {})[resource_id] = state['connection']
+        ctx['context']['group'] = {'id': group.id, 'name': group.name, 'type': group.type, 'iteration': 1}
         self.log(ctx['logs'], 'DEBUG', f'Group entered: {group.name}', kind='group', groupId=group.id, groupType=group.type, iteration=0)
         return state, should_run
 
@@ -184,6 +194,7 @@ class WorkflowRuntime:
                         ctx['vars'][str(cfg.get('indexVariable') or 'index')] = state['iteration'] + 1
                     maximum = max(1, int(self.resolve(cfg.get('maxIterations', 10000), ctx) or 10000))
                     if state['iteration'] >= maximum: raise FabricFault(f'{group.name} exceeded maxIterations={maximum}', fault_type='GROUP_ITERATION_LIMIT')
+                    ctx['context']['group'] = {'id': group.id, 'name': group.name, 'type': group.type, 'iteration': state['iteration'] + 1}
                     self.log(ctx['logs'], 'DEBUG', f'Group iteration: {group.name} #{state["iteration"] + 1}', kind='group', groupId=group.id, groupType=group.type, iteration=state['iteration'])
                     return plan['entry']
             await self._finish_group(state, plan, ctx, success); ctx['groupStack'].pop()
@@ -198,6 +209,8 @@ class WorkflowRuntime:
         state = stack[retry_index]; state['retriesRemaining'] -= 1; state['iteration'] += 1
         if state['config'].get('stopCondition') and self.condition(str(state['config']['stopCondition']), ctx): return None
         ctx['vars'][str(state['config'].get('indexVariable') or 'index')] = state['iteration'] + 1
+        group = plans[state['id']]['group']
+        ctx['context']['group'] = {'id': group.id, 'name': group.name, 'type': group.type, 'iteration': state['iteration'] + 1}
         delay = float(self.resolve(state['config'].get('retryIntervalSeconds', state['config'].get('retryDelaySeconds', 0)), ctx) or 0)
         self.log(ctx['logs'], 'WARN', f'Group retry: {plans[state["id"]]["group"].name}; {state["retriesRemaining"]} retries remain', kind='group', groupId=state['id'], iteration=state['iteration'])
         if delay: await asyncio.sleep(delay)
@@ -271,7 +284,7 @@ class WorkflowRuntime:
                 if error:
                     chosen = next((t for t in outgoing if t.type == 'error'), None)
                     fault = self.fault_payload(error, current.id)
-                    context['last'] = fault; context['context']['error'] = fault
+                    context['last'] = fault; context['context']['error'] = fault; context['vars']['error'] = fault
                     if not chosen:
                         retry_target = await self.retry_failed_group(context, group_plans)
                         if retry_target:

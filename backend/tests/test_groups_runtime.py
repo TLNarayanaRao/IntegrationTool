@@ -14,6 +14,62 @@ def activity(identifier, kind="basic", operation="empty", **config):
 
 
 class GroupRuntimeTests(unittest.TestCase):
+    def test_iterate_collection_from_task_data_runs_once_per_member(self):
+        process = ProcessDefinition(
+            id="iterate-data", name="Iterate Data",
+            activities=[activity("start", "start"), activity("work", "log", message="${vars.item}"), activity("end", "end")],
+            transitions=[Transition(id="a", source="start", target="work"), Transition(id="b", source="work", target="end")],
+            groups=[GroupDefinition(id="items", type="iterate", name="Items", member_activity_ids=["work"], config={"source": "${input.orders}", "itemVariable": "item", "indexVariable": "index"})],
+        )
+        result = asyncio.run(WorkflowRuntime().run(process, {"orders": [{"id": 1}, {"id": 2}, {"id": 3}]}))
+        self.assertEqual(result.status, "completed")
+        starts = [entry for entry in result.logs if entry.get("message", "").startswith("Activity started: Iterate Data / Work")]
+        self.assertEqual(len(starts), 3)
+
+    def test_repeat_on_error_retries_complete_group_and_exposes_fault_data(self):
+        class FlakyRuntime(WorkflowRuntime):
+            def __init__(self): super().__init__(); self.attempts = 0; self.observed_errors = []
+            async def execute(self, current, ctx):
+                if current.id == "flaky":
+                    self.attempts += 1
+                    if self.attempts > 1: self.observed_errors.append(ctx["vars"].get("error"))
+                    if self.attempts < 3: raise RuntimeError(f"temporary-{self.attempts}")
+                    return {"recovered": True}
+                return await super().execute(current, ctx)
+        process = ProcessDefinition(
+            id="retry-data", name="Retry Data",
+            activities=[activity("start", "start"), activity("flaky"), activity("end", "end")],
+            transitions=[Transition(id="a", source="start", target="flaky"), Transition(id="b", source="flaky", target="end")],
+            groups=[GroupDefinition(id="retry", type="repeat_on_error", name="Retry", member_activity_ids=["flaky"], config={"stopCondition": "${vars.index} >= 5", "retryCount": 5, "indexVariable": "index"})],
+        )
+        runtime = FlakyRuntime()
+        result = asyncio.run(runtime.run(process, {}))
+        self.assertEqual(result.status, "completed")
+        self.assertEqual(runtime.attempts, 3)
+        self.assertEqual(runtime.observed_errors[0]["message"], "temporary-1")
+
+    def test_critical_section_serializes_concurrent_jobs_until_group_exit(self):
+        class ObservedRuntime(WorkflowRuntime):
+            def __init__(self): super().__init__(); self.active = 0; self.maximum_active = 0
+            async def execute(self, current, ctx):
+                if current.id == "work":
+                    self.active += 1; self.maximum_active = max(self.maximum_active, self.active)
+                    await asyncio.sleep(0.025)
+                    self.active -= 1
+                    return {"complete": True}
+                return await super().execute(current, ctx)
+        process = ProcessDefinition(
+            id="critical", name="Critical",
+            activities=[activity("start", "start"), activity("work"), activity("end", "end")],
+            transitions=[Transition(id="a", source="start", target="work"), Transition(id="b", source="work", target="end")],
+            groups=[GroupDefinition(id="lock", type="critical_section", name="Locked", member_activity_ids=["work"], config={"lockName": "shared-test-lock"})],
+        )
+        runtime = ObservedRuntime()
+        async def run_both(): return await asyncio.gather(runtime.run(process, {"job": 1}), runtime.run(process, {"job": 2}))
+        results = asyncio.run(run_both())
+        self.assertTrue(all(result.status == "completed" for result in results))
+        self.assertEqual(runtime.maximum_active, 1)
+
     def test_java_jdbc_transaction_reuses_worker_then_commits_once(self):
         class Worker:
             def __init__(self): self.requests = []; self.closed = False

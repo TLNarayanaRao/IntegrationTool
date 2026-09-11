@@ -11,7 +11,7 @@ Integration Fabric groups are persisted execution boundaries, not drawing-only c
 | While | Evaluates `condition` before the first and every following iteration. `maxIterations` prevents runaway execution. |
 | Iterate / For Each | Resolves `source` or `collection`, exposes `itemVariable` and `indexVariable`, and runs once per item. |
 | Repeat Until True | Runs once, evaluates `condition` at the end, and repeats until true. Legacy count-based definitions remain readable. |
-| Repeat on Error Until True | Retries the complete group after an unhandled member fault. An optional `stopCondition` and bounded `retryCount` control termination. |
+| Repeat on Error Until True | Retries the complete group after an unhandled member fault while `stopCondition` is false. A true condition propagates the current fault without another attempt. `retryCount` is the mandatory runaway-safety boundary. |
 | Critical Section | Acquires a runtime-wide named lock before entry and releases it on success, fault, or debugger stop. Concurrent jobs using the same lock wait. |
 | JDBC Transaction | Opens one connection for the group, supplies it to every matching JDBC activity, commits only after successful exit, and rolls back on an escaping fault or stopped debugger. |
 
@@ -20,6 +20,19 @@ Group exceptions first follow an explicit member error transition. Otherwise Rep
 ## Editing and nesting
 
 Select connected activities on the Task canvas and choose **Group selected**. The group frame is rendered behind its activities. Select its header to edit its name, type, membership, parent, condition/collection, retry settings, or JDBC resource. Moving selected activities updates the group frame automatically. Group definitions, membership, nesting, and configuration are saved in Task JSON and included in project/deployment archives.
+
+## Data-driven group configuration
+
+The group editor uses the same Data, Functions, Constants, and project-property browser as an activity Input tab. Conditions and collections can be dragged from initial Task input, any earlier activity output, a prior-iteration output from inside the group, environment properties, typed constants, built-in functions, or project functions.
+
+- **If** evaluates its mapped boolean before entering the group.
+- **While True** evaluates before the first iteration and again after each completed iteration.
+- **Iterate / For Each** resolves the mapped collection once at group entry and runs exactly `count(collection)` times. The current member and one-based index are published through the configured item and index variables.
+- **Repeat Until True** always runs once and evaluates the mapped boolean after the group body.
+- **Repeat on Error Until True** publishes the current fault as `${context.error}` and `${vars.error}` before evaluating the stop condition. False restarts the entire group; true stops retrying and propagates the fault.
+- **Critical Section** acquires its named lock before the first enclosed activity and retains ownership until that group execution completes, fails, or is stopped. Other jobs using the same named lock wait.
+
+`maxIterations` and `retryCount` are safety boundaries, not substitutes for data conditions.
 
 ## Validation rules
 

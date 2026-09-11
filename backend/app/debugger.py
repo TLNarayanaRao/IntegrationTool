@@ -151,8 +151,9 @@ class DebugManager:
             state['logs'].append({'time': log_timestamp(), 'level': 'ERROR', 'kind': 'activity', 'message': f'Activity failed: {task.name} / {activity.name} in {duration:.3f} ms: {exc}', 'activityId': activity.id, 'taskId': task.id, 'durationMs': duration})
             outgoing = [edge for edge in task.transitions if edge.source == activity.id]
             error_edge = next((edge for edge in outgoing if edge.type == 'error'), None)
+            fault = self.runtime.fault_payload(exc, activity.id)
+            ctx['last'] = fault; ctx['context']['error'] = fault; ctx['vars']['error'] = fault
             if error_edge:
-                ctx['last'] = self.runtime.fault_payload(exc, activity.id); ctx['context']['error'] = ctx['last']
                 target = await self.runtime.leave_group_boundaries(activity.id, error_edge.target, ctx, plans, success=False)
                 if target: frame['activityId'] = target; state['status'] = 'paused'; return
             retry_target = await self.runtime.retry_failed_group(ctx, plans)
