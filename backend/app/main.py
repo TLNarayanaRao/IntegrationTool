@@ -637,7 +637,7 @@ def export_project(project_id: str):
     if not item: raise HTTPException(404, 'Project not found')
     stream = io.BytesIO()
     with zipfile.ZipFile(stream, 'w', zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr('manifest.json', json.dumps({'format':'integration-fabric-project','version':1,'projectId':item.id,'name':item.name}, indent=2))
+        archive.writestr('manifest.json', json.dumps({'format':'integration-fabric-project','version':2,'projectId':item.id,'name':item.name,'features':{'groups':'runtime-v1'}}, indent=2))
         archive.writestr('project.json', item.model_dump_json(indent=2))
         for task in item.tasks: archive.writestr(f'tasks/{task.id}.json', task.model_dump_json(indent=2))
         for resource in item.resources: archive.writestr(f'resources/{resource.type}/{resource.id}.json', resource.model_dump_json(indent=2))
@@ -773,12 +773,13 @@ def deployment_package_files(item: Project, target: str, environment: str, artif
     sanitized_resources = [scrub(resource.model_dump(), f'resources.{resource.id}') for resource in item.resources]
     secret_keys = sorted(set(secret_keys))
     manifest = {
-        'format': 'integration-fabric-deployment', 'formatVersion': 1,
+        'format': 'integration-fabric-deployment', 'formatVersion': 2,
         'applicationId': item.id, 'applicationName': item.name,
         'artifact': artifact, 'version': version, 'target': target,
         'environment': environment, 'runtime': 'integration-fabric-python',
         'secretKeys': secret_keys,
         'selectedArtifacts': sorted(selected_artifacts),
+        'features': {'groups': 'runtime-v1'},
     }
     files: dict[str, bytes] = {
         'manifest.json': json.dumps(manifest, indent=2).encode(),

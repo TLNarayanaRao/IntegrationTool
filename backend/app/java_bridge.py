@@ -156,8 +156,9 @@ class SapJcoListener:
 
 class SapJcoWorker:
     """One persistent SAP client JVM with a live JCo destination pool."""
-    def __init__(self, process: subprocess.Popen, descriptor: Path, loaded_jars: list[str], startup_timeout: float = 30):
+    def __init__(self, process: subprocess.Popen, descriptor: Path, loaded_jars: list[str], startup_timeout: float = 30, connector_name: str = "SAP JCo"):
         self.process, self.descriptor, self.loaded_jars = process, descriptor, loaded_jars
+        self.connector_name = connector_name
         self._lock, self._closed = threading.Lock(), threading.Event()
         self._responses: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=256)
         self._stderr: queue.Queue[str] = queue.Queue(maxsize=100)
@@ -168,9 +169,9 @@ class SapJcoWorker:
         except queue.Empty as exc:
             detail = '; '.join(list(self._stderr.queue)[-5:])
             self.close()
-            raise JavaBridgeError(f"SAP JCo worker startup timed out{': ' + detail if detail else ''}") from exc
+            raise JavaBridgeError(f"{self.connector_name} worker startup timed out{': ' + detail if detail else ''}") from exc
         if ready.get("event") != "ready" or not ready.get("ok", False):
-            self.close(); raise JavaBridgeError(str(ready.get("message") or "SAP JCo worker did not become ready"))
+            self.close(); raise JavaBridgeError(str(ready.get("message") or f"{self.connector_name} worker did not become ready"))
 
     def _read_stdout(self) -> None:
         try:
@@ -197,7 +198,7 @@ class SapJcoWorker:
         except Exception: return
 
     def request(self, action: str, values: dict[str, Any] | None = None, timeout: float = 35) -> dict[str, Any]:
-        if self.process.poll() is not None or not self.process.stdin: raise JavaBridgeError("SAP JCo worker is not running")
+        if self.process.poll() is not None or not self.process.stdin: raise JavaBridgeError(f"{self.connector_name} worker is not running")
         request_id = str(__import__('uuid').uuid4())
         encoded = ""
         if values is not None:
@@ -210,8 +211,8 @@ class SapJcoWorker:
                     response = self._responses.get(timeout=timeout)
                     if response.get("requestId") == request_id: break
             except (OSError, queue.Empty) as exc:
-                raise JavaBridgeError(f"SAP JCo worker request failed or timed out: {exc}") from exc
-        if not response.get("ok", False): raise JavaBridgeError(str(response.get("message") or "SAP JCo worker call failed"))
+                raise JavaBridgeError(f"{self.connector_name} worker request failed or timed out: {exc}") from exc
+        if not response.get("ok", False): raise JavaBridgeError(str(response.get("message") or f"{self.connector_name} worker call failed"))
         response["loadedJars"] = self.loaded_jars
         return response
 
@@ -386,6 +387,26 @@ def start_sap_worker(config: dict[str, Any], values: dict[str, Any]) -> SapJcoWo
         process = subprocess.Popen(_java_command(config, classpath, descriptor.name), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace", env=process_env, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), bufsize=1)
         return SapJcoWorker(process, Path(descriptor.name), [jar.name for jar in jars], float(config.get("timeoutSeconds") or 30) + 5)
+    except Exception:
+        Path(descriptor.name).unlink(missing_ok=True)
+        raise
+
+
+def start_jdbc_worker(config: dict[str, Any], values: dict[str, Any], family: str) -> SapJcoWorker:
+    """Start a persistent, single-session JDBC transaction bridge."""
+    classpath, jars = _classpath(config, family)
+    descriptor = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".properties", delete=False)
+    with descriptor:
+        for key, value in {"command": "jdbc.worker", **values}.items():
+            if value is not None: descriptor.write(f"{_escape_property(key)}={_escape_property(value)}\n")
+    try:
+        process = subprocess.Popen(
+            _java_command(config, classpath, descriptor.name), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace", env=os.environ.copy(), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), bufsize=1,
+        )
+        worker = SapJcoWorker(process, Path(descriptor.name), [jar.name for jar in jars], float(config.get("timeoutSeconds") or 30) + 5, "JDBC")
+        worker.request("begin", timeout=float(config.get("timeoutSeconds") or 30) + 5)
+        return worker
     except Exception:
         Path(descriptor.name).unlink(missing_ok=True)
         raise

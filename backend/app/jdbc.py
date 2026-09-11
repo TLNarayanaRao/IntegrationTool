@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .java_bridge import JavaBridgeError, invoke as invoke_java
+from .java_bridge import JavaBridgeError, invoke as invoke_java, start_jdbc_worker
 
 
 class JdbcAdapterError(RuntimeError):
@@ -244,7 +244,7 @@ def _java_metadata(config: dict) -> dict:
     except JavaBridgeError as exc: raise JdbcAdapterError(str(exc), "JDBCSQLException") from exc
 
 
-def _java_execute(connection_config: dict, config: dict) -> dict:
+def _java_execute(connection_config: dict, config: dict, worker=None) -> dict:
     operation = str(config.get("operation") or "query")
     sql = str(config.get("SqlStatement") or config.get("SqlUpdateStatement") or config.get("statement") or config.get("sql") or "").strip()
     parameters = _parameters(config)
@@ -261,8 +261,37 @@ def _java_execute(connection_config: dict, config: dict) -> dict:
         data_type = _java_parameter_type(value, declared.get(parameter_names[index], ""))
         values[f"parameter.{index}.type"] = data_type
         values[f"parameter.{index}.value"] = _java_parameter_value(value, data_type)
-    try: return invoke_java("jdbc.execute", connection_config, values, family=_java_family(connection_config), timeout=float(config.get("timeout") or connection_config.get("timeoutSeconds") or 30) + 5)
+    try:
+        if worker is not None: return worker.request("execute", values, timeout=float(config.get("timeout") or connection_config.get("timeoutSeconds") or 30) + 5)
+        return invoke_java("jdbc.execute", connection_config, values, family=_java_family(connection_config), timeout=float(config.get("timeout") or connection_config.get("timeoutSeconds") or 30) + 5)
     except JavaBridgeError as exc: raise JdbcAdapterError(str(exc), "JDBCSQLException") from exc
+
+
+class JavaJdbcTransaction:
+    """DB-API-like handle backed by one persistent Java JDBC connection."""
+    def __init__(self, config: dict):
+        self.config = dict(config); self.closed = False; self.completed = False
+        try: self.worker = start_jdbc_worker(self.config, _java_connection_values(self.config), _java_family(self.config))
+        except JavaBridgeError as exc: raise JdbcAdapterError(str(exc), "JDBCConnectionNotFoundException") from exc
+
+    def execute(self, config: dict) -> dict:
+        if self.closed or self.completed: raise JdbcAdapterError("JDBC transaction session is closed", "JDBCTransactionException")
+        return _java_execute(self.config, config, self.worker)
+
+    def commit(self):
+        if not self.closed and not self.completed:
+            self.worker.request("commit"); self.completed = True
+
+    def rollback(self):
+        if not self.closed and not self.completed:
+            self.worker.request("rollback"); self.completed = True
+
+    def close(self):
+        if self.closed: return
+        try:
+            if not self.completed: self.rollback()
+        finally:
+            self.worker.close(); self.closed = True
 
 
 def _odbc_value(value: Any) -> str:
@@ -361,6 +390,7 @@ def _sqlserver_connection_string(config: dict, installed_drivers: list[str]) -> 
 def connect(config: dict):
     driver = str(config.get("driver") or "sqlite").lower()
     try:
+        if _uses_java(config): return JavaJdbcTransaction(config)
         if driver == "sqlite":
             connection = sqlite3.connect(_sqlite_path(config.get("url")), timeout=float(config.get("timeoutSeconds") or 30))
             connection.row_factory = sqlite3.Row
@@ -508,14 +538,17 @@ def _normalize_sql(sql: str, parameters: Any, driver: str):
     return sql, parameters
 
 
-def execute(connection_config: dict, config: dict) -> dict:
+def execute(connection_config: dict, config: dict, connection=None, manage_transaction: bool = True) -> dict:
     if _uses_java(connection_config):
+        if isinstance(connection, JavaJdbcTransaction): return connection.execute(config)
+        if connection is not None or not manage_transaction: raise JdbcAdapterError("Invalid Java JDBC transaction session", "JDBCTransactionException")
         return _java_execute(connection_config, config)
     operation = str(config.get("operation") or "query")
     sql = str(config.get("SqlStatement") or config.get("SqlUpdateStatement") or config.get("statement") or config.get("sql") or "").strip()
     if operation == "truncate" and sql.lower().startswith("truncate ") and str(connection_config.get("driver") or "sqlite").lower() == "sqlite":
         sql = "DELETE FROM " + sql.split()[-1]
-    connection = connect(connection_config)
+    owns_connection = connection is None
+    connection = connection or connect(connection_config)
     driver = str(connection_config.get("driver") or "sqlite").lower()
     try:
         cursor = connection.cursor()
@@ -535,7 +568,7 @@ def execute(connection_config: dict, config: dict) -> dict:
                 result_sets.append([dict(zip(names, row)) for row in cursor.fetchall()])
                 if not getattr(cursor, "nextset", lambda: False)():
                     break
-            if not config.get("overrideTransactionBehavior"):
+            if manage_transaction and not config.get("overrideTransactionBehavior"):
                 connection.commit()
             return {"resultSets": result_sets, "outParameters": result, "UnresolvedResultSets": []}
         if not sql:
@@ -559,17 +592,21 @@ def execute(connection_config: dict, config: dict) -> dict:
             rows = cursor.fetchall() if limit == 0 else cursor.fetchmany(limit)
             output = [dict(zip(names, row)) for row in rows]
             return {"resultSet": {"Record": output}, "rows": output, "rowCount": len(output), "lastSubset": not subset or len(rows) < subset, "columns": [{"name": item[0], "dataType": str(item[1] or "unknown")} for item in cursor.description]}
-        connection.commit()
+        if manage_transaction: connection.commit()
         count = int(cursor.rowcount or 0)
         return {"noOfUpdates": count, "rowCount": count, "lastInsertId": getattr(cursor, "lastrowid", None)}
     except JdbcAdapterError:
         raise
     except Exception as exc:
-        try: connection.rollback()
-        except Exception: pass
+        if manage_transaction:
+            try: connection.rollback()
+            except Exception: pass
         raise JdbcAdapterError(str(exc), "JDBCSQLException") from exc
     finally:
-        connection.close()
+        if owns_connection: connection.close()
 
 
-jdbc_adapter = type("JdbcAdapter", (), {"test": staticmethod(test_connection), "metadata": staticmethod(metadata), "execute": staticmethod(execute)})()
+jdbc_adapter = type("JdbcAdapter", (), {
+    "test": staticmethod(test_connection), "metadata": staticmethod(metadata),
+    "execute": staticmethod(execute), "connect": staticmethod(connect)
+})()

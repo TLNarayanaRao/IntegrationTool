@@ -788,8 +788,56 @@ public final class FabricJavaBridge {
             }
             if (operation.equals("metadata")) return jdbcMetadata(connection, p);
             if (operation.equals("execute")) return jdbcExecute(connection, p);
+            if (operation.equals("worker")) return jdbcWorker(connection);
             throw new IllegalArgumentException("Unsupported JDBC operation: " + operation);
         }
+    }
+
+    /** Keep one physical JDBC connection alive for the complete transaction
+     * group. Requests are serialized over stdin so a connection is never used
+     * concurrently and commit/rollback always applies to the same session. */
+    private static Map<String, Object> jdbcWorker(Connection connection) throws Exception {
+        connection.setAutoCommit(false);
+        System.out.println(json(map("event", "ready", "ok", true, "pid", ProcessHandle.current().pid(), "autoCommit", false))); System.out.flush();
+        boolean active = true;
+        try (BufferedReader commands = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = commands.readLine()) != null) {
+                String[] parts = line.split("\\t", 3);
+                String action = parts.length > 0 ? parts[0] : "", requestId = parts.length > 1 ? parts[1] : "";
+                Map<String, Object> result = new LinkedHashMap<>();
+                try {
+                    if (action.equals("begin")) {
+                        if (!active) { connection.setAutoCommit(false); active = true; }
+                        result.put("transactionOpen", true);
+                    } else if (action.equals("execute") && parts.length == 3) {
+                        if (!active) throw new IllegalStateException("No JDBC transaction is open");
+                        Properties call = new Properties();
+                        call.load(new StringReader(new String(Base64.getDecoder().decode(parts[2]), StandardCharsets.UTF_8)));
+                        result.putAll(jdbcExecute(connection, call));
+                        result.put("transactionOpen", true);
+                    } else if (action.equals("commit")) {
+                        if (!active) throw new IllegalStateException("No JDBC transaction is open");
+                        connection.commit(); active = false;
+                        result.put("committed", true); result.put("transactionOpen", false);
+                    } else if (action.equals("rollback")) {
+                        if (active) connection.rollback(); active = false;
+                        result.put("rolledBack", true); result.put("transactionOpen", false);
+                    } else if (action.equals("ping")) {
+                        result.put("healthy", connection.isValid(5)); result.put("transactionOpen", active);
+                    } else if (action.equals("stop")) break;
+                    else throw new IllegalArgumentException("Unsupported JDBC worker action: " + action);
+                    result.put("ok", true);
+                } catch (Throwable error) {
+                    result.clear(); result.put("ok", false); result.put("message", String.valueOf(error.getMessage() == null ? error : error.getMessage())); result.put("errorType", error.getClass().getName());
+                }
+                result.put("requestId", requestId); System.out.println(json(result)); System.out.flush();
+            }
+        } finally {
+            if (active) try { connection.rollback(); } catch (Throwable ignored) { }
+            try { connection.setAutoCommit(true); } catch (Throwable ignored) { }
+        }
+        return map("stopped", true);
     }
 
     private static Map<String, Object> jdbcMetadata(Connection connection, Properties p) throws SQLException {

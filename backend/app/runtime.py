@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import httpx
 from time import perf_counter
-from .models import Activity, ProcessDefinition, Project, RunResult
+from .models import Activity, GroupDefinition, ProcessDefinition, Project, RunResult
 from .mapper import apply_function, execute as execute_mapping
 from .dataweave import DataWeaveError, execute as execute_dataweave
 from .sap import sap_adapter
@@ -26,6 +26,7 @@ class WorkflowRuntime:
         self.messages: dict[str, list[dict]] = {}
         self.acknowledgements: dict[str, dict] = {}
         self.shared_variables: dict[str, Any] = {}
+        self.group_locks: dict[str, asyncio.Lock] = {}
 
     def register_acknowledgement(self, technology: str, message_id: str, callback=None) -> str:
         ack_id = f'{technology}:{message_id}:{uuid.uuid4()}'
@@ -45,6 +46,163 @@ class WorkflowRuntime:
             confirmed.append(str(handle)); technologies.append(pending['technology'])
         return {'confirmed': True, 'count': len(confirmed), 'ackIds': confirmed, 'technologies': sorted(set(technologies))}
 
+    def compile_groups(self, process: ProcessDefinition) -> dict[str, dict]:
+        """Compile persisted group containers into executable graph boundaries."""
+        groups = {group.id: group for group in process.groups}
+        children = {group_id: [] for group_id in groups}
+        for group in process.groups:
+            if group.parent_group_id: children[group.parent_group_id].append(group.id)
+
+        def descendants(group_id: str) -> set[str]:
+            result = set(groups[group_id].member_activity_ids)
+            for child_id in children[group_id]: result.update(descendants(child_id))
+            return result
+
+        plans: dict[str, dict] = {}
+        for group in process.groups:
+            if group.type == 'pick_first':
+                raise FabricFault(f'Group {group.name} uses Pick First, which is not runtime-qualified yet', fault_type='GROUP_UNSUPPORTED')
+            members = descendants(group.id)
+            if not members: raise FabricFault(f'Group {group.name} is empty', fault_type='GROUP_VALIDATION')
+            internal_incoming = {edge.target for edge in process.transitions if edge.source in members and edge.target in members}
+            external_entries = {edge.target for edge in process.transitions if edge.source not in members and edge.target in members}
+            entries = external_entries or (members - internal_incoming)
+            exit_edges = [edge for edge in process.transitions if edge.source in members and edge.target not in members]
+            for source_id in members:
+                fanout = [edge for edge in process.transitions if edge.source == source_id and edge.target in members and edge.type == 'success']
+                if len(fanout) > 1:
+                    raise FabricFault(f'Group {group.name} contains a parallel fan-out; use separate top-level branches until grouped branch joining is qualified', fault_type='GROUP_UNSUPPORTED')
+            exit_sources = {edge.source for edge in exit_edges}
+            terminal = {activity.id for activity in process.activities if activity.id in members and not any(edge.source == activity.id and edge.target in members for edge in process.transitions)}
+            exits = exit_sources or terminal
+            if len(entries) != 1:
+                raise FabricFault(f'Group {group.name} must have exactly one entry activity; found {len(entries)}', fault_type='GROUP_VALIDATION')
+            if len(exits) != 1:
+                raise FabricFault(f'Group {group.name} must have exactly one exit activity; found {len(exits)}', fault_type='GROUP_VALIDATION')
+            plans[group.id] = {'group': group, 'members': members, 'entry': next(iter(entries)), 'exit': next(iter(exits)), 'exitEdges': exit_edges}
+        return plans
+
+    @staticmethod
+    def _group_ancestors(group: GroupDefinition, plans: dict[str, dict]) -> list[str]:
+        result, current = [], group
+        while current:
+            result.append(current.id)
+            current = plans.get(current.parent_group_id, {}).get('group') if current.parent_group_id else None
+        return list(reversed(result))
+
+    async def _begin_group(self, plan: dict, ctx: dict) -> tuple[dict, bool]:
+        # Keep condition expressions intact for the condition evaluator. Exact
+        # value fields are resolved individually below.
+        group, cfg = plan['group'], dict(plan['group'].config)
+        state = {'id': group.id, 'iteration': 0, 'config': cfg}
+        kind = group.type
+        should_run = True
+        if kind in ('if', 'while'):
+            expression = str(cfg.get('condition') or '')
+            if not expression: raise FabricFault(f'{group.name} requires a condition', fault_type='GROUP_VALIDATION')
+            should_run = self.condition(expression, ctx)
+            if kind == 'while': ctx['vars'][str(cfg.get('indexVariable') or 'index')] = 1
+        elif kind in ('for_each', 'iterate'):
+            source_value = cfg.get('collection', cfg.get('source'))
+            if kind == 'for_each' and source_value in (None, ''):
+                start, end, increment = int(self.resolve(cfg.get('start', 1), ctx)), int(self.resolve(cfg.get('end', 1), ctx)), int(self.resolve(cfg.get('increment', 1), ctx) or 1)
+                if increment == 0: raise FabricFault(f'{group.name} increment cannot be zero', fault_type='GROUP_VALIDATION')
+                items = list(range(start, end + (1 if increment > 0 else -1), increment))
+            else:
+                source = self.resolve(source_value or [], ctx)
+                items = list(source.values()) if isinstance(source, dict) else list(source or [])
+            state['items'] = items; should_run = bool(items)
+            if should_run:
+                ctx['vars'][str(cfg.get('itemVariable') or 'item')] = items[0]
+                ctx['vars'][str(cfg.get('indexVariable') or 'index')] = 1
+        elif kind == 'repeat':
+            state['count'] = max(0, int(self.resolve(cfg.get('count', cfg.get('iterations', 1)), ctx) or 0)); should_run = True if cfg.get('condition') else state['count'] > 0
+            ctx['vars'][str(cfg.get('indexVariable') or 'index')] = 1
+        elif kind == 'repeat_on_error':
+            state['retriesRemaining'] = max(0, int(self.resolve(cfg.get('retryCount', cfg.get('retries', 3)), ctx) or 0))
+            ctx['vars'][str(cfg.get('indexVariable') or 'index')] = 1
+        elif kind == 'critical_section':
+            lock_name = str(self.resolve(cfg.get('lockName'), ctx) or f'{ctx.get("_process").id}:{group.id}')
+            lock = self.group_locks.setdefault(lock_name, asyncio.Lock())
+            await lock.acquire(); state['lock'] = lock; state['lockName'] = lock_name
+        elif kind == 'transaction_jdbc':
+            resource_id = str(self.resolve(cfg.get('resourceId'), ctx) or '')
+            jdbc_members = [item for item in ctx.get('_process').activities if item.id in plan['members'] and item.type == 'jdbc']
+            inferred = {str(self.resolve(item.config.get('resourceId'), ctx) or '') for item in jdbc_members} - {''}
+            if not resource_id and len(inferred) == 1: resource_id = next(iter(inferred))
+            if not resource_id or len(inferred - {resource_id}) > 0:
+                raise FabricFault(f'{group.name} must use one JDBC shared connection', fault_type='JDBCTransactionException')
+            resource = ctx['resources'].get(resource_id)
+            if not resource or resource.type != 'jdbc': raise FabricFault(f'{group.name} requires a valid JDBC connection', fault_type='JDBCTransactionException')
+            connection_config = self.resolve(resource.config, ctx)
+            state['resourceId'] = resource_id
+            state['connection'] = await asyncio.to_thread(jdbc_adapter.connect, connection_config)
+            ctx.setdefault('jdbcTransactions', {})[resource_id] = state['connection']
+        self.log(ctx['logs'], 'DEBUG', f'Group entered: {group.name}', kind='group', groupId=group.id, groupType=group.type, iteration=0)
+        return state, should_run
+
+    async def _finish_group(self, state: dict, plan: dict, ctx: dict, success: bool) -> None:
+        if plan['group'].type == 'transaction_jdbc':
+            connection = state.get('connection')
+            if connection:
+                try: await asyncio.to_thread(connection.commit if success else connection.rollback)
+                finally: await asyncio.to_thread(connection.close)
+            ctx.setdefault('jdbcTransactions', {}).pop(state.get('resourceId'), None)
+        if plan['group'].type == 'critical_section' and state.get('lock') and state['lock'].locked(): state['lock'].release()
+        self.log(ctx['logs'], 'DEBUG', f'Group {"completed" if success else "failed"}: {plan["group"].name}', kind='group', groupId=plan['group'].id, groupType=plan['group'].type, iteration=state.get('iteration', 0))
+
+    async def enter_group_boundaries(self, activity_id: str, ctx: dict, plans: dict[str, dict]) -> str | None:
+        active = {state['id'] for state in ctx.setdefault('groupStack', [])}
+        candidates = [plan for plan in plans.values() if plan['entry'] == activity_id and plan['group'].id not in active]
+        candidates.sort(key=lambda plan: len(self._group_ancestors(plan['group'], plans)))
+        for plan in candidates:
+            if plan['group'].parent_group_id and plan['group'].parent_group_id not in {state['id'] for state in ctx['groupStack']}: continue
+            state, should_run = await self._begin_group(plan, ctx)
+            ctx['groupStack'].append(state)
+            if not should_run:
+                await self._finish_group(state, plan, ctx, True); ctx['groupStack'].pop()
+                edges = plan['exitEdges']
+                eligible = self.eligible_success_transitions(edges, ctx)
+                return eligible[0].target if eligible else None
+        return activity_id
+
+    async def leave_group_boundaries(self, source_id: str, target_id: str | None, ctx: dict, plans: dict[str, dict], success: bool = True) -> str | None:
+        while ctx.get('groupStack'):
+            state = ctx['groupStack'][-1]; plan = plans[state['id']]; group = plan['group']
+            if target_id in plan['members']: break
+            if success and source_id == plan['exit']:
+                cfg = state['config']; repeat = False
+                if group.type == 'while': repeat = self.condition(str(cfg.get('condition') or ''), ctx)
+                elif group.type == 'repeat': repeat = (not self.condition(str(cfg.get('condition')), ctx)) if cfg.get('condition') else state['iteration'] + 1 < state['count']
+                elif group.type in ('for_each', 'iterate'):
+                    repeat = state['iteration'] + 1 < len(state['items'])
+                if repeat:
+                    state['iteration'] += 1
+                    if group.type in ('for_each', 'iterate'):
+                        ctx['vars'][str(cfg.get('itemVariable') or 'item')] = state['items'][state['iteration']]
+                    if group.type in ('for_each', 'iterate', 'repeat', 'while'):
+                        ctx['vars'][str(cfg.get('indexVariable') or 'index')] = state['iteration'] + 1
+                    maximum = max(1, int(self.resolve(cfg.get('maxIterations', 10000), ctx) or 10000))
+                    if state['iteration'] >= maximum: raise FabricFault(f'{group.name} exceeded maxIterations={maximum}', fault_type='GROUP_ITERATION_LIMIT')
+                    self.log(ctx['logs'], 'DEBUG', f'Group iteration: {group.name} #{state["iteration"] + 1}', kind='group', groupId=group.id, groupType=group.type, iteration=state['iteration'])
+                    return plan['entry']
+            await self._finish_group(state, plan, ctx, success); ctx['groupStack'].pop()
+        return target_id
+
+    async def retry_failed_group(self, ctx: dict, plans: dict[str, dict]) -> str | None:
+        stack = ctx.get('groupStack', [])
+        retry_index = next((index for index in range(len(stack) - 1, -1, -1) if plans[stack[index]['id']]['group'].type == 'repeat_on_error' and stack[index].get('retriesRemaining', 0) > 0), None)
+        if retry_index is None: return None
+        while len(stack) - 1 > retry_index:
+            child = stack.pop(); await self._finish_group(child, plans[child['id']], ctx, False)
+        state = stack[retry_index]; state['retriesRemaining'] -= 1; state['iteration'] += 1
+        if state['config'].get('stopCondition') and self.condition(str(state['config']['stopCondition']), ctx): return None
+        ctx['vars'][str(state['config'].get('indexVariable') or 'index')] = state['iteration'] + 1
+        delay = float(self.resolve(state['config'].get('retryIntervalSeconds', state['config'].get('retryDelaySeconds', 0)), ctx) or 0)
+        self.log(ctx['logs'], 'WARN', f'Group retry: {plans[state["id"]]["group"].name}; {state["retriesRemaining"]} retries remain', kind='group', groupId=state['id'], iteration=state['iteration'])
+        if delay: await asyncio.sleep(delay)
+        return plans[state['id']]['entry']
+
     async def run(self, process: ProcessDefinition, initial: dict, resources=None, properties=None, entry_activity_id=None, project: Project | None=None, execution_state: dict | None=None, event_output: Any = _NO_EVENT_OUTPUT, transport: dict | None = None) -> RunResult:
         run_id, logs = str(uuid.uuid4()), []
         started = datetime.now(timezone.utc)
@@ -59,6 +217,7 @@ class WorkflowRuntime:
             'activities': activity_outputs, 'tasks': task_outputs,
             'context': {'taskId': process.id, 'activityId': '', 'environment': getattr(project, 'active_environment', '') if project else '', 'correlationId': correlation_id, 'runId': run_id},
             'transport': transport or {},
+            '_process': process, 'groupStack': [], 'jdbcTransactions': {},
         }
         self.log(logs, 'INFO', f'Job started: {process.name}', kind='lifecycle', correlationId=correlation_id, runId=run_id, startedAt=log_timestamp(started))
         def finish(status: str, output: dict) -> RunResult:
@@ -68,6 +227,9 @@ class WorkflowRuntime:
                 entry.setdefault('correlationId', correlation_id); entry.setdefault('runId', run_id)
             return RunResult(run_id=run_id, correlation_id=correlation_id, started_at=log_timestamp(started), ended_at=log_timestamp(ended), duration_ms=duration, status=status, output=output, logs=logs, activity_outputs=activity_outputs, task_outputs=task_outputs)
         activity_by_id = {a.id: a for a in process.activities}
+        try: group_plans = self.compile_groups(process)
+        except Exception as exc:
+            self.log(logs, 'ERROR', str(exc)); return finish('failed', {})
         incoming = {t.target for t in process.transitions}
         starts = [activity_by_id[entry_activity_id]] if entry_activity_id in activity_by_id else ([a for a in process.activities if a.type == 'start'] or [a for a in process.activities if a.id not in incoming and a.type != 'catch'])
         if len(starts) != 1:
@@ -76,7 +238,15 @@ class WorkflowRuntime:
         current = starts[0]
         triggered_event_pending = event_output is not _NO_EVENT_OUTPUT and current.id == entry_activity_id
         try:
-            for _ in range(len(process.activities) + 1):
+            step_count = 0
+            while True:
+                step_count += 1
+                if step_count > max(100000, len(process.activities) * 10000):
+                    raise FabricFault('Execution step limit exceeded; check group loop conditions', fault_type='GROUP_ITERATION_LIMIT')
+                entered = await self.enter_group_boundaries(current.id, context, group_plans)
+                if entered is None: break
+                if entered != current.id:
+                    current = activity_by_id[entered]; continue
                 activity_started = perf_counter()
                 operation = str(current.config.get('operation') or current.type)
                 self.log(logs, 'INFO', f'Activity started: {process.name} / {current.name}', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation)
@@ -103,6 +273,13 @@ class WorkflowRuntime:
                     fault = self.fault_payload(error, current.id)
                     context['last'] = fault; context['context']['error'] = fault
                     if not chosen:
+                        retry_target = await self.retry_failed_group(context, group_plans)
+                        if retry_target:
+                            current = activity_by_id[retry_target]
+                            continue
+                        while context.get('groupStack'):
+                            failed_state = context['groupStack'].pop()
+                            await self._finish_group(failed_state, group_plans[failed_state['id']], context, False)
                         used = set(context['context'].setdefault('handledCatchIds', []))
                         catches = [activity for activity in process.activities if activity.type == 'catch' and activity.id not in used]
                         caught = next((activity for activity in catches if self.as_bool(activity.config.get('catchAll', True)) or (activity.config.get('errorType') and activity.config.get('errorType') == fault['type']) or (activity.config.get('errorCode') and str(activity.config.get('errorCode')) == fault['code'])), None)
@@ -115,11 +292,18 @@ class WorkflowRuntime:
                     chosen_edges = self.eligible_success_transitions(outgoing, context)
                 if error:
                     chosen_edges = [chosen] if chosen else []
-                if not chosen_edges: raise RuntimeErrorWithLogs(f'{current.name} has no matching outgoing transition')
+                if not chosen_edges:
+                    target_id = await self.leave_group_boundaries(current.id, None, context, group_plans, success=not error)
+                    if target_id:
+                        current = activity_by_id[target_id]; continue
+                    if context.get('groupStack'): raise RuntimeErrorWithLogs(f'{current.name} has no matching outgoing transition')
+                    break
                 for edge in chosen_edges:
                     self.log(logs, 'DEBUG', f'Transition selected: {current.name} -> {activity_by_id[edge.target].name} ({edge.type})', kind='trace', runtimeActivityId=current.id, transitionId=edge.id, parallel=len(chosen_edges) > 1)
                 if len(chosen_edges) == 1:
-                    current = activity_by_id[chosen_edges[0].target]
+                    target_id = await self.leave_group_boundaries(current.id, chosen_edges[0].target, context, group_plans, success=not error)
+                    if target_id is None: break
+                    current = activity_by_id[target_id]
                 else:
                     # A task may have multiple eligible success edges.  They are
                     # a fan-out, not an ordered if/else chain. Run every branch
@@ -144,6 +328,10 @@ class WorkflowRuntime:
             task_state['output'] = final_output
             return finish('completed', final_output)
         except Exception as exc:
+            while context.get('groupStack'):
+                state = context['groupStack'].pop()
+                try: await self._finish_group(state, group_plans[state['id']], context, False)
+                except Exception: pass
             self.log(logs, 'ERROR', str(exc), current.id)
             task_state['error'] = {'message': str(exc), 'activityId': current.id}
             return finish('failed', {})
@@ -625,7 +813,8 @@ class WorkflowRuntime:
         if activity.type == 'jdbc':
             resource = ctx['resources'].get(cfg.get('resourceId'))
             if not resource or resource.type != 'jdbc': raise FabricFault('JDBC activity requires a valid shared JDBC connection', fault_type='JDBCConnectionNotFoundException')
-            try: return await asyncio.to_thread(jdbc_adapter.execute, self.resolve(resource.config, ctx), cfg)
+            transaction = ctx.get('jdbcTransactions', {}).get(cfg.get('resourceId'))
+            try: return await asyncio.to_thread(jdbc_adapter.execute, self.resolve(resource.config, ctx), cfg, transaction, transaction is None)
             except Exception as exc: raise FabricFault(str(exc), fault_type=getattr(exc, 'fault_type', 'JDBCSQLException')) from exc
         if activity.type == 'snowflake':
             resource = ctx['resources'].get(cfg.get('resourceId'))

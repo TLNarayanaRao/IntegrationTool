@@ -22,7 +22,8 @@ class DebugManager:
         session_id = str(uuid4())
         execution_state = {'activities': {}, 'tasks': {task.id: {'name': task.name, 'activities': {}}}}
         logs = [{'time': log_timestamp(), 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Debug session started: {project.name} / {task.name}', 'taskId': task.id, 'sessionId': session_id}]
-        context = {'input': initial, 'vars': {}, 'last': initial, 'resources': resources, 'properties': properties, 'project': project, 'runtime': self.runtime, 'logs': logs, 'activities': execution_state['activities'], 'tasks': execution_state['tasks'], 'context': {'taskId': task.id, 'activityId': starters[0].id, 'environment': environment}}
+        group_plans = self.runtime.compile_groups(task)
+        context = {'input': initial, 'vars': {}, 'last': initial, 'resources': resources, 'properties': properties, 'project': project, 'runtime': self.runtime, 'logs': logs, 'activities': execution_state['activities'], 'tasks': execution_state['tasks'], 'context': {'taskId': task.id, 'activityId': starters[0].id, 'environment': environment}, '_process': task, 'groupStack': [], 'jdbcTransactions': {}}
         operation = starters[0].config.get('operation')
         continuous_listener = starters[0].type in ('timer', 'file', 'ems', 'jms', 'amqp', 'kafka', 'pubsub', 'sap') and operation in ('schedule', 'poll', 'queue_receiver', 'topic_subscriber', 'receive_message', 'receive', 'get', 'subscribe', 'idoc_listener', 'rfc_bapi_listener')
         self.sessions[session_id] = {
@@ -31,6 +32,7 @@ class DebugManager:
             'breakpoints': set(breakpoints), 'logs': logs, 'status': 'listening' if continuous_listener else 'paused',
             'listenerMode': continuous_listener, 'listenerTaskId': task.id, 'listenerActivityId': starters[0].id,
             'initial': initial, 'resources': resources, 'properties': properties,
+            'groupPlans': {task.id: group_plans},
         }
         if continuous_listener:
             logs.append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'listener', 'message': f'{starters[0].name} is ready and waiting for events', 'activityId': starters[0].id, 'taskId': task.id, 'sessionId': session_id})
@@ -47,6 +49,7 @@ class DebugManager:
             'runtime': self.runtime, 'logs': state['logs'], 'activities': execution_state['activities'],
             'tasks': execution_state['tasks'],
             'context': {'taskId': task.id, 'activityId': activity_id, 'environment': state['environment']},
+            '_process': task, 'groupStack': [], 'jdbcTransactions': {},
         }
         state['frames'] = [{'taskId': task.id, 'activityId': activity_id, 'context': context}]
         state['status'] = 'listening'
@@ -83,6 +86,11 @@ class DebugManager:
         state = self.sessions.get(session_id)
         if not state: raise ValueError('Debug session not found')
         if action == 'stop':
+            for frame in reversed(state.get('frames', [])):
+                plans = state.get('groupPlans', {}).get(frame['taskId'], {})
+                while frame['context'].get('groupStack'):
+                    group_state = frame['context']['groupStack'].pop()
+                    await self.runtime._finish_group(group_state, plans[group_state['id']], frame['context'], False)
             state['status'] = 'stopped'
             state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Debug session stopped: {state["project"].name}', 'sessionId': session_id})
             return self.view(state)
@@ -115,7 +123,13 @@ class DebugManager:
     async def step(self, state: dict, enter_subtask=False):
         if not state['frames']: state['status'] = 'completed'; return
         frame = state['frames'][-1]; project = state['project']; task = next(item for item in project.tasks if item.id == frame['taskId'])
-        activity = next(item for item in task.activities if item.id == frame['activityId']); ctx = frame['context']
+        plans = state.setdefault('groupPlans', {}).setdefault(task.id, self.runtime.compile_groups(task))
+        ctx = frame['context']; ctx.setdefault('_process', task); ctx.setdefault('groupStack', []); ctx.setdefault('jdbcTransactions', {})
+        entered = await self.runtime.enter_group_boundaries(frame['activityId'], ctx, plans)
+        if entered is None:
+            frame['activityId'] = ''; state['status'] = 'completed'; return
+        frame['activityId'] = entered
+        activity = next(item for item in task.activities if item.id == frame['activityId'])
         state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'activity', 'message': f'Activity started: {task.name} / {activity.name}', 'activityId': activity.id, 'taskId': task.id, 'activityType': activity.type, 'operation': activity.config.get('operation') or activity.type})
         activity_started = perf_counter()
         if enter_subtask and activity.type == 'call_task':
@@ -126,7 +140,7 @@ class DebugManager:
                 incoming = {edge.target for edge in target.transitions}; starter = next((item for item in target.activities if item.type == 'start'), None) or next(item for item in target.activities if item.id not in incoming)
                 values = self.runtime.map_input_values(activity.config.get('inputMappings', {}), ctx)
                 mapped = self.runtime.unwrap_boundary(values, 'payload', ctx['last'])
-                child_context = {**ctx, 'input': mapped, 'last': mapped, 'context': {'taskId': target.id, 'activityId': starter.id, 'environment': project.active_environment}}
+                child_context = {**ctx, 'input': mapped, 'last': mapped, 'context': {'taskId': target.id, 'activityId': starter.id, 'environment': project.active_environment}, '_process': target, 'groupStack': [], 'jdbcTransactions': {}}
                 ctx['tasks'].setdefault(target.id, {'name': target.name, 'activities': {}})
                 state['frames'].append({'taskId': target.id, 'activityId': starter.id, 'context': child_context}); state['status'] = 'paused'; return
         ctx['context']['activityId'] = activity.id
@@ -135,6 +149,16 @@ class DebugManager:
         except Exception as exc:
             duration = round((perf_counter() - activity_started) * 1000, 3)
             state['logs'].append({'time': log_timestamp(), 'level': 'ERROR', 'kind': 'activity', 'message': f'Activity failed: {task.name} / {activity.name} in {duration:.3f} ms: {exc}', 'activityId': activity.id, 'taskId': task.id, 'durationMs': duration})
+            outgoing = [edge for edge in task.transitions if edge.source == activity.id]
+            error_edge = next((edge for edge in outgoing if edge.type == 'error'), None)
+            if error_edge:
+                ctx['last'] = self.runtime.fault_payload(exc, activity.id); ctx['context']['error'] = ctx['last']
+                target = await self.runtime.leave_group_boundaries(activity.id, error_edge.target, ctx, plans, success=False)
+                if target: frame['activityId'] = target; state['status'] = 'paused'; return
+            retry_target = await self.runtime.retry_failed_group(ctx, plans)
+            if retry_target: frame['activityId'] = retry_target; state['status'] = 'paused'; return
+            while ctx.get('groupStack'):
+                group_state = ctx['groupStack'].pop(); await self.runtime._finish_group(group_state, plans[group_state['id']], ctx, False)
             raise
         duration = round((perf_counter() - activity_started) * 1000, 3)
         state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'activity', 'message': f'Activity completed: {task.name} / {activity.name} in {duration:.3f} ms', 'activityId': activity.id, 'taskId': task.id, 'durationMs': duration})
@@ -142,6 +166,10 @@ class DebugManager:
         outgoing = [edge for edge in task.transitions if edge.source == activity.id]
         chosen_edges = self.runtime.eligible_success_transitions(outgoing, ctx)
         if activity.type == 'end' or not chosen_edges:
+            target = await self.runtime.leave_group_boundaries(activity.id, None, ctx, plans)
+            if target:
+                frame['activityId'] = target
+                return
             pending = frame.get('parallelQueue') or []
             if activity.type == 'end' and pending:
                 frame['activityId'] = pending.pop(0)
@@ -161,7 +189,10 @@ class DebugManager:
             return
         pending = frame.get('parallelQueue') or []
         frame['parallelQueue'] = pending + [edge.target for edge in chosen_edges[1:]]
-        frame['activityId'] = chosen_edges[0].target
+        target = await self.runtime.leave_group_boundaries(activity.id, chosen_edges[0].target, ctx, plans)
+        if target is None:
+            state['status'] = 'completed'; return
+        frame['activityId'] = target
 
     def current_activity(self, state):
         if not state['frames']: return None
@@ -171,4 +202,5 @@ class DebugManager:
     def view(self, state):
         current = self.current_activity(state)
         execution_state = state.get('executionState', {})
-        return {'sessionId': state['id'], 'status': state['status'], 'currentActivityId': current.id if current else None, 'currentTaskId': state['frames'][-1]['taskId'] if state['frames'] else None, 'callStack': [{'taskId': frame['taskId'], 'activityId': frame['activityId']} for frame in state['frames']], 'logs': state['logs'], 'output': state.get('output', {}), 'activityOutputs': execution_state.get('activities', {}), 'taskOutputs': execution_state.get('tasks', {}), 'endpoints': state.get('endpoints', [])}
+        group_stack = state['frames'][-1]['context'].get('groupStack', []) if state.get('frames') else []
+        return {'sessionId': state['id'], 'status': state['status'], 'currentActivityId': current.id if current else None, 'currentTaskId': state['frames'][-1]['taskId'] if state['frames'] else None, 'currentGroupIds': [item['id'] for item in group_stack], 'groupIterations': {item['id']: item.get('iteration', 0) for item in group_stack}, 'callStack': [{'taskId': frame['taskId'], 'activityId': frame['activityId'], 'groupIds': [item['id'] for item in frame['context'].get('groupStack', [])]} for frame in state['frames']], 'logs': state['logs'], 'output': state.get('output', {}), 'activityOutputs': execution_state.get('activities', {}), 'taskOutputs': execution_state.get('tasks', {}), 'endpoints': state.get('endpoints', [])}

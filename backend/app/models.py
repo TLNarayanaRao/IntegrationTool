@@ -23,11 +23,13 @@ class Activity(BaseModel):
 
 class GroupDefinition(BaseModel):
     id: str
-    type: Literal['if', 'while', 'for_each', 'iterate', 'repeat', 'repeat_on_error', 'scope', 'none', 'transaction_jdbc', 'pick_first']
+    type: Literal['if', 'while', 'for_each', 'iterate', 'repeat', 'repeat_on_error', 'scope', 'none', 'critical_section', 'transaction_jdbc', 'pick_first']
     name: str
     member_activity_ids: list[str] = Field(default_factory=list)
     config: dict[str, Any] = Field(default_factory=dict)
     position: dict[str, float] = Field(default_factory=lambda: {'x': 100, 'y': 100})
+    size: dict[str, float] = Field(default_factory=lambda: {'width': 420, 'height': 220})
+    parent_group_id: str | None = None
 
 class Transition(BaseModel):
     id: str
@@ -313,6 +315,34 @@ class ProcessDefinition(BaseModel):
         catch_ids = {activity.id for activity in self.activities if activity.type == 'catch'}
         if any(transition.target in catch_ids for transition in self.transitions):
             raise ValueError('Transitions cannot target a Catch activity; Catch is entered only by an unhandled exception')
+        activity_ids = {activity.id for activity in self.activities}
+        group_ids = {group.id for group in self.groups}
+        if len(group_ids) != len(self.groups):
+            raise ValueError('Group identifiers must be unique within a Task')
+        owners: dict[str, str] = {}
+        for group in self.groups:
+            missing = set(group.member_activity_ids) - activity_ids
+            if missing:
+                raise ValueError(f'Group {group.name} references missing activities: {", ".join(sorted(missing))}')
+            if group.parent_group_id and group.parent_group_id not in group_ids:
+                raise ValueError(f'Group {group.name} references a missing parent group')
+            if group.parent_group_id == group.id:
+                raise ValueError(f'Group {group.name} cannot contain itself')
+            for activity_id in group.member_activity_ids:
+                if activity_id in owners:
+                    raise ValueError(f'Activity {activity_id} belongs directly to more than one group')
+                owners[activity_id] = group.id
+                member = next(activity for activity in self.activities if activity.id == activity_id)
+                if member.type in ('start', 'end', 'catch') or is_event_activity(member):
+                    raise ValueError(f'Group {group.name} cannot directly contain starter, End, or Catch activity {member.name}')
+        parents = {group.id: group.parent_group_id for group in self.groups}
+        for group_id in group_ids:
+            visited: set[str] = set()
+            current: str | None = group_id
+            while current:
+                if current in visited:
+                    raise ValueError('Nested groups contain a parent cycle')
+                visited.add(current); current = parents.get(current)
         return self
 
 class TaskDefinition(ProcessDefinition):
@@ -362,7 +392,7 @@ class Project(BaseModel):
         if not self.active_task_id or not any(task.id == self.active_task_id for task in self.tasks):
             self.active_task_id = self.tasks[0].id
         active = next(task for task in self.tasks if task.id == self.active_task_id)
-        self.process = ProcessDefinition(**active.model_dump(include={'id','name','activities','transitions'}))
+        self.process = ProcessDefinition(**active.model_dump(include={'id','name','activities','transitions','groups'}))
         return self
 
 class RunRequest(BaseModel):
