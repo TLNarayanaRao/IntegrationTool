@@ -75,6 +75,7 @@ export const mapperFunctionCatalog: MapperFunctionDefinition[] = [
   fn("Conversion", "boolean", "boolean(value)", "Convert common true/false representations.", "boolean($value)"),
   fn("Conversion", "jsonParse", "jsonParse(value)", "Parse JSON text.", "jsonParse($value)"),
   fn("Conversion", "jsonRender", "jsonRender(value)", "Serialize a value as JSON.", "jsonRender($value)"),
+  fn("Conversion", "render-xml", "render-xml(value, rootName?, pretty?)", "Convert an XML object (including a parsed XML value) into an XML string. Use @name for attributes and #text for element text.", "render-xml($value)"),
 
   fn("General", "coalesce", "coalesce(value, …fallbacks)", "Return the first non-null/non-empty value.", "coalesce($value, \"fallback\")", "coalesce(\"fallback\")"),
   fn("General", "default", "default(value, fallback)", "Apply a fallback to null or empty values.", "default($value, \"fallback\")", "default(\"fallback\")"),

@@ -65,7 +65,7 @@ class DebugManager:
         state['logs'].append({'time': now, 'level': 'INFO', 'kind': 'event', 'message': f'Event received: {task.name} / {activity.name}', 'activityId': activity.id, 'taskId': task.id, 'sessionId': session_id})
         self.runtime.record_activity_output(activity, output, ctx)
         outgoing = [edge for edge in task.transitions if edge.source == activity.id]
-        chosen_edges = self.runtime.eligible_success_transitions(outgoing, ctx)
+        chosen_edges = self.runtime.select_group_transitions(self.runtime.eligible_success_transitions(outgoing, ctx), ctx, state.get('groupPlans', {}).get(task.id, {}))
         if not chosen_edges:
             state['logs'].append({'time': now, 'level': 'ERROR', 'kind': 'event', 'message': f'{activity.name} has no matching outgoing transition', 'activityId': activity.id, 'taskId': task.id})
             self.rearm_listener(state)
@@ -165,7 +165,7 @@ class DebugManager:
         state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'activity', 'message': f'Activity completed: {task.name} / {activity.name} in {duration:.3f} ms', 'activityId': activity.id, 'taskId': task.id, 'durationMs': duration})
         self.runtime.record_activity_output(activity, ctx['last'], ctx)
         outgoing = [edge for edge in task.transitions if edge.source == activity.id]
-        chosen_edges = self.runtime.eligible_success_transitions(outgoing, ctx)
+        chosen_edges = self.runtime.select_group_transitions(self.runtime.eligible_success_transitions(outgoing, ctx), ctx, plans)
         if activity.type == 'end' or not chosen_edges:
             target = await self.runtime.leave_group_boundaries(activity.id, None, ctx, plans)
             if target:

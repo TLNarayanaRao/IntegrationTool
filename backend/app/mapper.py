@@ -145,6 +145,44 @@ def _date_pattern(value: str) -> str:
     return pattern
 
 
+def _render_xml(value: Any, root_name: str = 'root', pretty: bool = False) -> str:
+    """Render the mapper's XML object representation as serialized XML.
+
+    Parsed XML values use ``{root, value}``; ordinary dictionaries use keys
+    as element names, ``@name`` for attributes, and ``#text`` for text. Lists
+    become repeated sibling elements. This mirrors the Render XML activity so
+    mapping expressions and activities produce the same wire format.
+    """
+    if isinstance(value, dict) and 'root' in value and 'value' in value:
+        root_name, value = value['root'], value['value']
+    root_name = re.sub(r'[^A-Za-z0-9_.-]', '_', str(root_name or 'root')) or 'root'
+
+    def build(name: str, item: Any):
+        element = ElementTree.Element(re.sub(r'[^A-Za-z0-9_.-]', '_', str(name)) or 'item')
+        if isinstance(item, dict):
+            for key, child in item.items():
+                key = str(key)
+                if key.startswith('@'):
+                    element.set(key[1:], '' if child is None else str(child))
+                elif key == '#text':
+                    element.text = '' if child is None else str(child)
+                elif isinstance(child, list):
+                    for entry in child:
+                        element.append(build(key, entry))
+                else:
+                    element.append(build(key, child))
+        elif item is not None:
+            element.text = str(item)
+        return element
+
+    if isinstance(value, list):
+        value = {'item': value}
+    root = build(root_name, value)
+    if pretty:
+        ElementTree.indent(root, space='  ')
+    return ElementTree.tostring(root, encoding='unicode')
+
+
 def apply_function(name: str, value: Any = None, args: list[Any] | None = None):
     """Execute the built-in integration-mapper function catalog."""
     args = list(args or []); key = str(name or '').lower().replace('-', '').replace('_', '')
@@ -229,6 +267,7 @@ def apply_function(name: str, value: Any = None, args: list[Any] | None = None):
     if key == 'flatten': return [item for group in (value or []) for item in (group if isinstance(group, list) else [group])]
     if key == 'jsonparse': return json.loads(text)
     if key == 'jsonrender': return json.dumps(value, separators=(',', ':') if args and args[0] is False else None, default=str)
+    if key in ('renderxml', 'xmlrender'): return _render_xml(value, str(args[0]) if args and args[0] not in (None, '') else 'root', bool(args[1]) if len(args) > 1 else False)
     if key == 'base64encode': return base64.b64encode(text.encode()).decode()
     if key == 'base64decode': return base64.b64decode(text).decode()
     if key == 'hexencode': return text.encode().hex()

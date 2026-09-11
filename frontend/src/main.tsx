@@ -139,6 +139,29 @@ type Task = {
   groups?: GroupDefinition[];
 };
 type GroupDefinition = { id: string; type: "if" | "while" | "for_each" | "iterate" | "repeat" | "repeat_on_error" | "scope" | "none" | "critical_section" | "transaction_jdbc" | "pick_first"; name: string; member_activity_ids: string[]; config: Record<string, any>; position: { x: number; y: number }; size?: { width: number; height: number }; parent_group_id?: string | null };
+
+// Route transitions from the nearest side of each activity.  The old wire
+// always used the right-center/left-center ports, which made branches that
+// travelled upward or downward enter an activity from a diagonal corner and
+// left the arrowhead visibly detached from the target.
+function activityWirePath(source: Node, target: Node) {
+  const width = 104, height = 76;
+  const sourceCenter = { x: source.position.x + width / 2, y: source.position.y + height / 2 };
+  const targetCenter = { x: target.position.x + width / 2, y: target.position.y + height / 2 };
+  const dx = targetCenter.x - sourceCenter.x, dy = targetCenter.y - sourceCenter.y;
+  const horizontal = Math.abs(dx) >= Math.abs(dy);
+  const direction = horizontal ? (dx >= 0 ? 1 : -1) : (dy >= 0 ? 1 : -1);
+  const start = horizontal
+    ? { x: source.position.x + (direction > 0 ? width : 0), y: sourceCenter.y }
+    : { x: sourceCenter.x, y: source.position.y + (direction > 0 ? height : 0) };
+  const end = horizontal
+    ? { x: target.position.x + (direction > 0 ? 0 : width), y: targetCenter.y }
+    : { x: targetCenter.x, y: target.position.y + (direction > 0 ? 0 : height) };
+  const bend = Math.max(30, Math.min(180, (horizontal ? Math.abs(end.x - start.x) : Math.abs(end.y - start.y)) * 0.42));
+  const c1 = horizontal ? { x: start.x + direction * bend, y: start.y } : { x: start.x, y: start.y + direction * bend };
+  const c2 = horizontal ? { x: end.x - direction * bend, y: end.y } : { x: end.x, y: end.y - direction * bend };
+  return `M${start.x},${start.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${end.x},${end.y}`;
+}
 type Resource = {
   id: string;
   type:
@@ -1205,6 +1228,19 @@ function App() {
       tasks: p.tasks.map((t) => (t.id === p.active_task_id ? fn(t) : t)),
       process: undefined,
     }));
+  const upsertSapIdocSchema = (idoc: any) => {
+    if (!idoc?.schema || !idoc?.idocType) return "";
+    const suffix = [idoc.extensionType, idoc.release].filter(Boolean).join("-");
+    const key = String(idoc.idocType).replace(/[^A-Za-z0-9_.-]+/g, "_");
+    const schemaId = `sap-idoc-${key}${suffix ? `-${String(suffix).replace(/[^A-Za-z0-9_.-]+/g, "_")}` : ""}`;
+    const schemaName = `${key}${suffix ? `-${String(suffix).replace(/[^A-Za-z0-9_.-]+/g, "_")}` : ""}.xsd`;
+    setProject((current) => {
+      const existing = current.schemas.find((schema) => schema.id === schemaId || schema.name === schemaName);
+      const schema = { id: existing?.id || schemaId, name: schemaName, content: String(idoc.schema) };
+      return { ...current, schemas: [...current.schemas.filter((item) => item.id !== schema.id && item.name !== schema.name), schema] };
+    });
+    return schemaId;
+  };
   const createGroup = () => {
     if (!selectedIds.length) { setLogs([{ level: "WARN", message: "Select the connected activities that belong to the group first." }]); return; }
     const id = `group-${Date.now()}`, existing = task.groups || [];
@@ -1733,6 +1769,13 @@ function App() {
     setSelectedEdge(null);
     setSelectedResource(null);
     setMenu(null);
+  };
+  const addGroup = (groupType: GroupDefinition["type"], pos?: { x: number; y: number }) => {
+    const labels: Record<GroupDefinition["type"], string> = { if: "If", while: "While", for_each: "For Each", iterate: "Iterate", repeat: "Repeat", repeat_on_error: "Repeat on Error", scope: "Scope", none: "None", critical_section: "Critical Section", transaction_jdbc: "Transaction (JDBC)", pick_first: "Pick First" };
+    const memberIds = selectedIds.filter((id) => nodes.some((node) => node.id === id));
+    const group: GroupDefinition = { id: `group-${Date.now()}`, type: groupType, name: `${labels[groupType]} Group`, member_activity_ids: memberIds, config: {}, position: pos || { x: 100, y: 100 } };
+    mutateTask((current) => ({ ...current, groups: [...(current.groups || []), group] }));
+    setLogs([{ level: "INFO", message: `${group.name} created${memberIds.length ? ` around ${memberIds.length} selected activit${memberIds.length === 1 ? "y" : "ies"}` : "; select activities and edit membership in its configuration"}.` }]);
   };
   const createExceptionHandlers = (catchActivityId: string, exceptionTypes: string[]) => {
     const selectedTypes = [...new Set(exceptionTypes.filter(Boolean))];
@@ -2847,7 +2890,7 @@ function App() {
                 const a = byId[e.source],
                   b = byId[e.target];
                 if (!a || !b) return null;
-                const d = `M${a.position.x + 104},${a.position.y + 38} C${a.position.x + 136},${a.position.y + 38} ${b.position.x - 32},${b.position.y + 38} ${b.position.x},${b.position.y + 38}`;
+                const d = activityWirePath(a, b);
                 return (
                   <g
                     key={e.id}
@@ -3202,6 +3245,7 @@ function App() {
         <SharedConnectionDialog
           type={connectionDialog}
           properties={project.properties[project.active_environment] || []}
+          onSapSchemaFetched={(idoc: any) => upsertSapIdocSchema(idoc)}
           onClose={() => setConnectionDialog(null)}
           onCreate={(r: Resource) => {
             setProject((p) => ({ ...p, resources: [...p.resources, r] }));
@@ -3215,6 +3259,7 @@ function App() {
           type={editingConnection.type}
           initial={editingConnection}
           properties={project.properties[project.active_environment] || []}
+          onSapSchemaFetched={(idoc: any) => upsertSapIdocSchema(idoc)}
           onClose={() => setEditingConnection(null)}
           onCreate={(updated: Resource) => {
             setProject((current) => ({ ...current, resources: current.resources.map((item) => item.id === editingConnection.id ? updated : item) }));
@@ -3338,7 +3383,7 @@ function GroupEditor({ group, groups, resources, activities, task, tasks, schema
   const dataSources = [...upstream, ...memberSources.filter((source: any) => !sourceIds.has(source.activity.id))];
   return <div className="modal-backdrop"><div className="runtime-modal group-editor-dialog"><header><span><Workflow/><span><b>Executable Group</b><small>Nested canvas and runtime execution boundary</small></span></span><button onClick={onClose}>×</button></header><main>
     <label>Group name<input autoFocus value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>
-    <label>Execution semantics<select value={draft.type} onChange={(event) => { const type = event.target.value as GroupDefinition["type"]; setDraft({ ...draft, type, config: groupConfigDefaults(type) }); }}><option value="scope">None / Scope (once)</option><option value="if">If</option><option value="while">While True</option><option value="iterate">Iterate collection</option><option value="for_each">For each</option><option value="repeat">Repeat Until True</option><option value="repeat_on_error">Repeat on Error Until True</option><option value="critical_section">Critical Section</option><option value="transaction_jdbc">JDBC transaction</option><option value="pick_first" disabled>Pick first (not runtime-qualified)</option></select></label>
+    <label>Execution semantics<select value={draft.type} onChange={(event) => { const type = event.target.value as GroupDefinition["type"]; setDraft({ ...draft, type, config: groupConfigDefaults(type) }); }}><option value="scope">None / Scope (once)</option><option value="if">If</option><option value="while">While True</option><option value="iterate">Iterate collection</option><option value="for_each">For each</option><option value="repeat">Repeat Until True</option><option value="repeat_on_error">Repeat on Error Until True</option><option value="critical_section">Critical Section</option><option value="transaction_jdbc">JDBC transaction</option><option value="pick_first">Pick First (first eligible branch)</option></select></label>
     <label>Parent group<select value={draft.parent_group_id || ""} onChange={(event) => setDraft({ ...draft, parent_group_id: event.target.value || null })}><option value="">Top level</option>{groups.filter((item: GroupDefinition) => item.id !== draft.id && item.parent_group_id !== draft.id).map((item: GroupDefinition) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
     {draft.type === "for_each" && <label>For Each source<select value={draft.config.iterationMode || "collection"} onChange={(event) => setDraft((current) => { const config: Record<string, any> = { ...current.config, iterationMode: event.target.value }; if (event.target.value === "range") { delete config.source; delete config.collection; } else { delete config.start; delete config.end; delete config.increment; } return { ...current, config }; })}><option value="collection">Collection elements</option><option value="range">Counter range</option></select></label>}
     {!["scope", "none", "critical_section", "transaction_jdbc"].includes(draft.type) && <section className="group-data-mapper"><DataSourcePane properties={properties} sources={dataSources} customFunctions={customFunctions} runtimeVariables={[...["iterate", "for_each"].includes(draft.type) ? [{ name: draft.config.currentElementName || draft.config.itemVariable || "currentElement", label: "Current iteration element", type: "any" }] : [], ...["while", "repeat", "repeat_on_error", "iterate", "for_each"].includes(draft.type) ? [{ name: draft.config.indexVariable || "index", label: "Current iteration index", type: "integer" }] : [], ...(draft.type === "repeat_on_error" ? [{ name: "error", label: "Current group error", type: "object" }] : [])]}/><div className="group-condition-targets"><header><DataNodeIcon/><span><b>Group data and condition</b><small>Drag data, functions, properties, or constants into the runtime field.</small></span></header>
@@ -3355,7 +3400,7 @@ function GroupEditor({ group, groups, resources, activities, task, tasks, schema
     {draft.type === "critical_section" && <label className="wide">Shared lock name<input value={draft.config.lockName || ""} onChange={(event) => patchConfig("lockName", event.target.value)} placeholder="inventory-shared-lock"/></label>}
     {draft.type === "transaction_jdbc" && <label className="wide">JDBC shared connection<select value={draft.config.resourceId || ""} onChange={(event) => patchConfig("resourceId", event.target.value)}><option value="">Select connection…</option>{resources.filter((item: Resource) => item.type === "jdbc").map((item: Resource) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
     <section className="group-members"><b>DIRECT ACTIVITY MEMBERS</b><small>Use Parent group for nesting. An activity has one direct owner. Start/event, End, and Catch are Task boundaries.</small>{activities.map((item: Node) => { const owner = owners.get(item.id), boundary = isEventActivity(item) || ["end", "catch"].includes(item.type), disabled = boundary || (!!owner && owner !== draft.id); return <label key={item.id} className={disabled ? "disabled" : ""}><input type="checkbox" disabled={disabled} checked={draft.member_activity_ids.includes(item.id)} onChange={() => toggleMember(item.id)}/><span>{item.name}<small>{boundary ? "Task boundary" : disabled ? `Owned by ${groups.find((candidate: GroupDefinition) => candidate.id === owner)?.name}` : item.type}</small></span></label>; })}</section>
-    <aside className="group-runtime-status"><CheckCircle2/><span><b>Runtime-backed semantics</b><small>Conditions, loops, whole-group retry, exception propagation, native and Java-driver JDBC commit/rollback, validation, archive persistence, and debugger iteration state are active. Pick First stays disabled until cancellation is runtime-qualified.</small></span></aside>
+    <aside className="group-runtime-status"><CheckCircle2/><span><b>Runtime-backed semantics</b><small>Conditions, loops, Pick First branch selection, whole-group retry, exception propagation, native and Java-driver JDBC commit/rollback, validation, archive persistence, and debugger iteration state are active.</small></span></aside>
   </main><footer>{group && <button className="danger" onClick={() => onDelete(draft.id)}><Trash2/> Delete group</button>}<span/><button onClick={onClose}>Cancel</button><button className="primary" disabled={!draft.name.trim() || (!draft.member_activity_ids.length && !groups.some((item: GroupDefinition) => item.parent_group_id === draft.id))} onClick={() => onSave(draft)}><Save/> Save group</button></footer></div></div>;
 }
 
@@ -4102,11 +4147,12 @@ function Context({
   };
     if (menu.type === "canvas")
     return (
-      <ActivityPicker
-        menu={menu}
-        packs={packs}
-        addActivity={addActivity}
-        close={close}
+          <ActivityPicker
+            menu={menu}
+            packs={packs}
+            addActivity={addActivity}
+            addGroup={actions.groupActivity}
+            close={close}
       />
     );
   const targetFolder = menu.type === "task" ? "tasks" : (menu.type === "resource" || menu.type === "resources-root") ? "resources" : menu.type === "schema" ? "schemas" : menu.type === "property" ? "properties" : menu.type;
@@ -4476,7 +4522,7 @@ function connectionDefaults(type: string) {
   if (type === "pubsub") Object.assign(values, { authenticationType: "Service Account JSON", projectId: "", serviceAccountJson: "" });
   return values;
 }
-function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }: any) {
+function SharedConnectionDialog({ type, initial, properties, onClose, onCreate, onSapSchemaFetched }: any) {
   const fields = connectionFieldSets[type] || [];
   const testOutputRef = useRef<HTMLDivElement>(null);
   const idocBrowserRef = useRef<HTMLElement>(null);
@@ -4576,7 +4622,9 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate }
       const output = await response.json();
       if (!response.ok) throw new Error(output.detail || "IDoc metadata download failed");
       const selected = output.idoc;
-      setDraft((current: any) => ({ ...current, config: { ...current.config, selectedIdoc: selected, idocCatalog: [...(current.config.idocCatalog || []).filter((entry: any) => !(entry.idocType === selected.idocType && (entry.extensionType || "") === (selected.extensionType || "") && (entry.release || "") === (selected.release || ""))), selected] } }));
+      const schemaId = onSapSchemaFetched?.(selected);
+      const selectedWithSchema = { ...selected, schemaId: schemaId || selected.schemaId };
+      setDraft((current: any) => ({ ...current, config: { ...current.config, selectedIdoc: selectedWithSchema, idocSchema: selectedWithSchema.schema, schemaId: selectedWithSchema.schemaId, idocCatalog: [...(current.config.idocCatalog || []).filter((entry: any) => !(entry.idocType === selected.idocType && (entry.extensionType || "") === (selected.extensionType || "") && (entry.release || "") === (selected.release || ""))), selectedWithSchema] } }));
       setIdocPickerOpen(false);
     } catch (error: any) { setIdocError(error?.message || "IDoc metadata download failed"); }
     finally { setIdocLoading(false); }

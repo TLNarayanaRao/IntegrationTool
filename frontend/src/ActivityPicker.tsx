@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 
-type Entry = { label: string; asset?: string; type?: string; operation?: string; children?: Entry[] };
+type Entry = { label: string; asset?: string; type?: string; operation?: string; groupType?: string; children?: Entry[] };
 const icon = (asset?: string) => asset ? <img src={`/activity-icons/${asset.includes(".") ? asset : `${asset}.png`}`} alt="" /> : null;
 const searchableText = (entry: Entry & { path?: string }) =>
   [entry.label, entry.path, entry.type, entry.operation]
@@ -12,8 +12,13 @@ function flatten(entries: Entry[], parents: string[] = []): Array<Entry & { path
   return entries.flatMap((entry) => entry.children?.length ? flatten(entry.children, [...parents, entry.label]) : [{ ...entry, path: parents.join(" / ") }]);
 }
 
-export default function ActivityPicker({ menu, packs, addActivity, close }: any) {
-  const groups: Entry[] = useMemo(() => packs.map((pack: any) => ({ label: pack.name, children: pack.items })), [packs]);
+export default function ActivityPicker({ menu, packs, addActivity, addGroup, close }: any) {
+  const groupEntries: Entry[] = [
+    ["If", "if"], ["While", "while"], ["For Each", "for_each"], ["Iterate", "iterate"],
+    ["Repeat", "repeat"], ["Repeat on Error", "repeat_on_error"], ["Scope", "scope"],
+    ["None", "none"], ["Critical Section", "critical_section"], ["Transaction (JDBC)", "transaction_jdbc"], ["Pick First", "pick_first"],
+  ].map(([label, groupType]) => ({ label, groupType, type: "group" }));
+  const groups: Entry[] = useMemo(() => [{ label: "Groups", children: groupEntries }, ...packs.map((pack: any) => ({ label: pack.name, children: pack.items }))], [packs]);
   const [query, setQuery] = useState(""), [trail, setTrail] = useState<Entry[]>(groups.length ? [groups[0]] : []);
   const current = trail[trail.length - 1], entries = current?.children || groups;
   const results = useMemo(() => {
@@ -22,7 +27,7 @@ export default function ActivityPicker({ menu, packs, addActivity, close }: any)
   }, [groups, query]);
   const width = Math.min(720, window.innerWidth - 16), height = Math.min(500, window.innerHeight - 16);
   const left = Math.max(8, Math.min(menu.x, window.innerWidth - width - 8)), top = Math.max(8, Math.min(menu.y, window.innerHeight - height - 8));
-  const add = (entry: Entry) => { addActivity(entry, { x: menu.cx, y: menu.cy, connectFrom: menu.connectFrom }); close(); };
+  const add = (entry: Entry) => { if (entry.type === "group") addGroup?.(entry.groupType, { x: menu.cx, y: menu.cy }); else addActivity(entry, { x: menu.cx, y: menu.cy, connectFrom: menu.connectFrom }); close(); };
   const openEntry = (entry: Entry) => entry.children?.length ? setTrail((items) => [...items, entry]) : add(entry);
   return <div className="activity-picker simple-picker" style={{ left, top, width, height }} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
     <header><Search/><input type="search" autoFocus autoComplete="off" spellCheck={false} aria-label="Search activities" placeholder="Search activities…" value={query} onInput={(event) => setQuery(event.currentTarget.value)} onKeyDown={(event) => event.stopPropagation()}/>{query && <button type="button" aria-label="Clear search" onClick={() => setQuery("")}><X/></button>}<button type="button" aria-label="Close activity picker" onClick={close}><X/></button></header>

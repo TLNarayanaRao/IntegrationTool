@@ -60,8 +60,6 @@ class WorkflowRuntime:
 
         plans: dict[str, dict] = {}
         for group in process.groups:
-            if group.type == 'pick_first':
-                raise FabricFault(f'Group {group.name} uses Pick First, which is not runtime-qualified yet', fault_type='GROUP_UNSUPPORTED')
             config = group.config or {}
             if group.type in ('if', 'while') and not str(config.get('condition') or '').strip():
                 raise FabricFault(f'Group {group.name} requires a boolean condition', fault_type='GROUP_VALIDATION')
@@ -79,16 +77,16 @@ class WorkflowRuntime:
             exit_edges = [edge for edge in process.transitions if edge.source in members and edge.target not in members]
             for source_id in members:
                 fanout = [edge for edge in process.transitions if edge.source == source_id and edge.target in members and edge.type == 'success']
-                if len(fanout) > 1:
+                if len(fanout) > 1 and group.type != 'pick_first':
                     raise FabricFault(f'Group {group.name} contains a parallel fan-out; use separate top-level branches until grouped branch joining is qualified', fault_type='GROUP_UNSUPPORTED')
             exit_sources = {edge.source for edge in exit_edges}
             terminal = {activity.id for activity in process.activities if activity.id in members and not any(edge.source == activity.id and edge.target in members for edge in process.transitions)}
             exits = exit_sources or terminal
-            if len(entries) != 1:
+            if len(entries) != 1 and group.type != 'pick_first':
                 raise FabricFault(f'Group {group.name} must have exactly one entry activity; found {len(entries)}', fault_type='GROUP_VALIDATION')
-            if len(exits) != 1:
+            if len(exits) != 1 and group.type != 'pick_first':
                 raise FabricFault(f'Group {group.name} must have exactly one exit activity; found {len(exits)}', fault_type='GROUP_VALIDATION')
-            plans[group.id] = {'group': group, 'members': members, 'entry': next(iter(entries)), 'exit': next(iter(exits)), 'exitEdges': exit_edges}
+            plans[group.id] = {'group': group, 'members': members, 'entries': entries, 'entry': next(iter(entries)) if entries else None, 'exits': exits, 'exit': next(iter(exits)) if exits else None, 'exitEdges': exit_edges}
         return plans
 
     @staticmethod
@@ -195,7 +193,7 @@ class WorkflowRuntime:
 
     async def enter_group_boundaries(self, activity_id: str, ctx: dict, plans: dict[str, dict]) -> str | None:
         active = {state['id'] for state in ctx.setdefault('groupStack', [])}
-        candidates = [plan for plan in plans.values() if plan['entry'] == activity_id and plan['group'].id not in active]
+        candidates = [plan for plan in plans.values() if activity_id in plan.get('entries', {plan.get('entry')}) and plan['group'].id not in active]
         candidates.sort(key=lambda plan: len(self._group_ancestors(plan['group'], plans)))
         for plan in candidates:
             if plan['group'].parent_group_id and plan['group'].parent_group_id not in {state['id'] for state in ctx['groupStack']}: continue
@@ -204,7 +202,7 @@ class WorkflowRuntime:
             if not should_run:
                 await self._finish_group(state, plan, ctx, True); ctx['groupStack'].pop()
                 edges = plan['exitEdges']
-                eligible = self.eligible_success_transitions(edges, ctx)
+                eligible = self.select_group_transitions(self.eligible_success_transitions(edges, ctx), ctx, plans)
                 return eligible[0].target if eligible else None
         return activity_id
 
@@ -212,7 +210,7 @@ class WorkflowRuntime:
         while ctx.get('groupStack'):
             state = ctx['groupStack'][-1]; plan = plans[state['id']]; group = plan['group']
             if target_id in plan['members']: break
-            if success and source_id == plan['exit']:
+            if success and (source_id == plan['exit'] or source_id in plan.get('exits', {plan.get('exit')})):
                 cfg = state['config']; repeat = False
                 if group.type in ('for_each', 'iterate') and 'accumulatedOutput' in state:
                     state['accumulatedOutput'].append(ctx.get('last'))
@@ -345,7 +343,7 @@ class WorkflowRuntime:
                         current = caught
                         continue
                 else:
-                    chosen_edges = self.eligible_success_transitions(outgoing, context)
+                    chosen_edges = self.select_group_transitions(self.eligible_success_transitions(outgoing, context), context, group_plans)
                 if error:
                     chosen_edges = [chosen] if chosen else []
                 if not chosen_edges:
@@ -405,6 +403,27 @@ class WorkflowRuntime:
         if conditional: return conditional
         success = [edge for edge in outgoing if edge.type == 'success']
         return success or [edge for edge in outgoing if edge.type == 'success_no_match']
+
+    @staticmethod
+    def select_group_transitions(edges, context: dict, plans: dict[str, dict]):
+        """Apply Pick First semantics before the generic parallel fan-out.
+
+        Pick First is a first-match branch construct: once execution reaches a
+        branch in the group, only that eligible branch continues. Ordinary
+        success fan-out remains unchanged for every other group type.
+        """
+        if len(edges) <= 1:
+            return edges
+        active = next((state for state in reversed(context.get('groupStack', []))
+                       if getattr(plans.get(state.get('id'), {}).get('group'), 'type', None) == 'pick_first'), None)
+        if active:
+            return edges[:1]
+        process = context.get('_process')
+        if not process:
+            return edges
+        pick_first_members = set().union(*(plan['members'] for plan in plans.values() if plan['group'].type == 'pick_first'))
+        candidates = [edge for edge in edges if edge.target in pick_first_members]
+        return edges[:1] if candidates else edges
 
     @staticmethod
     def record_activity_output(activity: Activity, result, ctx: dict):
