@@ -1816,7 +1816,7 @@ function FieldEditor({ field, value, set, resources, tasks, properties = [], sel
             readOnly={field.readOnly}
             onChange={(e) => change(field.type === "number" && !e.target.value.startsWith("${") ? (e.target.value === "" ? "" : Number(e.target.value)) : e.target.value)}
           />
-          <details ref={propertyPanel} className="configuration-property-picker" onToggle={(event) => { if (event.currentTarget.open) { setPropertySearch(""); window.setTimeout(() => event.currentTarget.querySelector<HTMLInputElement>("input")?.focus(), 0); } }}>
+          <details ref={propertyPanel} className="configuration-property-picker" onToggle={(event) => { const panel = event.currentTarget; if (panel.open) { setPropertySearch(""); window.setTimeout(() => panel.querySelector<HTMLInputElement>("input")?.focus(), 0); } }}>
             <summary aria-label={`Browse environment properties for ${field.label}`} title={`Browse environment properties for ${field.label}`}><DataNodeIcon/></summary>
             <div><header><DataNodeIcon/><span><b>ENVIRONMENT PROPERTY</b><small>Map {field.label}</small></span></header><input aria-label={`Search properties for ${field.label}`} value={propertySearch} onChange={(event) => setPropertySearch(event.target.value)} placeholder="Search active environment…"/>
               <section>{compatibleProperties.map((property: any) => <button type="button" key={property.key} onClick={() => { change(`\${properties.${property.key}}`); if (propertyPanel.current) propertyPanel.current.open = false; }}><DataNodeIcon/><span><b>{property.key}</b><small>{property.data_type} · {String(property.value ?? "") || "empty"}</small></span></button>)}{!compatibleProperties.length && <p>No compatible properties match.</p>}</section>
@@ -2004,7 +2004,7 @@ function MappingBinding({ expression, sources, onChange, onConstantChange, field
       ref={constantPanel}
       className="mapping-constant-editor"
       onClick={(event) => event.stopPropagation()}
-      onToggle={(event) => { if (event.currentTarget.open) window.setTimeout(() => event.currentTarget.querySelector<HTMLElement>("input,select")?.focus(), 0); }}
+      onToggle={(event) => { const panel = event.currentTarget; if (panel.open) window.setTimeout(() => panel.querySelector<HTMLElement>("input,select")?.focus(), 0); }}
       onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as globalThis.Node) && !validationFailure.current && constantPanel.current) constantPanel.current.open = false; }}
     >
       <summary role="button" tabIndex={0} aria-label={`Enter ${fieldType} constant value`} title="Enter a schema-typed constant value" onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.parentElement?.toggleAttribute("open"); } }}>123</summary>
@@ -2324,7 +2324,7 @@ function AdvancedEditor({ node, value, properties, set }: any) {
                 value={advanced.logPayload}
                 onChange={(e) => change("logPayload", e.target.value)}
               />
-              <details ref={logPropertyPanel} className="configuration-property-picker" onToggle={(event) => { if (event.currentTarget.open) { setLogPropertySearch(""); window.setTimeout(() => event.currentTarget.querySelector<HTMLInputElement>("input")?.focus(), 0); } }}>
+              <details ref={logPropertyPanel} className="configuration-property-picker" onToggle={(event) => { const panel = event.currentTarget; if (panel.open) { setLogPropertySearch(""); window.setTimeout(() => panel.querySelector<HTMLInputElement>("input")?.focus(), 0); } }}>
                 <summary aria-label="Browse environment properties for Log Payload" title="Browse environment properties for Log Payload"><DataNodeIcon/></summary>
                 <div>
                   <header><DataNodeIcon/><span><b>ENVIRONMENT PROPERTY</b><small>Configure Log Payload from the active environment</small></span></header>

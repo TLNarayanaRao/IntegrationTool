@@ -76,6 +76,20 @@ import "./packaging-target.css";
 import "./home-screen.css";
 import "./groups.css";
 const Braces = DataNodeIcon;
+const EDITABLE_CONTROL_SELECTOR =
+  'input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [contenteditable="true"], [role="textbox"], [data-keyboard-input="true"]';
+
+function editableControlFromEvent(event: Event): HTMLElement | null {
+  for (const item of event.composedPath?.() || []) {
+    if (item instanceof HTMLElement && item.matches(EDITABLE_CONTROL_SELECTOR)) return item;
+  }
+  const target = event.target;
+  return target instanceof Element ? target.closest<HTMLElement>(EDITABLE_CONTROL_SELECTOR) : null;
+}
+
+function eventBelongsToEditableControl(event: Event) {
+  return editableControlFromEvent(event) !== null;
+}
 type Kind =
   | "start"
   | "timer"
@@ -1296,7 +1310,59 @@ function App() {
   }, [project, closed]);
   const split = useRef<{ y: number; height: number } | null>(null),
     configSplit = useRef<{ y: number; height: number } | null>(null),
-    explorerSplit = useRef<{ x: number; width: number } | null>(null);
+    explorerSplit = useRef<{ x: number; width: number } | null>(null),
+    canvasSelectionPointer = useRef<number | null>(null);
+
+  // Canvas pointer capture and pane resize state must never leak into form
+  // editing. Electron/Chromium can miss a component-level pointerup when the
+  // pointer leaves the window; on the next editor click, synchronously clear
+  // every transient gesture and explicitly restore focus to the control.
+  useEffect(() => {
+    const clearTransientGestures = () => {
+      const activeDrag = drag.current;
+      const captureTarget = activeDrag?.captureTarget as HTMLElement | undefined;
+      const pointerId = activeDrag?.pointerId as number | undefined;
+      try {
+        if (captureTarget && pointerId != null && captureTarget.hasPointerCapture?.(pointerId)) {
+          captureTarget.releasePointerCapture(pointerId);
+        }
+      } catch { /* A lost Electron window may have released it already. */ }
+      const selectionPointerId = canvasSelectionPointer.current;
+      try {
+        if (canvas.current && selectionPointerId != null && canvas.current.hasPointerCapture(selectionPointerId)) {
+          canvas.current.releasePointerCapture(selectionPointerId);
+        }
+      } catch { /* Pointer capture is best-effort recovery. */ }
+      drag.current = null;
+      split.current = null;
+      configSplit.current = null;
+      explorerSplit.current = null;
+      canvasSelectionPointer.current = null;
+      setSelectionBox(null);
+      setConnectionDraft(null);
+      setQuickAddDrag(null);
+      setEdgeRewire(null);
+    };
+    const protectEditor = (event: Event) => {
+      const control = editableControlFromEvent(event);
+      if (!control) return;
+      clearTransientGestures();
+      if (event.type === "pointerdown") {
+        window.setTimeout(() => {
+          if (document.contains(control) && document.activeElement !== control) control.focus({ preventScroll: true });
+        }, 0);
+      }
+    };
+    const leaveWindow = () => clearTransientGestures();
+    document.addEventListener("pointerdown", protectEditor, true);
+    document.addEventListener("focusin", protectEditor, true);
+    window.addEventListener("blur", leaveWindow);
+    return () => {
+      document.removeEventListener("pointerdown", protectEditor, true);
+      document.removeEventListener("focusin", protectEditor, true);
+      window.removeEventListener("blur", leaveWindow);
+    };
+  }, []);
   const commitPendingHistory = () => {
     const state = history.current;
     if (state.timer !== null) window.clearTimeout(state.timer);
@@ -1350,8 +1416,7 @@ function App() {
   useEffect(() => {
     const keyboardHistory = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]')) return;
+      if (eventBelongsToEditableControl(event)) return;
       const key = event.key.toLowerCase();
       if (key === "z" && !event.shiftKey) { event.preventDefault(); undoStudio(); }
       else if (key === "y" || (key === "z" && event.shiftKey)) { event.preventDefault(); redoStudio(); }
@@ -1482,8 +1547,9 @@ function App() {
       }
       setConnectionDraft(null);
     };
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
-    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    const cancel = () => setConnectionDraft(null);
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", cancel);
+    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", cancel); };
   }, [connectionDraft?.source, project.active_task_id, zoom]);
   useEffect(() => {
     if (!edgeRewire) return;
@@ -1498,8 +1564,9 @@ function App() {
       if (nodeId && nodeId !== edgeRewire.fixedId && (edgeRewire.endpoint !== "target" || byId[nodeId]?.type !== "catch")) mutateTask((current) => ({ ...current, transitions: current.transitions.map((transition) => transition.id === edgeRewire.edgeId ? { ...transition, [edgeRewire.endpoint]: nodeId } : transition) }));
       setEdgeRewire(null);
     };
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
-    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    const cancel = () => setEdgeRewire(null);
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", cancel);
+    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", cancel); };
   }, [edgeRewire?.edgeId, edgeRewire?.endpoint, project.active_task_id, zoom]);
   useEffect(() => {
     if (!quickAddDrag) return;
@@ -1567,16 +1634,25 @@ function App() {
         if (explorerSplit.current)
           setExplorerWidth(Math.max(190, Math.min(520, explorerSplit.current.width + e.clientX - explorerSplit.current.x)));
       },
-      up = () => {
+      up = (event?: PointerEvent) => {
         split.current = null;
         configSplit.current = null;
         explorerSplit.current = null;
+        if (event && canvasSelectionPointer.current === event.pointerId) {
+          try {
+            if (canvas.current?.hasPointerCapture(event.pointerId)) canvas.current.releasePointerCapture(event.pointerId);
+          } catch { /* The browser may already have released capture. */ }
+          canvasSelectionPointer.current = null;
+          setSelectionBox(null);
+        }
       };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
     };
   }, []);
   const selectTask = (id: string) => {
@@ -1929,8 +2005,7 @@ function App() {
   useEffect(() => {
     const removeSelection = (event: KeyboardEvent) => {
       if (event.key !== "Delete" && event.key !== "Backspace") return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]')) return;
+      if (eventBelongsToEditableControl(event)) return;
       if (!node && !edge) return;
       event.preventDefault();
       if (edge) deleteSelectedTransition();
@@ -1941,8 +2016,7 @@ function App() {
   }, [node, edge, nodes, byId]);
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]')) return;
+      if (eventBelongsToEditableControl(event)) return;
       if (event.ctrlKey || event.metaKey) {
         const key = event.key.toLowerCase();
         if (key === "a") { event.preventDefault(); setSelectedIds(nodes.map((item) => item.id)); if (nodes[0]) setSelected(nodes[0].id); }
@@ -2411,6 +2485,7 @@ function App() {
   useEffect(() => {
     const projectFileShortcuts = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") return;
+      if (eventBelongsToEditableControl(event)) return;
       event.preventDefault();
       if (event.shiftKey) void exportProject();
       else void save();
@@ -2855,6 +2930,7 @@ function App() {
             const x = (event.clientX - bounds.left + canvas.current.scrollLeft) / zoom;
             const y = (event.clientY - bounds.top + canvas.current.scrollTop) / zoom;
             const additive = event.ctrlKey || event.metaKey || event.shiftKey;
+            canvasSelectionPointer.current = event.pointerId;
             setSelectionBox({ startX: x, startY: y, x, y, pointerId: event.pointerId, baseIds: additive ? selectedIds : [] });
             if (!additive) { setSelectedIds([]); setSelected(""); }
             setSelectedEdge(null); setSelectedResource(null);
@@ -2876,10 +2952,13 @@ function App() {
           onPointerUp={(event) => {
             if (!selectionBox || selectionBox.pointerId !== event.pointerId) return;
             if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+            canvasSelectionPointer.current = null;
             setSelectionBox(null);
           }}
           onPointerCancel={(event) => {
             if (!selectionBox || selectionBox.pointerId !== event.pointerId) return;
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+            canvasSelectionPointer.current = null;
             setSelectionBox(null);
           }}
         >
