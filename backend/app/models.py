@@ -21,6 +21,14 @@ class Activity(BaseModel):
     position: dict[str, float] = Field(default_factory=lambda: {'x': 100, 'y': 100})
     config: dict[str, Any] = Field(default_factory=dict)
 
+class GroupDefinition(BaseModel):
+    id: str
+    type: Literal['if', 'while', 'for_each', 'iterate', 'repeat', 'repeat_on_error', 'scope', 'none', 'transaction_jdbc', 'pick_first']
+    name: str
+    member_activity_ids: list[str] = Field(default_factory=list)
+    config: dict[str, Any] = Field(default_factory=dict)
+    position: dict[str, float] = Field(default_factory=lambda: {'x': 100, 'y': 100})
+
 class Transition(BaseModel):
     id: str
     source: str
@@ -295,6 +303,7 @@ class ProcessDefinition(BaseModel):
     name: str = 'Main Process'
     activities: list[Activity] = Field(default_factory=list)
     transitions: list[Transition] = Field(default_factory=list)
+    groups: list[GroupDefinition] = Field(default_factory=list)
 
     @model_validator(mode='after')
     def enforce_single_event_activity(self):

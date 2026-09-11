@@ -170,6 +170,53 @@ const writeProjectJson = (filePath, value) => {
   fs.renameSync(temporary, filePath);
 };
 
+const readProjectFolder = (folderPath) => {
+  const descriptorPath = path.join(folderPath, 'project.json');
+  if (!fs.existsSync(descriptorPath)) throw new Error('The selected folder does not contain project.json.');
+  const metadata = JSON.parse(fs.readFileSync(descriptorPath, 'utf8'));
+  const layout = metadata.layout && typeof metadata.layout === 'object' ? metadata.layout : {};
+  // Accept folders produced by older Studio builds, which kept the complete
+  // project directly in project.json instead of using a layout manifest.
+  if (!metadata.layout && Array.isArray(metadata.tasks)) {
+    return { path: folderPath, name: path.basename(folderPath), project: metadata, kind: 'folder' };
+  }
+  const relativePath = (value, label) => {
+    if (typeof value !== 'string' || !value.trim() || path.isAbsolute(value) || value.includes('..')) throw new Error(`Invalid ${label} path in project.json.`);
+    return value.replaceAll('/', path.sep);
+  };
+  const readJson = (relative, label) => {
+    const target = path.join(folderPath, relativePath(relative, label));
+    if (!fs.existsSync(target) || !fs.statSync(target).isFile()) throw new Error(`Missing ${label}: ${relative}`);
+    return JSON.parse(fs.readFileSync(target, 'utf8'));
+  };
+  const taskFiles = Array.isArray(layout.tasks) ? layout.tasks : [];
+  const resourceFiles = Array.isArray(layout.resources) ? layout.resources : [];
+  const schemaFiles = Array.isArray(layout.schemas) ? layout.schemas : [];
+  const propertyFiles = Array.isArray(layout.properties) ? layout.properties : [];
+  const properties = Object.fromEntries(propertyFiles.map((relative) => {
+    const value = readJson(relative, 'environment properties');
+    if (!value.environment) throw new Error(`Environment properties file ${relative} has no environment name.`);
+    return [value.environment, value.values && typeof value.values === 'object' ? value.values : {}];
+  }));
+  const schemas = schemaFiles.map((relative) => {
+    const normalized = relativePath(relative, 'schema');
+    const target = path.join(folderPath, normalized);
+    if (!fs.existsSync(target) || !fs.statSync(target).isFile()) throw new Error(`Missing schema: ${relative}`);
+    const metaPath = `${target}.meta.json`;
+    const meta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf8')) : {};
+    return { id: meta.id || safeProjectPart(path.basename(normalized, path.extname(normalized))), name: meta.name || path.basename(normalized), content: fs.readFileSync(target, 'utf8') };
+  });
+  const packaging = layout.packaging ? readJson(layout.packaging, 'packaging') : {};
+  const tasks = taskFiles.map((item) => readJson(item, 'task'));
+  tasks.forEach((task) => (task.activities || []).forEach((activity) => {
+    const artifact = activity.config && activity.config.projectArtifact;
+    if (artifact) activity.config.artifactPath = path.join(folderPath, relativePath(artifact, 'project artifact'));
+  }));
+  const project = { ...metadata, layout: undefined, tasks, resources: resourceFiles.map((item) => readJson(item, 'resource')), schemas, properties, packaging };
+  delete project.layout;
+  return { path: folderPath, name: path.basename(folderPath), project, kind: 'folder' };
+};
+
 ipcMain.handle('fabric:save-project-folder', async (_event, options) => {
   let folderPath = options.path;
   if (!folderPath) {
@@ -213,28 +260,44 @@ ipcMain.handle('fabric:save-project-folder', async (_event, options) => {
   return folderPath;
 });
 
-ipcMain.handle('fabric:open-file', async () => {
+ipcMain.handle('fabric:open-file', async (_event, fileType) => {
+  const extensions = fileType === 'ifproject' ? ['ifproject'] : fileType === 'ifpkg' ? ['ifpkg'] : fileType === 'zip' ? ['zip'] : fileType === 'json' ? ['json'] : ['ifproject', 'ifpkg', 'zip', 'json'];
   const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile', 'openDirectory'],
-    filters: [{ name: 'Integration Fabric Project', extensions: ['ifproject', 'ifpkg', 'zip', 'json'] }],
+    // Import must be a file picker. Combining openFile and openDirectory on
+    // Windows causes Electron to show a folder-only dialog and prevents the
+    // .ifproject filter from being selected.
+    properties: ['openFile'],
+    filters: [{ name: 'Integration Fabric Project', extensions }],
   });
   if (result.canceled || !result.filePaths[0]) return null;
   const filePath = result.filePaths[0];
-  if (fs.statSync(filePath).isDirectory()) {
-    const descriptorPath = path.join(filePath, 'project.json');
-    if (!fs.existsSync(descriptorPath)) throw new Error('The selected folder does not contain project.json.');
-    const metadata = JSON.parse(fs.readFileSync(descriptorPath, 'utf8'));
-    const layout = metadata.layout || {};
-    const readJson = (relative) => JSON.parse(fs.readFileSync(path.join(filePath, relative), 'utf8'));
-    const taskFiles = layout.tasks || [];
-    const resourceFiles = layout.resources || [];
-    const schemaFiles = layout.schemas || [];
-    const propertyFiles = layout.properties || [];
-    const properties = Object.fromEntries(propertyFiles.map((relative) => { const value = readJson(relative); return [value.environment, value.values]; }));
-    const schemas = schemaFiles.map((relative) => { const target = path.join(filePath, relative); const meta = fs.existsSync(`${target}.meta.json`) ? JSON.parse(fs.readFileSync(`${target}.meta.json`, 'utf8')) : {}; return { id: meta.id || safeProjectPart(path.basename(relative, path.extname(relative))), name: meta.name || path.basename(relative), content: fs.readFileSync(target, 'utf8') }; });
-    const project = { ...metadata, layout: undefined, tasks: taskFiles.map(readJson), resources: resourceFiles.map(readJson), schemas, properties, packaging: layout.packaging ? readJson(layout.packaging) : {} };
-    return { path: filePath, name: path.basename(filePath), project, kind: 'folder' };
+  return { path: filePath, name: path.basename(filePath), bytes: [...fs.readFileSync(filePath)], kind: 'file' };
+});
+
+ipcMain.handle('fabric:open-project-folder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, { title: 'Open Integration Fabric project folder', buttonLabel: 'Open folder', properties: ['openDirectory'] });
+  if (result.canceled || !result.filePaths[0]) return null;
+  return readProjectFolder(result.filePaths[0]);
+});
+
+ipcMain.handle('fabric:open-project-source', async () => {
+  const choice = await dialog.showMessageBox(mainWindow, {
+    type: 'question',
+    title: 'Open Integration Fabric project',
+    message: 'Choose the project source to open',
+    buttons: ['Project file', 'Project folder', 'Cancel'],
+    defaultId: 0,
+    cancelId: 2,
+  });
+  if (choice.response === 2) return null;
+  if (choice.response === 1) {
+    const result = await dialog.showOpenDialog(mainWindow, { title: 'Open Integration Fabric project folder', buttonLabel: 'Open folder', properties: ['openDirectory'] });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return readProjectFolder(result.filePaths[0]);
   }
+  const result = await dialog.showOpenDialog(mainWindow, { title: 'Open Integration Fabric project file', properties: ['openFile'], filters: [{ name: 'Integration Fabric Project', extensions: ['ifproject', 'ifpkg', 'zip', 'json'] }] });
+  if (result.canceled || !result.filePaths[0]) return null;
+  const filePath = result.filePaths[0];
   return { path: filePath, name: path.basename(filePath), bytes: [...fs.readFileSync(filePath)], kind: 'file' };
 });
 

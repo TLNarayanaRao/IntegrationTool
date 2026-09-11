@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   ArrowRight,
+  ExternalLink,
   BookOpen,
   CalendarClock,
   CheckCircle2,
@@ -1330,6 +1331,7 @@ export default function ActivityEditor({
   customFunctions = [],
   updateCustomFunctions,
   handleExceptions,
+  navigateTask,
   tab,
   update,
 }: any) {
@@ -1408,6 +1410,7 @@ export default function ActivityEditor({
               tasks={tasks}
               properties={properties}
               selectedResourceId={cfg.resourceId}
+              navigateTask={navigateTask}
             />
           ))}
         </div>
@@ -1691,7 +1694,7 @@ function JdbcDesigner({ config, resource, properties, setConfig }: any) {
   return <section className="jdbc-designer"><header><span><Database/><b>JDBC SQL DESIGNER</b><small>Prepared SQL editor · parameters become typed Input fields automatically.</small></span><span><button type="button" onClick={fetchMetadata} disabled={busy || !resource}><RefreshCw/> Fetch metadata</button><button type="button" onClick={run} disabled={busy || !resource || (!String(config.sql || "").trim() && config.operation !== "call")}><FlaskConical/> Run &amp; fetch</button></span></header>{config.operation !== "call" && <><div className="jdbc-editor-toolbar"><span><b>SQL statement</b><small>Use <code>:parameterName</code> for safe dynamic values.</small></span><button type="button" onClick={() => updateSql(samples[config.operation] || samples.query)}>Insert sample {config.operation || "query"}</button></div><div className="jdbc-code-editor"><span aria-hidden="true">SQL</span><textarea aria-label="JDBC SQL statement" value={config.sql || ""} onChange={(event) => updateSql(event.target.value)} placeholder={samples[config.operation] || samples.query} spellCheck={false}/></div></>} {!!configuredParameters.length && <div className="jdbc-parameters"><header><b>Derived input parameters</b><small>Map values in Input → parameters; choose the database datatype here.</small></header>{configuredParameters.map((parameter: any, index: number) => <label key={`${parameter.name}-${index}`}><code>{index + 1}</code><span><b>:{parameter.name}</b><small>parameters.{parameter.name}</small></span><select aria-label={`Datatype for ${parameter.name}`} value={parameter.type || "string"} onChange={(event) => setParameterType(parameter.name, event.target.value)}>{parameterTypes.map((type) => <option key={type}>{type}</option>)}</select></label>)}</div>} {metadata && <div className="jdbc-schema-browser">{metadata.tables?.map((table: any) => <button type="button" key={`${table.schema}.${table.name}`} onClick={() => updateSql(`SELECT * FROM ${table.schema ? `${table.schema}.` : ""}${table.name}`)}><span><b>{table.name}</b><small>{table.schema} · {table.type}</small></span><code>{table.columns?.length || 0} columns</code></button>)}</div>} {preview && <pre>{JSON.stringify(preview, null, 2)}</pre>} {status && <p>{status}</p>}</section>;
 }
 
-function FieldEditor({ field, value, set, resources, tasks, properties = [], selectedResourceId }: any) {
+function FieldEditor({ field, value, set, resources, tasks, properties = [], selectedResourceId, navigateTask }: any) {
   const change = (v: any) => set(field.key, v);
   const propertyPanel = useRef<HTMLDetailsElement>(null);
   const [propertySearch, setPropertySearch] = useState("");
@@ -1799,16 +1802,10 @@ function FieldEditor({ field, value, set, resources, tasks, properties = [], sel
           })}
         </select>
       ) : field.type === "task" ? (
-        <select value={value || ""} onChange={(e) => change(e.target.value)}>
-          <option value="">Select Sub Task…</option>
-          {tasks
-            .filter((t: any) => t.kind === "subtask")
-            .map((t: any) => (
-              <option value={t.id} key={t.id}>
-                {t.name}
-              </option>
-            ))}
-        </select>
+        <span className="task-reference-picker"><select value={value || ""} onChange={(e) => change(e.target.value)} onDoubleClick={() => value && navigateTask?.(value)}>
+            <option value="">Select Sub Task…</option>
+            {tasks.filter((t: any) => t.kind === "subtask").map((t: any) => <option value={t.id} key={t.id}>{t.name}</option>)}
+          </select>{value && <button type="button" title="Open selected Sub Task" aria-label="Open selected Sub Task" onClick={() => navigateTask?.(value)}><ExternalLink/></button>}</span>
       ) : (
         field.propertyBrowse ? <span className="configuration-property-field">
           <input

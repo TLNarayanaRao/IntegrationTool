@@ -63,6 +63,7 @@ import "./studio-shell.css";
 import "./schema-studio.css";
 import "./task-runtime.css";
 import "./themes.css";
+import "./seasonal-themes.css";
 import "./activity-editor.css";
 import "./explorer-enhancements.css";
 import "./mapper-studio.css";
@@ -134,7 +135,9 @@ type Task = {
   transitions: Edge[];
   input_schema?: Record<string, any>;
   output_schema?: Record<string, any>;
+  groups?: GroupDefinition[];
 };
+type GroupDefinition = { id: string; type: "if" | "while" | "for_each" | "iterate" | "repeat" | "repeat_on_error" | "scope" | "none" | "transaction_jdbc" | "pick_first"; name: string; member_activity_ids: string[]; config: Record<string, any>; position: { x: number; y: number } };
 type Resource = {
   id: string;
   type:
@@ -229,6 +232,18 @@ const themeOptions = [
   { value: "cyber", label: "Cyber Neon", detail: "Electric cyan, magenta, and deep-space canvas" },
   { value: "lavender", label: "Lavender Mist", detail: "Soft violet workspace with calm teal accents" },
   { value: "terminal", label: "Terminal Green", detail: "Monospace operator console with phosphor highlights" },
+  { value: "autumn", label: "Autumn Ember", detail: "Burnt orange, maple, and warm espresso" },
+  { value: "spring", label: "Spring Garden", detail: "Fresh mint, blossom pink, and young-leaf green" },
+  { value: "summer", label: "Summer Citrus", detail: "Bright lemon, aqua, and sunset coral" },
+  { value: "icy", label: "Icy Blue", detail: "Cool blue glass with crisp silver accents" },
+  { value: "snowy", label: "Snowy Morning", detail: "Soft white, powder blue, and winter violet" },
+  { value: "creamy", label: "Creamy Latte", detail: "Warm cream, caramel, and coffee brown" },
+  { value: "icecreamy", label: "Ice Cream", detail: "Playful strawberry, mint, and vanilla" },
+  { value: "lunchy", label: "Lunchy Diner", detail: "Retro tomato, mustard, and pickle green" },
+  { value: "crunchy", label: "Crunchy Snack", detail: "Toasted amber, paprika, and sesame" },
+  { value: "ai", label: "AI Intelligence", detail: "Neural violet with electric cyan data pulses" },
+  { value: "robots", label: "Robotics Lab", detail: "Steel, hazard yellow, and machine blue" },
+  { value: "datastream", label: "Live Data Stream", detail: "Animated green and blue movement across the canvas" },
 ];
 const isEventActivity = (item: { type: Kind; operation?: string; config?: Record<string, any> }) => {
   const operation = item.operation || item.config?.operation || "";
@@ -936,6 +951,7 @@ const normalizeProject = (value: any): Project => {
         };
       }),
       transitions: Array.isArray(task.transitions) ? task.transitions : [],
+      groups: Array.isArray(task.groups) ? task.groups : [],
     });
   });
   const fallback = structuredClone(initial);
@@ -1090,6 +1106,8 @@ function App() {
     [aiBuilderOpen, setAiBuilderOpen] = useState(false),
     [catchAIOpen, setCatchAIOpen] = useState<string | null>(null),
     [packageOpen, setPackageOpen] = useState(false),
+    [openSourceOpen, setOpenSourceOpen] = useState(false),
+    [exportSourceOpen, setExportSourceOpen] = useState(false),
     [debugState, setDebugState] = useState<any>(null),
     [executionOutputs, setExecutionOutputs] = useState<Record<string, any>>({}),
     [endpoints, setEndpoints] = useState<any[]>([]),
@@ -1855,8 +1873,8 @@ function App() {
     anchor.href = url; anchor.download = filename; document.body.appendChild(anchor); anchor.click(); anchor.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1500);
   };
-  const saveProjectFile = async (format: "package" | "json" = "package", forceNew = false) => {
-    const extension = format === "package" ? "ifproject" : "json", filename = projectFilename(extension), picker = (window as any).showSaveFilePicker;
+  const saveProjectFile = async (format: "package" | "json" = "package", forceNew = false, extensionOverride?: string) => {
+    const extension = extensionOverride || (format === "package" ? "ifproject" : "json"), filename = projectFilename(extension), picker = (window as any).showSaveFilePicker;
     let handle = format === "package" && !forceNew ? projectFileHandle.current : null;
     setWorkStatus(format === "package" ? "Saving project package…" : "Saving project JSON…");
     try {
@@ -2150,19 +2168,25 @@ function App() {
       return null;
     } finally { setWorkStatus(""); }
   };
-  const importFromFileSystem = async () => {
+  const importFromFileSystem = async (fileType?: "ifproject" | "ifpkg" | "zip" | "json") => {
     setWorkStatus("Opening project from filesystem…");
     try {
     if (window.fabricDesktop) {
-      const selectedFile = await window.fabricDesktop.openProject();
+      const selectedFile = await window.fabricDesktop.openProject(fileType);
       if (!selectedFile) return;
       if (selectedFile.kind === "folder" && selectedFile.project) {
-        const response = await fetch(`/api/projects/${(selectedFile.project as any).id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(selectedFile.project) });
+        const projectValue = selectedFile.project as any;
+        const response = await fetch(`/api/projects/${projectValue.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(projectValue) });
         const imported = await response.json();
         if (!response.ok) { setLogs([{ level: "ERROR", message: imported.detail || "Unable to open project folder" }]); return; }
-        const normalized = normalizeProject(imported); setProject(normalized); setClosed(false); const first = normalized.tasks?.[0]?.activities?.[0]?.id || ""; setSelected(first); setSelectedIds(first ? [first] : []);
-        projectFileHandle.current = selectedFile.path; localStorage.setItem(`integration-fabric-project-path:${imported.id}`, selectedFile.path);
-        setLogs([{ level: "INFO", message: `Opened project folder ${selectedFile.path}.` }]); return;
+        const normalized = normalizeProject(imported);
+        setProject(normalized); setClosed(false);
+        const first = normalized.tasks?.[0]?.activities?.[0]?.id || "";
+        setSelected(first); setSelectedIds(first ? [first] : []);
+        projectFileHandle.current = selectedFile.path;
+        localStorage.setItem(`integration-fabric-project-path:${imported.id}`, selectedFile.path);
+        setLogs([{ level: "INFO", message: `Opened complete project folder ${selectedFile.path}.` }]);
+        return;
       }
       if (!selectedFile.bytes) return;
       const imported = await importProject(new File([new Uint8Array(selectedFile.bytes)], selectedFile.name));
@@ -2181,6 +2205,41 @@ function App() {
       if (error?.name !== "AbortError") setLogs([{ level: "ERROR", message: error?.message || "Project import failed" }]);
     }
     } finally { setWorkStatus(""); }
+  };
+  const importProjectFolder = async () => {
+    if (!window.fabricDesktop?.openProjectFolder) {
+      setLogs([{ level: "INFO", message: "Project folder import is available in the desktop application. Use an .ifproject file in browser mode." }]);
+      return;
+    }
+    setWorkStatus("Opening project folder…");
+    try {
+      const selected = await window.fabricDesktop.openProjectFolder();
+      if (!selected?.project) return;
+      const projectValue = selected.project as any;
+      const response = await fetch(`/api/projects/${projectValue.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(projectValue) });
+      const imported = await response.json();
+      if (!response.ok) throw new Error(imported.detail || "Unable to open project folder");
+      const normalized = normalizeProject(imported);
+      setProject(normalized); setClosed(false);
+      const first = normalized.tasks?.[0]?.activities?.[0]?.id || "";
+      setSelected(first); setSelectedIds(first ? [first] : []);
+      projectFileHandle.current = selected.path;
+      localStorage.setItem(`integration-fabric-project-path:${imported.id}`, selected.path);
+      setLogs([{ level: "INFO", message: `Opened complete project folder ${selected.path}.` }]);
+    } catch (error: any) {
+      if (error?.name !== "AbortError") setLogs([{ level: "ERROR", message: error?.message || "Project folder import failed" }]);
+    } finally { setWorkStatus(""); }
+  };
+  const openGenericProject = () => {
+    if (window.fabricDesktop) setOpenSourceOpen(true);
+    else void importFromFileSystem();
+  };
+  const exportGenericProject = (type?: string) => {
+    if (!type) { setExportSourceOpen(true); return; }
+    if (type === "folder") { void saveProjectFolder(); return; }
+    if (type === "json") { void saveJsonFile(); return; }
+    if (type === "ifpkg") { setPackageOpen(true); return; }
+    void saveProjectFile("package", true, type);
   };
   const deleteCurrent = async () => {
       if (
@@ -2259,6 +2318,7 @@ function App() {
         createProject={newProject}
         importProject={importProject}
         importFromFileSystem={importFromFileSystem}
+        importProjectFolder={importProjectFolder}
         theme={theme}
         setTheme={setTheme}
       />
@@ -2270,7 +2330,7 @@ function App() {
           <Workflow /> IF
         </div>
         <div className="menu-root"><button className={menu === "file" ? "active" : ""} onClick={(e) => { e.stopPropagation(); setMenu(menu === "file" ? null : "file"); }}>File</button>
-          {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} save={save} saveJson={saveJsonFile} exportProject={exportProject} importProject={importFromFileSystem} openProjects={() => setClosed(true)} sampleProjects={() => setSampleGalleryOpen(true)} catchAI={openCatchAI} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
+          {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} save={save} saveJson={saveJsonFile} exportProject={exportGenericProject} importProject={openGenericProject} importProjectFolder={importProjectFolder} openProjects={() => setClosed(true)} sampleProjects={() => setSampleGalleryOpen(true)} catchAI={openCatchAI} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
         <TopMenu label="Edit" open={menu === "edit"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "edit" ? null : "edit"); }} commands={[
           { label: "Undo", detail: "Restore an earlier Studio change · up to 100 levels", icon: Undo2, shortcut: "Ctrl+Z", action: undoStudio, disabled: history.current.past.length === 0 && !history.current.pendingBase },
           { label: "Redo", detail: "Restore the most recently undone change", icon: Redo2, shortcut: "Ctrl+Y", action: redoStudio, disabled: history.current.future.length === 0 },
@@ -2312,8 +2372,10 @@ function App() {
         newProject={newProject}
         openProject={() => setClosed(true)}
         importProject={importFromFileSystem}
+        openProjectSource={openGenericProject}
+        importProjectFolder={importProjectFolder}
         save={save}
-        exportProject={exportProject}
+        exportProject={exportGenericProject}
         packageProject={() => setPackageOpen(true)}
         sampleProjects={() => setSampleGalleryOpen(true)}
         closeProject={closeProject}
@@ -2787,13 +2849,19 @@ function App() {
                     setSelectedResource(null);
                     setActiveTab("configuration");
                   }}
-                  onDoubleClick={() =>
-                    setBreakpoints((b) =>
-                      b.includes(n.id)
-                        ? b.filter((x) => x !== n.id)
-                        : [...b, n.id],
-                    )
-                  }
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSelected(n.id); setSelectedIds([n.id]); setSelectedEdge(null); setSelectedResource(null); setActiveTab("configuration");
+                    setMenu({ type: "activity", id: n.id, x: e.clientX, y: e.clientY });
+                  }}
+                  onDoubleClick={() => {
+                    if (n.type === "call_task") {
+                      const target = project.tasks.find((candidate) => candidate.kind === "subtask" && (candidate.id === n.config?.taskId || candidate.name === n.config?.taskId));
+                      if (target) { selectTask(target.id); return; }
+                    }
+                    setBreakpoints((b) => b.includes(n.id) ? b.filter((x) => x !== n.id) : [...b, n.id]);
+                  }}
                 >
                   <span className="node-icon">
                     {ai(
@@ -2888,6 +2956,7 @@ function App() {
                 }))
               }
               handleExceptions={(types: string[]) => createExceptionHandlers(node.id, types)}
+              navigateTask={selectTask}
             />
           ) : edge ? (
             <EdgeConfig
@@ -2987,6 +3056,7 @@ function App() {
       {typeof menu === "object" && menu && (
         <Context
           menu={menu}
+          projectActivity={(id: string) => nodes.find((item) => item.id === id)}
           addActivity={addActivity}
           createTask={setTaskDialog}
           createConnection={setConnectionDialog}
@@ -2994,7 +3064,11 @@ function App() {
             newProject, importProject: importFromFileSystem, exportProject, save, refresh: explorerRefresh,
             rename: explorerRename, copy: explorerCopy, paste: explorerPaste, remove: explorerRemove,
             run: (id?: string) => run(id), debug: (id?: string) => debug(id), validate: (id?: string) => { const target = id ? project.tasks.find((item) => item.id === id) : null; if (!target) { runValidation("project"); return; } const issues = validateTaskDefinition(project, target); setValidation({ title: `Validate Task · ${target.name}`, issues }); selectTask(target.id); setLogs([{ level: issues.some((item) => item.severity === "error") ? "ERROR" : issues.length ? "WARN" : "INFO", message: issues.length ? `${target.name}: ${issues.length} validation finding${issues.length === 1 ? "" : "s"}.` : `${target.name}: validation successful.` }]); },
-            properties: (type: string, id?: string) => { if (type === "application") setRenameOpen(true); else if (type === "task" && id) selectTask(id); else if (type === "resource" && id) setEditingConnection(project.resources.find((item) => item.id === id) || null); else if (type === "schema" && id) setSchemaEditor(project.schemas.find((item) => item.id === id) || null); else if (type === "property" && id) setPropertyEditor(id); else if (type === "packaging") setPackageOpen(true); },
+            properties: (type: string, id?: string) => { if (type === "application") setRenameOpen(true); else if (type === "task" && id) selectTask(id); else if (type === "activity" && id) { setSelected(id); setSelectedIds([id]); setActiveTab("configuration"); } else if (type === "resource" && id) setEditingConnection(project.resources.find((item) => item.id === id) || null); else if (type === "schema" && id) setSchemaEditor(project.schemas.find((item) => item.id === id) || null); else if (type === "property" && id) setPropertyEditor(id); else if (type === "packaging") setPackageOpen(true); },
+            copyActivity: copySelection, cutActivity: cutSelection, pasteActivity: pasteSelection,
+            deleteActivity: deleteSelectedActivity,
+            toggleBreakpoint: (id: string) => setBreakpoints((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]),
+            groupActivity: () => setLogs([{ level: "INFO", message: "Group editor is being prepared for nested execution semantics." }]),
             newSchema: () => setSchemaEditor("new"), newEnvironment: () => { const name = prompt("New environment name")?.trim().toLowerCase(); if (name && !project.properties[name]) setProject((current) => ({ ...current, properties: { ...current.properties, [name]: newEnvironmentProperties() } })); }, package: () => setPackageOpen(true),
           }}
           close={() => setMenu(null)}
@@ -3135,7 +3209,9 @@ function App() {
         if (issue.activityId) { setSelected(issue.activityId); setSelectedIds([issue.activityId]); setSelectedEdge(null); setSelectedResource(null); setActiveTab("configuration"); }
         setValidation(null);
       }}/>}
-      {catchAIOpen && <CatchAIDialog onClose={() => setCatchAIOpen(null)} onApply={(types: string[]) => { createExceptionHandlers(catchAIOpen, types); setCatchAIOpen(null); }}/>}
+      {catchAIOpen && <CatchAIDialog onClose={() => setCatchAIOpen(null)} onApply={(types: string[]) => { createExceptionHandlers(catchAIOpen, types); setCatchAIOpen(null); }}/>} 
+      {openSourceOpen && <OpenProjectSourceDialog onClose={() => setOpenSourceOpen(false)} onFile={(type: any) => { setOpenSourceOpen(false); void importFromFileSystem(type); }} onFolder={() => { setOpenSourceOpen(false); void importProjectFolder(); }}/>} 
+      {exportSourceOpen && <OpenProjectSourceDialog title="Export Integration Fabric project" actionLabel="Export" onClose={() => setExportSourceOpen(false)} onFile={(type: any) => { setExportSourceOpen(false); exportGenericProject(type); }} onFolder={() => { setExportSourceOpen(false); exportGenericProject("folder"); }} exportMode/>}
       {renameOpen && (
         <RenameApplication
           name={project.name}
@@ -3333,11 +3409,26 @@ function StudioRibbon(props: any) {
   const command = (label: string, Icon: any, action: () => void, disabled = false, emphasis = false) =>
     <button type="button" className={emphasis ? "emphasis" : ""} disabled={disabled} onClick={(event) => { event.stopPropagation(); action(); }} title={label}><Icon/><span>{label}</span></button>;
   return <section className="studio-ribbon" aria-label="Studio ribbon">
-    <div className="ribbon-group"><b>PROJECT</b><div>{command("New", FilePlus2, props.newProject)}{command("Open", FolderOpen, props.openProject)}{command("Import", Upload, props.importProject)}{command("Samples", BookOpen, props.sampleProjects)}{command("Save", Save, props.save)}{command("Export", Download, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</div></div>
+    <div className="ribbon-group"><b>PROJECT</b><div>{command("New", FilePlus2, props.newProject)}{command("Open", FolderOpen, props.openProjectSource || props.importProject)}{command("Import", Upload, props.importProject)}{command("Samples", BookOpen, props.sampleProjects)}{command("Save", Save, props.save)}{command("Export", Download, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</div></div>
     <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("AI Build", WandSparkles, props.aiBuild)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Run", CirclePlay, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}</div></div>
     <div className="ribbon-group"><b>EDIT</b><div>{command("Undo", Undo2, props.undo)}{command("Cut", Scissors, props.cut, !props.selectedCount)}{command("Copy", ClipboardCopy, props.copy, !props.selectedCount)}{command("Paste", ClipboardPaste, props.paste)}</div></div>
     <div className="ribbon-group layout-group"><b>ARRANGE · {props.selectedCount} SELECTED</b><div>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</div></div>
   </section>;
+}
+function OpenProjectSourceDialog({ onClose, onFile, onFolder, title = "Open Integration Fabric project", actionLabel = "Browse", exportMode = false }: any) {
+  const [source, setSource] = useState<"ifproject" | "ifpkg" | "zip" | "json" | "folder">("ifproject");
+  const choices = [
+    ["ifproject", ".ifproject", exportMode ? "Export complete project package" : "Complete Integration Fabric project package"],
+    ["ifpkg", ".ifpkg", exportMode ? "Export deployment package" : "Deployment package"],
+    ["zip", "ZIP", "ZIP project archive"],
+    ["json", "JSON", "Project JSON descriptor"],
+    ["folder", "Structured project folder", "Folder containing project.json and project content"],
+  ] as const;
+  return <div className="modal-backdrop"><div className="runtime-modal" role="dialog" aria-modal="true" aria-labelledby="open-project-title">
+    <header><b id="open-project-title">{title}</b><button onClick={onClose} aria-label="Close">×</button></header>
+    <main><p>Select the project format, then browse for the matching file or folder.</p><div className="open-project-source-options">{choices.map(([value, label, detail]) => <label key={value}><input type="radio" name={exportMode ? "export-source" : "project-source"} checked={source === value} onChange={() => setSource(value)}/><span><b>{label}</b><small>{detail}</small></span></label>)}</div></main>
+    <footer><button onClick={onClose}>Cancel</button><button className="primary" onClick={() => source === "folder" ? onFolder() : onFile(source)}>{source === "folder" ? "Browse folder" : `${actionLabel} file`}</button></footer>
+  </div></div>;
 }
 function ValidationDialog({ result, onClose, onOpen }: any) {
   const counts = result.issues.reduce((value: any, issue: ValidationIssue) => ({ ...value, [issue.severity]: (value[issue.severity] || 0) + 1 }), {});
@@ -3627,6 +3718,7 @@ function FileMenu({
   saveJson,
   exportProject,
   importProject,
+  importProjectFolder,
   openProjects,
   sampleProjects,
   catchAI,
@@ -3662,6 +3754,12 @@ function FileMenu({
         <Upload />
         <span>
           Import Project<small>Open .ifproject or JSON</small>
+        </span>
+      </button>
+      <button onClick={go(importProjectFolder)}>
+        <FolderOpen />
+        <span>
+          Open Project Folder<small>Open a saved structured project folder</small>
         </span>
       </button>
       <button onClick={go(openProjects)}>
@@ -3758,10 +3856,11 @@ function IntegrationBrandArtwork({ className = "" }: { className?: string }) {
     </svg>
   </div>;
 }
-function ProjectWelcome({ createProject, importProject, importFromFileSystem, theme, setTheme }: any) {
-  const input = useRef<HTMLInputElement>(null), [createOpen, setCreateOpen] = useState(false), [samplesOpen, setSamplesOpen] = useState(false), [name, setName] = useState("New Integration Application"), [importing, setImporting] = useState(false);
+function ProjectWelcome({ createProject, importProject, importFromFileSystem, importProjectFolder, theme, setTheme }: any) {
+  const input = useRef<HTMLInputElement>(null), [createOpen, setCreateOpen] = useState(false), [samplesOpen, setSamplesOpen] = useState(false), [sourceOpen, setSourceOpen] = useState(false), [name, setName] = useState("New Integration Application"), [importing, setImporting] = useState(false);
   const beginImport = async () => {
     if (!window.fabricDesktop && !(window as any).showOpenFilePicker) { input.current?.click(); return; }
+    if (window.fabricDesktop) { setSourceOpen(true); return; }
     setImporting(true);
     try { await importFromFileSystem(); } finally { setImporting(false); }
   };
@@ -3831,10 +3930,11 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, th
         <h1>Mediation,<br /><span>Transformation &amp;</span><br />Deliver Integrations.</h1>
         <div className="launch-buttons">
           <button className="create-project" onClick={() => setCreateOpen(true)}><span><FilePlus2/></span><b>Create new project<small>Start with the standard project structure</small></b><ChevronRight/></button>
-          <button className="import-project" onClick={beginImport} disabled={importing}><span><Upload/></span><b>{importing ? "Importing project…" : "Import existing project"}<small>.ifproject, project folder, ZIP or compatible JSON</small></b><ChevronRight/></button>
+          <button className="import-project" onClick={beginImport} disabled={importing}><span><Upload/></span><b>{importing ? "Opening project…" : "Import existing project"}<small>Choose .ifproject, .ifpkg, ZIP, JSON, or a structured folder</small></b><ChevronRight/></button>
           <button className="sample-projects" onClick={() => setSamplesOpen(true)}><span><BookOpen/></span><b>Explore sample projects<small>Editable, installed examples for mapping, APIs, data, JDBC, and messaging</small></b><ChevronRight/></button>
           <button className="installed-guide" onClick={() => window.open("/help/activity-reference.html", "_blank", "noopener")}><span><BookOpen/></span><b>Open installed activity guide<small>Offline configuration, mapping, runtime, and error reference</small></b><ChevronRight/></button>
         </div>
+        {sourceOpen && <OpenProjectSourceDialog onClose={() => setSourceOpen(false)} onFile={(type: any) => { setSourceOpen(false); setImporting(true); void importFromFileSystem(type).finally(() => setImporting(false)); }} onFolder={() => { setSourceOpen(false); setImporting(true); void importProjectFolder().finally(() => setImporting(false)); }}/>} 
       </section>
     </main>
     <footer><span><ShieldCheck/> Enterprise integration development</span><span>DESIGN TIME <i/> RUNTIME <i/> DEPLOYMENT</span></footer>
@@ -3848,6 +3948,7 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, th
 }
 function Context({
   menu,
+  projectActivity,
   addActivity,
   createTask,
   createConnection,
@@ -3874,7 +3975,7 @@ function Context({
     jdbc: "/activity-icons/JDBC-Query.png", snowflake: "/activity-icons/snowflake.svg", amqp: "/vendor-logos/rabbitmq.svg",
     sap: "/vendor-logos/sap.svg", sap_tid: "/vendor-logos/sap.svg",
   };
-  if (menu.type === "canvas")
+    if (menu.type === "canvas")
     return (
       <ActivityPicker
         menu={menu}
@@ -3888,6 +3989,23 @@ function Context({
   const explorerMenuMaxHeight = Math.max(180, window.innerHeight - explorerMenuTop - 8);
   const act = (callback: () => void) => () => { callback(); close(); };
   const item = (label: string, detail: string, Icon: any, callback: () => void, disabled = false) => <button disabled={disabled} onClick={act(callback)}><Icon/><span><b>{label}</b><small>{detail}</small></span></button>;
+  if (menu.type === "activity") {
+    const activity = projectActivity(menu.id);
+    return <div className="canvas-menu resource-menu activity-context-menu" style={{ left: Math.max(8, Math.min(menu.x, window.innerWidth - 340)), top: Math.max(8, Math.min(menu.y, window.innerHeight - 360)) }} onClick={(e) => e.stopPropagation()}>
+      <b>{activity?.name || "Activity"}</b>
+      {item("Edit Configuration", "Open activity configuration", Settings2, () => actions.properties("activity", menu.id))}
+      {item("Copy", "Copy activity and its transitions", ClipboardCopy, actions.copyActivity)}
+      {item("Cut", "Copy then remove activity", Scissors, actions.cutActivity)}
+      {item("Paste", "Paste copied activity", ClipboardPaste, actions.pasteActivity)}
+      <div className="context-submenu-heading">Toggle breakpoint</div>
+      {item("Before", "Toggle breakpoint before activity", Bug, () => actions.toggleBreakpoint(menu.id))}
+      {item("After", "Toggle breakpoint after activity", Bug, () => actions.toggleBreakpoint(menu.id))}
+      {item("Both", "Toggle before and after breakpoint", Bug, () => actions.toggleBreakpoint(menu.id))}
+      <div className="context-submenu-heading">Groups</div>
+      {item("Add to Group…", "If, While, For Each, Repeat, Scope, Transaction, and more", Workflow, actions.groupActivity)}
+      {item("Delete", "Remove activity and its transitions", Trash2, actions.deleteActivity)}
+    </div>;
+  }
   const fileCommands = <div className="explorer-context-commands">
     {item("Copy", "Copy this explorer item", ClipboardCopy, () => actions.copy(menu.type, menu.id), !["task", "resource", "schema", "property"].includes(menu.type))}
     {item("Paste", `Paste into ${targetFolder}`, ClipboardPaste, () => actions.paste(targetFolder), !["tasks", "resources", "resources-root", "schemas", "properties"].includes(targetFolder))}
