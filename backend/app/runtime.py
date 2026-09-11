@@ -400,9 +400,17 @@ class WorkflowRuntime:
         are returned.
         """
         conditional = [edge for edge in outgoing if edge.type == 'success_condition' and self.condition(edge.condition, context)]
-        if conditional: return conditional
-        success = [edge for edge in outgoing if edge.type == 'success']
-        return success or [edge for edge in outgoing if edge.type == 'success_no_match']
+        # Older project files omitted the type on ordinary success edges;
+        # preserve their historical behavior as executable success paths.
+        success = [edge for edge in outgoing if edge.type in ('success', None)]
+        # A matching condition is not an exclusive if/else switch.  Normal
+        # success edges are also executable branches, so retain them whenever
+        # they coexist with matching conditional edges. This prevents a
+        # conditional branch from silently suppressing a parallel publisher,
+        # logger, or audit path.
+        if conditional or success:
+            return [*conditional, *success]
+        return [edge for edge in outgoing if edge.type == 'success_no_match']
 
     @staticmethod
     def select_group_transitions(edges, context: dict, plans: dict[str, dict]):
