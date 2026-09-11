@@ -54,6 +54,7 @@ import SchemaStudio, { SchemaDoc } from "./SchemaStudio";
 import ActivityEditor, { activityContract, DataSourcePane, upstreamActivitySources } from "./ActivityEditor";
 import ActivityPicker from "./ActivityPicker";
 import DataNodeIcon from "./DataNodeIcon";
+import FileUtilities, { UtilityMode } from "./FileUtilities";
 import "./styles.css";
 import "./designer.css";
 import "./properties.css";
@@ -1183,6 +1184,7 @@ function App() {
     [groupEditor, setGroupEditor] = useState<string | "new" | null>(null),
     [openTaskIds, setOpenTaskIds] = useState<string[]>([initial.active_task_id]),
     [taskTabMenu, setTaskTabMenu] = useState<{ taskId: string; x: number; y: number } | null>(null);
+  const [utilityMode, setUtilityMode] = useState<UtilityMode | null>(null);
   const [monitorMode, setMonitorMode] = useState<"normal" | "expanded" | "fullscreen">("normal");
   const [historyVersion, setHistoryVersion] = useState(0);
   const history = useRef<{
@@ -2456,6 +2458,9 @@ function App() {
           { label: "Task Designer", detail: "Move focus to the orchestration canvas", icon: Workflow, action: () => focusStudioPanel(".canvas") },
           { label: "Configuration", detail: "Move focus to activity configuration", icon: Settings2, action: () => focusStudioPanel(".config") },
           { label: "Execution & Debug", detail: "Move focus to runtime output", icon: Bug, action: () => focusStudioPanel(".monitor") },
+          { label: "XML Viewer", detail: "Windowed large-file XML viewer and pretty printer", icon: CodeXml, action: () => setUtilityMode("xml") },
+          { label: "JSON Viewer", detail: "Windowed large-file JSON viewer and pretty printer", icon: Braces, action: () => setUtilityMode("json") },
+          { label: "Compare Files", detail: "Side-by-side text or binary file comparison", icon: Scissors, action: () => setUtilityMode("compare") },
         ]}/>
         <TopMenu label="Help" open={menu === "help"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "help" ? null : "help"); }} commands={[
           { label: "Installed Activity Guide", detail: "Offline product activity and runtime documentation", icon: BookOpen, action: () => window.open("/help/activity-reference.html", "_blank", "noopener") },
@@ -3143,6 +3148,7 @@ function App() {
           </div>
         ))}
       </aside>
+      {utilityMode && <FileUtilities initialMode={utilityMode} onClose={() => setUtilityMode(null)}/>}
       <footer className="studio-status-bar">
         <span className="status-product"><Workflow/> Integration Fabric Studio</span>
         <span className="status-context">{project.name} · {task.name}</span>

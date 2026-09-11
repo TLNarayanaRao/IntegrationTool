@@ -1,0 +1,183 @@
+.utility-workbench {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.utility-workbench > header,
+.utility-workbench > nav,
+.utility-workbench > main,
+.utility-workbench > footer {
+  grid-column: 1;
+}
+
+.utility-workbench > header { grid-row: 1; }
+.utility-workbench > nav { grid-row: 2; }
+.utility-workbench > main { grid-row: 3; }
+.utility-workbench > footer { grid-row: 4; }
+
+.utility-workbench > main {
+  display: block !important;
+  height: 100%;
+}
+
+.utility-workbench .utility-panel {
+  width: 100%;
+  height: 100%;
+}
+
+.utility-workbench .utility-panel[hidden] {
+  display: none !important;
+}
+
+/* Studio's shell uses broad grid rules for headers and main content. Keep every
+   utility view in its own single-column flex layout so those rules cannot create
+   implicit columns and place the pager over the payload. */
+.utility-workbench .utility-viewer {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.utility-workbench .utility-toolbar,
+.utility-workbench .compare-syncbar,
+.utility-workbench .utility-file-heading,
+.utility-workbench .compare-headings,
+.utility-workbench .utility-pager,
+.utility-workbench .utility-findings,
+.utility-workbench .utility-message {
+  width: auto;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+.utility-workbench .utility-code,
+.utility-workbench .compare-grid,
+.utility-workbench .utility-empty {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.utility-workbench .utility-code.wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.utility-workbench textarea.utility-code {
+  box-sizing: border-box;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  resize: none;
+}
+
+.utility-workbench .utility-toolbar svg,
+.utility-workbench .compare-syncbar svg {
+  flex: 0 0 auto;
+}
+
+.compare-syncbar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border-bottom: 1px solid #294b61;
+  background: #081a29;
+}
+
+.compare-syncbar button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 9px;
+  border: 1px solid #315c74;
+  border-radius: 5px;
+  background: #102a3c;
+  color: #c4e8f5;
+}
+
+.compare-syncbar button:disabled { opacity: .35; }
+.compare-syncbar svg { width: 13px; }
+.compare-syncbar > span { margin-left: auto; }
+
+.utility-workbench .compare-grid {
+  grid-template-columns: 30px 46px minmax(0, 1fr) 46px minmax(0, 1fr);
+}
+
+.diff-select {
+  display: grid;
+  min-height: 22px;
+  place-items: center;
+  border-right: 1px solid #294556;
+  border-bottom: 1px solid #142b3b;
+  background: #0a1926;
+}
+
+.diff-select input { margin: 0; }
+.diff-select.same { opacity: .35; }
+
+.compare-editors {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1px;
+  background: #294b61;
+}
+
+.compare-editors textarea {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  color: #bcefdc;
+  background: #06111b;
+  font: 11px/1.55 "DM Mono", Consolas, monospace;
+  white-space: pre;
+  overflow: auto;
+}
+
+.compare-editors textarea:focus { box-shadow: inset 0 0 0 1px #39c8ef; }
+
+.utility-workbench .utility-toolbar button.active {
+  border-color: #2fc7e9;
+  background: #12445a;
+  color: #ffffff;
+}
+
+@media (max-width: 1050px) {
+  .utility-workbench .utility-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .utility-workbench .compare-syncbar {
+    flex-wrap: wrap;
+  }
+
+  .utility-workbench .compare-syncbar > span {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .utility-workbench .utility-search {
+    display: block;
+    width: min(100%, 320px);
+    margin-left: auto;
+  }
+
+  .utility-workbench .utility-search input {
+    box-sizing: border-box;
+    width: 100%;
+  }
+}
+
+@media (max-width: 760px) {
+  .compare-editors { grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr 1fr; }
+}

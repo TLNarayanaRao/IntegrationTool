@@ -4,11 +4,13 @@ const fs = require('node:fs');
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
+const crypto = require('node:crypto');
 
 let mainWindow;
 let runtimeProcess;
 let runtimeStartupError;
 let runtimeLogPath;
+const utilityFiles = new Map();
 
 const availablePort = () => new Promise((resolve, reject) => {
   const server = net.createServer();
@@ -273,6 +275,75 @@ ipcMain.handle('fabric:open-file', async (_event, fileType) => {
   const filePath = result.filePaths[0];
   return { path: filePath, name: path.basename(filePath), bytes: [...fs.readFileSync(filePath)], kind: 'file' };
 });
+
+ipcMain.handle('fabric:open-utility-file', async (_event, options = {}) => {
+  const extensions = Array.isArray(options.extensions) ? options.extensions.map((value) => String(value).replace(/^\./, '')).filter((value) => /^[A-Za-z0-9]+$/.test(value)).slice(0, 20) : [];
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: String(options.title || 'Open file').slice(0, 120),
+    properties: ['openFile'],
+    filters: extensions.length ? [{ name: String(options.filterName || 'Supported files').slice(0, 80), extensions }, { name: 'All files', extensions: ['*'] }] : [{ name: 'All files', extensions: ['*'] }],
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  const filePath = result.filePaths[0], stats = fs.statSync(filePath), id = crypto.randomUUID();
+  utilityFiles.set(id, filePath);
+  return { id, name: path.basename(filePath), size: stats.size, modified: stats.mtimeMs };
+});
+
+ipcMain.handle('fabric:read-utility-file-chunk', async (_event, options = {}) => {
+  const filePath = utilityFiles.get(String(options.id || ''));
+  if (!filePath) throw new Error('The file handle is closed or was not selected by this Studio session.');
+  const stats = await fs.promises.stat(filePath), offset = Math.floor(Math.max(0, Math.min(Number(options.offset) || 0, stats.size)));
+  const length = Math.floor(Math.max(1, Math.min(Number(options.length) || 1048576, 4 * 1024 * 1024, stats.size - offset)));
+  if (!length) return { offset, length: 0, size: stats.size, base64: '', eof: true };
+  const handle = await fs.promises.open(filePath, 'r');
+  try {
+    const buffer = Buffer.allocUnsafe(length), result = await handle.read(buffer, 0, length, offset), bytes = buffer.subarray(0, result.bytesRead);
+    return { offset, length: result.bytesRead, size: stats.size, base64: bytes.toString('base64'), eof: offset + result.bytesRead >= stats.size };
+  } finally { await handle.close(); }
+});
+
+ipcMain.handle('fabric:save-utility-file-window', async (_event, options = {}) => {
+  const filePath = utilityFiles.get(String(options.id || ''));
+  if (!filePath) throw new Error('The file handle is closed or was not selected by this Studio session.');
+  const stats = await fs.promises.stat(filePath), expectedModified = Number(options.expectedModified);
+  if (Number.isFinite(expectedModified) && Math.abs(stats.mtimeMs - expectedModified) > 1) throw new Error('The file changed outside Studio. Reopen it before saving to avoid overwriting newer content.');
+  const offset = Math.floor(Math.max(0, Math.min(Number(options.offset) || 0, stats.size)));
+  const originalLength = Math.floor(Math.max(0, Math.min(Number(options.originalLength) || 0, stats.size - offset)));
+  const replacement = Buffer.from(String(options.base64 || ''), 'base64');
+  if (replacement.length > 64 * 1024 * 1024) throw new Error('The edited window exceeds the 64 MB safe-save limit. Save smaller windows instead.');
+  const temporaryPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${crypto.randomUUID()}.fabric-tmp`);
+  let source, target;
+  try {
+    source = await fs.promises.open(filePath, 'r');
+    target = await fs.promises.open(temporaryPath, 'wx', stats.mode);
+    const copyRange = async (start, end) => {
+      const buffer = Buffer.allocUnsafe(1024 * 1024);
+      let position = start;
+      while (position < end) {
+        const requested = Math.min(buffer.length, end - position), result = await source.read(buffer, 0, requested, position);
+        if (!result.bytesRead) break;
+        await target.write(buffer, 0, result.bytesRead, null);
+        position += result.bytesRead;
+      }
+    };
+    await copyRange(0, offset);
+    if (replacement.length) await target.write(replacement, 0, replacement.length, null);
+    await copyRange(offset + originalLength, stats.size);
+    await target.sync();
+    await source.close(); source = null;
+    await target.close(); target = null;
+    await fs.promises.rename(temporaryPath, filePath);
+    const updated = await fs.promises.stat(filePath);
+    return { name: path.basename(filePath), size: updated.size, modified: updated.mtimeMs };
+  } catch (error) {
+    if (source) await source.close().catch(() => undefined);
+    if (target) await target.close().catch(() => undefined);
+    await fs.promises.unlink(temporaryPath).catch(() => undefined);
+    throw error;
+  }
+});
+
+ipcMain.handle('fabric:close-utility-file', (_event, id) => utilityFiles.delete(String(id || '')));
 
 ipcMain.handle('fabric:open-project-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, { title: 'Open Integration Fabric project folder', buttonLabel: 'Open folder', properties: ['openDirectory'] });
