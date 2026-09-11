@@ -99,6 +99,25 @@ class WorkflowRuntime:
             current = plans.get(current.parent_group_id, {}).get('group') if current.parent_group_id else None
         return list(reversed(result))
 
+    @staticmethod
+    def _set_group_variable(state: dict, ctx: dict, name: str, value) -> None:
+        if not name: return
+        previous = state.setdefault('previousVariables', {})
+        if name not in previous: previous[name] = (name in ctx['vars'], ctx['vars'].get(name))
+        ctx['vars'][name] = value
+
+    @staticmethod
+    def _restore_group_variables(state: dict, ctx: dict) -> None:
+        for name, (existed, value) in state.get('previousVariables', {}).items():
+            if existed: ctx['vars'][name] = value
+            else: ctx['vars'].pop(name, None)
+
+    @staticmethod
+    def _publish_group_context(state: dict, group: GroupDefinition, ctx: dict, current_element=None) -> None:
+        details = {'id': group.id, 'name': group.name, 'type': group.type, 'iteration': state.get('iteration', 0) + 1}
+        if current_element is not None: details['currentElement'] = current_element
+        ctx['context']['group'] = details
+
     async def _begin_group(self, plan: dict, ctx: dict) -> tuple[dict, bool]:
         # Keep condition expressions intact for the condition evaluator. Exact
         # value fields are resolved individually below.
@@ -110,7 +129,9 @@ class WorkflowRuntime:
             expression = str(cfg.get('condition') or '')
             if not expression: raise FabricFault(f'{group.name} requires a condition', fault_type='GROUP_VALIDATION')
             should_run = self.condition(expression, ctx)
-            if kind == 'while': ctx['vars'][str(cfg.get('indexVariable') or 'index')] = 1
+            if kind == 'while':
+                self._set_group_variable(state, ctx, str(cfg.get('indexVariable') or 'index'), 1)
+                self._set_group_variable(state, ctx, 'currentIndex', 1)
         elif kind in ('for_each', 'iterate'):
             source_value = cfg.get('collection', cfg.get('source'))
             if kind == 'for_each' and source_value in (None, ''):
@@ -122,14 +143,24 @@ class WorkflowRuntime:
                 items = list(source.values()) if isinstance(source, dict) else list(source or [])
             state['items'] = items; should_run = bool(items)
             if should_run:
-                ctx['vars'][str(cfg.get('itemVariable') or 'item')] = items[0]
-                ctx['vars'][str(cfg.get('indexVariable') or 'index')] = 1
+                current_name = str(cfg.get('currentElementName') or cfg.get('itemVariable') or 'currentElement')
+                self._set_group_variable(state, ctx, current_name, items[0])
+                self._set_group_variable(state, ctx, 'currentElement', items[0])
+                self._set_group_variable(state, ctx, str(cfg.get('indexVariable') or 'index'), 1)
+                self._set_group_variable(state, ctx, 'currentIndex', 1)
+                state['currentElementName'] = current_name
+            if self.as_bool(cfg.get('accumulateOutput', False)):
+                state['accumulatedOutput'] = []
+                state['accumulatorVariable'] = str(cfg.get('accumulatorVariable') or f'{group.id}Results')
+                ctx['vars'][state['accumulatorVariable']] = state['accumulatedOutput']
         elif kind == 'repeat':
             state['count'] = max(0, int(self.resolve(cfg.get('count', cfg.get('iterations', 1)), ctx) or 0)); should_run = True if cfg.get('condition') else state['count'] > 0
-            ctx['vars'][str(cfg.get('indexVariable') or 'index')] = 1
+            self._set_group_variable(state, ctx, str(cfg.get('indexVariable') or 'index'), 1)
+            self._set_group_variable(state, ctx, 'currentIndex', 1)
         elif kind == 'repeat_on_error':
             state['retriesRemaining'] = max(0, int(self.resolve(cfg.get('retryCount', cfg.get('retries', 3)), ctx) or 0))
-            ctx['vars'][str(cfg.get('indexVariable') or 'index')] = 1
+            self._set_group_variable(state, ctx, str(cfg.get('indexVariable') or 'index'), 1)
+            self._set_group_variable(state, ctx, 'currentIndex', 1)
         elif kind == 'critical_section':
             lock_name = str(self.resolve(cfg.get('lockName'), ctx) or f'{ctx.get("_process").id}:{group.id}')
             lock = self.group_locks.setdefault(lock_name, asyncio.Lock())
@@ -147,7 +178,7 @@ class WorkflowRuntime:
             state['resourceId'] = resource_id
             state['connection'] = await asyncio.to_thread(jdbc_adapter.connect, connection_config)
             ctx.setdefault('jdbcTransactions', {})[resource_id] = state['connection']
-        ctx['context']['group'] = {'id': group.id, 'name': group.name, 'type': group.type, 'iteration': 1}
+        self._publish_group_context(state, group, ctx, state.get('items', [None])[0] if state.get('items') else None)
         self.log(ctx['logs'], 'DEBUG', f'Group entered: {group.name}', kind='group', groupId=group.id, groupType=group.type, iteration=0)
         return state, should_run
 
@@ -159,6 +190,7 @@ class WorkflowRuntime:
                 finally: await asyncio.to_thread(connection.close)
             ctx.setdefault('jdbcTransactions', {}).pop(state.get('resourceId'), None)
         if plan['group'].type == 'critical_section' and state.get('lock') and state['lock'].locked(): state['lock'].release()
+        self._restore_group_variables(state, ctx)
         self.log(ctx['logs'], 'DEBUG', f'Group {"completed" if success else "failed"}: {plan["group"].name}', kind='group', groupId=plan['group'].id, groupType=plan['group'].type, iteration=state.get('iteration', 0))
 
     async def enter_group_boundaries(self, activity_id: str, ctx: dict, plans: dict[str, dict]) -> str | None:
@@ -182,6 +214,9 @@ class WorkflowRuntime:
             if target_id in plan['members']: break
             if success and source_id == plan['exit']:
                 cfg = state['config']; repeat = False
+                if group.type in ('for_each', 'iterate') and 'accumulatedOutput' in state:
+                    state['accumulatedOutput'].append(ctx.get('last'))
+                    ctx['vars'][state['accumulatorVariable']] = list(state['accumulatedOutput'])
                 if group.type == 'while': repeat = self.condition(str(cfg.get('condition') or ''), ctx)
                 elif group.type == 'repeat': repeat = (not self.condition(str(cfg.get('condition')), ctx)) if cfg.get('condition') else state['iteration'] + 1 < state['count']
                 elif group.type in ('for_each', 'iterate'):
@@ -189,12 +224,15 @@ class WorkflowRuntime:
                 if repeat:
                     state['iteration'] += 1
                     if group.type in ('for_each', 'iterate'):
-                        ctx['vars'][str(cfg.get('itemVariable') or 'item')] = state['items'][state['iteration']]
+                        current_element = state['items'][state['iteration']]
+                        self._set_group_variable(state, ctx, state.get('currentElementName') or str(cfg.get('itemVariable') or 'currentElement'), current_element)
+                        self._set_group_variable(state, ctx, 'currentElement', current_element)
                     if group.type in ('for_each', 'iterate', 'repeat', 'while'):
-                        ctx['vars'][str(cfg.get('indexVariable') or 'index')] = state['iteration'] + 1
+                        self._set_group_variable(state, ctx, str(cfg.get('indexVariable') or 'index'), state['iteration'] + 1)
+                        self._set_group_variable(state, ctx, 'currentIndex', state['iteration'] + 1)
                     maximum = max(1, int(self.resolve(cfg.get('maxIterations', 10000), ctx) or 10000))
                     if state['iteration'] >= maximum: raise FabricFault(f'{group.name} exceeded maxIterations={maximum}', fault_type='GROUP_ITERATION_LIMIT')
-                    ctx['context']['group'] = {'id': group.id, 'name': group.name, 'type': group.type, 'iteration': state['iteration'] + 1}
+                    self._publish_group_context(state, group, ctx, state['items'][state['iteration']] if group.type in ('for_each', 'iterate') else None)
                     self.log(ctx['logs'], 'DEBUG', f'Group iteration: {group.name} #{state["iteration"] + 1}', kind='group', groupId=group.id, groupType=group.type, iteration=state['iteration'])
                     return plan['entry']
             await self._finish_group(state, plan, ctx, success); ctx['groupStack'].pop()
@@ -208,9 +246,14 @@ class WorkflowRuntime:
             child = stack.pop(); await self._finish_group(child, plans[child['id']], ctx, False)
         state = stack[retry_index]; state['retriesRemaining'] -= 1; state['iteration'] += 1
         if state['config'].get('stopCondition') and self.condition(str(state['config']['stopCondition']), ctx): return None
-        ctx['vars'][str(state['config'].get('indexVariable') or 'index')] = state['iteration'] + 1
+        self._set_group_variable(state, ctx, str(state['config'].get('indexVariable') or 'index'), state['iteration'] + 1)
+        self._set_group_variable(state, ctx, 'currentIndex', state['iteration'] + 1)
         group = plans[state['id']]['group']
-        ctx['context']['group'] = {'id': group.id, 'name': group.name, 'type': group.type, 'iteration': state['iteration'] + 1}
+        self._publish_group_context(state, group, ctx)
+        for activity_id in plans[state['id']]['members']:
+            ctx.get('activities', {}).pop(activity_id, None)
+            task_id = ctx.get('context', {}).get('taskId')
+            if task_id: ctx.get('tasks', {}).get(task_id, {}).get('activities', {}).pop(activity_id, None)
         delay = float(self.resolve(state['config'].get('retryIntervalSeconds', state['config'].get('retryDelaySeconds', 0)), ctx) or 0)
         self.log(ctx['logs'], 'WARN', f'Group retry: {plans[state["id"]]["group"].name}; {state["retriesRemaining"]} retries remain', kind='group', groupId=state['id'], iteration=state['iteration'])
         if delay: await asyncio.sleep(delay)

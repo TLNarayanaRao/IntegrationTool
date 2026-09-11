@@ -15,16 +15,44 @@ def activity(identifier, kind="basic", operation="empty", **config):
 
 class GroupRuntimeTests(unittest.TestCase):
     def test_iterate_collection_from_task_data_runs_once_per_member(self):
+        class CurrentElementRuntime(WorkflowRuntime):
+            def __init__(self): super().__init__(); self.elements = []; self.accumulated = None
+            async def execute(self, current, ctx):
+                if current.id == "work":
+                    self.elements.append(ctx["vars"]["currentElement"])
+                    return {"processedId": ctx["vars"]["currentElement"]["id"]}
+                if current.id == "after":
+                    self.accumulated = ctx["vars"].get("processed")
+                    return {"count": len(self.accumulated or [])}
+                return await super().execute(current, ctx)
         process = ProcessDefinition(
             id="iterate-data", name="Iterate Data",
-            activities=[activity("start", "start"), activity("work", "log", message="${vars.item}"), activity("end", "end")],
-            transitions=[Transition(id="a", source="start", target="work"), Transition(id="b", source="work", target="end")],
-            groups=[GroupDefinition(id="items", type="iterate", name="Items", member_activity_ids=["work"], config={"source": "${input.orders}", "itemVariable": "item", "indexVariable": "index"})],
+            activities=[activity("start", "start"), activity("work"), activity("after"), activity("end", "end")],
+            transitions=[Transition(id="a", source="start", target="work"), Transition(id="b", source="work", target="after"), Transition(id="c", source="after", target="end")],
+            groups=[GroupDefinition(id="items", type="iterate", name="Items", member_activity_ids=["work"], config={"source": "${input.orders}", "currentElementName": "order", "indexVariable": "index", "accumulateOutput": True, "accumulatorVariable": "processed"})],
         )
-        result = asyncio.run(WorkflowRuntime().run(process, {"orders": [{"id": 1}, {"id": 2}, {"id": 3}]}))
+        runtime = CurrentElementRuntime()
+        result = asyncio.run(runtime.run(process, {"orders": [{"id": 1}, {"id": 2}, {"id": 3}]}))
         self.assertEqual(result.status, "completed")
-        starts = [entry for entry in result.logs if entry.get("message", "").startswith("Activity started: Iterate Data / Work")]
-        self.assertEqual(len(starts), 3)
+        self.assertEqual([item["id"] for item in runtime.elements], [1, 2, 3])
+        self.assertEqual(runtime.accumulated, [{"processedId": 1}, {"processedId": 2}, {"processedId": 3}])
+
+    def test_repeat_on_error_resolves_retry_limit_from_environment_properties(self):
+        class FailingRuntime(WorkflowRuntime):
+            def __init__(self): super().__init__(); self.attempts = 0
+            async def execute(self, current, ctx):
+                if current.id == "fail": self.attempts += 1; raise RuntimeError("still unavailable")
+                return await super().execute(current, ctx)
+        process = ProcessDefinition(
+            id="retry-properties", name="Retry Properties",
+            activities=[activity("start", "start"), activity("fail"), activity("end", "end")],
+            transitions=[Transition(id="a", source="start", target="fail"), Transition(id="b", source="fail", target="end")],
+            groups=[GroupDefinition(id="retry", type="repeat_on_error", name="Retry", member_activity_ids=["fail"], config={"stopCondition": "${vars.index} >= 10", "retryCount": "${properties.advanced.retryCount}", "retryIntervalSeconds": "${properties.advanced.retryIntervalSeconds}"})],
+        )
+        runtime = FailingRuntime()
+        result = asyncio.run(runtime.run(process, {}, properties={"advanced.retryCount": 1, "advanced.retryIntervalSeconds": 0}))
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(runtime.attempts, 2)
 
     def test_repeat_on_error_retries_complete_group_and_exposes_fault_data(self):
         class FlakyRuntime(WorkflowRuntime):

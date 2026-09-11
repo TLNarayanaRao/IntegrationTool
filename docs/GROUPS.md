@@ -27,12 +27,12 @@ The group editor uses the same Data, Functions, Constants, and project-property 
 
 - **If** evaluates its mapped boolean before entering the group.
 - **While True** evaluates before the first iteration and again after each completed iteration.
-- **Iterate / For Each** resolves the mapped collection once at group entry and runs exactly `count(collection)` times. The current member and one-based index are published through the configured item and index variables.
+- **Iterate / For Each** resolves the mapped collection once at group entry and runs exactly `count(collection)` times. For Each can alternatively use an inclusive start/end/increment counter range. The named current element and one-based index are published through the configured variables and through the stable `currentElement` / `currentIndex` aliases. Enclosed activities see these values in their Input Data browser. Optional accumulated output collects the group-exit result from every successful iteration.
 - **Repeat Until True** always runs once and evaluates the mapped boolean after the group body.
-- **Repeat on Error Until True** publishes the current fault as `${context.error}` and `${vars.error}` before evaluating the stop condition. False restarts the entire group; true stops retrying and propagates the fault.
+- **Repeat on Error Until True** publishes the current fault as `${context.error}` and `${vars.error}` before evaluating the stop condition. False clears failed-attempt activity output and restarts the entire group; true stops retrying and propagates the fault. Retry count and interval accept expressions and default to `${properties.advanced.retryCount}` and `${properties.advanced.retryIntervalSeconds}`.
 - **Critical Section** acquires its named lock before the first enclosed activity and retains ownership until that group execution completes, fails, or is stopped. Other jobs using the same named lock wait.
 
-`maxIterations` and `retryCount` are safety boundaries, not substitutes for data conditions.
+`maxIterations` and `retryCount` are safety boundaries, not substitutes for data conditions. New loop groups default `maxIterations` to `${properties.advanced.groupMaxIterations}`, so each environment can tune the protection without modifying the Task.
 
 ## Validation rules
 

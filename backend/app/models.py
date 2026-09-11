@@ -63,6 +63,7 @@ def default_environment_properties() -> list[EnvironmentProperty]:
         ('advanced.retryEnabled', False, 'boolean'),
         ('advanced.retryCount', 3, 'integer'),
         ('advanced.retryIntervalSeconds', 60, 'integer'),
+        ('advanced.groupMaxIterations', 10000, 'integer'),
         ('connections.http.baseUrl', 'https://api.example.com', 'string'),
         ('connections.http.host', 'localhost', 'string'),
         ('connections.http.port', 8080, 'integer'),
