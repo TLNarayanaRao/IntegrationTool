@@ -13,6 +13,7 @@ interface Window {
     openUtilityFile(options?: { title?: string; filterName?: string; extensions?: string[] }): Promise<{ id: string; name: string; size: number; modified: number } | null>;
     readUtilityFileChunk(options: { id: string; offset: number; length: number }): Promise<{ offset: number; length: number; size: number; base64: string; eof: boolean }>;
     saveUtilityFileWindow(options: { id: string; offset: number; originalLength: number; base64: string; expectedModified?: number }): Promise<{ name: string; size: number; modified: number }>;
+    saveUtilityFileAs(options: { filename: string; title?: string; filterName?: string; extensions?: string[]; base64: string }): Promise<{ id: string; name: string; size: number; modified: number } | null>;
     closeUtilityFile(id: string): Promise<boolean>;
   };
 }

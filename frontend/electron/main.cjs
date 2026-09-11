@@ -343,6 +343,29 @@ ipcMain.handle('fabric:save-utility-file-window', async (_event, options = {}) =
   }
 });
 
+ipcMain.handle('fabric:save-utility-file-as', async (_event, options = {}) => {
+  const extensions = Array.isArray(options.extensions) ? options.extensions.map((value) => String(value).replace(/^\./, '')).filter((value) => /^[A-Za-z0-9]+$/.test(value)).slice(0, 20) : [];
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: String(options.title || 'Save file as').slice(0, 120),
+    defaultPath: path.basename(String(options.filename || 'untitled.txt')),
+    filters: extensions.length ? [{ name: String(options.filterName || 'Supported files').slice(0, 80), extensions }, { name: 'All files', extensions: ['*'] }] : [{ name: 'All files', extensions: ['*'] }],
+  });
+  if (result.canceled || !result.filePath) return null;
+  const replacement = Buffer.from(String(options.base64 || ''), 'base64');
+  if (replacement.length > 64 * 1024 * 1024) throw new Error('The editor content exceeds the 64 MB safe-save limit. Save smaller windows instead.');
+  const filePath = result.filePath, temporaryPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${crypto.randomUUID()}.fabric-tmp`);
+  try {
+    await fs.promises.writeFile(temporaryPath, replacement, { flag: 'wx' });
+    await fs.promises.rename(temporaryPath, filePath);
+  } catch (error) {
+    await fs.promises.unlink(temporaryPath).catch(() => undefined);
+    throw error;
+  }
+  const stats = await fs.promises.stat(filePath), id = crypto.randomUUID();
+  utilityFiles.set(id, filePath);
+  return { id, name: path.basename(filePath), size: stats.size, modified: stats.mtimeMs };
+});
+
 ipcMain.handle('fabric:close-utility-file', (_event, id) => utilityFiles.delete(String(id || '')));
 
 ipcMain.handle('fabric:open-project-folder', async () => {

@@ -8,11 +8,14 @@ The desktop application gives the UI an opaque file handle rather than unrestric
 
 Each active window is editable. Desktop saves stream the untouched prefix and suffix through a temporary file and then replace the original, so even a very large file is not assembled in renderer memory. Navigation is locked while edits are unsaved. Browser mode downloads the edited result because web pages cannot overwrite the selected local file directly.
 
+The utilities do not require an existing file. **New XML**, **New JSON**, **New left**, and **New right** create scratch documents where content can be typed or pasted directly. **Save As** converts a scratch document into a filesystem-backed document. Ctrl+S saves the editor that currently has focus.
+
 Complete XML or JSON files up to 16 MB can be validated and pretty-printed as a whole. Larger files use a tolerant pretty printer for the current bounded window, avoiding an unbounded parse tree or full-file string in renderer memory.
 
 ## XML Viewer
 
 - Opens XML, XSD, and WSDL files.
+- Creates blank XML documents for direct typing or clipboard paste.
 - Pretty-prints well-formed complete documents.
 - **Decode &lt; and &gt;** changes `&amp;lt;` and `&amp;gt;` into visible angle brackets in the display.
 - Wraps long or minified lines by default so payload content stays visible; wrapping can be toggled from the toolbar.
@@ -22,6 +25,7 @@ Complete XML or JSON files up to 16 MB can be validated and pretty-printed as a 
 ## JSON Viewer
 
 - Opens JSON and JSON Lines files.
+- Creates blank JSON documents for direct typing or clipboard paste.
 - Pretty-prints and validates complete JSON documents.
 - Uses bounded-window formatting for very large payloads.
 - Wraps long or minified lines by default.
@@ -31,6 +35,7 @@ Complete XML or JSON files up to 16 MB can be validated and pretty-printed as a 
 ## Compare Files
 
 - Accepts any two file types.
+- Allows either side to be a newly created document instead of an imported file.
 - Uses side-by-side aligned text rows for text files.
 - Marks added, removed, and changed rows separately.
 - Automatically displays binary or unknown content as hexadecimal and printable ASCII.

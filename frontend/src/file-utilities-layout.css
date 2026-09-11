@@ -1,7 +1,6 @@
 .utility-workbench {
   grid-template-columns: minmax(0, 1fr);
 }
-
 .utility-workbench > header,
 .utility-workbench > nav,
 .utility-workbench > main,
@@ -176,8 +175,4 @@
     box-sizing: border-box;
     width: 100%;
   }
-}
-
-@media (max-width: 760px) {
-  .compare-editors { grid-template-columns: minmax(0, 1fr); grid-template-rows: 1fr 1fr; }
 }

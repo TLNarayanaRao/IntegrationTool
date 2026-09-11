@@ -141,11 +141,11 @@ type Task = {
 };
 type GroupDefinition = { id: string; type: "if" | "while" | "for_each" | "iterate" | "repeat" | "repeat_on_error" | "scope" | "none" | "critical_section" | "transaction_jdbc" | "pick_first"; name: string; member_activity_ids: string[]; config: Record<string, any>; position: { x: number; y: number }; size?: { width: number; height: number }; parent_group_id?: string | null };
 
-// Route transitions from the nearest side of each activity.  The old wire
-// always used the right-center/left-center ports, which made branches that
-// travelled upward or downward enter an activity from a diagonal corner and
-// left the arrowhead visibly detached from the target.
-function activityWirePath(source: Node, target: Node) {
+// Route transitions from the nearest facing sides of each activity. For a
+// diagonal connection, the final Bézier tangent follows the overall approach
+// vector so SVG's automatic marker orientation cannot leave a horizontal
+// arrowhead sitting on a visibly diagonal line.
+function activityWireGeometry(source: Node, target: Node) {
   const width = 104, height = 76;
   const sourceCenter = { x: source.position.x + width / 2, y: source.position.y + height / 2 };
   const targetCenter = { x: target.position.x + width / 2, y: target.position.y + height / 2 };
@@ -158,10 +158,16 @@ function activityWirePath(source: Node, target: Node) {
   const end = horizontal
     ? { x: target.position.x + (direction > 0 ? 0 : width), y: targetCenter.y }
     : { x: targetCenter.x, y: target.position.y + (direction > 0 ? 0 : height) };
-  const bend = Math.max(30, Math.min(180, (horizontal ? Math.abs(end.x - start.x) : Math.abs(end.y - start.y)) * 0.42));
-  const c1 = horizontal ? { x: start.x + direction * bend, y: start.y } : { x: start.x, y: start.y + direction * bend };
-  const c2 = horizontal ? { x: end.x - direction * bend, y: end.y } : { x: end.x, y: end.y - direction * bend };
-  return `M${start.x},${start.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${end.x},${end.y}`;
+  const pathDx = end.x - start.x, pathDy = end.y - start.y, distance = Math.max(1, Math.hypot(pathDx, pathDy));
+  const unit = { x: pathDx / distance, y: pathDy / distance };
+  const bend = Math.max(24, Math.min(96, distance * 0.34));
+  const sourceOut = horizontal ? { x: direction, y: 0 } : { x: 0, y: direction };
+  const aligned = horizontal ? Math.abs(pathDy) < 3 : Math.abs(pathDx) < 3;
+  const c1 = { x: start.x + sourceOut.x * bend, y: start.y + sourceOut.y * bend };
+  const c2 = aligned
+    ? { x: end.x - sourceOut.x * bend, y: end.y - sourceOut.y * bend }
+    : { x: end.x - unit.x * bend, y: end.y - unit.y * bend };
+  return { start, end, d: `M${start.x},${start.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${end.x},${end.y}` };
 }
 type Resource = {
   id: string;
@@ -2890,12 +2896,12 @@ function App() {
               </section>;
             })}
             <svg className="wires" style={{ width: Math.max(1400, ...nodes.map((n) => n.position.x + 260)), height: Math.max(750, ...nodes.map((n) => n.position.y + 150)) }}>
-              <defs><marker id="transition-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>
+              <defs><marker id="transition-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>
               {edges.map((e) => {
                 const a = byId[e.source],
                   b = byId[e.target];
                 if (!a || !b) return null;
-                const d = activityWirePath(a, b);
+                const wire = activityWireGeometry(a, b), d = wire.d;
                 return (
                   <g
                     key={e.id}
@@ -2911,7 +2917,7 @@ function App() {
                     <path className="edge-hit" d={d} />
                     <path id={`edge-path-${e.id}`} className="edge-line" d={d} markerEnd="url(#transition-arrow)" />
                     <text><textPath href={`#edge-path-${e.id}`} startOffset="50%" textAnchor="middle">{e.type || "success"}</textPath></text>
-                    {selectedEdge === e.id && <><circle className="edge-rewire-handle source" cx={a.position.x + 104} cy={a.position.y + 38} r="7" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setEdgeRewire({ edgeId: e.id, endpoint: "source", fixedId: e.target, x: a.position.x + 104, y: a.position.y + 38 }); }}/><circle className="edge-rewire-handle target" cx={b.position.x} cy={b.position.y + 38} r="7" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setEdgeRewire({ edgeId: e.id, endpoint: "target", fixedId: e.source, x: b.position.x, y: b.position.y + 38 }); }}/></>}
+                    {selectedEdge === e.id && <><circle className="edge-rewire-handle source" cx={wire.start.x} cy={wire.start.y} r="7" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setEdgeRewire({ edgeId: e.id, endpoint: "source", fixedId: e.target, x: wire.start.x, y: wire.start.y }); }}/><circle className="edge-rewire-handle target" cx={wire.end.x} cy={wire.end.y} r="7" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setEdgeRewire({ edgeId: e.id, endpoint: "target", fixedId: e.source, x: wire.end.x, y: wire.end.y }); }}/></>}
                   </g>
                 );
               })}
