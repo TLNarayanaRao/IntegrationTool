@@ -1,6 +1,12 @@
 # Linux Control Plane: Direct Run Guide
 
-This guide runs the Integration Fabric Control Plane directly from the shell. It does not use `systemctl` or require a systemd service. The Unix team only needs to provision the `/opt/integrationfabric` directory and its permissions.
+> Current standard layout: copy `administrator/`, `backend/`, `drivers/`,
+> `java-bridge/`, and `scripts/` into `/opt/tibco/esb/IntegrationFabricSoftware`.
+> Run `scripts/linux/setup-integration-fabric-linux.sh` from that directory.
+> The commands in this guide that reference the older `integrationfabric/source`
+> layout are retained as historical alternatives; do not mix the two layouts.
+
+This guide runs the Integration Fabric Control Plane directly from the shell. It does not use `systemctl` or require a systemd service. The Unix team only needs to provision `/opt/tibco/esb/IntegrationFabricSoftware` and its permissions.
 
 ## Directory layout
 
@@ -83,6 +89,55 @@ The generated archive is:
 /opt/tibco/esb/integrationfabric/source/administrator/release/IntegrationFabricAdministrator-2.4.0-Linux-x64.tar.gz
 ```
 
+## Clean setup from the copied Linux archive
+
+For a fresh machine, copy the Linux Administrator archive into
+`/opt/tibco/esb/IntegrationFabricSoftware/administrator/release/`, and copy
+`backend/`, `drivers/`, and `java-bridge/` beside the `administrator/` and
+`scripts/` folders. Then run the setup script. It creates the Control Plane
+layout, runtime virtual environment, runtime adapter, and INI file:
+
+If there is no `release/` folder, the setup script automatically runs
+`scripts/linux/build-administrator-linux.sh` and generates the archive under
+`administrator/release/`. This requires Linux Python 3.10+ and the build
+dependencies to be available. To build version `1.0.0`, run:
+
+```bash
+./scripts/linux/setup-integration-fabric-linux.sh 1.0.0
+```
+
+The setup script also accepts an already extracted Linux Administrator folder:
+copy `IntegrationFabricAdministrator` and its `_internal/` directory below
+`/opt/tibco/esb/IntegrationFabricSoftware/administrator/` and set
+`FABRIC_BUILD_ADMIN=false`.
+
+The shared requirements file excludes the Windows-only
+`python-qpid-proton-wheel` package on Linux. If an application uses AMQP 1.0,
+install a Linux-compatible native Qpid Proton package from the approved Red
+Hat package repository or internal Python mirror separately; RabbitMQ AMQP
+0.9.1 uses `pika` and does not require it.
+
+The setup script also skips the optional `ibm-db` package by default because
+its Linux installation builds the IBM DB2 CLI driver and requires `gcc`. If a
+deployed application uses DB2, have the Unix team install the compiler and
+run the setup with:
+
+```bash
+FABRIC_INSTALL_DB2=true \
+FABRIC_PYTHON=/usr/bin/python3.12 \
+./scripts/linux/setup-integration-fabric-linux.sh 1.0.0
+```
+
+```bash
+cd /opt/tibco/esb/IntegrationFabricSoftware
+chmod +x scripts/linux/setup-integration-fabric-linux.sh
+./scripts/linux/setup-integration-fabric-linux.sh 2.4.0
+```
+
+If the archive is the only Linux Administrator archive in the temp directory,
+the version argument can be omitted. Set `FABRIC_PYTHON` if Python 3.12 is at
+another path.
+
 ## Install the Control Plane files
 
 ```bash
@@ -111,6 +166,52 @@ The copy step provides the requested executable name:
 /opt/tibco/esb/integrationfabric/control-plane/integration-fabric-control-plane
 ```
 
+## Install the runtime adapter before deploying applications
+
+Building and installing the Administrator only starts the Control Plane APIs. It does **not** provide the runtime that executes deployed applications. Complete this section before using **Start**, **Run**, or **Debug** for an application.
+
+Copy the Linux-compatible application runtime source and drivers below the same root, then create its virtual environment:
+
+```bash
+mkdir -p /opt/tibco/esb/integrationfabric/runtime
+python3.12 -m venv /opt/tibco/esb/integrationfabric/runtime/.venv
+/opt/tibco/esb/integrationfabric/runtime/.venv/bin/pip install   -r /opt/tibco/esb/integrationfabric/source/backend/requirements.txt
+```
+
+Create the runtime adapter at exactly this path:
+
+```bash
+vi /opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime
+```
+
+Use this content:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+export PYTHONPATH=/opt/tibco/esb/integrationfabric/source/backend
+export FABRIC_DRIVER_HOME=/opt/tibco/esb/integrationfabric/source/drivers
+exec /opt/tibco/esb/IntegrationFabricSoftware/runtime/.venv/bin/python \
+  /opt/tibco/esb/IntegrationFabricSoftware/backend/run_deployment.py "$@"
+```
+
+Make it executable and verify it exists:
+
+```bash
+chmod 755 /opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime
+ls -l /opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime
+/opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime --help
+```
+
+The adapter path in the INI file must match this path exactly:
+
+```ini
+runtime_command=/opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime --application {application} --environment {environment}
+```
+
+If this file is missing, application deployment fails with:
+`[Errno 2] No such file or directory: '/opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime'`.
+
 ## Configure the current shell
 
 Run these commands in the same shell that starts the Control Plane:
@@ -123,8 +224,8 @@ export FABRIC_ADMIN_DATA_DIR=/opt/tibco/esb/integrationfabric/control-plane-data
 export FABRIC_ADMIN_LOG_DIR=/opt/tibco/esb/integrationfabric/logs/control-plane
 export FABRIC_ADMIN_PID_DIR=/opt/tibco/esb/integrationfabric/run
 
-export FABRIC_ADMIN_API_KEY='replace-with-a-long-admin-key'
-export FABRIC_ADMIN_SECRET_KEY='replace-with-a-stable-encryption-key'
+export FABRIC_ADMIN_API_KEY=dev-api-key-if
+export FABRIC_ADMIN_SECRET_KEY=dev-api-key-if
 ```
 
 `FABRIC_ADMIN_SECRET_KEY` must remain stable. Changing it can make previously encrypted deployment secrets unreadable.
@@ -220,10 +321,22 @@ http://<linux-host>:9080/docs
 
 ## Configure deployed application startup
 
-The Control Plane needs a Linux runtime adapter to start on-premises applications. Configure the adapter only after the Linux runtime and its Python dependencies are available:
+The Control Plane needs the runtime adapter above to start on-premises applications. The INI file is preferred for direct-run deployments:
 
 ```bash
-export FABRIC_ADMIN_RUNTIME_COMMAND='/usr/local/bin/integration-fabric-runtime --application {application} --environment {environment}'
+vi /opt/tibco/esb/integrationfabric/control-plane/integration-fabric-control-plane.ini
+```
+
+Set:
+
+```ini
+runtime_command=/opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime --application {application} --environment {environment}
+```
+
+If you are not using the INI file, configure the adapter in the same shell that starts the Control Plane:
+
+```bash
+export FABRIC_ADMIN_RUNTIME_COMMAND='/opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime --application {application} --environment {environment}'
 ```
 
 The runtime command supports these placeholders:
@@ -243,6 +356,27 @@ For Linux application packages, use this install-root convention in Studio:
 ```
 
 After adding the runtime command, stop and restart the Control Plane from the same shell so it inherits the variable.
+
+## Deploy an application from Linux
+
+Use the included API script to upload a package, create its deployment, and
+start it automatically:
+
+```bash
+chmod +x /opt/tibco/esb/integrationfabric/source/scripts/linux/deploy-application.sh
+export FABRIC_CONTROL_PLANE_URL=http://localhost:19080
+export FABRIC_CONTROL_PLANE_KEY=dev-api-key-if
+export FABRIC_DATA_PLANE=localhost
+export FABRIC_NAMESPACE=default
+export FABRIC_SECRETS_FILE=/opt/tibco/esb/temp/linux/deployment-secrets.json
+
+/opt/tibco/esb/integrationfabric/source/scripts/linux/deploy-application.sh \
+  /opt/tibco/esb/temp/linux/my-application.ifpkg dev
+```
+
+The script prints the generated Deployment ID. To deploy without starting,
+set `FABRIC_START_AFTER_DEPLOY=false`. For a delivery-team token, set
+`FABRIC_CONTROL_PLANE_KEY` to that token and set `FABRIC_TEAM_ID` when required.
 
 ## View logs
 
@@ -415,20 +549,20 @@ export FABRIC_DRIVER_HOME=/opt/tibco/esb/integrationfabric/drivers
 export PYTHONPATH=/opt/tibco/esb/integrationfabric/source/backend
 ```
 
-Create `/usr/local/bin/integration-fabric-runtime` with:
+Create `/opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime` with:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 export PYTHONPATH=/opt/tibco/esb/integrationfabric/source/backend
-exec /opt/tibco/esb/integrationfabric/runtime/.venv/bin/python \
-  -m app.run_deployment "$@"
+exec /opt/tibco/esb/IntegrationFabricSoftware/runtime/.venv/bin/python \
+  /opt/tibco/esb/IntegrationFabricSoftware/backend/run_deployment.py "$@"
 ```
 
 Configure the Control Plane before starting it:
 
 ```bash
-export FABRIC_ADMIN_RUNTIME_COMMAND='/usr/local/bin/integration-fabric-runtime --application {application} --environment {environment}'
+export FABRIC_ADMIN_RUNTIME_COMMAND='/opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime --application {application} --environment {environment}'
 ```
 
 ### Optional files
@@ -458,3 +592,44 @@ frontend/node_modules/
 ```
 
 A Linux-native Administrator package and Linux-native Java bridge must be built on Linux or in a Linux CI runner.
+
+### Remote data-plane agents and team isolation
+
+The Linux scripts now include a real remote data-plane agent. It is a normal foreground process launched with `nohup`; it does not require `systemctl`.
+
+The central configuration is:
+
+```text
+/opt/tibco/esb/IntegrationFabricSoftware/scripts/linux/integration-fabric-control-plane.ini
+```
+
+Use one `[data-plane]` section per agent process and map the delivery-team aliases in `[data-teams]`:
+
+```ini
+[data-teams]
+team1=bddteam1
+team2=bddteam2
+
+[data-plane]
+id=team1-data-plane
+namespace=bddteam1
+```
+
+Each agent sends heartbeats, polls its assigned deployments, downloads the package, starts the configured runtime workers, injects deployment secrets, and reports instance health and log tails. The Control Plane only returns deployments assigned to that agent's `data-plane.id`, so applications remain isolated by data plane and namespace.
+
+Start the complete flow after editing the INI:
+
+```bash
+cd /opt/tibco/esb/IntegrationFabricSoftware/scripts/linux
+chmod 700 *.sh
+./00-setup-and-register.sh
+```
+
+For multiple data planes on one Linux host, create a separate INI copy for each plane and run one agent per INI:
+
+```bash
+FABRIC_CONFIG_FILE=team1.ini ./05-start-data-plane-agent.sh > /opt/tibco/esb/IntegrationFabricSoftware/logs/team1-agent.log 2>&1 &
+FABRIC_CONFIG_FILE=team2.ini ./05-start-data-plane-agent.sh > /opt/tibco/esb/IntegrationFabricSoftware/logs/team2-agent.log 2>&1 &
+```
+
+The updated `administrator` executable must be rebuilt and copied to the target Control Plane before using remote lifecycle operations. If the old executable is still running, it will continue to return the previous localhost-only adapter error.

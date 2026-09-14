@@ -63,7 +63,7 @@ class DebugManager:
         ctx = frame['context']; ctx['last'] = output; ctx['context']['activityId'] = activity.id
         now = log_timestamp()
         state['logs'].append({'time': now, 'level': 'INFO', 'kind': 'event', 'message': f'Event received: {task.name} / {activity.name}', 'activityId': activity.id, 'taskId': task.id, 'sessionId': session_id})
-        self.runtime.record_activity_output(activity, output, ctx)
+        self.runtime.record_activity_output(activity, output, ctx, output)
         outgoing = [edge for edge in task.transitions if edge.source == activity.id]
         chosen_edges = self.runtime.select_group_transitions(self.runtime.eligible_success_transitions(outgoing, ctx), ctx, state.get('groupPlans', {}).get(task.id, {}))
         if not chosen_edges:
@@ -132,7 +132,7 @@ class DebugManager:
         activity = next(item for item in task.activities if item.id == frame['activityId'])
         state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'activity', 'message': f'Activity started: {task.name} / {activity.name}', 'activityId': activity.id, 'taskId': task.id, 'activityType': activity.type, 'operation': activity.config.get('operation') or activity.type})
         activity_started = perf_counter()
-        if enter_subtask and activity.type == 'call_task':
+        if activity.type == 'call_task':
             dynamic_id = self.runtime.resolve(activity.config.get('dynamicTaskId', ''), ctx)
             target_id = str(dynamic_id or activity.config.get('taskId') or '').strip()
             target = next((item for item in project.tasks if (item.id == target_id or item.name.casefold() == target_id.casefold()) and item.kind == 'subtask'), None)
@@ -142,8 +142,15 @@ class DebugManager:
                 mapped = self.runtime.unwrap_boundary(values, 'payload', ctx['last'])
                 child_context = {**ctx, 'input': mapped, 'last': mapped, 'context': {'taskId': target.id, 'activityId': starter.id, 'environment': project.active_environment}, '_process': target, 'groupStack': [], 'jdbcTransactions': {}}
                 ctx['tasks'].setdefault(target.id, {'name': target.name, 'activities': {}})
-                state['frames'].append({'taskId': target.id, 'activityId': starter.id, 'context': child_context}); state['status'] = 'paused'; return
+                state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'call', 'message': f'Entering Sub Task: {target.name}', 'activityId': activity.id, 'taskId': task.id, 'calledTaskId': target.id})
+                state['frames'].append({'taskId': target.id, 'activityId': starter.id, 'context': child_context})
+                # Step In pauses on the child Start; Continue keeps the debug
+                # engine running through the child frame and returns to the
+                # caller only after the child End completes.
+                state['status'] = 'paused' if enter_subtask else 'running'
+                return
         ctx['context']['activityId'] = activity.id
+        activity_input = ctx['last']
         try:
             ctx['last'] = await self.runtime.execute_with_policy(activity, ctx)
         except Exception as exc:
@@ -163,7 +170,7 @@ class DebugManager:
             raise
         duration = round((perf_counter() - activity_started) * 1000, 3)
         state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'activity', 'message': f'Activity completed: {task.name} / {activity.name} in {duration:.3f} ms', 'activityId': activity.id, 'taskId': task.id, 'durationMs': duration})
-        self.runtime.record_activity_output(activity, ctx['last'], ctx)
+        self.runtime.record_activity_output(activity, ctx['last'], ctx, activity_input)
         outgoing = [edge for edge in task.transitions if edge.source == activity.id]
         chosen_edges = self.runtime.select_group_transitions(self.runtime.eligible_success_transitions(outgoing, ctx), ctx, plans)
         if activity.type == 'end' or not chosen_edges:
@@ -204,4 +211,8 @@ class DebugManager:
         current = self.current_activity(state)
         execution_state = state.get('executionState', {})
         group_stack = state['frames'][-1]['context'].get('groupStack', []) if state.get('frames') else []
-        return {'sessionId': state['id'], 'status': state['status'], 'currentActivityId': current.id if current else None, 'currentTaskId': state['frames'][-1]['taskId'] if state['frames'] else None, 'currentGroupIds': [item['id'] for item in group_stack], 'groupIterations': {item['id']: item.get('iteration', 0) for item in group_stack}, 'callStack': [{'taskId': frame['taskId'], 'activityId': frame['activityId'], 'groupIds': [item['id'] for item in frame['context'].get('groupStack', [])]} for frame in state['frames']], 'logs': state['logs'], 'output': state.get('output', {}), 'activityOutputs': execution_state.get('activities', {}), 'taskOutputs': execution_state.get('tasks', {}), 'endpoints': state.get('endpoints', [])}
+        active_ids = []
+        for frame in state.get('frames', []):
+            if frame.get('activityId'): active_ids.append(frame['activityId'])
+            active_ids.extend(frame.get('parallelQueue') or [])
+        return {'sessionId': state['id'], 'status': state['status'], 'currentActivityId': current.id if current else None, 'currentActivityIds': list(dict.fromkeys(active_ids)), 'currentTaskId': state['frames'][-1]['taskId'] if state['frames'] else None, 'currentGroupIds': [item['id'] for item in group_stack], 'groupIterations': {item['id']: item.get('iteration', 0) for item in group_stack}, 'callStack': [{'taskId': frame['taskId'], 'activityId': frame['activityId'], 'groupIds': [item['id'] for item in frame['context'].get('groupStack', [])]} for frame in state['frames']], 'logs': state['logs'], 'output': state.get('output', {}), 'activityOutputs': execution_state.get('activities', {}), 'taskOutputs': execution_state.get('tasks', {}), 'endpoints': state.get('endpoints', [])}

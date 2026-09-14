@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 
 PUBSUB_SCOPE = "https://www.googleapis.com/auth/pubsub"
@@ -27,10 +31,58 @@ def _credentials_with_ca(credentials, ca_file: str):
 
         def refresh(self, request):
             session = requests.Session()
-            session.verify = self._integration_fabric_ca_file
+            session.verify = _merged_ca_bundle(self._integration_fabric_ca_file)
             return super().refresh(Request(session=session))
 
     return CACredentials(credentials, ca_file)
+
+
+def _merged_ca_bundle(ca_file: str) -> str:
+    """Return a bundle containing public roots plus the configured corporate CA.
+
+    Passing only a corporate CA to gRPC replaces the normal public trust store;
+    that makes direct Google endpoints fail even though the corporate CA file is
+    valid. Keep both trust sets available for inspected and direct connections.
+    """
+    custom = Path(ca_file).expanduser().read_bytes()
+    try:
+        import certifi
+        system_bundle = Path(certifi.where()).read_bytes()
+    except (ImportError, OSError):
+        system_bundle = b""
+    merged = system_bundle.rstrip() + b"\n" + custom.lstrip()
+    identity = hashlib.sha256(merged).hexdigest()[:24]
+    destination = Path(tempfile.gettempdir()) / f"integration-fabric-pubsub-ca-{identity}.pem"
+    if not destination.exists():
+        destination.write_bytes(merged)
+    return str(destination)
+
+
+def _credential_file_path(value: Any) -> Path:
+    """Normalize a property-resolved credential file reference."""
+    text = str(value or "").strip().strip('"').strip("'")
+    if text.lower().startswith("file://"):
+        parsed = urlparse(text)
+        text = unquote(parsed.path)
+        # file:///C:/... is a Windows path; urlparse returns /C:/...
+        if len(text) >= 3 and text[0] == "/" and text[2] == ":":
+            text = text[1:]
+    return Path(os.path.expandvars(text)).expanduser()
+
+
+def _load_service_account_file(value: Any) -> dict[str, Any]:
+    path = _credential_file_path(value)
+    if not path.is_file():
+        raise ValueError(
+            f"Service account JSON file was not found on the connection server: {path}"
+        )
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Unable to read service account JSON file {path}: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("Service account JSON file must contain one JSON object")
+    return parsed
 
 
 def _service_account_info(config: dict[str, Any]) -> dict[str, Any] | None:
@@ -44,14 +96,7 @@ def _service_account_info(config: dict[str, Any]) -> dict[str, Any] | None:
             # path.  Accept that form as well as the existing inline JSON
             # form, while keeping the full service-account document intact.
             if not text.startswith("{"):
-                candidate = Path(text).expanduser()
-                if candidate.is_file():
-                    try:
-                        info = json.loads(candidate.read_text(encoding="utf-8"))
-                    except (OSError, json.JSONDecodeError) as exc:
-                        raise ValueError(f"Unable to read service account JSON file: {exc}") from exc
-                else:
-                    raise ValueError(f"Service account JSON file was not found: {candidate}")
+                info = _load_service_account_file(text)
             else:
                 try:
                     info = json.loads(text)
@@ -66,16 +111,7 @@ def _service_account_info(config: dict[str, Any]) -> dict[str, Any] | None:
     # Backward compatibility for projects created before inline JSON credentials.
     credentials_file = str(config.get("credentialsFile") or config.get("serviceAccountJsonFile") or "").strip()
     if credentials_file:
-        path = Path(credentials_file).expanduser()
-        if not path.is_file():
-            raise ValueError(f"Service account JSON file was not found: {path}")
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(f"Unable to read service account JSON file: {exc}") from exc
-        if not isinstance(value, dict):
-            raise ValueError("Service account JSON file must contain one JSON object")
-        return value
+        return _load_service_account_file(credentials_file)
     return None
 
 
@@ -89,7 +125,16 @@ def client_configuration(config: dict[str, Any]) -> tuple[dict[str, Any], str]:
     # Corporate TLS inspection commonly replaces Google's certificate with a
     # certificate signed by an internal CA.  Pass that CA to gRPC explicitly;
     # do not disable certificate verification.
-    ca_file = str(config.get("caCertificateFile") or config.get("certificateAuthorityFile") or "").strip()
+    # The Studio shared-connection editor stores the corporate CA under
+    # `certificateFile`; retain the API/runtime aliases as well so a saved
+    # connection and its deployed activity use the same certificate.
+    ca_file = str(
+        config.get("caCertificateFile")
+        or config.get("certificateAuthorityFile")
+        or config.get("certificateFile")
+        or config.get("caCertificatePath")
+        or ""
+    ).strip()
     if ca_file:
         ca_path = Path(ca_file).expanduser()
         if not ca_path.is_file():
@@ -99,8 +144,9 @@ def client_configuration(config: dict[str, Any]) -> tuple[dict[str, Any], str]:
             # Keep this private marker out of the public client constructor;
             # the generated Publisher/Subscriber clients accept the TLS
             # credentials through their transport, not as a direct keyword.
-            kwargs["_ssl_channel_credentials"] = grpc.ssl_channel_credentials(root_certificates=ca_path.read_bytes())
-            kwargs["_ca_certificate_file"] = str(ca_path.resolve())
+            bundle = _merged_ca_bundle(str(ca_path.resolve()))
+            kwargs["_ssl_channel_credentials"] = grpc.ssl_channel_credentials(root_certificates=Path(bundle).read_bytes())
+            kwargs["_ca_certificate_file"] = bundle
         except OSError as exc:
             raise ValueError(f"Unable to read Pub/Sub CA certificate file: {exc}") from exc
 

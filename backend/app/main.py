@@ -32,6 +32,7 @@ runtime = WorkflowRuntime()
 debugger = DebugManager(runtime)
 runtime_states: dict[str, dict] = {}
 active_runs: dict[str, asyncio.Task] = {}
+debug_runs: dict[str, asyncio.Task] = {}
 
 @app.middleware('http')
 async def prevent_stale_studio_entry(request: Request, call_next):
@@ -52,10 +53,11 @@ async def prevent_stale_studio_entry(request: Request, call_next):
 @app.on_event('shutdown')
 async def shutdown_native_connectors():
     """Stop persistent JCo processes before the runtime exits/reloads."""
-    pending = [task for task in active_runs.values() if task and not task.done()]
+    pending = [task for task in [*active_runs.values(), *debug_runs.values()] if task and not task.done()]
     for task in pending: task.cancel()
     if pending: await asyncio.gather(*pending, return_exceptions=True)
     active_runs.clear()
+    debug_runs.clear()
     sap_adapter.close_all()
 
 INBOUND_OPERATIONS = {None, 'listen', 'receiver', 'service'}
@@ -459,12 +461,12 @@ async def _continuous_sap_event_loop(item: Project, task, activity, environment:
                 _publish_runtime_state(project_id, status='listening', logs=combined_logs, result=result, environment=environment)
                 retry_delay = 1.0
             except asyncio.CancelledError:
-                if delivery_id and listener_key:
+                if delivery_id and listener_key and not transport.get('completed'):
                     try: sap_adapter.acknowledge_idoc(listener_key, delivery_id, False)
                     except Exception: pass
                 raise
             except Exception as exc:
-                if delivery_id and listener_key:
+                if delivery_id and listener_key and not transport.get('completed'):
                     try: sap_adapter.acknowledge_idoc(listener_key, delivery_id, False)
                     except Exception: pass
                 entry = {'time': log_timestamp(), 'level': 'ERROR', 'kind': 'listener', 'message': f'{activity.name} worker {index} failed; retrying in {retry_delay:g} seconds: {exc}', 'activityId': activity.id, 'taskId': task.id, 'worker': index, 'deliveryId': delivery_id}
@@ -1392,7 +1394,19 @@ def mapper_test(payload: dict):
         options = {**(payload.get('options') or {}), 'validateOutput': False}
         if payload.get('targetSchema'): options = {**options, 'targetSchema': payload.get('targetSchema')}
         if payload.get('targetSchemaText'): options = {**options, 'targetSchemaText': payload.get('targetSchemaText')}
-        output = execute_mapping(payload.get('input', {}), normalized, options)
+        # Mapper expressions use the same aliases as the runtime.  In
+        # particular, the function palette creates expressions such as
+        # ``render-xml(${last})``.  The test endpoint previously passed the
+        # sample document directly, so ``last`` was missing and render-xml
+        # received None, resulting in ``<root />`` even though the function
+        # was otherwise working correctly.
+        test_input = payload.get('input', {})
+        test_document = {
+            **(test_input if isinstance(test_input, dict) else {}),
+            'last': test_input,
+            'input': test_input,
+        }
+        output = execute_mapping(test_document, normalized, options)
         schema = payload.get('targetSchema') or payload.get('targetSchemaText')
         errors = validate_output(output, schema) if schema and (payload.get('options') or {}).get('validateOutput', True) else []
         active = [rule for rule in normalized if rule.get('enabled', True)]
@@ -1489,6 +1503,25 @@ async def start_debug(project_id: str, http_request: Request, request: DebugRequ
         state['persistedLogCount'] = len(state['logs'])
         if event and _is_continuous_event(event):
             _start_continuous_listener(item, task, event, request.environment, view['sessionId'])
+        elif not request.breakpoints:
+            # Run without breakpoints in the background. This lets the Studio
+            # poll the debug session and paint each activity/parallel branch
+            # while it executes instead of receiving only the final snapshot.
+            session_id = view['sessionId']
+            state['status'] = 'running'
+
+            async def finish_debug_session():
+                try:
+                    await debugger.action(session_id, 'continue')
+                finally:
+                    current = debugger.sessions.get(session_id)
+                    if current:
+                        cursor = int(current.get('persistedLogCount', 0))
+                        append_project_logs(current['project'].id, current['project'].name, current['logs'][cursor:], _project_log_directory(current['project'], current.get('environment', 'local')))
+                        current['persistedLogCount'] = len(current['logs'])
+                    debug_runs.pop(session_id, None)
+
+            debug_runs[session_id] = asyncio.create_task(finish_debug_session())
         return debugger.view(state)
     except ValueError as exc: raise HTTPException(400, str(exc))
 

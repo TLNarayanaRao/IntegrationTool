@@ -253,13 +253,18 @@ def _java_executable() -> Path | str:
     return bundled if bundled.exists() else "java"
 
 
-def _java_command(config: dict[str, Any], classpath: str, descriptor: str) -> list[str]:
+def _java_command(config: dict[str, Any], classpath: str, descriptor: str, family: str | None = None) -> list[str]:
     """Build a bounded JVM command for native connector bridge processes."""
     initial = max(16, min(4096, int(config.get("jvmInitialHeapMb") or 64)))
     maximum = max(initial, min(8192, int(config.get("jvmMaximumHeapMb") or 512)))
+    native_options: list[str] = []
+    if family == "sap":
+        native_directories = [str(path) for path in driver_directories(config, "sap") if path.exists()]
+        if native_directories:
+            native_options.append(f"-Djava.library.path={os.pathsep.join(native_directories)}")
     return [
         str(_java_executable()), f"-Xms{initial}m", f"-Xmx{maximum}m",
-        "-XX:+ExitOnOutOfMemoryError", "-cp", classpath,
+        "-XX:+ExitOnOutOfMemoryError", *native_options, "-cp", classpath,
         "com.integrationfabric.bridge.FabricJavaBridge", descriptor,
     ]
 
@@ -324,7 +329,7 @@ def invoke(command: str, config: dict[str, Any], values: dict[str, Any] | None =
                 if value is not None:
                     descriptor.write(f"{_escape_property(key)}={_escape_property(value)}\n")
         completed = subprocess.run(
-            _java_command(config, classpath, descriptor.name),
+            _java_command(config, classpath, descriptor.name, family=family),
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout or float(config.get("timeoutSeconds") or 30) + 5,
             env=process_env,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
@@ -363,7 +368,7 @@ def start_sap_listener(config: dict[str, Any], values: dict[str, Any]) -> SapJco
             if value is not None: descriptor.write(f"{_escape_property(key)}={_escape_property(value)}\n")
     try:
         process = subprocess.Popen(
-            _java_command(config, classpath, descriptor.name),
+            _java_command(config, classpath, descriptor.name, family="sap"),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", env=process_env,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), bufsize=1,
         )
@@ -384,7 +389,7 @@ def start_sap_worker(config: dict[str, Any], values: dict[str, Any]) -> SapJcoWo
         for key, value in {"command":"sap.worker", **values}.items():
             if value is not None: descriptor.write(f"{_escape_property(key)}={_escape_property(value)}\n")
     try:
-        process = subprocess.Popen(_java_command(config, classpath, descriptor.name), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        process = subprocess.Popen(_java_command(config, classpath, descriptor.name, family="sap"), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace", env=process_env, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), bufsize=1)
         return SapJcoWorker(process, Path(descriptor.name), [jar.name for jar in jars], float(config.get("timeoutSeconds") or 30) + 5)
     except Exception:
@@ -401,7 +406,7 @@ def start_jdbc_worker(config: dict[str, Any], values: dict[str, Any], family: st
             if value is not None: descriptor.write(f"{_escape_property(key)}={_escape_property(value)}\n")
     try:
         process = subprocess.Popen(
-            _java_command(config, classpath, descriptor.name), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            _java_command(config, classpath, descriptor.name, family=family), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace", env=os.environ.copy(), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), bufsize=1,
         )
         worker = SapJcoWorker(process, Path(descriptor.name), [jar.name for jar in jars], float(config.get("timeoutSeconds") or 30) + 5, "JDBC")

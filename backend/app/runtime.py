@@ -305,15 +305,17 @@ class WorkflowRuntime:
                 operation = str(current.config.get('operation') or current.type)
                 self.log(logs, 'INFO', f'Activity started: {process.name} / {current.name}', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation)
                 context['context']['activityId'] = current.id
+                activity_input = context['last']
                 error = None
                 try:
                     if triggered_event_pending:
                         context['last'] = event_output
+                        activity_input = event_output
                         triggered_event_pending = False
                         self.log(logs, 'INFO', f'Event delivered: {process.name} / {current.name}', kind='event', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation)
                     else:
                         context['last'] = await self.execute_with_policy(current, context)
-                    self.record_activity_output(current, context['last'], context)
+                    self.record_activity_output(current, context['last'], context, activity_input)
                 except Exception as exc: error = exc
                 activity_duration = round((perf_counter() - activity_started) * 1000, 3)
                 if error:
@@ -370,11 +372,16 @@ class WorkflowRuntime:
                                  entry_activity_id=edge.target, project=project,
                                  execution_state=execution_state, transport=transport)
                         for edge in chosen_edges
-                    ))
-                    for result in results:
+                    ), return_exceptions=True)
+                    failed = None
+                    for index, result in enumerate(results):
+                        if isinstance(result, Exception):
+                            failed = result
+                            self.log(logs, 'ERROR', f'Parallel branch {index + 1} failed from {current.name}: {result}', kind='parallel', runtimeActivityId=current.id, branch=index + 1)
+                            continue
                         logs.extend(result.logs)
-                    failed = next((result for result in results if result.status != 'completed'), None)
-                    if failed: raise RuntimeErrorWithLogs(f'Parallel branch failed from {current.name}')
+                        if result.status != 'completed' and failed is None: failed = RuntimeErrorWithLogs(f'Parallel branch {index + 1} failed from {current.name}')
+                    if failed: raise RuntimeErrorWithLogs(f'Parallel execution failed from {current.name}: {failed}')
                     final_output = results[-1].output if results else context['last']
                     task_state['output'] = final_output
                     return finish('completed', final_output)
@@ -434,9 +441,11 @@ class WorkflowRuntime:
         return edges[:1] if candidates else edges
 
     @staticmethod
-    def record_activity_output(activity: Activity, result, ctx: dict):
+    def record_activity_output(activity: Activity, result, ctx: dict, input_value: Any = _NO_EVENT_OUTPUT):
         """Retain every executed activity result for downstream mappings and debugging."""
         record = {'activityId': activity.id, 'name': activity.name, 'type': activity.type, 'output': result}
+        if input_value is not _NO_EVENT_OUTPUT:
+            record['input'] = input_value
         if activity.type in ('xml', 'flat') and activity.config.get('operation') == 'parse' and isinstance(result, dict) and result.get('xml'):
             record['displayOutput'] = result['xml']
         record.update(ctx.pop('_activityMetadata', {}))
@@ -710,6 +719,19 @@ class WorkflowRuntime:
             ctx['_activityMetadata'] = {'logEvent': event}
             return ctx['last']
         if activity.type == 'confirm':
+            # SAP IDoc listeners carry their transaction handle out-of-band in
+            # the workflow transport.  An explicit Confirm activity can close
+            # that tRFC immediately, allowing SAP to deliver the next IDoc
+            # while downstream activities continue.  This is deliberately
+            # opt-in: failures after this point cannot roll the IDoc back.
+            transport = ctx.get('transport') or {}
+            sap_delivery_id = transport.get('deliveryId')
+            sap_listener_key = transport.get('listenerKey')
+            if sap_delivery_id and sap_listener_key and not transport.get('completed'):
+                sap_adapter.acknowledge_idoc(sap_listener_key, sap_delivery_id, True)
+                transport['completed'] = True
+                transport['earlyConfirmed'] = True
+                return {'confirmed': True, 'count': 1, 'ackIds': [str(sap_delivery_id)], 'technologies': ['SAP'], 'early': True}
             previous = ctx['last'] if isinstance(ctx['last'], dict) else {}
             handles = cfg.get('ackIds') or cfg.get('ackId') or previous.get('ackIds') or previous.get('ackId') or previous.get('AckID')
             if not handles:
@@ -1122,22 +1144,35 @@ class WorkflowRuntime:
                     if not native_messages: consumer.close()
                 else: consumer.close()
                 return {'messages': messages, 'count': len(messages), 'ackId': messages[0].get('ackId') if messages else None, 'ackIds':[item['ackId'] for item in messages if item.get('ackId')]}
-            producer_cfg = {**common, 'acks': str(cfg.get('acks','all')), 'compression.type': cfg.get('compressionType','none'), 'retries': int(cfg.get('retries',3) or 0), 'batch.size': int(cfg.get('batchSize',16384) or 16384), 'linger.ms': int(cfg.get('lingerMs',0) or 0), 'queue.buffering.max.kbytes': max(1, int(cfg.get('bufferMemory',33554432) or 33554432) // 1024), 'message.max.bytes': int(cfg.get('maxRequestSize',1048576) or 1048576), 'enable.idempotence': bool(cfg.get('enableIdempotence',False)), **mapping(cfg.get('additionalProperties'))}
-            if cfg.get('transactionalId'): producer_cfg['transactional.id'] = cfg['transactionalId']
-            producer = Producer(producer_cfg); delivered = {}; transactional = bool(cfg.get('transactionalId'))
-            if transactional: producer.init_transactions(); producer.begin_transaction()
-            def delivery(error, message):
-                if error: delivered['error'] = str(error)
-                else: delivered.update({'partition':message.partition(),'offset':message.offset(),'timestamp':message.timestamp()[1]})
             raw = kafka_bytes(payload, cfg.get('valueSerializer', 'String'))
             key = kafka_bytes(cfg.get('key'), cfg.get('keySerializer', 'String'))
-            try:
-                producer.produce(destination, raw, key=key, partition=int(cfg['partitionId']) if cfg.get('assignCustomPartition') else -1, headers=list(attributes.items()), callback=delivery); producer.flush()
-                if transactional: producer.commit_transaction()
-            except Exception:
-                if transactional: producer.abort_transaction()
-                raise
-            if delivered.get('error'): raise RuntimeError(delivered['error'])
+            producer_cfg = {**common, 'acks': str(cfg.get('acks','all')), 'compression.type': cfg.get('compressionType','none'), 'retries': int(cfg.get('retries',3) or 0), 'batch.size': int(cfg.get('batchSize',16384) or 16384), 'linger.ms': int(cfg.get('lingerMs',0) or 0), 'queue.buffering.max.kbytes': max(1, int(cfg.get('bufferMemory',33554432) or 33554432) // 1024), 'message.max.bytes': int(cfg.get('maxRequestSize',1048576) or 1048576), 'enable.idempotence': bool(cfg.get('enableIdempotence',False)), **mapping(cfg.get('additionalProperties'))}
+            if cfg.get('transactionalId'): producer_cfg['transactional.id'] = cfg['transactionalId']
+
+            def publish_kafka():
+                """Run librdkafka's blocking producer operations on a worker thread.
+
+                Producer construction, flush, and transactional calls can block
+                while DNS, TLS, broker metadata, or acknowledgements complete.
+                Keeping them off the asyncio event loop is essential because the
+                SAP listener uses several concurrent asyncio workers.
+                """
+                producer = Producer(producer_cfg); delivered = {}; transactional = bool(cfg.get('transactionalId'))
+                if transactional: producer.init_transactions(); producer.begin_transaction()
+                def delivery(error, message):
+                    if error: delivered['error'] = str(error)
+                    else: delivered.update({'partition':message.partition(),'offset':message.offset(),'timestamp':message.timestamp()[1]})
+                try:
+                    producer.produce(destination, raw, key=key, partition=int(cfg['partitionId']) if cfg.get('assignCustomPartition') else -1, headers=list(attributes.items()), callback=delivery)
+                    producer.flush()
+                    if transactional: producer.commit_transaction()
+                except Exception:
+                    if transactional: producer.abort_transaction()
+                    raise
+                if delivered.get('error'): raise RuntimeError(delivered['error'])
+                return delivered
+
+            delivered = await asyncio.to_thread(publish_kafka)
             return {**envelope, **delivered, 'messageId':envelope['id'], 'topic':destination, 'published':True}
         if technology == 'pubsub':
             try: from google.cloud import pubsub_v1
@@ -1163,30 +1198,35 @@ class WorkflowRuntime:
                     subscriber.close()
                 first = messages[0] if messages else {}
                 return {'MessageID':first.get('messageId'),'PublishTime':first.get('publishTime'),'Data':first.get('data'),'Attributes':first.get('attributes',{}),'AckID':first.get('ackId'),'ackId':first.get('ackId'),'messages':messages,'count':len(messages)}
-            publisher = create_pubsub_client(pubsub_v1.PublisherClient, {**rcfg, 'projectId': cfg.get('projectId') or rcfg.get('projectId')})
             publish_timeout = max(1.0, float(cfg.get('publishTimeout', 60) or 60))
-            try:
-                path = publisher.topic_path(project_id, destination)
-                raw = payload if isinstance(payload, bytes) else (payload.encode() if isinstance(payload, str) else json.dumps(payload).encode())
+            publish_config = {**rcfg, 'projectId': cfg.get('projectId') or rcfg.get('projectId')}
+            raw = payload if isinstance(payload, bytes) else (payload.encode() if isinstance(payload, str) else json.dumps(payload).encode())
+
+            def publish_pubsub():
+                """Keep gRPC publish and its completion wait off the event loop."""
+                publisher = create_pubsub_client(pubsub_v1.PublisherClient, publish_config)
                 try:
-                    from google.api_core.retry import Retry
-                    publish_future = publisher.publish(
-                        path, raw, ordering_key=str(cfg.get('orderingKey', '')),
-                        retry=Retry(deadline=publish_timeout),
-                        timeout=publish_timeout, **attributes,
-                    )
-                    message_id = publish_future.result(timeout=publish_timeout + 2)
-                except TimeoutError as exc:
-                    raise RuntimeError(f'Google Pub/Sub publish timed out after {publish_timeout:g} seconds. Verify the topic, IAM permission, endpoint, proxy, and firewall settings.') from exc
-                return {**envelope, 'TopicName': path, 'MessageID': message_id, 'messageId': message_id, 'published': True}
-            finally:
-                # Stop the batching/sequencer threads before closing gRPC.
-                # Closing the channel first causes the Google batch thread to
-                # raise "Cannot invoke RPC on closed channel" during retries.
-                try: publisher.stop()
-                except Exception: pass
-                try: publisher.transport.close()
-                except Exception: pass
+                    path = publisher.topic_path(project_id, destination)
+                    try:
+                        from google.api_core.retry import Retry
+                        publish_future = publisher.publish(
+                            path, raw, ordering_key=str(cfg.get('orderingKey', '')),
+                            retry=Retry(deadline=publish_timeout),
+                            timeout=publish_timeout, **attributes,
+                        )
+                        message_id = publish_future.result(timeout=publish_timeout + 2)
+                    except TimeoutError as exc:
+                        raise RuntimeError(f'Google Pub/Sub publish timed out after {publish_timeout:g} seconds. Verify the topic, IAM permission, endpoint, proxy, and firewall settings.') from exc
+                    return path, message_id
+                finally:
+                    # Stop the batching/sequencer threads before closing gRPC.
+                    try: publisher.stop()
+                    except Exception: pass
+                    try: publisher.transport.close()
+                    except Exception: pass
+
+            path, message_id = await asyncio.to_thread(publish_pubsub)
+            return {**envelope, 'TopicName': path, 'MessageID': message_id, 'messageId': message_id, 'published': True}
         raise RuntimeError(f'Unsupported messaging technology {technology}')
 
     @staticmethod

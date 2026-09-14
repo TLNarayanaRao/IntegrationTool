@@ -367,6 +367,7 @@ ipcMain.handle('fabric:save-utility-file-as', async (_event, options = {}) => {
 });
 
 ipcMain.handle('fabric:close-utility-file', (_event, id) => utilityFiles.delete(String(id || '')));
+ipcMain.handle('fabric:exit', () => { app.quit(); return true; });
 
 ipcMain.handle('fabric:open-project-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, { title: 'Open Integration Fabric project folder', buttonLabel: 'Open folder', properties: ['openDirectory'] });

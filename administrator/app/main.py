@@ -55,6 +55,8 @@ MACHINES_FILE, SECRETS_FILE, AUDIT_FILE, KEY_FILE = DATA_DIR / "machines.json", 
 CAPABILITIES_FILE, RESOURCES_FILE, PRINCIPALS_FILE = DATA_DIR / "capabilities.json", DATA_DIR / "resources.json", DATA_DIR / "principals.json"
 TEAMS_FILE, TOKENS_FILE = DATA_DIR / "teams.json", DATA_DIR / "access-tokens.json"
 REVISIONS_FILE = DATA_DIR / "revisions.json"
+ALERTS_FILE = DATA_DIR / "alerts.json"
+PROCESS_STATES_FILE = DATA_DIR / "process-states.json"
 TECHNOLOGY_TEAM_ID = "technology-team"
 MAX_PACKAGE_BYTES = int(os.environ.get("FABRIC_ADMIN_MAX_PACKAGE_MB", "250")) * 1024 * 1024
 MAX_EXPANDED_BYTES = int(os.environ.get("FABRIC_ADMIN_MAX_EXPANDED_MB", "1024")) * 1024 * 1024
@@ -115,6 +117,17 @@ def record_revision(asset_type: str, asset_id: str, action: str, snapshot: dict,
     }
     values.append(revision); write_json(REVISIONS_FILE, values[-10000:])
     return revision
+
+
+def operator_process_instances(deployments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    values = read_json(PROCESS_STATES_FILE, {})
+    output = []
+    for deployment in deployments:
+        for instance in deployment.get("instances", []):
+            instance_id = str(instance.get("id"))
+            state = values.get(instance_id, {}) if isinstance(values, dict) else {}
+            output.append({"id": instance_id, "deploymentId": deployment.get("id"), "application": deployment.get("application"), "taskId": state.get("taskId", "runtime"), "status": state.get("status", instance.get("state", "UNKNOWN")), "startedAt": instance.get("startedAt"), "durationMs": state.get("durationMs"), "correlationId": state.get("correlationId"), "input": state.get("input"), "output": state.get("output"), "fault": state.get("fault"), "dataPlaneId": deployment.get("dataPlaneId") or deployment.get("machine"), "namespace": deployment.get("namespace", "default")})
+    return output
 
 
 def token_hash(value: str) -> str:
@@ -259,7 +272,10 @@ def checked_name(name: str) -> str:
 def validate_manifest(manifest: Any, names: set[str]) -> dict:
     if not isinstance(manifest, dict) or manifest.get("format") != "integration-fabric-deployment":
         raise ValueError("manifest.json is not an Integration Fabric deployment descriptor")
-    if int(manifest.get("formatVersion", 0)) != 1:
+    # Studio 2.x deployment archives use manifest format version 2. The
+    # archive layout and required descriptor files remain compatible with the
+    # Administrator's version-1 validator, so reject only unknown versions.
+    if int(manifest.get("formatVersion", 0)) not in (1, 2):
         raise ValueError(f"Unsupported package formatVersion {manifest.get('formatVersion')!r}")
     for field in ("artifact", "version", "applicationName", "target"):
         if not str(manifest.get(field, "")).strip():
@@ -455,6 +471,7 @@ class ResourceRequest(BaseModel):
 
 
 class PrincipalRequest(BaseModel):
+    id: str | None = None
     name: str
     type: str = "user"
     teamId: str = TECHNOLOGY_TEAM_ID
@@ -536,6 +553,47 @@ def get_package(artifact: str, version: str, request: Request, teamId: str | Non
     if not item:
         raise HTTPException(404, "Package not found")
     return {**item, "tasks": package_task_inventory(item)}
+
+
+def agent_deployment_record(plane_id: str, deployment_id: str | None = None):
+    deployments = [item for item in deployment_inventory() if (item.get("dataPlaneId") or item.get("machine")) == plane_id and item.get("state") != "UNDEPLOYED"]
+    if deployment_id:
+        item = next((value for value in deployments if value.get("id") == deployment_id), None)
+        if not item: raise HTTPException(404, "Deployment not found")
+        item = dict(item); item["secrets"] = deployment_secret_values(item["id"]); return item
+    return [{**item, "secrets": deployment_secret_values(item["id"])} for item in deployments]
+
+
+@app.get("/api/data-planes/{plane_id}/agent/deployments")
+def agent_deployments(plane_id: str, request: Request):
+    require_technology(request)
+    return agent_deployment_record(plane_id)
+
+
+@app.get("/api/data-planes/{plane_id}/agent/deployments/{deployment_id}/package")
+def agent_package(plane_id: str, deployment_id: str, request: Request):
+    require_technology(request)
+    item = agent_deployment_record(plane_id, deployment_id)
+    root = deployment_package_path(item)
+    if not root.exists(): raise HTTPException(404, "Deployment package is not available")
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in root.rglob("*"):
+            if path.is_file(): archive.write(path, path.relative_to(root).as_posix())
+    return Response(buffer.getvalue(), media_type="application/zip", headers={"Content-Disposition": f"attachment; filename={safe(item.get('id', deployment_id))}.zip"})
+
+
+@app.post("/api/data-planes/{plane_id}/agent/deployments/{deployment_id}/report")
+def agent_deployment_report(plane_id: str, deployment_id: str, request: Request, payload: dict[str, Any]):
+    require_technology(request)
+    deployments = read_json(DEPLOYMENTS_FILE, []); item = next((value for value in deployments if value.get("id") == deployment_id and (value.get("dataPlaneId") or value.get("machine")) == plane_id), None)
+    if not item: raise HTTPException(404, "Deployment not found")
+    for key in ("state", "instances", "message", "lastError"):
+        if key in payload: item[key] = payload[key]
+    if isinstance(payload.get("health"), dict): item["healthReport"] = payload["health"]
+    if isinstance(payload.get("logs"), list): item["remoteLogs"] = payload["logs"][-20:]
+    item["updatedAt"] = now(); write_json(DEPLOYMENTS_FILE, deployments)
+    return item
 
 
 @app.delete("/api/packages/{artifact}/{version}")
@@ -716,7 +774,18 @@ def data_plane_heartbeat(plane_id: str, request: Request, payload: dict[str, Any
     for key in ("runtimeVersion", "agentVersion", "cpuPercent", "memoryPercent", "availableCapacity", "namespaces"):
         if key in payload: item[key] = payload[key]
     machines = read_json(MACHINES_FILE, [])
-    stored = next(value for value in machines if value.get("id") == plane_id); stored.update(item); write_json(MACHINES_FILE, machines)
+    stored = next(value for value in machines if value.get("id") == plane_id); stored.update(item); stored["runtimeConfigured"] = True; write_json(MACHINES_FILE, machines)
+    # A capability is provisioned before its agent may be online. Reconcile
+    # existing capabilities whenever the data-plane heartbeat arrives so they
+    # do not remain permanently PENDING after the agent has connected.
+    capabilities = read_json(CAPABILITIES_FILE, [])
+    capability_changed = False
+    for capability in capabilities:
+        if capability.get("dataPlaneId") != plane_id: continue
+        next_health = "RUNNING" if stored.get("status") == "ONLINE" else "PENDING"
+        if capability.get("health") != next_health:
+            capability["health"] = next_health; capability["updatedAt"] = now(); capability_changed = True
+    if capability_changed: write_json(CAPABILITIES_FILE, capabilities)
     reports = payload.get("deploymentHealth") or {}
     if isinstance(reports, list): reports = {str(value.get("deploymentId")):value for value in reports if isinstance(value, dict) and value.get("deploymentId")}
     if isinstance(reports, dict) and reports:
@@ -931,8 +1000,26 @@ def create_principal(payload: PrincipalRequest, request: Request):
     invalid = [item.get("role") for item in payload.permissions if item.get("role") not in allowed]
     if invalid: raise HTTPException(400, f"Unsupported permissions: {', '.join(map(str, invalid))}")
     if team.get("kind") == "delivery" and any(item.get("role") in {"Owner", "Team Admin"} or item.get("scope") == "control-plane" for item in payload.permissions): raise HTTPException(403, "Delivery-team principals cannot receive Control Plane roles")
-    item = payload.model_dump(); item.update(id=str(uuid4()), status="ACTIVE", createdAt=now())
-    values = read_json(PRINCIPALS_FILE, []); values.append(item); write_json(PRINCIPALS_FILE, values); audit("access.principal.create", item["id"], detail=payload.name)
+    item = payload.model_dump(); item.update(id=safe(payload.id or str(uuid4())), status="ACTIVE", createdAt=now())
+    values = read_json(PRINCIPALS_FILE, [])
+    if any(value.get("id") == item["id"] for value in values): raise HTTPException(409, "Principal already exists")
+    values.append(item); write_json(PRINCIPALS_FILE, values); audit("access.principal.create", item["id"], detail=payload.name)
+    return item
+
+
+@app.put("/api/access/principals/{principal_id}")
+def update_principal(principal_id: str, payload: PrincipalRequest, request: Request):
+    require_technology(request)
+    if payload.type not in {"user", "team", "idp-group"}: raise HTTPException(400, "Principal type must be user, team, or idp-group")
+    team = team_record(payload.teamId)
+    allowed = {"Owner", "Team Admin", "Capability Manager", "Application Manager", "Application Viewer"}
+    invalid = [item.get("role") for item in payload.permissions if item.get("role") not in allowed]
+    if invalid: raise HTTPException(400, f"Unsupported permissions: {', '.join(map(str, invalid))}")
+    if team.get("kind") == "delivery" and any(item.get("role") in {"Owner", "Team Admin"} or item.get("scope") == "control-plane" for item in payload.permissions): raise HTTPException(403, "Delivery-team principals cannot receive Control Plane roles")
+    values = read_json(PRINCIPALS_FILE, []); item = next((value for value in values if value.get("id") == principal_id), None)
+    if not item: raise HTTPException(404, "Principal not found")
+    item.update(name=payload.name, type=payload.type, teamId=payload.teamId, permissions=payload.permissions, updatedAt=now())
+    write_json(PRINCIPALS_FILE, values); audit("access.principal.update", principal_id, detail=payload.name)
     return item
 
 
@@ -997,7 +1084,7 @@ def delete_application(deployment_id: str, request: Request):
     item = next((value for value in deployments if value.get("id") == deployment_id), None)
     if not item: raise HTTPException(404, "Deployment not found")
     require_application_write(request, item)
-    if item.get("state") == "RUNNING": raise HTTPException(409, "Stop or undeploy the application before deleting it")
+    if item.get("state") != "UNDEPLOYED": raise HTTPException(409, "Undeploy the application before deleting it")
     write_json(DEPLOYMENTS_FILE, [value for value in deployments if value.get("id") != deployment_id])
     secrets_store = read_json(SECRETS_FILE, {}); secrets_store.pop(deployment_id, None); write_json(SECRETS_FILE, secrets_store)
     caller = identity(request); audit("application.delete", deployment_id, actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID))
@@ -1140,6 +1227,8 @@ def reconcile_instances() -> None:
     for item in deployments:
         if item.get("state") != "RUNNING":
             continue
+        if (item.get("dataPlaneId") or item.get("machine")) != "localhost":
+            continue
         dead = []
         for instance in item.get("instances", []):
             if instance.get("state") == "RUNNING" and instance.get("ownerRunId") != RUN_ID:
@@ -1159,6 +1248,31 @@ def reconcile_instances() -> None:
 ALLOWED_ACTIONS = {"start": {"DEPLOYED", "STOPPED", "FAILED"}, "stop": {"RUNNING"}, "restart": {"RUNNING", "STOPPED", "FAILED"}, "kill": {"RUNNING"}, "undeploy": {"DEPLOYED", "STOPPED", "FAILED"}}
 
 
+@app.post("/api/deployments/{deployment_id}/revert")
+def revert_deployment_action(deployment_id: str, payload: dict[str, Any], request: Request):
+    require_application_manager(request)
+    deployments = read_json(DEPLOYMENTS_FILE, [])
+    item = next((value for value in deployments if value.get("id") == deployment_id), None)
+    if not item: raise HTTPException(404, "Deployment not found")
+    require_application_write(request, item)
+    revisions = [value for value in read_json(REVISIONS_FILE, []) if value.get("assetType") == "deployment" and value.get("assetId") == deployment_id]
+    selected = payload.get("revision") or payload.get("revisionId")
+    revision = next((value for value in revisions if str(value.get("revision")) == str(selected) or value.get("id") == selected), None)
+    if not revision: raise HTTPException(404, "Deployment revision not found")
+    snapshot = revision.get("snapshot") or {}
+    if snapshot.get("environment"): item["environment"] = snapshot["environment"]
+    if snapshot.get("instances") is not None: item["desiredInstances"] = int(snapshot["instances"])
+    if snapshot.get("healthCheckEnabled") is not None: item["healthCheckEnabled"] = bool(snapshot["healthCheckEnabled"])
+    if isinstance(snapshot.get("starterStates"), dict): item["starterStates"] = snapshot["starterStates"]
+    if item.get("state") == "RUNNING" and (item.get("dataPlaneId") or item.get("machine")) == "localhost": terminate_instances(item); start_instances(item)
+    item.update(updatedAt=now(), lastError=None, message=f"Reverted to deployment revision {revision.get('revision')}")
+    write_json(DEPLOYMENTS_FILE, deployments)
+    caller = identity(request)
+    record_revision("deployment", deployment_id, "deployment.revert", {"revertedRevision": revision.get("revision"), "environment": item.get("environment"), "instances": item.get("desiredInstances"), "healthCheckEnabled": item.get("healthCheckEnabled", True), "starterStates": item.get("starterStates", {})}, actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID), detail=item["message"])
+    audit("deployment.revert", deployment_id, detail=item["message"], actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID))
+    return {**item, "health": deployment_health(item)}
+
+
 @app.post("/api/deployments/{deployment_id}/{action}")
 def lifecycle(deployment_id: str, action: str, request: Request):
     if action not in ALLOWED_ACTIONS:
@@ -1174,10 +1288,13 @@ def lifecycle(deployment_id: str, action: str, request: Request):
         if action in {"stop", "kill", "restart"} and item.get("state") == "RUNNING":
             terminate_instances(item, action == "kill")
         if action in {"start", "restart"}:
-            start_instances(item)
-            item.update(state="RUNNING", message=f"{len(item['instances'])} runtime instance(s) started", lastError=None)
+            if item.get("machine") == "localhost":
+                start_instances(item)
+                item.update(state="RUNNING", message=f"{len(item['instances'])} runtime instance(s) started", lastError=None)
+            else:
+                item.update(state="RUNNING", message="Start requested; awaiting the remote data-plane agent", lastError=None)
         elif action in {"stop", "kill"}:
-            item.update(state="STOPPED", message="Runtime instances stopped")
+            item.update(state="STOPPED", message="Stop requested; awaiting the remote data-plane agent")
         else:
             item.update(state="UNDEPLOYED", instances=[], message="Deployment removed from the runtime inventory")
             secrets = read_json(SECRETS_FILE, {}); secrets.pop(deployment_id, None); write_json(SECRETS_FILE, secrets)
@@ -1353,6 +1470,8 @@ def revision_history(asset_type: str, asset_id: str, request: Request):
 def deployment_logs(deployment_id: str, request: Request, lines: int = 300):
     item = get_deployment(deployment_id, request)
     output = []
+    for entry in item.get("remoteLogs", []):
+        if isinstance(entry, dict): output.append({"instanceId": entry.get("instanceId", "remote"), "lines": entry.get("lines", [])[-min(max(lines, 1), 2000):]})
     for instance in item.get("instances", []):
         log_path = Path(instance.get("log", ""))
         if log_path.exists() and LOGS_DIR in log_path.resolve().parents:
@@ -1389,6 +1508,151 @@ def observability(request: Request, dataPlaneId: str | None = None, teamId: str 
     running = [instance for item in deployments for instance in item.get("instances", []) if instance.get("state") == "RUNNING"]
     total = int(REQUEST_METRICS["total"]) if caller.get("teamId") == TECHNOLOGY_TEAM_ID else 0; errors = int(REQUEST_METRICS["errors"]) if caller.get("teamId") == TECHNOLOGY_TEAM_ID else 0
     return {"time":now(), "filter":{"dataPlaneId":dataPlaneId or "*", "teamId":teamId or caller.get("teamId")}, "summary":{"applications":len({item.get('application') for item in deployments}), "deployments":len(deployments), "runningInstances":len(running), "requestCount":total, "errorCount":errors, "errorRate":round(errors / total * 100, 2) if total else 0}, "dataPlanes":[{"id":item.get("id"), "name":item.get("name"), "status":item.get("status"), "tunnelStatus":item.get("tunnelStatus"), "cpuPercent":item.get("cpuPercent"), "memoryPercent":item.get("memoryPercent"), "lastHeartbeat":item.get("lastHeartbeat")} for item in planes], "applications":[{"id":item.get("id"), "name":item.get("application"), "state":item.get("state"), "dataPlaneId":item.get("dataPlaneId") or item.get("machine"), "namespace":item.get("namespace", "default"), "instances":len(item.get("instances", [])), "lastError":item.get("lastError")} for item in deployments], "requests":{"total":total, "errors":errors, "routes":REQUEST_METRICS["routes"] if caller.get("teamId") == TECHNOLOGY_TEAM_ID else {}}, "resources":resource_inventory(dataPlaneId) if caller.get("teamId") == TECHNOLOGY_TEAM_ID else []}
+
+
+@app.get("/api/operator/runtime-tree")
+def runtime_tree(request: Request):
+    caller = identity(request); deployments = visible_assets(request, deployment_inventory())
+    planes = data_plane_inventory(); capabilities = read_json(CAPABILITIES_FILE, [])
+    result = []
+    for plane in planes:
+        if caller.get("teamId") != TECHNOLOGY_TEAM_ID and not any((item.get("dataPlaneId") or item.get("machine")) == plane.get("id") for item in deployments): continue
+        plane_caps = [dict(item) for item in capabilities if item.get("dataPlaneId") == plane.get("id")]
+        plane_apps = [item for item in deployments if (item.get("dataPlaneId") or item.get("machine")) == plane.get("id")]
+        result.append({"id":plane.get("id"), "name":plane.get("name"), "status":plane.get("status"), "capabilities":[{**cap, "applications":[{**item, "instances":[{**instance, "taskId":(read_json(PROCESS_STATES_FILE, {}).get(instance.get("id"), {}) or {}).get("taskId", "runtime")} for instance in item.get("instances", [])]} for item in plane_apps if item.get("capabilityId") == cap.get("id")]} for cap in plane_caps]})
+    return {"time":now(), "dataPlanes":result}
+
+
+@app.get("/api/operator/process-instances")
+def process_instances(request: Request, deploymentId: str | None = None):
+    deployments = visible_assets(request, deployment_inventory())
+    if deploymentId: deployments = [item for item in deployments if item.get("id") == deploymentId]
+    return operator_process_instances(deployments)
+
+
+@app.get("/api/operator/metrics")
+def operator_metrics(request: Request):
+    deployments = visible_assets(request, deployment_inventory()); instances = operator_process_instances(deployments)
+    completed = [item for item in instances if item.get("status") in {"COMPLETED", "SUCCESS"}]
+    failed = [item for item in instances if item.get("status") in {"FAILED", "FAULTED"}]
+    return {"time":now(), "applications":len({item.get("application") for item in deployments}), "instances":len(instances), "running":len([item for item in instances if item.get("status") == "RUNNING"]), "completed":len(completed), "failed":len(failed), "successRate":round(len(completed) / (len(completed) + len(failed)) * 100, 2) if completed or failed else 0, "requests":REQUEST_METRICS["total"] if identity(request).get("teamId") == TECHNOLOGY_TEAM_ID else 0}
+
+
+@app.get("/api/operator/commands")
+def operator_commands(request: Request, limit: int = 250):
+    return audit_inventory(limit) if identity(request).get("teamId") == TECHNOLOGY_TEAM_ID else [item for item in audit_inventory(limit) if item.get("teamId") == identity(request).get("teamId")]
+
+
+@app.get("/api/alerts")
+def list_alerts(request: Request):
+    require_technology(request); values = read_json(ALERTS_FILE, [])
+    planes, deployments = data_plane_inventory(), deployment_inventory()
+    for alert in values:
+        if not alert.get("enabled", True): alert["state"] = "DISABLED"; continue
+        kind = alert.get("type"); threshold = float(alert.get("threshold", 0)); value = 0
+        if kind == "offline-data-plane": value = len([x for x in planes if x.get("status") != "ONLINE"])
+        elif kind == "failed-deployment": value = len([x for x in deployments if x.get("state") == "FAILED"])
+        elif kind == "unhealthy-application": value = len([x for x in deployments if x.get("state") == "RUNNING" and deployment_health(x).get("status") not in {"HEALTHY", "UNKNOWN"}])
+        alert.update(value=value, state="FIRING" if value >= threshold else "OK", evaluatedAt=now())
+    write_json(ALERTS_FILE, values); return values
+
+
+@app.post("/api/alerts")
+def create_alert(payload: dict[str, Any], request: Request):
+    require_technology(request)
+    if payload.get("type") not in {"offline-data-plane", "failed-deployment", "unhealthy-application", "resource-threshold"}: raise HTTPException(400, "Unsupported alert type")
+    values = read_json(ALERTS_FILE, []); item = {"id":str(uuid4()), "name":str(payload.get("name") or payload["type"]), "type":payload["type"], "threshold":float(payload.get("threshold", 1)), "enabled":bool(payload.get("enabled", True)), "createdAt":now()}; values.append(item); write_json(ALERTS_FILE, values); audit("alert.create", item["id"], detail=item["name"]); return item
+
+
+@app.delete("/api/alerts/{alert_id}")
+def delete_alert(alert_id: str, request: Request):
+    require_technology(request); values = read_json(ALERTS_FILE, []); updated = [item for item in values if item.get("id") != alert_id]
+    if len(updated) == len(values): raise HTTPException(404, "Alert not found")
+    write_json(ALERTS_FILE, updated); audit("alert.delete", alert_id); return {"deleted":True, "id":alert_id}
+
+
+@app.post("/api/deployments/{deployment_id}/instances/{instance_id}/{action}")
+def instance_action(deployment_id: str, instance_id: str, action: str, request: Request):
+    if action not in {"start", "stop", "restart", "suspend", "resume"}: raise HTTPException(400, "Unsupported instance action")
+    require_application_manager(request); deployments = read_json(DEPLOYMENTS_FILE, []); item = next((value for value in deployments if value.get("id") == deployment_id), None)
+    if not item: raise HTTPException(404, "Deployment not found")
+    require_application_write(request, item); instance = next((value for value in item.get("instances", []) if value.get("id") == instance_id), None)
+    if not instance: raise HTTPException(404, "Runtime instance not found")
+    states = read_json(PROCESS_STATES_FILE, {}); current = states.get(instance_id, {}) if isinstance(states, dict) else {}
+    if action in {"suspend", "resume"}:
+        current["status"] = "SUSPENDED" if action == "suspend" else "RUNNING"; states[instance_id] = current; write_json(PROCESS_STATES_FILE, states)
+    elif (item.get("dataPlaneId") or item.get("machine")) != "localhost": raise HTTPException(409, "Instance-level control requires a connected remote agent implementation")
+    else:
+        process = PROCESS_HANDLES.get(instance_id)
+        if action == "stop" and process and process.poll() is None: process.terminate(); instance["state"] = "STOPPED"
+        elif action == "start": item["state"] = "RUNNING"; start_instances(item)
+        elif action == "restart": terminate_instances(item); start_instances(item); item["state"] = "RUNNING"
+        write_json(DEPLOYMENTS_FILE, deployments)
+    audit(f"instance.{action}", instance_id); return {"deploymentId":deployment_id, "instanceId":instance_id, "action":action, "state":instance.get("state", current.get("status"))}
+
+
+@app.post("/api/deployments/bulk")
+def bulk_deployment_action(payload: dict[str, Any], request: Request):
+    action = payload.get("action"); ids = payload.get("deploymentIds") or []
+    if action not in {"start", "stop", "restart", "undeploy"} or not isinstance(ids, list) or not ids: raise HTTPException(400, "Provide deploymentIds and a supported action")
+    results = []
+    for deployment_id in ids:
+        try: results.append(lifecycle(str(deployment_id), action, request))
+        except HTTPException as error: results.append({"id":deployment_id, "error":error.detail})
+    return {"action":action, "results":results}
+
+
+@app.get("/api/deployments/{deployment_id}/compare")
+def compare_deployment(deployment_id: str, request: Request, revision: int | None = None):
+    item = get_deployment(deployment_id, request); revisions = [x for x in read_json(REVISIONS_FILE, []) if x.get("assetType") == "deployment" and x.get("assetId") == deployment_id]
+    target = next((x for x in revisions if revision is not None and int(x.get("revision", 0)) == revision), None) if revision is not None else (revisions[-1] if revisions else None)
+    current = {"environment":item.get("environment"), "instances":item.get("desiredInstances"), "healthCheckEnabled":item.get("healthCheckEnabled", True), "starterStates":item.get("starterStates", {})}; previous = target.get("snapshot", {}) if target else {}
+    return {"deploymentId":deployment_id, "current":current, "revision":target, "changes":{key:{"from":previous.get(key), "to":value} for key,value in current.items() if previous.get(key) != value}}
+
+
+@app.get("/api/deployments/{deployment_id}/backup")
+def backup_deployment(deployment_id: str, request: Request):
+    item = get_deployment(deployment_id, request); root = deployment_package_path(item)
+    if not root.exists(): raise HTTPException(404, "Deployment package is not available")
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in root.rglob("*"):
+            if path.is_file(): archive.write(path, path.relative_to(root).as_posix())
+        archive.writestr("deployment-state.json", json.dumps({"deploymentId":item.get("id"), "packageId":item.get("packageId"), "environment":item.get("environment"), "dataPlaneId":item.get("dataPlaneId"), "namespace":item.get("namespace"), "desiredInstances":item.get("desiredInstances"), "healthCheckEnabled":item.get("healthCheckEnabled", True)}, indent=2))
+    return Response(buffer.getvalue(), media_type="application/zip", headers={"Content-Disposition":f"attachment; filename={safe(item.get('application', deployment_id))}-backup.zip"})
+
+
+@app.post("/api/deployments/{deployment_id}/restore")
+async def restore_deployment(deployment_id: str, request: Request, file: UploadFile = File(...)):
+    require_application_manager(request); deployments = read_json(DEPLOYMENTS_FILE, []); item = next((value for value in deployments if value.get("id") == deployment_id), None)
+    if not item: raise HTTPException(404, "Deployment not found")
+    require_application_write(request, item)
+    if item.get("state") not in {"UNDEPLOYED", "STOPPED", "FAILED", "DEPLOYED"}: raise HTTPException(409, "Stop or undeploy the application before restoring it")
+    body = await file.read()
+    try:
+        with zipfile.ZipFile(io.BytesIO(body)) as archive: state = json.loads(archive.read("deployment-state.json"))
+    except (KeyError, zipfile.BadZipFile, json.JSONDecodeError) as error: raise HTTPException(400, "The backup archive is invalid or missing deployment-state.json") from error
+    if state.get("packageId") and state.get("packageId") != item.get("packageId"): raise HTTPException(400, "Backup belongs to a different application package")
+    for key in ("environment", "dataPlaneId", "namespace", "desiredInstances", "healthCheckEnabled"):
+        if key in state: item[key] = state[key]
+    item["machine"] = item.get("dataPlaneId") or item.get("machine"); item.update(state="DEPLOYED", instances=[], updatedAt=now(), lastError=None, message="Deployment configuration restored from backup")
+    write_json(DEPLOYMENTS_FILE, deployments); caller = identity(request); audit("deployment.restore", deployment_id, detail=file.filename or "backup", actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID)); record_revision("deployment", deployment_id, "deployment.restore", {"environment":item.get("environment"), "dataPlaneId":item.get("dataPlaneId"), "namespace":item.get("namespace"), "instances":item.get("desiredInstances")}, actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID), detail="Restored deployment backup"); return item
+
+
+@app.post("/api/deployments/{deployment_id}/move")
+def move_deployment(deployment_id: str, payload: dict[str, Any], request: Request):
+    require_application_manager(request); deployments = read_json(DEPLOYMENTS_FILE, []); item = next((value for value in deployments if value.get("id") == deployment_id), None)
+    if not item: raise HTTPException(404, "Deployment not found")
+    require_application_write(request, item)
+    plane_id, namespace = str(payload.get("dataPlaneId") or ""), str(payload.get("namespace") or item.get("namespace", "default"))
+    plane = next((value for value in data_plane_inventory() if value.get("id") == plane_id), None)
+    if not plane: raise HTTPException(404, "Data plane not found")
+    if namespace not in plane.get("namespaces", []): raise HTTPException(400, "Namespace is not registered on the selected data plane")
+    capability = next((value for value in read_json(CAPABILITIES_FILE, []) if value.get("id") == payload.get("capabilityId") and value.get("dataPlaneId") == plane_id and value.get("namespace") == namespace and value.get("type") == "integration-runtime"), None)
+    if not capability: raise HTTPException(409, "Provision an Integration Runtime capability in the target data plane and namespace first")
+    if item.get("state") == "RUNNING": raise HTTPException(409, "Stop or undeploy the application before moving it")
+    item.update(dataPlaneId=plane_id, machine=plane_id, namespace=namespace, capabilityId=capability["id"], updatedAt=now(), message="Deployment target updated; start to activate the new target")
+    write_json(DEPLOYMENTS_FILE, deployments); caller = identity(request); audit("deployment.move", deployment_id, detail=f"{plane_id} / {namespace}", actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID)); record_revision("deployment", deployment_id, "deployment.move", {"dataPlaneId":plane_id, "namespace":namespace, "capabilityId":capability["id"]}, actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID), detail=item["message"]); return item
 
 
 static_candidates = [Path(os.environ["FABRIC_ADMIN_WEB"]) if os.environ.get("FABRIC_ADMIN_WEB") else None, Path(getattr(sys, "_MEIPASS", "")) / "web" if getattr(sys, "_MEIPASS", None) else None, Path(__file__).parents[1] / "web"]

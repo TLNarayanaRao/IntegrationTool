@@ -153,8 +153,17 @@ def _render_xml(value: Any, root_name: str = 'root', pretty: bool = False) -> st
     become repeated sibling elements. This mirrors the Render XML activity so
     mapping expressions and activities produce the same wire format.
     """
-    if isinstance(value, dict) and 'root' in value and 'value' in value:
-        root_name, value = value['root'], value['value']
+    if isinstance(value, dict):
+        # Parsed XML activities retain both the object representation and the
+        # original wire value.  If a caller passes that envelope back through
+        # render-xml, return the XML string rather than serializing the
+        # envelope itself.
+        for key in ('xmlString', 'xml', 'IDocXML'):
+            candidate = value.get(key)
+            if isinstance(candidate, (str, bytes)) and str(candidate).lstrip().startswith('<'):
+                return candidate.decode() if isinstance(candidate, bytes) else candidate
+        if 'root' in value and 'value' in value:
+            root_name, value = value['root'], value['value']
     root_name = re.sub(r'[^A-Za-z0-9_.-]', '_', str(root_name or 'root')) or 'root'
 
     def build(name: str, item: Any):

@@ -1188,6 +1188,7 @@ function App() {
     [openSourceOpen, setOpenSourceOpen] = useState(false),
     [exportSourceOpen, setExportSourceOpen] = useState(false),
     [debugState, setDebugState] = useState<any>(null),
+    [jobDataOpen, setJobDataOpen] = useState(false),
     [executionOutputs, setExecutionOutputs] = useState<Record<string, any>>({}),
     [endpoints, setEndpoints] = useState<any[]>([]),
     [runtimeState, setRuntimeState] = useState<any>(null),
@@ -1218,6 +1219,8 @@ function App() {
   const latestProject = useRef(project);
   latestProject.current = project;
   const autosaveTimer = useRef<number | null>(null);
+  const savedProjectSnapshot = useRef(JSON.stringify(initial));
+  const pendingLeaveAction = useRef<(() => void) | null>(null);
   const canvas = useRef<HTMLDivElement>(null),
     fileInput = useRef<HTMLInputElement>(null),
     drag = useRef<any>(null),
@@ -1282,11 +1285,14 @@ function App() {
     [theme, setTheme] = useState(
       localStorage.getItem("integration-fabric-theme") || "midnight",
     );
+  const [unsavedPrompt, setUnsavedPrompt] = useState(false);
+  const projectDirty = JSON.stringify(project) !== savedProjectSnapshot.current;
   const [activeTab, setActiveTab] = useState<
       "configuration" | "input" | "map_test" | "output" | "advanced" | "errors" | "documentation"
     >("configuration"),
     [propertyEditor, setPropertyEditor] = useState<string | null>(null),
     [renameOpen, setRenameOpen] = useState(false),
+    [renameTaskId, setRenameTaskId] = useState<string | null>(null),
     [sampleGalleryOpen, setSampleGalleryOpen] = useState(false),
     [helpDialog, setHelpDialog] = useState<"about" | "shortcuts" | null>(null),
     [treeHeight, setTreeHeight] = useState(305),
@@ -1460,7 +1466,7 @@ function App() {
     [],
   );
   useEffect(() => {
-    if (!endpoints.length) return;
+    if (!endpoints.length && !debugState?.sessionId) return;
     let cancelled = false;
     const refreshRuntime = async () => {
       try {
@@ -1998,9 +2004,14 @@ function App() {
     const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `project-${Date.now()}`;
     const next = structuredClone(initial);
     next.id = id; next.name = name; next.description = ""; next.resources = []; next.schemas = []; next.custom_functions = []; next.properties = structuredClone(envs); next.packaging = { ...next.packaging, artifact_name: id }; next.tasks = [starter("main", "Main Task")]; next.active_task_id = "main";
-    projectFileHandle.current = null;
-    setProject(next); setSelected("main-start"); setSelectedIds(["main-start"]); setSelectedEdge(null); setSelectedResource(null); setClosed(false);
-    setLogs([{ level: "INFO", message: `Created new project ${name}. Save to persist it.` }]);
+    const replace = () => {
+      projectFileHandle.current = null;
+      savedProjectSnapshot.current = "";
+      setProject(next); setSelected("main-start"); setSelectedIds(["main-start"]); setSelectedEdge(null); setSelectedResource(null); setClosed(false);
+      setLogs([{ level: "INFO", message: `Created new project ${name}. Save to persist it.` }]);
+    };
+    if (projectDirty) { pendingLeaveAction.current = replace; setUnsavedPrompt(true); return; }
+    replace();
   };
   useEffect(() => {
     const removeSelection = (event: KeyboardEvent) => {
@@ -2036,7 +2047,9 @@ function App() {
     if (!contentType.includes("application/json")) throw new Error("The project API returned HTML instead of project JSON. Verify the local runtime is running on port 8787.");
     const output = await response.json();
     if (!response.ok) throw new Error(output.detail || "Project save failed");
-    setProject(normalizeProject(output));
+    const normalized = normalizeProject(output);
+    savedProjectSnapshot.current = JSON.stringify(normalized);
+    setProject(normalized);
     return output;
   };
   const fetchProjectFile = async (format: "package" | "json") => {
@@ -2307,6 +2320,10 @@ function App() {
     }
   };
   const executionActive = busy || (!!debugState && !["completed", "failed", "stopped"].includes(debugState.status)) || endpoints.length > 0 || ["running", "listening", "paused"].includes(runtimeState?.status);
+  const executionLogEntries: any[] = debugState?.logs || runtimeState?.logs || logs;
+  const executedTransitionIds = new Set(executionLogEntries.filter((entry: any) => entry?.transitionId).map((entry: any) => String(entry.transitionId)));
+  const currentActivityIds = new Set<string>([debugState?.currentActivityId, ...(debugState?.currentActivityIds || [])].filter(Boolean));
+  const currentTransitionIds = new Set(edges.filter((transition) => currentActivityIds.has(transition.target) && executedTransitionIds.has(String(transition.id))).map((transition) => String(transition.id)));
   const visibleWorkStatus = workStatus || (busy ? "Starting and running task…" : debugState?.status === "paused" ? "Debugger paused" : debugState ? `Debugger ${debugState.status || "working"}…` : runtimeState?.status === "listening" ? "Application is listening" : "");
   const stopExecution = async () => {
     try {
@@ -2332,7 +2349,9 @@ function App() {
       if (!contentType.includes("application/json")) { setLogs([{ level: "ERROR", message: "Import failed because the runtime returned HTML instead of project JSON." }]); return; }
       const out = await r.json();
       if (r.ok) {
-        setProject(normalizeProject(out));
+        const normalized = normalizeProject(out);
+        savedProjectSnapshot.current = JSON.stringify(normalized);
+        setProject(normalized);
         setClosed(false);
         const first = out.tasks?.[0]?.activities?.[0]?.id || "";
         setSelected(first); setSelectedIds(first ? [first] : []);
@@ -2360,7 +2379,7 @@ function App() {
         const imported = await response.json();
         if (!response.ok) { setLogs([{ level: "ERROR", message: imported.detail || "Unable to open project folder" }]); return; }
         const normalized = normalizeProject(imported);
-        setProject(normalized); setClosed(false);
+        savedProjectSnapshot.current = JSON.stringify(normalized); setProject(normalized); setClosed(false);
         const first = normalized.tasks?.[0]?.activities?.[0]?.id || "";
         setSelected(first); setSelectedIds(first ? [first] : []);
         projectFileHandle.current = selectedFile.path;
@@ -2400,7 +2419,7 @@ function App() {
       const imported = await response.json();
       if (!response.ok) throw new Error(imported.detail || "Unable to open project folder");
       const normalized = normalizeProject(imported);
-      setProject(normalized); setClosed(false);
+      savedProjectSnapshot.current = JSON.stringify(normalized); setProject(normalized); setClosed(false);
       const first = normalized.tasks?.[0]?.activities?.[0]?.id || "";
       setSelected(first); setSelectedIds(first ? [first] : []);
       projectFileHandle.current = selected.path;
@@ -2437,9 +2456,23 @@ function App() {
       }
     };
   const closeProject = () => {
-      setClosed(true);
-      setMenu(null);
+      const close = () => { setClosed(true); setMenu(null); };
+      if (projectDirty) { pendingLeaveAction.current = close; setUnsavedPrompt(true); return; }
+      close();
     };
+  const resolveUnsavedPrompt = async (choice: "save" | "discard" | "cancel") => {
+    if (choice === "cancel") { pendingLeaveAction.current = null; setUnsavedPrompt(false); return; }
+    const action = pendingLeaveAction.current;
+    if (choice === "save") {
+      try { await persistProject(); } catch (error: any) { setLogs([{ level: "ERROR", message: error?.message || "Unable to save project changes." }]); return; }
+    }
+    pendingLeaveAction.current = null; setUnsavedPrompt(false); action?.();
+  };
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => { if (!projectDirty) return; event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [projectDirty]);
   const explorerCopy = (type: string, id?: string) => {
     const value = type === "task" ? project.tasks.find((item) => item.id === id)
       : type === "resource" ? project.resources.find((item) => item.id === id)
@@ -2466,6 +2499,10 @@ function App() {
   };
   const explorerRename = (type: string, id?: string) => {
     if (type === "application") { setRenameOpen(true); return; }
+    // Use a React modal for desktop task renames. window.prompt() is
+    // unreliable in the packaged Electron renderer and made this command
+    // appear to do nothing even though it worked in browser mode.
+    if (type === "task") { setRenameTaskId(id || null); return; }
     const currentName = type === "task" ? project.tasks.find((item) => item.id === id)?.name : type === "resource" ? project.resources.find((item) => item.id === id)?.name : type === "schema" ? project.schemas.find((item) => item.id === id)?.name : id;
     const name = prompt(`Rename ${type}`, currentName || "")?.trim(); if (!name || name === currentName) return;
     if (type === "task") setProject((current) => ({ ...current, tasks: current.tasks.map((item) => item.id === id ? { ...item, name } : item) }));
@@ -2511,7 +2548,7 @@ function App() {
           <Workflow /> IF
         </div>
         <div className="menu-root"><button className={menu === "file" ? "active" : ""} onClick={(e) => { e.stopPropagation(); setMenu(menu === "file" ? null : "file"); }}>File</button>
-          {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} save={save} saveJson={saveJsonFile} exportProject={exportGenericProject} importProject={openGenericProject} importProjectFolder={importProjectFolder} openProjects={() => setClosed(true)} sampleProjects={() => setSampleGalleryOpen(true)} catchAI={openCatchAI} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
+          {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} newProject={newProject} exitStudio={() => (window as any).fabricDesktop?.exit?.() || window.close()} save={save} saveJson={saveJsonFile} exportProject={exportGenericProject} importProject={openGenericProject} importProjectFolder={importProjectFolder} openProjects={closeProject} sampleProjects={() => setSampleGalleryOpen(true)} catchAI={openCatchAI} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
         <TopMenu label="Edit" open={menu === "edit"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "edit" ? null : "edit"); }} commands={[
           { label: "Undo", detail: "Restore an earlier Studio change · up to 100 levels", icon: Undo2, shortcut: "Ctrl+Z", action: undoStudio, disabled: history.current.past.length === 0 && !history.current.pendingBase },
           { label: "Redo", detail: "Restore the most recently undone change", icon: Redo2, shortcut: "Ctrl+Y", action: redoStudio, disabled: history.current.future.length === 0 },
@@ -2554,7 +2591,7 @@ function App() {
       <StudioRibbon
         selectedCount={selectedIds.length}
         newProject={newProject}
-        openProject={() => setClosed(true)}
+        openProject={closeProject}
         importProject={importFromFileSystem}
         openProjectSource={openGenericProject}
         importProjectFolder={importProjectFolder}
@@ -2650,6 +2687,7 @@ function App() {
                 key={t.id}
                 className={`tree-row indent2 ${t.id === task.id ? "active" : ""}`}
                 onClick={() => selectTask(t.id)}
+                onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setRenameTaskId(t.id); }}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setMenu({ type: "task", id: t.id, x: e.clientX, y: e.clientY });
@@ -2895,7 +2933,8 @@ function App() {
             </button>
           </span>
         </div>
-        {debugState && <DebugBar state={debugState} act={debugAction} stop={stopExecution} />}
+        {debugState && <DebugBar state={debugState} act={debugAction} stop={stopExecution} openJobData={() => setJobDataOpen(true)} />}
+        {debugState && jobDataOpen && <DebugJobDataDialog state={debugState} task={task} activities={nodes} onClose={() => setJobDataOpen(false)} />}
         <div
           className="canvas"
           ref={canvas}
@@ -2975,16 +3014,21 @@ function App() {
               </section>;
             })}
             <svg className="wires" style={{ width: Math.max(1400, ...nodes.map((n) => n.position.x + 260)), height: Math.max(750, ...nodes.map((n) => n.position.y + 150)) }}>
-              <defs><marker id="transition-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>
+              <defs>
+                <marker id="transition-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
+                <marker id="transition-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path fill="#35e6b0" d="M 0 0 L 10 5 L 0 10 z" /></marker>
+                <marker id="transition-arrow-current" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path fill="#ffe27a" d="M 0 0 L 10 5 L 0 10 z" /></marker>
+              </defs>
               {edges.map((e) => {
                 const a = byId[e.source],
                   b = byId[e.target];
                 if (!a || !b) return null;
                 const wire = activityWireGeometry(a, b), d = wire.d;
+                const traversed = executedTransitionIds.has(String(e.id)), current = currentTransitionIds.has(String(e.id));
                 return (
                   <g
                     key={e.id}
-                    className={`${e.type || "success"} ${selectedEdge === e.id ? "selected" : ""}`}
+                    className={`${e.type || "success"} ${selectedEdge === e.id ? "selected" : ""} ${traversed ? "runtime-traversed" : ""} ${current ? "runtime-current" : ""}`}
                     onClick={() => {
                       setSelectedEdge(e.id);
                       setSelected("");
@@ -2994,7 +3038,7 @@ function App() {
                     }}
                   >
                     <path className="edge-hit" d={d} />
-                    <path id={`edge-path-${e.id}`} className="edge-line" d={d} markerEnd="url(#transition-arrow)" />
+                    <path id={`edge-path-${e.id}`} className="edge-line" d={d} markerEnd={`url(#transition-arrow${current ? "-current" : traversed ? "-active" : ""})`} />
                     <text><textPath href={`#edge-path-${e.id}`} startOffset="50%" textAnchor="middle">{e.type || "success"}</textPath></text>
                     {selectedEdge === e.id && <><circle className="edge-rewire-handle source" cx={wire.start.x} cy={wire.start.y} r="7" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setEdgeRewire({ edgeId: e.id, endpoint: "source", fixedId: e.target, x: wire.start.x, y: wire.start.y }); }}/><circle className="edge-rewire-handle target" cx={wire.end.x} cy={wire.end.y} r="7" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setEdgeRewire({ edgeId: e.id, endpoint: "target", fixedId: e.source, x: wire.end.x, y: wire.end.y }); }}/></>}
                   </g>
@@ -3022,7 +3066,7 @@ function App() {
                 <button
                   key={n.id}
                   data-node-id={n.id}
-                  className={`node ${selectedIds.includes(n.id) ? "selected" : ""} ${selectedIds.length > 1 && selectedIds.includes(n.id) ? "multi-selected" : ""} ${debugState?.currentActivityId === n.id ? "debug-current" : ""} ${executionOutputs[n.id] ? "runtime-executed" : ""}`}
+                  className={`node ${selectedIds.includes(n.id) ? "selected" : ""} ${selectedIds.length > 1 && selectedIds.includes(n.id) ? "multi-selected" : ""} ${currentActivityIds.has(n.id) ? "debug-current" : ""} ${executionOutputs[n.id] ? "runtime-executed" : ""}`}
                   style={{ left: n.position.x, top: n.position.y }}
                   onPointerDown={(e) => {
                     if (e.button !== 0) return;
@@ -3419,20 +3463,34 @@ function App() {
           name={project.name}
           onClose={() => setRenameOpen(false)}
           onSave={(name: string) => {
+            const artifactName = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "integration-application";
             setProject((p) => ({
               ...p,
               name,
               packaging: {
                 ...p.packaging,
-                artifact_name:
-                  p.packaging?.artifact_name ||
-                  name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+                artifact_name: !p.packaging?.artifact_name || p.packaging.artifact_name === p.id || p.packaging.artifact_name === p.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") ? artifactName : p.packaging.artifact_name,
               },
             }));
             setRenameOpen(false);
           }}
         />
       )}
+      {renameTaskId && (
+        <RenameApplication
+          entity="task"
+          name={project.tasks.find((item) => item.id === renameTaskId)?.name || ""}
+          onClose={() => setRenameTaskId(null)}
+          onSave={(name: string) => {
+            setProject((current) => ({
+              ...current,
+              tasks: current.tasks.map((item) => item.id === renameTaskId ? { ...item, name } : item),
+            }));
+            setRenameTaskId(null);
+          }}
+        />
+      )}
+      {unsavedPrompt && <div className="modal-backdrop"><div className="runtime-modal"><header><b>Unsaved changes</b><button onClick={() => resolveUnsavedPrompt("cancel")} aria-label="Cancel">×</button></header><main><p>{project.name} has changes that have not been saved. What would you like to do?</p></main><footer><button onClick={() => resolveUnsavedPrompt("cancel")}>Cancel</button><button onClick={() => resolveUnsavedPrompt("discard")}>Discard changes</button><button className="primary" onClick={() => void resolveUnsavedPrompt("save")}>Save and continue</button></footer></div></div>}
     </div>
   );
 }
@@ -3593,7 +3651,17 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
       setTargetCatalog(result);
       const planes = result.dataPlanes.filter((plane: any) => draft.target === "cloud" ? plane.type === "kubernetes" : plane.type !== "kubernetes");
       const selected = planes.find((plane: any) => plane.id === draft.dataPlaneId) || planes[0];
-      if (selected) setDraft((current: any) => ({ ...current, dataPlaneId: selected.id, namespace: selected.namespaces?.includes(current.namespace) ? current.namespace : selected.namespaces?.[0] || "default", capabilityId: "" }));
+      if (selected) {
+        const selectedCapabilities = result.capabilities.filter((capability: any) => capability.type === "integration-runtime" && capability.dataPlaneId === selected.id);
+        const discoveredNamespaces = selected.namespaces || [];
+        const matchingNamespace = discoveredNamespaces.includes(draft.namespace)
+          ? draft.namespace
+          : selectedCapabilities.find((capability: any) => discoveredNamespaces.includes(capability.namespace))?.namespace
+            || selectedCapabilities[0]?.namespace
+            || discoveredNamespaces[0]
+            || "default";
+        setDraft((current: any) => ({ ...current, dataPlaneId: selected.id, namespace: matchingNamespace, capabilityId: "" }));
+      }
     } catch (failure: any) { setError(failure?.name === "AbortError" ? "Control Plane target discovery timed out after 20 seconds." : failure?.message || "Unable to load Control Plane targets."); }
     finally { window.clearTimeout(timeout); setDiscovering(false); }
   };
@@ -3670,7 +3738,7 @@ function StudioRibbon(props: any) {
   const command = (label: string, Icon: any, action: () => void, disabled = false, emphasis = false) =>
     <button type="button" className={emphasis ? "emphasis" : ""} disabled={disabled} onClick={(event) => { event.stopPropagation(); action(); }} title={label}><Icon/><span>{label}</span></button>;
   return <section className="studio-ribbon" aria-label="Studio ribbon">
-    <div className="ribbon-group"><b>PROJECT</b><div>{command("New", FilePlus2, props.newProject)}{command("Open", FolderOpen, props.openProjectSource || props.importProject)}{command("Import", Upload, props.importProject)}{command("Samples", BookOpen, props.sampleProjects)}{command("Save", Save, props.save)}{command("Export", Download, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</div></div>
+    <div className="ribbon-group"><b>PROJECT</b><div>{command("New", FilePlus2, props.newProject)}{command("Open", FolderOpen, props.openProjectSource || props.importProject)}{command("Import", Download, props.importProject)}{command("Samples", BookOpen, props.sampleProjects)}{command("Save", Save, props.save)}{command("Export", Upload, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</div></div>
     <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("AI Build", WandSparkles, props.aiBuild)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Run", CirclePlay, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}</div></div>
     <div className="ribbon-group"><b>EDIT</b><div>{command("Undo", Undo2, props.undo)}{command("Cut", Scissors, props.cut, !props.selectedCount)}{command("Copy", ClipboardCopy, props.copy, !props.selectedCount)}{command("Paste", ClipboardPaste, props.paste)}</div></div>
     <div className="ribbon-group layout-group"><b>ARRANGE · {props.selectedCount} SELECTED</b><div>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</div></div>
@@ -3697,18 +3765,19 @@ function ValidationDialog({ result, onClose, onOpen }: any) {
   const filtered = filter === "all" ? result.issues : result.issues.filter((issue: ValidationIssue) => issue.severity === filter);
   return <div className="modal-backdrop"><div className="runtime-modal validation-dialog"><header><span><ShieldCheck/><b>{result.title}</b></span><button aria-label="Close validation" onClick={onClose}>×</button></header><div className="validation-summary"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>{result.issues.length} all</button><button className={filter === "error" ? "active error" : "error"} onClick={() => setFilter("error")}>{counts.error || 0} errors</button><button className={filter === "warning" ? "active warning" : "warning"} onClick={() => setFilter("warning")}>{counts.warning || 0} warnings</button><button className={filter === "mapping" ? "active mapping" : "mapping"} onClick={() => setFilter("mapping")}>{counts.mapping || 0} mappings</button></div><main>{!result.issues.length ? <div className="validation-clean"><CheckCircle2/><h2>Validation successful</h2><p>No errors or missing mappings were found.</p></div> : !filtered.length ? <div className="validation-clean"><CheckCircle2/><h2>No findings in this category</h2><p>Select another validation filter.</p></div> : filtered.map((issue: ValidationIssue) => <button key={issue.id} className={`validation-issue ${issue.severity}`} onClick={() => onOpen(issue)}><span>{issue.severity === "error" ? "ERROR" : issue.severity === "mapping" ? "MAPPING" : "WARNING"}</span><div><b>{issue.category}</b><p>{issue.message}</p><small>{issue.remedy}</small></div>{(issue.taskId || issue.activityId) && <ChevronRight/>}</button>)}</main><footer><span>Click a finding to open its task and activity configuration.</span><button className="primary" onClick={onClose}>Close</button></footer></div></div>;
 }
-function RenameApplication({ name, onClose, onSave }: any) {
+function RenameApplication({ name, onClose, onSave, entity = "application" }: any) {
   const [value, setValue] = useState(name);
+  const label = entity === "task" ? "Task name" : "Application name";
   return (
     <div className="modal-backdrop">
       <div className="runtime-modal rename-modal">
         <header>
-          <b>Rename application</b>
+          <b>Rename {entity}</b>
           <button onClick={onClose}>×</button>
         </header>
         <main>
           <label>
-            Application name
+            {label}
             <input
               autoFocus
               value={value}
@@ -3719,8 +3788,9 @@ function RenameApplication({ name, onClose, onSave }: any) {
             />
           </label>
           <p>
-            This name appears at the root of Project Explorer and in exported
-            project metadata.
+            {entity === "task"
+              ? "This name appears in Project Explorer, task tabs, and runtime/debug output."
+              : "This name appears at the root of Project Explorer and in exported project metadata."}
           </p>
         </main>
         <footer>
@@ -3975,6 +4045,8 @@ function HelpDialog({ mode, onClose }: any) {
 }
 function FileMenu({
   stop,
+  newProject,
+  exitStudio,
   save,
   saveJson,
   exportProject,
@@ -3992,6 +4064,8 @@ function FileMenu({
   return (
     <div className="menu-dropdown project-menu glossy-menu" onClick={stop}>
       <b>PROJECT</b>
+      <button onClick={go(newProject)}><FilePlus2 /><span>New Project<small>Create a new integration project</small></span></button>
+      <button onClick={go(importProject)}><Download /><span>Open Project<small>Open a project file or package</small></span></button>
       <button onClick={go(save)}>
         <Save />
         <span>
@@ -4012,7 +4086,7 @@ function FileMenu({
         </span>
       </button>
       <button onClick={go(importProject)}>
-        <Upload />
+        <Download />
         <span>
           Import Project<small>Open .ifproject or JSON</small>
         </span>
@@ -4054,6 +4128,8 @@ function FileMenu({
           Delete Project<small>Remove backend JSON files</small>
         </span>
       </button>
+      <hr />
+      <button onClick={go(exitStudio)}><Square /><span>Exit<small>Close Integration Fabric Studio</small></span></button>
     </div>
   );
 }
@@ -4191,7 +4267,7 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, im
         <h1>Mediation,<br /><span>Transformation &amp;</span><br />Deliver Integrations.</h1>
         <div className="launch-buttons">
           <button className="create-project" onClick={() => setCreateOpen(true)}><span><FilePlus2/></span><b>Create new project<small>Start with the standard project structure</small></b><ChevronRight/></button>
-          <button className="import-project" onClick={beginImport} disabled={importing}><span><Upload/></span><b>{importing ? "Opening project…" : "Import existing project"}<small>Choose .ifproject, .ifpkg, ZIP, JSON, or a structured folder</small></b><ChevronRight/></button>
+          <button className="import-project" onClick={beginImport} disabled={importing}><span><Download/></span><b>{importing ? "Opening project…" : "Import existing project"}<small>Choose .ifproject, .ifpkg, ZIP, JSON, or a structured folder</small></b><ChevronRight/></button>
           <button className="sample-projects" onClick={() => setSamplesOpen(true)}><span><BookOpen/></span><b>Explore sample projects<small>Editable, installed examples for mapping, APIs, data, JDBC, and messaging</small></b><ChevronRight/></button>
           <button className="installed-guide" onClick={() => window.open("/help/activity-reference.html", "_blank", "noopener")}><span><BookOpen/></span><b>Open installed activity guide<small>Offline configuration, mapping, runtime, and error reference</small></b><ChevronRight/></button>
         </div>
@@ -4275,8 +4351,8 @@ function Context({
     {item("Remove", "Remove from this project", Trash2, () => actions.remove(menu.type, menu.id), !["application", "task", "resource", "schema", "property"].includes(menu.type))}
     {item("Refresh", "Reload saved project state", Redo2, actions.refresh)}
     {item("Show Properties", "Open the selected item editor", Settings2, () => actions.properties(menu.type, menu.id))}
-    {item("Import", "Import a project from the filesystem", Upload, actions.importProject)}
-    {item("Export", "Export a portable project", Download, actions.exportProject)}
+    {item("Import", "Import a project from the filesystem", Download, actions.importProject)}
+    {item("Export", "Export a portable project", Upload, actions.exportProject)}
     {item("Save", "Save the current project folder", Save, actions.save)}
   </div>;
   return (
@@ -4678,6 +4754,10 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate, 
     if (type !== "pubsub" || resource.config.authenticationType !== "Service Account JSON") return "";
     if (String(resource.config.credentialsFile || "").trim() && !String(resource.config.serviceAccountJson || "").trim()) return "";
     if (!String(resource.config.serviceAccountJson || "").trim()) return "Provide an inline service-account JSON document or bind a service-account JSON file property.";
+    // A property may resolve this field to a path instead of JSON text. The
+    // backend owns the connection and will read that path on the machine
+    // where the backend/control plane is running.
+    if (!String(resource.config.serviceAccountJson || "").trim().startsWith("{")) return "";
     try {
       const parsed = typeof resource.config.serviceAccountJson === "string" ? JSON.parse(resource.config.serviceAccountJson) : resource.config.serviceAccountJson;
       if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") return "Service account JSON must contain one JSON object.";
@@ -5499,7 +5579,15 @@ function ConnectionConfig({ resource, update }: any) {
     </div>
   );
 }
-function DebugBar({ state, act, stop }: any) {
+function DebugJobDataDialog({ state, task, activities, onClose }: any) {
+  const records = state.activityOutputs || {}, executed = activities.filter((activity: any) => records[activity.id]);
+  const [selectedId, setSelectedId] = useState(executed[0]?.id || activities[0]?.id || "");
+  const selected = records[selectedId];
+  const formatted = (value: any) => value === undefined ? "(not captured)" : typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="runtime-modal debug-job-data-dialog"><header><span><Database/><span><b>Debug Job Data</b><small>{task.name} · inspect input and output captured for each executed activity</small></span></span><button aria-label="Close job data" onClick={onClose}>×</button></header><main><aside className="debug-job-activity-list"><b>EXECUTED ACTIVITIES · {executed.length}</b>{executed.map((activity: any) => <button key={activity.id} className={selectedId === activity.id ? "active" : ""} onClick={() => setSelectedId(activity.id)}><span><b>{activity.name}</b><small>{activity.type}</small></span><i>✓</i></button>)}{!executed.length && <p>No activity data has been captured yet.</p>}</aside><section className="debug-job-payloads"><div className="debug-job-heading"><span><b>{selected?.name || "Activity data"}</b><small>{selected?.activityId || "Select an executed activity"}</small></span>{selected && <code>{selected.type}</code>}</div>{selected ? <div className="debug-job-columns"><article><header>INPUT</header><pre>{formatted(selected.input)}</pre></article><article><header>OUTPUT</header><pre>{formatted(selected.output)}</pre></article></div> : <div className="debug-job-empty">Start or continue the debug session to capture activity job data.</div>}</section></main><footer><span>Data is from the current debug job and is cleared when the session ends.</span><button className="primary" onClick={onClose}>Close</button></footer></div></div>;
+}
+
+function DebugBar({ state, act, stop, openJobData }: any) {
   const waitingForEvent = state.status === "listening";
   return (
     <div className="debug-bar">
@@ -5522,6 +5610,7 @@ function DebugBar({ state, act, stop }: any) {
       </button>
       <button disabled={waitingForEvent} onClick={() => act("jump_in")}>Jump In</button>
       <button disabled={waitingForEvent} onClick={() => act("jump_out")}>Jump Out</button>
+      <button onClick={openJobData}><Database /> Job Data</button>
       <button className="debug-stop" onClick={stop}>
         <Square /> Stop
       </button>

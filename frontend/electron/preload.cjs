@@ -14,4 +14,5 @@ contextBridge.exposeInMainWorld('fabricDesktop', {
   saveUtilityFileAs: (options) => ipcRenderer.invoke('fabric:save-utility-file-as', options),
   closeUtilityFile: (id) => ipcRenderer.invoke('fabric:close-utility-file', id),
   platform: process.platform,
+  exit: () => ipcRenderer.invoke('fabric:exit'),
 });

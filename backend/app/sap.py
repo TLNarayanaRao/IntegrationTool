@@ -1153,7 +1153,20 @@ class SapAdapter:
                 # parser, mapper, and log activities. Keep the structured
                 # JSON view for compatibility, but never make consumers know
                 # which internal field contains the XML representation.
-                result = {'SAPIDoc': json_value, 'payload': output, 'IDocXML': output, 'format': 'XML', 'contentType': 'application/xml', 'idocType': idoc_type, 'schema': cfg.get('idocSchema') or cfg.get('selectedIdoc',{}).get('schema')}
+                result = {
+                    # XML mode is a parser result: expose the parsed XML
+                    # object for mappings and downstream activities. Keep the
+                    # serialized document separately for explicit wire-format
+                    # use (for example a publisher or file writer).
+                    'xmlObject': json_value,
+                    'SAPIDoc': json_value,
+                    'payload': output,
+                    'IDocXML': output,
+                    'format': 'XML',
+                    'contentType': 'application/xml',
+                    'idocType': idoc_type,
+                    'schema': cfg.get('idocSchema') or cfg.get('selectedIdoc',{}).get('schema'),
+                }
             elif mode == 'RAW': result = {'SAPIDoc': raw, 'format': 'RAW', 'idocType': idoc_type, 'schema': cfg.get('idocSchema') or cfg.get('selectedIdoc',{}).get('schema')}
             else: result = {'SAPIDoc': json_value, 'format': 'JSON', 'idocType': idoc_type, 'schema': cfg.get('idocSchema') or cfg.get('selectedIdoc',{}).get('schema')}
             # The Input tree displays the selected basic type (for example

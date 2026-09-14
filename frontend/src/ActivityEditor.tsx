@@ -260,13 +260,14 @@ export function activityContract(n: any): Contract {
   if (n.type === "confirm")
     return {
       configuration: [
-        f("ackId", "Acknowledgement handle", "text", "Map the ackId emitted by a JMS, Kafka, Pub/Sub, or future client-acknowledge receiver."),
+        f("ackId", "Acknowledgement handle", "text", "Map a broker acknowledgement handle, or place this activity after an SAP IDoc Parser to confirm the SAP tRFC early."),
         f("failIfMissing", "Fail when handle is missing", "boolean"),
       ],
-      input: [d("ackId", "Acknowledgement handle", "string", true, "Map the Client acknowledgement handle emitted by the receiver."), d("ackIds", "Multiple acknowledgement handles", "array")],
+      input: [d("ackId", "Acknowledgement handle", "string", false, "Optional for SAP IDoc early confirmation; otherwise map the client acknowledgement handle."), d("ackIds", "Multiple acknowledgement handles", "array")],
       output: [d("confirmed", "Confirmation status", "boolean"), d("count", "Confirmed message count", "integer"), d("technologies", "Confirmed transports", "array")],
       errors: [
         { type: "ACKNOWLEDGEMENT_NOT_FOUND", description: "The acknowledgement handle is missing, expired, or was already confirmed." },
+        { type: "SAP_EARLY_CONFIRM_FAILED", description: "SAP rejected the early IDoc confirmation." },
         { type: "ACKNOWLEDGEMENT_FAILED", description: "The transport rejected the message confirmation." },
       ],
     };
@@ -1195,8 +1196,20 @@ function resolvedActivityContract(node: any, task: any, tasks: any[], schemas: a
       if (fields.length) return { ...contract, output: [...fields.map((field: any) => ({ ...field, key: `SAPIDoc.${field.key}` })), d("format", "Output format")] };
     }
     if (mode === "XML") {
+      // XML mode is parsed XML data, not just a serialized payload. Publish
+      // the reusable object tree as the primary output; IDocXML/payload remain
+      // available when a downstream connector explicitly needs XML text.
       const fields = selected?.schema ? schemaDataFields(selected.schema) : [];
-      return { ...contract, output: [...fields.map((field: any) => ({ ...field, key: `SAPIDoc.${field.key}` })), d("SAPIDoc", "Structured IDoc XML tree", "object"), d("IDocXML", "Serialized IDoc XML", "string"), d("format", "Output format")] };
+      return {
+        ...contract,
+        output: [
+          ...fields.map((field: any) => ({ ...field, key: `xmlObject.${field.key}` })),
+          d("xmlObject", "Parsed IDoc XML object", "object"),
+          d("IDocXML", "Serialized IDoc XML", "string"),
+          d("payload", "XML payload", "string"),
+          d("format", "Output format"),
+        ],
+      };
     }
   }
   if (["xml", "json", "flat"].includes(node.type)) {
