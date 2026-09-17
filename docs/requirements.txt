@@ -1,10 +1,12 @@
-- Nested canvas rendering and editing
-- Group membership and configuration persistence
-- Runtime execution graph scheduling
-- Loop iteration and retry semantics
-- JDBC transaction lifecycle
-- Exception propagation
-- Validation rules
-- Deployment/archive schemas
-- Debugger behavior
-Implementing only the UI would create groups that appear configured but do not execute correctly. The implementation needs to continue as a staged runtime feature rather than being represented as complete prematurely.
+These must be two independent deployment types:
+1. Standard archive
+   Existing JSON-based .ifpkg / .ear deployment. No change.
+2. Raw Python archive
+   A separate deployable Python application:
+   - main.py / task Python modules with direct async code
+   - Python connector implementations for SAP, Kafka, Pub/Sub, EMS, logging, mapping, and confirm
+   - Python asyncio branches, retries, and error handling
+   - Python typed configuration and schema models
+   - No application/project.json, task JSON, resource JSON, or Fabric DSL
+   - Control Plane deploys the Python entry point directly
+manifest.json can remain only as Control Plane package metadata; it is not application code. The Python archive itself will contain Python-only application implementation.
