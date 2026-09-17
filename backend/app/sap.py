@@ -1147,6 +1147,13 @@ class SapAdapter:
             if not idoc_type and xml_text.lstrip().startswith('<'):
                 try: idoc_type = self._xml_name(ET.fromstring(xml_text).tag)
                 except ET.ParseError: pass
+            # The activity output tree presents the selected basic type below
+            # SAPIDoc (for example SAPIDoc.ARTMAS05.IDOC).  Keep the historic
+            # direct shape too (SAPIDoc.IDOC), but also publish that visible
+            # branch so expressions copied from the tree resolve at runtime.
+            sap_idoc_value = json_value
+            if idoc_type and isinstance(json_value, dict) and idoc_type not in json_value:
+                sap_idoc_value = {**json_value, idoc_type: json_value}
             if mode == 'XML':
                 output = xml_text if xml_text.lstrip().startswith('<') else self._json_to_xml(json_value)
                 # `payload` is the canonical downstream value for listener,
@@ -1159,7 +1166,7 @@ class SapAdapter:
                     # serialized document separately for explicit wire-format
                     # use (for example a publisher or file writer).
                     'xmlObject': json_value,
-                    'SAPIDoc': json_value,
+                    'SAPIDoc': sap_idoc_value,
                     'payload': output,
                     'IDocXML': output,
                     'format': 'XML',
@@ -1168,7 +1175,7 @@ class SapAdapter:
                     'schema': cfg.get('idocSchema') or cfg.get('selectedIdoc',{}).get('schema'),
                 }
             elif mode == 'RAW': result = {'SAPIDoc': raw, 'format': 'RAW', 'idocType': idoc_type, 'schema': cfg.get('idocSchema') or cfg.get('selectedIdoc',{}).get('schema')}
-            else: result = {'SAPIDoc': json_value, 'format': 'JSON', 'idocType': idoc_type, 'schema': cfg.get('idocSchema') or cfg.get('selectedIdoc',{}).get('schema')}
+            else: result = {'SAPIDoc': sap_idoc_value, 'format': 'JSON', 'idocType': idoc_type, 'schema': cfg.get('idocSchema') or cfg.get('selectedIdoc',{}).get('schema')}
             # The Input tree displays the selected basic type (for example
             # ARTMAS05) as its root. Publish that same key at runtime so a
             # mapping to the visible root does not resolve to an empty value.

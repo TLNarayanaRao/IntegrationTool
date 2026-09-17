@@ -213,6 +213,19 @@ class SapMapperTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'parser expects ORDERS05'):
             adapter.execute('idoc_parser', {'mode':'mock', 'idocType':'ORDERS05'}, wrong)
 
+    def test_idoc_parser_supports_selected_type_path_in_log_expressions(self):
+        result = SapAdapter().execute('idoc_parser', {'idocType': 'ARTMAS05', 'idocOutputMode': 'JSON'},
+            '<ARTMAS05><IDOC><EDI_DC40><DOCNUM>0000000123456789</DOCNUM></EDI_DC40></IDOC></ARTMAS05>')
+        runtime = WorkflowRuntime()
+        context = {'activities': {}}
+        runtime.record_activity_output(Activity(id='IDoc-Parser', type='sap', name='IDoc-Parser'), result, context)
+        message = runtime.resolve(
+            'concat("IDOC published to pubsub queue :", ${IDoc-Parser.SAPIDoc.ARTMAS05.IDOC.EDI_DC40.DOCNUM})', context,
+        )
+        self.assertEqual(message, 'IDOC published to pubsub queue :0000000123456789')
+        # Preserve existing expressions that access the IDOC branch directly.
+        self.assertEqual(result['SAPIDoc']['IDOC']['EDI_DC40']['DOCNUM'], '0000000123456789')
+
     def test_sap_idoc_transaction_contract_selects_tids_and_bounded_listener_settings(self):
         adapter = SapAdapter()
         values = adapter._listener_values({'mode':'mock', 'programId':'FABRIC_IDOC', 'gatewayHost':'sapqa2', 'gatewayService':'sapgw00', 'maximumConnections':12, 'ackTimeoutSeconds':420})

@@ -1347,8 +1347,18 @@ class WorkflowRuntime:
             return ctx['properties'].get(value[13:-1], '')
         if isinstance(value, str) and value.startswith('${') and value.endswith('}'):
             path = value[2:-1].split('.')
-            if path[0] in ('activities', 'tasks', 'context'):
+            if path[0] in ('tasks', 'context'):
                 current = ctx.get(path[0], {})
+                for part in path[1:]:
+                    if isinstance(current, dict): current = current.get(part, '')
+                    elif isinstance(current, list) and part.isdigit() and int(part) < len(current): current = current[int(part)]
+                    else: return ''
+                return current
+            # Activity IDs are normalized display names, so mappings expose a
+            # direct, readable output path: ${IDoc-Parser.SAPIDoc...}.
+            record = ctx.get('activities', {}).get(path[0])
+            if isinstance(record, dict):
+                current = record.get('output', '')
                 for part in path[1:]:
                     if isinstance(current, dict): current = current.get(part, '')
                     elif isinstance(current, list) and part.isdigit() and int(part) < len(current): current = current[int(part)]

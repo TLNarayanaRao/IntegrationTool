@@ -26,7 +26,7 @@ class ProjectLoggingTests(unittest.TestCase):
                 info = project_log_info(project_id)
                 self.assertLessEqual(info["sizeBytes"], 1024)
                 self.assertTrue(Path(info["path"] + ".1").exists())
-                self.assertTrue(read_project_logs(project_id, 100))
+                self.assertTrue(read_project_logs(project_id, limit=100))
             finally:
                 for key in [key for key in _handlers if key[0] == project_id]:
                     _handlers.pop(key).close()
@@ -47,9 +47,9 @@ class ProjectLoggingTests(unittest.TestCase):
             local_root = str(Path(folder) / "local-logs")
             append_project_logs(project_id, "Environment Log Test", [{"level": "INFO", "message": "dev"}], dev_root)
             append_project_logs(project_id, "Environment Log Test", [{"level": "INFO", "message": "local"}], local_root)
-            self.assertEqual(read_project_logs(project_id, configured_directory=dev_root)[-1]["message"], "dev")
-            self.assertEqual(read_project_logs(project_id, configured_directory=local_root)[-1]["message"], "local")
-            self.assertNotEqual(project_log_info(project_id, dev_root)["path"], project_log_info(project_id, local_root)["path"])
+            self.assertEqual(read_project_logs(project_id, "Environment Log Test", configured_directory=dev_root)[-1]["message"], "dev")
+            self.assertEqual(read_project_logs(project_id, "Environment Log Test", configured_directory=local_root)[-1]["message"], "local")
+            self.assertNotEqual(project_log_info(project_id, "Environment Log Test", dev_root)["path"], project_log_info(project_id, "Environment Log Test", local_root)["path"])
             for key in [key for key in _handlers if key[0] == project_id]:
                 _handlers.pop(key).close()
 
@@ -67,7 +67,7 @@ class ProjectLoggingTests(unittest.TestCase):
             with patch("app.main.get_project", return_value=project):
                 response = TestClient(app).post(f"/api/projects/{project_id}/run", json={"environment": "dev", "task_id": "main", "input": {}})
             self.assertEqual(response.status_code, 200)
-            expected = Path(folder) / project_id / "application.log"
+            expected = Path(folder) / "Environment-Runtime-Log-Test" / "Environment-Runtime-Log-Test.log"
             self.assertTrue(expected.exists())
             self.assertIn("Application Environment Runtime Log Test started", expected.read_text(encoding="utf-8"))
             for key in [key for key in _handlers if key[0] == project_id]:

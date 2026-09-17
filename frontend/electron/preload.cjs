@@ -15,4 +15,10 @@ contextBridge.exposeInMainWorld('fabricDesktop', {
   closeUtilityFile: (id) => ipcRenderer.invoke('fabric:close-utility-file', id),
   platform: process.platform,
   exit: () => ipcRenderer.invoke('fabric:exit'),
+  completeWindowClose: () => ipcRenderer.invoke('fabric:complete-window-close'),
+  onWindowCloseRequested: (listener) => {
+    const callback = () => listener();
+    ipcRenderer.on('fabric:request-window-close', callback);
+    return () => ipcRenderer.removeListener('fabric:request-window-close', callback);
+  },
 });

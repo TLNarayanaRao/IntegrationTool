@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
+import importlib.util
 import json
 import os
 import sys
@@ -17,6 +19,25 @@ from pathlib import Path
 def load_project(application: Path):
     from app.models import Project
 
+    python_descriptor = application / "python" / "project.py"
+    if python_descriptor.is_file():
+        # Python archives are a deliberate executable artifact type. The
+        # Control Plane authorizes their upload through application-manager
+        # RBAC before this worker imports the generated source package.
+        try:
+            package_name = f'_fabric_generated_{hashlib.sha256(str(application).encode()).hexdigest()[:16]}'
+            spec = importlib.util.spec_from_file_location(package_name, python_descriptor, submodule_search_locations=[str(python_descriptor.parent)])
+            if not spec or not spec.loader: raise ValueError('Python application module could not be loaded')
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[package_name] = module
+            spec.loader.exec_module(module)
+            builder = getattr(module, 'build_project', None)
+            project = builder() if callable(builder) else None
+        except (OSError, SyntaxError, ValueError, TypeError, ImportError) as exc:
+            raise ValueError(f"Invalid generated Python application descriptor: {exc}") from exc
+        if not isinstance(project, Project):
+            raise ValueError("Generated Python application descriptor must define build_project() returning Project")
+        return project
     project_file = application / "project.json"
     if not project_file.is_file():
         raise FileNotFoundError(f"Packaged application descriptor not found: {project_file}")
@@ -38,6 +59,15 @@ async def run_deployment(application: Path, environment: str) -> None:
     import app.main as runtime_api
 
     project = load_project(application)
+    profile_file = application.parent / "environments" / f"{environment}.json"
+    if profile_file.is_file():
+        try:
+            profile_values = json.loads(profile_file.read_text(encoding="utf-8"))
+            from app.models import EnvironmentProperty
+            if not isinstance(profile_values, list): raise ValueError("profile must be an array")
+            project.properties[environment] = [EnvironmentProperty.model_validate(value) for value in profile_values]
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            raise ValueError(f"Invalid deployment environment profile {profile_file}: {exc}") from exc
     if environment not in project.properties:
         raise ValueError(f"Environment {environment!r} is not present in the packaged application")
     project.active_environment = environment

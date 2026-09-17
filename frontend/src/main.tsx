@@ -51,7 +51,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import SchemaStudio, { SchemaDoc } from "./SchemaStudio";
-import ActivityEditor, { activityContract, DataSourcePane, upstreamActivitySources } from "./ActivityEditor";
+import ActivityEditor, { activityContract, activityReferenceName, DataSourcePane, upstreamActivitySources } from "./ActivityEditor";
 import ActivityPicker from "./ActivityPicker";
 import DataNodeIcon from "./DataNodeIcon";
 import FileUtilities, { UtilityMode } from "./FileUtilities";
@@ -59,6 +59,7 @@ import "./styles.css";
 import "./designer.css";
 import "./properties.css";
 import "./transition-fix.css";
+import "./canvas-selection.css";
 import "./activity-packs.css";
 import "./studio-shell.css";
 import "./schema-studio.css";
@@ -159,7 +160,7 @@ type GroupDefinition = { id: string; type: "if" | "while" | "for_each" | "iterat
 // diagonal connection, the final Bézier tangent follows the overall approach
 // vector so SVG's automatic marker orientation cannot leave a horizontal
 // arrowhead sitting on a visibly diagonal line.
-function activityWireGeometry(source: Node, target: Node) {
+function activityWireGeometry(source: Node, target: Node, lane = 0) {
   const width = 104, height = 76;
   const sourceCenter = { x: source.position.x + width / 2, y: source.position.y + height / 2 };
   const targetCenter = { x: target.position.x + width / 2, y: target.position.y + height / 2 };
@@ -173,15 +174,27 @@ function activityWireGeometry(source: Node, target: Node) {
     ? { x: target.position.x + (direction > 0 ? 0 : width), y: targetCenter.y }
     : { x: targetCenter.x, y: target.position.y + (direction > 0 ? 0 : height) };
   const pathDx = end.x - start.x, pathDy = end.y - start.y, distance = Math.max(1, Math.hypot(pathDx, pathDy));
-  const unit = { x: pathDx / distance, y: pathDy / distance };
   const bend = Math.max(24, Math.min(96, distance * 0.34));
   const sourceOut = horizontal ? { x: direction, y: 0 } : { x: 0, y: direction };
-  const aligned = horizontal ? Math.abs(pathDy) < 3 : Math.abs(pathDx) < 3;
-  const c1 = { x: start.x + sourceOut.x * bend, y: start.y + sourceOut.y * bend };
-  const c2 = aligned
-    ? { x: end.x - sourceOut.x * bend, y: end.y - sourceOut.y * bend }
-    : { x: end.x - unit.x * bend, y: end.y - unit.y * bend };
-  return { start, end, d: `M${start.x},${start.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${end.x},${end.y}` };
+  // Always enter the activity perpendicular to its facing side. This keeps
+  // the arrowhead aimed at the node rather than visually floating beside it.
+  // Parallel transitions get a small deterministic lane spread, so fan-out
+  // branches do not sit directly on top of each other.
+  const spread = lane * 22;
+  const c1 = horizontal
+    ? { x: start.x + sourceOut.x * bend, y: start.y + spread }
+    : { x: start.x + spread, y: start.y + sourceOut.y * bend };
+  const c2 = horizontal
+    ? { x: end.x - sourceOut.x * bend, y: end.y + spread }
+    : { x: end.x + spread, y: end.y - sourceOut.y * bend };
+  const at = (t: number) => {
+    const p = 1 - t;
+    return {
+      x: p ** 3 * start.x + 3 * p ** 2 * t * c1.x + 3 * p * t ** 2 * c2.x + t ** 3 * end.x,
+      y: p ** 3 * start.y + 3 * p ** 2 * t * c1.y + 3 * p * t ** 2 * c2.y + t ** 3 * end.y,
+    };
+  };
+  return { start, end, label: at(0.5), d: `M${start.x},${start.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${end.x},${end.y}` };
 }
 type Resource = {
   id: string;
@@ -849,14 +862,14 @@ const starter = (id = "main", name = "Main Task"): Task => ({
   kind: "starter",
   activities: [
     {
-      id: `${id}-start`,
+      id: "Start",
       type: "start",
       name: "Start",
       position: { x: 70, y: 150 },
       config: { advanced: advancedDefaults() },
     },
     {
-      id: `${id}-end`,
+      id: "End",
       type: "end",
       name: "End",
       position: { x: 350, y: 150 },
@@ -866,8 +879,8 @@ const starter = (id = "main", name = "Main Task"): Task => ({
   transitions: [
     {
       id: `${id}-edge`,
-      source: `${id}-start`,
-      target: `${id}-end`,
+      source: "Start",
+      target: "End",
       type: "success",
     },
   ],
@@ -878,7 +891,8 @@ const ensureTaskEnd = (task: Task): Task => {
     (current, activity) => !current || activity.position.x > current.position.x ? activity : current,
     undefined,
   );
-  const endId = `${task.id}-end`;
+  const usedActivityNames = new Set(task.activities.map((activity) => String(activity.name || "").toLowerCase()));
+  const endId = uniqueActivityName("End", usedActivityNames);
   const end: Node = {
     id: endId,
     type: "end",
@@ -965,9 +979,16 @@ const uniqueActivityName = (requested: unknown, used: Set<string>, fallback = "A
   const base = String(requested || "").trim() || fallback;
   let candidate = base;
   let suffix = 2;
-  while (used.has(candidate.toLowerCase())) candidate = `${base} ${suffix++}`;
+  while (used.has(candidate.toLowerCase())) candidate = `${base}-${suffix++}`;
   used.add(candidate.toLowerCase());
   return candidate;
+};
+const rewriteActivityReference = (value: any, from: string, to: string): any => {
+  if (from === to) return value;
+  if (typeof value === "string") return value.replace(new RegExp(`\\$\\{${from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=\\.|\\})`, "g"), `\${${to}`);
+  if (Array.isArray(value)) return value.map((item) => rewriteActivityReference(item, from, to));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, rewriteActivityReference(item, from, to)]));
+  return value;
 };
 const normalizeProject = (value: any): Project => {
   const source = value && typeof value === "object" ? value : {};
@@ -988,7 +1009,7 @@ const normalizeProject = (value: any): Project => {
           ...activity,
           id: String(activity.id || `activity-${taskIndex + 1}-${activityIndex + 1}`),
           type: String(activity.type || "log"),
-          name: uniqueActivityName(activity.name, usedActivityNames),
+          name: uniqueActivityName(activityReferenceName(activity.name), usedActivityNames),
           position: {
             x: Number.isFinite(Number(position.x)) ? Number(position.x) : 80 + activityIndex * 190,
             y: Number.isFinite(Number(position.y)) ? Number(position.y) : 150,
@@ -1000,8 +1021,33 @@ const normalizeProject = (value: any): Project => {
       groups: Array.isArray(task.groups) ? task.groups.map((group: any) => ({ ...group, member_activity_ids: Array.isArray(group.member_activity_ids) ? group.member_activity_ids : [], config: group.config && typeof group.config === "object" ? group.config : {}, position: group.position || { x: 100, y: 100 }, size: group.size || { width: 420, height: 220 }, parent_group_id: group.parent_group_id || null })) : [],
     });
   });
+  const migratedTasks = normalizedTasks.map((task: Task) => {
+    const aliases = Object.fromEntries(task.activities.map((activity: Node) => [activity.id, activityReferenceName(activity.name)]));
+    const references = Object.fromEntries(task.activities.flatMap((activity: Node) => [
+      [activity.id, aliases[activity.id]],
+      [String(activity.name || ""), aliases[activity.id]],
+    ]));
+    const migrate = (item: any): any => {
+      if (typeof item === "string") {
+        let migrated = item.replace(/\$\{activities\.([^.}]+)\.output(?:\.([^}]+))?\}/g, (whole, id, path) => references[id] ? `\${${references[id]}${path ? `.${path}` : ""}}` : whole);
+        Object.entries(references).forEach(([from, to]) => {
+          if (from !== to) migrated = rewriteActivityReference(migrated, from, to);
+        });
+        return migrated;
+      }
+      if (Array.isArray(item)) return item.map(migrate);
+      if (item && typeof item === "object") return Object.fromEntries(Object.entries(item).map(([key, value]) => [key, migrate(value)]));
+      return item;
+    };
+    return {
+      ...task,
+      activities: task.activities.map((activity: Node) => ({ ...activity, id: aliases[activity.id], name: aliases[activity.id], config: migrate(activity.config) })),
+      transitions: task.transitions.map((transition) => ({ ...transition, source: aliases[transition.source] || transition.source, target: aliases[transition.target] || transition.target })),
+      groups: (task.groups || []).map((group) => ({ ...group, member_activity_ids: group.member_activity_ids.map((id) => aliases[id] || id) })),
+    };
+  });
   const fallback = structuredClone(initial);
-  const next = { ...fallback, ...source, tasks: normalizedTasks.length ? normalizedTasks : fallback.tasks } as Project;
+  const next = { ...fallback, ...source, tasks: migratedTasks.length ? migratedTasks : fallback.tasks } as Project;
   next.active_task_id = next.tasks.some((task) => task.id === source.active_task_id) ? source.active_task_id : next.tasks[0].id;
   next.resources = Array.isArray(source.resources) ? source.resources : [];
   next.schemas = Array.isArray(source.schemas) ? source.schemas : [];
@@ -1161,8 +1207,8 @@ const validateProjectDefinition = (project: Project) => {
 };
 function App() {
   const [project, setProject] = useState<Project>(initial),
-    [selected, setSelected] = useState("main-start"),
-    [selectedIds, setSelectedIds] = useState<string[]>(["main-start"]),
+    [selected, setSelected] = useState("Start"),
+    [selectedIds, setSelectedIds] = useState<string[]>(["Start"]),
     [selectedEdge, setSelectedEdge] = useState<string | null>(null),
     [selectedResource, setSelectedResource] = useState<string | null>(null),
     [logs, setLogs] = useState<any[]>([]),
@@ -1206,6 +1252,7 @@ function App() {
     [openTaskIds, setOpenTaskIds] = useState<string[]>([initial.active_task_id]),
     [taskTabMenu, setTaskTabMenu] = useState<{ taskId: string; x: number; y: number } | null>(null);
   const [utilityMode, setUtilityMode] = useState<UtilityMode | null>(null);
+  const [executionPanelOpen, setExecutionPanelOpen] = useState(false);
   const [monitorMode, setMonitorMode] = useState<"normal" | "expanded" | "fullscreen">("normal");
   const [historyVersion, setHistoryVersion] = useState(0);
   const history = useRef<{
@@ -1687,8 +1734,9 @@ function App() {
     setTaskTabMenu(null);
   };
   const addActivity = (d: Def, pos?: { x: number; y: number; connectFrom?: string }) => {
-    const id = `${d.type}-${Date.now()}`,
-      usedActivityNames = new Set(nodes.map((activity) => String(activity.name || "").trim().toLowerCase()).filter(Boolean)),
+    const usedActivityNames = new Set(nodes.map((activity) => String(activity.name || "").trim().toLowerCase()).filter(Boolean)),
+      activityName = uniqueActivityName(activityReferenceName(d.label), usedActivityNames),
+      id = activityName,
       config: any = {
         operation: d.operation,
         advanced: advancedDefaults(d.type, d.operation || ""),
@@ -1814,7 +1862,7 @@ function App() {
     const n: Node = {
       id,
       type: d.type,
-      name: uniqueActivityName(d.label, usedActivityNames),
+      name: activityName,
       position: pos ? { x: pos.x, y: pos.y } : {
         x: 160 + (nodes.length % 4) * 180,
         y: 270 + Math.floor(nodes.length / 4) * 105,
@@ -1874,23 +1922,25 @@ function App() {
     mutateTask((current) => {
       const origin = current.activities.find((activity) => activity.id === catchActivityId);
       if (!origin || origin.type !== "catch") return current;
+      const usedNames = new Set(current.activities.filter((activity) => activity.id !== catchActivityId).map((activity) => activity.id.toLowerCase()));
       const activities = current.activities.filter((activity) => !String(activity.config?.generatedByCatchAI || "").startsWith(`${catchActivityId}:`));
       const removed = new Set(current.activities.filter((activity) => String(activity.config?.generatedByCatchAI || "").startsWith(`${catchActivityId}:`)).map((activity) => activity.id));
       const transitions = current.transitions.filter((transition) => !removed.has(transition.source) && !removed.has(transition.target) && transition.source !== catchActivityId);
       const generatedActivities: Node[] = [];
       const generatedTransitions: Edge[] = [];
       selectedTypes.forEach((exceptionType, index) => {
-        const catchId = index === 0 ? catchActivityId : `${catchActivityId}-ai-${stamp}-${index}`;
-        const throwId = `${catchActivityId}-throw-${stamp}-${index}`;
+        const catchId = uniqueActivityName(activityReferenceName(`Catch ${exceptionType}`), usedNames);
+        const throwId = uniqueActivityName(activityReferenceName(`Throw ${exceptionType}`), usedNames);
+        const catchReference = catchId;
         const catchPosition = { x: origin.position.x, y: origin.position.y + index * 145 };
         if (index === 0) {
           const position = activities.findIndex((activity) => activity.id === catchActivityId);
-          activities[position] = { ...origin, name: `Catch ${exceptionType}`, position: catchPosition, config: { ...origin.config, catchAll: false, errorType: exceptionType, errorCode: "" } };
-        } else generatedActivities.push({ id: catchId, type: "catch", name: `Catch ${exceptionType}`, position: catchPosition, config: { operation: "catch", catchAll: false, errorType: exceptionType, errorCode: "", advanced: advancedDefaults(), generatedByCatchAI: `${catchActivityId}:${exceptionType}` } });
+          activities[position] = { ...origin, id: catchId, name: catchId, position: catchPosition, config: { ...origin.config, catchAll: false, errorType: exceptionType, errorCode: "" } };
+        } else generatedActivities.push({ id: catchId, type: "catch", name: catchId, position: catchPosition, config: { operation: "catch", catchAll: false, errorType: exceptionType, errorCode: "", advanced: advancedDefaults(), generatedByCatchAI: `${catchActivityId}:${exceptionType}` } });
         generatedActivities.push({
           id: throwId,
           type: "throw",
-          name: `Throw ${exceptionType}`,
+          name: throwId,
           position: { x: catchPosition.x + 235, y: catchPosition.y },
           config: {
             operation: "throw",
@@ -1898,30 +1948,31 @@ function App() {
             advanced: advancedDefaults(),
             generatedByCatchAI: `${catchActivityId}:${exceptionType}`,
             inputMappings: {
-              type: `\${activities.${catchId}.output.type}`,
-              code: `\${activities.${catchId}.output.code}`,
-              message: `\${activities.${catchId}.output.message}`,
-              details: `\${activities.${catchId}.output.details}`,
-              stackTrace: `\${activities.${catchId}.output.stackTrace}`,
+              type: `\${${catchReference}.type}`,
+              code: `\${${catchReference}.code}`,
+              message: `\${${catchReference}.message}`,
+              details: `\${${catchReference}.details}`,
+              stackTrace: `\${${catchReference}.stackTrace}`,
             },
           },
         });
         generatedTransitions.push({ id: `${catchId}-to-${throwId}`, source: catchId, target: throwId, type: "success" });
       });
-      return { ...current, activities: [...activities, ...generatedActivities], transitions: [...transitions, ...generatedTransitions] };
+      return { ...current, activities: [...activities, ...generatedActivities], transitions: [...transitions.map((transition) => ({ ...transition, source: transition.source === catchActivityId ? selectedTypes.length ? activityReferenceName(`Catch ${selectedTypes[0]}`) : transition.source : transition.source, target: transition.target === catchActivityId ? selectedTypes.length ? activityReferenceName(`Catch ${selectedTypes[0]}`) : transition.target : transition.target })), ...generatedTransitions] };
     });
-    setSelected(catchActivityId); setSelectedIds([catchActivityId]); setSelectedEdge(null);
+    const firstCatch = activityReferenceName(`Catch ${selectedTypes[0]}`);
+    setSelected(firstCatch); setSelectedIds([firstCatch]); setSelectedEdge(null);
     setLogs([{ level: "INFO", message: `Catch AI generated ${selectedTypes.length} exception handler block${selectedTypes.length === 1 ? "" : "s"} with code, message, details, and stack-trace mappings.` }]);
   };
   const openCatchAI = () => {
     const existing = node?.type === "catch" ? node : nodes.find((activity) => activity.type === "catch" && !activity.config?.generatedByCatchAI);
-    const catchId = existing?.id || `catch-ai-${Date.now()}`;
+    const catchId = existing?.id || uniqueActivityName(activityReferenceName("Catch Exception"), new Set(nodes.map((activity) => activity.id.toLowerCase())));
     if (!existing) {
       const lowest = nodes.reduce((value, activity) => Math.max(value, activity.position.y), 120);
       const catchNode: Node = {
         id: catchId,
         type: "catch",
-        name: "Catch Exception",
+        name: catchId,
         position: { x: 80, y: lowest + 135 },
         config: { operation: "catch", catchAll: true, errorType: "", errorCode: "", advanced: advancedDefaults() },
       };
@@ -1983,8 +2034,8 @@ function App() {
     if (!clipboard?.activities.length) { setLogs([{ level: "WARN", message: "The Studio activity clipboard is empty." }]); return; }
     if (clipboard.activities.some(isEventActivity) && nodes.some(isEventActivity)) { setLogs([{ level: "WARN", message: "Paste blocked: a Task can contain only one event activity. Copy downstream activities without the starter/event." }]); return; }
     const now = Date.now(), idMap: Record<string, string> = {}, usedActivityNames = new Set(nodes.map((activity) => String(activity.name || "").trim().toLowerCase()).filter(Boolean));
-    clipboard.activities.forEach((item, index) => { idMap[item.id] = `${item.type}-${now}-${index}`; });
-    const pasted = clipboard.activities.map((item) => ({ ...structuredClone(item), id: idMap[item.id], name: uniqueActivityName(`${item.name} Copy`, usedActivityNames), position: { x: item.position.x + 34, y: item.position.y + 34 } }));
+    clipboard.activities.forEach((item) => { idMap[item.id] = uniqueActivityName(activityReferenceName(`${item.name}-Copy`), usedActivityNames); });
+    const pasted = clipboard.activities.map((item) => ({ ...structuredClone(item), id: idMap[item.id], name: idMap[item.id], config: rewriteActivityReference(item.config, item.id, idMap[item.id]), position: { x: item.position.x + 34, y: item.position.y + 34 } }));
     const pastedEdges = clipboard.transitions.map((item, index) => ({ ...structuredClone(item), id: `edge-${now}-${index}`, source: idMap[item.source], target: idMap[item.target] }));
     mutateTask((current) => ({ ...current, activities: [...current.activities, ...pasted], transitions: [...current.transitions, ...pastedEdges] }));
     setSelected(pasted[0].id); setSelectedIds(pasted.map((item) => item.id)); setSelectedEdge(null); setSelectedResource(null);
@@ -2007,7 +2058,7 @@ function App() {
     const replace = () => {
       projectFileHandle.current = null;
       savedProjectSnapshot.current = "";
-      setProject(next); setSelected("main-start"); setSelectedIds(["main-start"]); setSelectedEdge(null); setSelectedResource(null); setClosed(false);
+      setProject(next); setSelected("Start"); setSelectedIds(["Start"]); setSelectedEdge(null); setSelectedResource(null); setClosed(false);
       setLogs([{ level: "INFO", message: `Created new project ${name}. Save to persist it.` }]);
     };
     if (projectDirty) { pendingLeaveAction.current = replace; setUnsavedPrompt(true); return; }
@@ -2149,8 +2200,12 @@ function App() {
         setValidation({ title: `Validate Project · ${project.name}`, issues });
         throw new Error(`Package blocked by ${blocking.length} project validation error${blocking.length === 1 ? "" : "s"}.`);
       }
-      const { credential, secretsText, controlPlaneUrl, caCertificatePath, ...persistedSettings } = settings;
-      const next = { ...project, packaging: { ...project.packaging, ...persistedSettings } };
+      const { credential, secretsText, controlPlaneUrl, caCertificatePath, format: requestedFormat, ...persistedSettings } = settings;
+      // Python source export is an explicit one-off action. Never persist it
+      // as the project's default archive format, or normal Export would
+      // unexpectedly create another Python archive.
+      const regularFormat = ["ifpkg", "zip", "tar.gz", "ear"].includes(requestedFormat) ? requestedFormat : ( ["ifpkg", "zip", "tar.gz", "ear"].includes(project.packaging?.format) ? project.packaging.format : "ifpkg" );
+      const next = { ...project, packaging: { ...project.packaging, ...persistedSettings, format: regularFormat } };
       const saved = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
       if (!saved.ok) throw new Error("Unable to save packaging configuration.");
       setProject(normalizeProject(await saved.json()));
@@ -2159,7 +2214,7 @@ function App() {
       const response = await fetch(`/api/projects/${project.id}/package?${query}`);
       if (!response.ok) { const detail = await response.json().catch(() => ({})); throw new Error(detail.detail || "Package generation failed."); }
       const blob = await response.blob(), disposition = response.headers.get("content-disposition") || "";
-      const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `${settings.artifact_name}-${settings.version}.${settings.format === "ifpkg" ? "ifpkg" : settings.format}`;
+      const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `${settings.artifact_name}-${settings.version}.${settings.format === "ifpkg" ? "ifpkg" : settings.format === "python" ? "pyifpkg" : settings.format}`;
       if (window.fabricDesktop) {
         const filePath = await window.fabricDesktop.saveFile({ filename, bytes: [...new Uint8Array(await blob.arrayBuffer())], filters: [{ name: "Integration Fabric Deployment Package", extensions: [filename.endsWith(".tar.gz") ? "tar.gz" : filename.split(".").pop() || "ifpkg"] }] });
         if (!filePath) return;
@@ -2183,8 +2238,9 @@ function App() {
       try { secrets = settings.secretsText?.trim() ? JSON.parse(settings.secretsText) : {}; }
       catch { throw new Error("Deployment secrets must be a JSON object of property names and values."); }
       if (!secrets || Array.isArray(secrets) || typeof secrets !== "object") throw new Error("Deployment secrets must be a JSON object.");
-      const { credential, secretsText, controlPlaneUrl, caCertificatePath, ...persistedSettings } = settings;
-      const next = { ...project, packaging: { ...project.packaging, ...persistedSettings } };
+      const { credential, secretsText, controlPlaneUrl, caCertificatePath, format: requestedFormat, ...persistedSettings } = settings;
+      const regularFormat = ["ifpkg", "zip", "tar.gz", "ear"].includes(requestedFormat) ? requestedFormat : "ifpkg";
+      const next = { ...project, packaging: { ...project.packaging, ...persistedSettings, format: regularFormat } };
       const saved = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
       if (!saved.ok) throw new Error("Unable to save packaging configuration.");
       setProject(normalizeProject(await saved.json()));
@@ -2313,14 +2369,19 @@ function App() {
       const output = await response.json();
       if (!response.ok) throw new Error(output.detail || "Unable to download saved logs");
       const blob = new Blob([(output.entries || []).map((entry: any) => JSON.stringify(entry)).join("\n") + "\n"], { type: "application/x-ndjson" });
-      browserDownload(blob, `${project.id}-${project.active_environment}-application.log`);
+      const logName = project.name.replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-|-$/g, "") || project.id;
+      browserDownload(blob, `${logName}-${project.active_environment}.log`);
       setLogs((current) => [...current, { level: "INFO", message: "Downloaded saved application logs to the browser Downloads folder." }]);
     } catch (error: any) {
       setLogs((current) => [...current, { level: "ERROR", message: error?.message || "Unable to download saved logs" }]);
     }
   };
   const executionActive = busy || (!!debugState && !["completed", "failed", "stopped"].includes(debugState.status)) || endpoints.length > 0 || ["running", "listening", "paused"].includes(runtimeState?.status);
-  const executionLogEntries: any[] = debugState?.logs || runtimeState?.logs || logs;
+  // General Studio notices (open, save, copy, etc.) belong in the status area,
+  // not in the execution console. The console is reserved for runtime work.
+  const executionLogEntries: any[] = debugState?.logs || runtimeState?.logs || logs.filter((entry) =>
+    ["activity", "listener", "lifecycle", "debug", "call", "runtime"].includes(String(entry.kind || "").toLowerCase()) || !!entry.correlationId || !!entry.runtimeActivityId,
+  );
   const executedTransitionIds = new Set(executionLogEntries.filter((entry: any) => entry?.transitionId).map((entry: any) => String(entry.transitionId)));
   const currentActivityIds = new Set<string>([debugState?.currentActivityId, ...(debugState?.currentActivityIds || [])].filter(Boolean));
   const currentTransitionIds = new Set(edges.filter((transition) => currentActivityIds.has(transition.target) && executedTransitionIds.has(String(transition.id))).map((transition) => String(transition.id)));
@@ -2460,6 +2521,22 @@ function App() {
       if (projectDirty) { pendingLeaveAction.current = close; setUnsavedPrompt(true); return; }
       close();
     };
+  const exitStudio = () => {
+    const exit = () => {
+      if (window.fabricDesktop?.completeWindowClose) void window.fabricDesktop.completeWindowClose();
+      else window.close();
+    };
+    if (projectDirty) { pendingLeaveAction.current = exit; setUnsavedPrompt(true); return; }
+    exit();
+  };
+  useEffect(() => {
+    if (!window.fabricDesktop?.onWindowCloseRequested) return;
+    return window.fabricDesktop.onWindowCloseRequested(() => {
+      // A second native-close click while the modal is already open must not
+      // replace the pending save/discard action.
+      if (!unsavedPrompt) exitStudio();
+    });
+  }, [projectDirty, unsavedPrompt]);
   const resolveUnsavedPrompt = async (choice: "save" | "discard" | "cancel") => {
     if (choice === "cancel") { pendingLeaveAction.current = null; setUnsavedPrompt(false); return; }
     const action = pendingLeaveAction.current;
@@ -2487,9 +2564,14 @@ function App() {
     const stamp = Date.now();
     if (target === "tasks" && copied.type === "task") {
       const item = { ...structuredClone(copied.value), id: `task-${stamp}`, name: `${copied.value.name} Copy` };
-      item.activities = item.activities.map((activity: Node, index: number) => ({ ...activity, id: `${activity.type}-${stamp}-${index}` }));
+      const usedNames = new Set<string>();
+      item.activities = item.activities.map((activity: Node) => {
+        const id = uniqueActivityName(activityReferenceName(`${activity.name}-Copy`), usedNames);
+        return { ...activity, id, name: id, config: rewriteActivityReference(activity.config, activity.id, id) };
+      });
       const ids = Object.fromEntries(copied.value.activities.map((activity: Node, index: number) => [activity.id, item.activities[index].id]));
       item.transitions = item.transitions.map((edge: Edge, index: number) => ({ ...edge, id: `edge-${stamp}-${index}`, source: ids[edge.source], target: ids[edge.target] }));
+      item.groups = (item.groups || []).map((group: GroupDefinition) => ({ ...group, member_activity_ids: group.member_activity_ids.map((activityId) => ids[activityId] || activityId) }));
       setProject((current) => ({ ...current, tasks: [...current.tasks, item] }));
     } else if (target === "resources" && copied.type === "resource") setProject((current) => ({ ...current, resources: [...current.resources, { ...structuredClone(copied.value), id: `resource-${stamp}`, name: `${copied.value.name} Copy` }] }));
     else if (target === "schemas" && copied.type === "schema") setProject((current) => ({ ...current, schemas: [...current.schemas, { ...structuredClone(copied.value), id: `schema-${stamp}`, name: copied.value.name.replace(/\.xsd$/i, "-copy.xsd") }] }));
@@ -2542,13 +2624,13 @@ function App() {
       />
     );
   return (
-    <div className="app" style={{ "--explorer-width": `${explorerWidth}px` } as React.CSSProperties} onClick={() => setMenu(null)}>
+    <div className={`app ${executionPanelOpen ? "" : "monitor-hidden"}`} style={{ "--explorer-width": `${explorerWidth}px` } as React.CSSProperties} onClick={() => setMenu(null)}>
       <nav className="menu-bar">
         <div className="menu-mark">
           <Workflow /> IF
         </div>
         <div className="menu-root"><button className={menu === "file" ? "active" : ""} onClick={(e) => { e.stopPropagation(); setMenu(menu === "file" ? null : "file"); }}>File</button>
-          {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} newProject={newProject} exitStudio={() => (window as any).fabricDesktop?.exit?.() || window.close()} save={save} saveJson={saveJsonFile} exportProject={exportGenericProject} importProject={openGenericProject} importProjectFolder={importProjectFolder} openProjects={closeProject} sampleProjects={() => setSampleGalleryOpen(true)} catchAI={openCatchAI} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
+          {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} newProject={newProject} exitStudio={exitStudio} save={save} saveJson={saveJsonFile} exportProject={exportGenericProject} importProject={openGenericProject} importProjectFolder={importProjectFolder} openProjects={closeProject} sampleProjects={() => setSampleGalleryOpen(true)} catchAI={openCatchAI} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
         <TopMenu label="Edit" open={menu === "edit"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "edit" ? null : "edit"); }} commands={[
           { label: "Undo", detail: "Restore an earlier Studio change · up to 100 levels", icon: Undo2, shortcut: "Ctrl+Z", action: undoStudio, disabled: history.current.past.length === 0 && !history.current.pendingBase },
           { label: "Redo", detail: "Restore the most recently undone change", icon: Redo2, shortcut: "Ctrl+Y", action: redoStudio, disabled: history.current.future.length === 0 },
@@ -2575,7 +2657,7 @@ function App() {
           { label: "Project Explorer", detail: "Move focus to the project tree", icon: FolderOpen, action: () => focusStudioPanel(".explorer") },
           { label: "Task Designer", detail: "Move focus to the orchestration canvas", icon: Workflow, action: () => focusStudioPanel(".canvas") },
           { label: "Configuration", detail: "Move focus to activity configuration", icon: Settings2, action: () => focusStudioPanel(".config") },
-          { label: "Execution & Debug", detail: "Move focus to runtime output", icon: Bug, action: () => focusStudioPanel(".monitor") },
+          { label: "Execution & Debug", detail: "Open runtime output", icon: Bug, action: () => { setExecutionPanelOpen(true); window.setTimeout(() => focusStudioPanel(".monitor"), 0); } },
           { label: "XML Viewer", detail: "Windowed large-file XML viewer and pretty printer", icon: CodeXml, action: () => setUtilityMode("xml") },
           { label: "JSON Viewer", detail: "Windowed large-file JSON viewer and pretty printer", icon: Braces, action: () => setUtilityMode("json") },
           { label: "Compare Files", detail: "Side-by-side text or binary file comparison", icon: Scissors, action: () => setUtilityMode("compare") },
@@ -3015,15 +3097,18 @@ function App() {
             })}
             <svg className="wires" style={{ width: Math.max(1400, ...nodes.map((n) => n.position.x + 260)), height: Math.max(750, ...nodes.map((n) => n.position.y + 150)) }}>
               <defs>
-                <marker id="transition-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
-                <marker id="transition-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path fill="#35e6b0" d="M 0 0 L 10 5 L 0 10 z" /></marker>
-                <marker id="transition-arrow-current" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path fill="#ffe27a" d="M 0 0 L 10 5 L 0 10 z" /></marker>
+                <marker id="transition-arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
+                <marker id="transition-arrow-active" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path fill="#35e6b0" d="M 0 0 L 10 5 L 0 10 z" /></marker>
+                <marker id="transition-arrow-current" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path fill="#ffe27a" d="M 0 0 L 10 5 L 0 10 z" /></marker>
               </defs>
               {edges.map((e) => {
                 const a = byId[e.source],
                   b = byId[e.target];
                 if (!a || !b) return null;
-                const wire = activityWireGeometry(a, b), d = wire.d;
+                const siblings = edges.filter((candidate) => candidate.source === e.source);
+                const lane = siblings.findIndex((candidate) => candidate.id === e.id) - (siblings.length - 1) / 2;
+                const wire = activityWireGeometry(a, b, lane), d = wire.d;
+                const visualLabel = e.label?.trim();
                 const traversed = executedTransitionIds.has(String(e.id)), current = currentTransitionIds.has(String(e.id));
                 return (
                   <g
@@ -3039,7 +3124,7 @@ function App() {
                   >
                     <path className="edge-hit" d={d} />
                     <path id={`edge-path-${e.id}`} className="edge-line" d={d} markerEnd={`url(#transition-arrow${current ? "-current" : traversed ? "-active" : ""})`} />
-                    <text><textPath href={`#edge-path-${e.id}`} startOffset="50%" textAnchor="middle">{e.type || "success"}</textPath></text>
+                    {visualLabel && <g className="edge-label" pointerEvents="none"><rect x={wire.label.x - Math.max(25, visualLabel.length * 3.5)} y={wire.label.y - 9} width={Math.max(50, visualLabel.length * 7)} height="14" rx="5" fill="#0d1724" opacity=".9"/><text x={wire.label.x} y={wire.label.y + 1} textAnchor="middle">{visualLabel}</text></g>}
                     {selectedEdge === e.id && <><circle className="edge-rewire-handle source" cx={wire.start.x} cy={wire.start.y} r="7" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setEdgeRewire({ edgeId: e.id, endpoint: "source", fixedId: e.target, x: wire.start.x, y: wire.start.y }); }}/><circle className="edge-rewire-handle target" cx={wire.end.x} cy={wire.end.y} r="7" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setEdgeRewire({ edgeId: e.id, endpoint: "target", fixedId: e.source, x: wire.end.x, y: wire.end.y }); }}/></>}
                   </g>
                 );
@@ -3118,6 +3203,7 @@ function App() {
                     )}
                   </span>
                   {breakpoints.includes(n.id) && <i className="breakpoint" />}
+                  {executionOutputs[n.id] && <i className="runtime-complete-dot" aria-label="Activity executed" />}
                   <strong>{n.name}</strong>
                   <span
                     className="connect-handle"
@@ -3188,14 +3274,23 @@ function App() {
               updateCustomFunctions={(customFunctions: any[]) => setProject((current) => ({ ...current, custom_functions: customFunctions }))}
               properties={project.properties[project.active_environment] || []}
               tab={activeTab}
-              update={(c: any) =>
-                mutateTask((t) => ({
-                  ...t,
-                  activities: t.activities.map((n) =>
-                    n.id === selected ? { ...n, ...c } : n,
-                  ),
-                }))
-              }
+              update={(c: any) => {
+                const renamed = c.name !== undefined, nextSelected = renamed ? activityReferenceName(c.name) : selected;
+                if (renamed) { setSelected(nextSelected); setSelectedIds((ids) => ids.map((id) => id === selected ? nextSelected : id)); }
+                mutateTask((t) => {
+                  const current = t.activities.find((activity) => activity.id === selected);
+                  const from = activityReferenceName(current?.name);
+                  const to = c.name === undefined ? from : activityReferenceName(c.name);
+                  return {
+                    ...t,
+                    activities: t.activities.map((n) => n.id === selected
+                      ? { ...n, ...c, id: to, name: to }
+                      : { ...n, config: rewriteActivityReference(n.config, from, to) }),
+                    transitions: t.transitions.map((edge) => ({ ...edge, source: edge.source === selected ? to : edge.source, target: edge.target === selected ? to : edge.target })),
+                    groups: (t.groups || []).map((group) => ({ ...group, member_activity_ids: group.member_activity_ids.map((id) => id === selected ? to : id) })),
+                  };
+                });
+              }}
               handleExceptions={(types: string[]) => createExceptionHandlers(node.id, types)}
               navigateTask={selectTask}
             />
@@ -3232,8 +3327,9 @@ function App() {
           )}
         </section>
       </main>
-      <aside className={`monitor monitor-${monitorMode}`}>
+      {executionPanelOpen && <aside className={`monitor monitor-${monitorMode}`}>
         <div className="pane-title"><span>EXECUTION / DEBUG</span><span className="monitor-actions">
+          <button title="Close execution panel" onClick={() => { setExecutionPanelOpen(false); setMonitorMode("normal"); }}>×</button>
           <button title="Load saved project logs" onClick={loadSystemLogs}><HardDrive/></button>
           <button title="Download saved project logs" onClick={downloadSystemLogs}><Download/></button>
           <button title={monitorMode === "expanded" ? "Restore execution panel" : "Expand execution panel"} onClick={() => setMonitorMode((mode) => mode === "expanded" ? "normal" : "expanded")}><Maximize2/></button>
@@ -3269,14 +3365,14 @@ function App() {
             <pre>{formatRuntimeOutput(record)}</pre>
           </details>)}
         </details>})()}
-        {logs.map((l, i) => (
+        {executionLogEntries.map((l, i) => (
           <div className={`log ${(l.level || "info").toLowerCase()}`} key={i}>
             <small>{l.time ? new Date(l.time).toLocaleTimeString() : ""} {l.level}{l.correlationId ? ` · ${l.correlationId}` : ""}</small>
             <p>{l.message}</p>
             {l.payload !== undefined && l.payload !== "" && l.payload !== null && <pre>{JSON.stringify(l.payload, null, 2)}</pre>}
           </div>
         ))}
-      </aside>
+      </aside>}
       {utilityMode && <FileUtilities initialMode={utilityMode} onClose={() => setUtilityMode(null)}/>}
       <footer className="studio-status-bar">
         <span className="status-product"><Workflow/> Integration Fabric Studio</span>
@@ -3537,9 +3633,9 @@ function GroupEditor({ group, groups, resources, activities, task, tasks, schema
     {draft.type === "for_each" && <label>For Each source<select value={draft.config.iterationMode || "collection"} onChange={(event) => setDraft((current) => { const config: Record<string, any> = { ...current.config, iterationMode: event.target.value }; if (event.target.value === "range") { delete config.source; delete config.collection; } else { delete config.start; delete config.end; delete config.increment; } return { ...current, config }; })}><option value="collection">Collection elements</option><option value="range">Counter range</option></select></label>}
     {!["scope", "none", "critical_section", "transaction_jdbc"].includes(draft.type) && <section className="group-data-mapper"><DataSourcePane properties={properties} sources={dataSources} customFunctions={customFunctions} runtimeVariables={[...["iterate", "for_each"].includes(draft.type) ? [{ name: draft.config.currentElementName || draft.config.itemVariable || "currentElement", label: "Current iteration element", type: "any" }] : [], ...["while", "repeat", "repeat_on_error", "iterate", "for_each"].includes(draft.type) ? [{ name: draft.config.indexVariable || "index", label: "Current iteration index", type: "integer" }] : [], ...(draft.type === "repeat_on_error" ? [{ name: "error", label: "Current group error", type: "object" }] : [])]}/><div className="group-condition-targets"><header><DataNodeIcon/><span><b>Group data and condition</b><small>Drag data, functions, properties, or constants into the runtime field.</small></span></header>
       {["if", "while"].includes(draft.type) && <GroupExpressionTarget label={draft.type === "if" ? "If condition" : "While True condition"} kind="boolean" value={draft.config.condition} onChange={(value: any) => patchConfig("condition", value)} placeholder="${input.enabled} == true" help={draft.type === "if" ? "Evaluated before entering the group." : "Evaluated before every iteration; execution continues while true."}/>}
-      {(draft.type === "iterate" || (draft.type === "for_each" && draft.config.iterationMode !== "range")) && <GroupExpressionTarget label="Collection to iterate" kind="collection" value={draft.config.source} onChange={(value: any) => patchConfig("source", value)} placeholder="${activities.read.output.records}" help="Resolved at group entry. The group executes exactly once for each collection item and publishes the current element."/>}
+      {(draft.type === "iterate" || (draft.type === "for_each" && draft.config.iterationMode !== "range")) && <GroupExpressionTarget label="Collection to iterate" kind="collection" value={draft.config.source} onChange={(value: any) => patchConfig("source", value)} placeholder="${Read.records}" help="Resolved at group entry. The group executes exactly once for each collection item and publishes the current element."/>}
       {draft.type === "for_each" && draft.config.iterationMode === "range" && <><GroupExpressionTarget label="Start counter" kind="number" value={draft.config.start} onChange={(value: any) => patchConfig("start", value)} placeholder="1" help="Inclusive first counter value."/><GroupExpressionTarget label="End counter" kind="number" value={draft.config.end} onChange={(value: any) => patchConfig("end", value)} placeholder="${properties.batch.end}" help="Inclusive final counter value."/><GroupExpressionTarget label="Increment" kind="number" value={draft.config.increment ?? 1} onChange={(value: any) => patchConfig("increment", value)} placeholder="1" help="Positive or negative counter step; zero is rejected."/></>}
-      {draft.type === "repeat" && <GroupExpressionTarget label="Repeat Until True condition" kind="boolean" value={draft.config.condition} onChange={(value: any) => patchConfig("condition", value)} placeholder="${activities.check.output.complete} == true" help="The group executes once, then repeats until this condition becomes true."/>}
+      {draft.type === "repeat" && <GroupExpressionTarget label="Repeat Until True condition" kind="boolean" value={draft.config.condition} onChange={(value: any) => patchConfig("condition", value)} placeholder="${Check.complete} == true" help="The group executes once, then repeats until this condition becomes true."/>}
       {draft.type === "repeat_on_error" && <GroupExpressionTarget label="Repeat-on-error stop condition" kind="boolean" value={draft.config.stopCondition} onChange={(value: any) => patchConfig("stopCondition", value)} placeholder="${vars.index} >= 3 or ${context.error.code} == 'NON_RETRYABLE'" help="Evaluated only after an unhandled activity error. False retries the complete group; true stops retrying and propagates the error."/>}
       {["while", "repeat", "iterate", "for_each"].includes(draft.type) && <GroupExpressionTarget label="Maximum iterations" kind="number" value={draft.config.maxIterations} onChange={(value: any) => patchConfig("maxIterations", value)} placeholder="${properties.advanced.groupMaxIterations}" help="Environment-resolved runaway protection. This does not replace the condition or collection size."/>}
       {draft.type === "repeat_on_error" && <><GroupExpressionTarget label="Maximum retry count" kind="number" value={draft.config.retryCount} onChange={(value: any) => patchConfig("retryCount", value)} placeholder="${properties.advanced.retryCount}" help="Additional attempts after the first failure; accepts an environment property or expression."/><GroupExpressionTarget label="Retry interval (seconds)" kind="number" value={draft.config.retryIntervalSeconds} onChange={(value: any) => patchConfig("retryIntervalSeconds", value)} placeholder="${properties.advanced.retryIntervalSeconds}" help="Delay between attempts, resolved from the active runtime environment."/></>}
@@ -3603,7 +3699,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
     target: initialTarget,
     starterTaskIds: Array.isArray(packaging?.starterTaskIds) && packaging.starterTaskIds.length ? packaging.starterTaskIds.filter((id: string) => starterTasks.some((task: Task) => task.id === id)) : starterTasks.map((task: Task) => task.id),
     environments: Array.isArray(packaging?.environments) && packaging.environments.length ? packaging.environments.filter((name: string) => environments.includes(name)) : [packaging?.environment || "production"].filter((name: string) => environments.includes(name)),
-    format: packaging?.format || "ifpkg",
+    format: ["ifpkg", "zip", "tar.gz", "ear"].includes(packaging?.format) ? packaging.format : "ifpkg",
     artifacts: savedArtifacts.length ? savedArtifacts : initialChoices.map((choice) => choice.key),
     image: packaging?.image || "",
     replicas: packaging?.replicas || 1,
@@ -3640,7 +3736,17 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
   const toggleStarter = (id: string) => setDraft((current: any) => ({ ...current, starterTaskIds: current.starterTaskIds.includes(id) ? current.starterTaskIds.filter((value: string) => value !== id) : [...current.starterTaskIds, id] }));
   const extension = draft.format === "ifpkg" ? "ifpkg" : draft.format;
   const compatiblePlanes = targetCatalog.dataPlanes.filter((plane: any) => draft.target === "cloud" ? plane.type === "kubernetes" : plane.type !== "kubernetes");
-  const compatibleCapabilities = targetCatalog.capabilities.filter((capability: any) => capability.type === "integration-runtime" && capability.dataPlaneId === draft.dataPlaneId && capability.namespace === draft.namespace);
+  const selectedPlane = compatiblePlanes.find((plane: any) => plane.id === draft.dataPlaneId);
+  const runtimeCapabilitiesFor = (dataPlaneId: string) => targetCatalog.capabilities.filter((capability: any) => capability.type === "integration-runtime" && capability.dataPlaneId === dataPlaneId);
+  // A data plane can retain namespaces that were used by an earlier capability.
+  // Deployment must use the namespace currently backed by an Integration Runtime,
+  // not a stale value in the data-plane registration record.
+  const namespacesFor = (plane: any) => {
+    const capabilityNamespaces = [...new Set(runtimeCapabilitiesFor(plane?.id || "").map((capability: any) => String(capability.namespace || "").trim()).filter(Boolean))];
+    return capabilityNamespaces.length ? capabilityNamespaces : (plane?.namespaces || []);
+  };
+  const deployableNamespaces = namespacesFor(selectedPlane);
+  const compatibleCapabilities = runtimeCapabilitiesFor(draft.dataPlaneId).filter((capability: any) => capability.namespace === draft.namespace);
   const discoverTargets = async () => {
     setError(""); setDiscovering(true);
     const controller = new AbortController(), timeout = window.setTimeout(() => controller.abort(), 20000);
@@ -3653,7 +3759,8 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
       const selected = planes.find((plane: any) => plane.id === draft.dataPlaneId) || planes[0];
       if (selected) {
         const selectedCapabilities = result.capabilities.filter((capability: any) => capability.type === "integration-runtime" && capability.dataPlaneId === selected.id);
-        const discoveredNamespaces = selected.namespaces || [];
+        const capabilityNamespaces = [...new Set(selectedCapabilities.map((capability: any) => String(capability.namespace || "").trim()).filter(Boolean))];
+        const discoveredNamespaces = capabilityNamespaces.length ? capabilityNamespaces : (selected.namespaces || []);
         const matchingNamespace = discoveredNamespaces.includes(draft.namespace)
           ? draft.namespace
           : selectedCapabilities.find((capability: any) => discoveredNamespaces.includes(capability.namespace))?.namespace
@@ -3665,7 +3772,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
     } catch (failure: any) { setError(failure?.name === "AbortError" ? "Control Plane target discovery timed out after 20 seconds." : failure?.message || "Unable to load Control Plane targets."); }
     finally { window.clearTimeout(timeout); setDiscovering(false); }
   };
-  const build = async (deploy = false) => {
+  const build = async (deploy = false, pythonArchive = false) => {
     setError("");
     if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(draft.artifact_name.trim())) { setError("Artifact name may contain letters, numbers, dots, dashes, and underscores."); return; }
     if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(draft.version.trim())) { setError("Use a semantic version such as 1.0.0 or 1.0.0-beta.1."); return; }
@@ -3677,7 +3784,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
     if (deploy && !draft.dataPlaneId.trim()) { setError("Enter the target data-plane ID."); return; }
     if (deploy && !draft.environments.includes(draft.deploymentEnvironment)) { setError("Choose one of the packaged environment profiles for deployment."); return; }
     setBusy(true);
-    try { await (deploy ? onDeploy(draft) : onPackage(draft)); }
+    try { await (deploy ? onDeploy(draft) : onPackage({ ...draft, format: pythonArchive ? "python" : draft.format })); }
     catch (failure: any) { setError(failure?.message || "Package generation failed."); }
     finally { setBusy(false); }
   };
@@ -3720,9 +3827,9 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
         <label>Access key<input type="password" value={draft.credential} onChange={(event) => update("credential", event.target.value)} placeholder="Not saved in the project"/></label>
         <label>Delivery team ID (optional)<input value={draft.teamId} onChange={(event) => update("teamId", event.target.value)} placeholder="technology-team"/></label>
         <label>Deployment environment<select value={draft.deploymentEnvironment} onChange={(event) => updateDeploymentEnvironment(event.target.value)}>{draft.environments.map((name: string) => <option key={name}>{name}</option>)}</select></label>
-        <label>Data plane{compatiblePlanes.length ? <select value={draft.dataPlaneId} onChange={(event) => { const plane = compatiblePlanes.find((item: any) => item.id === event.target.value); setDraft((current: any) => ({ ...current, dataPlaneId: event.target.value, namespace: plane?.namespaces?.[0] || "default", capabilityId: "" })); }}>{compatiblePlanes.map((plane: any) => <option key={plane.id} value={plane.id}>{plane.name} · {plane.id}</option>)}</select> : <input value={draft.dataPlaneId} onChange={(event) => update("dataPlaneId", event.target.value)} placeholder={draft.target === "cloud" ? "kubernetes-prod" : "localhost"}/>}</label>
+        <label>Data plane{compatiblePlanes.length ? <select value={draft.dataPlaneId} onChange={(event) => { const plane = compatiblePlanes.find((item: any) => item.id === event.target.value); const capabilityNamespaces = [...new Set(targetCatalog.capabilities.filter((capability: any) => capability.type === "integration-runtime" && capability.dataPlaneId === plane?.id).map((capability: any) => String(capability.namespace || "").trim()).filter(Boolean))]; setDraft((current: any) => ({ ...current, dataPlaneId: event.target.value, namespace: capabilityNamespaces[0] || plane?.namespaces?.[0] || "default", capabilityId: "" })); }}>{compatiblePlanes.map((plane: any) => <option key={plane.id} value={plane.id}>{plane.name} · {plane.id}</option>)}</select> : <input value={draft.dataPlaneId} onChange={(event) => update("dataPlaneId", event.target.value)} placeholder={draft.target === "cloud" ? "kubernetes-prod" : "localhost"}/>}</label>
         <label>Runtime capability{compatibleCapabilities.length ? <select value={draft.capabilityId} onChange={(event) => update("capabilityId", event.target.value)}><option value="">Auto-select</option>{compatibleCapabilities.map((capability: any) => <option key={capability.id} value={capability.id}>{capability.name} · {capability.version}</option>)}</select> : <input value={draft.capabilityId} onChange={(event) => update("capabilityId", event.target.value)} placeholder="Auto-select in namespace"/>}</label>
-        <label>Namespace{(compatiblePlanes.find((plane: any) => plane.id === draft.dataPlaneId)?.namespaces || []).length ? <select value={draft.namespace} onChange={(event) => setDraft((current: any) => ({ ...current, namespace: event.target.value, capabilityId: "" }))}>{compatiblePlanes.find((plane: any) => plane.id === draft.dataPlaneId).namespaces.map((name: string) => <option key={name}>{name}</option>)}</select> : <input value={draft.namespace} onChange={(event) => update("namespace", event.target.value)} placeholder="default"/>}</label>
+        <label>Namespace{deployableNamespaces.length ? <select value={draft.namespace} onChange={(event) => setDraft((current: any) => ({ ...current, namespace: event.target.value, capabilityId: "" }))}>{deployableNamespaces.map((name: string) => <option key={name}>{name}</option>)}</select> : <input value={draft.namespace} onChange={(event) => update("namespace", event.target.value)} placeholder="default"/>}</label>
         <label>CA certificate path (optional)<input value={draft.caCertificatePath} onChange={(event) => update("caCertificatePath", event.target.value)} placeholder="Corporate CA PEM file"/></label>
         <label className="package-toggle"><input type="checkbox" checked={!!draft.verifyTls} onChange={(event) => update("verifyTls", event.target.checked)}/> Verify Control Plane TLS certificate</label>
         <label className="package-secrets">Deployment secrets (JSON)<textarea value={draft.secretsText} onChange={(event) => update("secretsText", event.target.value)} spellCheck={false} placeholder={'{"database.password":"value"}'}/><small>Sent securely to the Control Plane and never written to the project or archive.</small></label>
@@ -3731,7 +3838,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
       <p className="package-security"><ShieldCheck/> Direct Control Plane deployment securely sends configured environment secrets. Downloaded archives remain sanitized and contain only the required secret-key manifest.</p>
       {error && <p className="package-error"><AlertTriangle/>{error}</p>}
     </main>
-    <footer><button disabled={busy} onClick={onClose}>Cancel</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false)}>{busy ? "Working…" : "Export archive"}</button><button className="primary" disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(true)}>{busy ? "Working…" : "Deploy to Control Plane"}</button></footer>
+    <footer><button disabled={busy} onClick={onClose}>Cancel</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false)}>{busy ? "Working…" : "Export archive"}</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false, true)}>{busy ? "Working…" : "Export Python archive"}</button><button className="primary" disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(true)}>{busy ? "Working…" : "Deploy to Control Plane"}</button></footer>
   </div></div>;
 }
 function StudioRibbon(props: any) {
@@ -5546,7 +5653,7 @@ function EdgeConfig({ edge, properties, update, onDelete }: any) {
     setTesting(false);
   };
   return <div className="transition-editor">
-    <header><label>Transition type<select value={edge.type || "success"} onChange={(event) => update({ type: event.target.value })}><option value="success">Success</option><option value="success_condition">Success with condition</option><option value="success_no_match">Success with no matching condition</option><option value="error">Error</option></select></label><button className="delete-transition" title="Delete selected transition (Delete or Backspace)" onClick={onDelete}><Trash2/> Delete Transition</button></header>
+    <header><label>Transition type<select value={edge.type || "success"} onChange={(event) => update({ type: event.target.value })}><option value="success">Success</option><option value="success_condition">Success with condition</option><option value="success_no_match">Success with no matching condition</option><option value="error">Error</option></select></label><label className="transition-label">Canvas label <small>optional</small><input value={edge.label || ""} onChange={(event) => update({ label: event.target.value })} placeholder="Plain transition" maxLength={80}/></label><button className="delete-transition" title="Delete selected transition (Delete or Backspace)" onClick={onDelete}><Trash2/> Delete Transition</button></header>
     {edge.type === "success_condition" && <div className="condition-workbench"><section><h4>CONDITION EXPRESSION</h4><textarea aria-label="Transition condition expression" value={edge.condition || ""} onChange={(event) => update({ condition: event.target.value })} placeholder='contains(${last.status}, "READY") and ${last.amount} > 0'/><div className="condition-functions"><b>Functions</b>{functions.map((name) => <button key={name} onClick={() => update({ condition: `${edge.condition || ""}${edge.condition ? " " : ""}${name}` })}>{name}</button>)}</div><div className="condition-paths"><b>Paths</b>{paths.map((path) => <button key={path} onClick={() => update({ condition: `${edge.condition || ""}${edge.condition ? " " : ""}${path}` })}>{path}</button>)}</div></section><section><h4>EVALUATE PATH / FUNCTION</h4><textarea aria-label="Condition sample context" value={sample} onChange={(event) => setSample(event.target.value)} spellCheck={false}/><button className="evaluate-condition" onClick={evaluate} disabled={testing}><CirclePlay/> {testing ? "Evaluating…" : "Evaluate condition"}</button>{result !== null && <output className={result === true ? "true" : result === false ? "false" : "error"}>{typeof result === "boolean" ? `Result: ${result}` : String(result)}</output>}</section></div>}
     {edge.type !== "success_condition" && <p className="transition-help">{edge.type === "success_no_match" ? "Runs when no conditional Success transition from the activity matches." : edge.type === "error" ? "Runs when the source activity raises an unhandled error." : "Runs whenever the source activity completes successfully."}</p>}
   </div>;

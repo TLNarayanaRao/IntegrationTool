@@ -10,6 +10,7 @@ let mainWindow;
 let runtimeProcess;
 let runtimeStartupError;
 let runtimeLogPath;
+let windowCloseApproved = false;
 const utilityFiles = new Map();
 
 const availablePort = () => new Promise((resolve, reject) => {
@@ -143,6 +144,14 @@ async function createWindow() {
     },
   });
   mainWindow.removeMenu();
+  mainWindow.on('close', (event) => {
+    // BrowserWindow's native close button bypasses the renderer's project
+    // close modal. Ask the renderer to resolve unsaved work first; it invokes
+    // fabric:complete-window-close only after Save or Discard.
+    if (windowCloseApproved || app.isQuitting) return;
+    event.preventDefault();
+    mainWindow.webContents.send('fabric:request-window-close');
+  });
   await mainWindow.loadURL(process.env.FABRIC_DEV_URL || `http://127.0.0.1:${runtimePort}`);
 }
 
@@ -367,7 +376,16 @@ ipcMain.handle('fabric:save-utility-file-as', async (_event, options = {}) => {
 });
 
 ipcMain.handle('fabric:close-utility-file', (_event, id) => utilityFiles.delete(String(id || '')));
-ipcMain.handle('fabric:exit', () => { app.quit(); return true; });
+ipcMain.handle('fabric:exit', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+  return true;
+});
+ipcMain.handle('fabric:complete-window-close', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return true;
+  windowCloseApproved = true;
+  mainWindow.close();
+  return true;
+});
 
 ipcMain.handle('fabric:open-project-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, { title: 'Open Integration Fabric project folder', buttonLabel: 'Open folder', properties: ['openDirectory'] });
@@ -411,7 +429,12 @@ app.whenReady().then(createWindow).catch((error) => {
   app.quit();
 });
 app.on('window-all-closed', () => app.quit());
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  if (!windowCloseApproved && mainWindow && !mainWindow.isDestroyed()) {
+    event.preventDefault();
+    mainWindow.webContents.send('fabric:request-window-close');
+    return;
+  }
   app.isQuitting = true;
   if (runtimeProcess && !runtimeProcess.killed) runtimeProcess.kill();
 });

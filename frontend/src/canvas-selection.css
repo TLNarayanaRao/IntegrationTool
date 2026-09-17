@@ -1,0 +1,32 @@
+/* The activity body is a 66px icon inside a 104px canvas node. Anchor the
+   selected halo to that icon's true centre, never to the label height. */
+.node.selected::after{
+  content:""!important;
+  left:50%!important;
+  top:33px!important;
+  width:78px!important;
+  height:78px!important;
+  transform:translate(-50%,-50%)!important;
+  border-radius:50%!important;
+}
+
+/* A completed node also uses ::after for its small green status dot. When it
+   is selected, retain the transparent selection halo instead of allowing the
+   status-dot fill and right offset to turn the full halo into a green disc. */
+.node.selected.runtime-executed::after{
+  right:auto!important;
+  background:transparent!important;
+}
+
+/* Runtime completion must never share the selection halo pseudo-element.
+   Keep icon artwork in its own stacking layer and render completion as a
+   dedicated small element. */
+.node.runtime-executed:not(.selected)::after{content:none!important;}
+.node .node-icon{position:relative!important;z-index:2!important;isolation:isolate;}
+.node .node-icon img{display:block!important;opacity:1!important;visibility:visible!important;}
+.node strong{position:relative;z-index:2;}
+.runtime-complete-dot{position:absolute!important;z-index:4;right:5px!important;top:5px!important;width:7px!important;height:7px!important;border-radius:50%;background:#38e0a8;box-shadow:0 0 8px #38e0a8;pointer-events:none;}
+
+.transition-editor .transition-label{display:flex;flex-direction:column;gap:5px;min-width:210px;flex:1;}
+.transition-editor .transition-label small{color:#7895a8;font:9px "DM Mono";}
+.transition-editor .transition-label input{width:100%;color:#d8eaf5;background:#081522;border:1px solid #31536c;border-radius:6px;padding:8px;}

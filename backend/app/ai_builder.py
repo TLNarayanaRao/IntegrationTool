@@ -26,6 +26,10 @@ EVENT_TYPES = {'http_listener','rest','timer','file','ems','kafka','pubsub','sap
 def _slug(value: str, fallback='activity') -> str:
     return re.sub(r'[^a-z0-9]+', '-', value.lower()).strip('-') or fallback
 
+def _reference_name(value: str, fallback='Activity') -> str:
+    """Canonical activity key: readable display name with safe separators."""
+    return re.sub(r'-+', '-', re.sub(r'[^A-Za-z0-9_-]+', '-', value.strip())).strip('-') or fallback
+
 def local_proposal(requirement: str, scope: str, current_task: dict | None = None) -> dict[str, Any]:
     lower = requirement.lower(); selected = []
     special_kafka_sap_idoc = 'kafka' in lower and 'sap' in lower and ('artmas' in lower or 'idoc' in lower)
@@ -45,16 +49,18 @@ def local_proposal(requirement: str, scope: str, current_task: dict | None = Non
     if selected[-1][0] != 'end': selected.append(('end', 'end', 'End'))
     activities, transitions = [], []
     for index, (kind, operation, label) in enumerate(selected):
-        activity_id = f'{_slug(label)}-{index + 1}'
+        activity_id = _reference_name(label)
+        if any(activity['id'].lower() == activity_id.lower() for activity in activities):
+            activity_id = f'{activity_id}-{index + 1}'
         config: dict[str, Any] = {'operation': operation}
         if kind == 'kafka' and operation == 'receive': config.update({'topic': '${properties.connections.kafka.topic}', 'groupId': 'integration-fabric', 'maxMessages': 1, 'valueDeserializer': 'String'})
         if kind == 'log': config.update({'level': 'INFO', 'message': '${last}', 'includePayload': True})
         if kind == 'sap' and operation == 'idoc_parser': config.update({'idocType': 'ARTMAS05', 'idocOutputMode': 'JSON', 'parserEngine': 'Built-in', 'validateIdocType': True, 'inputMappings': {'IDoc': '${last}'}})
-        if kind == 'sap' and operation == 'post_idoc': config.update({'idocType': 'ARTMAS05', 'inputFormat': 'XML', 'idocInputMode': 'tRFC', 'inputMappings': {'payload': '${activities.parse-artmas05-idoc-3.output.SAPIDoc}'}})
+        if kind == 'sap' and operation == 'post_idoc': config.update({'idocType': 'ARTMAS05', 'inputFormat': 'XML', 'idocInputMode': 'tRFC', 'inputMappings': {'payload': '${Parse-ARTMAS05-IDoc.SAPIDoc}'}})
         if kind in ('http_listener','rest') and operation == 'receiver': config.update({'path':'/api/resource','methods':'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS,TRACE,CONNECT'})
         if kind == 'http_listener': config.update({'path':'/api/resource','method':'POST'})
         if kind == 'catch': config['catchAll'] = True
-        activities.append({'id':activity_id,'type':kind,'name':label,'position':{'x':80 + index * 190,'y':100 if kind != 'catch' else 260},'config':config})
+        activities.append({'id':activity_id,'type':kind,'name':activity_id,'position':{'x':80 + index * 190,'y':100 if kind != 'catch' else 260},'config':config})
     main_track = [item for item in activities if item['type'] != 'catch']
     for index in range(len(main_track)-1):
         transitions.append({'id':f'ai-edge-{index + 1}','source':main_track[index]['id'],'target':main_track[index+1]['id'],'type':'success','label':'success','condition':''})

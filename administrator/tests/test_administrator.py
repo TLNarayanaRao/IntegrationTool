@@ -33,6 +33,22 @@ def package_bytes(*, unsafe=False, target="on-prem"):
     return output.getvalue()
 
 
+def python_package_bytes():
+    manifest = {
+        "format": "integration-fabric-deployment", "formatVersion": 2,
+        "artifact": "python-orders", "version": "1.0.0", "applicationName": "Python Orders", "target": "on-prem",
+        "environments": ["dev"], "starterTaskIds": ["main"], "includedTaskIds": ["main"],
+        "pythonSource": {"entrypoint": "application/python/project.py", "formatVersion": 1},
+        "taskInventory": [{"id": "main", "name": "Orders Receiver", "kind": "starter", "starter": True, "activityCount": 1, "activities": [{"id": "start", "name": "Start", "type": "start"}]}],
+    }
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("manifest.json", json.dumps(manifest))
+        archive.writestr("application/python/project.py", "def build_project():\n    return None\n")
+        archive.writestr("environments/dev.json", json.dumps([]))
+    return output.getvalue()
+
+
 class AdministratorTests(unittest.TestCase):
     def test_administrator_version_accepts_build_or_runtime_override(self):
         with patch.dict("os.environ", {"FABRIC_ADMIN_VERSION": "3.4.5"}):
@@ -103,6 +119,12 @@ class AdministratorTests(unittest.TestCase):
         response = self.upload(broken.getvalue())
         self.assertEqual(response.status_code, 400)
 
+    def test_python_source_package_does_not_require_json_application_descriptors(self):
+        response = self.client.post("/api/packages", files={"file": ("python-orders.pyifpkg", python_package_bytes(), "application/zip")})
+        self.assertEqual(response.status_code, 200, response.text)
+        package = self.client.get("/api/packages/python-orders/1.0.0").json()
+        self.assertEqual(package["tasks"][0]["name"], "Orders Receiver")
+
     def test_cloud_package_is_inventory_only(self):
         self.assertEqual(self.upload(package_bytes(target="cloud")).status_code, 200)
         response = self.client.post("/api/deployments", json={"packageId": "orders:1.2.3", "environment": "dev", "machine": "localhost", "instances": 1, "secrets": {"DB_PASSWORD": "x"}})
@@ -144,6 +166,11 @@ class AdministratorTests(unittest.TestCase):
         plane_id = registered.json()["id"]
         heartbeat = self.client.post(f"/api/data-planes/{plane_id}/heartbeat", json={"cpuPercent":21, "memoryPercent":38, "agentVersion":"1.0.0"})
         self.assertEqual(heartbeat.json()["status"], "ONLINE")
+        # Agent telemetry must not be able to replace Control-Plane-managed
+        # namespace assignments with a stale local configuration.
+        stale = self.client.post(f"/api/data-planes/{plane_id}/heartbeat", json={"namespaces":["legacy-namespace"]})
+        self.assertEqual(stale.status_code, 200, stale.text)
+        self.assertEqual(self.client.get(f"/api/data-planes/{plane_id}").json()["namespaces"], ["integration"])
         main.write_json(main.DEPLOYMENTS_FILE, [{"id":"remote-health", "teamId":main.TECHNOLOGY_TEAM_ID, "packageId":"orders:1.2.3", "application":"Orders", "environment":"dev", "dataPlaneId":plane_id, "machine":plane_id, "namespace":"integration", "desiredInstances":1, "instances":[], "state":"RUNNING", "healthCheckEnabled":True}])
         reported = self.client.post(f"/api/data-planes/{plane_id}/heartbeat", json={"deploymentHealth":{"remote-health":{"status":"HEALTHY", "message":"readiness probe passed"}}})
         self.assertEqual(reported.status_code, 200, reported.text)

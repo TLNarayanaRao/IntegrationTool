@@ -23,6 +23,13 @@ import DataNodeIcon from "./DataNodeIcon";
 import { functionExpression, mapperFunctionCatalog, mapperFunctionCategories } from "./mapper-functions";
 const Braces = DataNodeIcon;
 
+// The normalized display name is the graph ID and mapping reference.
+export const activityReferenceName = (value: unknown) => String(value || "Activity")
+  .trim()
+  .replace(/[^A-Za-z0-9_-]+/g, "-")
+  .replace(/-+/g, "-")
+  .replace(/^-|-$/g, "") || "Activity";
+
 type Field = {
   key: string;
   label: string;
@@ -1404,12 +1411,12 @@ export default function ActivityEditor({
             Display name<b>*</b>
             <input
               value={node.name}
-              onChange={(e) => update({ name: e.target.value })}
+              onChange={(e) => update({ name: activityReferenceName(e.target.value) })}
               onBlur={() => {
-                const base = node.name.trim() || "Activity";
-                const used = new Set((task.activities || []).filter((activity: any) => activity.id !== node.id).map((activity: any) => String(activity.name || "").trim().toLowerCase()).filter(Boolean));
+                const base = activityReferenceName(node.name);
+                const used = new Set((task.activities || []).filter((activity: any) => activity.id !== node.id).map((activity: any) => activityReferenceName(activity.name).toLowerCase()));
                 let candidate = base, suffix = 2;
-                while (used.has(candidate.toLowerCase())) candidate = `${base} ${suffix++}`;
+                while (used.has(candidate.toLowerCase())) candidate = `${base}-${suffix++}`;
                 if (candidate !== node.name) update({ name: candidate });
               }}
             />
@@ -1892,10 +1899,10 @@ function activityGroupVariables(node: any, task: any, tasks: any[] = [], schemas
     const config = group.config || {}, looping = ["iterate", "for_each", "while", "repeat", "repeat_on_error"].includes(group.type);
     if (looping) add({ name: config.indexVariable || "index", label: `${group.name} · iteration index`, type: "integer", scope: group.name });
     if (["iterate", "for_each"].includes(group.type)) {
-      const name = config.currentElementName || config.itemVariable || "currentElement", source = String(config.source || config.collection || ""), match = source.match(/^\$\{activities\.([^.}]+)\.output(?:\.([^}]+))?\}$/);
+      const name = config.currentElementName || config.itemVariable || "currentElement", source = String(config.source || config.collection || ""), match = source.match(/^\$\{activities\.([^.}]+)\.output(?:\.([^}]+))?\}$/) || source.match(/^\$\{([^.}]+)(?:\.([^}]+))?\}$/);
       let fields: any[] = [];
       if (match) {
-        const sourceActivity = (task.activities || []).find((item: any) => item.id === match[1]), root = match[2] || "";
+        const sourceActivity = (task.activities || []).find((item: any) => item.id === match[1] || activityReferenceName(item.name) === match[1]), root = match[2] || "";
         if (sourceActivity) fields = resolvedActivityContract(sourceActivity, task, tasks, schemas, resources).output.filter((field: any) => !root || field.key.startsWith(`${root}.`)).map((field: any) => ({ ...field, key: root ? field.key.slice(root.length + 1) : field.key })).filter((field: any) => field.key);
       }
       add({ name, label: `${group.name} · current element`, type: "object", scope: group.name, fields });
@@ -1931,7 +1938,26 @@ export function DataSourcePane({ properties, sources = [], customFunctions = [],
   };
   const query = search.toLowerCase(), visibleSources = sources.map((source: ActivitySource) => ({ ...source, fields: source.fields.filter((field) => !query || field.label.toLowerCase().includes(query) || field.key.toLowerCase().includes(query) || source.activity.name.toLowerCase().includes(query)) })).filter((source: ActivitySource) => !query || source.activity.name.toLowerCase().includes(query) || source.fields.length);
   const propertyFields = properties.filter((property: any) => property.key.toLowerCase().includes(query)).map((property: any) => d(property.key, property.key.split(".").pop() || property.key, property.data_type));
-  return <aside className="source-pane"><div className="source-tabs"><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}>Data</button><button className={tab === "functions" ? "active" : ""} onClick={() => setTab("functions")}>Functions</button><button className={tab === "constants" ? "active" : ""} onClick={() => setTab("constants")}>Constants</button></div><input className="source-search" aria-label={`Search ${tab}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${tab}…`}/>{tab === "data" ? <div className="source-list"><h4>EXECUTION PATH OUTPUTS · {visibleSources.length}</h4>{!query && item("Initial task input", "${input}", "object", false)}{visibleSources.map((source: ActivitySource) => { const sourceRows = dataTreeRows(source.fields); return <details className="activity-source" key={source.activity.id} open={source.distance === 1 || !!source.scope || !!query}><summary><span className="tree-disclosure"/><Braces/><span><b>{source.activity.name}</b><small>{source.scope || (source.distance === 1 ? "Immediate predecessor" : `${source.distance} steps upstream`)} · {source.activity.type}</small></span><code>{source.fields.length}</code></summary>{item("Output", `\${activities.${source.activity.id}.output}`, "object", false)}{sourceRows.map((field) => { const path = `${source.activity.id}.${field.path}`; if (!query && !tree.visible(path)) return null; return item(field.label, `\${activities.${source.activity.id}.output.${field.path}}`, field.type, false, field.depth + 1, field.group, true, path); })}</details>; })}{!visibleSources.length && <p className="source-empty">No connected upstream activity matches this search.</p>}{runtimeVariables.length > 0 && <><h4>GROUP VARIABLES</h4>{runtimeVariables.filter((variable: any) => !query || `${variable.name} ${variable.label}`.toLowerCase().includes(query)).map((variable: any) => variable.fields?.length ? <details className="activity-source group-variable-source" key={variable.name} open><summary><span className="tree-disclosure"/><Braces/><span><b>{variable.label || variable.name}</b><small>{variable.scope || "Current group"} · ${variable.name}</small></span><code>{variable.fields.length}</code></summary>{item("Current element", `\${vars.${variable.name}}`, variable.type || "object", false)}{dataTreeRows(variable.fields).map((field) => item(field.label, `\${vars.${variable.name}.${field.path}}`, field.type, false, field.depth + 1, field.group, true, `${variable.name}.${field.path}`))}</details> : item(variable.label || variable.name, `\${vars.${variable.name}}`, variable.type || "any", true))}</>}<h4>PROCESS CONTEXT</h4>{item("Task ID", "${context.taskId}", "string", false)}{item("Environment", "${context.environment}", "string", false)}{item("Current activity ID", "${context.activityId}", "string", false)}<h4>GLOBAL VARIABLES</h4>{dataTreeRows(propertyFields).map((property) => { const path = `properties.${property.path}`; if (!query && !tree.visible(path)) return null; return item(property.label, `\${properties.${property.path}}`, property.type, false, property.depth, property.group, property.explicit, path); })}</div> : tab === "functions" ? <div className="source-list function-list"><div className="custom-function-heading"><h4>PROJECT FUNCTIONS · {customFunctions.length}</h4><button onClick={createFunction}><Plus/> New</button></div>{customFunctions.filter((fn: any) => fn.name.toLowerCase().includes(query)).map((fn: any) => item(fn.name, `custom:${fn.name}(${fn.parameters.map((name: string) => `$${name}`).join(", ")})`, "custom", false))}<h4>BUILT-IN FUNCTIONS · {functionItems.length}</h4>{mapperFunctionCategories.map((category) => { const definitions = functionItems.filter((item) => item.category === category); return definitions.length ? <details className="function-category" key={category} open={!!query || category === "String"}><summary><span className="tree-disclosure"/><b>{category}</b><code>{definitions.length}</code></summary>{definitions.map(functionItem)}</details> : null; })}</div> : <div className="source-list constants-list"><h4>TYPED CONSTANTS</h4>{constantItem("Empty string", "", "string")}{constantItem("True", true, "boolean")}{constantItem("False", false, "boolean")}{constantItem("Zero", 0, "integer")}{constantItem("Empty object", {}, "object")}{constantItem("Empty array", [], "array")}{constantItem("Null", null, "null")}</div>}</aside>;
+  const renderData = () => <div className="source-list">
+    <h4>EXECUTION PATH OUTPUTS · {visibleSources.length}</h4>
+    {!query && item("Initial task input", "${input}", "object", false)}
+    {visibleSources.map((source: ActivitySource) => {
+      const sourceRows = dataTreeRows(source.fields), reference = activityReferenceName(source.activity.name);
+      return <details className="activity-source" key={source.activity.id} open={source.distance === 1 || !!source.scope || !!query}>
+        <summary><span className="tree-disclosure"/><Braces/><span><b>{source.activity.name}</b><small>{source.scope || (source.distance === 1 ? "Immediate predecessor" : `${source.distance} steps upstream`)} · {source.activity.type}</small></span><code>{source.fields.length}</code></summary>
+        {item("Output", `\${${reference}}`, "object", false)}
+        {sourceRows.map((field) => {
+          const path = `${source.activity.id}.${field.path}`;
+          return !query && !tree.visible(path) ? null : item(field.label, `\${${reference}.${field.path}}`, field.type, false, field.depth + 1, field.group, true, path);
+        })}
+      </details>;
+    })}
+    {!visibleSources.length && <p className="source-empty">No connected upstream activity matches this search.</p>}
+    {runtimeVariables.length > 0 && <><h4>GROUP VARIABLES</h4>{runtimeVariables.filter((variable: any) => !query || `${variable.name} ${variable.label}`.toLowerCase().includes(query)).map((variable: any) => variable.fields?.length ? <details className="activity-source group-variable-source" key={variable.name} open><summary><span className="tree-disclosure"/><Braces/><span><b>{variable.label || variable.name}</b><small>{variable.scope || "Current group"} · ${variable.name}</small></span><code>{variable.fields.length}</code></summary>{item("Current element", `\${vars.${variable.name}}`, variable.type || "object", false)}{dataTreeRows(variable.fields).map((field) => item(field.label, `\${vars.${variable.name}.${field.path}}`, field.type, false, field.depth + 1, field.group, true, `${variable.name}.${field.path}`))}</details> : item(variable.label || variable.name, `\${vars.${variable.name}}`, variable.type || "any", true))}</>}
+    <h4>PROCESS CONTEXT</h4>{item("Task ID", "${context.taskId}", "string", false)}{item("Environment", "${context.environment}", "string", false)}{item("Current activity ID", "${context.activityId}", "string", false)}
+    <h4>GLOBAL VARIABLES</h4>{dataTreeRows(propertyFields).map((property) => { const path = `properties.${property.path}`; return !query && !tree.visible(path) ? null : item(property.label, `\${properties.${property.path}}`, property.type, false, property.depth, property.group, property.explicit, path); })}
+  </div>;
+  return <aside className="source-pane"><div className="source-tabs"><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}>Data</button><button className={tab === "functions" ? "active" : ""} onClick={() => setTab("functions")}>Functions</button><button className={tab === "constants" ? "active" : ""} onClick={() => setTab("constants")}>Constants</button></div><input className="source-search" aria-label={`Search ${tab}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${tab}…`}/>{tab === "data" ? renderData() : tab === "functions" ? <div className="source-list function-list"><div className="custom-function-heading"><h4>PROJECT FUNCTIONS · {customFunctions.length}</h4><button onClick={createFunction}><Plus/> New</button></div>{customFunctions.filter((fn: any) => fn.name.toLowerCase().includes(query)).map((fn: any) => item(fn.name, `custom:${fn.name}(${fn.parameters.map((name: string) => `$${name}`).join(", ")})`, "custom", false))}<h4>BUILT-IN FUNCTIONS · {functionItems.length}</h4>{mapperFunctionCategories.map((category) => { const definitions = functionItems.filter((item) => item.category === category); return definitions.length ? <details className="function-category" key={category} open={!!query || category === "String"}><summary><span className="tree-disclosure"/><b>{category}</b><code>{definitions.length}</code></summary>{definitions.map(functionItem)}</details> : null; })}</div> : <div className="source-list constants-list"><h4>TYPED CONSTANTS</h4>{constantItem("Empty string", "", "string")}{constantItem("True", true, "boolean")}{constantItem("False", false, "boolean")}{constantItem("Zero", 0, "integer")}{constantItem("Empty object", {}, "object")}{constantItem("Empty array", [], "array")}{constantItem("Null", null, "null")}</div>}</aside>;
 }
 function describeMapping(expression: any, sources: ActivitySource[]): string {
   if (expression === undefined || expression === null || expression === "") return "Drop a source field or enter a constant";
@@ -1939,13 +1965,14 @@ function describeMapping(expression: any, sources: ActivitySource[]): string {
   if (typeof expression !== "string") return `Constant › ${JSON.stringify(expression)}`;
   if (expression.startsWith("__fabric_constant__:")) return `Constant › ${expression.slice(20)}`;
   if (expression === "${input}") return "Initial task input";
-  const activityPath = expression.match(/^\$\{activities\.([^.}]+)\.output(?:\.([^}]+))?\}$/);
+  const activityPath = expression.match(/^\$\{(?:activities\.([^.}]+)\.output|([^.}]+))(?:\.([^}]+))?\}$/);
   if (activityPath) {
-    const source = sources.find((item) => item.activity.id === activityPath[1]);
+    const source = sources.find((item) => item.activity.id === activityPath[1] || activityReferenceName(item.activity.name) === activityPath[2]);
     if (source) {
-      if (!activityPath[2]) return `${source.activity.name} › Output`;
-      const field = source.fields.find((item) => item.key === activityPath[2]);
-      const parts = activityPath[2].split(".");
+      const fieldPath = activityPath[3];
+      if (!fieldPath) return `${source.activity.name} › Output`;
+      const field = source.fields.find((item) => item.key === fieldPath);
+      const parts = fieldPath.split(".");
       return `${source.activity.name} › ${field?.label || parts[parts.length - 1]}`;
     }
   }
@@ -2135,7 +2162,7 @@ function TransformInputEditor({ config, properties, sources, runtimeVariables = 
         fields.filter((candidate) => candidate.path.startsWith(`${target}.`)).forEach((candidate) => {
           const relative = candidate.path.slice(target.length + 1), sourcePath = `${sourceRoot}.${relative}`;
           if (!existingTargets.has(candidate.path) && sourceActivity.fields.some((sourceField: DataField) => sourceField.key === sourcePath)) {
-            next.push({ target: candidate.path, source: `\${activities.${sourceActivity.activity.id}.output.${sourcePath}}`, targetType: candidate.type, functions: [], enabled: true, autoGenerated: true });
+            next.push({ target: candidate.path, source: `\${${activityReferenceName(sourceActivity.activity.name)}.${sourcePath}}`, targetType: candidate.type, functions: [], enabled: true, autoGenerated: true });
           }
         });
       }

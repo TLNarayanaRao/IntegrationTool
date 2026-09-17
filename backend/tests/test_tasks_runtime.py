@@ -1,4 +1,5 @@
-import io, json, tarfile, unittest, zipfile
+import io, json, tarfile, tempfile, unittest, zipfile
+from pathlib import Path
 import httpx
 from fastapi.testclient import TestClient
 from app.main import app
@@ -187,6 +188,38 @@ class TaskRuntimeTests(unittest.TestCase):
             manifest = json.loads(archive.read('manifest.json'))
             self.assertEqual(manifest['starterTaskIds'], ['main'])
             self.assertEqual(manifest['includedTaskIds'], ['main', 'child'])
+        self.client.delete('/api/projects/task-runtime-test')
+
+    def test_python_archive_contains_source_and_runtime_loads_its_descriptor(self):
+        from run_deployment import load_project
+
+        self.assertEqual(self.client.post('/api/projects', json=self.project()).status_code, 200)
+        response = self.client.get('/api/projects/task-runtime-test/package?target=on-prem&environments=dev&starters=main&archive=python')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn('filename="task-runtime-test-1.0.0-on-prem.pyifpkg"', response.headers['content-disposition'])
+        with tempfile.TemporaryDirectory() as folder, zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            names = archive.namelist()
+            self.assertIn('application/python/project.py', names)
+            self.assertIn('application/python/tasks/task_0_main.py', names)
+            self.assertIn('application/python/tasks/task_1_child.py', names)
+            self.assertNotIn('application/project.json', names)
+            self.assertNotIn('application/tasks/main.json', names)
+            self.assertNotIn('application/resources/kafka/k1.json', names)
+            self.assertIn(b'def build_project():', archive.read('application/python/project.py'))
+            self.assertIn(b'task.kafka.publish(', archive.read('application/python/tasks/task_0_main.py'))
+            self.assertNotIn(b'PROJECT = {', archive.read('application/python/project.py'))
+            manifest = json.loads(archive.read('manifest.json'))
+            self.assertEqual(manifest['runtime'], 'integration-fabric-python-source')
+            self.assertEqual(manifest['pythonSource']['entrypoint'], 'application/python/project.py')
+            archive.extractall(folder)
+            loaded = load_project(Path(folder) / 'application')
+            self.assertEqual(loaded.id, 'task-runtime-test')
+            self.assertEqual([task.id for task in loaded.tasks], ['main', 'child'])
+        normal = self.client.get('/api/projects/task-runtime-test/package?target=on-prem&environments=dev&starters=main&archive=ifpkg')
+        self.assertEqual(normal.status_code, 200, normal.text)
+        with zipfile.ZipFile(io.BytesIO(normal.content)) as archive:
+            self.assertIn('application/project.json', archive.namelist())
+            self.assertNotIn('application/python/project.py', archive.namelist())
         self.client.delete('/api/projects/task-runtime-test')
 
     def test_direct_control_plane_deployment_uploads_generated_archive_then_creates_deployment(self):

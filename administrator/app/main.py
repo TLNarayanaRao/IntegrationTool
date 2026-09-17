@@ -67,7 +67,7 @@ STATE_LOCK = threading.RLock()
 PROCESS_HANDLES: dict[str, subprocess.Popen] = {}
 
 app = FastAPI(title="Integration Fabric Control Plane", version=ADMIN_VERSION)
-REQUEST_METRICS = {"startedAt": log_timestamp(), "total": 0, "errors": 0, "routes": {}}
+REQUEST_METRICS = {"startedAt": log_timestamp(), "total": 0, "errors": 0, "routes": {}, "recentErrors": []}
 
 
 def now() -> str:
@@ -230,7 +230,10 @@ async def authenticate(request: Request, call_next):
     if request.url.path.startswith("/api/"):
         with STATE_LOCK:
             REQUEST_METRICS["total"] += 1
-            if response.status_code >= 400: REQUEST_METRICS["errors"] += 1
+            if response.status_code >= 400:
+                REQUEST_METRICS["errors"] += 1
+                REQUEST_METRICS["recentErrors"].append({"time": now(), "method": request.method, "path": request.url.path, "status": response.status_code})
+                REQUEST_METRICS["recentErrors"] = REQUEST_METRICS["recentErrors"][-200:]
             key = f"{request.method} {request.url.path}"
             REQUEST_METRICS["routes"][key] = REQUEST_METRICS["routes"].get(key, 0) + 1
     return response
@@ -282,14 +285,27 @@ def validate_manifest(manifest: Any, names: set[str]) -> dict:
             raise ValueError(f"manifest.json is missing {field}")
     if manifest["target"] not in {"on-prem", "cloud"}:
         raise ValueError("target must be on-prem or cloud")
-    if "application/project.json" not in names:
+    python_source = manifest.get("pythonSource")
+    if python_source is not None:
+        if not isinstance(python_source, dict) or python_source.get("entrypoint") != "application/python/project.py":
+            raise ValueError("Python source package has an invalid entrypoint")
+        if "application/python/project.py" not in names:
+            raise ValueError("Python source package is missing application/python/project.py")
+        task_inventory = manifest.get("taskInventory")
+        if not isinstance(task_inventory, list):
+            raise ValueError("Python source package is missing taskInventory")
+        known_task_ids = {str(task.get("id") or "") for task in task_inventory if isinstance(task, dict)}
+        missing = [task_id for task_id in manifest.get("includedTaskIds") or [] if task_id not in known_task_ids]
+        if missing: raise ValueError(f"Python source task inventory is missing: {', '.join(missing)}")
+    elif "application/project.json" not in names:
         raise ValueError("application/project.json is missing")
     environments = package_environments(manifest)
     if not environments:
         raise ValueError("The package does not declare an environment profile")
-    missing = [task_id for task_id in manifest.get("includedTaskIds") or [] if f"application/tasks/{task_id}.json" not in names]
-    if missing:
-        raise ValueError(f"Task artifacts are missing: {', '.join(missing)}")
+    if python_source is None:
+        missing = [task_id for task_id in manifest.get("includedTaskIds") or [] if f"application/tasks/{task_id}.json" not in names]
+        if missing:
+            raise ValueError(f"Task artifacts are missing: {', '.join(missing)}")
     manifest["environments"] = environments
     manifest["secretKeysByEnvironment"] = {environment: required_secrets(manifest, environment) for environment in environments}
     return manifest
@@ -364,6 +380,8 @@ def stored_package_path(item: dict) -> Path:
     return target
 
 def package_task_inventory(item: dict) -> list[dict]:
+    generated = item.get("taskInventory")
+    if isinstance(generated, list): return generated
     root, tasks = stored_package_path(item) / "application" / "tasks", []
     if not root.exists(): return tasks
     starter_ids = set(item.get("starterTaskIds") or [])
@@ -771,7 +789,13 @@ def data_plane_heartbeat(plane_id: str, request: Request, payload: dict[str, Any
     require_technology(request)
     item = record_machine_heartbeat(plane_id)
     payload = payload or {}
-    for key in ("runtimeVersion", "agentVersion", "cpuPercent", "memoryPercent", "availableCapacity", "namespaces"):
+    # Agents may report host capacity and execution counters in addition to
+    # their liveness signal. Keep the complete telemetry document so the
+    # operator console can show what the runtime is actually consuming.
+    # A heartbeat reports health and capacity only.  The data-plane namespace
+    # list is deployment topology managed through the Control Plane/UI.  Do
+    # not let an older agent INI overwrite it on every heartbeat.
+    for key in ("runtimeVersion", "agentVersion", "cpuPercent", "memoryPercent", "memoryUsedBytes", "memoryAvailableBytes", "memoryTotalBytes", "diskPercent", "diskFreeBytes", "loadAverage", "processCount", "availableCapacity", "telemetry"):
         if key in payload: item[key] = payload[key]
     machines = read_json(MACHINES_FILE, [])
     stored = next(value for value in machines if value.get("id") == plane_id); stored.update(item); stored["runtimeConfigured"] = True; write_json(MACHINES_FILE, machines)
@@ -1339,9 +1363,10 @@ def update_stored_profile(package: dict, environment: str, values: list[dict]) -
     if not profile.exists(): raise HTTPException(404, "Environment profile was not found in the package")
     write_json(profile, values)
     project_file = root / "application" / "project.json"
-    project = read_json(project_file, {})
-    project.setdefault("properties", {})[environment] = values
-    write_json(project_file, project)
+    if project_file.exists():
+        project = read_json(project_file, {})
+        project.setdefault("properties", {})[environment] = values
+        write_json(project_file, project)
     manifest_file = root / "manifest.json"; manifest = read_json(manifest_file, {})
     manifest.setdefault("secretKeysByEnvironment", {})[environment] = sorted(value["key"] for value in values if value.get("data_type") == "password")
     write_json(manifest_file, manifest)
@@ -1507,7 +1532,7 @@ def observability(request: Request, dataPlaneId: str | None = None, teamId: str 
     planes = [item for item in data_plane_inventory() if (caller.get("teamId") == TECHNOLOGY_TEAM_ID or item.get("id") in visible_plane_ids) and (not dataPlaneId or item.get("id") == dataPlaneId)]
     running = [instance for item in deployments for instance in item.get("instances", []) if instance.get("state") == "RUNNING"]
     total = int(REQUEST_METRICS["total"]) if caller.get("teamId") == TECHNOLOGY_TEAM_ID else 0; errors = int(REQUEST_METRICS["errors"]) if caller.get("teamId") == TECHNOLOGY_TEAM_ID else 0
-    return {"time":now(), "filter":{"dataPlaneId":dataPlaneId or "*", "teamId":teamId or caller.get("teamId")}, "summary":{"applications":len({item.get('application') for item in deployments}), "deployments":len(deployments), "runningInstances":len(running), "requestCount":total, "errorCount":errors, "errorRate":round(errors / total * 100, 2) if total else 0}, "dataPlanes":[{"id":item.get("id"), "name":item.get("name"), "status":item.get("status"), "tunnelStatus":item.get("tunnelStatus"), "cpuPercent":item.get("cpuPercent"), "memoryPercent":item.get("memoryPercent"), "lastHeartbeat":item.get("lastHeartbeat")} for item in planes], "applications":[{"id":item.get("id"), "name":item.get("application"), "state":item.get("state"), "dataPlaneId":item.get("dataPlaneId") or item.get("machine"), "namespace":item.get("namespace", "default"), "instances":len(item.get("instances", [])), "lastError":item.get("lastError")} for item in deployments], "requests":{"total":total, "errors":errors, "routes":REQUEST_METRICS["routes"] if caller.get("teamId") == TECHNOLOGY_TEAM_ID else {}}, "resources":resource_inventory(dataPlaneId) if caller.get("teamId") == TECHNOLOGY_TEAM_ID else []}
+    return {"time":now(), "filter":{"dataPlaneId":dataPlaneId or "*", "teamId":teamId or caller.get("teamId")}, "summary":{"applications":len({item.get('application') for item in deployments}), "deployments":len(deployments), "runningInstances":len(running), "requestCount":total, "errorCount":errors, "errorRate":round(errors / total * 100, 2) if total else 0}, "dataPlanes":[{"id":item.get("id"), "name":item.get("name"), "status":item.get("status"), "tunnelStatus":item.get("tunnelStatus"), "cpuPercent":item.get("cpuPercent"), "memoryPercent":item.get("memoryPercent"), "memoryUsedBytes":item.get("memoryUsedBytes"), "memoryAvailableBytes":item.get("memoryAvailableBytes"), "memoryTotalBytes":item.get("memoryTotalBytes"), "diskPercent":item.get("diskPercent"), "diskFreeBytes":item.get("diskFreeBytes"), "loadAverage":item.get("loadAverage"), "processCount":item.get("processCount"), "telemetry":item.get("telemetry", {}), "lastHeartbeat":item.get("lastHeartbeat")} for item in planes], "applications":[{"id":item.get("id"), "name":item.get("application"), "state":item.get("state"), "dataPlaneId":item.get("dataPlaneId") or item.get("machine"), "namespace":item.get("namespace", "default"), "instances":len(item.get("instances", [])), "lastError":item.get("lastError")} for item in deployments], "requests":{"total":total, "errors":errors, "routes":REQUEST_METRICS["routes"] if caller.get("teamId") == TECHNOLOGY_TEAM_ID else {}, "recentErrors":REQUEST_METRICS["recentErrors"] if caller.get("teamId") == TECHNOLOGY_TEAM_ID else []}, "resources":resource_inventory(dataPlaneId) if caller.get("teamId") == TECHNOLOGY_TEAM_ID else []}
 
 
 @app.get("/api/operator/runtime-tree")
@@ -1535,7 +1560,17 @@ def operator_metrics(request: Request):
     deployments = visible_assets(request, deployment_inventory()); instances = operator_process_instances(deployments)
     completed = [item for item in instances if item.get("status") in {"COMPLETED", "SUCCESS"}]
     failed = [item for item in instances if item.get("status") in {"FAILED", "FAULTED"}]
-    return {"time":now(), "applications":len({item.get("application") for item in deployments}), "instances":len(instances), "running":len([item for item in instances if item.get("status") == "RUNNING"]), "completed":len(completed), "failed":len(failed), "successRate":round(len(completed) / (len(completed) + len(failed)) * 100, 2) if completed or failed else 0, "requests":REQUEST_METRICS["total"] if identity(request).get("teamId") == TECHNOLOGY_TEAM_ID else 0}
+    planes = data_plane_inventory()
+    task_counts: dict[str, dict[str, int]] = {}; activity_counts: dict[str, dict[str, int]] = {}
+    for plane in planes:
+        execution = (plane.get("telemetry") or {}).get("execution") or {}
+        for kind, target in (("tasks", task_counts), ("activities", activity_counts)):
+            for item in execution.get(kind, []) if isinstance(execution.get(kind), list) else []:
+                name = str(item.get("name") or "unknown")
+                bucket = target.setdefault(name, {"total": 0, "completed": 0, "failed": 0})
+                for key in bucket: bucket[key] += int(item.get(key) or 0)
+    compact = lambda values: [{"name":name, **count} for name, count in sorted(values.items(), key=lambda value: (-value[1]["total"], value[0]))[:12]]
+    return {"time":now(), "applications":len({item.get("application") for item in deployments}), "instances":len(instances), "running":len([item for item in instances if item.get("status") == "RUNNING"]), "completed":len(completed), "failed":len(failed), "successRate":round(len(completed) / (len(completed) + len(failed)) * 100, 2) if completed or failed else 0, "requests":REQUEST_METRICS["total"] if identity(request).get("teamId") == TECHNOLOGY_TEAM_ID else 0, "dataPlanes":[{"id":item.get("id"), "name":item.get("name"), "status":item.get("status"), "system":(item.get("telemetry") or {}).get("system", {})} for item in planes], "tasks":compact(task_counts), "activities":compact(activity_counts)}
 
 
 @app.get("/api/operator/commands")
