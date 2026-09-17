@@ -8,18 +8,18 @@ Each environment properties file contains the user-configurable property:
 
 Set it independently in `local.properties`, `dev.properties`, `qa.properties`, `pre.properties`, and `production.properties`. Run, Debug, listeners, and Stop use the selected runtime environment and write beneath that environment's configured directory. For example, setting the development value to `D:\IntegrationLogs\dev` produces:
 
-`D:\IntegrationLogs\dev\<project-id>\application.log`
+`D:\IntegrationLogs\dev\<project-name>\<project-name>.log`
 
 Relative values are resolved beneath the Fabric data directory. Environment variables and `~` are expanded. When the property is blank, each project has an isolated structured log at the default location:
 
-`<Fabric data directory>/logs/<project-id>/application.log`
+`<Fabric data directory>/logs/<project-name>/<project-name>.log`
 
 Log and audit timestamps use Arizona time by default (`America/Phoenix`, shown
 with the `-07:00` offset). Set `FABRIC_LOG_TIMEZONE` to another IANA timezone
 when a deployment requires a different display timezone. Scheduler and token
 expiry calculations continue to use UTC internally.
 
-The active file automatically rolls at 10 MB. Four numbered archives are retained by default (`application.log.1` through `application.log.4`), so an individual file never grows without bound. Each line is UTF-8 JSON and includes the project, timestamp, level, message, and available run, correlation, task, activity, duration, and exception context.
+The active file automatically rolls at 10 MB. Four numbered archives are retained by default (`<project-name>.log.1` through `<project-name>.log.4`), so an individual file never grows without bound. Each line is UTF-8 JSON and includes the project, timestamp, level, message, and available run, correlation, task, activity, duration, and exception context. Failed package builds also write a `packaging` record with a traceback to this log, and the API returns the log path with the error. The exact resolved path is shown in Studio's **Execution / Debug** panel after clicking the disk button.
 
 Packaged desktop installations place the Fabric data directory under the Studio user-data location configured through `FABRIC_DATA_DIR`. Administrators may override logging without changing code:
 

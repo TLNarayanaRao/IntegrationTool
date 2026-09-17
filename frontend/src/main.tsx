@@ -2207,12 +2207,12 @@ function App() {
       const regularFormat = ["ifpkg", "zip", "tar.gz", "ear"].includes(requestedFormat) ? requestedFormat : ( ["ifpkg", "zip", "tar.gz", "ear"].includes(project.packaging?.format) ? project.packaging.format : "ifpkg" );
       const next = { ...project, packaging: { ...project.packaging, ...persistedSettings, format: regularFormat } };
       const saved = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
-      if (!saved.ok) throw new Error("Unable to save packaging configuration.");
+      if (!saved.ok) { const detail = await saved.json().catch(() => ({})); throw new Error(detail.detail || `Unable to save packaging configuration (HTTP ${saved.status}).`); }
       setProject(normalizeProject(await saved.json()));
       const selectedEnvironments = settings.environments?.length ? settings.environments : [settings.environment || project.active_environment];
       const query = new URLSearchParams({ target: settings.target, environments: selectedEnvironments.join(","), starters: (settings.starterTaskIds || []).join(","), archive: settings.format, artifacts: settings.artifacts.join(",") });
       const response = await fetch(`/api/projects/${project.id}/package?${query}`);
-      if (!response.ok) { const detail = await response.json().catch(() => ({})); throw new Error(detail.detail || "Package generation failed."); }
+      if (!response.ok) { const detail = await response.json().catch(() => ({})); throw new Error(detail.detail || `Package generation failed (HTTP ${response.status}). Check the project log for details.`); }
       const blob = await response.blob(), disposition = response.headers.get("content-disposition") || "";
       const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `${settings.artifact_name}-${settings.version}.${settings.format === "ifpkg" ? "ifpkg" : settings.format === "python" ? "pyifpkg" : settings.format}`;
       if (window.fabricDesktop) {
@@ -2222,7 +2222,7 @@ function App() {
       } else browserDownload(blob, filename);
       setPackageOpen(false);
     } catch (error: any) {
-      setLogs([{ level: "ERROR", message: error?.message || "Package generation failed" }]);
+      setLogs([{ level: "ERROR", kind: "packaging", message: error?.message || "Package generation failed" }]);
       throw error;
     } finally { setWorkStatus(""); }
   };
@@ -2380,7 +2380,7 @@ function App() {
   // General Studio notices (open, save, copy, etc.) belong in the status area,
   // not in the execution console. The console is reserved for runtime work.
   const executionLogEntries: any[] = debugState?.logs || runtimeState?.logs || logs.filter((entry) =>
-    ["activity", "listener", "lifecycle", "debug", "call", "runtime"].includes(String(entry.kind || "").toLowerCase()) || !!entry.correlationId || !!entry.runtimeActivityId,
+    ["activity", "listener", "lifecycle", "debug", "call", "runtime", "packaging"].includes(String(entry.kind || "").toLowerCase()) || !!entry.correlationId || !!entry.runtimeActivityId,
   );
   const executedTransitionIds = new Set(executionLogEntries.filter((entry: any) => entry?.transitionId).map((entry: any) => String(entry.transitionId)));
   const currentActivityIds = new Set<string>([debugState?.currentActivityId, ...(debugState?.currentActivityIds || [])].filter(Boolean));

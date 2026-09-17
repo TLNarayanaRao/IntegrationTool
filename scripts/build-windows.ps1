@@ -6,7 +6,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Java bridge build failed.' }
 Push-Location "$root/backend"
 if (!(Test-Path .venv)) { py -3.12 -m venv .venv }
 & .\.venv\Scripts\pip install -r requirements.txt pyinstaller
-& .\.venv\Scripts\pyinstaller --noconfirm --name IntegrationFabric --add-data "..\frontend\dist;frontend\dist" --paths . run_desktop.py
+& .\.venv\Scripts\pyinstaller --noconfirm --name IntegrationFabric --add-data "..\frontend\dist;frontend\dist" --add-data "app;app" --paths . run_desktop.py
 Pop-Location
 if (!(Test-Path "$root/backend/dist/IntegrationFabric/IntegrationFabric.exe")) { throw 'PyInstaller runtime output was not created.' }
 Copy-Item -Recurse -Force "$root/java-bridge/build" "$root/backend/dist/IntegrationFabric/java-bridge"

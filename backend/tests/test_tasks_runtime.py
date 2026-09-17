@@ -3,10 +3,30 @@ from pathlib import Path
 import httpx
 from fastapi.testclient import TestClient
 from app.main import app
+from app.project_logging import close_project_log_handlers
 from unittest.mock import patch
 
 class TaskRuntimeTests(unittest.TestCase):
     def setUp(self): self.client = TestClient(app)
+
+    def test_package_failure_reports_cause_and_persists_diagnostics(self):
+        self.assertEqual(self.client.post('/api/projects', json=self.project()).status_code, 200)
+        try:
+            with tempfile.TemporaryDirectory() as folder, \
+                 patch('app.main._project_log_directory', return_value=folder), \
+                 patch('app.main.build_deployment_archive', side_effect=FileNotFoundError('Python engine source is missing')):
+                response = self.client.get('/api/projects/task-runtime-test/package?archive=python&environment=local')
+                self.assertEqual(response.status_code, 500)
+                self.assertIn('Python engine source is missing', response.json()['detail'])
+                self.assertIn('See project log:', response.json()['detail'])
+                log_path = Path(folder) / 'Task-Runtime-Test' / 'Task-Runtime-Test.log'
+                self.assertTrue(log_path.exists())
+                entry = json.loads(log_path.read_text(encoding='utf-8').splitlines()[-1])
+                self.assertEqual(entry['kind'], 'packaging')
+                self.assertIn('FileNotFoundError', entry['traceback'])
+                close_project_log_handlers('task-runtime-test')
+        finally:
+            self.client.delete('/api/projects/task-runtime-test')
 
     def project(self):
         return {

@@ -76,6 +76,14 @@ def append_project_logs(project_id: str, project_name: str, entries: list[dict],
             handler.emit(record)
 
 
+def close_project_log_handlers(project_id: str | None = None) -> None:
+    """Release log files, especially before deleting a project on Windows."""
+    with _lock:
+        for key in list(_handlers):
+            if project_id is None or key[0] == project_id:
+                _handlers.pop(key).close()
+
+
 def read_project_logs(project_id: str, project_name: str = "", limit: int = 1000, configured_directory: str = "") -> list[dict]:
     """Read the newest records across the active log and its rolled archives."""
     path = project_log_path(project_id, project_name, configured_directory)

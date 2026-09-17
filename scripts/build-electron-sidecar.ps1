@@ -89,9 +89,11 @@ try {
     # Explicitly collect the local `app` package. Some clean Python 3.11
     # environments resolve generic namespace packages differently during
     # analysis, which can otherwise produce an EXE without app.main.
-    & $buildPython -m PyInstaller --noconfirm --clean --name IntegrationFabricRuntime --add-data "$root\frontend\dist;frontend\dist" --paths "$root\backend" --hidden-import app.main --hidden-import ibm_db --hidden-import ibm_db_dbi --collect-submodules app --collect-submodules databricks run_sidecar.py
+    # Raw Python export reads the engine and support .py files at runtime.
+    # PyInstaller's module archive is importable but not readable as source.
+    & $buildPython -m PyInstaller --noconfirm --clean --name IntegrationFabricRuntime --add-data "$root\frontend\dist;frontend\dist" --add-data "$root\backend\app;app" --paths "$root\backend" --hidden-import app.main --hidden-import ibm_db --hidden-import ibm_db_dbi --collect-submodules app --collect-submodules databricks run_sidecar.py
     Assert-CommandSucceeded 'Runtime executable build' $LASTEXITCODE
-    & $buildPython -m PyInstaller --noconfirm --clean --name IntegrationFabricWorker --paths "$root\backend" --hidden-import app.main --hidden-import ibm_db --hidden-import ibm_db_dbi --collect-submodules app --collect-submodules databricks run_deployment.py
+    & $buildPython -m PyInstaller --noconfirm --clean --name IntegrationFabricWorker --add-data "$root\backend\app;app" --paths "$root\backend" --hidden-import app.main --hidden-import ibm_db --hidden-import ibm_db_dbi --collect-submodules app --collect-submodules databricks run_deployment.py
     Assert-CommandSucceeded 'Deployment worker executable build' $LASTEXITCODE
 } finally { Pop-Location }
 

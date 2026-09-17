@@ -1,4 +1,4 @@
-import asyncio, io, json, os, socket, sys, tarfile, zipfile
+import asyncio, io, json, os, socket, sys, tarfile, traceback, zipfile
 from pprint import pformat
 import re
 import platform
@@ -1254,6 +1254,39 @@ def build_deployment_archive(item: Project, target: str, environments: list[str]
         raise HTTPException(400, 'Archive must be ifpkg, zip, ear, tar.gz, or python')
     return stream.getvalue(), f'{artifact}-{version}-{target}.{extension}', media, manifest
 
+def _package_failure(item: Project, environments: list[str], error: Exception) -> HTTPException:
+    """Persist useful build diagnostics while keeping configured secrets out of logs/UI."""
+    status = error.status_code if isinstance(error, HTTPException) else 500
+    detail = str(error.detail if isinstance(error, HTTPException) else error) or type(error).__name__
+    trace = ''.join(traceback.format_exception(error))
+    secrets = []
+    for values in item.properties.values():
+        for prop in values:
+            if any(word in prop.key.lower() for word in ('password', 'secret', 'token', 'private', 'credential')):
+                secrets.append(str(prop.value or ''))
+    for resource in item.resources:
+        for key, value in resource.config.items():
+            if any(word in key.lower() for word in ('password', 'secret', 'token', 'private', 'credential')):
+                secrets.append(str(value or ''))
+    for secret in sorted({value for value in secrets if len(value) >= 4}, key=len, reverse=True):
+        detail = detail.replace(secret, '[REDACTED]')
+        trace = trace.replace(secret, '[REDACTED]')
+    # Studio's saved-log button reads the active environment; package-build
+    # failures belong there even when the archive targets other profiles.
+    environment = item.active_environment or (environments[0] if environments else 'local')
+    directory = _project_log_directory(item, environment)
+    try:
+        append_project_logs(item.id, item.name, [{
+            'time': log_timestamp(), 'level': 'ERROR', 'kind': 'packaging',
+            'message': f'{type(error).__name__}: {detail}',
+            'traceback': trace[-12000:], 'environments': environments,
+        }], directory)
+        path = project_log_info(item.id, item.name, directory)['path']
+        suffix = f' See project log: {path}'
+    except Exception:
+        suffix = ' The diagnostic log could not be written; check log directory permissions.'
+    return HTTPException(status, f'Package generation failed: {detail}.{suffix}')
+
 class ControlPlaneDeployRequest(BaseModel):
     target: str = 'on-prem'
     environments: list[str] = Field(default_factory=list)
@@ -1317,7 +1350,10 @@ def package_project(project_id: str, target: str = 'on-prem', environment: str =
     selected_environments = [value.strip() for value in environments.split(',') if value.strip()] if environments else [environment]
     # Normal packages keep their established JSON layout. The explicit raw
     # Python archive is compiled on a separate path in build_deployment_archive.
-    body, filename, media, _ = build_deployment_archive(item, target, selected_environments, selected_starters, archive, selected_artifacts)
+    try:
+        body, filename, media, _ = build_deployment_archive(item, target, selected_environments, selected_starters, archive, selected_artifacts)
+    except Exception as error:
+        raise _package_failure(item, selected_environments, error) from error
     return StreamingResponse(io.BytesIO(body), media_type=media, headers={'Content-Disposition': f'attachment; filename="{filename}"'})
 
 @app.post('/api/projects/{project_id}/package/deploy')
@@ -1331,10 +1367,13 @@ async def package_and_deploy_project(project_id: str, payload: ControlPlaneDeplo
     # Archive creation can include many tasks, resources, schemas, and
     # environment profiles. Keep CPU/file work off the async API loop so the
     # Studio remains responsive while the package is assembled.
-    body, filename, media, _ = await asyncio.to_thread(
-        build_deployment_archive, item, payload.target, environments,
-        payload.starterTaskIds or None, payload.archive, artifacts,
-    )
+    try:
+        body, filename, media, _ = await asyncio.to_thread(
+            build_deployment_archive, item, payload.target, environments,
+            payload.starterTaskIds or None, payload.archive, artifacts,
+        )
+    except Exception as error:
+        raise _package_failure(item, environments, error) from error
     base_url, headers, verify = _control_plane_client_options(payload)
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=10.0), verify=verify, follow_redirects=False) as client:
