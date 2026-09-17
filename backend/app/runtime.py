@@ -1,5 +1,5 @@
 from __future__ import annotations
-import ast, asyncio, base64, csv, ftplib, gzip, importlib.util, io, json, os, re, shlex, shutil, sqlite3, sys, tempfile, traceback, uuid
+import ast, asyncio, base64, csv, ftplib, gzip, hashlib, importlib.util, io, json, os, re, shlex, shutil, sqlite3, sys, tempfile, threading, traceback, uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import httpx
@@ -27,6 +27,34 @@ class WorkflowRuntime:
         self.acknowledgements: dict[str, dict] = {}
         self.shared_variables: dict[str, Any] = {}
         self.group_locks: dict[str, asyncio.Lock] = {}
+        self._publisher_lock = threading.Lock()
+        self._publishers: dict[str, object] = {}
+
+    def _publisher(self, kind: str, config: dict, factory):
+        """Reuse broker connections; never retain plaintext credentials in cache keys."""
+        fingerprint = hashlib.sha256(json.dumps(config, sort_keys=True, default=str).encode()).hexdigest()
+        key = f'{kind}:{fingerprint}'
+        with self._publisher_lock:
+            client = self._publishers.get(key)
+            if client is not None: return client, False
+            # Unusual high-cardinality dynamic configurations do not grow the
+            # process indefinitely; those extra clients remain one-shot.
+            if len(self._publishers) >= 32: return factory(), True
+            client = factory()
+            self._publishers[key] = client
+            return client, False
+
+    def close_publishers(self):
+        with self._publisher_lock:
+            clients = list(self._publishers.items())
+            self._publishers.clear()
+        for key, client in clients:
+            try:
+                if key.startswith('kafka:'): client.flush(3)
+                else:
+                    client.stop()
+                    client.transport.close()
+            except Exception: pass
 
     def register_acknowledgement(self, technology: str, message_id: str, callback=None) -> str:
         ack_id = f'{technology}:{message_id}:{uuid.uuid4()}'
@@ -1100,7 +1128,7 @@ class WorkflowRuntime:
         if technology == 'kafka':
             try: from confluent_kafka import Consumer, Producer, TopicPartition
             except ImportError: raise RuntimeError('External Kafka mode requires confluent-kafka')
-            common = {'bootstrap.servers': rcfg['bootstrapServers'], 'client.id': rcfg.get('clientId') or f'integration-fabric-{uuid.uuid4()}', 'request.timeout.ms': int(rcfg.get('requestTimeoutMilliseconds', 30000) or 30000), 'reconnect.backoff.ms': int(rcfg.get('reconnectBackoffMilliseconds', 50) or 50), 'retry.backoff.ms': int(rcfg.get('retryBackoffMilliseconds', 100) or 100), **mapping(rcfg.get('clientProperties'))}
+            common = {'bootstrap.servers': rcfg['bootstrapServers'], 'client.id': rcfg.get('clientId') or 'integration-fabric', 'request.timeout.ms': int(rcfg.get('requestTimeoutMilliseconds', 30000) or 30000), 'reconnect.backoff.ms': int(rcfg.get('reconnectBackoffMilliseconds', 50) or 50), 'retry.backoff.ms': int(rcfg.get('retryBackoffMilliseconds', 100) or 100), **mapping(rcfg.get('clientProperties'))}
             if rcfg.get('securityProtocol'): common['security.protocol'] = rcfg['securityProtocol']
             sasl_mechanism = rcfg.get('saslMechanism') or ('PLAIN' if str(rcfg.get('authenticationType') or '').strip().lower() == 'api key / secret' else '')
             if sasl_mechanism: common['sasl.mechanism'] = sasl_mechanism
@@ -1150,25 +1178,28 @@ class WorkflowRuntime:
             if cfg.get('transactionalId'): producer_cfg['transactional.id'] = cfg['transactionalId']
 
             def publish_kafka():
-                """Run librdkafka's blocking producer operations on a worker thread.
-
-                Producer construction, flush, and transactional calls can block
-                while DNS, TLS, broker metadata, or acknowledgements complete.
-                Keeping them off the asyncio event loop is essential because the
-                SAP listener uses several concurrent asyncio workers.
-                """
-                producer = Producer(producer_cfg); delivered = {}; transactional = bool(cfg.get('transactionalId'))
+                """Wait for this message's acknowledgement, not the entire producer queue."""
+                transactional = bool(cfg.get('transactionalId'))
+                producer, one_shot = (Producer(producer_cfg), True) if transactional else self._publisher('kafka', producer_cfg, lambda: Producer(producer_cfg))
+                delivered = {}; completed = threading.Event()
                 if transactional: producer.init_transactions(); producer.begin_transaction()
                 def delivery(error, message):
                     if error: delivered['error'] = str(error)
                     else: delivered.update({'partition':message.partition(),'offset':message.offset(),'timestamp':message.timestamp()[1]})
+                    completed.set()
                 try:
                     producer.produce(destination, raw, key=key, partition=int(cfg['partitionId']) if cfg.get('assignCustomPartition') else -1, headers=list(attributes.items()), callback=delivery)
-                    producer.flush()
+                    timeout = max(1.0, float(cfg.get('publishTimeout') or rcfg.get('requestTimeoutMilliseconds', 30000) / 1000))
+                    deadline = perf_counter() + timeout
+                    while not completed.is_set() and perf_counter() < deadline:
+                        producer.poll(min(.1, max(0, deadline - perf_counter())))
+                    if not completed.is_set(): raise TimeoutError(f'Kafka publish timed out after {timeout:g} seconds waiting for broker acknowledgement')
                     if transactional: producer.commit_transaction()
                 except Exception:
                     if transactional: producer.abort_transaction()
                     raise
+                finally:
+                    if one_shot: producer.flush(3)
                 if delivered.get('error'): raise RuntimeError(delivered['error'])
                 return delivered
 
@@ -1204,7 +1235,7 @@ class WorkflowRuntime:
 
             def publish_pubsub():
                 """Keep gRPC publish and its completion wait off the event loop."""
-                publisher = create_pubsub_client(pubsub_v1.PublisherClient, publish_config)
+                publisher, one_shot = self._publisher('pubsub', publish_config, lambda: create_pubsub_client(pubsub_v1.PublisherClient, publish_config))
                 try:
                     path = publisher.topic_path(project_id, destination)
                     try:
@@ -1219,11 +1250,11 @@ class WorkflowRuntime:
                         raise RuntimeError(f'Google Pub/Sub publish timed out after {publish_timeout:g} seconds. Verify the topic, IAM permission, endpoint, proxy, and firewall settings.') from exc
                     return path, message_id
                 finally:
-                    # Stop the batching/sequencer threads before closing gRPC.
-                    try: publisher.stop()
-                    except Exception: pass
-                    try: publisher.transport.close()
-                    except Exception: pass
+                    if one_shot:
+                        try: publisher.stop()
+                        except Exception: pass
+                        try: publisher.transport.close()
+                        except Exception: pass
 
             path, message_id = await asyncio.to_thread(publish_pubsub)
             return {**envelope, 'TopicName': path, 'MessageID': message_id, 'messageId': message_id, 'published': True}

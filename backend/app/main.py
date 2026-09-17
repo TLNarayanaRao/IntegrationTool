@@ -60,6 +60,7 @@ async def shutdown_native_connectors():
     active_runs.clear()
     debug_runs.clear()
     sap_adapter.close_all()
+    await asyncio.to_thread(runtime.close_publishers)
 
 INBOUND_OPERATIONS = {None, 'listen', 'receiver', 'service'}
 CONTINUOUS_EVENT_OPERATIONS = {

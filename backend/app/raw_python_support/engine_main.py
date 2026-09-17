@@ -235,6 +235,8 @@ def main() -> int:
     except Exception:
         LOG.exception('Python application failed')
         return 1
+    finally:
+        RUNTIME.close_publishers()
     return 0
 
 
