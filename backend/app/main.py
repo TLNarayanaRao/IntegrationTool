@@ -1192,22 +1192,49 @@ def build_deployment_archive(item: Project, target: str, environments: list[str]
                              archive: str, artifacts: set[str] | None) -> tuple[bytes, str, str, dict]:
     """Build the exact archive used by both download and direct Control Plane deployment."""
     selected, root_tasks, included_tasks = packaging_task_closure(item, starter_ids)
+    selected.packaging.pop('sourceFormat', None)
     files = multi_environment_package_files(selected, target, environments, artifacts)
     manifest = json.loads(files['manifest.json'])
     manifest['starterTaskIds'], manifest['includedTaskIds'] = root_tasks, included_tasks
     if archive == 'python':
-        # Python source is the application contract. Keep only the manifest
-        # and editable environment profiles as Control Plane metadata; do not
-        # ship duplicate JSON task/resource/project definitions.
+        from .raw_python import engine_python_files
+        # The standard package builder provides exactly the same secret
+        # sanitization and selected profile closure.  Its JSON descriptors
+        # are input to the compiler only; none enter the raw archive.
+        project_payload = json.loads(files['application/project.json'])
+        profile_values = project_payload['properties']
+        try:
+            python_files = engine_python_files(project_payload, profile_values)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        manifest['runtime'] = 'python-async-standalone'
+        manifest['pythonSource'] = {'entrypoint': 'application/main.py', 'formatVersion': 2, 'mode': 'engine'}
+        manifest.pop('profileLayout', None)
+        manifest['selectedArtifacts'] = []
+        def raw_secret_keys(keys: list[str]) -> list[str]:
+            normalized = []
+            for key in keys:
+                match = re.fullmatch(r'resources\[(\d+)\](\..+)', key)
+                if match:
+                    index = int(match.group(1))
+                    if index < len(selected.resources):
+                        key = f'resources.{selected.resources[index].id}{match.group(2)}'
+                if key.startswith('tasks['):
+                    raise HTTPException(400, 'Raw Python cannot inject task-level inline secrets; map them to typed environment properties')
+                normalized.append(key)
+            return sorted(set(normalized))
+        manifest['secretKeys'] = raw_secret_keys(manifest.get('secretKeys') or [])
+        if isinstance(manifest.get('secretKeysByEnvironment'), dict):
+            manifest['secretKeysByEnvironment'] = {
+                environment: raw_secret_keys(keys) for environment, keys in manifest['secretKeysByEnvironment'].items()
+            }
         manifest['taskInventory'] = [
             {'id': task.id, 'name': task.name, 'kind': task.kind, 'starter': task.kind == 'starter',
              'description': task.description, 'activityCount': len(task.activities),
              'activities': [{'id': activity.id, 'name': activity.name, 'type': activity.type} for activity in task.activities]}
             for task in selected.tasks
         ]
-        for name in list(files):
-            if name == 'application/project.json' or name.startswith('application/tasks/') or name.startswith('application/resources/') or name.startswith('application/schemas/'):
-                files.pop(name)
+        files = python_files
     files['manifest.json'] = json.dumps(manifest, indent=2).encode()
     artifact = re.sub(r'[^A-Za-z0-9_.-]+', '-', selected.packaging.get('artifact_name') or selected.id).strip('-')
     version = re.sub(r'[^A-Za-z0-9_.-]+', '-', selected.packaging.get('version') or '1.0.0').strip('-')
@@ -1287,12 +1314,8 @@ def package_project(project_id: str, target: str = 'on-prem', environment: str =
     selected_starters = [value.strip() for value in starters.split(',') if value.strip()] if starters else None
     selected_artifacts = {value.strip() for value in artifacts.split(',') if value.strip()} if artifacts else None
     selected_environments = [value.strip() for value in environments.split(',') if value.strip()] if environments else [environment]
-    # The source format is export-specific. A normal package always retains
-    # the established JSON application layout; only the explicit Python
-    # archive request emits generated Python application source.
-    item = item.model_copy(deep=True)
-    if archive == 'python': item.packaging['sourceFormat'] = 'python'
-    else: item.packaging.pop('sourceFormat', None)
+    # Normal packages keep their established JSON layout. The explicit raw
+    # Python archive is compiled on a separate path in build_deployment_archive.
     body, filename, media, _ = build_deployment_archive(item, target, selected_environments, selected_starters, archive, selected_artifacts)
     return StreamingResponse(io.BytesIO(body), media_type=media, headers={'Content-Disposition': f'attachment; filename="{filename}"'})
 

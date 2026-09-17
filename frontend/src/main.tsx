@@ -3776,7 +3776,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
     setError("");
     if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(draft.artifact_name.trim())) { setError("Artifact name may contain letters, numbers, dots, dashes, and underscores."); return; }
     if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(draft.version.trim())) { setError("Use a semantic version such as 1.0.0 or 1.0.0-beta.1."); return; }
-    if (!draft.artifacts.length) { setError("Select at least one deployment artifact."); return; }
+    if (!pythonArchive && !draft.artifacts.length) { setError("Select at least one deployment artifact."); return; }
     if (!draft.environments.length) { setError("Select at least one environment profile."); return; }
     if (!draft.starterTaskIds.length) { setError("Select at least one Starter Task to package."); return; }
     if (deploy && discovering) { setError("Wait for deployment target discovery to finish before deploying."); return; }
@@ -3784,7 +3784,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
     if (deploy && !draft.dataPlaneId.trim()) { setError("Enter the target data-plane ID."); return; }
     if (deploy && !draft.environments.includes(draft.deploymentEnvironment)) { setError("Choose one of the packaged environment profiles for deployment."); return; }
     setBusy(true);
-    try { await (deploy ? onDeploy(draft) : onPackage({ ...draft, format: pythonArchive ? "python" : draft.format })); }
+    try { await (deploy ? onDeploy({ ...draft, format: pythonArchive ? "python" : draft.format }) : onPackage({ ...draft, format: pythonArchive ? "python" : draft.format })); }
     catch (failure: any) { setError(failure?.message || "Package generation failed."); }
     finally { setBusy(false); }
   };
@@ -3838,7 +3838,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
       <p className="package-security"><ShieldCheck/> Direct Control Plane deployment securely sends configured environment secrets. Downloaded archives remain sanitized and contain only the required secret-key manifest.</p>
       {error && <p className="package-error"><AlertTriangle/>{error}</p>}
     </main>
-    <footer><button disabled={busy} onClick={onClose}>Cancel</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false)}>{busy ? "Working…" : "Export archive"}</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false, true)}>{busy ? "Working…" : "Export Python archive"}</button><button className="primary" disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(true)}>{busy ? "Working…" : "Deploy to Control Plane"}</button></footer>
+    <footer><button disabled={busy} onClick={onClose}>Cancel</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false)}>{busy ? "Working…" : "Export archive"}</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false, true)}>{busy ? "Working…" : "Export Python archive"}</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(true, true)}>{busy ? "Working…" : "Deploy Python"}</button><button className="primary" disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(true)}>{busy ? "Working…" : "Deploy archive"}</button></footer>
   </div></div>;
 }
 function StudioRibbon(props: any) {

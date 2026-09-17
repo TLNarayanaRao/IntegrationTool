@@ -1,0 +1,23 @@
+FROM eclipse-temurin:17-jdk AS bridge
+WORKDIR /bridge
+COPY java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java ./FabricJavaBridge.java
+RUN mkdir -p classes && javac -encoding UTF-8 -d classes FabricJavaBridge.java
+
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/opt/agent \
+    FABRIC_JAVA_BRIDGE_HOME=/opt/integration-fabric/java-bridge/build \
+    FABRIC_DRIVER_HOME=/opt/integration-fabric/drivers
+RUN apt-get update && apt-get install -y --no-install-recommends openjdk-17-jre-headless \
+    && rm -rf /var/lib/apt/lists/*
+COPY backend/requirements.txt /tmp/backend-requirements.txt
+COPY administrator/requirements-agent.txt /tmp/agent-requirements.txt
+RUN pip install --no-cache-dir -r /tmp/backend-requirements.txt -r /tmp/agent-requirements.txt
+COPY --from=bridge /bridge/classes /opt/integration-fabric/java-bridge/build/classes
+COPY administrator/agent /opt/agent/administrator/agent
+RUN useradd --uid 10001 --create-home fabric \
+    && mkdir -p /opt/integration-fabric/drivers /var/lib/integration-fabric/agent \
+    && chown -R fabric:fabric /var/lib/integration-fabric/agent
+USER 10001
+WORKDIR /var/lib/integration-fabric/agent
+CMD ["python", "-m", "administrator.agent.main"]

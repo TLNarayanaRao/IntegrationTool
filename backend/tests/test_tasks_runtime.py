@@ -190,36 +190,92 @@ class TaskRuntimeTests(unittest.TestCase):
             self.assertEqual(manifest['includedTaskIds'], ['main', 'child'])
         self.client.delete('/api/projects/task-runtime-test')
 
-    def test_python_archive_contains_source_and_runtime_loads_its_descriptor(self):
-        from run_deployment import load_project
-
+    def test_python_archive_contains_direct_async_source_without_fabric_descriptors(self):
         self.assertEqual(self.client.post('/api/projects', json=self.project()).status_code, 200)
         response = self.client.get('/api/projects/task-runtime-test/package?target=on-prem&environments=dev&starters=main&archive=python')
         self.assertEqual(response.status_code, 200, response.text)
         self.assertIn('filename="task-runtime-test-1.0.0-on-prem.pyifpkg"', response.headers['content-disposition'])
         with tempfile.TemporaryDirectory() as folder, zipfile.ZipFile(io.BytesIO(response.content)) as archive:
             names = archive.namelist()
-            self.assertIn('application/python/project.py', names)
-            self.assertIn('application/python/tasks/task_0_main.py', names)
-            self.assertIn('application/python/tasks/task_1_child.py', names)
+            self.assertIn('application/main.py', names)
+            self.assertIn('application/tasks/task_0_main.py', names)
+            self.assertIn('application/tasks/task_1_child.py', names)
+            self.assertIn('application/engine/runtime.py', names)
+            self.assertIn('application/project.py', names)
             self.assertNotIn('application/project.json', names)
             self.assertNotIn('application/tasks/main.json', names)
             self.assertNotIn('application/resources/kafka/k1.json', names)
-            self.assertIn(b'def build_project():', archive.read('application/python/project.py'))
-            self.assertIn(b'task.kafka.publish(', archive.read('application/python/tasks/task_0_main.py'))
-            self.assertNotIn(b'PROJECT = {', archive.read('application/python/project.py'))
+            self.assertNotIn('application/python/fabric_dsl.py', names)
+            self.assertIn(b'async def run(initial=', archive.read('application/tasks/task_0_main.py'))
+            self.assertIn(b'Activity(**', archive.read('application/tasks/task_0_main.py'))
+            self.assertTrue(all(name.endswith('.py') or name == 'manifest.json' for name in names))
             manifest = json.loads(archive.read('manifest.json'))
-            self.assertEqual(manifest['runtime'], 'integration-fabric-python-source')
-            self.assertEqual(manifest['pythonSource']['entrypoint'], 'application/python/project.py')
+            self.assertEqual(manifest['runtime'], 'python-async-standalone')
+            self.assertEqual(manifest['pythonSource']['entrypoint'], 'application/main.py')
+            self.assertEqual(manifest['pythonSource']['mode'], 'engine')
             archive.extractall(folder)
-            loaded = load_project(Path(folder) / 'application')
-            self.assertEqual(loaded.id, 'task-runtime-test')
-            self.assertEqual([task.id for task in loaded.tasks], ['main', 'child'])
+            import subprocess, sys
+            result = subprocess.run([sys.executable, '-m', 'application.main', '--environment', 'dev', '--task', 'main', '--input', '{"value":42}'], cwd=folder, capture_output=True, text=True, timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)['count'], 1)
         normal = self.client.get('/api/projects/task-runtime-test/package?target=on-prem&environments=dev&starters=main&archive=ifpkg')
         self.assertEqual(normal.status_code, 200, normal.text)
         with zipfile.ZipFile(io.BytesIO(normal.content)) as archive:
             self.assertIn('application/project.json', archive.namelist())
             self.assertNotIn('application/python/project.py', archive.namelist())
+        self.client.delete('/api/projects/task-runtime-test')
+
+    def test_raw_python_packages_groups_with_the_full_python_engine(self):
+        payload = self.project()
+        payload['tasks'][0]['groups'] = [{'id': 'g1', 'type': 'transaction_jdbc', 'name': 'Transaction', 'member_activity_ids': ['c', 'p']}]
+        self.assertEqual(self.client.post('/api/projects', json=payload).status_code, 200)
+        response = self.client.get('/api/projects/task-runtime-test/package?target=on-prem&environment=dev&archive=python')
+        self.assertEqual(response.status_code, 200, response.text)
+        with zipfile.ZipFile(io.BytesIO(response.content)) as bundle:
+            self.assertIn(b'GroupDefinition(**', bundle.read('application/tasks/task_0_main.py'))
+            self.assertIn('application/engine/runtime.py', bundle.namelist())
+        normal = self.client.get('/api/projects/task-runtime-test/package?target=on-prem&environment=dev&archive=ifpkg')
+        self.assertEqual(normal.status_code, 200)
+        self.client.delete('/api/projects/task-runtime-test')
+
+    def test_raw_python_secrets_are_sanitized_and_use_resource_ids(self):
+        payload = self.project()
+        payload['resources'][0]['config']['password'] = 'private-value'
+        self.assertEqual(self.client.post('/api/projects', json=payload).status_code, 200)
+        response = self.client.get('/api/projects/task-runtime-test/package?target=on-prem&environment=dev&archive=python')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertNotIn(b'private-value', response.content)
+        with zipfile.ZipFile(io.BytesIO(response.content)) as bundle:
+            manifest = json.loads(bundle.read('manifest.json'))
+            self.assertIn('resources.k1.config.password', manifest['secretKeys'])
+            self.assertFalse(any(key.startswith('resources[') for key in manifest['secretKeys']))
+        self.client.delete('/api/projects/task-runtime-test')
+
+    def test_raw_python_direct_deploy_uploads_independent_archive(self):
+        self.assertEqual(self.client.post('/api/projects', json=self.project()).status_code, 200)
+        uploaded = []
+        class ControlPlaneClient:
+            def __init__(self, *args, **kwargs): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self, *args): pass
+            async def post(self, url, **kwargs):
+                request = httpx.Request('POST', url)
+                if url.endswith('/api/packages'):
+                    with zipfile.ZipFile(io.BytesIO(kwargs['files']['file'][1])) as archive:
+                        uploaded.extend(archive.namelist())
+                        self_outer.assertEqual(json.loads(archive.read('manifest.json'))['pythonSource']['entrypoint'], 'application/main.py')
+                    return httpx.Response(200, request=request, json={'packageId': 'task-runtime-test:1.0.0'})
+                return httpx.Response(200, request=request, json={'id': 'raw-deployment', 'state': 'DEPLOYED'})
+        self_outer = self
+        with patch('app.main.httpx.AsyncClient', ControlPlaneClient):
+            response = self.client.post('/api/projects/task-runtime-test/package/deploy', json={
+                'target': 'on-prem', 'environments': ['dev'], 'starterTaskIds': ['main'],
+                'archive': 'python', 'deploymentEnvironment': 'dev', 'controlPlaneUrl': 'https://control.example',
+                'dataPlaneId': 'localhost', 'start': False,
+            })
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn('application/main.py', uploaded)
+        self.assertNotIn('application/project.json', uploaded)
         self.client.delete('/api/projects/task-runtime-test')
 
     def test_direct_control_plane_deployment_uploads_generated_archive_then_creates_deployment(self):

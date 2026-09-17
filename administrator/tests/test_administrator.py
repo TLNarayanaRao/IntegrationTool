@@ -49,10 +49,46 @@ def python_package_bytes():
     return output.getvalue()
 
 
+def raw_python_package_bytes():
+    manifest = {
+        "format": "integration-fabric-deployment", "formatVersion": 2,
+        "artifact": "raw-orders", "version": "1.0.0", "applicationName": "Raw Orders", "target": "on-prem",
+        "environments": ["dev"], "starterTaskIds": ["main"], "includedTaskIds": ["main"],
+        "runtime": "python-async-standalone",
+        "pythonSource": {"entrypoint": "application/main.py", "formatVersion": 2},
+        "taskInventory": [{"id": "main", "name": "Main", "kind": "starter", "starter": True, "activityCount": 1, "activities": []}],
+    }
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("manifest.json", json.dumps(manifest))
+        for path in ("application/__init__.py", "application/config.py", "application/core.py", "application/registry.py", "application/main.py"):
+            archive.writestr(path, "# Python application\n")
+    return output.getvalue()
+
+
 class AdministratorTests(unittest.TestCase):
+    def test_raw_python_package_uses_direct_entrypoint(self):
+        manifest, _ = main.inspect_archive(raw_python_package_bytes())
+        self.assertEqual(manifest['runtime'], 'python-async-standalone')
+        self.assertEqual(manifest['pythonSource']['entrypoint'], 'application/main.py')
+
+    def test_raw_python_runtime_arguments_do_not_use_fabric_worker(self):
+        item = {'packageStoragePath': 'team/raw-orders/1.0.0', 'environment': 'dev',
+                'pythonSource': {'entrypoint': 'application/main.py', 'formatVersion': 2}}
+        with patch.object(main, 'RUNTIME_COMMAND', ''):
+            self.assertEqual(main.runtime_arguments(item, 'instance-1'),
+                             [sys.executable, '-m', 'application.main', '--environment', 'dev'])
+
     def test_administrator_version_accepts_build_or_runtime_override(self):
         with patch.dict("os.environ", {"FABRIC_ADMIN_VERSION": "3.4.5"}):
             self.assertEqual(main.administrator_version(), "3.4.5")
+
+    def test_control_desk_assets_are_served(self):
+        page = self.client.get("/")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("/control-desk.js", page.text)
+        self.assertIn("/control-desk.css", page.text)
+        self.assertEqual(self.client.get("/control-desk.js").status_code, 200)
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -65,6 +101,7 @@ class AdministratorTests(unittest.TestCase):
         main.CAPABILITIES_FILE, main.RESOURCES_FILE, main.PRINCIPALS_FILE = root / "capabilities.json", root / "resources.json", root / "principals.json"
         main.TEAMS_FILE, main.TOKENS_FILE = root / "teams.json", root / "access-tokens.json"
         main.REVISIONS_FILE = root / "revisions.json"
+        main.TELEMETRY_FILE = root / "telemetry-history.json"
         main.API_KEY = ""
         main.RUNTIME_COMMAND = f'"{sys.executable}" -c "import time; time.sleep(60)"'
         self.client_context = TestClient(main.app)
@@ -166,6 +203,14 @@ class AdministratorTests(unittest.TestCase):
         plane_id = registered.json()["id"]
         heartbeat = self.client.post(f"/api/data-planes/{plane_id}/heartbeat", json={"cpuPercent":21, "memoryPercent":38, "agentVersion":"1.0.0"})
         self.assertEqual(heartbeat.json()["status"], "ONLINE")
+        history = self.client.get(f"/api/operator/telemetry-history?dataPlaneId={plane_id}")
+        self.assertEqual(history.status_code, 200, history.text)
+        self.assertEqual(history.json()[plane_id][0]["cpuPercent"], 21)
+        alert = self.client.post("/api/alerts", json={"name":"High CPU", "type":"resource-threshold", "metric":"cpuPercent", "dataPlaneId":plane_id, "threshold":20})
+        self.assertEqual(alert.status_code, 200, alert.text)
+        measured = next(item for item in self.client.get("/api/alerts").json() if item["id"] == alert.json()["id"])
+        self.assertEqual(measured["state"], "FIRING")
+        self.assertEqual(measured["value"], 21)
         # Agent telemetry must not be able to replace Control-Plane-managed
         # namespace assignments with a stale local configuration.
         stale = self.client.post(f"/api/data-planes/{plane_id}/heartbeat", json={"namespaces":["legacy-namespace"]})

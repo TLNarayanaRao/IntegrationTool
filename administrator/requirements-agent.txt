@@ -1,0 +1,3 @@
+httpx==0.28.1
+kubernetes>=30,<35
+psutil>=6,<8

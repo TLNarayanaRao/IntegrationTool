@@ -57,6 +57,7 @@ TEAMS_FILE, TOKENS_FILE = DATA_DIR / "teams.json", DATA_DIR / "access-tokens.jso
 REVISIONS_FILE = DATA_DIR / "revisions.json"
 ALERTS_FILE = DATA_DIR / "alerts.json"
 PROCESS_STATES_FILE = DATA_DIR / "process-states.json"
+TELEMETRY_FILE = DATA_DIR / "telemetry-history.json"
 TECHNOLOGY_TEAM_ID = "technology-team"
 MAX_PACKAGE_BYTES = int(os.environ.get("FABRIC_ADMIN_MAX_PACKAGE_MB", "250")) * 1024 * 1024
 MAX_EXPANDED_BYTES = int(os.environ.get("FABRIC_ADMIN_MAX_EXPANDED_MB", "1024")) * 1024 * 1024
@@ -287,10 +288,20 @@ def validate_manifest(manifest: Any, names: set[str]) -> dict:
         raise ValueError("target must be on-prem or cloud")
     python_source = manifest.get("pythonSource")
     if python_source is not None:
-        if not isinstance(python_source, dict) or python_source.get("entrypoint") != "application/python/project.py":
+        if not isinstance(python_source, dict) or python_source.get("entrypoint") not in {"application/python/project.py", "application/main.py"}:
             raise ValueError("Python source package has an invalid entrypoint")
-        if "application/python/project.py" not in names:
-            raise ValueError("Python source package is missing application/python/project.py")
+        entrypoint = python_source["entrypoint"]
+        if entrypoint not in names:
+            raise ValueError(f"Python source package is missing {entrypoint}")
+        if entrypoint == "application/main.py":
+            if python_source.get("formatVersion") != 2 or manifest.get("runtime") != "python-async-standalone":
+                raise ValueError("Raw Python package has invalid runtime metadata")
+            forbidden = [name for name in names if name.startswith("application/") and not name.endswith(".py")]
+            if forbidden:
+                raise ValueError(f"Raw Python application contains non-Python files: {', '.join(forbidden[:3])}")
+            required_files = ("application/__init__.py", "application/project.py", "application/engine/models.py", "application/engine/runtime.py") if python_source.get('mode') == 'engine' else ("application/__init__.py", "application/config.py", "application/core.py", "application/registry.py")
+            for required in required_files:
+                if required not in names: raise ValueError(f"Raw Python package is missing {required}")
         task_inventory = manifest.get("taskInventory")
         if not isinstance(task_inventory, list):
             raise ValueError("Python source package is missing taskInventory")
@@ -574,7 +585,7 @@ def get_package(artifact: str, version: str, request: Request, teamId: str | Non
 
 
 def agent_deployment_record(plane_id: str, deployment_id: str | None = None):
-    deployments = [item for item in deployment_inventory() if (item.get("dataPlaneId") or item.get("machine")) == plane_id and item.get("state") != "UNDEPLOYED"]
+    deployments = [item for item in deployment_inventory() if (item.get("dataPlaneId") or item.get("machine")) == plane_id]
     if deployment_id:
         item = next((value for value in deployments if value.get("id") == deployment_id), None)
         if not item: raise HTTPException(404, "Deployment not found")
@@ -592,13 +603,15 @@ def agent_deployments(plane_id: str, request: Request):
 def agent_package(plane_id: str, deployment_id: str, request: Request):
     require_technology(request)
     item = agent_deployment_record(plane_id, deployment_id)
+    if item.get("state") == "UNDEPLOYED": raise HTTPException(404, "Deployment is undeployed")
     root = deployment_package_path(item)
     if not root.exists(): raise HTTPException(404, "Deployment package is not available")
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in root.rglob("*"):
             if path.is_file(): archive.write(path, path.relative_to(root).as_posix())
-    return Response(buffer.getvalue(), media_type="application/zip", headers={"Content-Disposition": f"attachment; filename={safe(item.get('id', deployment_id))}.zip"})
+    body = buffer.getvalue()
+    return Response(body, media_type="application/zip", headers={"Content-Disposition": f"attachment; filename={safe(item.get('id', deployment_id))}.zip", "x-fabric-package-sha256": hashlib.sha256(body).hexdigest()})
 
 
 @app.post("/api/data-planes/{plane_id}/agent/deployments/{deployment_id}/report")
@@ -799,6 +812,19 @@ def data_plane_heartbeat(plane_id: str, request: Request, payload: dict[str, Any
         if key in payload: item[key] = payload[key]
     machines = read_json(MACHINES_FILE, [])
     stored = next(value for value in machines if value.get("id") == plane_id); stored.update(item); stored["runtimeConfigured"] = True; write_json(MACHINES_FILE, machines)
+    if any(key in payload for key in ("cpuPercent", "memoryPercent", "diskPercent", "processCount", "telemetry")):
+        system = payload.get("telemetry", {}).get("system", {}) if isinstance(payload.get("telemetry"), dict) else {}
+        sample = {"time": now(), "cpuPercent": system.get("cpuPercent", payload.get("cpuPercent")),
+                  "memoryPercent": system.get("memoryPercent", payload.get("memoryPercent")),
+                  "diskPercent": system.get("diskPercent", payload.get("diskPercent")),
+                  "processCount": system.get("processCount", payload.get("processCount"))}
+        with STATE_LOCK:
+            history = read_json(TELEMETRY_FILE, {})
+            recent = history.get(plane_id, [])
+            previous = recent[-1]["time"] if recent else None
+            if not previous or (datetime.fromisoformat(sample["time"].replace("Z", "+00:00")) - datetime.fromisoformat(previous.replace("Z", "+00:00"))).total_seconds() >= 15:
+                history[plane_id] = (recent + [sample])[-720:]
+                write_json(TELEMETRY_FILE, history)
     # A capability is provisioned before its agent may be online. Reconcile
     # existing capabilities whenever the data-plane heartbeat arrives so they
     # do not remain permanently PENDING after the agent has connected.
@@ -1142,7 +1168,7 @@ def create_deployment(payload: DeploymentRequest, request: Request):
         raise HTTPException(422, f"Required secrets are missing: {', '.join(missing)}")
     deployment_id = str(uuid4())
     starter_states = {task_id:"STARTED" for task_id in package.get("starterTaskIds") or []}
-    item = {"id": deployment_id, "packageId": payload.packageId, "packageStoragePath":package.get("storagePath"), "teamId":asset_team, "application": package.get("applicationName"), "environment": payload.environment, "machine": data_plane_id, "dataPlaneId": data_plane_id, "capabilityId": capability["id"], "namespace": payload.namespace, "desiredInstances": payload.instances, "instances": [], "requiredSecrets": required, "starterStates":starter_states, "healthCheckEnabled":True, "health":"PENDING", "state": "DEPLOYED", "createdAt": now(), "updatedAt": now(), "message": "Validated and ready to start." if data_plane_id == "localhost" else "Deployment created; awaiting the data-plane runtime agent.", "lastError": None}
+    item = {"id": deployment_id, "packageId": payload.packageId, "packageStoragePath":package.get("storagePath"), "teamId":asset_team, "application": package.get("applicationName"), "applicationId":package.get("applicationId"), "target":package.get("target"), "environment": payload.environment, "machine": data_plane_id, "dataPlaneId": data_plane_id, "capabilityId": capability["id"], "namespace": payload.namespace, "desiredInstances": payload.instances, "instances": [], "requiredSecrets": required, "starterStates":starter_states, "pythonSource":package.get("pythonSource"), "healthCheckEnabled":True, "health":"PENDING", "state": "DEPLOYED", "createdAt": now(), "updatedAt": now(), "message": "Validated and ready to start." if data_plane_id == "localhost" else "Deployment created; awaiting the data-plane runtime agent.", "lastError": None}
     deployments = read_json(DEPLOYMENTS_FILE, [])
     deployments.append(item)
     write_json(DEPLOYMENTS_FILE, deployments)
@@ -1184,6 +1210,8 @@ def deployment_package_path(item: dict) -> Path:
 
 def runtime_arguments(item: dict, instance_id: str) -> list[str] | str:
     package_path = deployment_package_path(item)
+    if (item.get("pythonSource") or {}).get("entrypoint") == "application/main.py":
+        return [os.environ.get('FABRIC_PYTHON_EXECUTABLE') or sys.executable, "-m", "application.main", "--environment", item["environment"]]
     command = RUNTIME_COMMAND
     for marker, value in {"{application}": str(package_path / "application"), "{package}": str(package_path), "{environment}": item["environment"], "{deployment_id}": item["id"], "{instance_id}": instance_id}.items():
         command = command.replace(marker, value)
@@ -1198,7 +1226,7 @@ def runtime_arguments(item: dict, instance_id: str) -> list[str] | str:
 
 
 def start_instances(item: dict) -> None:
-    if not RUNTIME_COMMAND:
+    if not RUNTIME_COMMAND and (item.get("pythonSource") or {}).get("entrypoint") != "application/main.py":
         raise HTTPException(409, "No runtime adapter is configured. Set FABRIC_ADMIN_RUNTIME_COMMAND; see the Administrator Guide.")
     machine = next((value for value in machine_inventory() if value.get("id") == item.get("machine")), None)
     if not machine or machine.get("driver") != "command" or item.get("machine") != "localhost":
@@ -1524,6 +1552,20 @@ def monitoring(request: Request):
     return {"time": now(), "deploymentStates": states, "runningInstances": sum(1 for item in deployments for instance in item.get("instances", []) if instance.get("state") == "RUNNING"), "machines": {"total": len(machines), "online": len([item for item in machines if item.get("status") == "ONLINE"])}, "dataPlanes": {"total": len(machines), "running": len([item for item in machines if item.get("status") == "ONLINE"]), "warning":len([item for item in machines if item.get("status") == "REGISTERED"]), "critical":len([item for item in machines if item.get("status") == "OFFLINE"])}, "runtimeAdapterConfigured": bool(RUNTIME_COMMAND), "recentFailures": [item for item in deployments if item.get("state") == "FAILED"][-20:]}
 
 
+@app.get("/api/operator/telemetry-history")
+def telemetry_history(request: Request, dataPlaneId: str | None = None, limit: int = 120):
+    caller = identity(request)
+    visible = visible_assets(request, deployment_inventory())
+    allowed = {item.get("dataPlaneId") or item.get("machine") for item in visible}
+    if caller.get("teamId") == TECHNOLOGY_TEAM_ID:
+        allowed = {item.get("id") for item in data_plane_inventory()}
+    if dataPlaneId and dataPlaneId not in allowed:
+        raise HTTPException(404, "Data plane not found")
+    count = min(max(limit, 1), 720)
+    history = read_json(TELEMETRY_FILE, {})
+    return {plane_id: history.get(plane_id, [])[-count:] for plane_id in allowed if not dataPlaneId or plane_id == dataPlaneId}
+
+
 @app.get("/api/observability")
 def observability(request: Request, dataPlaneId: str | None = None, teamId: str | None = None):
     if teamId: requested_asset_team(request, teamId)
@@ -1585,9 +1627,19 @@ def list_alerts(request: Request):
     for alert in values:
         if not alert.get("enabled", True): alert["state"] = "DISABLED"; continue
         kind = alert.get("type"); threshold = float(alert.get("threshold", 0)); value = 0
-        if kind == "offline-data-plane": value = len([x for x in planes if x.get("status") != "ONLINE"])
-        elif kind == "failed-deployment": value = len([x for x in deployments if x.get("state") == "FAILED"])
-        elif kind == "unhealthy-application": value = len([x for x in deployments if x.get("state") == "RUNNING" and deployment_health(x).get("status") not in {"HEALTHY", "UNKNOWN"}])
+        selected_planes = [plane for plane in planes if not alert.get("dataPlaneId") or plane.get("id") == alert.get("dataPlaneId")]
+        selected_deployments = [deployment for deployment in deployments if not alert.get("dataPlaneId") or (deployment.get("dataPlaneId") or deployment.get("machine")) == alert.get("dataPlaneId")]
+        if kind == "offline-data-plane": value = len([x for x in selected_planes if x.get("status") != "ONLINE"])
+        elif kind == "failed-deployment": value = len([x for x in selected_deployments if x.get("state") == "FAILED"])
+        elif kind == "unhealthy-application": value = len([x for x in selected_deployments if x.get("state") == "RUNNING" and deployment_health(x).get("status") not in {"HEALTHY", "UNKNOWN"}])
+        elif kind == "resource-threshold":
+            metric = alert.get("metric", "cpuPercent")
+            reported = [(plane.get("telemetry") or {}).get("system", {}).get(metric, plane.get(metric)) for plane in selected_planes]
+            measured = [float(item) for item in reported if item is not None]
+            if not measured:
+                alert.update(value=None, state="NO_DATA", evaluatedAt=now())
+                continue
+            value = max(measured)
         alert.update(value=value, state="FIRING" if value >= threshold else "OK", evaluatedAt=now())
     write_json(ALERTS_FILE, values); return values
 
@@ -1596,7 +1648,13 @@ def list_alerts(request: Request):
 def create_alert(payload: dict[str, Any], request: Request):
     require_technology(request)
     if payload.get("type") not in {"offline-data-plane", "failed-deployment", "unhealthy-application", "resource-threshold"}: raise HTTPException(400, "Unsupported alert type")
-    values = read_json(ALERTS_FILE, []); item = {"id":str(uuid4()), "name":str(payload.get("name") or payload["type"]), "type":payload["type"], "threshold":float(payload.get("threshold", 1)), "enabled":bool(payload.get("enabled", True)), "createdAt":now()}; values.append(item); write_json(ALERTS_FILE, values); audit("alert.create", item["id"], detail=item["name"]); return item
+    metric = str(payload.get("metric") or "cpuPercent")
+    if payload["type"] == "resource-threshold" and metric not in {"cpuPercent", "memoryPercent", "diskPercent"}: raise HTTPException(400, "Unsupported resource metric")
+    plane_id = str(payload.get("dataPlaneId") or "")
+    if plane_id and not any(plane.get("id") == plane_id for plane in data_plane_inventory()): raise HTTPException(404, "Data plane not found")
+    threshold = float(payload.get("threshold", 1))
+    if threshold <= 0 or (payload["type"] == "resource-threshold" and threshold > 100): raise HTTPException(400, "Alert threshold is out of range")
+    values = read_json(ALERTS_FILE, []); item = {"id":str(uuid4()), "name":str(payload.get("name") or payload["type"]), "type":payload["type"], "threshold":threshold, "metric":metric if payload["type"] == "resource-threshold" else None, "dataPlaneId":plane_id or None, "enabled":bool(payload.get("enabled", True)), "createdAt":now()}; values.append(item); write_json(ALERTS_FILE, values); audit("alert.create", item["id"], detail=item["name"]); return item
 
 
 @app.delete("/api/alerts/{alert_id}")
