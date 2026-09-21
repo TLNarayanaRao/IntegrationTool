@@ -862,7 +862,13 @@ def deployment_property_profile(item: Project, environment: str) -> list[dict]:
         for alias in PROPERTY_REFERENCE.findall(str(value.get('value', ''))):
             if alias not in referenced:
                 referenced.add(alias); pending.append(alias)
-    return [value for value in source if value.get('key') in referenced]
+    # Keep every value the user actually configured, even when a dynamic
+    # expression prevents static reference discovery. Empty connector
+    # placeholders remain excluded unless they are referenced explicitly.
+    return [
+        value for value in source
+        if value.get('key') in referenced or value.get('value') not in (None, '')
+    ]
 
 def deployment_package_files(item: Project, target: str, environment: str, artifacts: set[str] | None = None) -> dict[str, bytes]:
     if target not in {'on-prem', 'cloud'}:
@@ -1197,19 +1203,27 @@ def build_deployment_archive(item: Project, target: str, environments: list[str]
     files = multi_environment_package_files(selected, target, environments, artifacts)
     manifest = json.loads(files['manifest.json'])
     manifest['starterTaskIds'], manifest['includedTaskIds'] = root_tasks, included_tasks
-    if archive == 'python':
-        from .raw_python import engine_python_files
+    if archive in ('python', 'python-engine', 'python-direct'):
+        from .raw_python import engine_python_files, raw_python_files, raw_python_requirements
         # The standard package builder provides exactly the same secret
         # sanitization and selected profile closure.  Its JSON descriptors
         # are input to the compiler only; none enter the raw archive.
         project_payload = json.loads(files['application/project.json'])
         profile_values = project_payload['properties']
         try:
-            python_files = engine_python_files(project_payload, profile_values)
+            python_files = raw_python_files(project_payload, profile_values) if archive == 'python-direct' else engine_python_files(project_payload, profile_values)
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
         manifest['runtime'] = 'python-async-standalone'
-        manifest['pythonSource'] = {'entrypoint': 'application/main.py', 'formatVersion': 2, 'mode': 'engine'}
+        manifest['pythonSource'] = {'entrypoint': 'application/main.py', 'formatVersion': 2, 'mode': 'direct' if archive == 'python-direct' else 'engine'}
+        if archive == 'python-direct':
+            manifest['pythonSource']['scriptEntrypoint'] = 'run.py'
+            manifest['pythonSource']['zipEntrypoint'] = '__main__.py'
+            dependency_checks, external_files = raw_python_requirements(project_payload)
+            manifest['pythonSource']['preflightCommand'] = 'python run.py --check'
+            manifest['pythonSource']['qualificationCommand'] = 'python run.py --qualify-task <task-id> --iterations 1000 --concurrency 10'
+            manifest['pythonSource']['dependencies'] = dependency_checks
+            manifest['pythonSource']['externalFiles'] = external_files
         manifest.pop('profileLayout', None)
         manifest['selectedArtifacts'] = []
         def raw_secret_keys(keys: list[str]) -> list[str]:
@@ -1245,13 +1259,13 @@ def build_deployment_archive(item: Project, target: str, environments: list[str]
             for name, body in files.items():
                 info = tarfile.TarInfo(name); info.size = len(body); bundle.addfile(info, io.BytesIO(body))
         extension, media = 'tar.gz', 'application/gzip'
-    elif archive in {'ifpkg', 'ear', 'zip', 'python'}:
+    elif archive in {'ifpkg', 'ear', 'zip', 'python', 'python-engine', 'python-direct'}:
         with zipfile.ZipFile(stream, 'w', zipfile.ZIP_DEFLATED) as bundle:
             for name, body in files.items(): bundle.writestr(name, body)
-        extension = 'ear' if archive == 'ear' else ('zip' if archive == 'zip' else ('pyifpkg' if archive == 'python' else 'ifpkg'))
+        extension = 'ear' if archive == 'ear' else ('zip' if archive == 'zip' else ('pyifpkg' if archive in {'python', 'python-engine', 'python-direct'} else 'ifpkg'))
         media = 'application/java-archive' if archive == 'ear' else 'application/zip'
     else:
-        raise HTTPException(400, 'Archive must be ifpkg, zip, ear, tar.gz, or python')
+        raise HTTPException(400, 'Archive must be ifpkg, zip, ear, tar.gz, python-engine, or python-direct')
     return stream.getvalue(), f'{artifact}-{version}-{target}.{extension}', media, manifest
 
 def _package_failure(item: Project, environments: list[str], error: Exception) -> HTTPException:

@@ -1106,6 +1106,12 @@ class WorkflowRuntime:
             if missing: raise FabricFault(f"Required connection values are missing: {', '.join(missing)}", fault_type='JMSConnectionException')
             options = {**cfg, 'topic': 'topic' in operation or operation in ('publish', 'topic_subscriber'), 'clientAcknowledge': client_ack, 'properties': attributes}
             try:
+                if operation == 'request_reply':
+                    output = await asyncio.to_thread(execute_jms, rcfg, 'request', str(destination), payload, options)
+                    body = output.get('body')
+                    try: body = json.loads(body) if isinstance(body, str) else body
+                    except ValueError: pass
+                    return {**output, 'body': body, 'count': 1 if output.get('received') else 0, 'destination': destination}
                 if operation in receive_ops:
                     output = await asyncio.to_thread(execute_jms, rcfg, 'receive', str(destination), None, options)
                     if not output.get('received'):
@@ -1378,7 +1384,7 @@ class WorkflowRuntime:
             return ctx['properties'].get(value[13:-1], '')
         if isinstance(value, str) and value.startswith('${') and value.endswith('}'):
             path = value[2:-1].split('.')
-            if path[0] in ('tasks', 'context'):
+            if path[0] in ('activities', 'tasks', 'context'):
                 current = ctx.get(path[0], {})
                 for part in path[1:]:
                     if isinstance(current, dict): current = current.get(part, '')

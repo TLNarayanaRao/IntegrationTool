@@ -227,7 +227,12 @@ class TaskRuntimeTests(unittest.TestCase):
             self.assertNotIn('application/resources/kafka/k1.json', names)
             self.assertNotIn('application/python/fabric_dsl.py', names)
             self.assertIn(b'async def run(initial=', archive.read('application/tasks/task_0_main.py'))
-            self.assertIn(b'Activity(**', archive.read('application/tasks/task_0_main.py'))
+            task_source = archive.read('application/tasks/task_0_main.py')
+            self.assertIn(b"Activity(\n            id='s'", task_source)
+            self.assertNotIn(b'Activity(**', task_source)
+            self.assertNotIn(b'position=', task_source)
+            self.assertIn(b"operation='publish'", task_source)
+            self.assertNotIn(b'Project(**', archive.read('application/project.py'))
             self.assertTrue(all(name.endswith('.py') or name == 'manifest.json' for name in names))
             manifest = json.loads(archive.read('manifest.json'))
             self.assertEqual(manifest['runtime'], 'python-async-standalone')
@@ -245,6 +250,54 @@ class TaskRuntimeTests(unittest.TestCase):
             self.assertNotIn('application/python/project.py', archive.namelist())
         self.client.delete('/api/projects/task-runtime-test')
 
+    def test_strict_direct_python_archive_uses_compiled_task_code(self):
+        self.assertEqual(self.client.post('/api/projects', json=self.project()).status_code, 200)
+        try:
+            response = self.client.get('/api/projects/task-runtime-test/package?target=on-prem&environments=dev&starters=main&archive=python-direct')
+            self.assertEqual(response.status_code, 200, response.text)
+            with tempfile.TemporaryDirectory() as folder, zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+                names = archive.namelist()
+                self.assertIn('application/main.py', names)
+                self.assertIn('run.py', names)
+                self.assertIn('__main__.py', names)
+                self.assertNotIn('application/engine/runtime.py', names)
+                self.assertTrue(all(name.endswith('.py') or name == 'manifest.json' for name in names))
+                source = archive.read('application/tasks/task_0_main.py')
+                self.assertIn(b"if current == 'p':", source)
+                self.assertNotIn(b'TRANSITIONS =', source)
+                self.assertNotIn(b'Activity(**', source)
+                python_source = json.loads(archive.read('manifest.json'))['pythonSource']
+                self.assertEqual(python_source['mode'], 'direct')
+                self.assertEqual(python_source['scriptEntrypoint'], 'run.py')
+                self.assertEqual(python_source['preflightCommand'], 'python run.py --check')
+                self.assertIn('application/diagnostics.py', names)
+                archive.extractall(folder)
+                import subprocess, sys
+                result = subprocess.run([sys.executable, '-m', 'application.main', '--environment', 'dev', '--task', 'main', '--input', '{"value":42}'], cwd=folder, capture_output=True, text=True, timeout=20)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)['count'], 1)
+                preflight = subprocess.run([sys.executable, '-m', 'application.main', '--check'], cwd=folder, capture_output=True, text=True, timeout=20)
+                self.assertEqual(preflight.returncode, 0, preflight.stderr)
+                self.assertTrue(json.loads(preflight.stdout)['ready'])
+                direct_path = Path(folder) / 'direct.pyifpkg'
+                direct_path.write_bytes(response.content)
+                result = subprocess.run([sys.executable, str(direct_path), '--task', 'main', '--input', '{"value":42}'], capture_output=True, text=True, timeout=20)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)['count'], 1)
+        finally:
+            self.client.delete('/api/projects/task-runtime-test')
+
+    def test_strict_direct_python_rejects_malformed_transaction_group(self):
+        payload = self.project()
+        payload['tasks'][0]['groups'] = [{'id': 'g1', 'type': 'transaction_jdbc', 'name': 'Transaction', 'member_activity_ids': ['c', 'p']}]
+        self.assertEqual(self.client.post('/api/projects', json=payload).status_code, 200)
+        try:
+            response = self.client.get('/api/projects/task-runtime-test/package?target=on-prem&environments=dev&starters=main&archive=python-direct')
+            self.assertEqual(response.status_code, 400)
+            self.assertIn('JDBC transaction group needs JDBC activities', response.json()['detail'])
+        finally:
+            self.client.delete('/api/projects/task-runtime-test')
+
     def test_raw_python_packages_groups_with_the_full_python_engine(self):
         payload = self.project()
         payload['tasks'][0]['groups'] = [{'id': 'g1', 'type': 'transaction_jdbc', 'name': 'Transaction', 'member_activity_ids': ['c', 'p']}]
@@ -252,7 +305,7 @@ class TaskRuntimeTests(unittest.TestCase):
         response = self.client.get('/api/projects/task-runtime-test/package?target=on-prem&environment=dev&archive=python')
         self.assertEqual(response.status_code, 200, response.text)
         with zipfile.ZipFile(io.BytesIO(response.content)) as bundle:
-            self.assertIn(b'GroupDefinition(**', bundle.read('application/tasks/task_0_main.py'))
+            self.assertIn(b"GroupDefinition(\n            id='g1'", bundle.read('application/tasks/task_0_main.py'))
             self.assertIn('application/engine/runtime.py', bundle.namelist())
         normal = self.client.get('/api/projects/task-runtime-test/package?target=on-prem&environment=dev&archive=ifpkg')
         self.assertEqual(normal.status_code, 200)
@@ -284,18 +337,20 @@ class TaskRuntimeTests(unittest.TestCase):
                     with zipfile.ZipFile(io.BytesIO(kwargs['files']['file'][1])) as archive:
                         uploaded.extend(archive.namelist())
                         self_outer.assertEqual(json.loads(archive.read('manifest.json'))['pythonSource']['entrypoint'], 'application/main.py')
+                        self_outer.assertEqual(json.loads(archive.read('manifest.json'))['pythonSource']['mode'], 'direct')
                     return httpx.Response(200, request=request, json={'packageId': 'task-runtime-test:1.0.0'})
                 return httpx.Response(200, request=request, json={'id': 'raw-deployment', 'state': 'DEPLOYED'})
         self_outer = self
         with patch('app.main.httpx.AsyncClient', ControlPlaneClient):
             response = self.client.post('/api/projects/task-runtime-test/package/deploy', json={
                 'target': 'on-prem', 'environments': ['dev'], 'starterTaskIds': ['main'],
-                'archive': 'python', 'deploymentEnvironment': 'dev', 'controlPlaneUrl': 'https://control.example',
+                'archive': 'python-direct', 'deploymentEnvironment': 'dev', 'controlPlaneUrl': 'https://control.example',
                 'dataPlaneId': 'localhost', 'start': False,
             })
         self.assertEqual(response.status_code, 200, response.text)
         self.assertIn('application/main.py', uploaded)
         self.assertNotIn('application/project.json', uploaded)
+        self.assertNotIn('application/engine/runtime.py', uploaded)
         self.client.delete('/api/projects/task-runtime-test')
 
     def test_direct_control_plane_deployment_uploads_generated_archive_then_creates_deployment(self):

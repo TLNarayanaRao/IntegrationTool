@@ -2214,7 +2214,7 @@ function App() {
       const response = await fetch(`/api/projects/${project.id}/package?${query}`);
       if (!response.ok) { const detail = await response.json().catch(() => ({})); throw new Error(detail.detail || `Package generation failed (HTTP ${response.status}). Check the project log for details.`); }
       const blob = await response.blob(), disposition = response.headers.get("content-disposition") || "";
-      const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `${settings.artifact_name}-${settings.version}.${settings.format === "ifpkg" ? "ifpkg" : settings.format === "python" ? "pyifpkg" : settings.format}`;
+      const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `${settings.artifact_name}-${settings.version}.${settings.format === "ifpkg" ? "ifpkg" : settings.format.startsWith("python") ? "pyifpkg" : settings.format}`;
       if (window.fabricDesktop) {
         const filePath = await window.fabricDesktop.saveFile({ filename, bytes: [...new Uint8Array(await blob.arrayBuffer())], filters: [{ name: "Integration Fabric Deployment Package", extensions: [filename.endsWith(".tar.gz") ? "tar.gz" : filename.split(".").pop() || "ifpkg"] }] });
         if (!filePath) return;
@@ -3734,7 +3734,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
   const toggleArtifact = (key: string) => setDraft((current: any) => ({ ...current, artifacts: current.artifacts.includes(key) ? current.artifacts.filter((value: string) => value !== key) : [...current.artifacts, key] }));
   const toggleEnvironment = (name: string) => setDraft((current: any) => ({ ...current, environments: current.environments.includes(name) ? current.environments.filter((value: string) => value !== name) : [...current.environments, name] }));
   const toggleStarter = (id: string) => setDraft((current: any) => ({ ...current, starterTaskIds: current.starterTaskIds.includes(id) ? current.starterTaskIds.filter((value: string) => value !== id) : [...current.starterTaskIds, id] }));
-  const extension = draft.format === "ifpkg" ? "ifpkg" : draft.format;
+  const extension = draft.format.startsWith("python") ? "pyifpkg" : draft.format;
   const compatiblePlanes = targetCatalog.dataPlanes.filter((plane: any) => draft.target === "cloud" ? plane.type === "kubernetes" : plane.type !== "kubernetes");
   const selectedPlane = compatiblePlanes.find((plane: any) => plane.id === draft.dataPlaneId);
   const runtimeCapabilitiesFor = (dataPlaneId: string) => targetCatalog.capabilities.filter((capability: any) => capability.type === "integration-runtime" && capability.dataPlaneId === dataPlaneId);
@@ -3776,7 +3776,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
     setError("");
     if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(draft.artifact_name.trim())) { setError("Artifact name may contain letters, numbers, dots, dashes, and underscores."); return; }
     if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(draft.version.trim())) { setError("Use a semantic version such as 1.0.0 or 1.0.0-beta.1."); return; }
-    if (!pythonArchive && !draft.artifacts.length) { setError("Select at least one deployment artifact."); return; }
+    if (!pythonArchive && draft.format !== "python-engine" && !draft.artifacts.length) { setError("Select at least one deployment artifact."); return; }
     if (!draft.environments.length) { setError("Select at least one environment profile."); return; }
     if (!draft.starterTaskIds.length) { setError("Select at least one Starter Task to package."); return; }
     if (deploy && discovering) { setError("Wait for deployment target discovery to finish before deploying."); return; }
@@ -3784,7 +3784,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
     if (deploy && !draft.dataPlaneId.trim()) { setError("Enter the target data-plane ID."); return; }
     if (deploy && !draft.environments.includes(draft.deploymentEnvironment)) { setError("Choose one of the packaged environment profiles for deployment."); return; }
     setBusy(true);
-    try { await (deploy ? onDeploy({ ...draft, format: pythonArchive ? "python" : draft.format }) : onPackage({ ...draft, format: pythonArchive ? "python" : draft.format })); }
+    try { await (deploy ? onDeploy({ ...draft, format: pythonArchive ? "python-direct" : draft.format }) : onPackage({ ...draft, format: pythonArchive ? "python-direct" : draft.format })); }
     catch (failure: any) { setError(failure?.message || "Package generation failed."); }
     finally { setBusy(false); }
   };
@@ -3799,7 +3799,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
       </div>
       <section className="package-starters"><header><span><b>TASK STARTERS</b><small>Select the deployable entry points. Called Sub Tasks are discovered recursively and included automatically; unrelated Sub Tasks are excluded.</small></span><button type="button" onClick={() => update("starterTaskIds", starterTasks.map((task: Task) => task.id))}>Select all</button></header><div>{starterTasks.map((task: Task) => <label key={task.id} className={draft.starterTaskIds.includes(task.id) ? "selected" : ""}><input type="checkbox" checked={draft.starterTaskIds.includes(task.id)} onChange={() => toggleStarter(task.id)}/><span><b>{task.name}</b><small>{task.description || "Starter Task"}</small></span></label>)}</div>{!starterTasks.length && <p>No Starter Tasks are available. Create a Starter Task before packaging.</p>}</section>
       <section className="package-environments"><header><span><b>ENVIRONMENT PROFILES</b><small>The application is common; configuration and secret files are generated separately for every selected profile.</small></span><button type="button" onClick={() => update("environments", environments)}>Select all</button></header><div>{environments.map((name: string) => <label key={name} className={draft.environments.includes(name) ? "selected" : ""}><input type="checkbox" checked={draft.environments.includes(name)} onChange={() => toggleEnvironment(name)}/><span><b>{name}</b><small>{draft.environments.includes(name) ? "Included" : "Not packaged"}</small></span></label>)}</div></section>
-      <label>Archive format<select value={draft.format} onChange={(event) => update("format", event.target.value)}><option value="ifpkg">Integration package (.ifpkg)</option><option value="zip">ZIP archive (.zip)</option><option value="tar.gz">Compressed TAR (.tar.gz)</option><option value="ear">EAR-compatible ZIP (.ear)</option></select></label>
+      <label>Archive format<select value={draft.format} onChange={(event) => update("format", event.target.value)}><option value="ifpkg">Integration package (.ifpkg)</option><option value="zip">ZIP archive (.zip)</option><option value="tar.gz">Compressed TAR (.tar.gz)</option><option value="ear">EAR-compatible ZIP (.ear)</option><option value="python-engine">Python compatibility archive (engine-backed)</option></select></label>
       <section className="package-artifacts">
         <header><span><b>SELECT DEPLOYMENT FILES</b><small>Core application, tasks, resources, schemas, and secret requirements are always included.</small></span><button type="button" onClick={() => update("artifacts", deploymentArtifactChoices[draft.target].map((choice) => choice.key))}>Select all</button></header>
         <div>{deploymentArtifactChoices[draft.target].map((choice) => <label key={choice.key} className={draft.artifacts.includes(choice.key) ? "selected" : ""}><input type="checkbox" checked={draft.artifacts.includes(choice.key)} onChange={() => toggleArtifact(choice.key)}/><span><b>{choice.label}</b><small>{choice.detail}</small></span></label>)}</div>
@@ -3836,9 +3836,10 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
       </section>
       <div className="package-preview"><Package/><span><b>{draft.artifact_name}-{draft.version}-{draft.target}.{extension}</b><small>{draft.starterTaskIds.length} starter{draft.starterTaskIds.length === 1 ? "" : "s"} · {draft.environments.length} environment profile{draft.environments.length === 1 ? "" : "s"} · related Sub Tasks resolved automatically</small></span></div>
       <p className="package-security"><ShieldCheck/> Direct Control Plane deployment securely sends configured environment secrets. Downloaded archives remain sanitized and contain only the required secret-key manifest.</p>
+      <p className="package-security">Direct Python generates async task code and rejects activities or groups it cannot convert safely. Choose “Python compatibility archive (engine-backed)” above when full runtime compatibility is required.</p>
       {error && <p className="package-error"><AlertTriangle/>{error}</p>}
     </main>
-    <footer><button disabled={busy} onClick={onClose}>Cancel</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false)}>{busy ? "Working…" : "Export archive"}</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false, true)}>{busy ? "Working…" : "Export Python archive"}</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(true, true)}>{busy ? "Working…" : "Deploy Python"}</button><button className="primary" disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(true)}>{busy ? "Working…" : "Deploy archive"}</button></footer>
+    <footer><button disabled={busy} onClick={onClose}>Cancel</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false)}>{busy ? "Working…" : "Export archive"}</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false, true)}>{busy ? "Working…" : "Export direct Python"}</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(true, true)}>{busy ? "Working…" : "Deploy direct Python"}</button><button className="primary" disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(true)}>{busy ? "Working…" : "Deploy archive"}</button></footer>
   </div></div>;
 }
 function StudioRibbon(props: any) {

@@ -139,6 +139,19 @@ class SapJcoListener:
         except (BrokenPipeError, OSError) as exc:
             raise JavaBridgeError(f"SAP JCo listener acknowledgement failed: {exc}") from exc
 
+    def reply_jms(self, delivery_id: str, payload: Any) -> None:
+        """Reply on the live provider session so temporary JMS destinations remain valid."""
+        if not delivery_id or not self.process.stdin or self.process.poll() is not None:
+            raise JavaBridgeError("JMS listener is not available to reply to the request")
+        body = payload if isinstance(payload, str) else json.dumps(payload, default=str)
+        encoded = base64.b64encode(body.encode('utf-8')).decode('ascii')
+        try:
+            with self._command_lock:
+                self.process.stdin.write(f"reply\t{delivery_id}\t{encoded}\n")
+                self.process.stdin.flush()
+        except (BrokenPipeError, OSError) as exc:
+            raise JavaBridgeError(f"JMS listener reply failed: {exc}") from exc
+
     def close(self) -> None:
         self._closed.set()
         if self.process.poll() is None:
@@ -297,7 +310,7 @@ def _classpath(config: dict[str, Any], family: str) -> tuple[str, list[Path]]:
     classes = _bridge_home() / "classes"
     if not classes.exists():
         raise JavaBridgeError(
-            f"The Java bridge classes are missing at {classes}. Run npm run desktop:prepare or scripts/build-java-bridge.ps1."
+            f"The Java bridge classes are missing at {classes}. Build scripts/build-java-bridge.ps1 on the build host and set FABRIC_JAVA_BRIDGE_HOME to the directory containing classes on the runtime."
         )
     directories = driver_directories(config, family)
     jars = sorted({jar.resolve() for directory in directories if directory.exists() for jar in directory.rglob("*.jar")})
@@ -441,7 +454,30 @@ def execute_jms(config: dict[str, Any], operation: str, destination: str, payloa
         "sessionCount": options.get("maxSessions", options.get("sessionCount", 1)), "flowLimit": options.get("flowLimit", 0),
         "clientAcknowledge": str(bool(options.get("clientAcknowledge"))).lower(), "persistent": str(str(options.get("deliveryMode", "Persistent")).lower() == "persistent").lower(),
         "priority": options.get("priority", 4), "expiration": options.get("expiration", 0), "correlationId": options.get("correlationId"), "messageType": options.get("type"),
+        "replyTo": options.get("replyTo"), "replyTopic": str(bool(options.get("replyTopic"))).lower(),
     }
     for key, value in (options.get("properties") or {}).items():
         values[f"messageProperty.{key}"] = value
     return invoke(f"jms.{operation}", config, values, family="jms", timeout=max(10, float(values["timeoutMs"] or 0) / 1000 + 10))
+
+
+def start_jms_listener(config: dict[str, Any], destination: str, options: dict[str, Any] | None = None) -> SapJcoListener:
+    """Keep one provider session alive until each delivery is confirmed/recovered."""
+    options = options or {}
+    classpath, _ = _classpath(config, "jms")
+    values = {**jms_values(config), "destination": destination,
+              "topic": str(bool(options.get("topic"))).lower(),
+              "jndiDestination": str(bool(options.get("jndiDestination"))).lower(),
+              "selector": options.get("messageSelector")}
+    descriptor = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".properties", delete=False)
+    with descriptor:
+        for key, value in {"command": "jms.listen", **values}.items():
+            if value is not None: descriptor.write(f"{_escape_property(key)}={_escape_property(value)}\n")
+    try:
+        process = subprocess.Popen(_java_command(config, classpath, descriptor.name, family="jms"),
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace", creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), bufsize=1)
+        return SapJcoListener(process, Path(descriptor.name), 2)
+    except Exception:
+        Path(descriptor.name).unlink(missing_ok=True)
+        raise

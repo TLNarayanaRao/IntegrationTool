@@ -732,17 +732,64 @@ public final class FabricJavaBridge {
             if (!p.getProperty("clientId", "").isBlank()) invoke(connection, "setClientID", p.getProperty("clientId"));
             invoke(connection, "start");
             if (operation.equals("test")) return map("message", "Native JMS connection succeeded");
-            session = invoke(connection, "createSession", false, 1); // Session.AUTO_ACKNOWLEDGE
+            session = invoke(connection, "createSession", false, operation.equals("listen") ? 2 : 1);
             String destinationName = required(p, "destination");
             Object destination;
             if (context != null && bool(p, "jndiDestination", false)) destination = context.lookup(destinationName);
             else destination = invoke(session, bool(p, "topic", false) ? "createTopic" : "createQueue", destinationName);
+            if (operation.equals("listen")) {
+                Object consumer = p.getProperty("selector", "").isBlank() ? invoke(session, "createConsumer", destination) : invoke(session, "createConsumer", destination, p.getProperty("selector"));
+                try (BufferedReader commands = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
+                    System.out.println(json(map("event", "listening", "received", false, "destination", destinationName, "ok", true)));
+                    System.out.flush();
+                    while (true) {
+                        Object message = invoke(consumer, "receive", 1000L);
+                        if (message == null) continue;
+                        String deliveryId = UUID.randomUUID().toString();
+                        Object body;
+                        try { body = invoke(message, "getText"); } catch (Exception ignored) { body = String.valueOf(message); }
+                        Map<String, Object> headers = new LinkedHashMap<>();
+                        copyHeader(headers, message, "JMSMessageID", "getJMSMessageID");
+                        copyHeader(headers, message, "JMSCorrelationID", "getJMSCorrelationID");
+                        copyHeader(headers, message, "JMSReplyTo", "getJMSReplyTo");
+                        copyHeader(headers, message, "JMSType", "getJMSType");
+                        Map<String, Object> properties = new LinkedHashMap<>();
+                        Enumeration<?> names = (Enumeration<?>) invoke(message, "getPropertyNames");
+                        while (names.hasMoreElements()) { String name = String.valueOf(names.nextElement()); properties.put(name, invoke(message, "getObjectProperty", name)); }
+                        System.out.println(json(map("event", "message", "received", true, "deliveryId", deliveryId, "body", body, "headers", headers, "properties", properties, "destination", destinationName, "ok", true)));
+                        System.out.flush();
+                        String decision;
+                        do { decision = commands.readLine(); if (decision == null) throw new EOFException("JMS acknowledgement channel closed"); }
+                        while (!decision.equals("commit\t" + deliveryId) && !decision.equals("rollback\t" + deliveryId) && !decision.startsWith("reply\t" + deliveryId + "\t"));
+                        if (decision.startsWith("reply\t")) {
+                            String[] parts = decision.split("\t", 3);
+                            Object replyDestination = invoke(message, "getJMSReplyTo");
+                            if (replyDestination == null) throw new IllegalStateException("JMS request does not contain JMSReplyTo");
+                            Object producer = invoke(session, "createProducer", replyDestination);
+                            try {
+                                String replyBody = new String(Base64.getDecoder().decode(parts[2]), StandardCharsets.UTF_8);
+                                Object reply = invoke(session, "createTextMessage", replyBody);
+                                Object correlation = invoke(message, "getJMSCorrelationID");
+                                if (correlation == null || String.valueOf(correlation).isBlank()) correlation = invoke(message, "getJMSMessageID");
+                                invoke(reply, "setJMSCorrelationID", correlation);
+                                invoke(producer, "send", reply);
+                                invoke(message, "acknowledge");
+                            } finally { close(producer); }
+                        } else if (decision.startsWith("commit\t")) invoke(message, "acknowledge");
+                        else invoke(session, "recover");
+                    }
+                } finally { close(consumer); }
+            }
             if (operation.equals("send")) {
                 Object producer = invoke(session, "createProducer", destination);
                 try {
                     Object message = invoke(session, "createTextMessage", p.getProperty("body", ""));
                     setIfPresent(message, "setJMSCorrelationID", p, "correlationId");
                     setIfPresent(message, "setJMSType", p, "messageType");
+                    if (!p.getProperty("replyTo", "").isBlank()) {
+                        Object replyDestination = invoke(session, bool(p, "replyTopic", false) ? "createTopic" : "createQueue", p.getProperty("replyTo"));
+                        invoke(message, "setJMSReplyTo", replyDestination);
+                    }
                     for (String name : p.stringPropertyNames()) if (name.startsWith("messageProperty.")) invoke(message, "setStringProperty", name.substring(16), p.getProperty(name));
                     invoke(producer, "setDeliveryMode", bool(p, "persistent", true) ? 2 : 1);
                     invoke(producer, "setPriority", integer(p, "priority", 4));
@@ -750,6 +797,32 @@ public final class FabricJavaBridge {
                     invoke(producer, "send", message);
                     return map("messageId", invoke(message, "getJMSMessageID"), "destination", destinationName, "published", true);
                 } finally { close(producer); }
+            }
+            if (operation.equals("request")) {
+                Object producer = invoke(session, "createProducer", destination);
+                Object replyDestination = p.getProperty("replyTo", "").isBlank()
+                    ? invoke(session, "createTemporaryQueue")
+                    : invoke(session, bool(p, "replyTopic", false) ? "createTopic" : "createQueue", p.getProperty("replyTo"));
+                Object consumer = invoke(session, "createConsumer", replyDestination);
+                try {
+                    Object request = invoke(session, "createTextMessage", p.getProperty("body", ""));
+                    invoke(request, "setJMSReplyTo", replyDestination);
+                    setIfPresent(request, "setJMSCorrelationID", p, "correlationId");
+                    setIfPresent(request, "setJMSType", p, "messageType");
+                    for (String name : p.stringPropertyNames()) if (name.startsWith("messageProperty.")) invoke(request, "setStringProperty", name.substring(16), p.getProperty(name));
+                    invoke(producer, "setDeliveryMode", bool(p, "persistent", true) ? 2 : 1);
+                    invoke(producer, "setPriority", integer(p, "priority", 4));
+                    invoke(producer, "setTimeToLive", number(p, "expiration", 0));
+                    invoke(producer, "send", request);
+                    Object response = invoke(consumer, "receive", number(p, "timeoutMs", 30000));
+                    if (response == null) return map("received", false, "body", null, "requestMessageId", invoke(request, "getJMSMessageID"));
+                    Object body;
+                    try { body = invoke(response, "getText"); } catch (Exception ignored) { body = String.valueOf(response); }
+                    Map<String, Object> headers = new LinkedHashMap<>();
+                    copyHeader(headers, response, "JMSMessageID", "getJMSMessageID");
+                    copyHeader(headers, response, "JMSCorrelationID", "getJMSCorrelationID");
+                    return map("received", true, "body", body, "headers", headers, "requestMessageId", invoke(request, "getJMSMessageID"));
+                } finally { close(consumer); close(producer); }
             }
             if (operation.equals("receive")) {
                 Object consumer = p.getProperty("selector", "").isBlank() ? invoke(session, "createConsumer", destination) : invoke(session, "createConsumer", destination, p.getProperty("selector"));
@@ -759,7 +832,7 @@ public final class FabricJavaBridge {
                     Object body;
                     try { body = invoke(message, "getText"); } catch (Exception ignored) { body = String.valueOf(message); }
                     Map<String, Object> headers = new LinkedHashMap<>();
-                    copyHeader(headers, message, "JMSMessageID", "getJMSMessageID"); copyHeader(headers, message, "JMSCorrelationID", "getJMSCorrelationID");
+                    copyHeader(headers, message, "JMSMessageID", "getJMSMessageID"); copyHeader(headers, message, "JMSCorrelationID", "getJMSCorrelationID"); copyHeader(headers, message, "JMSReplyTo", "getJMSReplyTo");
                     copyHeader(headers, message, "JMSType", "getJMSType"); copyHeader(headers, message, "JMSTimestamp", "getJMSTimestamp");
                     copyHeader(headers, message, "JMSPriority", "getJMSPriority"); copyHeader(headers, message, "JMSRedelivered", "getJMSRedelivered");
                     Map<String, Object> properties = new LinkedHashMap<>();

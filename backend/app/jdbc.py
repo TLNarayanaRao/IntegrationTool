@@ -392,7 +392,7 @@ def connect(config: dict):
     try:
         if _uses_java(config): return JavaJdbcTransaction(config)
         if driver == "sqlite":
-            connection = sqlite3.connect(_sqlite_path(config.get("url")), timeout=float(config.get("timeoutSeconds") or 30))
+            connection = sqlite3.connect(_sqlite_path(config.get("url")), timeout=float(config.get("timeoutSeconds") or 30), check_same_thread=False)
             connection.row_factory = sqlite3.Row
             return connection
         if driver in ("postgresql", "postgres"):

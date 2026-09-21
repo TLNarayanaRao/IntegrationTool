@@ -6,17 +6,58 @@ support library.  Unsupported activity semantics are rejected at build time.
 """
 from __future__ import annotations
 
+import keyword
 import re
 from pathlib import Path
+from pprint import pformat
 
 
 SUPPORTED = {
-    ('start', ''), ('end', ''), ('log', ''), ('mapper', ''),
+    ('start', ''), ('end', ''), ('log', ''), ('mapper', ''), ('confirm', 'acknowledge'),
     ('call_task', ''), ('catch', ''), ('throw', ''), ('rethrow', ''),
-    ('basic', 'empty'), ('basic', 'assign'), ('basic', 'sleep'),
-    ('kafka', 'publish'), ('kafka', 'receive'),
-    ('pubsub', 'publish'), ('pubsub', 'pull'),
+    ('basic', 'empty'), ('basic', 'assign'), ('basic', 'sleep'), ('basic', 'checkpoint'),
+    ('basic', 'get_shared_variable'), ('basic', 'set_shared_variable'), ('basic', 'external_command'),
+    *((('file', operation) for operation in ('read', 'write', 'list', 'delete', 'rename', 'copy', 'poll'))),
+    *((('ftp', operation) for operation in ('get', 'put', 'delete', 'dir', 'change_dir'))),
+    *((('sftp', operation) for operation in ('get', 'put', 'delete', 'dir', 'change_dir'))),
+    ('http_listener', 'listen'), ('http', 'request'), ('rest', 'receiver'), ('rest', 'invoke'),
+    ('soap', 'service'), ('soap', 'request_reply'), ('http_response', 'response'),
+    ('xml', 'parse'), ('xml', 'render'), ('json', 'parse'), ('json', 'render'),
+    ('flat', 'parse'), ('flat', 'render'), ('excel', 'read'), ('dataweave', 'transform'),
+    ('python', 'invoke'), ('java', 'invoke'),
+    *((('snowflake', operation) for operation in ('insert', 'query', 'update', 'delete', 'bulk_load'))),
+    *((('amqp', operation) for operation in ('send', 'get', 'receive', 'dead_letter'))),
+    ('kafka', 'publish'), ('kafka', 'send'), ('kafka', 'receive'), ('kafka', 'get'),
+    ('pubsub', 'publish'), ('pubsub', 'pull'), ('pubsub', 'subscribe'),
+    ('ems', 'send'), ('ems', 'publish'), ('ems', 'queue_receiver'), ('ems', 'topic_subscriber'), ('ems', 'request_reply'), ('ems', 'reply'),
+    ('jms', 'send_message'), ('jms', 'receive_message'), ('jms', 'get_queue_message'), ('jms', 'request_reply'), ('jms', 'reply_message'), ('jms', 'wait_request'),
+    ('sap', 'dynamic_connection'), ('sap', 'idoc_acknowledgment'), ('sap', 'idoc_confirmation'),
+    ('sap', 'idoc_converter'), ('sap', 'idoc_parser'), ('sap', 'idoc_reader'),
+    ('sap', 'post_idoc'), ('sap', 'idoc_renderer'), ('sap', 'invoke_rfc_bapi'),
+    ('sap', 'read_table'),
+    ('sap', 'idoc_listener'), ('sap', 'rfc_bapi_listener'), ('sap', 'reply_rfc_bapi'),
+    ('timer', 'schedule'),
+    *((('jdbc', operation) for operation in ('insert', 'update', 'query', 'truncate', 'delete', 'call', 'dynamic'))),
 }
+STRUCTURAL = {'start', 'end', 'log', 'mapper', 'call_task', 'catch', 'throw', 'rethrow'}
+EVENT_OPERATIONS = {('kafka', 'receive'), ('kafka', 'get'), ('pubsub', 'pull'), ('pubsub', 'subscribe'), ('ems', 'queue_receiver'),
+                    ('ems', 'topic_subscriber'), ('jms', 'receive_message'), ('sap', 'idoc_listener'), ('sap', 'rfc_bapi_listener'), ('timer', 'schedule')}
+EVENT_OPERATIONS.update({('http_listener', 'listen'), ('rest', 'receiver'), ('soap', 'service'), ('jms', 'wait_request')})
+
+
+def _starter_event(task: dict) -> dict | None:
+    if task.get('kind') != 'starter': return None
+    activities = {item['id']: item for item in task['activities']}
+    incoming = {edge['target'] for edge in task.get('transitions', [])}
+    entries = [item for item in task['activities'] if item['id'] not in incoming and item['type'] != 'catch']
+    if len(entries) != 1: return None
+    candidate = entries[0]
+    if candidate['type'] == 'start':
+        successors = [edge['target'] for edge in task.get('transitions', [])
+                      if edge['source'] == candidate['id'] and edge.get('type', 'success') == 'success']
+        if len(successors) == 1: candidate = activities.get(successors[0], candidate)
+    operation = str(candidate.get('config', {}).get('operation') or '')
+    return candidate if (candidate['type'], operation) in EVENT_OPERATIONS else None
 
 
 def _identifier(value: str) -> str:
@@ -24,38 +65,233 @@ def _identifier(value: str) -> str:
     return f'_{result}' if result[0].isdigit() else result
 
 
+_CONDITION_ATOM = r'(?:\$\{[^}]+\}|true|false|-?\d+(?:\.\d+)?|"[^"\n]*"|\'[^\'\n]*\')'
+
+
+def _condition_atom_source(value: str) -> str:
+    item = value.strip()
+    if item.lower() in {'true', 'false'}: return item.title()
+    if re.fullmatch(r'-?\d+(?:\.\d+)?', item): return item
+    if len(item) >= 2 and item[0] == item[-1] and item[0] in {'"', "'"}: return repr(item[1:-1])
+    if re.fullmatch(r'\$\{[^}]+\}', item): return f'resolve({_direct_literal(item)}, ctx)'
+    raise ValueError(f'Unsupported direct-code condition: {value!r}')
+
+
+def _condition_source(value: str) -> str:
+    condition = str(value or '').strip()
+    match = re.fullmatch(rf'\s*({_CONDITION_ATOM})\s*(==|!=|>=|<=|>|<)\s*({_CONDITION_ATOM})\s*', condition, re.I)
+    if match:
+        return f'({_condition_atom_source(match.group(1))} {match.group(2)} {_condition_atom_source(match.group(3))})'
+    return f'bool({_condition_atom_source(condition)})'
+
+
+def _simple_group_plans(task: dict) -> list[dict]:
+    """Accept only structured groups that compile to inline Python control flow."""
+    groups = task.get('groups') or []
+    if not groups: return []
+    if len(groups) > 1:
+        by_id = {group['id']: group for group in groups}
+        if len(by_id) != len(groups): raise ValueError(f"{task['name']}: duplicate group identifiers")
+        def ancestors(group: dict) -> list[str]:
+            result, seen = [], set()
+            current = group.get('parent_group_id')
+            while current:
+                if current not in by_id or current in seen:
+                    raise ValueError(f"{task['name']}: invalid nested group hierarchy")
+                result.append(current); seen.add(current)
+                current = by_id[current].get('parent_group_id')
+            return result
+        lineage = {group['id']: ancestors(group) for group in groups}
+        descendants = {}
+        for group in groups:
+            children = [child for child in groups if group['id'] in lineage[child['id']]]
+            descendants[group['id']] = set(group.get('member_activity_ids') or []) - set(by_id)
+            for child in children:
+                descendants[group['id']].update(set(child.get('member_activity_ids') or []) - set(by_id))
+        for left in groups:
+            for right in groups:
+                if left['id'] >= right['id']: continue
+                if descendants[left['id']] & descendants[right['id']] and left['id'] not in lineage[right['id']] and right['id'] not in lineage[left['id']]:
+                    raise ValueError(f"{task['name']}: overlapping sibling groups are ambiguous")
+        plans = []
+        for group in sorted(groups, key=lambda item: (len(lineage[item['id']]), item['id'])):
+            flattened = {**group, 'parent_group_id': None, 'member_activity_ids': sorted(descendants[group['id']])}
+            compiled = _simple_group_plans({**task, 'groups': [flattened]})
+            for plan in compiled:
+                plan['parent_group_id'] = group.get('parent_group_id')
+                plan['depth'] = len(lineage[group['id']])
+            plans.extend(compiled)
+        return plans
+    if len(groups) != 1 or groups[0].get('type') not in {'if', 'for_each', 'iterate', 'while', 'repeat', 'repeat_on_error', 'critical_section', 'transaction_jdbc'} or groups[0].get('parent_group_id'):
+        raise ValueError(f"{task['name']}: nested or unsupported groups are not yet supported by independent Python code")
+    group = groups[0]
+    members = set(group.get('member_activity_ids') or [])
+    if not members: raise ValueError(f"{task['name']}: If group is empty")
+    transitions = task.get('transitions') or []
+    entries = {edge['target'] for edge in transitions if edge['source'] not in members and edge['target'] in members}
+    exits = [edge for edge in transitions if edge['source'] in members and edge['target'] not in members]
+    if len(entries) != 1 or len(exits) != 1 or exits[0].get('type', 'success') != 'success':
+        raise ValueError(f"{task['name']}: direct group needs one external entry and one unconditional exit")
+    if any(edge['source'] in members and edge['target'] in members and edge.get('type', 'success') != 'success' for edge in transitions):
+        raise ValueError(f"{task['name']}: direct group cannot contain conditional or error transitions")
+    activity_types = {activity['id']: activity['type'] for activity in task['activities']}
+    if any(activity_types.get(member) in (None, 'end') for member in members):
+        raise ValueError(f"{task['name']}: direct group has a missing or terminal member")
+    reachable = set()
+    pending = list(entries)
+    while pending:
+        member = pending.pop()
+        if member in reachable: continue
+        reachable.add(member)
+        pending.extend(edge['target'] for edge in transitions if edge['source'] == member and edge['target'] in members)
+    if reachable != members:
+        raise ValueError(f"{task['name']}: direct group has disconnected members")
+    cfg = group.get('config') or {}
+    expression = _condition_source(str(cfg.get('condition') or '')) if group['type'] in {'if', 'while'} or group['type'] == 'repeat' and cfg.get('condition') else ''
+    if group['type'] == 'repeat' and not expression and cfg.get('count', cfg.get('iterations')) is None:
+        raise ValueError(f"{task['name']}: Repeat group needs a condition or count")
+    if group['type'] == 'repeat_on_error':
+        expression = _condition_source(str(cfg.get('stopCondition') or ''))
+    if group['type'] in {'for_each', 'iterate'}:
+        if cfg.get('collection', cfg.get('source')) in (None, '') and not (group['type'] == 'for_each' and cfg.get('start') is not None and cfg.get('end') is not None):
+            raise ValueError(f"{task['name']}: collection group needs a source or numeric range")
+    if group['type'] == 'transaction_jdbc':
+        jdbc_members = [activity for activity in task['activities'] if activity['id'] in members and activity['type'] == 'jdbc']
+        if not jdbc_members:
+            raise ValueError(f"{task['name']}: JDBC transaction group needs JDBC activities")
+        configured = str(cfg.get('resourceId') or '')
+        used = {str(item.get('config', {}).get('resourceId') or '') for item in jdbc_members}
+        if not configured and len(used) == 1: configured = next(iter(used))
+        if not configured or any(item not in ('', configured) for item in used):
+            raise ValueError(f"{task['name']}: JDBC transaction group needs one static shared connection")
+        cfg = {**cfg, 'resourceId': configured}
+    return [{'entry': next(iter(entries)), 'exit_source': exits[0]['source'],
+             'exit_target': exits[0]['target'], 'expression': expression,
+             'type': group['type'], 'config': cfg, 'id': group['id'], 'members': members,
+             'parent_group_id': group.get('parent_group_id'), 'depth': 0}]
+
+
+def _direct_literal(value, indent: int = 0) -> str:
+    """Compile expressions into Python reference objects, never Fabric syntax."""
+    if isinstance(value, str):
+        matches = list(re.finditer(r'\$\{([^}]+)\}', value))
+        if len(matches) == 1 and matches[0].span() == (0, len(value)):
+            return f'Reference({matches[0].group(1)!r})'
+        if matches:
+            parts = []
+            cursor = 0
+            for match in matches:
+                if match.start() > cursor: parts.append(repr(value[cursor:match.start()]))
+                parts.append(f'Reference({match.group(1)!r})')
+                cursor = match.end()
+            if cursor < len(value): parts.append(repr(value[cursor:]))
+            return 'Template((' + ', '.join(parts) + (',' if len(parts) == 1 else '') + '))'
+    if isinstance(value, dict):
+        if not value: return 'dict()'
+        if all(isinstance(key, str) and key.isidentifier() and not keyword.iskeyword(key) for key in value):
+            pad = ' ' * indent
+            fields = [f'{pad}    {key}={_direct_literal(item, indent + 4)},' for key, item in value.items()]
+            return 'dict(\n' + '\n'.join(fields) + f'\n{pad})'
+        return '{' + ', '.join(f'{key!r}: {_direct_literal(item, indent)}' for key, item in value.items()) + '}'
+    if isinstance(value, list):
+        return '[' + ', '.join(_direct_literal(item, indent) for item in value) + ']'
+    return repr(value)
+
+
 def validate_raw_python(project: dict) -> None:
     failures: list[str] = []
     task_ids = {task['id'] for task in project['tasks']}
     for task in project['tasks']:
-        if task.get('groups'):
-            failures.append(f"{task['name']}: groups are not yet supported by the independent Python compiler")
+        incoming_ids = {edge['target'] for edge in task.get('transitions', [])}
+        entry_ids = {activity['id'] for activity in task['activities'] if activity['type'] == 'start'} or {
+            activity['id'] for activity in task['activities'] if activity['id'] not in incoming_ids and activity['type'] != 'catch'
+        }
+        try: _simple_group_plans(task)
+        except ValueError as error: failures.append(str(error))
+        starter_event = _starter_event(task)
         for activity in task.get('activities', []):
             kind = str(activity['type'])
             operation = str(activity.get('config', {}).get('operation') or ('empty' if kind == 'basic' else ''))
-            if (kind, operation) not in SUPPORTED:
+            if kind not in STRUCTURAL and (kind, operation) not in SUPPORTED:
                 failures.append(f"{task['name']} / {activity['name']}: {kind}/{operation or 'default'}")
+            if kind in {'ems', 'jms'} and operation in {'queue_receiver', 'topic_subscriber', 'receive_message', 'get_queue_message', 'wait_request'}:
+                client_ack = str(activity.get('config', {}).get('acknowledgeMode') or 'Auto').strip().lower() not in {'auto', 'automatic'}
+                if client_ack and not (starter_event and activity['id'] == starter_event['id']):
+                    failures.append(f"{task['name']} / {activity['name']}: client acknowledgement requires a Starter Task receiver")
             if kind == 'call_task' and str(activity.get('config', {}).get('taskId') or '') not in task_ids:
                 failures.append(f"{task['name']} / {activity['name']}: Call Sub Task needs a static taskId")
-            if kind == 'mapper':
-                mappings = activity.get('config', {}).get('mappings') or []
-                rules = [{'target': key, 'source': value} for key, value in mappings.items()] if isinstance(mappings, dict) else mappings
-                for rule in rules:
-                    if not isinstance(rule, dict) or any(rule.get(key) for key in ('operator', 'condition', 'whens', 'select', 'function')):
-                        failures.append(f"{task['name']} / {activity['name']}: advanced mapping rules are not yet supported")
-                        break
-            if kind in {'kafka', 'pubsub'} and operation in {'receive', 'pull'} and task.get('kind') == 'starter' and task['activities'] and task['activities'][0]['id'] == activity['id']:
-                failures.append(f"{task['name']} / {activity['name']}: continuous event starters are not yet supported by the independent Python compiler")
+            if starter_event and activity['id'] == starter_event['id']:
+                next_edges = [edge for edge in task.get('transitions', []) if edge['source'] == activity['id']]
+                if len(next_edges) != 1 or next_edges[0].get('type', 'success') != 'success':
+                    failures.append(f"{task['name']} / {activity['name']}: event starter needs one unconditional success edge")
         outgoing: dict[str, int] = {}
         for edge in task.get('transitions', []):
             if edge.get('type', 'success') == 'success':
                 outgoing[edge['source']] = outgoing.get(edge['source'], 0) + 1
             if edge.get('type') == 'success_condition' and str(edge.get('condition') or '').strip() not in ('true', 'false') and not re.fullmatch(r'\$\{[^}]+\}', str(edge.get('condition') or '')):
                 failures.append(f"{task['name']}: conditional transition {edge.get('id', '')} needs a simple boolean field expression")
-        if any(count > 1 for count in outgoing.values()):
-            failures.append(f"{task['name']}: parallel success branches are not yet supported")
+        if task.get('groups') and any(count > 1 for count in outgoing.values()):
+            failures.append(f"{task['name']}: parallel branches inside groups are not yet supported by direct code")
+        for source_id, count in outgoing.items():
+            if count <= 1: continue
+            pending = [edge['target'] for edge in task.get('transitions', []) if edge['source'] == source_id and edge.get('type', 'success') == 'success']
+            visited = set()
+            while pending:
+                candidate = pending.pop()
+                if candidate == source_id:
+                    failures.append(f"{task['name']}: parallel branches cannot cycle back to their fork")
+                    break
+                if candidate in visited: continue
+                visited.add(candidate)
+                pending.extend(edge['target'] for edge in task.get('transitions', []) if edge['source'] == candidate and edge.get('type', 'success') == 'success')
+        for activity in task['activities']:
+            edges = [edge for edge in task.get('transitions', []) if edge['source'] == activity['id']]
+            conditions = [edge for edge in edges if edge.get('type') == 'success_condition']
+            if len(conditions) > 1 or conditions and any(edge.get('type', 'success') == 'success' for edge in edges):
+                failures.append(f"{task['name']} / {activity['name']}: parallel conditional branches are not yet supported by direct code")
     if failures:
         raise ValueError('Raw Python export cannot preserve these behaviors yet: ' + '; '.join(failures))
+
+
+def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
+    """Return optional runtime requirements actually used by the task closure."""
+    activity_pairs = {(str(activity.get('type') or ''), str(activity.get('config', {}).get('operation') or ''))
+                      for task in project.get('tasks', []) for activity in task.get('activities', [])}
+    resources: dict[str, list[dict]] = {}
+    for item in project.get('resources', []): resources.setdefault(str(item.get('type') or ''), []).append(item.get('config') or {})
+    def needs_external(kind: str) -> bool:
+        configured = resources.get(kind) or []
+        return not configured or any(str(item.get('mode') or '').lower() not in {'memory', 'mock'} for item in configured)
+    checks: list[dict] = []
+    def add(name: str, modules: list[str], install: str, *, any_module: bool = False, java: bool = False):
+        if not any(item['name'] == name for item in checks):
+            checks.append({'name': name, 'modules': modules, 'install': install, 'any': any_module, 'java': java})
+    if any(kind == 'kafka' for kind, _ in activity_pairs) and needs_external('kafka'): add('Kafka client', ['aiokafka'], 'python -m pip install aiokafka')
+    if any(kind == 'pubsub' for kind, _ in activity_pairs): add('Google Pub/Sub client', ['google.cloud.pubsub_v1', 'google.oauth2'], 'python -m pip install google-cloud-pubsub google-auth')
+    if any(kind == 'sftp' for kind, _ in activity_pairs): add('SFTP client', ['paramiko'], 'python -m pip install paramiko')
+    if any(kind == 'excel' for kind, _ in activity_pairs): add('Excel reader', ['openpyxl'], 'python -m pip install openpyxl')
+    if any(kind == 'snowflake' for kind, _ in activity_pairs): add('Snowflake client', ['snowflake.connector'], 'python -m pip install snowflake-connector-python')
+    if any(kind == 'amqp' for kind, _ in activity_pairs):
+        amqp_config = (resources.get('amqp') or [{}])[0]
+        mode = str(amqp_config.get('brokerType') or amqp_config.get('provider') or '').lower()
+        if 'azure' in mode: add('Azure Service Bus AMQP client', ['azure.servicebus'], 'python -m pip install azure-servicebus')
+        elif needs_external('amqp'): add('AMQP client', ['pika', 'azure.servicebus'], 'python -m pip install pika  # or azure-servicebus', any_module=True)
+    sap_sources = {str(activity.get('config', {}).get('messagingSource') or '').strip().lower().replace(' ', '')
+                   for task in project.get('tasks', []) for activity in task.get('activities', [])
+                   if activity.get('type') == 'sap' and activity.get('config', {}).get('operation') == 'idoc_listener'}
+    if 'kafka' in sap_sources and needs_external('kafka'): add('Kafka client', ['aiokafka'], 'python -m pip install aiokafka')
+    bridge_kinds = {kind for kind, _ in activity_pairs if kind in {'ems', 'jms', 'sap'} and needs_external(kind)}
+    if any(source in sap_sources and needs_external(source) for source in ('ems', 'jms')):
+        bridge_kinds.add('sap-messaging-bridge')
+    if bridge_kinds or any(kind == 'java' for kind, _ in activity_pairs):
+        add('Java vendor bridge', [], 'Provision Java plus the licensed vendor JARs in the configured driver directory.', java=True)
+    external: list[str] = []
+    for task in project.get('tasks', []):
+        for activity in task.get('activities', []):
+            cfg = activity.get('config') or {}
+            if activity.get('type') in {'java', 'python'} and cfg.get('artifactPath'):
+                external.append(str(cfg['artifactPath']))
+    return checks, sorted(set(external))
 
 
 def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str, bytes]:
@@ -63,27 +299,51 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     root = Path(__file__).with_name('raw_python_support')
     files = {
         f'application/{name}': (root / name).read_bytes()
-        for name in ('__init__.py', 'core.py', 'connectors.py', 'main.py')
+        for name in ('__init__.py', 'core.py', 'connectors.py', 'activities.py', 'diagnostics.py', 'qualification.py', 'main.py')
     }
+    # A Python script task can run run.py from an extracted archive.  The
+    # __main__ module also makes the .pyifpkg directly executable by CPython
+    # as a zip application, without generating or editing a launcher.
+    launcher = b'"""Run this exported application with any standard Python interpreter."""\nfrom application.main import main\n\nif __name__ == "__main__":\n    raise SystemExit(main())\n'
+    files['run.py'] = launcher
+    files['__main__.py'] = launcher
+    files['application/native/__init__.py'] = b'"""Self-contained Python connector adapters; vendor binaries are external."""\n'
+    for name in ('sap.py', 'java_bridge.py', 'jdbc.py', 'snowflake.py', 'amqp.py', 'dataweave.py', 'mapper.py'):
+        files[f'application/native/{name}'] = Path(__file__).with_name(name).read_bytes()
     files['application/tasks/__init__.py'] = b'"""Generated async tasks."""\n'
+    checks, external_files = raw_python_requirements(project)
+    files['application/requirements.py'] = (
+        '"""Generated deployment requirements for this application."""\n'
+        f'CHECKS = {pformat(checks, width=100, sort_dicts=False)}\n'
+        f'EXTERNAL_FILES = {pformat(external_files, width=100, sort_dicts=False)}\n'
+    ).encode('utf-8')
     task_modules: dict[str, str] = {}
     for index, task in enumerate(project['tasks']):
         module = f'task_{index}_{_identifier(str(task["id"]))}'
         task_modules[task['id']] = module
+    profile_source = ',\n    '.join(
+        f'{name!r}: [{", ".join(_python_call("Property", item, ("key", "value", "data_type"), 8) for item in values)}]'
+        for name, values in profiles.items())
+    resource_source = ',\n    '.join(
+        f'{resource["id"]!r}: Resource(id={resource["id"]!r}, type={resource["type"]!r}, name={resource["name"]!r}, config={_direct_literal(resource["config"], 8)})'
+        for resource in project['resources'])
+    schema_source = ',\n    '.join(
+        f'{schema["name"]!r}: {_python_call("Schema", schema, ("name", "content"), 4)}'
+        for schema in project.get('schemas', []))
     files['application/config.py'] = (
         '"""Typed, sanitized deployment configuration. Secrets come from environment variables."""\n'
-        'from dataclasses import dataclass, field\nfrom typing import Any\nimport json\nimport os\n\n'
+        'from dataclasses import dataclass, field\nfrom typing import Any\nimport json\nimport os\nfrom .core import Reference, Template\n\n'
         '@dataclass(frozen=True)\nclass Property:\n    key: str\n    value: Any\n    data_type: str = "string"\n\n'
         '@dataclass(frozen=True)\nclass Resource:\n    id: str\n    type: str\n    name: str\n    config: dict[str, Any] = field(default_factory=dict)\n\n'
         '@dataclass(frozen=True)\nclass Schema:\n    name: str\n    content: str\n\n'
-        f'PROFILES = {repr(profiles)}\n'
-        f'RESOURCES = {repr({r["id"]: r for r in project["resources"]})}\n'
-        f'SCHEMAS = {{name: Schema(name, content) for name, content in {repr({s["name"]: s["content"] for s in project.get("schemas", [])})}.items()}}\n\n'
+        f'PROFILES = {{\n    {profile_source}\n}}\n'
+        'DEFAULT_ENVIRONMENT = next(iter(PROFILES), "local")\n'
+        f'RESOURCES = {{\n    {resource_source}\n}}\n'
+        f'SCHEMAS = {{\n    {schema_source}\n}}\n\n'
         'def environment(name: str) -> tuple[dict[str, Any], dict[str, Resource]]:\n'
         '    if name not in PROFILES:\n        raise ValueError(f"Unknown environment: {name}")\n'
         '    properties = {}\n'
-        '    for item in PROFILES[name]:\n'
-        '        prop = Property(**item)\n'
+        '    for prop in PROFILES[name]:\n'
         '        value = os.environ.get(prop.key, prop.value)\n'
         '        if prop.data_type in ("integer", "long") and value not in (None, ""): value = int(value)\n'
         '        elif prop.data_type == "number" and value not in (None, ""): value = float(value)\n'
@@ -91,22 +351,30 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         '        elif prop.data_type == "json" and isinstance(value, str) and value: value = json.loads(value)\n'
         '        properties[prop.key] = value\n'
         '    resources = {}\n'
-        '    for key, record in RESOURCES.items():\n'
-        '        config = dict(record["config"])\n'
+        '    for key, resource in RESOURCES.items():\n'
+        '        config = dict(resource.config)\n'
         '        for field in config:\n'
         '            secret_key = f"resources.{key}.config.{field}"\n'
         '            if secret_key in os.environ: config[field] = os.environ[secret_key]\n'
-        '        resources[key] = Resource(record["id"], record["type"], record["name"], config)\n'
+        '        resources[key] = Resource(resource.id, resource.type, resource.name, config)\n'
         '    return properties, resources\n'
     ).encode('utf-8')
     task_imports = '\n'.join(f'from .tasks import {module}' for module in task_modules.values())
     registry = ', '.join(f'{task_id!r}: {module}.run' for task_id, module in task_modules.items())
+    event_starters = {task['id']: activity for task in project['tasks']
+                      if (activity := _starter_event(task)) is not None}
+    event_source = ',\n    '.join(
+        f'{task_id!r}: ({activity["id"]!r}, {activity["type"]!r}, {_direct_literal(activity.get("config") or {}, 8)}, {activity["name"]!r})'
+        for task_id, activity in event_starters.items())
     files['application/registry.py'] = (
         '"""Generated task registry; callable from notebooks or another Python host."""\n'
+        'from .core import Reference, Template\n'
         f'{task_imports}\nTASKS = {{{registry}}}\n'
         f'STARTERS = {repr([task["id"] for task in project["tasks"] if task["kind"] == "starter"])}\n'
+        f'EVENT_STARTERS = {{\n    {event_source}\n}}\n'
     ).encode('utf-8')
     for task in project['tasks']:
+        group_plans = _simple_group_plans(task)
         activities = {activity['id']: activity for activity in task['activities']}
         incoming = {edge['target'] for edge in task['transitions']}
         starts = [activity['id'] for activity in task['activities'] if activity['type'] == 'start'] or [activity['id'] for activity in task['activities'] if activity['id'] not in incoming and activity['type'] != 'catch']
@@ -117,46 +385,274 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
                 raise ValueError(f"Raw Python task {task['name']} contains a dangling transition")
         lines = [
             '"""Direct async implementation of this Integration Fabric task."""',
-            'from application.core import Context, execute_with_policy, choose_transition',
+            'import asyncio',
+            'from application.core import Context, execute_with_policy, resolve, group_lock, Reference, Template',
+            'from application.native.jdbc import jdbc_adapter',
             '',
             f'TASK_ID = {task["id"]!r}',
             f'TASK_NAME = {task["name"]!r}',
-            f'TRANSITIONS = {repr(task["transitions"])}',
             '',
-            'async def run(ctx: Context):',
-            f'    current = {starts[0]!r}',
+            'async def run(ctx: Context, *, start_after: str | None = None, event_output=None, start_at: str | None = None):',
+            '    if start_after is not None:',
+            '        ctx.record(start_after, event_output)',
+            f'    current = start_at if start_at is not None else ({starts[0]!r} if start_after is None else {{' + ', '.join(
+                f'{activity["id"]!r}: {next((edge["target"] for edge in task["transitions"] if edge["source"] == activity["id"] and edge.get("type", "success") == "success"), None)!r}'
+                for activity in task['activities']) + '}.get(start_after))',
             '    steps = 0',
+            '    handled_catches = set()',
             '    while current is not None:',
             '        steps += 1',
             '        if steps > 100000:',
             '            raise RuntimeError(f"Task {TASK_NAME} exceeded its execution step limit")',
-            '        try:',
         ]
+        if group_plans:
+            insertion = lines.index('    while current is not None:')
+            lines[insertion:insertion] = [
+                '    group_items = {}', '    group_indices = {}',
+                '    transaction_connections = {}', '    transaction_resources = {}',
+                '    critical_locks = {}', '    retry_remaining = {}', '    retry_iterations = {}',
+            ]
+        for plan in group_plans:
+            if plan['type'] == 'if':
+                lines.extend([
+                    f'        if current == {plan["entry"]!r} and not ({plan["expression"]}):',
+                    f'            current = {plan["exit_target"]!r}',
+                    '            continue',
+                ])
+            elif plan['type'] in {'while', 'repeat'}:
+                cfg = plan['config']
+                group_id = plan['id']
+                index_name = str(cfg.get('indexVariable') or 'index')
+                lines.append(f'        if current == {plan["entry"]!r}:')
+                if plan['type'] == 'while':
+                    lines.append(f'            if not ({plan["expression"]}):')
+                elif plan['expression']:
+                    lines.append(f'            if group_indices.get({group_id!r}, 0) > 0 and ({plan["expression"]}):')
+                else:
+                    lines.append(f'            if group_indices.get({group_id!r}, 0) >= int(resolve({_direct_literal(cfg.get("count", cfg.get("iterations")))}, ctx)):')
+                lines.extend([
+                    f'                group_indices.pop({group_id!r}, None)',
+                    f'                current = {plan["exit_target"]!r}',
+                    '                continue',
+                    f'            if group_indices.get({group_id!r}, 0) >= int(resolve({_direct_literal(cfg.get("maxIterations", 10000))}, ctx)):',
+                    f'                raise RuntimeError({plan["id"]!r} + " exceeded maxIterations")',
+                    f'            group_indices[{group_id!r}] = group_indices.get({group_id!r}, 0) + 1',
+                    f'            ctx.variables[{index_name!r}] = group_indices[{group_id!r}]',
+                    f"            ctx.variables['currentIndex'] = group_indices[{group_id!r}]",
+                ])
+            elif plan['type'] == 'transaction_jdbc':
+                group_id = plan['id']
+                lines.extend([
+                    f'        if current == {plan["entry"]!r} and {group_id!r} not in transaction_connections:',
+                    f'            transaction_resource_id = str(resolve({_direct_literal(plan["config"]["resourceId"])}, ctx))',
+                    '            transaction_resource = ctx.resources.get(transaction_resource_id)',
+                    '            if transaction_resource is None or transaction_resource.type != "jdbc":',
+                    '                raise RuntimeError("JDBC transaction requires the configured shared connection")',
+                    '            transaction_conn = await asyncio.to_thread(jdbc_adapter.connect, resolve(transaction_resource.config, ctx))',
+                    f'            transaction_connections[{group_id!r}] = transaction_conn',
+                    f'            transaction_resources[{group_id!r}] = transaction_resource_id',
+                    '            ctx.transactions[transaction_resource_id] = transaction_conn',
+                ])
+            elif plan['type'] == 'critical_section':
+                group_id = plan['id']
+                lock_name = plan['config'].get('lockName') or f'{task["id"]}:{plan["id"]}'
+                lines.extend([
+                    f'        if current == {plan["entry"]!r} and {group_id!r} not in critical_locks:',
+                    f'            critical_lock = group_lock(str(resolve({_direct_literal(lock_name)}, ctx)))',
+                    '            await critical_lock.acquire()',
+                    f'            critical_locks[{group_id!r}] = critical_lock',
+                ])
+            elif plan['type'] == 'repeat_on_error':
+                cfg = plan['config']
+                group_id = plan['id']
+                index_name = str(cfg.get('indexVariable') or 'index')
+                lines.extend([
+                    f'        if current == {plan["entry"]!r} and {group_id!r} not in retry_remaining:',
+                    f'            retry_remaining[{group_id!r}] = max(0, int(resolve({_direct_literal(cfg.get("retryCount", cfg.get("retries", 3)))}, ctx)))',
+                    f'            retry_iterations[{group_id!r}] = 1',
+                    f'            ctx.variables[{index_name!r}] = retry_iterations[{group_id!r}]',
+                    f"            ctx.variables['currentIndex'] = retry_iterations[{group_id!r}]",
+                ])
+            else:
+                cfg = plan['config']
+                group_id = plan['id']
+                source = cfg.get('collection', cfg.get('source'))
+                if source in (None, ''):
+                    start = _direct_literal(cfg.get('start', 1)); end = _direct_literal(cfg.get('end', 1)); increment = _direct_literal(cfg.get('increment', 1))
+                    source_expr = f'range(int(resolve({start}, ctx)), int(resolve({end}, ctx)) + (1 if int(resolve({increment}, ctx)) > 0 else -1), int(resolve({increment}, ctx)))'
+                else:
+                    source_expr = f'resolve({_direct_literal(source)}, ctx)'
+                item_name = str(cfg.get('currentElementName') or cfg.get('itemVariable') or 'currentElement')
+                index_name = str(cfg.get('indexVariable') or 'index')
+                accumulator = str(cfg.get('accumulatorVariable') or f'{plan["id"]}Results')
+                lines.extend([
+                    f'        if current == {plan["entry"]!r}:',
+                    f'            if {group_id!r} not in group_items:',
+                    f'                group_source = {source_expr}',
+                    f'                group_items[{group_id!r}] = list(group_source.values()) if isinstance(group_source, dict) else list(group_source or [])',
+                    f'                group_indices[{group_id!r}] = 0',
+                ])
+                if cfg.get('accumulateOutput'):
+                    lines.append(f'                ctx.variables[{accumulator!r}] = []')
+                lines.extend([
+                    f'            if group_indices[{group_id!r}] >= len(group_items[{group_id!r}]):',
+                    f'                group_items.pop({group_id!r}, None)',
+                    f'                group_indices.pop({group_id!r}, None)',
+                    f'                current = {plan["exit_target"]!r}',
+                    '                continue',
+                    f'            if group_indices[{group_id!r}] >= int(resolve({_direct_literal(cfg.get("maxIterations", 10000))}, ctx)):',
+                    f'                raise RuntimeError({plan["id"]!r} + " exceeded maxIterations")',
+                    f'            current_element = group_items[{group_id!r}][group_indices[{group_id!r}]]',
+                    f'            ctx.variables[{item_name!r}] = current_element',
+                    "            ctx.variables['currentElement'] = current_element",
+                    f'            ctx.variables[{index_name!r}] = group_indices[{group_id!r}] + 1',
+                    f"            ctx.variables['currentIndex'] = group_indices[{group_id!r}] + 1",
+                    f'            group_indices[{group_id!r}] += 1',
+                ])
         for index, activity in enumerate(task['activities']):
             prefix = 'if' if index == 0 else 'elif'
             config = activity.get('config') or {}
+            outgoing = [edge for edge in task['transitions'] if edge['source'] == activity['id']]
+            error_target = next((edge['target'] for edge in outgoing if edge.get('type') == 'error'), None)
+            conditional = [edge for edge in outgoing if edge.get('type') == 'success_condition']
+            ordinary = next((edge['target'] for edge in outgoing if edge.get('type', 'success') == 'success'), None)
+            ordinary_targets = [edge['target'] for edge in outgoing if edge.get('type', 'success') == 'success']
+            no_match = next((edge['target'] for edge in outgoing if edge.get('type') == 'success_no_match'), None)
             lines.extend([
-                f'            {prefix} current == {activity["id"]!r}:',
-                f'                result = await execute_with_policy({activity["type"]!r}, {repr(config)}, ctx, {activity["id"]!r}, {activity["name"]!r})',
+                f'        {prefix} current == {activity["id"]!r}:',
+                '            try:',
+                f'                result = await execute_with_policy({activity["type"]!r}, {_direct_literal(config, 16)}, ctx, {activity["id"]!r}, {activity["name"]!r})',
+                '            except Exception as error:',
+                '                ctx.error = error',
             ])
+            for plan in sorted(group_plans, key=lambda item: item.get('depth', 0), reverse=True):
+                if activity['id'] not in set(plan.get('members') or []): continue
+                if plan['type'] == 'transaction_jdbc':
+                    group_id = plan['id']
+                    lines.extend([
+                        f'                if {group_id!r} in transaction_connections:',
+                        f'                    transaction_conn = transaction_connections.pop({group_id!r})',
+                        f'                    transaction_resource_id = transaction_resources.pop({group_id!r})',
+                        '                    await asyncio.to_thread(transaction_conn.rollback)',
+                        '                    await asyncio.to_thread(transaction_conn.close)',
+                        '                    ctx.transactions.pop(transaction_resource_id, None)',
+                    ])
+                elif plan['type'] == 'critical_section':
+                    group_id = plan['id']
+                    lines.extend([
+                        f'                if {group_id!r} in critical_locks:',
+                        f'                    critical_lock = critical_locks.pop({group_id!r})',
+                        '                    critical_lock.release()',
+                    ])
+                elif plan['type'] == 'repeat_on_error':
+                    cfg = plan['config']
+                    group_id = plan['id']
+                    index_name = str(cfg.get('indexVariable') or 'index')
+                    delay = _direct_literal(cfg.get('retryIntervalSeconds', cfg.get('retryDelaySeconds', 0)))
+                    lines.extend([
+                        f'                if retry_remaining.get({group_id!r}, 0) > 0:',
+                        f'                    retry_remaining[{group_id!r}] -= 1',
+                        f'                    retry_iterations[{group_id!r}] += 1',
+                        f'                    ctx.variables[{index_name!r}] = retry_iterations[{group_id!r}]',
+                        f"                    ctx.variables['currentIndex'] = retry_iterations[{group_id!r}]",
+                        f'                    if not ({plan["expression"]}):',
+                    ])
+                    for member in sorted(plan['members']):
+                        lines.append(f'                        ctx.outputs.pop({member!r}, None)')
+                    lines.extend([
+                        f'                        await asyncio.sleep(max(0.0, float(resolve({delay}, ctx))))',
+                        f'                        current = {plan["entry"]!r}',
+                        '                        continue',
+                    ])
+            lines.extend([
+                f'                current = {error_target!r}',
+                '                if current is None:',
+                '                    fault_type = str(getattr(error, "fault_type", type(error).__name__))',
+                '                    fault_code = str(getattr(error, "code", "") or "")',
+            ])
+            global_catches = [item for item in task['activities'] if item['type'] == 'catch' and
+                              not any(edge.get('target') == item['id'] and edge.get('type') == 'error' for edge in task['transitions'])]
+            for catch in global_catches:
+                catch_cfg = catch.get('config') or {}
+                catch_all = bool(catch_cfg.get('catchAll', True))
+                catch_type = str(catch_cfg.get('errorType') or '')
+                catch_code = str(catch_cfg.get('errorCode') or '')
+                match = 'True' if catch_all else f'(fault_type == {catch_type!r} or (bool({catch_code!r}) and fault_code == {catch_code!r}))'
+                lines.extend([
+                    f'                    if current is None and {catch["id"]!r} not in handled_catches and {match}:',
+                    f'                        handled_catches.add({catch["id"]!r})',
+                    f'                        current = {catch["id"]!r}',
+                ])
+            lines.extend(['                if current is None: raise', '            else:', f'                ctx.record({activity["id"]!r}, result)'])
+            if activity['type'] == 'end':
+                lines.append('                return result')
+            elif conditional:
+                for condition_index, edge in enumerate(conditional):
+                    condition = str(edge.get('condition') or '').strip()
+                    expression = 'True' if condition.lower() == 'true' else 'False' if condition.lower() == 'false' else f'bool(resolve({_direct_literal(condition, 16)}, ctx))'
+                    lines.append(f'                {"if" if condition_index == 0 else "elif"} {expression}: current = {edge["target"]!r}')
+                lines.append(f'                else: current = {no_match!r}')
+            elif len(ordinary_targets) > 1:
+                calls = ', '.join(f'run(ctx.fork(), start_at={target!r})' for target in ordinary_targets)
+                lines.extend([
+                    f'                branch_results = await asyncio.gather({calls})',
+                    '                return branch_results[-1] if branch_results else ctx.last',
+                ])
+            else:
+                exits = [plan for plan in group_plans if plan['exit_source'] == activity['id']]
+                boundary_exit = max(exits, key=lambda item: item.get('depth', 0), default=None)
+                collection_exit = boundary_exit if boundary_exit and boundary_exit['type'] in {'for_each', 'iterate', 'while', 'repeat'} else None
+                transaction_exit = boundary_exit if boundary_exit and boundary_exit['type'] == 'transaction_jdbc' else None
+                critical_exit = boundary_exit if boundary_exit and boundary_exit['type'] == 'critical_section' else None
+                retry_exit = boundary_exit if boundary_exit and boundary_exit['type'] == 'repeat_on_error' else None
+                if collection_exit:
+                    if collection_exit['config'].get('accumulateOutput'):
+                        accumulator = str(collection_exit['config'].get('accumulatorVariable') or f'{collection_exit["id"]}Results')
+                        lines.append(f'                ctx.variables[{accumulator!r}].append(ctx.last)')
+                    lines.append(f'                current = {collection_exit["entry"]!r}')
+                elif transaction_exit:
+                    group_id = transaction_exit['id']
+                    lines.extend([
+                        f'                transaction_conn = transaction_connections.pop({group_id!r})',
+                        f'                transaction_resource_id = transaction_resources.pop({group_id!r})',
+                        '                await asyncio.to_thread(transaction_conn.commit)',
+                        '                await asyncio.to_thread(transaction_conn.close)',
+                        '                ctx.transactions.pop(transaction_resource_id, None)',
+                        f'                current = {ordinary!r}',
+                    ])
+                elif critical_exit:
+                    group_id = critical_exit['id']
+                    lines.extend([
+                        f'                critical_lock = critical_locks.pop({group_id!r})',
+                        '                critical_lock.release()',
+                        f'                current = {ordinary!r}',
+                    ])
+                elif retry_exit:
+                    group_id = retry_exit['id']
+                    lines.extend([f'                retry_remaining.pop({group_id!r}, None)',
+                                  f'                retry_iterations.pop({group_id!r}, None)', f'                current = {ordinary!r}'])
+                else:
+                    lines.append(f'                current = {ordinary!r}')
         lines.extend([
-            '            else:',
-            '                raise RuntimeError(f"Unknown activity {current!r} in {TASK_NAME}")',
-            '        except Exception as error:',
-            '            ctx.error = error',
-            '            current = choose_transition(TRANSITIONS, current, ctx, error=error)',
-            '            if current is None:',
-            '                raise',
             '        else:',
-            '            ctx.record(current, result)',
-            '            if current in END_IDS:',
-            '                return result',
-            '            current = choose_transition(TRANSITIONS, current, ctx)',
+            '            raise RuntimeError(f"Unknown activity {current!r} in {TASK_NAME}")',
             '    return ctx.last',
             '',
-            f'END_IDS = {repr([activity["id"] for activity in task["activities"] if activity["type"] == "end"])}',
-            '',
         ])
+        if any(plan['type'] in {'transaction_jdbc', 'critical_section'} for plan in group_plans):
+            start = lines.index('    while current is not None:')
+            body = lines[start:-1]
+            lines[start:-1] = ['    try:', *(f'    {line}' for line in body), '    finally:']
+            lines.extend([
+                '        for group_id, transaction_conn in list(transaction_connections.items()):',
+                '            transaction_resource_id = transaction_resources.get(group_id)',
+                '            try: await asyncio.to_thread(transaction_conn.rollback)',
+                '            finally:',
+                '                await asyncio.to_thread(transaction_conn.close)',
+                '                if transaction_resource_id: ctx.transactions.pop(transaction_resource_id, None)',
+                '        for critical_lock in list(critical_locks.values()):',
+                '            if critical_lock.locked(): critical_lock.release()',
+            ])
         files[f'application/tasks/{task_modules[task["id"]]}.py'] = ('\n'.join(lines)).encode('utf-8')
     for name, body in files.items():
         if name.endswith('.py'):
@@ -172,6 +668,29 @@ ENGINE_MODULES = (
     'snowflake.py', 'jdbc.py', 'amqp.py', 'java_bridge.py',
     'google_pubsub.py', 'time_utils.py',
 )
+
+
+def _python_literal(value, indent: int) -> str:
+    if isinstance(value, dict) and all(isinstance(key, str) and key.isidentifier() and not keyword.iskeyword(key) for key in value):
+        if not value:
+            return 'dict()'
+        pad = ' ' * indent
+        parts = [f'{pad}    {key}={_python_literal(item, indent + 4)},' for key, item in value.items()]
+        return 'dict(\n' + '\n'.join(parts) + f'\n{pad})'
+    rendered = pformat(value, width=88, sort_dicts=False)
+    return rendered.replace('\n', '\n' + ' ' * indent)
+
+
+def _python_call(name: str, values: dict, fields: tuple[str, ...], indent: int = 8) -> str:
+    """Emit readable Python constructor arguments instead of a model-dump blob."""
+    pad = ' ' * indent
+    arguments = []
+    for field in fields:
+        if field not in values:
+            continue
+        rendered = _python_literal(values[field], indent + 4)
+        arguments.append(f'{pad}    {field}={rendered},')
+    return f'{name}(\n' + '\n'.join(arguments) + f'\n{pad})'
 
 
 def engine_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str, bytes]:
@@ -199,38 +718,45 @@ def engine_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[
         task_calls.append(f'build_task_{index}()')
         attributes = {key: value for key, value in task.items() if key not in {'activities', 'transitions', 'groups'}}
         activities = ',\n        '.join(
-            f'Activity(**{repr(activity)})' for activity in task['activities'])
+            _python_call('Activity', activity, ('id', 'type', 'name', 'config'))
+            for activity in task['activities'])
         transitions = ',\n        '.join(
-            f'Transition(**{repr(edge)})' for edge in task['transitions'])
+            _python_call('Transition', edge, ('id', 'source', 'target', 'label', 'type', 'condition'))
+            for edge in task['transitions'])
         groups = ',\n        '.join(
-            f'GroupDefinition(**{repr(group)})' for group in task.get('groups', []))
+            _python_call('GroupDefinition', group, ('id', 'type', 'name', 'member_activity_ids', 'config', 'parent_group_id'))
+            for group in task.get('groups', []))
+        task_header = _python_call('TaskDefinition', attributes, ('id', 'name', 'kind', 'description', 'input_schema', 'output_schema'), 4)
+        task_header = task_header.rsplit('\n', 1)[0] + '\n'
         files[f'application/tasks/{module}.py'] = (
-            '"""Generated Python definition and async entry for this task."""\n'
+            '"""Executable Python task definition and async entry point."""\n'
             'from application.engine.models import Activity, GroupDefinition, TaskDefinition, Transition\n'
             'from application.engine.runtime import WorkflowRuntime\n\n'
             'def build_task() -> TaskDefinition:\n'
-            f'    return TaskDefinition(**{repr(attributes)},\n'
+            f'    return {task_header}'
             f'        activities=[{activities}],\n'
             f'        transitions=[{transitions}],\n'
-            f'        groups=[{groups}])\n\n'
+            f'        groups=[{groups}],\n'
+            '    )\n\n'
             'async def run(initial=None, *, resources=None, properties=None, project=None):\n'
             '    """Run this task directly from a notebook or Python caller."""\n'
             '    return await WorkflowRuntime().run(build_task(), initial or {}, resources or {}, properties or {}, project=project)\n'
         ).encode('utf-8')
     project_fields = {key: value for key, value in project.items()
                       if key not in {'tasks', 'resources', 'schemas', 'properties', 'custom_functions', 'process'}}
-    resources = ',\n        '.join(f'SharedResource(**{repr(value)})' for value in project['resources'])
-    schemas = ',\n        '.join(f'SchemaAsset(**{repr(value)})' for value in project.get('schemas', []))
-    functions = ',\n        '.join(f'CustomFunction(**{repr(value)})' for value in project.get('custom_functions', []))
+    resources = ',\n        '.join(_python_call('SharedResource', value, ('id', 'type', 'name', 'config')) for value in project['resources'])
+    schemas = ',\n        '.join(_python_call('SchemaAsset', value, ('id', 'name', 'content')) for value in project.get('schemas', []))
+    functions = ',\n        '.join(_python_call('CustomFunction', value, ('id', 'name', 'parameters', 'expression', 'description')) for value in project.get('custom_functions', []))
     profile_lines = ',\n        '.join(
-        f'{name!r}: [{", ".join(f"EnvironmentProperty(**{repr(value)})" for value in values)}]'
+        f'{name!r}: [{", ".join(_python_call("EnvironmentProperty", value, ("key", "value", "data_type")) for value in values)}]'
         for name, values in profiles.items())
+    project_header = _python_call('Project', project_fields, ('id', 'name', 'description', 'active_environment', 'active_task_id'), 4).rsplit('\n', 1)[0] + '\n'
     files['application/project.py'] = (
-        '"""Python-only, typed project assembly; no project/task/resource JSON."""\n'
+        '"""Typed Python application assembly; no Fabric descriptor is loaded."""\n'
         'from .engine.models import CustomFunction, EnvironmentProperty, Project, SchemaAsset, SharedResource\n'
         + '\n'.join(task_imports) + '\n\n'
         'def build_project() -> Project:\n'
-        f'    return Project(**{repr(project_fields)},\n'
+        f'    return {project_header}'
         f'        resources=[{resources}],\n'
         f'        schemas=[{schemas}],\n'
         f'        custom_functions=[{functions}],\n'
