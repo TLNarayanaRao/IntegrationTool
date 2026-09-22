@@ -1,12 +1,1 @@
-These must be two independent deployment types:
-1. Standard archive
-   Existing JSON-based .ifpkg / .ear deployment. No change.
-2. Raw Python archive
-   A separate deployable Python application:
-   - main.py / task Python modules with direct async code
-   - Python connector implementations for SAP, Kafka, Pub/Sub, EMS, logging, mapping, and confirm
-   - Python asyncio branches, retries, and error handling
-   - Python typed configuration and schema models
-   - No application/project.json, task JSON, resource JSON, or Fabric DSL
-   - Control Plane deploys the Python entry point directly
-manifest.json can remain only as Control Plane package metadata; it is not application code. The Python archive itself will contain Python-only application implementation.
+{"projectId":"test","project":"petm-out-artmas05-prc","time":"2026-09-21T19:25:55.902019-07:00","level":"ERROR","kind":"packaging","message":"HTTPException: Raw Python export cannot preserve these behaviors yet: t-receive-sap-send-kafka / IDoc-Listener: event starter needs one unconditional success edge","traceback":"Traceback (most recent call last):\n  File \"app\\main.py\", line 1214, in build_deployment_archive\n    python_files = raw_python_files(project_payload, profile_values) if archive == 'python-direct' else engine_python_files(project_payload, profile_values)\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"app\\raw_python.py\", line 298, in raw_python_files\n    validate_raw_python(project)\n  File \"app\\raw_python.py\", line 253, in validate_raw_python\n    raise ValueError('Raw Python export cannot preserve these behaviors yet: ' + '; '.join(failures))\nValueError: Raw Python export cannot preserve these behaviors yet: t-receive-sap-send-kafka / IDoc-Listener: event starter needs one unconditional success edge\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"app\\main.py\", line 1368, in package_project\n    body, filename, media, _ = build_deployment_archive(item, target, selected_environments, selected_starters, archive, selected_artifacts)\n                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"app\\main.py\", line 1216, in build_deployment_archive\n    raise HTTPException(400, str(error)) from error\nfastapi.exceptions.HTTPException: 400: Raw Python export cannot preserve these behaviors yet: t-receive-sap-send-kafka / IDoc-Listener: event starter needs one unconditional success edge\n","environments":["qa","pre","dev"]}
