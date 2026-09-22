@@ -281,7 +281,7 @@ type ValidationIssue = {
 };
 const themeOptions = [
   { value: "plain-classic", label: "Plain Classic", detail: "Light grey desktop panels, white editors, and blue selections" },
-  { value: "plain-studio", label: "Plain Studio", detail: "Flat white workspace with subtle grey panels and teal selections" },
+  { value: "plain-studio", label: "Plain Studio", detail: "Soft rounded panels and controls with teal selections" },
   { value: "midnight", label: "Midnight Studio", detail: "Deep blue professional workspace" },
   { value: "aurora", label: "Aurora Glass", detail: "Violet glass with teal highlights" },
   { value: "graphite", label: "Graphite Pro", detail: "Neutral engineering workstation" },
@@ -1346,6 +1346,12 @@ function App() {
       localStorage.getItem("integration-fabric-theme") || "midnight",
     );
   const [unsavedPrompt, setUnsavedPrompt] = useState(false);
+  const [plainMode, setPlainMode] = useState<"light" | "dark">(() =>
+    localStorage.getItem("mina-plain-theme-mode") === "dark" ? "dark" : "light");
+  useEffect(() => {
+    document.body.dataset.plainMode = plainMode;
+    localStorage.setItem("mina-plain-theme-mode", plainMode);
+  }, [plainMode]);
   const projectDirty = JSON.stringify(project) !== savedProjectSnapshot.current;
   const [activeTab, setActiveTab] = useState<
       "configuration" | "input" | "map_test" | "output" | "advanced" | "errors" | "documentation"
@@ -2657,6 +2663,8 @@ function App() {
         importProjectFolder={importProjectFolder}
         theme={theme}
         setTheme={setTheme}
+        plainMode={plainMode}
+        setPlainMode={setPlainMode}
       />
     );
   return (
@@ -2704,7 +2712,7 @@ function App() {
           { label: "About MINA", detail: "Product and project information", icon: Workflow, action: () => setHelpDialog("about") },
         ]}/>
         <span className="menu-spacer" />
-        <ThemePicker theme={theme} setTheme={setTheme} />
+        <ThemePicker theme={theme} setTheme={setTheme} plainMode={plainMode} setPlainMode={setPlainMode} />
       </nav>
       <StudioRibbon
         selectedCount={selectedIds.length}
@@ -4303,18 +4311,26 @@ function FileMenu({
     </div>
   );
 }
-function ThemePicker({ theme, setTheme }: any) {
+function ThemePicker({ theme, setTheme, plainMode, setPlainMode }: any) {
   return (
-    <label className="theme-picker">
-      THEME
+    <div className="theme-picker">
+      <label htmlFor="studio-theme">THEME</label>
       <select
+        id="studio-theme"
         aria-label="Theme"
         value={theme}
         onChange={(e) => setTheme(e.target.value)}
       >
         {themeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
-    </label>
+      {(theme === "plain-classic" || theme === "plain-studio") &&
+        <div className="plain-mode-toggle" role="group" aria-label="Theme appearance">
+          {(["light", "dark"] as const).map(mode => <button key={mode} type="button"
+            aria-pressed={plainMode === mode} onClick={() => setPlainMode(mode)}>
+            {mode === "light" ? "Light" : "Dark"}
+          </button>)}
+        </div>}
+    </div>
   );
 }
 type SampleProject = { id: string; name: string; category: string; description: string; activities: string[]; file: string; ready: boolean };
@@ -4375,7 +4391,7 @@ function IntegrationBrandArtwork({ className = "" }: { className?: string }) {
     </svg>
   </div>;
 }
-function ProjectWelcome({ createProject, importProject, importFromFileSystem, importProjectFolder, theme, setTheme }: any) {
+function ProjectWelcome({ createProject, importProject, importFromFileSystem, importProjectFolder, theme, setTheme, plainMode, setPlainMode }: any) {
   const input = useRef<HTMLInputElement>(null), [createOpen, setCreateOpen] = useState(false), [samplesOpen, setSamplesOpen] = useState(false), [sourceOpen, setSourceOpen] = useState(false), [name, setName] = useState("New Integration Application"), [importing, setImporting] = useState(false);
   const beginImport = async () => {
     if (!window.fabricDesktop && !(window as any).showOpenFilePicker) { input.current?.click(); return; }
@@ -4394,7 +4410,7 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, im
     if (value) createProject(value);
   };
   return <div className="project-home fabric-launch-home">
-     <header><IntegrationBrandArtwork className="home-brand-art"/><ThemePicker theme={theme} setTheme={setTheme}/></header>
+     <header><IntegrationBrandArtwork className="home-brand-art"/><ThemePicker theme={theme} setTheme={setTheme} plainMode={plainMode} setPlainMode={setPlainMode}/></header>
      <main>
       <section className="fabric-live-map" aria-label="Animated system integration fabric">
         <div className="home-grid"/><div className="home-aurora one"/><div className="home-aurora two"/>

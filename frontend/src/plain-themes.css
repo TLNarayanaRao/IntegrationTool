@@ -1,9 +1,14 @@
 /* Plain desktop themes. Kept last in the cascade to cover legacy dark surfaces. */
 body[data-theme="plain-classic"] {
-  --shell: #e5e5e5;
-  --panel: #f0f0f0;
-  --panel2: #fafafa;
-  --surface: #ffffff;
+  --plain-panel-radius: 3px;
+  --plain-control-radius: 2px;
+  --plain-card-radius: 5px;
+  --plain-badge-radius: 5px;
+  --shell: #d9dde1;
+  --panel: #e4e7ea;
+  --panel2: #eceef0;
+  --surface: #f5f6f5;
+  --field: #ffffff;
   --line: #b5b5b5;
   --text: #202020;
   --muted: #555555;
@@ -12,10 +17,15 @@ body[data-theme="plain-classic"] {
   --selection: #dceafa;
 }
 body[data-theme="plain-studio"] {
-  --shell: #eef1f3;
-  --panel: #f5f7f8;
-  --panel2: #ffffff;
-  --surface: #ffffff;
+  --plain-panel-radius: 14px;
+  --plain-control-radius: 8px;
+  --plain-card-radius: 10px;
+  --plain-badge-radius: 999px;
+  --shell: #dce3e7;
+  --panel: #e5ebee;
+  --panel2: #edf1f3;
+  --surface: #f4f6f7;
+  --field: #ffffff;
   --line: #bbc5cc;
   --text: #23323d;
   --muted: #52636f;
@@ -25,7 +35,19 @@ body[data-theme="plain-studio"] {
 }
 body:is([data-theme="plain-classic"], [data-theme="plain-studio"]) {
   --glow: transparent;
-  color-scheme: light;
+  --plain-scheme: light;
+  --plain-grid: #c8cdd1;
+  --plain-primary-bg: var(--accent);
+  --plain-danger-bg: #942832;
+  --plain-info-bg: #e3edf7;
+  --plain-info-text: #214e73;
+  --plain-success-bg: #e3f0e7;
+  --plain-success-text: #245b37;
+  --plain-warning-bg: #fff0cc;
+  --plain-warning-text: #704700;
+  --plain-error-bg: #fbe6e8;
+  --plain-error-text: #942832;
+  color-scheme: var(--plain-scheme);
   font-family: "Segoe UI", Arial, sans-serif;
 }
 /* Preserve layout, activity artwork, and interaction affordances. */
@@ -43,7 +65,7 @@ body[data-theme^="plain-"] :is(header, footer, nav, .studio-ribbon, .menu-bar, .
 }
 body[data-theme^="plain-"] :is(.app>main, .runtime-modal, .package-modal, .menu-dropdown, .glossy-menu, .schema-context-menu, .home-card, .project-list, .fabric-live-map, .system-node, .config-body, .property-grid, .group-data-mapper, .group-condition-targets, .package-artifacts, .package-starters, .package-environments, .package-runtime-options, [class$="-modal"], [class$="-dialog"], [class$="-panel"], [class$="-pane"], [class$="-editor"], [class$="-card"], [class$="-picker"], [class$="-popover"]) {
   background: var(--surface) !important;
-  border-radius: 3px !important;
+  border-radius: var(--plain-panel-radius) !important;
 }
 body[data-theme^="plain-"] :is(.runtime-modal, .package-modal, [class$="-dialog"], [class$="-modal"]) :is(main, section, article, aside, pre, details) {
   background: var(--surface) !important;
@@ -58,12 +80,12 @@ body[data-theme^="plain-"] .launch-buttons>button>span {
 }
 body[data-theme^="plain-"] :is(button, .tree-row, summary, [role="tab"]) {
   background: var(--panel) !important;
-  border-radius: 2px !important;
+  border-radius: var(--plain-control-radius) !important;
 }
 body[data-theme^="plain-"] :is(input, select, textarea, pre, code, [contenteditable="true"]) {
-  background: var(--surface) !important;
-  color-scheme: light !important;
-  border-radius: 2px !important;
+  background: var(--field) !important;
+  color-scheme: var(--plain-scheme) !important;
+  border-radius: var(--plain-control-radius) !important;
   caret-color: var(--text);
 }
 body[data-theme^="plain-"] :is(input, textarea)::placeholder {
@@ -78,7 +100,7 @@ body[data-theme^="plain-"] :is(button:hover:not(:disabled), .tree-row:hover, sum
   border-color: var(--accent) !important;
 }
 body[data-theme^="plain-"] :is(button.primary, button.primary:hover, .generate-ai-design) {
-  background: var(--accent) !important;
+  background: var(--plain-primary-bg) !important;
   color: #ffffff !important;
 }
 body[data-theme^="plain-"] button.primary :is(span, b, small, svg) {
@@ -97,7 +119,7 @@ body[data-theme^="plain-"] :is(input[type="checkbox"], input[type="radio"]) {
 }
 body[data-theme^="plain-"] .canvas {
   background-color: var(--surface) !important;
-  background-image: radial-gradient(#c8cdd1 .7px, transparent .7px) !important;
+  background-image: radial-gradient(var(--plain-grid) .7px, transparent .7px) !important;
   background-size: 24px 24px !important;
 }
 body[data-theme^="plain-"] .node {
@@ -141,5 +163,306 @@ body[data-theme^="plain-"] :is(.package-error, .validation-issue.error, .ai-buil
   color: #a11b22 !important;
   border-color: #c45157 !important;
 }
-body[data-theme^="plain-"] :is(.danger, .delete-activity, .error) { color: #a11b22 !important; }
+body[data-theme^="plain-"] :is(.danger, .delete-activity, .error) { color: var(--plain-error-text) !important; }
 body[data-theme^="plain-"] ::selection { background: var(--selection); color: var(--text); }
+
+/* Explorer counters must not inherit the dark-theme pill background. */
+body[data-theme^="plain-"] .tree-row .count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--plain-badge-radius);
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  font: 600 12px/1 "Segoe UI", Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
+  opacity: 1;
+}
+
+/* Palette captions are <em> elements, not ordinary text spans. Override their
+   explicit dark-theme colour and size rather than relying on inheritance. */
+body[data-theme^="plain-"] .palette .activity-grid {
+  gap: 8px;
+  padding: 10px;
+  background: var(--panel2) !important;
+}
+body[data-theme^="plain-"] .palette .activity-grid>button {
+  border: 1px solid var(--line) !important;
+  border-radius: var(--plain-card-radius) !important;
+  background: var(--surface) !important;
+  padding: 8px 5px !important;
+  gap: 7px !important;
+  min-height: 94px !important;
+}
+body[data-theme^="plain-"] .palette .activity-grid>button em {
+  color: var(--text) !important;
+  font: 600 12px/1.35 "Segoe UI", Arial, sans-serif !important;
+  opacity: 1;
+  text-shadow: none;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+body[data-theme^="plain-"] .palette .activity-grid>button img {
+  filter: drop-shadow(0 1px 1px #26374626) !important;
+}
+body[data-theme^="plain-"] .palette .group-title {
+  background: var(--panel) !important;
+  border-block: 1px solid var(--line) !important;
+  padding: 10px !important;
+}
+body[data-theme^="plain-"] .palette .group-title b {
+  font: 600 12px/1.4 "Segoe UI", Arial, sans-serif;
+}
+body[data-theme^="plain-"] .palette .activity-grid>button:is(:hover, :focus-visible) {
+  background: var(--selection) !important;
+  border-color: var(--accent) !important;
+}
+body[data-theme^="plain-"] :is(.node strong, .activity-picker em, .activity-picker b) {
+  color: var(--text) !important;
+  text-shadow: none !important;
+  font-family: "Segoe UI", Arial, sans-serif;
+}
+body[data-theme^="plain-"] :is(.config, .mapper-studio, .utility-workbench) :is(header, .tabs, [class$="-toolbar"]) {
+  background: var(--panel) !important;
+}
+body[data-theme^="plain-"] :is(.input-tree-row, .schema-tree-row, .source-tree-node) {
+  border-bottom: 1px solid var(--line) !important;
+}
+body[data-theme^="plain-"] :is(.config, .mapper-studio) :is(.input-tree-row, .schema-tree-row, .source-tree-node):hover {
+  background: var(--selection) !important;
+}
+
+/* Give legacy components a foreground/background pair. Changing text alone
+   leaves dark pills, popovers, and nested editor surfaces unreadable. */
+body[data-theme^="plain-"] :is(
+  .canvas-menu, .task-tab-context, .resource-menu, .connection-create-menu,
+  .mapping-context-menu, .connection-property-browser, .connection-property-picker,
+  .configuration-property-picker>div, .cascade-level, .sample-gallery,
+  .sample-gallery-content, .sample-gallery>main, .sample-gallery article,
+  .schema-studio, .schema-studio>main, .code-shell, .sap-idoc-browser,
+  .sap-idoc-picker, .sap-idoc-picker-card, .connection-test-output,
+  .runtime-outputs, .runtime-outputs>details, .runtime-endpoints,
+  .runtime-endpoints article, .debug-job-columns article, .debug-watch-results article,
+  .debug-variable-grid article, .debug-tool-section, .input-mapper-content,
+  .transform-schema-editor, .transform-schema-columns, .transform-schema-columns>section,
+  .transform-map-test, .transform-map-test>main>section, .scheduler-editor,
+  .catch-ai-editor, .catch-discovery, .activity-documentation,
+  .activity-documentation>section, .documentation-fields article,
+  .documentation-tree>div, .documentation-errors article, .condition-workbench>section,
+  .function-library, .mapping-rule-editor, .mapping-choose-editor>div,
+  .advanced-editor article, .advanced-property-group, .ai-policy-panel,
+  .transform-policies, .property-source, .schema-hierarchy-preview
+) {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+}
+body[data-theme^="plain-"] :is(
+  .studio-status-bar, .studio-progress-toast, .debug-bar, .system-log-info,
+  .debug-job-heading, .debug-job-activity-list, .task-editor-tabs, .task-editor-tab,
+  .sample-gallery-search, .sample-gallery-header, .sample-gallery-footer,
+  .line-rail, .jdbc-code-editor>span, .source-list h4, .source-tabs,
+  .advanced-tree-root, .schema-tree-group, .input-tree-group,
+  .source-tree-node.tree-group-node, .validation-summary, .property-help,
+  .utility-pager, .utility-findings, .picker-browser>aside
+) {
+  background: var(--panel) !important;
+  color: var(--text) !important;
+}
+body[data-theme^="plain-"] :is(
+  .count, .task-kind, .environment-active, .runtime-outputs>summary b,
+  .sample-card-heading>span, .sample-activities code, .utility-file-heading i,
+  .group-expression-target i, .schema-tree-row .tree-field em,
+  .mapping-constant-box>em, .mapping-connection i, .map-test-rules article>em,
+  .function-category>summary>code, .catch-ai-editor>header>i,
+  .transform-map-test>header>i, .input-mapper-dialog>header>i,
+  .configuration-property-picker>summary, .mapping-function-editor>summary,
+  .mapping-constant-editor>summary, .shortcut-grid kbd
+) {
+  background: var(--plain-info-bg) !important;
+  color: var(--plain-info-text) !important;
+  text-shadow: none !important;
+}
+body[data-theme^="plain-"] :is(
+  .task-editor-tab.active, .source-tree-node.source-selected,
+  .input-tree-row.selected, .schema-tree-row.selected, .mapping-binding.mapped,
+  .structural-binding, .schema-tree-row.mapping-statement-row,
+  .mapping-editor>section>label.selected, .package-preview,
+  .schema-tree-row.selected .mapping-binding
+) {
+  background: var(--selection) !important;
+  color: var(--text) !important;
+  border-color: var(--accent) !important;
+}
+body[data-theme^="plain-"] :is(
+  .sample-card-heading>i.ready, .group-runtime-status, .connection-status,
+  .condition-workbench output.true, .transform-map-test>footer.valid,
+  .compare-grid .added, .mapping-connection.connected i
+) {
+  background: var(--plain-success-bg) !important;
+  color: var(--plain-success-text) !important;
+  border-color: var(--plain-success-text) !important;
+}
+body[data-theme^="plain-"] :is(
+  .sample-card-heading>i.setup, .condition-workbench output.false,
+  .validation-summary .warning, .validation-issue.warning,
+  .map-rule.pending, .compare-grid .changed, .execution-group-header em
+) {
+  background: var(--plain-warning-bg) !important;
+  color: var(--plain-warning-text) !important;
+  border-color: var(--plain-warning-text) !important;
+}
+body[data-theme^="plain-"] :is(
+  .package-error, .editor-error, .ai-builder-error, .sample-gallery-error,
+  .sap-idoc-error, .debug-exception, .validation-summary .error,
+  .validation-issue.error, .condition-workbench output.error,
+  .transform-map-test>footer.error, .mapper-studio .mapper-message.error,
+  .compare-grid .removed
+) {
+  background: var(--plain-error-bg) !important;
+  color: var(--plain-error-text) !important;
+  border-color: var(--plain-error-text) !important;
+}
+/* Keep nested badge/status text on the same semantic colour pair. */
+body[data-theme^="plain-"] :is(
+  .group-runtime-status, .connection-status, .debug-exception, .package-error,
+  .editor-error, .sample-gallery-error, .validation-issue, .sample-card-heading>i
+) :is(span, b, strong, small, p, h3, em, svg) { color: inherit !important; }
+body[data-theme^="plain-"] :is(.validation-summary .mapping, .resource-note, .transition-help) {
+  background: var(--plain-info-bg) !important;
+  color: var(--plain-info-text) !important;
+}
+body[data-theme^="plain-"] :is(
+  button.primary, .actions .run, .run-map-test, .evaluate-condition,
+  .edit-input-mapping, .generate-ai-design, .schema-sample button
+) {
+  background: var(--plain-primary-bg) !important;
+  color: white !important;
+  border-color: var(--accent) !important;
+}
+body[data-theme^="plain-"] :is(
+  .menu-bar>button.global-stop, .debug-bar button.debug-stop,
+  .studio-ribbon .ribbon-group button.emphasis, .delete-transition
+) {
+  background: var(--plain-danger-bg) !important;
+  color: white !important;
+  border-color: var(--plain-error-text) !important;
+}
+body[data-theme^="plain-"] :is(
+  button.primary, .actions .run, .run-map-test, .evaluate-condition,
+  .edit-input-mapping, .generate-ai-design, .schema-sample button,
+  button.global-stop, button.debug-stop, .ribbon-group button.emphasis, .delete-transition
+) :is(span, b, strong, small, em, svg) { color: white !important; }
+body[data-theme^="plain-"] :is(.pane-splitter, .source-splitter, .config-splitter) {
+  background: var(--panel) !important;
+}
+body[data-theme^="plain-"] :is(.pane-splitter, .source-splitter, .config-splitter) span {
+  background: var(--muted) !important;
+}
+
+/* Plain Studio has a softer shape system; Classic keeps its desktop geometry.
+   Apply radii without clipping popovers, resize handles, or canvas content. */
+body[data-theme="plain-studio"] :is(
+  .runtime-modal, .package-modal, .property-modal, .input-mapper-dialog,
+  .mapper-studio, .schema-studio, .utility-workbench, .sample-gallery,
+  .activity-picker, .sap-idoc-picker, .sap-idoc-browser, .fabric-live-map,
+  .menu-dropdown, .glossy-menu, .canvas-menu, .task-tab-context,
+  .schema-context-menu, .mapping-context-menu, .resource-menu,
+  .connection-create-menu, .connection-property-browser, .connection-property-picker,
+  .configuration-property-picker>div, .cascade-level, .studio-progress-toast
+) { border-radius: var(--plain-panel-radius) !important; }
+body[data-theme="plain-studio"] :is(
+  .runtime-modal, .package-modal, .property-modal, .input-mapper-dialog,
+  .mapper-studio, .schema-studio, .utility-workbench, .sample-gallery,
+  .activity-picker, .sap-idoc-picker, .sap-idoc-browser
+)>header {
+  border-radius: var(--plain-panel-radius) var(--plain-panel-radius) 0 0 !important;
+}
+body[data-theme="plain-studio"] :is(
+  .runtime-modal, .package-modal, .property-modal, .input-mapper-dialog,
+  .mapper-studio, .schema-studio, .utility-workbench, .sample-gallery,
+  .sap-idoc-browser
+)>footer {
+  border-radius: 0 0 var(--plain-panel-radius) var(--plain-panel-radius) !important;
+}
+body[data-theme="plain-studio"] :is(
+  .package-artifacts, .package-environments, .package-starters,
+  .package-runtime-options, .package-preview, .package-targets>button,
+  .package-artifacts label, .package-environments label, .package-starters label,
+  .picker-card-grid>button, .sample-gallery article, .system-node,
+  .debug-tool-section, .debug-watch-results article, .debug-variable-grid article,
+  .connection-test-output, .runtime-endpoints article, .runtime-outputs>details,
+  .input-contract-tree, .schema-hierarchy-preview, .map-rule, .mapping-binding,
+  .structural-binding, .group-expression-target, .group-runtime-status,
+  .condition-workbench>section, .validation-issue, .package-error, .editor-error,
+  .ai-builder-error, .source-tree-node, .execution-group
+) { border-radius: var(--plain-card-radius) !important; }
+body[data-theme="plain-studio"] :is(
+  .count, .task-kind, .environment-active, .runtime-outputs>summary b,
+  .sample-card-heading>i, .sample-activities code, .utility-file-heading i,
+  .group-expression-target i, .mapping-connection i
+) { border-radius: var(--plain-badge-radius) !important; }
+body[data-theme="plain-studio"] .task-editor-tab {
+  border-radius: var(--plain-control-radius) var(--plain-control-radius) 0 0 !important;
+}
+
+/* Appearance is independent of the Classic/Studio corner geometry. */
+body[data-theme^="plain-"][data-plain-mode="dark"] {
+  --plain-scheme: dark;
+  --shell: #171c22;
+  --panel: #242b33;
+  --panel2: #2b333d;
+  --surface: #202730;
+  --field: #181f27;
+  --line: #566574;
+  --text: #edf2f7;
+  --muted: #b9c5d1;
+  --accent: #93c9ff;
+  --accent2: #91d6ad;
+  --selection: #30485f;
+  --plain-grid: #465362;
+  --plain-primary-bg: #195b91;
+  --plain-info-bg: #263e53;
+  --plain-info-text: #b7ddff;
+  --plain-success-bg: #233e30;
+  --plain-success-text: #a4e2b7;
+  --plain-warning-bg: #463921;
+  --plain-warning-text: #f4d38c;
+  --plain-error-bg: #47282e;
+  --plain-error-text: #ffb6be;
+}
+body[data-theme="plain-studio"][data-plain-mode="dark"] {
+  --shell: #162125;
+  --panel: #222f34;
+  --panel2: #2b393f;
+  --surface: #1e2a30;
+  --field: #162126;
+  --line: #526d75;
+  --accent: #8cd9e4;
+  --selection: #294950;
+  --plain-primary-bg: #126475;
+}
+body[data-theme^="plain-"] .plain-mode-toggle {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--plain-control-radius);
+  background: var(--surface) !important;
+}
+body[data-theme^="plain-"] .plain-mode-toggle>button {
+  padding: 5px 9px;
+  border: 1px solid transparent !important;
+  font: 600 11px/1.2 "Segoe UI", Arial, sans-serif;
+  cursor: pointer;
+}
+body[data-theme^="plain-"] .plain-mode-toggle>button[aria-pressed="true"] {
+  background: var(--selection) !important;
+  border-color: var(--accent) !important;
+  color: var(--text) !important;
+}
