@@ -365,7 +365,7 @@ class Project(BaseModel):
     description: str = ''
     resources: list[SharedResource] = Field(default_factory=list)
     packaging: dict[str, Any] = Field(default_factory=lambda: {
-        'artifact_name': '', 'version': '1.0.0', 'format': 'ifpkg',
+        'artifact_name': '', 'version': '1.0.0', 'format': 'mpkg',
         'target': 'on-prem', 'environment': 'production'
     })
     schemas: list[SchemaAsset] = Field(default_factory=list)

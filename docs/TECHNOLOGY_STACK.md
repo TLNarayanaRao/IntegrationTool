@@ -1,8 +1,8 @@
-# Integration Fabric Technology Stack
+# MINA Technology Stack
 
 ## 1. Purpose and scope
 
-Integration Fabric is a BusinessWorks-inspired integration design and execution platform. It separates the visual design experience from the runtime that executes integration applications. Projects are declarative `.ifproject` documents containing tasks, activities, mappings, transitions, shared resources, and environment properties.
+MINA is a BusinessWorks-inspired integration design and execution platform. It separates the visual design experience from the runtime that executes integration applications. Projects are declarative `.mpackage` documents containing tasks, activities, mappings, transitions, shared resources, and environment properties.
 
 This document records the technologies currently used in this repository, what each technology does, and the deployment implications for Windows, Linux, containers, and cloud environments.
 
@@ -88,7 +88,7 @@ Projects are stored as JSON-backed files under the runtime data directory. The m
 - environment properties;
 - logs and runtime state.
 
-The `.ifproject` format is portable and supports readable JSON import/export. The store includes compatibility handling for older SQLite-backed projects. Credentials should be supplied through environment-specific secrets or deployment configuration rather than committed into project files.
+The `.mpackage` format is portable and supports readable JSON import/export. Legacy `.ifproject` and `.ifpackage` files remain importable. The store includes compatibility handling for older SQLite-backed projects. Credentials should be supplied through environment-specific secrets or deployment configuration rather than committed into project files.
 
 ## 7. SAP integration
 
@@ -219,7 +219,7 @@ The build scripts validate generated frontend asset references before packaging.
 
 1. Pin production dependencies where the repository already specifies a version or range. Avoid upgrading dependencies solely because pip or npm reports a newer release.
 2. SAP JCo, SAP IDoc libraries, JMS providers, JDBC drivers, and broker-specific libraries may have separate licenses and distribution restrictions.
-3. Do not commit passwords, private keys, client secrets, SAP credentials, or broker credentials into `.ifproject` files or source control.
+3. Do not commit passwords, private keys, client secrets, SAP credentials, or broker credentials into `.mpackage` files or source control.
 4. Keep native libraries matched to the target operating system, CPU architecture, Python ABI, Java version, and vendor driver version.
 5. Rebuild the frontend, Java bridge, and packaged runtime together for a release so the desktop product does not mix artifacts from different builds.
 

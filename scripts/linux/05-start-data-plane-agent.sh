@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 05 - Start the lightweight Integration Fabric data-plane heartbeat agent.
+# 05 - Start the lightweight MINA data-plane heartbeat agent.
 #
 # This process keeps a registered data plane ONLINE by sending heartbeats to
 # the Control Plane. Run one agent per data plane. It does not use systemd.

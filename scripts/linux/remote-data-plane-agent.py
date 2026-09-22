@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remote Integration Fabric data-plane agent.
+"""Remote MINA data-plane agent.
 
 Polls the Control Plane, downloads assigned packages, reconciles desired
 instances, starts/stops local runtime workers, and reports health/log tails.

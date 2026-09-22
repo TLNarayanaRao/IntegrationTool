@@ -1,5 +1,5 @@
 {
-  "info":{"name":"Integration Fabric - Applications Management","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "info":{"name":"MINA - Applications Management","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
   "variable":[{"key":"baseUrl","value":"http://127.0.0.1:9080"},{"key":"adminKey","value":""},{"key":"packageArtifact","value":"petm-publisher-artmas05"},{"key":"packageVersion","value":"1.0.0"},{"key":"teamId","value":"technology-team"},{"key":"dataPlaneId","value":"localhost"},{"key":"capabilityId","value":"integration-runtime-local"},{"key":"namespace","value":"default"},{"key":"environment","value":"dev"},{"key":"deploymentId","value":""}],
   "item":[
     {"name":"List applications","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/applications"}},

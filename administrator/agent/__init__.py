@@ -1,1 +1,1 @@
-"""Python-capable Integration Fabric data-plane agent."""
+"""Python-capable MINA data-plane agent."""

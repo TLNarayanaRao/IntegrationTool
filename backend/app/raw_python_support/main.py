@@ -96,6 +96,16 @@ async def run_application(environment_name: str = DEFAULT_ENVIRONMENT):
     return await asyncio.gather(*jobs)
 
 
+async def managed_run(awaitable):
+    """Keep async connector shutdown on the loop that owns the clients."""
+    try:
+        return await awaitable
+    finally:
+        # ASYNC_CONNECTOR_CLOSE_START
+        pass
+        # ASYNC_CONNECTOR_CLOSE_END
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description='Run the generated Python application')
     parser.add_argument('--environment', default=os.environ.get('FABRIC_ENVIRONMENT', DEFAULT_ENVIRONMENT))
@@ -118,16 +128,16 @@ def main() -> int:
             return 0 if report['ready'] else 2
         if args.qualify_task:
             payload = json.loads(args.input)
-            report = asyncio.run(qualify(lambda: run_task(args.qualify_task, payload, args.environment),
+            report = asyncio.run(managed_run(qualify(lambda: run_task(args.qualify_task, payload, args.environment),
                 iterations=args.iterations, concurrency=args.concurrency, duration_seconds=args.duration_seconds,
                 max_error_rate=args.max_error_rate, max_p95_ms=args.max_p95_ms,
-                max_memory_growth_mb=args.max_memory_growth_mb))
+                max_memory_growth_mb=args.max_memory_growth_mb)))
             print(json.dumps(report, indent=2, default=str))
             return 0 if report['passed'] else 3
         if args.task:
-            print(json.dumps(asyncio.run(run_task(args.task, json.loads(args.input), args.environment)), default=str))
+            print(json.dumps(asyncio.run(managed_run(run_task(args.task, json.loads(args.input), args.environment))), default=str))
         else:
-            asyncio.run(run_application(args.environment))
+            asyncio.run(managed_run(run_application(args.environment)))
             # A one-shot starter is still a managed application when launched
             # by Control Plane. Notebook/CLI invocation returns immediately.
             if os.environ.get('FABRIC_DEPLOYMENT_ID'):

@@ -1,11 +1,11 @@
 # Vendor driver installation
 
-Integration Fabric Studio bundles its own minimal Java runtime and connector bridge. Vendor-licensed JARs are intentionally not distributed in the installer.
+MINA Studio bundles its own minimal Java runtime and connector bridge. Vendor-licensed JARs are intentionally not distributed in the installer.
 
 The default machine-wide driver root on Windows is:
 
 ```text
-C:\ProgramData\Integration Fabric Studio\drivers
+C:\ProgramData\MINA Studio\drivers
 ```
 
 Set `FABRIC_DRIVER_HOME` to override the complete root, or enter a **Driver JAR directory** in an individual shared connection. Source checkouts also search `D:\Integration-tool\IntegrationFabric\drivers` as a development fallback.
@@ -15,8 +15,8 @@ Set `FABRIC_DRIVER_HOME` to override the complete root, or enter a **Driver JAR 
 Place the EMS client files in:
 
 ```text
-C:\ProgramData\Integration Fabric Studio\drivers\jms\tibjms.jar
-C:\ProgramData\Integration Fabric Studio\drivers\jms\jakarta.jms-api-2.0.3.jar
+C:\ProgramData\MINA Studio\drivers\jms\tibjms.jar
+C:\ProgramData\MINA Studio\drivers\jms\jakarta.jms-api-2.0.3.jar
 ```
 
 For older EMS releases, use the matching `jms-2.0.jar` supplied with that EMS installation. Add `tibjmsufo.jar` for unshared-state failover. Do not mix JARs from different EMS releases.
@@ -34,7 +34,7 @@ Direct mode uses the EMS URL, username, and password. JNDI mode additionally use
 Download the Microsoft JDBC Driver for SQL Server and place the Java 11-compatible JAR in:
 
 ```text
-C:\ProgramData\Integration Fabric Studio\drivers\jdbc\sqlserver\mssql-jdbc-<version>.jre11.jar
+C:\ProgramData\MINA Studio\drivers\jdbc\sqlserver\mssql-jdbc-<version>.jre11.jar
 ```
 
 The driver class is `com.microsoft.sqlserver.jdbc.SQLServerDriver`. SQL Server Authentication is fully Java-based and does not need ODBC. Windows Integrated Authentication additionally requires Microsoft's architecture-matched authentication DLL; username/password authentication is the portable default.
@@ -44,7 +44,7 @@ The driver class is `com.microsoft.sqlserver.jdbc.SQLServerDriver`. SQL Server A
 Place the Oracle JDBC driver in:
 
 ```text
-C:\ProgramData\Integration Fabric Studio\drivers\jdbc\oracle\ojdbc11.jar
+C:\ProgramData\MINA Studio\drivers\jdbc\oracle\ojdbc11.jar
 ```
 
 Optional Oracle companion JARs such as `orai18n.jar`, `ucp.jar`, or Oracle PKI libraries can be put in the same directory when the selected Oracle features require them. The driver class is `oracle.jdbc.OracleDriver`. Thin JDBC mode does not require Oracle Instant Client.

@@ -75,7 +75,7 @@ public final class FabricJavaBridge {
             if (operation.equals("test")) {
                 destinationObject.getClass().getMethod("ping").invoke(destinationObject);
                 Object function = function(destinationObject, "STFC_CONNECTION");
-                setValue(function, "REQUTEXT", p.getProperty("requestText", "Integration Fabric connection test"));
+                setValue(function, "REQUTEXT", p.getProperty("requestText", "MINA connection test"));
                 invoke(function, "execute", destinationObject);
                 Class<?> jcoType = Class.forName("com.sap.conn.jco.JCo");
                 String jcoVersion = optionalStaticString(jcoType, "getVersion");
@@ -444,7 +444,7 @@ public final class FabricJavaBridge {
                         for (CompletableFuture<Boolean> decision : decisions) {
                             long remaining = deadline - System.nanoTime();
                             if (remaining <= 0 || !Boolean.TRUE.equals(decision.get(remaining, TimeUnit.NANOSECONDS))) {
-                                throw new IllegalStateException("Integration Fabric rolled back the SAP request or IDoc package");
+                                throw new IllegalStateException("MINA rolled back the SAP request or IDoc package");
                             }
                         }
                         if (responses.size() == 1) applyListenerResponse(function, responses.get(0));
@@ -512,7 +512,7 @@ public final class FabricJavaBridge {
         if (listenerLock == null) {
             try { listenerLockChannel.close(); } catch (IOException ignored) { }
             listenerLockChannel = null;
-            throw new IOException("SAP JCo program ID '" + programId + "' is already owned by another Integration Fabric listener on this machine");
+            throw new IOException("SAP JCo program ID '" + programId + "' is already owned by another MINA listener on this machine");
         }
     }
 
@@ -587,7 +587,7 @@ public final class FabricJavaBridge {
     private static boolean persistTidState(File store, Properties states) {
         File temporary = new File(store.getPath() + ".tmp");
         try (OutputStream output = new FileOutputStream(temporary)) {
-            states.store(output, "Integration Fabric SAP JCo tRFC transaction state");
+            states.store(output, "MINA SAP JCo tRFC transaction state");
             Path source = temporary.toPath(), target = store.toPath();
             try {
                 Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);

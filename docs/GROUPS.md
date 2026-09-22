@@ -1,6 +1,6 @@
 # Executable activity groups
 
-Integration Fabric groups are persisted execution boundaries, not drawing-only containers. A group owns a connected set of activities and can be nested through `parent_group_id`. Activities have one direct group owner; a parent group includes the activities of its child groups at runtime.
+MINA groups are persisted execution boundaries, not drawing-only containers. A group owns a connected set of activities and can be nested through `parent_group_id`. Activities have one direct group owner; a parent group includes the activities of its child groups at runtime.
 
 ## Supported runtime semantics
 

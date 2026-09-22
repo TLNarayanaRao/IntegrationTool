@@ -122,7 +122,7 @@ def _databricks_settings(config: dict) -> dict[str, Any]:
         "server_hostname": hostname.removeprefix("https://").rstrip("/"), "http_path": http_path,
         "catalog": config.get("catalog") or None, "schema": config.get("schema") or None,
         "use_cloud_fetch": _as_bool(config.get("useCloudFetch"), True),
-        "user_agent_entry": "IntegrationFabricStudio",
+        "user_agent_entry": "MINAStudio",
     }
     auth = str(config.get("authentication") or "Personal Access Token")
     token = config.get("accessToken") or config.get("password") or properties.get("auth_accesstoken") or properties.get("pwd")

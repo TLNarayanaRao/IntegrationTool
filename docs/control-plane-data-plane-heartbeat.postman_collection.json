@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "Integration Fabric - Data Plane Heartbeat",
-    "description": "Test and maintain the heartbeat for a registered Integration Fabric data plane.",
+    "name": "MINA - Data Plane Heartbeat",
+    "description": "Test and maintain the heartbeat for a registered MINA data plane.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [

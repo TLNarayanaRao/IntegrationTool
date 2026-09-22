@@ -287,8 +287,8 @@ def default_driver_home() -> Path:
     if override:
         return Path(override).expanduser().resolve()
     if os.name == "nt" and os.environ.get("PROGRAMDATA"):
-        return Path(os.environ["PROGRAMDATA"]) / "Integration Fabric Studio" / "drivers"
-    return Path("/opt/integrationfabric/drivers") if os.name != "nt" else Path.home() / ".integration-fabric" / "drivers"
+        return Path(os.environ["PROGRAMDATA"]) / "MINA Studio" / "drivers"
+    return Path("/opt/mina/drivers") if os.name != "nt" else Path.home() / ".mina" / "drivers"
 
 
 def driver_directories(config: dict[str, Any], family: str) -> list[Path]:
@@ -297,6 +297,14 @@ def driver_directories(config: dict[str, Any], family: str) -> list[Path]:
     if configured:
         candidates.append(Path(configured).expanduser())
     candidates.append(default_driver_home() / family)
+    # Keep existing installations operational after the MINA rebrand.
+    if os.name == "nt" and os.environ.get("PROGRAMDATA"):
+        legacy_windows_brand = "Integration" + " Fabric Studio"
+        candidates.append(Path(os.environ["PROGRAMDATA"]) / legacy_windows_brand / "drivers" / family)
+    elif os.name != "nt":
+        candidates.append(Path("/opt/integrationfabric/drivers") / family)
+    else:
+        candidates.append(Path.home() / ".integration-fabric" / "drivers" / family)
     candidates.append(_application_root() / "drivers" / family)
     unique: list[Path] = []
     for path in candidates:

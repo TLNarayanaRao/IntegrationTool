@@ -1,7 +1,8 @@
 # Raw Python archive and data-plane agent
 
-Raw Python (`.pyifpkg`) is a separate deployment type. Existing JSON-based
-`.ifpkg`, `.ear`, ZIP, and TAR packages are unchanged.
+Raw Python (`.pympkg`) is a separate deployment type. Existing JSON-based
+`.mpkg`, `.ear`, ZIP, and TAR packages remain available. Legacy `.pyifpkg` and
+`.ifpkg` files continue to be accepted for import and deployment.
 
 The archive contains `manifest.json` as Control Plane metadata and Python-only
 source under `application/`. `main.py` is the entry point; `project.py` and

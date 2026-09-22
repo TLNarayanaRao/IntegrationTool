@@ -1,5 +1,5 @@
 {
-  "info":{"name":"Integration Fabric - Data Planes Management","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "info":{"name":"MINA - Data Planes Management","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
   "variable":[{"key":"baseUrl","value":"http://127.0.0.1:9080"},{"key":"adminKey","value":""},{"key":"dataPlaneId","value":"customer-data-delivery-plane"}],
   "item":[
     {"name":"List data planes","request":{"method":"GET","header":[{"key":"X-Admin-Key","value":"{{adminKey}}"}],"url":"{{baseUrl}}/api/data-planes"}},

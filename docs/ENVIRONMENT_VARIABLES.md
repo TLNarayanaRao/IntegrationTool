@@ -1,7 +1,7 @@
-# Integration Fabric environment variables
+# MINA environment variables
 
 This is the reference list of environment variables recognized by the current
-Integration Fabric source, Studio sidecar, and Control Plane. Variable names
+MINA source, Studio sidecar, and Control Plane. Variable names
 are case-sensitive on Linux and Kubernetes. Values containing passwords,
 private keys, API keys, or tokens must be supplied by the operating system,
 service manager, or cloud secret store; do not commit them to a project or
@@ -88,7 +88,7 @@ in a package or checked into source control.
 For the current PowerShell session:
 
 ```powershell
-$env:FABRIC_DATA_DIR = 'C:\ProgramData\Integration Fabric\runtime-data'
+$env:FABRIC_DATA_DIR = 'C:\ProgramData\MINA\runtime-data'
 $env:FABRIC_RUNTIME_LOG_DIR = 'D:\IntegrationLogs'
 $env:FABRIC_LOG_TIMEZONE = 'America/Phoenix'
 $env:FABRIC_DRIVER_HOME = 'C:\SAP\jco'

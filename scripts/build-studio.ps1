@@ -19,7 +19,7 @@ if ($Version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.
 
 Push-Location $frontend
 try {
-    Write-Host "Building Integration Fabric Studio version $Version ($Target)"
+    Write-Host "Building MINA Studio version $Version ($Target)"
     & npm.cmd run desktop:prepare
     if ($LASTEXITCODE -ne 0) { throw "Studio preparation failed with exit code $LASTEXITCODE." }
     & .\node_modules\.bin\electron-builder.cmd --win $Target "-c.extraMetadata.version=$Version"

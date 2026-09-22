@@ -1197,16 +1197,34 @@ class WorkflowRuntime:
             if cfg.get('transactionalId'): producer_cfg['transactional.id'] = cfg['transactionalId']
 
             def publish_kafka():
-                """Wait for this message's acknowledgement, not the entire producer queue."""
+                """Buffer normally; wait only when the activity requests confirmation.
+
+                Kafka throughput collapses when every record turns into a synchronous
+                broker round trip.  The persistent librdkafka producer already owns a
+                background I/O thread and batching queue, so ordinary publishes return
+                after enqueueing.  Transactions and explicit confirmation retain the
+                previous delivery-report semantics.
+                """
                 transactional = bool(cfg.get('transactionalId'))
+                wait_for_delivery = transactional or self.as_bool(cfg.get('waitForDelivery', False))
                 producer, one_shot = self._publisher('kafka', producer_cfg, lambda: Producer(producer_cfg))
                 delivered = {}; completed = threading.Event()
                 def delivery(error, message):
                     if error: delivered['error'] = str(error)
                     else: delivered.update({'partition':message.partition(),'offset':message.offset(),'timestamp':message.timestamp()[1]})
                     completed.set()
-                def produce_and_wait():
-                    producer.produce(destination, raw, key=key, partition=int(cfg['partitionId']) if cfg.get('assignCustomPartition') else -1, headers=list(attributes.items()), callback=delivery)
+                def produce_record(wait: bool):
+                    producer.poll(0)
+                    try:
+                        producer.produce(destination, raw, key=key, partition=int(cfg['partitionId']) if cfg.get('assignCustomPartition') else -1, headers=list(attributes.items()), callback=delivery)
+                    except BufferError:
+                        # Apply bounded backpressure only when the local producer
+                        # queue is full; do not impose a broker round trip normally.
+                        producer.poll(.01)
+                        producer.produce(destination, raw, key=key, partition=int(cfg['partitionId']) if cfg.get('assignCustomPartition') else -1, headers=list(attributes.items()), callback=delivery)
+                    if not wait:
+                        producer.poll(0)
+                        return
                     timeout = max(.001, float(cfg.get('publishTimeout') or rcfg.get('requestTimeoutMilliseconds', 30000) / 1000))
                     deadline = perf_counter() + timeout
                     while not completed.is_set() and perf_counter() < deadline:
@@ -1221,17 +1239,17 @@ class WorkflowRuntime:
                                 if not one_shot: self._initialized_transactional_publishers.add(cache_key)
                             producer.begin_transaction()
                             try:
-                                produce_and_wait()
+                                produce_record(True)
                                 producer.commit_transaction()
                             except Exception:
                                 producer.abort_transaction()
                                 raise
                     else:
-                        produce_and_wait()
+                        produce_record(wait_for_delivery)
                 finally:
                     if one_shot: producer.flush(3)
                 if delivered.get('error'): raise RuntimeError(delivered['error'])
-                return delivered
+                return {**delivered, 'queued': True, 'deliveryConfirmed': completed.is_set() and not delivered.get('error')}
 
             publish_started = perf_counter()
             delivered = await asyncio.to_thread(publish_kafka)

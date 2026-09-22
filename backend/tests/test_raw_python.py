@@ -54,6 +54,8 @@ class RawPythonTests(unittest.TestCase):
         self.assertFalse(any(name.startswith('application/native/') for name in files))
         connector_source = files['application/connectors.py']
         self.assertIn(b'async def kafka', connector_source)
+        self.assertIn(b'async def close_kafka', connector_source)
+        self.assertIn(b'await connectors.close_kafka()', files['application/main.py'])
         self.assertNotIn(b'async def jms', connector_source)
         self.assertNotIn(b'async def pubsub', connector_source)
         self.assertNotIn(b'async def sap', connector_source)
@@ -93,6 +95,46 @@ class RawPythonTests(unittest.TestCase):
         core = files['application/core.py']
         for unused in (b"kind == 'timer'", b"kind == 'kafka'", b"kind == 'sap'", b"kind == 'file'", b"kind == 'mapper'"):
             self.assertNotIn(unused, core)
+        self.assertNotIn(b'def group_lock', core)
+        self.assertNotIn(b'group_lock', files['application/tasks/task_0_main.py'])
+
+    def test_artifact_linker_follows_resource_and_schema_dependencies(self):
+        project = self.project()
+        project['resources'] = [
+            {'id': 'logical-db', 'type': 'jdbc', 'name': 'Logical DB', 'config': {'connectionId': 'physical-db'}},
+            {'id': 'physical-db', 'type': 'jdbc', 'name': 'Physical DB', 'config': {'url': '${properties.db.url}'}},
+            {'id': 'unused-db', 'type': 'jdbc', 'name': 'Unused DB', 'config': {'url': 'discard'}},
+        ]
+        project['schemas'] = [
+            {'id': 'order', 'name': 'order.xsd', 'content': '<xs:include schemaLocation="common/types.xsd"/>'},
+            {'id': 'types', 'name': 'types.xsd', 'content': '<xs:schema/>'},
+            {'id': 'unused', 'name': 'unused.xsd', 'content': '<xs:schema/>'},
+        ]
+        project['tasks'] = [{'id': 'main', 'name': 'Linked', 'kind': 'starter', 'groups': [],
+            'activities': [
+                {'id': 's', 'type': 'start', 'name': 'Start', 'config': {}},
+                {'id': 'q', 'type': 'jdbc', 'name': 'Query', 'config': {'operation': 'query', 'resourceId': 'logical-db', 'schemaId': 'order'}},
+                {'id': 'e', 'type': 'end', 'name': 'End', 'config': {}}],
+            'transitions': [{'source': 's', 'target': 'q'}, {'source': 'q', 'target': 'e'}]}]
+        resources, schemas = compiler._project_artifact_closure(project)
+        self.assertEqual([item['id'] for item in resources], ['logical-db', 'physical-db'])
+        self.assertEqual([item['id'] for item in schemas], ['order', 'types'])
+
+    def test_dynamic_schema_reference_conservatively_keeps_schema_options(self):
+        project = self.project()
+        project['resources'] = []
+        project['schemas'] = [
+            {'id': 'one', 'name': 'one.xsd', 'content': '<schema/>'},
+            {'id': 'two', 'name': 'two.xsd', 'content': '<schema/>'},
+        ]
+        project['tasks'] = [{'id': 'main', 'name': 'Dynamic schema', 'kind': 'starter', 'groups': [],
+            'activities': [
+                {'id': 's', 'type': 'start', 'name': 'Start', 'config': {}},
+                {'id': 'p', 'type': 'xml', 'name': 'Parse', 'config': {'operation': 'parse', 'schemaId': '${properties.schema.id}'}},
+                {'id': 'e', 'type': 'end', 'name': 'End', 'config': {}}],
+            'transitions': [{'source': 's', 'target': 'p'}, {'source': 'p', 'target': 'e'}]}]
+        _, schemas = compiler._project_artifact_closure(project)
+        self.assertEqual([item['id'] for item in schemas], ['one', 'two'])
 
     def test_linker_registry_covers_every_supported_studio_operation(self):
         compiler._validate_capability_registry()

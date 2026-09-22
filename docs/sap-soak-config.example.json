@@ -1,6 +1,6 @@
 {
   "connection": {
-    "driverDirectory": "C:/ProgramData/Integration Fabric Studio/drivers/sap",
+    "driverDirectory": "C:/ProgramData/MINA Studio/drivers/sap",
     "applicationServerHost": "sap-qa.example.internal",
     "systemNumber": "00",
     "client": "100",
@@ -19,7 +19,7 @@
     "timeoutSeconds": 30
   },
   "payload": {
-    "REQUTEXT": "Integration Fabric SAP qualification"
+    "REQUTEXT": "MINA SAP qualification"
   },
   "durationSeconds": 3600,
   "concurrency": 8,

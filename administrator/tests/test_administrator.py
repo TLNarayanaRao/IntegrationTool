@@ -12,9 +12,9 @@ from fastapi.testclient import TestClient
 from administrator.app import main
 
 
-def package_bytes(*, unsafe=False, target="on-prem"):
+def package_bytes(*, unsafe=False, target="on-prem", package_format="mina-deployment"):
     manifest = {
-        "format": "integration-fabric-deployment", "formatVersion": 1,
+        "format": package_format, "formatVersion": 1,
         "artifact": "orders", "version": "1.2.3", "applicationName": "Orders",
         "target": target, "environments": ["dev", "production"],
         "secretKeysByEnvironment": {"dev": ["DB_PASSWORD"], "production": ["DB_PASSWORD", "API_KEY"]},
@@ -35,7 +35,7 @@ def package_bytes(*, unsafe=False, target="on-prem"):
 
 def python_package_bytes():
     manifest = {
-        "format": "integration-fabric-deployment", "formatVersion": 2,
+        "format": "mina-deployment", "formatVersion": 2,
         "artifact": "python-orders", "version": "1.0.0", "applicationName": "Python Orders", "target": "on-prem",
         "environments": ["dev"], "starterTaskIds": ["main"], "includedTaskIds": ["main"],
         "pythonSource": {"entrypoint": "application/python/project.py", "formatVersion": 1},
@@ -51,7 +51,7 @@ def python_package_bytes():
 
 def raw_python_package_bytes():
     manifest = {
-        "format": "integration-fabric-deployment", "formatVersion": 2,
+        "format": "mina-deployment", "formatVersion": 2,
         "artifact": "raw-orders", "version": "1.0.0", "applicationName": "Raw Orders", "target": "on-prem",
         "environments": ["dev"], "starterTaskIds": ["main"], "includedTaskIds": ["main"],
         "runtime": "python-async-standalone",
@@ -114,7 +114,7 @@ class AdministratorTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def upload(self, body=None):
-        return self.client.post("/api/packages", files={"file": ("orders.ifpkg", body or package_bytes(), "application/zip")})
+        return self.client.post("/api/packages", files={"file": ("orders.mpkg", body or package_bytes(), "application/zip")})
 
     def test_package_deployment_secrets_lifecycle_and_audit(self):
         uploaded = self.upload()
@@ -124,6 +124,9 @@ class AdministratorTests(unittest.TestCase):
         self.assertEqual(package["status"], "VALIDATED")
         self.assertEqual(len(package["sha256"]), 64)
         self.assertEqual(package["starterTaskIds"], ["main"])
+
+        legacy = self.client.post("/api/packages", files={"file": ("orders.ifpkg", package_bytes(package_format="integration-fabric-deployment"), "application/zip")})
+        self.assertEqual(legacy.status_code, 200, legacy.text)
 
         missing = self.client.post("/api/deployments", json={"packageId": "orders:1.2.3", "environment": "dev", "machine": "localhost", "instances": 1})
         self.assertEqual(missing.status_code, 422)
@@ -157,7 +160,7 @@ class AdministratorTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_python_source_package_does_not_require_json_application_descriptors(self):
-        response = self.client.post("/api/packages", files={"file": ("python-orders.pyifpkg", python_package_bytes(), "application/zip")})
+        response = self.client.post("/api/packages", files={"file": ("python-orders.pympkg", python_package_bytes(), "application/zip")})
         self.assertEqual(response.status_code, 200, response.text)
         package = self.client.get("/api/packages/python-orders/1.0.0").json()
         self.assertEqual(package["tasks"][0]["name"], "Orders Receiver")

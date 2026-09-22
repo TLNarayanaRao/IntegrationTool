@@ -1,7 +1,7 @@
 """Python-native connector implementations for generated applications.
 
 Optional client packages are imported only when their connector is used.
-No Integration Fabric runtime, bridge, DSL, or project descriptor is required.
+No MINA runtime, bridge, DSL, or project descriptor is required.
 """
 from __future__ import annotations
 
@@ -17,6 +17,15 @@ _MEMORY_JMS: dict[tuple[str, str], asyncio.Queue] = {}
 _JMS_LISTENERS: dict[str, Any] = {}
 _MEMORY_ACKS: dict[str, tuple[asyncio.Queue, Any]] = {}
 _AMQP_SETTLEMENTS: dict[str, Any] = {}
+
+
+async def close_kafka() -> None:
+    """Flush and stop cached async producers on their owning event loop."""
+    producers = list(_KAFKA_PRODUCERS.values())
+    _KAFKA_PRODUCERS.clear()
+    _KAFKA_PRODUCER_LOCKS.clear()
+    if producers:
+        await asyncio.gather(*(producer.stop() for producer in producers), return_exceptions=True)
 
 
 async def jms(kind: str, operation: str, connection: dict, cfg: dict, payload: Any, ctx=None) -> dict:
@@ -254,8 +263,18 @@ async def kafka(operation: str, connection: dict, cfg: dict, payload: Any) -> di
         key = cfg.get('key')
         key_bytes = key if isinstance(key, bytes) else str(key).encode() if key is not None else None
         headers = [(str(name), value if isinstance(value, bytes) else str(value).encode()) for name, value in (cfg.get('headers') or {}).items()]
-        metadata = await producer.send_and_wait(topic, data, key=key_bytes, headers=headers)
-        return {'topic': topic, 'partition': metadata.partition, 'offset': metadata.offset, 'published': True,
+        raw_wait = cfg.get('waitForDelivery', False)
+        wait_for_delivery = raw_wait if isinstance(raw_wait, bool) else str(raw_wait).strip().lower() in {'1', 'true', 'yes', 'on'}
+        if wait_for_delivery:
+            metadata = await producer.send_and_wait(topic, data, key=key_bytes, headers=headers)
+            return {'topic': topic, 'partition': metadata.partition, 'offset': metadata.offset, 'published': True,
+                    'queued': True, 'deliveryConfirmed': True,
+                    'publishLatencyMs': round((loop.time() - publish_started) * 1000, 3)}
+        # AIOKafkaProducer batches in the background. Awaiting send() applies
+        # local buffer backpressure but deliberately does not await the broker
+        # delivery future, preserving high-throughput publisher semantics.
+        await producer.send(topic, data, key=key_bytes, headers=headers)
+        return {'topic': topic, 'published': True, 'queued': True, 'deliveryConfirmed': False,
                 'publishLatencyMs': round((loop.time() - publish_started) * 1000, 3)}
     if operation == 'receive':
         consumer = AIOKafkaConsumer(topic, bootstrap_servers=servers,

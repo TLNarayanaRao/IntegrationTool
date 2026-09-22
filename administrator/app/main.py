@@ -1,4 +1,4 @@
-"""Integration Fabric self-hosted control plane."""
+"""MINA self-hosted control plane."""
 from __future__ import annotations
 
 import base64
@@ -67,7 +67,7 @@ API_KEY = os.environ.get("FABRIC_ADMIN_API_KEY", "").strip()
 STATE_LOCK = threading.RLock()
 PROCESS_HANDLES: dict[str, subprocess.Popen] = {}
 
-app = FastAPI(title="Integration Fabric Control Plane", version=ADMIN_VERSION)
+app = FastAPI(title="MINA Control Plane", version=ADMIN_VERSION)
 REQUEST_METRICS = {"startedAt": log_timestamp(), "total": 0, "errors": 0, "routes": {}, "recentErrors": []}
 
 
@@ -274,8 +274,8 @@ def checked_name(name: str) -> str:
 
 
 def validate_manifest(manifest: Any, names: set[str]) -> dict:
-    if not isinstance(manifest, dict) or manifest.get("format") != "integration-fabric-deployment":
-        raise ValueError("manifest.json is not an Integration Fabric deployment descriptor")
+    if not isinstance(manifest, dict) or manifest.get("format") not in {"mina-deployment", "integration-fabric-deployment"}:
+        raise ValueError("manifest.json is not a MINA deployment descriptor")
     # Studio 2.x deployment archives use manifest format version 2. The
     # archive layout and required descriptor files remain compatible with the
     # Administrator's version-1 validator, so reject only unknown versions.
@@ -418,7 +418,7 @@ def ensure_control_plane_defaults() -> None:
     ensure_local_machine()
     teams = read_json(TEAMS_FILE, [])
     if not any(item.get("id") == TECHNOLOGY_TEAM_ID for item in teams):
-        teams.append({"id":TECHNOLOGY_TEAM_ID, "name":"Technology Team", "kind":"technology", "description":"Owns and governs the Integration Fabric Control Plane", "controlPlaneAccess":True, "namespaceScopes":[{"dataPlaneId":"*", "namespace":"*"}], "status":"ACTIVE", "createdAt":now(), "updatedAt":now()})
+        teams.append({"id":TECHNOLOGY_TEAM_ID, "name":"Technology Team", "kind":"technology", "description":"Owns and governs the MINA Control Plane", "controlPlaneAccess":True, "namespaceScopes":[{"dataPlaneId":"*", "namespace":"*"}], "status":"ACTIVE", "createdAt":now(), "updatedAt":now()})
         write_json(TEAMS_FILE, teams)
     capabilities = read_json(CAPABILITIES_FILE, [])
     if not any(item.get("id") == "integration-runtime-local" for item in capabilities):
@@ -565,7 +565,7 @@ def control_plane_overview(request: Request):
     deployments = [item for item in deployment_inventory() if item.get("state") != "UNDEPLOYED"]
     state_counts: dict[str, int] = {}
     for item in deployments: state_counts[item.get("state", "UNKNOWN")] = state_counts.get(item.get("state", "UNKNOWN"), 0) + 1
-    return {"controlPlane":{"name":"Integration Fabric", "mode":"self-hosted", "version":ADMIN_VERSION, "region":"local", "status":"RUNNING"}, "teams":{"total":len([item for item in read_json(TEAMS_FILE, []) if item.get('status') == 'ACTIVE']), "delivery":len([item for item in read_json(TEAMS_FILE, []) if item.get('kind') == 'delivery' and item.get('status') == 'ACTIVE'])}, "dataPlanes":{"total":len(planes), "running":len([item for item in planes if item.get("status") == "ONLINE"]), "warning":len([item for item in planes if item.get("status") == "REGISTERED"]), "critical":len([item for item in planes if item.get("status") == "OFFLINE"])}, "capabilities":{"total":len(capabilities), "running":len([item for item in capabilities if item.get("health") == "RUNNING"])}, "applications":{"packages":len(package_inventory()), "deployments":len(deployments), "runningInstances":sum(len(item.get("instances", [])) for item in deployments), "states":state_counts}, "recentActivity":audit_inventory(12)}
+    return {"controlPlane":{"name":"MINA", "mode":"self-hosted", "version":ADMIN_VERSION, "region":"local", "status":"RUNNING"}, "teams":{"total":len([item for item in read_json(TEAMS_FILE, []) if item.get('status') == 'ACTIVE']), "delivery":len([item for item in read_json(TEAMS_FILE, []) if item.get('kind') == 'delivery' and item.get('status') == 'ACTIVE'])}, "dataPlanes":{"total":len(planes), "running":len([item for item in planes if item.get("status") == "ONLINE"]), "warning":len([item for item in planes if item.get("status") == "REGISTERED"]), "critical":len([item for item in planes if item.get("status") == "OFFLINE"])}, "capabilities":{"total":len(capabilities), "running":len([item for item in capabilities if item.get("health") == "RUNNING"])}, "applications":{"packages":len(package_inventory()), "deployments":len(deployments), "runningInstances":sum(len(item.get("instances", [])) for item in deployments), "states":state_counts}, "recentActivity":audit_inventory(12)}
 
 
 @app.get("/api/packages")
@@ -678,16 +678,16 @@ async def upload_package(request: Request, file: UploadFile = File(...), teamId:
             raise
         if backup.exists():
             shutil.rmtree(backup)
-        record = {**manifest, "packageId": f"{artifact}:{version}", "teamId":asset_team, "storagePath":str(Path(asset_team) / artifact / version), "receivedAt": now(), "status": "VALIDATED", "sha256": hashlib.sha256(body).hexdigest(), "archiveBytes": len(body), "expandedBytes": sum(len(value) for _, value in entries), "fileCount": len(entries), "sourceFile": file.filename or "deployment.ifpkg"}
+        record = {**manifest, "packageId": f"{artifact}:{version}", "teamId":asset_team, "storagePath":str(Path(asset_team) / artifact / version), "receivedAt": now(), "status": "VALIDATED", "sha256": hashlib.sha256(body).hexdigest(), "archiveBytes": len(body), "expandedBytes": sum(len(value) for _, value in entries), "fileCount": len(entries), "sourceFile": file.filename or "deployment.mpkg"}
         write_json(PACKAGES_FILE, [item for item in package_inventory() if not (item.get("packageId") == record["packageId"] and item.get("teamId", TECHNOLOGY_TEAM_ID) == asset_team)] + [record])
         caller = identity(request); audit("package.upload", record["packageId"], detail=f"Validated {len(entries)} files; sha256={record['sha256']}", actor=caller["name"], team_id=asset_team)
-        record_revision("package", record["packageId"], "package.upload", {"sha256":record["sha256"], "environments":record.get("environments", []), "starterTaskIds":record.get("starterTaskIds", []), "fileCount":record.get("fileCount")}, actor=caller["name"], team_id=asset_team, detail=file.filename or "deployment.ifpkg")
+        record_revision("package", record["packageId"], "package.upload", {"sha256":record["sha256"], "environments":record.get("environments", []), "starterTaskIds":record.get("starterTaskIds", []), "fileCount":record.get("fileCount")}, actor=caller["name"], team_id=asset_team, detail=file.filename or "deployment.mpkg")
         return record
     except HTTPException:
         raise
     except Exception as exc:
         caller = identity(request); audit("package.upload", outcome="failure", detail=str(exc), actor=caller["name"], team_id=asset_team)
-        raise HTTPException(400, f"Invalid Integration Fabric deployment package: {exc}") from exc
+        raise HTTPException(400, f"Invalid MINA deployment package: {exc}") from exc
     finally:
         if stage.exists():
             shutil.rmtree(stage)

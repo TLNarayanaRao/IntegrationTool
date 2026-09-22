@@ -744,7 +744,7 @@ class SapAdapter:
             cfg = {**cfg, 'listenerFunction': 'IDOC_INBOUND_ASYNCHRONOUS'}
         if self._mode(cfg) == 'mock':
             if rfc_listener:
-                request = cfg.get('mockInput') or {'imports': {'REQUEST': 'Integration Fabric mock RFC'}, 'tables': {}}
+                request = cfg.get('mockInput') or {'imports': {'REQUEST': 'MINA mock RFC'}, 'tables': {}}
                 return {'RfcRequest': request, 'functionName': cfg.get('listenerFunction'), 'invocationProtocol': cfg.get('invocationProtocol', 'Request/Reply'), 'received': True, 'mock': True, 'jcoDiagnostics': []}
             idoc_type = str(cfg.get('idocType') or (cfg.get('selectedIdoc') or {}).get('idocType') or 'MOCKIDOC')
             xml_payload = f'<{re.sub(r"[^A-Za-z0-9_.-]", "_", idoc_type)}><IDOC><EDI_DC40><TABNAM>EDI_DC40</TABNAM><IDOCTYP>{idoc_type}</IDOCTYP></EDI_DC40></IDOC></{re.sub(r"[^A-Za-z0-9_.-]", "_", idoc_type)}>'

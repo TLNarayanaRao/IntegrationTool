@@ -29,12 +29,21 @@
 .integration-brand-static-track-mask{fill:none;stroke:#061126;stroke-width:44;stroke-linecap:round;stroke-linejoin:round}
 .integration-brand-static-track-mask.artwork-alignment{stroke-width:34}
 .integration-brand-live-track{fill:none;stroke:#36a8ff;stroke-width:8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1;filter:drop-shadow(0 0 5px #0874e8)}
-.integration-brand-static-ball{fill:#061126;stroke:none}
-.integration-brand-motion-ball{fill:#ff3652;stroke:#ffd8dd;stroke-width:5;filter:drop-shadow(0 0 8px #ff3652)}
+.integration-brand-myna{filter:drop-shadow(0 0 9px #36a8ff)}
+.myna-body,.myna-head{fill:#312719;stroke:#f8c72e;stroke-width:4}
+.myna-tail{fill:#171a1d;stroke:#d9efff;stroke-width:3}
+.myna-wing{fill:#151a20;stroke:#e8f7ff;stroke-width:3;transform-box:fill-box;transform-origin:center}
+.myna-wing-lower{opacity:.92}
+.myna-wing-mark{fill:#f6fbff;stroke:#8fd6ff;stroke-width:2}
+.myna-eye-patch,.myna-beak{fill:#f6c72e;stroke:#fff1a1;stroke-width:2}
+.myna-eye{fill:#07101b;stroke:#fff;stroke-width:2}
 .home-brand-art{width:min(520px,48vw);height:60px;border:0;border-radius:0;box-shadow:none;background:transparent}
 .studio-brand-art{width:276px;height:50px;border:0;border-radius:0;box-shadow:none;background:transparent}
 @media(max-width:900px){.studio-brand-art{width:230px}.home-brand-art{width:min(440px,55vw)}}
 @media(max-width:650px){.home-brand-art{width:280px;height:54px}.studio-brand-art{width:190px;height:46px}}
 
 .integration-brand-svg{display:block;width:min(520px,100%);height:52px;object-fit:contain;object-position:left center}.fabric-launch-home .integration-brand-svg{width:520px;height:58px}
-.launch-actions h1{margin-bottom:25px;font-size:clamp(34px,3.2vw,50px)}.launch-actions h1>span{white-space:nowrap}
+.launch-actions h1{margin-bottom:25px;font-size:clamp(34px,3.2vw,50px)}
+.mina-home-title{display:flex;flex-direction:column;align-items:flex-start;max-width:100%!important;line-height:.98!important}
+.mina-home-title>span{display:block;white-space:normal}
+.mina-home-title .mina-name{margin-bottom:10px;color:var(--accent2);font-size:.72em;letter-spacing:.04em}

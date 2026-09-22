@@ -1,4 +1,4 @@
-"""Standalone Integration Fabric deployment worker.
+"""Standalone MINA deployment worker.
 
 This entry point is intentionally separate from ``run_sidecar.py``.  The
 sidecar serves Studio's HTTP API; this worker executes one packaged
@@ -125,7 +125,7 @@ async def run_deployment(application: Path, environment: str) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run a packaged Integration Fabric application")
+    parser = argparse.ArgumentParser(description="Run a packaged MINA application")
     parser.add_argument("--application", required=True, help="Path to the packaged application directory")
     parser.add_argument("--environment", "--env", dest="environment", default=None)
     # Accept the environment as a positional fallback as well. This keeps

@@ -6,7 +6,7 @@
 > The commands in this guide that reference the older `integrationfabric/source`
 > layout are retained as historical alternatives; do not mix the two layouts.
 
-This guide runs the Integration Fabric Control Plane directly from the shell. It does not use `systemctl` or require a systemd service. The Unix team only needs to provision `/opt/tibco/esb/IntegrationFabricSoftware` and its permissions.
+This guide runs the MINA Control Plane directly from the shell. It does not use `systemctl` or require a systemd service. The Unix team only needs to provision `/opt/tibco/esb/IntegrationFabricSoftware` and its permissions.
 
 ## Directory layout
 
@@ -371,7 +371,7 @@ export FABRIC_NAMESPACE=default
 export FABRIC_SECRETS_FILE=/opt/tibco/esb/temp/linux/deployment-secrets.json
 
 /opt/tibco/esb/integrationfabric/source/scripts/linux/deploy-application.sh \
-  /opt/tibco/esb/temp/linux/my-application.ifpkg dev
+  /opt/tibco/esb/temp/linux/my-application.mpkg dev
 ```
 
 The script prints the generated Deployment ID. To deploy without starting,

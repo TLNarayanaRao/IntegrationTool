@@ -250,7 +250,7 @@ class StudioErrorBoundary extends Component<React.PropsWithChildren, { error: Er
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("Integration Fabric Studio render failure", error, info.componentStack);
+    console.error("MINA Studio render failure", error, info.componentStack);
   }
 
   render() {
@@ -961,7 +961,7 @@ const initial: Project = {
   packaging: {
     artifact_name: "order-integration",
     version: "1.0.0",
-    format: "ifpkg",
+    format: "mpkg",
     target: "on-prem",
     environment: "production",
   },
@@ -1357,7 +1357,7 @@ function App() {
         headers: { "content-type": "application/json", "x-fabric-autosave": "true" },
         body: JSON.stringify(snapshot),
         keepalive: true,
-      }).catch((error) => console.warn("Integration Fabric autosave failed", error));
+      }).catch((error) => console.warn("MINA autosave failed", error));
     }, 700);
     return () => { if (autosaveTimer.current !== null) { window.clearTimeout(autosaveTimer.current); autosaveTimer.current = null; } };
   }, [project, closed]);
@@ -1771,7 +1771,7 @@ function App() {
       });
     if (d.type === "ems") Object.assign(config, { messagingStyle: d.operation?.includes("topic") ? "Topic" : "Queue", messageType: "Text", acknowledgeMode: ["queue_receiver", "topic_subscriber"].includes(d.operation || "") ? "Auto" : undefined, deliveryMode: "Persistent", priority: 4, expiration: 0, queue: d.operation === "queue_receiver" ? "${properties.connections.ems.destination}" : undefined, topic: d.operation === "topic_subscriber" ? "${properties.connections.ems.destination}" : undefined, maxSessions: "${properties.connections.ems.sessionCount}", flowLimit: "${properties.connections.ems.flowLimit}", receiveTimeout: "${properties.connections.ems.receiveTimeoutMs}", dynamicProperties: "{}" });
     if (d.type === "jms") Object.assign(config, { messagingStyle: "Queue", messageType: "Text", acknowledgeMode: ["get_queue_message", "receive_message", "wait_request"].includes(d.operation || "") ? "Auto" : undefined, deliveryMode: "Persistent", priority: 4, expiration: 0, maxSessions: 1, receiveTimeout: 30000, requestTimeout: 30000, dynamicProperties: "{}" });
-    if (d.type === "kafka") Object.assign(config, { acknowledgeMode: d.operation === "receive" || d.operation === "get" ? "Auto" : undefined, keySerializer: "String", valueSerializer: "String", keyDeserializer: "String", valueDeserializer: "String", acks: "all", compressionType: "none", retries: 3, bufferMemory: 33554432, batchSize: 16384, lingerMs: 0, maxRequestSize: 1048576, enableIdempotence: false, enableAutoCommit: true, autoOffsetReset: "earliest", fetchMinBytes: 1, maxPollRecords: 1, sessionTimeoutMs: 45000, heartbeatIntervalMs: 3000, additionalProperties: "{}" });
+    if (d.type === "kafka") Object.assign(config, { acknowledgeMode: d.operation === "receive" || d.operation === "get" ? "Auto" : undefined, keySerializer: "String", valueSerializer: "String", keyDeserializer: "String", valueDeserializer: "String", waitForDelivery: false, acks: "all", compressionType: "none", retries: 3, bufferMemory: 33554432, batchSize: 16384, lingerMs: 0, maxRequestSize: 1048576, enableIdempotence: false, enableAutoCommit: true, autoOffsetReset: "earliest", fetchMinBytes: 1, maxPollRecords: 1, sessionTimeoutMs: 45000, heartbeatIntervalMs: 3000, additionalProperties: "{}" });
     if (d.type === "pubsub") Object.assign(config, { acknowledgeMode: d.operation === "subscribe" ? "Auto" : undefined, receiveTimeout: 10, publishTimeout: 60, attributes: {}, data: "${last}" });
     if (d.type === "sap")
       Object.assign(config, {
@@ -2118,16 +2118,16 @@ function App() {
     window.setTimeout(() => URL.revokeObjectURL(url), 1500);
   };
   const saveProjectFile = async (format: "package" | "json" = "package", forceNew = false, extensionOverride?: string) => {
-    const extension = extensionOverride || (format === "package" ? "ifproject" : "json"), filename = projectFilename(extension), picker = (window as any).showSaveFilePicker;
+    const extension = extensionOverride || (format === "package" ? "mpackage" : "json"), filename = projectFilename(extension), picker = (window as any).showSaveFilePicker;
     let handle = format === "package" && !forceNew ? projectFileHandle.current : null;
     setWorkStatus(format === "package" ? "Saving project package…" : "Saving project JSON…");
     try {
-      if (picker && !handle) handle = await picker({ suggestedName: filename, types: [{ description: format === "package" ? "Integration Fabric Project" : "Integration Fabric Project JSON", accept: { [format === "package" ? "application/zip" : "application/json"]: [`.${extension}`] } }] });
+      if (picker && !handle) handle = await picker({ suggestedName: filename, types: [{ description: format === "package" ? "MINA Project" : "MINA Project JSON", accept: { [format === "package" ? "application/zip" : "application/json"]: [`.${extension}`] } }] });
       await persistProject();
       const blob = await fetchProjectFile(format);
       if (window.fabricDesktop) {
         const existingPath = format === "package" && !forceNew && typeof handle === "string" ? handle : undefined;
-        const filePath = await window.fabricDesktop.saveFile({ path: existingPath, filename, bytes: [...new Uint8Array(await blob.arrayBuffer())], filters: [{ name: format === "package" ? "Integration Fabric Project" : "Integration Fabric JSON", extensions: [extension] }] });
+        const filePath = await window.fabricDesktop.saveFile({ path: existingPath, filename, bytes: [...new Uint8Array(await blob.arrayBuffer())], filters: [{ name: format === "package" ? "MINA Project" : "MINA JSON", extensions: [extension] }] });
         if (!filePath) { setLogs([{ level: "INFO", message: "Project file save cancelled." }]); return; }
         if (format === "package") { projectFileHandle.current = filePath; localStorage.setItem(`integration-fabric-project-path:${project.id}`, filePath); }
         setLogs([{ level: "INFO", message: `Saved complete project to ${filePath}.` }]);
@@ -2150,7 +2150,7 @@ function App() {
       const saved = await persistProject();
       const folderName = projectFilename("").replace(/\.$/, "");
       if (window.fabricDesktop) {
-        const remembered = typeof projectFileHandle.current === "string" && !/\.(ifproject|zip|json)$/i.test(projectFileHandle.current) ? projectFileHandle.current : undefined;
+        const remembered = typeof projectFileHandle.current === "string" && !/\.(mpackage|ifproject|ifpackage|zip|json)$/i.test(projectFileHandle.current) ? projectFileHandle.current : undefined;
         const folderPath = await window.fabricDesktop.saveProjectFolder({ path: remembered, folderName, project: saved });
         if (!folderPath) { setLogs([{ level: "INFO", message: "Project folder save cancelled." }]); return; }
         projectFileHandle.current = folderPath;
@@ -2160,7 +2160,7 @@ function App() {
       }
       const picker = (window as any).showDirectoryPicker;
       if (!picker) {
-        setLogs([{ level: "INFO", message: "Browser mode cannot write a project folder directly. Downloading a portable .ifproject package instead." }]);
+        setLogs([{ level: "INFO", message: "Browser mode cannot write a project folder directly. Downloading a portable .mpackage package instead." }]);
         await saveProjectFile("package", true);
         return;
       }
@@ -2204,7 +2204,7 @@ function App() {
       // Python source export is an explicit one-off action. Never persist it
       // as the project's default archive format, or normal Export would
       // unexpectedly create another Python archive.
-      const regularFormat = ["ifpkg", "zip", "tar.gz", "ear"].includes(requestedFormat) ? requestedFormat : ( ["ifpkg", "zip", "tar.gz", "ear"].includes(project.packaging?.format) ? project.packaging.format : "ifpkg" );
+      const regularFormat = ["mpkg", "ifpkg", "zip", "tar.gz", "ear"].includes(requestedFormat) ? requestedFormat : ( ["mpkg", "ifpkg", "zip", "tar.gz", "ear"].includes(project.packaging?.format) ? project.packaging.format : "mpkg" );
       const next = { ...project, packaging: { ...project.packaging, ...persistedSettings, format: regularFormat } };
       const saved = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
       if (!saved.ok) { const detail = await saved.json().catch(() => ({})); throw new Error(detail.detail || `Unable to save packaging configuration (HTTP ${saved.status}).`); }
@@ -2214,9 +2214,9 @@ function App() {
       const response = await fetch(`/api/projects/${project.id}/package?${query}`);
       if (!response.ok) { const detail = await response.json().catch(() => ({})); throw new Error(detail.detail || `Package generation failed (HTTP ${response.status}). Check the project log for details.`); }
       const blob = await response.blob(), disposition = response.headers.get("content-disposition") || "";
-      const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `${settings.artifact_name}-${settings.version}.${settings.format === "ifpkg" ? "ifpkg" : settings.format.startsWith("python") ? "pyifpkg" : settings.format}`;
+      const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `${settings.artifact_name}-${settings.version}.${settings.format.startsWith("python") ? "pympkg" : settings.format}`;
       if (window.fabricDesktop) {
-        const filePath = await window.fabricDesktop.saveFile({ filename, bytes: [...new Uint8Array(await blob.arrayBuffer())], filters: [{ name: "Integration Fabric Deployment Package", extensions: [filename.endsWith(".tar.gz") ? "tar.gz" : filename.split(".").pop() || "ifpkg"] }] });
+        const filePath = await window.fabricDesktop.saveFile({ filename, bytes: [...new Uint8Array(await blob.arrayBuffer())], filters: [{ name: "MINA Deployment Package", extensions: [filename.endsWith(".tar.gz") ? "tar.gz" : filename.split(".").pop() || "mpkg"] }] });
         if (!filePath) return;
         setLogs([{ level: "INFO", message: `Created ${settings.target} deployment package: ${filePath}` }]);
       } else browserDownload(blob, filename);
@@ -2239,7 +2239,7 @@ function App() {
       catch { throw new Error("Deployment secrets must be a JSON object of property names and values."); }
       if (!secrets || Array.isArray(secrets) || typeof secrets !== "object") throw new Error("Deployment secrets must be a JSON object.");
       const { credential, secretsText, controlPlaneUrl, caCertificatePath, format: requestedFormat, ...persistedSettings } = settings;
-      const regularFormat = ["ifpkg", "zip", "tar.gz", "ear"].includes(requestedFormat) ? requestedFormat : "ifpkg";
+      const regularFormat = ["mpkg", "ifpkg", "zip", "tar.gz", "ear"].includes(requestedFormat) ? requestedFormat : "mpkg";
       const next = { ...project, packaging: { ...project.packaging, ...persistedSettings, format: regularFormat } };
       const saved = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
       if (!saved.ok) throw new Error("Unable to save packaging configuration.");
@@ -2428,7 +2428,7 @@ function App() {
       return null;
     } finally { setWorkStatus(""); }
   };
-  const importFromFileSystem = async (fileType?: "ifproject" | "ifpkg" | "zip" | "json") => {
+  const importFromFileSystem = async (fileType?: "mpackage" | "mpkg" | "legacy" | "ifproject" | "ifpackage" | "ifpkg" | "zip" | "json") => {
     setWorkStatus("Opening project from filesystem…");
     try {
     if (window.fabricDesktop) {
@@ -2457,7 +2457,7 @@ function App() {
     const picker = (window as any).showOpenFilePicker;
     if (!picker) { fileInput.current?.click(); return; }
     try {
-      const [handle] = await picker({ multiple: false, types: [{ description: "Integration Fabric Project", accept: { "application/zip": [".ifproject", ".ifpkg", ".zip"], "application/json": [".json"] } }] });
+      const [handle] = await picker({ multiple: false, types: [{ description: "MINA Project", accept: { "application/zip": [".mpackage", ".mpkg", ".ifproject", ".ifpackage", ".ifpkg", ".zip"], "application/json": [".json"] } }] });
       const file = await handle.getFile();
       await importProject(file);
       projectFileHandle.current = handle;
@@ -2468,7 +2468,7 @@ function App() {
   };
   const importProjectFolder = async () => {
     if (!window.fabricDesktop?.openProjectFolder) {
-      setLogs([{ level: "INFO", message: "Project folder import is available in the desktop application. Use an .ifproject file in browser mode." }]);
+      setLogs([{ level: "INFO", message: "Project folder import is available in the desktop application. Use an .mpackage file in browser mode (legacy .ifproject is also accepted)." }]);
       return;
     }
     setWorkStatus("Opening project folder…");
@@ -2498,7 +2498,7 @@ function App() {
     if (!type) { setExportSourceOpen(true); return; }
     if (type === "folder") { void saveProjectFolder(); return; }
     if (type === "json") { void saveJsonFile(); return; }
-    if (type === "ifpkg") { setPackageOpen(true); return; }
+    if (type === "mpkg" || type === "ifpkg") { setPackageOpen(true); return; }
     void saveProjectFile("package", true, type);
   };
   const deleteCurrent = async () => {
@@ -2627,7 +2627,7 @@ function App() {
     <div className={`app ${executionPanelOpen ? "" : "monitor-hidden"}`} style={{ "--explorer-width": `${explorerWidth}px` } as React.CSSProperties} onClick={() => setMenu(null)}>
       <nav className="menu-bar">
         <div className="menu-mark">
-          <Workflow /> IF
+          <Workflow /> MINA
         </div>
         <div className="menu-root"><button className={menu === "file" ? "active" : ""} onClick={(e) => { e.stopPropagation(); setMenu(menu === "file" ? null : "file"); }}>File</button>
           {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} newProject={newProject} exitStudio={exitStudio} save={save} saveJson={saveJsonFile} exportProject={exportGenericProject} importProject={openGenericProject} importProjectFolder={importProjectFolder} openProjects={closeProject} sampleProjects={() => setSampleGalleryOpen(true)} catchAI={openCatchAI} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
@@ -2665,7 +2665,7 @@ function App() {
         <TopMenu label="Help" open={menu === "help"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "help" ? null : "help"); }} commands={[
           { label: "Installed Activity Guide", detail: "Offline product activity and runtime documentation", icon: BookOpen, action: () => window.open("/help/activity-reference.html", "_blank", "noopener") },
           { label: "Keyboard Shortcuts", detail: "Designer and runtime commands", icon: Settings2, action: () => setHelpDialog("shortcuts") },
-          { label: "About Integration Fabric", detail: "Product and project information", icon: Workflow, action: () => setHelpDialog("about") },
+          { label: "About MINA", detail: "Product and project information", icon: Workflow, action: () => setHelpDialog("about") },
         ]}/>
         <span className="menu-spacer" />
         <ThemePicker theme={theme} setTheme={setTheme} />
@@ -3375,7 +3375,7 @@ function App() {
       </aside>}
       {utilityMode && <FileUtilities initialMode={utilityMode} onClose={() => setUtilityMode(null)}/>}
       <footer className="studio-status-bar">
-        <span className="status-product"><Workflow/> Integration Fabric Studio</span>
+        <span className="status-product"><Workflow/> MINA Studio</span>
         <span className="status-context">{project.name} · {task.name}</span>
         <span className="status-spacer"/>
         <span className="status-environment">{project.active_environment.toUpperCase()}</span>
@@ -3386,7 +3386,7 @@ function App() {
         hidden
         ref={fileInput}
         type="file"
-        accept=".ifproject,.ifpkg,.zip,.json"
+        accept=".mpackage,.mpkg,.ifproject,.ifpackage,.ifpkg,.zip,.json"
         onChange={(e) =>
           e.target.files?.[0] && importProject(e.target.files[0])
         }
@@ -3553,7 +3553,7 @@ function App() {
       }}/>}
       {catchAIOpen && <CatchAIDialog onClose={() => setCatchAIOpen(null)} onApply={(types: string[]) => { createExceptionHandlers(catchAIOpen, types); setCatchAIOpen(null); }}/>} 
       {openSourceOpen && <OpenProjectSourceDialog onClose={() => setOpenSourceOpen(false)} onFile={(type: any) => { setOpenSourceOpen(false); void importFromFileSystem(type); }} onFolder={() => { setOpenSourceOpen(false); void importProjectFolder(); }}/>} 
-      {exportSourceOpen && <OpenProjectSourceDialog title="Export Integration Fabric project" actionLabel="Export" onClose={() => setExportSourceOpen(false)} onFile={(type: any) => { setExportSourceOpen(false); exportGenericProject(type); }} onFolder={() => { setExportSourceOpen(false); exportGenericProject("folder"); }} exportMode/>}
+      {exportSourceOpen && <OpenProjectSourceDialog title="Export MINA project" actionLabel="Export" onClose={() => setExportSourceOpen(false)} onFile={(type: any) => { setExportSourceOpen(false); exportGenericProject(type); }} onFolder={() => { setExportSourceOpen(false); exportGenericProject("folder"); }} exportMode/>}
       {renameOpen && (
         <RenameApplication
           name={project.name}
@@ -3699,7 +3699,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
     target: initialTarget,
     starterTaskIds: Array.isArray(packaging?.starterTaskIds) && packaging.starterTaskIds.length ? packaging.starterTaskIds.filter((id: string) => starterTasks.some((task: Task) => task.id === id)) : starterTasks.map((task: Task) => task.id),
     environments: Array.isArray(packaging?.environments) && packaging.environments.length ? packaging.environments.filter((name: string) => environments.includes(name)) : [packaging?.environment || "production"].filter((name: string) => environments.includes(name)),
-    format: ["ifpkg", "zip", "tar.gz", "ear"].includes(packaging?.format) ? packaging.format : "ifpkg",
+    format: ["mpkg", "ifpkg", "zip", "tar.gz", "ear"].includes(packaging?.format) ? packaging.format : "mpkg",
     artifacts: savedArtifacts.length ? savedArtifacts : initialChoices.map((choice) => choice.key),
     image: packaging?.image || "",
     replicas: packaging?.replicas || 1,
@@ -3734,7 +3734,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
   const toggleArtifact = (key: string) => setDraft((current: any) => ({ ...current, artifacts: current.artifacts.includes(key) ? current.artifacts.filter((value: string) => value !== key) : [...current.artifacts, key] }));
   const toggleEnvironment = (name: string) => setDraft((current: any) => ({ ...current, environments: current.environments.includes(name) ? current.environments.filter((value: string) => value !== name) : [...current.environments, name] }));
   const toggleStarter = (id: string) => setDraft((current: any) => ({ ...current, starterTaskIds: current.starterTaskIds.includes(id) ? current.starterTaskIds.filter((value: string) => value !== id) : [...current.starterTaskIds, id] }));
-  const extension = draft.format.startsWith("python") ? "pyifpkg" : draft.format;
+  const extension = draft.format.startsWith("python") ? "pympkg" : draft.format;
   const compatiblePlanes = targetCatalog.dataPlanes.filter((plane: any) => draft.target === "cloud" ? plane.type === "kubernetes" : plane.type !== "kubernetes");
   const selectedPlane = compatiblePlanes.find((plane: any) => plane.id === draft.dataPlaneId);
   const runtimeCapabilitiesFor = (dataPlaneId: string) => targetCatalog.capabilities.filter((capability: any) => capability.type === "integration-runtime" && capability.dataPlaneId === dataPlaneId);
@@ -3799,7 +3799,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
       </div>
       <section className="package-starters"><header><span><b>TASK STARTERS</b><small>Select the deployable entry points. Called Sub Tasks are discovered recursively and included automatically; unrelated Sub Tasks are excluded.</small></span><button type="button" onClick={() => update("starterTaskIds", starterTasks.map((task: Task) => task.id))}>Select all</button></header><div>{starterTasks.map((task: Task) => <label key={task.id} className={draft.starterTaskIds.includes(task.id) ? "selected" : ""}><input type="checkbox" checked={draft.starterTaskIds.includes(task.id)} onChange={() => toggleStarter(task.id)}/><span><b>{task.name}</b><small>{task.description || "Starter Task"}</small></span></label>)}</div>{!starterTasks.length && <p>No Starter Tasks are available. Create a Starter Task before packaging.</p>}</section>
       <section className="package-environments"><header><span><b>ENVIRONMENT PROFILES</b><small>The application is common; configuration and secret files are generated separately for every selected profile.</small></span><button type="button" onClick={() => update("environments", environments)}>Select all</button></header><div>{environments.map((name: string) => <label key={name} className={draft.environments.includes(name) ? "selected" : ""}><input type="checkbox" checked={draft.environments.includes(name)} onChange={() => toggleEnvironment(name)}/><span><b>{name}</b><small>{draft.environments.includes(name) ? "Included" : "Not packaged"}</small></span></label>)}</div></section>
-      <label>Archive format<select value={draft.format} onChange={(event) => update("format", event.target.value)}><option value="ifpkg">Integration package (.ifpkg)</option><option value="zip">ZIP archive (.zip)</option><option value="tar.gz">Compressed TAR (.tar.gz)</option><option value="ear">EAR-compatible ZIP (.ear)</option><option value="python-engine">Python compatibility archive (engine-backed)</option></select></label>
+      <label>Archive format<select value={draft.format} onChange={(event) => update("format", event.target.value)}><option value="mpkg">MINA deployment package (.mpkg)</option><option value="ifpkg">Legacy deployment package (.ifpkg)</option><option value="zip">ZIP archive (.zip)</option><option value="tar.gz">Compressed TAR (.tar.gz)</option><option value="ear">EAR-compatible ZIP (.ear)</option><option value="python-engine">Python compatibility archive (.pympkg)</option></select></label>
       <section className="package-artifacts">
         <header><span><b>SELECT DEPLOYMENT FILES</b><small>Core application, tasks, resources, schemas, and secret requirements are always included.</small></span><button type="button" onClick={() => update("artifacts", deploymentArtifactChoices[draft.target].map((choice) => choice.key))}>Select all</button></header>
         <div>{deploymentArtifactChoices[draft.target].map((choice) => <label key={choice.key} className={draft.artifacts.includes(choice.key) ? "selected" : ""}><input type="checkbox" checked={draft.artifacts.includes(choice.key)} onChange={() => toggleArtifact(choice.key)}/><span><b>{choice.label}</b><small>{choice.detail}</small></span></label>)}</div>
@@ -3818,7 +3818,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
         <label>Runtime instances<input type="number" min="1" value={draft.instances} onChange={(event) => update("instances", Number(event.target.value))}/></label>
         <label>Graceful shutdown (seconds)<input type="number" min="1" value={draft.gracefulShutdownSeconds} onChange={(event) => update("gracefulShutdownSeconds", Number(event.target.value))}/></label>
         <label>Install root<input value={draft.installRoot} onChange={(event) => update("installRoot", event.target.value)} placeholder={`/opt/integrationfabric/apps/${draft.artifact_name}`}/></label>
-        <label>Windows install root<input value={draft.windowsInstallRoot} onChange={(event) => update("windowsInstallRoot", event.target.value)} placeholder={`C:\\ProgramData\\Integration Fabric\\apps\\${draft.artifact_name}`}/></label>
+        <label>Windows install root<input value={draft.windowsInstallRoot} onChange={(event) => update("windowsInstallRoot", event.target.value)} placeholder={`C:\\ProgramData\\MINA\\apps\\${draft.artifact_name}`}/></label>
         <label className="package-toggle"><input type="checkbox" checked={!!draft.startOnBoot} onChange={(event) => update("startOnBoot", event.target.checked)}/> Start application after Administrator deployment</label>
       </section>}
       <section className="package-runtime-options package-control-plane">
@@ -3852,15 +3852,17 @@ function StudioRibbon(props: any) {
     <div className="ribbon-group layout-group"><b>ARRANGE · {props.selectedCount} SELECTED</b><div>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</div></div>
   </section>;
 }
-function OpenProjectSourceDialog({ onClose, onFile, onFolder, title = "Open Integration Fabric project", actionLabel = "Browse", exportMode = false }: any) {
-  const [source, setSource] = useState<"ifproject" | "ifpkg" | "zip" | "json" | "folder">("ifproject");
-  const choices = [
-    ["ifproject", ".ifproject", exportMode ? "Export complete project package" : "Complete Integration Fabric project package"],
-    ["ifpkg", ".ifpkg", exportMode ? "Export deployment package" : "Deployment package"],
+function OpenProjectSourceDialog({ onClose, onFile, onFolder, title = "Open MINA project", actionLabel = "Browse", exportMode = false }: any) {
+  type ProjectSource = "mpackage" | "mpkg" | "legacy" | "zip" | "json" | "folder";
+  const [source, setSource] = useState<ProjectSource>("mpackage");
+  const choices: Array<[ProjectSource, string, string]> = [
+    ["mpackage", ".mpackage", exportMode ? "Export complete MINA project package" : "Complete MINA project package"],
+    ["mpkg", ".mpkg", exportMode ? "Export deployment package" : "MINA deployment package"],
     ["zip", "ZIP", "ZIP project archive"],
     ["json", "JSON", "Project JSON descriptor"],
     ["folder", "Structured project folder", "Folder containing project.json and project content"],
-  ] as const;
+  ];
+  if (!exportMode) choices.splice(2, 0, ["legacy", "Legacy MINA packages", ".ifproject, .ifpackage, and .ifpkg remain importable"]);
   return <div className="modal-backdrop"><div className="runtime-modal" role="dialog" aria-modal="true" aria-labelledby="open-project-title">
     <header><b id="open-project-title">{title}</b><button onClick={onClose} aria-label="Close">×</button></header>
     <main><p>Select the project format, then browse for the matching file or folder.</p><div className="open-project-source-options">{choices.map(([value, label, detail]) => <label key={value}><input type="radio" name={exportMode ? "export-source" : "project-source"} checked={source === value} onChange={() => setSource(value)}/><span><b>{label}</b><small>{detail}</small></span></label>)}</div></main>
@@ -4149,7 +4151,7 @@ function TopMenu({ label, open, toggle, commands }: any) {
   return <div className="menu-root"><button className={open ? "active" : ""} onClick={toggle}>{label}</button>{open && <div className="menu-dropdown command-menu glossy-menu" onClick={(event) => event.stopPropagation()}>{commands.map((command: any) => { const Icon = command.icon; return <button key={command.label} disabled={command.disabled} onClick={() => { command.action(); toggle({ stopPropagation() {} }); }}><Icon/><span><b>{command.label}</b><small>{command.detail}</small></span>{command.shortcut && <kbd>{command.shortcut}</kbd>}</button>; })}</div>}</div>;
 }
 function HelpDialog({ mode, onClose }: any) {
-  return <div className="modal-backdrop"><div className="runtime-modal help-dialog"><header><b>{mode === "shortcuts" ? "Keyboard Shortcuts" : "About Integration Fabric"}</b><button onClick={onClose}>×</button></header><main>{mode === "shortcuts" ? <div className="shortcut-grid"><kbd>Ctrl+Z</kbd><span>Undo Studio change (100 levels)</span><kbd>Ctrl+Y</kbd><span>Redo Studio change</span><kbd>Ctrl+Shift+Z</kbd><span>Redo Studio change</span><kbd>Delete</kbd><span>Delete selected activity or transition</span><kbd>Ctrl+S</kbd><span>Save project</span><kbd>F5</kbd><span>Run active task</span><kbd>F6</kbd><span>Start debugging</span><kbd>Right-click</kbd><span>Open context commands or activity search</span><kbd>Drag</kbd><span>Move activities on the canvas</span></div> : <div className="about-panel"><Workflow/><h2>Integration Fabric Studio</h2><p>Lightweight JSON-backed integration design, configuration, execution, and debugging.</p><code>Project: {location.pathname === "/" ? "Local Studio" : location.pathname}</code></div>}</main><footer><button className="primary" onClick={onClose}>Close</button></footer></div></div>;
+  return <div className="modal-backdrop"><div className="runtime-modal help-dialog"><header><b>{mode === "shortcuts" ? "Keyboard Shortcuts" : "About MINA"}</b><button onClick={onClose}>×</button></header><main>{mode === "shortcuts" ? <div className="shortcut-grid"><kbd>Ctrl+Z</kbd><span>Undo Studio change (100 levels)</span><kbd>Ctrl+Y</kbd><span>Redo Studio change</span><kbd>Ctrl+Shift+Z</kbd><span>Redo Studio change</span><kbd>Delete</kbd><span>Delete selected activity or transition</span><kbd>Ctrl+S</kbd><span>Save project</span><kbd>F5</kbd><span>Run active task</span><kbd>F6</kbd><span>Start debugging</span><kbd>Right-click</kbd><span>Open context commands or activity search</span><kbd>Drag</kbd><span>Move activities on the canvas</span></div> : <div className="about-panel"><Workflow/><h2>MINA Studio</h2><p>MINA — Mediation, Integration &amp; Automation.</p><code>Project: {location.pathname === "/" ? "Local Studio" : location.pathname}</code></div>}</main><footer><button className="primary" onClick={onClose}>Close</button></footer></div></div>;
 }
 function FileMenu({
   stop,
@@ -4190,13 +4192,13 @@ function FileMenu({
       <button onClick={go(exportProject)}>
         <Package />
         <span>
-          Export Project Package<small>Portable .ifproject archive</small>
+          Export Project Package<small>Portable .mpackage archive</small>
         </span>
       </button>
       <button onClick={go(importProject)}>
         <Download />
         <span>
-          Import Project<small>Open .ifproject or JSON</small>
+          Import Project<small>Open .mpackage, legacy package, or JSON</small>
         </span>
       </button>
       <button onClick={go(importProjectFolder)}>
@@ -4237,7 +4239,7 @@ function FileMenu({
         </span>
       </button>
       <hr />
-      <button onClick={go(exitStudio)}><Square /><span>Exit<small>Close Integration Fabric Studio</small></span></button>
+      <button onClick={go(exitStudio)}><Square /><span>Exit<small>Close MINA Studio</small></span></button>
     </div>
   );
 }
@@ -4277,15 +4279,15 @@ function SampleGallery({ onClose, onImport }: { onClose: () => void; onImport: (
     finally { setOpening(""); }
   };
   return <div className="modal-backdrop sample-gallery-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="sample-gallery">
-    <div className="sample-gallery-header"><span><BookOpen/><span><b>Installed sample projects</b><small>Learn with editable projects bundled with Integration Fabric Studio</small></span></span><button aria-label="Close samples" onClick={onClose}>×</button></div>
+    <div className="sample-gallery-header"><span><BookOpen/><span><b>Installed sample projects</b><small>Learn with editable projects bundled with MINA Studio</small></span></span><button aria-label="Close samples" onClick={onClose}>×</button></div>
     <div className="sample-gallery-search"><Search/><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search samples, activities, or technologies…"/></div>
     <div className="sample-gallery-content">{loading ? <div className="sample-gallery-empty"><LoaderCircle/> Loading installed samples…</div> : visible.map((sample) => <article key={sample.id}><div className="sample-card-heading"><span><Package/></span><div><em>{sample.category}</em><h3>{sample.name}</h3></div><i className={sample.ready ? "ready" : "setup"}>{sample.ready ? "READY TO RUN" : "CONNECTION SETUP"}</i></div><p>{sample.description}</p><div className="sample-activities">{sample.activities.map((activity) => <code key={activity}>{activity}</code>)}</div><button disabled={!!opening} onClick={() => void open(sample)}>{opening === sample.id ? <><LoaderCircle/> Opening…</> : <><FolderOpen/> Open editable sample</>}</button></article>)}{!loading && !visible.length && <div className="sample-gallery-empty">No installed samples match your search.</div>}</div>
     <div className="sample-gallery-footer"><span>Samples are copied into project storage when opened. Connection samples contain placeholders and never include credentials.</span><button onClick={onClose}>Close</button></div>{error && <p className="sample-gallery-error"><AlertTriangle/>{error}</p>}
   </div></div>;
 }
 function IntegrationBrandArtwork({ className = "" }: { className?: string }) {
-  return <div className={`integration-brand-art ${className}`.trim()} aria-label="Integration Studio">
-    <img src="/branding/integration-studio-art.png" alt="Integration Studio" />
+  return <div className={`integration-brand-art ${className}`.trim()} aria-label="MINA Studio">
+    <img src="/branding/mina-studio-art.png?v=2" alt="MINA — Mediation, Integration & Automation" />
     <svg className="integration-brand-motion" viewBox="0 0 2002 786" preserveAspectRatio="none" aria-hidden="true">
       <path className="integration-brand-motion-path" d="M643 398 C762 158 1011 158 1131 398 C1279 70 1456 66 1653 88" />
       <path className="integration-brand-static-track-mask" pathLength="1" d="M643 398 C762 158 1011 158 1131 398 C1279 70 1456 66 1653 88" />
@@ -4293,11 +4295,23 @@ function IntegrationBrandArtwork({ className = "" }: { className?: string }) {
       <path className="integration-brand-live-track" pathLength="1" d="M643 398 C762 158 1011 158 1131 398 C1279 70 1456 66 1653 88">
         <animate attributeName="stroke-dashoffset" dur="4.8s" repeatCount="indefinite" values="1;1;.86;0;0" keyTimes="0;.08;.14;.88;1" />
       </path>
-      <circle className="integration-brand-static-ball" r="57" cx="1653" cy="88" />
-      <circle className="integration-brand-motion-ball" r="58" cx="0" cy="0">
+      <g className="integration-brand-myna">
         <animate attributeName="opacity" dur="4.8s" repeatCount="indefinite" values="0;0;1;1;1" keyTimes="0;.08;.14;.88;1" />
-        <animateMotion dur="4.8s" repeatCount="indefinite" path="M643 398 C762 158 1011 158 1131 398 C1279 70 1456 66 1653 88" />
-      </circle>
+        <animateMotion dur="4.8s" repeatCount="indefinite" rotate="auto" path="M643 398 C762 158 1011 158 1131 398 C1279 70 1456 66 1653 88" />
+        <path className="myna-tail" d="M-54 10 L-105 34 L-62 -3 Z" />
+        <path className="myna-body" d="M-63 4 C-42 -30 19 -32 52 -4 C27 28 -31 35 -63 4 Z" />
+        <path className="myna-wing myna-wing-upper" d="M-28 -5 C-49 -70 9 -91 35 -20 C8 -34 -6 -23 -28 -5 Z">
+          <animateTransform attributeName="transform" type="rotate" values="7 -15 -3;-22 -15 -3;7 -15 -3" dur=".34s" repeatCount="indefinite" />
+        </path>
+        <path className="myna-wing myna-wing-lower" d="M-27 7 C-39 55 11 70 36 20 C9 31 -6 24 -27 7 Z">
+          <animateTransform attributeName="transform" type="rotate" values="-5 -14 6;18 -14 6;-5 -14 6" dur=".34s" repeatCount="indefinite" />
+        </path>
+        <ellipse className="myna-head" cx="46" cy="-9" rx="25" ry="24" />
+        <path className="myna-eye-patch" d="M35 -24 C47 -31 59 -25 65 -16 C52 -21 43 -18 35 -10 Z" />
+        <circle className="myna-eye" cx="55" cy="-16" r="4" />
+        <path className="myna-beak" d="M67 -13 L105 -2 L69 1 Z" />
+        <path className="myna-wing-mark" d="M-23 -13 C-3 -26 19 -20 34 -7 C12 -11 -3 -3 -17 8 Z" />
+      </g>
     </svg>
   </div>;
 }
@@ -4367,15 +4381,15 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, im
         <div className="system-node target kafka-system"><img className="vendor-logo kafka-logo" src="/vendor-logos/apache-kafka.svg" alt=""/><span><b>Kafka</b><small>Topics · Event streams</small></span></div>
         <div className="system-node target pubsub-system"><img className="vendor-logo pubsub-logo" src="/vendor-logos/gcp-pubsub.png" alt=""/><span><b>GCP Pub/Sub</b><small>Topics · Subscriptions</small></span></div>
         <div className="system-node edge rabbitmq"><img className="vendor-logo rabbitmq-logo" src="/vendor-logos/rabbitmq.svg" alt=""/><span><b>RabbitMQ</b><small>Queues · Exchanges</small></span></div>
-        <div className="fabric-core"><i/><span><Workflow/><b>INTEGRATION</b><strong>FABRIC</strong><small>DESIGN · CONNECT · RUN</small></span></div>
-        <div className="live-indicator"><i/> LIVE INTEGRATION FABRIC</div>
+        <div className="fabric-core"><i/><span><Workflow/><b>MINA</b><strong>STUDIO</strong><small>DESIGN · CONNECT · RUN</small></span></div>
+        <div className="live-indicator"><i/> LIVE MINA</div>
       </section>
       <section className="launch-actions">
         <span className="launch-eyebrow">BUILD THE CONNECTED ENTERPRISE</span>
-        <h1>Mediation,<br /><span>Transformation &amp;</span><br />Deliver Integrations.</h1>
+        <h1 className="mina-home-title"><span className="mina-name">MINA —</span><span>Mediation,</span><span>Integration &amp;</span><span>Automation</span></h1>
         <div className="launch-buttons">
           <button className="create-project" onClick={() => setCreateOpen(true)}><span><FilePlus2/></span><b>Create new project<small>Start with the standard project structure</small></b><ChevronRight/></button>
-          <button className="import-project" onClick={beginImport} disabled={importing}><span><Download/></span><b>{importing ? "Opening project…" : "Import existing project"}<small>Choose .ifproject, .ifpkg, ZIP, JSON, or a structured folder</small></b><ChevronRight/></button>
+          <button className="import-project" onClick={beginImport} disabled={importing}><span><Download/></span><b>{importing ? "Opening project…" : "Import existing project"}<small>Choose .mpackage, .mpkg, ZIP, JSON, or a legacy MINA package</small></b><ChevronRight/></button>
           <button className="sample-projects" onClick={() => setSamplesOpen(true)}><span><BookOpen/></span><b>Explore sample projects<small>Editable, installed examples for mapping, APIs, data, JDBC, and messaging</small></b><ChevronRight/></button>
           <button className="installed-guide" onClick={() => window.open("/help/activity-reference.html", "_blank", "noopener")}><span><BookOpen/></span><b>Open installed activity guide<small>Offline configuration, mapping, runtime, and error reference</small></b><ChevronRight/></button>
         </div>
@@ -4383,12 +4397,12 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, im
       </section>
     </main>
     <footer><span><ShieldCheck/> Enterprise integration development</span><span>DESIGN TIME <i/> RUNTIME <i/> DEPLOYMENT</span></footer>
-    <input ref={input} hidden type="file" accept=".ifproject,.ifpkg,.zip,.json" onChange={(event) => void importFile(event.target.files?.[0])}/>
+    <input ref={input} hidden type="file" accept=".mpackage,.mpkg,.ifproject,.ifpackage,.ifpkg,.zip,.json" onChange={(event) => void importFile(event.target.files?.[0])}/>
     {samplesOpen && <SampleGallery
       onClose={() => setSamplesOpen(false)}
       onImport={importProject}
     />}
-    {createOpen && <div className="modal-backdrop home-create-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setCreateOpen(false)}><form className="home-create-dialog" onSubmit={submitCreate}><header><span><FilePlus2/><b>Create Integration Fabric project</b></span><button type="button" aria-label="Close create project" onClick={() => setCreateOpen(false)}>×</button></header><main><div className="create-project-mark"><Workflow/><span><b>New application</b><small>A clean integration workspace with enterprise defaults</small></span></div><label>Application name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Customer Order Integration" required/></label><section><b>Project Explorer will include</b><div><span><Workflow/>Tasks</span><span><Cable/>Resources</span><span><Package/>Packaging</span><span><CodeXml/>Schemas</span><span><Braces/>Properties</span></div></section></main><footer><button type="button" onClick={() => setCreateOpen(false)}>Cancel</button><button className="primary" type="submit" disabled={!name.trim()}><FilePlus2/> Create project</button></footer></form></div>}
+    {createOpen && <div className="modal-backdrop home-create-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setCreateOpen(false)}><form className="home-create-dialog" onSubmit={submitCreate}><header><span><FilePlus2/><b>Create MINA project</b></span><button type="button" aria-label="Close create project" onClick={() => setCreateOpen(false)}>×</button></header><main><div className="create-project-mark"><Workflow/><span><b>New application</b><small>A clean integration workspace with enterprise defaults</small></span></div><label>Application name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Customer Order Integration" required/></label><section><b>Project Explorer will include</b><div><span><Workflow/>Tasks</span><span><Cable/>Resources</span><span><Package/>Packaging</span><span><CodeXml/>Schemas</span><span><Braces/>Properties</span></div></section></main><footer><button type="button" onClick={() => setCreateOpen(false)}>Cancel</button><button className="primary" type="submit" disabled={!name.trim()}><FilePlus2/> Create project</button></footer></form></div>}
   </div>;
 }
 function Context({
@@ -4588,7 +4602,7 @@ const connectionFieldSets: Record<string, any[]> = {
   jdbc: [
     { key: "driver", label: "Database", options: ["sqlite", "postgresql", "mysql", "mariadb", "sqlserver", "oracle", "db2", "snowflake", "databricks"] },
     { key: "connectionMode", label: "Connection runtime", options: ["jdbc", "python"], when: (config: any) => ["sqlserver", "mssql", "oracle"].includes(config.driver) },
-    { key: "driverDirectory", label: "JDBC driver JAR directory", placeholder: "Blank uses the Integration Fabric driver directory", when: (config: any) => ["sqlserver", "mssql", "oracle"].includes(config.driver) && config.connectionMode !== "python" },
+    { key: "driverDirectory", label: "JDBC driver JAR directory", placeholder: "Blank uses the MINA driver directory", when: (config: any) => ["sqlserver", "mssql", "oracle"].includes(config.driver) && config.connectionMode !== "python" },
     { key: "driverClass", label: "JDBC driver class (blank = vendor default)", when: (config: any) => ["sqlserver", "mssql", "oracle"].includes(config.driver) && config.connectionMode !== "python" },
     { key: "url", label: "JDBC URL" }, { key: "host", label: "Host" }, { key: "port", label: "Port" },
     { key: "database", label: "Database name" }, { key: "schema", label: "Schema" },
@@ -4690,7 +4704,7 @@ const connectionFieldSets: Record<string, any[]> = {
   ],
   ems: [
     { key: "serverUrl", label: "JMS connection URL", required: true, placeholder: "tcp://ems-host:7222" },
-    { key: "driverDirectory", label: "EMS/JMS driver JAR directory", placeholder: "Blank uses C:\\ProgramData\\Integration Fabric Studio\\drivers\\jms" },
+    { key: "driverDirectory", label: "EMS/JMS driver JAR directory", placeholder: "Blank uses C:\\ProgramData\\MINA Studio\\drivers\\jms" },
     { key: "connectionFactoryClass", label: "Native connection factory class", placeholder: "com.tibco.tibjms.TibjmsConnectionFactory" },
     { key: "connectionFactoryType", label: "Connection factory type", options: ["Direct", "JNDI"] },
     { key: "messagingStyle", label: "Messaging style", options: ["Generic", "Queue/Topic"] },
@@ -4708,7 +4722,7 @@ const connectionFieldSets: Record<string, any[]> = {
   ],
   jms: [
     { key: "provider", label: "JMS provider" }, { key: "serverUrl", label: "JMS connection URL", required: true, placeholder: "tcp://jms-host:61613" },
-    { key: "driverDirectory", label: "JMS provider JAR directory", placeholder: "Blank uses C:\\ProgramData\\Integration Fabric Studio\\drivers\\jms" },
+    { key: "driverDirectory", label: "JMS provider JAR directory", placeholder: "Blank uses C:\\ProgramData\\MINA Studio\\drivers\\jms" },
     { key: "connectionFactoryClass", label: "Connection factory class", required: (config: any) => config.connectionFactoryType !== "JNDI" },
     { key: "connectionFactoryType", label: "Connection factory type", options: ["Direct", "JNDI"] },
     { key: "username", label: "Username", required: true }, { key: "password", label: "Password", required: true, password: true }, { key: "clientId", label: "Client ID", placeholder: "Generated automatically when blank" },
@@ -4751,7 +4765,7 @@ const connectionFieldSets: Record<string, any[]> = {
   ],
   sap: [
     { key: "mode", label: "Runtime adapter", options: ["mock", "external"] },
-    { key: "driverDirectory", label: "SAP JCo driver directory", placeholder: "Blank uses C:\\ProgramData\\Integration Fabric Studio\\drivers\\sap" },
+    { key: "driverDirectory", label: "SAP JCo driver directory", placeholder: "Blank uses C:\\ProgramData\\MINA Studio\\drivers\\sap" },
     { key: "destinationName", label: "JCo destination name", placeholder: "integration-fabric-sap" },
     { key: "release", label: "SAP release", options: ["current", "720", "730"] },
     { key: "connectionType", label: "Connection type", options: ["dedicated", "logongroup", "snc", "sncwithlogongroup", "websocket"] },

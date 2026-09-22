@@ -1,12 +1,12 @@
-# Integration Fabric build and distribution
+# MINA build and distribution
 
 ## Product outputs
 
-Integration Fabric has three independently distributable components:
+MINA has three independently distributable components:
 
 1. **Studio** — an Electron desktop IDE for Windows. It embeds the React designer and a packaged Python sidecar.
 2. **Control Plane** — a Linux or Windows management plane for data planes, capabilities, applications, resources, access, observability, and package deployment.
-3. **Runtime package** — a portable `.ifpkg`, `.tar.gz`, or `.ear`-compatible archive produced by Studio for either an on-premises or Kubernetes data plane.
+3. **Runtime package** — a portable `.mpkg`, `.tar.gz`, or `.ear`-compatible archive produced by Studio for either an on-premises or Kubernetes data plane.
 
 ## Build Studio on Windows
 
@@ -28,7 +28,7 @@ npm run desktop:installer -- -Version 2.4.0
 Output:
 
 ```text
-frontend\release\IntegrationFabricStudio-2.4.0-Setup.exe
+frontend\release\MINAStudio-2.4.0-Setup.exe
 ```
 
 `-Version` is injected into Electron Builder at build time; `package.json` is not edited. It must be a semantic version. CI can set `$env:FABRIC_VERSION = '2.4.0'` and run `npm run desktop:installer` without passing the argument. When neither is supplied, the version in `frontend/package.json` is used as the fallback.
@@ -76,7 +76,7 @@ Database shared connections accept either the Studio host/port/database fields o
 
 ### Real SAP ECC connections
 
-SAP shared connections use the licensed SAP Java Connector (JCo). New SAP connections use the external adapter by default; the local mock remains available as an explicit design-time option. JCo is not included in the installer. Place `sapjco3.jar` and its matching `sapjco3.dll` in the configured SAP driver directory (or the default `C:\ProgramData\Integration Fabric Studio\drivers\sap`). No Python SAP package or separate NW RFC SDK installation is required.
+SAP shared connections use the licensed SAP Java Connector (JCo). New SAP connections use the external adapter by default; the local mock remains available as an explicit design-time option. JCo is not included in the installer. Place `sapjco3.jar` and its matching `sapjco3.dll` in the configured SAP driver directory (or the default `C:\ProgramData\MINA Studio\drivers\sap`). No Python SAP package or separate NW RFC SDK installation is required.
 
 The repository includes `requirements-sap.txt` as a reminder. The Java bridge loads JCo at runtime, so the JCo JAR and DLL remain outside source control and are reported in the connection-test response.
 
@@ -85,14 +85,14 @@ RFC/BAPI, transaction, lifecycle, and production certification behavior.
 
 Ensure the SDK's native library directory is on `PATH` before starting Studio. For an application-server connection, configure `ashost`, `sysnr`, `client`, `user`, and `passwd`; for a message-server/logon-group connection, configure `mshost`, `sysid`, `group`, `client`, `user`, and `passwd`. SNC connections additionally require the SNC partner name and SAP Cryptographic Library path. The Test Connection action calls `STFC_CONNECTION` and reports the native RFC error when authentication, routing, authorization, or network setup fails.
 
-After PyInstaller finishes, the build launches that exact packaged runtime on an isolated loopback port and requires a successful `/api/health` response before Electron Builder is allowed to create an installer. Installed Studio startup writes the runtime path, port, stdout, stderr, spawn errors, and exit status to `%APPDATA%\Integration Fabric Studio\logs\runtime-startup.log`. Startup errors include the log path and its latest output instead of only showing a generic readiness timeout.
+After PyInstaller finishes, the build launches that exact packaged runtime on an isolated loopback port and requires a successful `/api/health` response before Electron Builder is allowed to create an installer. Installed Studio startup writes the runtime path, port, stdout, stderr, spawn errors, and exit status to `%APPDATA%\MINA Studio\logs\runtime-startup.log`. Startup errors include the log path and its latest output instead of only showing a generic readiness timeout.
 
 The build compiles the complete backend with Python 3.11 before freezing it. PyInstaller then explicitly collects every module under the backend `app` package and verifies `app.main` both before and after freezing. This catches incompatible Python syntax early and avoids environment-dependent namespace/package discovery producing an executable that fails with `ModuleNotFoundError: app.main`.
 
 The unpacked executable is:
 
 ```text
-frontend\release\win-unpacked\Integration Fabric Studio.exe
+frontend\release\win-unpacked\MINA Studio.exe
 ```
 
 For production distribution, configure a company `.pfx` code-signing certificate through environment variables. A signing certificate is optional for producing an installer, but recommended for publisher identity and SmartScreen reputation:
@@ -194,11 +194,11 @@ Open **Packaging** in Project Explorer or select **Package** on the ribbon. Conf
 - Artifact name and version
 - Target: **On-premises Linux** or **Cloud / Kubernetes**
 - Target environment
-- Archive: `.ifpkg`, `.tar.gz`, or `.ear`
+- Archive: `.mpkg`, `.tar.gz`, or `.ear`
 
 An on-premises package contains an Administrator deployment descriptor. A cloud package contains a Docker build input and Kubernetes deployment manifest. Password property values are removed from both outputs and replaced by deployment-time secret requirements.
 
-The `.ifproject` file remains the editable Studio project. The `.ifpkg` file is the immutable deployment artifact.
+The `.mpackage` file is the editable Studio project package. The `.mpkg` file is the immutable deployment artifact. Studio and Control Plane continue accepting legacy `.ifproject`, `.ifpackage`, and `.ifpkg` files during the compatibility period.
 # Vendor Java connector bridge
 
 Desktop builds require JDK 17 or newer (`javac` and `jlink`). The build bundles a minimal Java runtime automatically; target machines do not need Java installed. TIBCO EMS, Microsoft SQL Server JDBC, and Oracle JDBC JAR placement is documented in [VENDOR_DRIVERS.md](VENDOR_DRIVERS.md).

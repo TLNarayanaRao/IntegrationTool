@@ -73,7 +73,7 @@ def local_proposal(requirement: str, scope: str, current_task: dict | None = Non
             activity['config']['resourceId'] = f'ai-{candidate}-connection'
             if candidate not in resource_types: resource_types.append(candidate)
     resources = [{'id':f'ai-{kind}-connection','type':kind,'name':f'{kind.upper()} Connection','config':{}} for kind in resource_types]
-    return {'provider':'local-blueprint','summary':f'Generated {len(activities)} activities and {len(resources)} shared connections. Review configuration and mappings before applying.','scope':scope,'project':{'name':'AI Generated Integration','description':requirement,'tasks':[task],'resources':resources,'schemas':[],'packaging':{'artifact_name':'ai-generated-integration','version':'1.0.0','format':'ifpkg','target':'on-prem','environment':'production'}}}
+    return {'provider':'local-blueprint','summary':f'Generated {len(activities)} activities and {len(resources)} shared connections. Review configuration and mappings before applying.','scope':scope,'project':{'name':'AI Generated Integration','description':requirement,'tasks':[task],'resources':resources,'schemas':[],'packaging':{'artifact_name':'ai-generated-integration','version':'1.0.0','format':'mpkg','target':'on-prem','environment':'production'}}}
 
 def _schema() -> dict[str, Any]:
     activity = {'type':'object','additionalProperties':False,'required':['id','type','name','position','config'],'properties':{'id':{'type':'string'},'type':{'type':'string'},'name':{'type':'string'},'position':{'type':'object','additionalProperties':False,'required':['x','y'],'properties':{'x':{'type':'number'},'y':{'type':'number'}}},'config':{'type':'object','additionalProperties':True}}}
@@ -86,7 +86,7 @@ async def generate(requirement: str, scope='task', current_task: dict | None = N
     key = os.getenv('OPENAI_API_KEY')
     if not key: return local_proposal(requirement, scope, current_task)
     model = os.getenv('INTEGRATION_FABRIC_AI_MODEL', 'gpt-5')
-    prompt = f'''Build an Integration Fabric middleware {scope} from this requirement:\n{requirement}\nUse only these activity types and operations: {json.dumps(CATALOG)}. A starter task must have exactly one event activity. Catch activities have no incoming transition. Add explicit HTTP Send Response for request/reply listeners. Return a fully connected, editable design; do not include credentials.'''
+    prompt = f'''Build a MINA middleware {scope} from this requirement:\n{requirement}\nUse only these activity types and operations: {json.dumps(CATALOG)}. A starter task must have exactly one event activity. Catch activities have no incoming transition. Add explicit HTTP Send Response for request/reply listeners. Return a fully connected, editable design; do not include credentials.'''
     payload = {'model':model,'input':prompt,'text':{'format':{'type':'json_schema','name':'integration_fabric_design','strict':False,'schema':_schema()}}}
     async with httpx.AsyncClient(timeout=90) as client:
         response = await client.post('https://api.openai.com/v1/responses', headers={'authorization':f'Bearer {key}','content-type':'application/json'}, json=payload)

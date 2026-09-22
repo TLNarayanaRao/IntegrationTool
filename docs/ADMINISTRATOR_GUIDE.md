@@ -1,8 +1,8 @@
-# Integration Fabric Control Plane guide
+# MINA Control Plane guide
 
 ## Purpose and operating model
 
-Integration Fabric Control Plane is the self-hosted management plane for Integration Fabric data planes, capabilities, applications, resources, access assignments, observability, and immutable deployment packages. A data plane represents an on-premises runtime host or Kubernetes runtime boundary. Capabilities are provisioned into a data-plane namespace, while applications are deployed to a selected data plane, namespace, and compatible Integration Runtime capability.
+MINA Control Plane is the self-hosted management plane for MINA data planes, capabilities, applications, resources, access assignments, observability, and immutable deployment packages. A data plane represents an on-premises runtime host or Kubernetes runtime boundary. Capabilities are provisioned into a data-plane namespace, while applications are deployed to a selected data plane, namespace, and compatible Integration Runtime capability.
 
 The implementation follows the main TIBCO Platform Control Plane concepts without copying its hosted service: separation of control and data planes, namespace-scoped capabilities and applications, platform resources, role assignments, health/heartbeat inventory, application lifecycle, audit, and observability dashboards.
 
@@ -74,7 +74,7 @@ export FABRIC_ADMIN_RUNTIME_COMMAND='integration-fabric-runtime --application {a
 On Windows desktop installations, configure the worker executable rather than the Studio sidecar:
 
 ```powershell
-$worker = 'C:\Program Files\Integration Fabric Studio\resources\runtime\IntegrationFabricWorker\IntegrationFabricWorker.exe'
+$worker = 'C:\Program Files\MINA Studio\resources\runtime\IntegrationFabricWorker\IntegrationFabricWorker.exe'
 $command = "`\"$worker`\" --application `\"{application}`\" --environment `\"{environment}`\""
 [Environment]::SetEnvironmentVariable('FABRIC_ADMIN_RUNTIME_COMMAND', $command, 'Machine')
 ```
@@ -83,7 +83,7 @@ The runtime receives `FABRIC_APPLICATION_DIR`, `FABRIC_ENVIRONMENT`, `FABRIC_DEP
 
 ## Package and deployment workflow
 
-1. In Studio Packaging, select the starter tasks, environments, target, archive format (`.ifpkg`, `.zip`, `.tar.gz`, or `.ear`), and deployment files. Only selected starter tasks and their recursively called Sub Tasks are packaged.
+1. In Studio Packaging, select the starter tasks, environments, target, archive format (`.mpkg`, `.zip`, `.tar.gz`, or `.ear`), and deployment files. Only selected starter tasks and their recursively called Sub Tasks are packaged. Legacy `.ifpkg` uploads remain supported during the compatibility period.
 2. Select **Export archive** for an offline bundle, or enter the Control Plane URL, credential, team, data plane, namespace, capability, deployment environment, and required secrets and select **Deploy to Control Plane**. Studio builds the archive once, uploads those exact bytes, creates the deployment, and reports the Control Plane deployment ID/state. Credentials and secret values are transient and are not saved in the project or package.
 3. Alternatively, upload an exported archive in **Applications**. Administrator rejects traversal paths, links/devices, duplicate paths, oversized expansion, unsupported formats, missing project/task artifacts, and invalid manifests.
 4. Review checksum, target, profiles, selected task metadata, and secret requirements.

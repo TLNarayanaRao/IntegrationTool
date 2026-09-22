@@ -1,12 +1,12 @@
-# Integration Fabric
+# MINA
 
-Integration Fabric is a BusinessWorks-inspired integration studio. It combines a React visual designer, a FastAPI/Python execution runtime, and a Java extension worker contract.
+MINA is a BusinessWorks-inspired integration studio. It combines a React visual designer, a FastAPI/Python execution runtime, and a Java extension worker contract.
 
 ## What is included
 
 - BW-style three-pane designer: Project Explorer, orchestration canvas, and activity configuration panel.
 - Lightweight JSON persistence under `backend/data/projects/<project-id>/`, with separate project, task, and shared-resource files. Existing SQLite projects are migrated automatically.
-- Portable `.ifproject` import/export, readable JSON download, project close/open, and backend project deletion.
+- Portable `.mpackage` import/export, readable JSON download, project close/open, and backend project deletion. Legacy `.ifproject` and `.ifpackage` files remain importable.
 - Midnight, Aurora, Graphite, and Arctic design themes with glass-style configuration dialogs.
 - Expandable environment property files with BW-style primitive data types, application renaming, and a vertically resizable/collapsible activity palette.
 - Metadata-driven activity editors: Configuration, Input mapping, Output schema, and Errors/fault policy for every bundled operation.

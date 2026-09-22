@@ -50,9 +50,9 @@ const healthReady = (port, executable, timeoutMs = 60000) => new Promise((resolv
   };
   const retry = () => {
     if (complete) return;
-    if (runtimeStartupError) return finish(`The Integration Fabric runtime could not start: ${runtimeStartupError.message}`);
-    if (runtimeProcess && runtimeProcess.exitCode !== null) return finish(`The Integration Fabric runtime exited during startup with code ${runtimeProcess.exitCode}.`);
-    if (Date.now() >= deadline) return finish(`The Integration Fabric runtime did not become ready on 127.0.0.1:${port} within ${Math.round(timeoutMs / 1000)} seconds.`);
+    if (runtimeStartupError) return finish(`The MINA runtime could not start: ${runtimeStartupError.message}`);
+    if (runtimeProcess && runtimeProcess.exitCode !== null) return finish(`The MINA runtime exited during startup with code ${runtimeProcess.exitCode}.`);
+    if (Date.now() >= deadline) return finish(`The MINA runtime did not become ready on 127.0.0.1:${port} within ${Math.round(timeoutMs / 1000)} seconds.`);
     setTimeout(probe, 250);
   };
   const probe = () => {
@@ -118,7 +118,7 @@ function startRuntime(port) {
   });
   runtimeProcess.on('exit', (code) => {
     fs.appendFileSync(runtimeLogPath, `[${new Date().toISOString()}] [exit] Runtime exited with code ${code}\n`);
-    if (!app.isQuitting && mainWindow) dialog.showErrorBox('Integration Fabric Runtime', `The local runtime stopped unexpectedly (exit code ${code}).`);
+    if (!app.isQuitting && mainWindow) dialog.showErrorBox('MINA Runtime', `The local runtime stopped unexpectedly (exit code ${code}).`);
   });
   return executable;
 }
@@ -134,7 +134,7 @@ async function createWindow() {
     minWidth: 1100,
     minHeight: 720,
     backgroundColor: '#071522',
-    title: 'Integration Fabric Studio',
+    title: 'MINA Studio',
     icon: path.join(__dirname, 'integration-fabric-icon.svg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -160,7 +160,7 @@ ipcMain.handle('fabric:save-file', async (_event, options) => {
   if (!filePath) {
     const result = await dialog.showSaveDialog(mainWindow, {
       defaultPath: options.filename,
-      filters: options.filters || [{ name: 'Integration Fabric file', extensions: ['ifproject', 'ifpkg', 'zip', 'json'] }],
+      filters: options.filters || [{ name: 'MINA file', extensions: ['mpackage', 'mpkg', 'ifproject', 'ifpackage', 'ifpkg', 'zip', 'json'] }],
     });
     if (result.canceled || !result.filePath) return null;
     filePath = result.filePath;
@@ -232,13 +232,13 @@ ipcMain.handle('fabric:save-project-folder', async (_event, options) => {
   let folderPath = options.path;
   if (!folderPath) {
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: 'Choose where to save the Integration Fabric project folder',
+      title: 'Choose where to save the MINA project folder',
       buttonLabel: 'Select folder',
       properties: ['openDirectory', 'createDirectory'],
     });
     if (result.canceled || !result.filePaths[0]) return null;
     const parent = result.filePaths[0];
-    const folderName = safeProjectPart(options.folderName, 'IntegrationFabricProject');
+    const folderName = safeProjectPart(options.folderName, 'MINAProject');
     folderPath = path.basename(parent).toLowerCase() === folderName.toLowerCase() ? parent : path.join(parent, folderName);
   }
   const project = options.project || {};
@@ -272,13 +272,21 @@ ipcMain.handle('fabric:save-project-folder', async (_event, options) => {
 });
 
 ipcMain.handle('fabric:open-file', async (_event, fileType) => {
-  const extensions = fileType === 'ifproject' ? ['ifproject'] : fileType === 'ifpkg' ? ['ifpkg'] : fileType === 'zip' ? ['zip'] : fileType === 'json' ? ['json'] : ['ifproject', 'ifpkg', 'zip', 'json'];
+  const extensions = fileType === 'mpackage' ? ['mpackage']
+    : fileType === 'mpkg' ? ['mpkg']
+    : fileType === 'legacy' ? ['ifproject', 'ifpackage', 'ifpkg']
+    : fileType === 'ifproject' ? ['ifproject']
+    : fileType === 'ifpackage' ? ['ifpackage']
+    : fileType === 'ifpkg' ? ['ifpkg']
+    : fileType === 'zip' ? ['zip']
+    : fileType === 'json' ? ['json']
+    : ['mpackage', 'mpkg', 'ifproject', 'ifpackage', 'ifpkg', 'zip', 'json'];
   const result = await dialog.showOpenDialog(mainWindow, {
     // Import must be a file picker. Combining openFile and openDirectory on
     // Windows causes Electron to show a folder-only dialog and prevents the
-    // .ifproject filter from being selected.
+    // project-package filters from being selected.
     properties: ['openFile'],
-    filters: [{ name: 'Integration Fabric Project', extensions }],
+    filters: [{ name: 'MINA Project', extensions }],
   });
   if (result.canceled || !result.filePaths[0]) return null;
   const filePath = result.filePaths[0];
@@ -388,7 +396,7 @@ ipcMain.handle('fabric:complete-window-close', () => {
 });
 
 ipcMain.handle('fabric:open-project-folder', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, { title: 'Open Integration Fabric project folder', buttonLabel: 'Open folder', properties: ['openDirectory'] });
+  const result = await dialog.showOpenDialog(mainWindow, { title: 'Open MINA project folder', buttonLabel: 'Open folder', properties: ['openDirectory'] });
   if (result.canceled || !result.filePaths[0]) return null;
   return readProjectFolder(result.filePaths[0]);
 });
@@ -396,7 +404,7 @@ ipcMain.handle('fabric:open-project-folder', async () => {
 ipcMain.handle('fabric:open-project-source', async () => {
   const choice = await dialog.showMessageBox(mainWindow, {
     type: 'question',
-    title: 'Open Integration Fabric project',
+    title: 'Open MINA project',
     message: 'Choose the project source to open',
     buttons: ['Project file', 'Project folder', 'Cancel'],
     defaultId: 0,
@@ -404,11 +412,11 @@ ipcMain.handle('fabric:open-project-source', async () => {
   });
   if (choice.response === 2) return null;
   if (choice.response === 1) {
-    const result = await dialog.showOpenDialog(mainWindow, { title: 'Open Integration Fabric project folder', buttonLabel: 'Open folder', properties: ['openDirectory'] });
+    const result = await dialog.showOpenDialog(mainWindow, { title: 'Open MINA project folder', buttonLabel: 'Open folder', properties: ['openDirectory'] });
     if (result.canceled || !result.filePaths[0]) return null;
     return readProjectFolder(result.filePaths[0]);
   }
-  const result = await dialog.showOpenDialog(mainWindow, { title: 'Open Integration Fabric project file', properties: ['openFile'], filters: [{ name: 'Integration Fabric Project', extensions: ['ifproject', 'ifpkg', 'zip', 'json'] }] });
+  const result = await dialog.showOpenDialog(mainWindow, { title: 'Open MINA project file', properties: ['openFile'], filters: [{ name: 'MINA Project', extensions: ['mpackage', 'mpkg', 'ifproject', 'ifpackage', 'ifpkg', 'zip', 'json'] }] });
   if (result.canceled || !result.filePaths[0]) return null;
   const filePath = result.filePaths[0];
   return { path: filePath, name: path.basename(filePath), bytes: [...fs.readFileSync(filePath)], kind: 'file' };
@@ -425,7 +433,7 @@ ipcMain.handle('fabric:select-code-artifact', async (_event, kind) => {
 });
 
 app.whenReady().then(createWindow).catch((error) => {
-  dialog.showErrorBox('Integration Fabric Studio', error.stack || String(error));
+  dialog.showErrorBox('MINA Studio', error.stack || String(error));
   app.quit();
 });
 app.on('window-all-closed', () => app.quit());

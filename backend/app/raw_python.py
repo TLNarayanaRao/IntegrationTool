@@ -124,7 +124,13 @@ def _project_capabilities(project: dict) -> set[str]:
 
 
 def _project_artifact_closure(project: dict) -> tuple[list[dict], list[dict]]:
-    """Return resources and schema assets reachable from the selected tasks."""
+    """Return the transitive resource and schema closure for selected tasks.
+
+    A task can reference a connection which itself delegates to another shared
+    resource, and an XSD/JSON schema can include another schema. Packaging only
+    the first object found in the task would create a small, but broken,
+    archive. Follow those references while excluding unrelated project assets.
+    """
     resources = project.get('resources') or []
     resource_by_id = {str(item.get('id') or ''): item for item in resources}
     referenced_ids: set[str] = set()
@@ -144,21 +150,59 @@ def _project_artifact_closure(project: dict) -> tuple[list[dict], list[dict]]:
     for task in project.get('tasks', []):
         for activity in task.get('activities', []): collect(activity.get('config') or {}, str(activity.get('type') or ''))
         for group in task.get('groups') or []: collect(group.get('config') or {}, 'jdbc' if group.get('type') == 'transaction_jdbc' else '')
-    for resource in resources:
-        if str(resource.get('type') or '') in dynamic_resource_types: referenced_ids.add(str(resource.get('id') or ''))
+    # Shared resources may be layered. Retain dependencies of selected
+    # resources recursively instead of retaining every project connection.
+    scanned_resources: set[str] = set()
+    while True:
+        for resource in resources:
+            if str(resource.get('type') or '') in dynamic_resource_types:
+                referenced_ids.add(str(resource.get('id') or ''))
+        pending_resources = referenced_ids - scanned_resources
+        if not pending_resources: break
+        for resource_id in pending_resources:
+            scanned_resources.add(resource_id)
+            resource = resource_by_id.get(resource_id)
+            if resource:
+                collect(resource.get('config') or {}, str(resource.get('type') or ''))
     selected_resources = [resource for resource in resources if str(resource.get('id') or '') in referenced_ids]
     schema_references: set[str] = set()
     known_schemas = {str(schema.get('id') or ''): schema for schema in project.get('schemas') or []}
     known_schemas.update({str(schema.get('name') or ''): schema for schema in project.get('schemas') or []})
+    dynamic_schema_reference = False
     def collect_schemas(value, key=''):
+        nonlocal dynamic_schema_reference
         if isinstance(value, dict):
             for child_key, child in value.items(): collect_schemas(child, str(child_key))
         elif isinstance(value, list):
             for child in value: collect_schemas(child, key)
-        elif isinstance(value, str) and 'schema' in key.lower() and value in known_schemas:
-            schema_references.add(value)
+        elif isinstance(value, str) and 'schema' in key.lower():
+            if value in known_schemas: schema_references.add(value)
+            elif '${' in value: dynamic_schema_reference = True
     for task in project.get('tasks', []): collect_schemas(task)
+    for resource in selected_resources: collect_schemas(resource)
+    if dynamic_schema_reference:
+        schema_references.update(known_schemas)
     selected_schema_ids = {id(known_schemas[name]) for name in schema_references}
+    # Follow XSD include/import schemaLocation and JSON Schema $ref values.
+    schema_aliases: dict[str, dict] = {}
+    for schema in project.get('schemas') or []:
+        for alias in (str(schema.get('id') or ''), str(schema.get('name') or '')):
+            if alias:
+                schema_aliases[alias] = schema
+                schema_aliases[alias.replace('\\', '/').rsplit('/', 1)[-1]] = schema
+    pending_schemas = [schema for schema in project.get('schemas') or [] if id(schema) in selected_schema_ids]
+    while pending_schemas:
+        schema = pending_schemas.pop()
+        content = str(schema.get('content') or '')
+        references = re.findall(r'''schemaLocation\s*=\s*["']([^"']+)["']''', content)
+        references.extend(re.findall(r'''["']\$ref["']\s*:\s*["']([^"']+)["']''', content))
+        for reference in references:
+            path = reference.split('#', 1)[0].replace('\\', '/')
+            if not path: continue
+            dependency = schema_aliases.get(path) or schema_aliases.get(path.rsplit('/', 1)[-1])
+            if dependency is not None and id(dependency) not in selected_schema_ids:
+                selected_schema_ids.add(id(dependency))
+                pending_schemas.append(dependency)
     selected_schemas = [schema for schema in project.get('schemas') or [] if id(schema) in selected_schema_ids]
     return selected_resources, selected_schemas
 
@@ -541,7 +585,10 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     if 'jms' in capabilities: retry_expressions.append("(kind in {'ems', 'jms'} and raw.get('operation') in {'send', 'publish', 'send_message', 'request_reply', 'reply', 'reply_message'})")
     if 'sap' in capabilities: retry_expressions.append("(kind == 'sap' and raw.get('operation') in {'post_idoc', 'invoke_rfc_bapi', 'reply_rfc_bapi'})")
     core_source = core_source.replace('False  # OUTBOUND_RETRY_EXPRESSION', ' or '.join(retry_expressions) or 'False')
-    files['application/core.py'] = _prune_module(core_source, {'Context', 'Reference', 'Template', 'resolve', 'group_lock', 'execute_with_policy'})
+    core_roots = {'Context', 'Reference', 'Template', 'resolve', 'execute_with_policy'}
+    if 'group:critical_section' in capabilities:
+        core_roots.add('group_lock')
+    files['application/core.py'] = _prune_module(core_source, core_roots)
     activity_roots: set[str] = set()
     if 'file' in capabilities: activity_roots.add('file_activity')
     if 'data_formats' in capabilities: activity_roots.add('data_activity')
@@ -567,6 +614,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     if 'sap' in capabilities: connector_roots.update({'sap', 'acknowledge_sap', 'close_sap'})
     for capability in ('jdbc', 'snowflake', 'amqp', 'kafka', 'pubsub'):
         if capability in capabilities: connector_roots.add(capability)
+    if 'kafka' in capabilities: connector_roots.add('close_kafka')
     if connector_roots:
         jms_operations = set().union(*(operations_by_kind.get(kind, set()) for kind in ('ems', 'jms')))
         kafka_operations = set(operations_by_kind.get('kafka', set()))
@@ -590,7 +638,8 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         f'CAPABILITIES = {tuple(sorted(capabilities))!r}\n').encode('utf-8')
     main_source = (root / 'main.py').read_text(encoding='utf-8')
     delivery_capabilities = capabilities & {'sap', 'jms'}
-    main_source = main_source.replace('# CONNECTOR_IMPORT', 'from . import connectors' if delivery_capabilities else '')
+    connector_lifecycle_capabilities = capabilities & {'sap', 'jms', 'kafka'}
+    main_source = main_source.replace('# CONNECTOR_IMPORT', 'from . import connectors' if connector_lifecycle_capabilities else '')
     ack_start = main_source.index('    # ACKNOWLEDGEMENT_CAPABILITY_START')
     ack_end = main_source.index('    # ACKNOWLEDGEMENT_CAPABILITY_END', ack_start) + len('    # ACKNOWLEDGEMENT_CAPABILITY_END')
     acknowledgement = ''
@@ -604,6 +653,10 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     close_end = main_source.index('        # CONNECTOR_CLOSE_END', close_start) + len('        # CONNECTOR_CLOSE_END')
     close_source = ''.join(f'        connectors.close_{name}()\n' for name in ('sap', 'jms') if name in delivery_capabilities) or '        pass\n'
     main_source = main_source[:close_start] + close_source + main_source[close_end:]
+    async_close_start = main_source.index('        # ASYNC_CONNECTOR_CLOSE_START')
+    async_close_end = main_source.index('        # ASYNC_CONNECTOR_CLOSE_END', async_close_start) + len('        # ASYNC_CONNECTOR_CLOSE_END')
+    async_close_source = '        await connectors.close_kafka()\n' if 'kafka' in capabilities else '        pass\n'
+    main_source = main_source[:async_close_start] + async_close_source + main_source[async_close_end:]
     files['application/main.py'] = main_source.encode('utf-8')
     has_inbound_http = 'inbound_http' in capabilities
     if has_inbound_http:
@@ -616,7 +669,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
             + "    jobs = [receive_forever(task_id) if task_id in EVENT_STARTERS else run_task(task_id, environment_name=environment_name) for task_id in ids]\n"
             + main_source[end:]).encode('utf-8')
     # A Python script task can run run.py from an extracted archive.  The
-    # __main__ module also makes the .pyifpkg directly executable by CPython
+    # __main__ module also makes the .pympkg (and legacy .pyifpkg) directly executable by CPython
     # as a zip application, without generating or editing a launcher.
     launcher = b'"""Run this exported application with any standard Python interpreter."""\nfrom application.main import main\n\nif __name__ == "__main__":\n    raise SystemExit(main())\n'
     files['run.py'] = launcher
@@ -705,10 +758,13 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         for edge in task['transitions']:
             if edge['source'] not in activities or edge['target'] not in activities:
                 raise ValueError(f"Raw Python task {task['name']} contains a dangling transition")
+        core_imports = ['Context', 'execute_with_policy', 'resolve', 'Reference', 'Template']
+        if any(plan['type'] == 'critical_section' for plan in group_plans):
+            core_imports.append('group_lock')
         lines = [
-            '"""Direct async implementation of this Integration Fabric task."""',
+            '"""Direct async implementation of this MINA task."""',
             'import asyncio',
-            'from application.core import Context, execute_with_policy, resolve, group_lock, Reference, Template',
+            f'from application.core import {", ".join(core_imports)}',
             *(['from application.native.jdbc import jdbc_adapter'] if any(plan['type'] == 'transaction_jdbc' for plan in group_plans) else []),
             '',
             f'TASK_ID = {task["id"]!r}',

@@ -1,7 +1,7 @@
 {
-  "name": "integration-fabric-studio",
-  "description": "Windows desktop integration designer for Integration Fabric applications",
-  "author": "Integration Fabric",
+  "name": "mina-studio",
+  "description": "Windows desktop integration designer for MINA applications",
+  "author": "MINA",
   "private": true,
   "version": "1.0.3",
   "type": "module",
@@ -42,7 +42,7 @@
   },
   "build": {
     "appId": "io.integrationfabric.studio",
-    "productName": "Integration Fabric Studio",
+    "productName": "MINA Studio",
     "electronDist": "node_modules/electron/dist",
     "directories": {
       "output": "release"
@@ -67,7 +67,7 @@
       "target": [
         "nsis"
       ],
-      "artifactName": "IntegrationFabricStudio-${version}-Setup.${ext}"
+      "artifactName": "MINAStudio-${version}-Setup.${ext}"
     },
     "nsis": {
       "oneClick": false,

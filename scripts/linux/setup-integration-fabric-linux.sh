@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Integration Fabric Linux environment setup. No systemctl is used.
+# MINA Linux environment setup. No systemctl is used.
 FABRIC_ROOT="${FABRIC_ROOT:-/opt/tibco/esb/IntegrationFabricSoftware}"
 TEMP_ROOT="${FABRIC_TEMP_ROOT:-$FABRIC_ROOT/administrator/release}"
 VERSION="${1:-${FABRIC_ADMIN_VERSION:-}}"

@@ -3,9 +3,9 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 [[ -f "$SCRIPT_DIR/_load-linux-config.sh" ]] && source "$SCRIPT_DIR/_load-linux-config.sh"
 
-# Upload, create, and start an Integration Fabric application deployment.
+# Upload, create, and start an MINA application deployment.
 # No systemctl is used.
-# Usage: ./deploy-application.sh <package.ifpkg|package.ear> <environment>
+# Usage: ./deploy-application.sh <package.mpkg|package.ear> <environment> (legacy .ifpkg is accepted)
 # Required: FABRIC_CONTROL_PLANE_KEY (or FABRIC_ADMIN_API_KEY)
 # Optional: FABRIC_CONTROL_PLANE_URL, FABRIC_DATA_PLANE, FABRIC_NAMESPACE,
 #           FABRIC_CAPABILITY_ID, FABRIC_TEAM_ID, FABRIC_INSTANCES,

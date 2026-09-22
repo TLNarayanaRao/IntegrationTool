@@ -1,5 +1,5 @@
 {
-  "name": "Integration Fabric - Local Control Plane",
+  "name": "MINA - Local Control Plane",
   "values": [
     {"key":"baseUrl","value":"http://127.0.0.1:9080","enabled":true},
     {"key":"adminKey","value":"","enabled":true},
@@ -16,5 +16,5 @@
     {"key":"resourceId","value":"","enabled":true}
   ],
   "_postman_variable_scope":"environment",
-  "_postman_exported_using":"Integration Fabric"
+  "_postman_exported_using":"MINA"
 }

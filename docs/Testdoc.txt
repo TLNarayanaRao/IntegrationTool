@@ -1,12 +1,12 @@
-# Integration Fabric build and distribution
+# MINA build and distribution
 
 ## Product outputs
 
-Integration Fabric has three independently distributable components:
+MINA has three independently distributable components:
 
 1. **Studio** — an Electron desktop IDE for Windows. It embeds the React designer and a packaged Python sidecar.
 2. **Enterprise Administrator** — a Linux or Windows web control plane for on-premises package management.
-3. **Runtime package** — a portable `.ifpkg`, `.tar.gz`, or `.ear`-compatible archive produced by Studio for either on-premises Administrator deployment or cloud/Kubernetes deployment.
+3. **Runtime package** — a portable `.mpkg`, `.tar.gz`, or `.ear`-compatible archive produced by Studio for either on-premises Administrator deployment or cloud/Kubernetes deployment.
 
 ## Build Studio on Windows
 
@@ -28,7 +28,7 @@ npm run desktop:installer
 Output:
 
 ```text
-frontend\release\IntegrationFabricStudio-0.2.0-Setup.exe
+frontend\release\MINAStudio-2.4.0-Setup.exe
 ```
 
 The installer is machine-wide so different Windows users can launch Studio in parallel. Each user gets an independent local runtime port and workspace data directory under that user's application-data profile.
@@ -44,7 +44,7 @@ npm run desktop:installer # Build the sidecar and final Setup.exe
 The unpacked executable is:
 
 ```text
-frontend\release\win-unpacked\Integration Fabric Studio.exe
+frontend\release\win-unpacked\MINA Studio.exe
 ```
 
 For production distribution, configure a company `.pfx` code-signing certificate in the CI/CD secret store and sign the installer and executables. Do not put certificate passwords in the repository.
@@ -134,20 +134,20 @@ Open **Packaging** in Project Explorer or select **Package** on the ribbon. Conf
 - Artifact name and version
 - Target: **On-premises Linux** or **Cloud / Kubernetes**
 - Target environment
-- Archive: `.ifpkg`, `.tar.gz`, or `.ear`
+- Archive: `.mpkg`, `.tar.gz`, or `.ear`
 
 An on-premises package contains an Administrator deployment descriptor. A cloud package contains a Docker build input and Kubernetes deployment manifest. Password property values are removed from both outputs and replaced by deployment-time secret requirements.
 
-The `.ifproject` file remains the editable Studio project. The `.ifpkg` file is the immutable deployment artifact.
-# Integration Fabric build and distribution
+The `.mpackage` file remains the editable Studio project package. The `.mpkg` file is the immutable deployment artifact. Legacy `.ifproject`, `.ifpackage`, and `.ifpkg` files remain importable.
+# MINA build and distribution
 
 ## Product outputs
 
-Integration Fabric has three independently distributable components:
+MINA has three independently distributable components:
 
 1. **Studio** — an Electron desktop IDE for Windows. It embeds the React designer and a packaged Python sidecar.
 2. **Enterprise Administrator** — a Linux or Windows web control plane for on-premises package management.
-3. **Runtime package** — a portable `.ifpkg`, `.tar.gz`, or `.ear`-compatible archive produced by Studio for either on-premises Administrator deployment or cloud/Kubernetes deployment.
+3. **Runtime package** — a portable `.mpkg`, `.tar.gz`, or `.ear`-compatible archive produced by Studio for either on-premises Administrator deployment or cloud/Kubernetes deployment.
 
 ## Build Studio on Windows
 
@@ -169,7 +169,7 @@ npm run desktop:installer
 Output:
 
 ```text
-frontend\release\IntegrationFabricStudio-0.2.0-Setup.exe
+frontend\release\MINAStudio-2.4.0-Setup.exe
 ```
 
 The installer is machine-wide so different Windows users can launch Studio in parallel. Each user gets an independent local runtime port and workspace data directory under that user's application-data profile.
@@ -185,7 +185,7 @@ npm run desktop:installer # Build the sidecar and final Setup.exe
 The unpacked executable is:
 
 ```text
-frontend\release\win-unpacked\Integration Fabric Studio.exe
+frontend\release\win-unpacked\MINA Studio.exe
 ```
 
 For production distribution, configure a company `.pfx` code-signing certificate in the CI/CD secret store and sign the installer and executables. Do not put certificate passwords in the repository.
@@ -275,8 +275,8 @@ Open **Packaging** in Project Explorer or select **Package** on the ribbon. Conf
 - Artifact name and version
 - Target: **On-premises Linux** or **Cloud / Kubernetes**
 - Target environment
-- Archive: `.ifpkg`, `.tar.gz`, or `.ear`
+- Archive: `.mpkg`, `.tar.gz`, or `.ear`
 
 An on-premises package contains an Administrator deployment descriptor. A cloud package contains a Docker build input and Kubernetes deployment manifest. Password property values are removed from both outputs and replaced by deployment-time secret requirements.
 
-The `.ifproject` file remains the editable Studio project. The `.ifpkg` file is the immutable deployment artifact.
+The `.mpackage` file remains the editable Studio project package. The `.mpkg` file is the immutable deployment artifact. Legacy `.ifproject`, `.ifpackage`, and `.ifpkg` files remain importable.
