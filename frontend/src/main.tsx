@@ -64,6 +64,7 @@ import "./activity-packs.css";
 import "./studio-shell.css";
 import "./schema-studio.css";
 import "./task-runtime.css";
+import "./debug-tools.css";
 import "./themes.css";
 import "./seasonal-themes.css";
 import "./activity-editor.css";
@@ -807,6 +808,11 @@ const defaultProperties: Property[] = [
   { key: "connections.pubsub.connectionTimeoutSeconds", value: 30, data_type: "integer" },
   { key: "connections.pubsub.maxInboundMessageBytes", value: 20971520, data_type: "integer" },
   { key: "connections.pubsub.keepAliveSeconds", value: 60, data_type: "integer" },
+  { key: "connections.pubsub.batchMaxMessages", value: 100, data_type: "integer" },
+  { key: "connections.pubsub.batchMaxBytes", value: 1048576, data_type: "integer" },
+  { key: "connections.pubsub.batchDelayThresholdMilliseconds", value: 10, data_type: "integer" },
+  { key: "connections.pubsub.flowControlMaxMessages", value: 1000, data_type: "integer" },
+  { key: "connections.pubsub.flowControlMaxBytes", value: 10485760, data_type: "integer" },
   { key: "connections.sap.applicationServerHost", value: "sap-ecc.example.com", data_type: "string" },
   { key: "connections.sap.release", value: "current", data_type: "string" },
   { key: "connections.sap.systemNumber", value: "00", data_type: "string" },
@@ -1235,11 +1241,15 @@ function App() {
     [exportSourceOpen, setExportSourceOpen] = useState(false),
     [debugState, setDebugState] = useState<any>(null),
     [jobDataOpen, setJobDataOpen] = useState(false),
+    [debugToolsOpen, setDebugToolsOpen] = useState(false),
     [executionOutputs, setExecutionOutputs] = useState<Record<string, any>>({}),
     [endpoints, setEndpoints] = useState<any[]>([]),
     [runtimeState, setRuntimeState] = useState<any>(null),
     [systemLogInfo, setSystemLogInfo] = useState<any>(null),
     [breakpoints, setBreakpoints] = useState<string[]>([]),
+    [breakpointConditions, setBreakpointConditions] = useState<Record<string, string>>({}),
+    [debugWatches, setDebugWatches] = useState<string[]>([]),
+    [pauseOnDebugError, setPauseOnDebugError] = useState(true),
     [busy, setBusy] = useState(false),
     [workStatus, setWorkStatus] = useState("Loading project workspace…"),
     [zoom, setZoom] = useState(1),
@@ -1772,7 +1782,7 @@ function App() {
     if (d.type === "ems") Object.assign(config, { messagingStyle: d.operation?.includes("topic") ? "Topic" : "Queue", messageType: "Text", acknowledgeMode: ["queue_receiver", "topic_subscriber"].includes(d.operation || "") ? "Auto" : undefined, deliveryMode: "Persistent", priority: 4, expiration: 0, queue: d.operation === "queue_receiver" ? "${properties.connections.ems.destination}" : undefined, topic: d.operation === "topic_subscriber" ? "${properties.connections.ems.destination}" : undefined, maxSessions: "${properties.connections.ems.sessionCount}", flowLimit: "${properties.connections.ems.flowLimit}", receiveTimeout: "${properties.connections.ems.receiveTimeoutMs}", dynamicProperties: "{}" });
     if (d.type === "jms") Object.assign(config, { messagingStyle: "Queue", messageType: "Text", acknowledgeMode: ["get_queue_message", "receive_message", "wait_request"].includes(d.operation || "") ? "Auto" : undefined, deliveryMode: "Persistent", priority: 4, expiration: 0, maxSessions: 1, receiveTimeout: 30000, requestTimeout: 30000, dynamicProperties: "{}" });
     if (d.type === "kafka") Object.assign(config, { acknowledgeMode: d.operation === "receive" || d.operation === "get" ? "Auto" : undefined, keySerializer: "String", valueSerializer: "String", keyDeserializer: "String", valueDeserializer: "String", waitForDelivery: false, acks: "all", compressionType: "none", retries: 3, bufferMemory: 33554432, batchSize: 16384, lingerMs: 0, maxRequestSize: 1048576, enableIdempotence: false, enableAutoCommit: true, autoOffsetReset: "earliest", fetchMinBytes: 1, maxPollRecords: 1, sessionTimeoutMs: 45000, heartbeatIntervalMs: 3000, additionalProperties: "{}" });
-    if (d.type === "pubsub") Object.assign(config, { acknowledgeMode: d.operation === "subscribe" ? "Auto" : undefined, receiveTimeout: 10, publishTimeout: 60, attributes: {}, data: "${last}" });
+    if (d.type === "pubsub") Object.assign(config, { acknowledgeMode: d.operation === "subscribe" ? "Auto" : undefined, receiveTimeout: 10, publishTimeout: 60, waitForDelivery: false, batchMaxMessages: 100, batchMaxBytes: 1048576, batchDelayThresholdMilliseconds: 10, attributes: {}, data: "${last}" });
     if (d.type === "sap")
       Object.assign(config, {
         resourceId: project.resources.find((r) => r.type === "sap")?.id || "",
@@ -2299,6 +2309,9 @@ function App() {
             environment: project.active_environment,
             task_id: typeof requestedTaskId === "string" ? requestedTaskId : task.id,
             breakpoints,
+            breakpoint_conditions: breakpointConditions,
+            watches: debugWatches,
+            pause_on_error: pauseOnDebugError,
           }),
         }),
           out = await r.json();
@@ -2332,17 +2345,22 @@ function App() {
         setWorkStatus("");
       }
     },
-    debugAction = async (action: string) => {
+    debugAction = async (action: string, options: Record<string, any> = {}) => {
       if (!debugState) return;
       const r = await fetch(`/api/debug/${debugState.sessionId}/action`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action }),
+          body: JSON.stringify({ action, ...options }),
         }),
         out = await r.json();
+      if (!r.ok) {
+        const message = out?.detail || `Debugger action failed (HTTP ${r.status})`;
+        setLogs((current) => [...current, { level: "ERROR", kind: "debug", message }]);
+        return null;
+      }
       if (out.status === "stopped") {
         setDebugState(null); setExecutionOutputs({}); setEndpoints([]); setRuntimeState(null); setLogs(out.logs || []);
-        return;
+        return out;
       }
       setDebugState(out);
       setExecutionOutputs(out.activityOutputs || {});
@@ -2350,6 +2368,7 @@ function App() {
       setEndpoints(out.endpoints || endpoints);
       if (out.currentTaskId && out.currentTaskId !== project.active_task_id)
         selectTask(out.currentTaskId);
+      return out;
     };
   const loadSystemLogs = async () => {
     setWorkStatus("Loading saved project logs…");
@@ -2387,15 +2406,29 @@ function App() {
   const currentTransitionIds = new Set(edges.filter((transition) => currentActivityIds.has(transition.target) && executedTransitionIds.has(String(transition.id))).map((transition) => String(transition.id)));
   const visibleWorkStatus = workStatus || (busy ? "Starting and running task…" : debugState?.status === "paused" ? "Debugger paused" : debugState ? `Debugger ${debugState.status || "working"}…` : runtimeState?.status === "listening" ? "Application is listening" : "");
   const stopExecution = async () => {
+    const sessionId = debugState?.sessionId;
+    // Stop is optimistic in the UI so a busy connector cannot leave the
+    // Windows renderer looking active while backend cleanup is in progress.
+    setWorkStatus("Stopping application and releasing resources…");
+    setBusy(false); setEndpoints([]); setExecutionOutputs({});
+    setDebugState((current: any) => current ? { ...current, status: "stopping", currentActivityId: null, currentActivityIds: [] } : current);
+    setRuntimeState((current: any) => current ? { ...current, status: "stopping", endpoints: [] } : current);
     try {
-      if (debugState?.sessionId) await fetch(`/api/debug/${debugState.sessionId}/action`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "stop" }) });
-      const response = await fetch(`/api/projects/${project.id}/stop`, { method: "POST" });
-      const stopped = response.ok ? await response.json() : { status: "stopped", logs: [...logs, { level: "INFO", message: `Application ${project.name} stopped by user` }] };
+      // These endpoints are idempotent and intentionally run together. The
+      // project stop must never wait behind a debugger Continue request.
+      const requests: Promise<Response>[] = [];
+      if (sessionId) requests.push(fetch(`/api/debug/${sessionId}/action`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "stop" }) }));
+      const projectStopIndex = requests.length;
+      requests.push(fetch(`/api/projects/${project.id}/stop`, { method: "POST" }));
+      const results = await Promise.allSettled(requests);
+      const projectResult = results[projectStopIndex];
+      const response = projectResult.status === "fulfilled" ? projectResult.value : null;
+      const stopped = response?.ok ? await response.json() : { status: "stopped", logs: [...logs, { level: "INFO", message: `Application ${project.name} stopped by user` }] };
       setDebugState(null); setBusy(false); setEndpoints([]); setExecutionOutputs({}); setRuntimeState(null); setLogs(stopped.logs || []);
     } catch (error: any) {
       setBusy(false); setDebugState(null); setEndpoints([]); setExecutionOutputs({}); setRuntimeState(null);
       setLogs((current) => [...current, { level: "ERROR", message: error?.message || "Unable to stop execution" }]);
-    }
+    } finally { setWorkStatus(""); }
   };
   const importProject = async (file: File) => {
     setWorkStatus(`Loading project ${file.name}…`);
@@ -3015,8 +3048,9 @@ function App() {
             </button>
           </span>
         </div>
-        {debugState && <DebugBar state={debugState} act={debugAction} stop={stopExecution} openJobData={() => setJobDataOpen(true)} />}
+        {debugState && <DebugBar state={debugState} act={debugAction} stop={stopExecution} openJobData={() => setJobDataOpen(true)} openTools={() => setDebugToolsOpen(true)} runToSelected={() => selected && debugAction("run_to", { activity_id: selected })} canRunTo={!!selected} />}
         {debugState && jobDataOpen && <DebugJobDataDialog state={debugState} task={task} activities={nodes} onClose={() => setJobDataOpen(false)} />}
+        {debugState && debugToolsOpen && <DebugToolsDialog state={debugState} activities={nodes} breakpoints={breakpoints} conditions={breakpointConditions} watches={debugWatches} pauseOnError={pauseOnDebugError} act={debugAction} onApply={(next: any) => { setBreakpoints(next.breakpoints); setBreakpointConditions(next.conditions); setDebugWatches(next.watches); setPauseOnDebugError(next.pauseOnError); }} onClose={() => setDebugToolsOpen(false)} />}
         <div
           className="canvas"
           ref={canvas}
@@ -4762,6 +4796,9 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "emulatorHost", label: "Emulator host", required: (config: any) => config.authenticationType === "Emulator", when: (config: any) => config.authenticationType === "Emulator", placeholder: "localhost:8085" }, { key: "ackDeadlineSeconds", label: "Ack deadline (seconds)" },
     { key: "connectionTimeoutSeconds", label: "Connection timeout (seconds)" }, { key: "maxInboundMessageBytes", label: "Maximum inbound message bytes" },
     { key: "keepAliveSeconds", label: "Keep-alive time (seconds)" },
+    { key: "batchMaxMessages", label: "Publisher batch maximum messages" }, { key: "batchMaxBytes", label: "Publisher batch maximum bytes" },
+    { key: "batchDelayThresholdMilliseconds", label: "Publisher batch delay threshold (ms)" },
+    { key: "flowControlMaxMessages", label: "Publisher flow-control message limit" }, { key: "flowControlMaxBytes", label: "Publisher flow-control byte limit" },
   ],
   sap: [
     { key: "mode", label: "Runtime adapter", options: ["mock", "external"] },
@@ -4808,7 +4845,7 @@ function connectionDefaults(type: string) {
   if (type === "jms") Object.assign(values, { connectionFactoryType: "Direct", connectionTimeoutSeconds: 30 });
   if (type === "snowflake") Object.assign(values, { mode: "external", authenticationType: "Username/Password", provider: "Snowflake" });
   if (type === "amqp") Object.assign(values, { brokerType: "RabbitMQ", amqpVersion: "AMQP-0-9-1", authenticationType: "SAS", connectionRecovery: "true", sslEnabled: "false" });
-  if (type === "pubsub") Object.assign(values, { authenticationType: "Service Account JSON", projectId: "", serviceAccountJson: "" });
+  if (type === "pubsub") Object.assign(values, { authenticationType: "Service Account JSON", projectId: "", serviceAccountJson: "", batchMaxMessages: 100, batchMaxBytes: 1048576, batchDelayThresholdMilliseconds: 10, flowControlMaxMessages: 1000, flowControlMaxBytes: 10485760 });
   return values;
 }
 function SharedConnectionDialog({ type, initial, properties, onClose, onCreate, onSapSchemaFetched }: any) {
@@ -5709,7 +5746,39 @@ function DebugJobDataDialog({ state, task, activities, onClose }: any) {
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="runtime-modal debug-job-data-dialog"><header><span><Database/><span><b>Debug Job Data</b><small>{task.name} · inspect input and output captured for each executed activity</small></span></span><button aria-label="Close job data" onClick={onClose}>×</button></header><main><aside className="debug-job-activity-list"><b>EXECUTED ACTIVITIES · {executed.length}</b>{executed.map((activity: any) => <button key={activity.id} className={selectedId === activity.id ? "active" : ""} onClick={() => setSelectedId(activity.id)}><span><b>{activity.name}</b><small>{activity.type}</small></span><i>✓</i></button>)}{!executed.length && <p>No activity data has been captured yet.</p>}</aside><section className="debug-job-payloads"><div className="debug-job-heading"><span><b>{selected?.name || "Activity data"}</b><small>{selected?.activityId || "Select an executed activity"}</small></span>{selected && <code>{selected.type}</code>}</div>{selected ? <div className="debug-job-columns"><article><header>INPUT</header><pre>{formatted(selected.input)}</pre></article><article><header>OUTPUT</header><pre>{formatted(selected.output)}</pre></article></div> : <div className="debug-job-empty">Start or continue the debug session to capture activity job data.</div>}</section></main><footer><span>Data is from the current debug job and is cleared when the session ends.</span><button className="primary" onClick={onClose}>Close</button></footer></div></div>;
 }
 
-function DebugBar({ state, act, stop, openJobData }: any) {
+function DebugToolsDialog({ state, activities, breakpoints, conditions, watches, pauseOnError, act, onApply, onClose }: any) {
+  const [conditionDraft, setConditionDraft] = useState<Record<string, string>>({ ...conditions });
+  const [watchText, setWatchText] = useState((watches || []).join("\n"));
+  const [pauseDraft, setPauseDraft] = useState(!!pauseOnError);
+  const [expression, setExpression] = useState("${last}");
+  const [editPath, setEditPath] = useState("vars.value");
+  const [editValue, setEditValue] = useState("");
+  const parsedWatches = watchText.split(/\r?\n/).map((item: string) => item.trim()).filter(Boolean);
+  const apply = async () => {
+    const next = { breakpoints: [...breakpoints], conditions: conditionDraft, watches: parsedWatches, pauseOnError: pauseDraft };
+    onApply(next);
+    await act("configure", { breakpoints: next.breakpoints, breakpoint_conditions: next.conditions, watches: next.watches, pause_on_error: next.pauseOnError });
+  };
+  const setRuntimeValue = async () => {
+    let value: any = editValue;
+    try { value = JSON.parse(editValue); } catch {}
+    await act("set_value", { path: editPath, value });
+  };
+  const formatted = (value: any) => JSON.stringify(value ?? {}, null, 2);
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="runtime-modal debug-tools-dialog">
+    <header><span><Bug/><span><b>Modern Debug Tools</b><small>Conditional stops, live watches, evaluation, and paused-state editing</small></span></span><button aria-label="Close debug tools" onClick={onClose}>×</button></header>
+    <main>
+      <section className="debug-tool-section"><h3>BREAKPOINTS</h3><label className="debug-check"><input type="checkbox" checked={pauseDraft} onChange={(event) => setPauseDraft(event.target.checked)}/> Pause when an activity throws an error</label>{breakpoints.length ? breakpoints.map((id: string) => { const activity = activities.find((item: any) => item.id === id); return <label key={id}><span>{activity?.name || id}<small>{id}</small></span><input value={conditionDraft[id] || ""} placeholder="Optional condition, e.g. ${last.amount} > 100" onChange={(event) => setConditionDraft((current) => ({ ...current, [id]: event.target.value }))}/></label>; }) : <p>Add a breakpoint from an activity’s context menu. Empty conditions always pause.</p>}</section>
+      <section className="debug-tool-section"><h3>WATCH EXPRESSIONS</h3><textarea value={watchText} onChange={(event) => setWatchText(event.target.value)} placeholder={'One expression per line\n${last.orderId}\n${vars.retryCount}'}/><div className="debug-watch-results">{(state.watchValues || []).map((item: any) => <article key={item.expression}><code>{item.expression}</code><pre>{item.error || formatted(item.value)}</pre></article>)}</div></section>
+      <section className="debug-tool-section"><h3>LIVE VARIABLES</h3><div className="debug-variable-grid"><article><b>INPUT</b><pre>{formatted(state.variables?.input)}</pre></article><article><b>LAST OUTPUT</b><pre>{formatted(state.variables?.last)}</pre></article><article><b>VARIABLES</b><pre>{formatted(state.variables?.vars)}</pre></article><article><b>PROCESS CONTEXT</b><pre>{formatted(state.variables?.context)}</pre></article></div></section>
+      <section className="debug-tool-section debug-evaluate"><h3>EVALUATE</h3><div><input value={expression} onChange={(event) => setExpression(event.target.value)} placeholder="${last.customer.id}"/><button onClick={() => act("evaluate", { expression })}>Evaluate</button></div>{state.lastEvaluation && <pre>{state.lastEvaluation.error || formatted(state.lastEvaluation.value)}</pre>}</section>
+      <section className="debug-tool-section debug-edit"><h3>EDIT PAUSED VALUE</h3><p>Change input.*, last.*, or vars.* while execution is paused.</p><div><input value={editPath} onChange={(event) => setEditPath(event.target.value)} placeholder="vars.retryCount"/><input value={editValue} onChange={(event) => setEditValue(event.target.value)} placeholder='JSON or text value'/><button disabled={state.status !== "paused"} onClick={setRuntimeValue}>Set value</button></div></section>
+      {state.lastException && <section className="debug-tool-section debug-exception"><h3>LAST EXCEPTION</h3><pre>{formatted(state.lastException)}</pre></section>}
+    </main><footer><span>Pause reason: <b>{state.pauseReason || "none"}</b></span><button onClick={onClose}>Close</button><button className="primary" onClick={apply}>Apply debugger settings</button></footer>
+  </div></div>;
+}
+
+function DebugBar({ state, act, stop, openJobData, openTools, runToSelected, canRunTo }: any) {
   const waitingForEvent = state.status === "listening";
   return (
     <div className="debug-bar">
@@ -5732,7 +5801,9 @@ function DebugBar({ state, act, stop, openJobData }: any) {
       </button>
       <button disabled={waitingForEvent} onClick={() => act("jump_in")}>Jump In</button>
       <button disabled={waitingForEvent} onClick={() => act("jump_out")}>Jump Out</button>
+      <button disabled={waitingForEvent || !canRunTo} onClick={runToSelected}><CirclePlay /> Run to selected</button>
       <button onClick={openJobData}><Database /> Job Data</button>
+      <button onClick={openTools}><Settings2 /> Debug Tools</button>
       <button className="debug-stop" onClick={stop}>
         <Square /> Stop
       </button>

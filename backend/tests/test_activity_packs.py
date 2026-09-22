@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from app.main import app, runtime
+from app.main import active_runs, app, debug_runs, runtime
 from app.models import Activity, EnvironmentProperty, ProcessDefinition, Project, SchemaAsset, SharedResource, Transition
 from app.runtime import WorkflowRuntime
 
@@ -20,6 +20,39 @@ class ActivityPackTests(unittest.TestCase):
     def execute(self, activity, payload):
         context = {'input': payload, 'last': payload, 'vars': {}, 'resources': {}, 'properties': {}}
         return asyncio.run(self.runtime.execute(activity, context))
+
+    def test_debug_stop_cancels_background_execution_immediately(self):
+        project_id = f'debug-stop-{uuid.uuid4()}'
+        project = Project(
+            id=project_id, name='Debug Stop Cleanup',
+            process=ProcessDefinition(activities=[
+                Activity(id='start', type='start', name='Start'),
+                Activity(id='wait', type='basic', name='Long Wait', config={'operation':'sleep', 'duration':60, 'unit':'seconds'}),
+                Activity(id='end', type='end', name='End'),
+            ], transitions=[
+                Transition(id='to-wait', source='start', target='wait'),
+                Transition(id='to-end', source='wait', target='end'),
+            ]),
+        )
+        with TestClient(app) as client:
+            self.assertEqual(client.post('/api/projects', json=project.model_dump(mode='json')).status_code, 200)
+            started = client.post(f'/api/projects/{project_id}/debug', json={'environment':'local', 'breakpoints':[]})
+            self.assertEqual(started.status_code, 200)
+            session_id = started.json()['sessionId']
+            deadline = time.time() + 2
+            while time.time() < deadline:
+                state = client.get(f'/api/debug/{session_id}').json()
+                if state.get('currentActivityId') == 'wait': break
+                time.sleep(.02)
+            before = time.perf_counter()
+            stopped = client.post(f'/api/debug/{session_id}/action', json={'action':'stop'})
+            elapsed = time.perf_counter() - before
+            self.assertEqual(stopped.status_code, 200, stopped.text)
+            self.assertEqual(stopped.json()['status'], 'stopped')
+            self.assertLess(elapsed, 2.0)
+            self.assertNotIn(session_id, debug_runs)
+            self.assertNotIn(project_id, active_runs)
+            client.delete(f'/api/projects/{project_id}')
 
     def test_ems_queue_receiver_deploys_continuously_and_starts_each_event_automatically(self):
         project_id = f'ems-listener-{uuid.uuid4()}'

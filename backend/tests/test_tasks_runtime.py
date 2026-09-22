@@ -258,6 +258,41 @@ class TaskRuntimeTests(unittest.TestCase):
             self.assertNotIn('application/python/project.py', archive.namelist())
         self.client.delete('/api/projects/task-runtime-test')
 
+    def test_modern_debugger_conditions_watches_edit_and_run_to(self):
+        self.assertEqual(self.client.post('/api/projects', json=self.project()).status_code, 200)
+        try:
+            started = self.client.post('/api/projects/task-runtime-test/debug', json={
+                'task_id':'main', 'input':{'value':42}, 'breakpoints':['p'],
+                'breakpoint_conditions':{'p':'${last.answer.value} == 42'},
+                'watches':['${last.answer.value}', '${vars.threshold}'], 'pause_on_error':True,
+            })
+            self.assertEqual(started.status_code, 200, started.text)
+            session_id = started.json()['sessionId']
+            paused = self.client.post(f'/api/debug/{session_id}/action', json={'action':'continue'})
+            self.assertEqual(paused.status_code, 200, paused.text)
+            self.assertEqual(paused.json()['status'], 'paused')
+            self.assertEqual(paused.json()['currentActivityId'], 'p')
+            self.assertEqual(paused.json()['pauseReason'], 'conditional-breakpoint:p')
+            self.assertEqual(paused.json()['watchValues'][0]['value'], 42)
+
+            changed = self.client.post(f'/api/debug/{session_id}/action', json={'action':'set_value', 'path':'vars.threshold', 'value':100})
+            self.assertEqual(changed.status_code, 200, changed.text)
+            self.assertEqual(changed.json()['variables']['vars']['threshold'], 100)
+            evaluated = self.client.post(f'/api/debug/{session_id}/action', json={'action':'evaluate', 'expression':'${vars.threshold}'})
+            self.assertEqual(evaluated.json()['lastEvaluation']['value'], 100)
+            configured = self.client.post(f'/api/debug/{session_id}/action', json={'action':'configure', 'breakpoints':[], 'watches':['${vars.threshold}'], 'pause_on_error':False})
+            self.assertFalse(configured.json()['pauseOnError'])
+            self.assertEqual(configured.json()['breakpoints'], [])
+
+            run_to = self.client.post(f'/api/debug/{session_id}/action', json={'action':'run_to', 'activity_id':'r'})
+            self.assertEqual(run_to.json()['status'], 'paused')
+            self.assertEqual(run_to.json()['currentActivityId'], 'r')
+            self.assertEqual(run_to.json()['pauseReason'], 'run-to:r')
+            stopped = self.client.post(f'/api/debug/{session_id}/action', json={'action':'stop'})
+            self.assertEqual(stopped.json()['status'], 'stopped')
+        finally:
+            self.client.delete('/api/projects/task-runtime-test')
+
     def test_strict_direct_python_archive_uses_compiled_task_code(self):
         self.assertEqual(self.client.post('/api/projects', json=self.project()).status_code, 200)
         try:

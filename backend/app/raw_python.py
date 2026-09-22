@@ -615,6 +615,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     for capability in ('jdbc', 'snowflake', 'amqp', 'kafka', 'pubsub'):
         if capability in capabilities: connector_roots.add(capability)
     if 'kafka' in capabilities: connector_roots.add('close_kafka')
+    if 'pubsub' in capabilities: connector_roots.add('close_pubsub')
     if connector_roots:
         jms_operations = set().union(*(operations_by_kind.get(kind, set()) for kind in ('ems', 'jms')))
         kafka_operations = set(operations_by_kind.get('kafka', set()))
@@ -638,7 +639,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         f'CAPABILITIES = {tuple(sorted(capabilities))!r}\n').encode('utf-8')
     main_source = (root / 'main.py').read_text(encoding='utf-8')
     delivery_capabilities = capabilities & {'sap', 'jms'}
-    connector_lifecycle_capabilities = capabilities & {'sap', 'jms', 'kafka'}
+    connector_lifecycle_capabilities = capabilities & {'sap', 'jms', 'kafka', 'pubsub'}
     main_source = main_source.replace('# CONNECTOR_IMPORT', 'from . import connectors' if connector_lifecycle_capabilities else '')
     ack_start = main_source.index('    # ACKNOWLEDGEMENT_CAPABILITY_START')
     ack_end = main_source.index('    # ACKNOWLEDGEMENT_CAPABILITY_END', ack_start) + len('    # ACKNOWLEDGEMENT_CAPABILITY_END')
@@ -655,7 +656,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     main_source = main_source[:close_start] + close_source + main_source[close_end:]
     async_close_start = main_source.index('        # ASYNC_CONNECTOR_CLOSE_START')
     async_close_end = main_source.index('        # ASYNC_CONNECTOR_CLOSE_END', async_close_start) + len('        # ASYNC_CONNECTOR_CLOSE_END')
-    async_close_source = '        await connectors.close_kafka()\n' if 'kafka' in capabilities else '        pass\n'
+    async_close_source = ''.join(f'        await connectors.close_{name}()\n' for name in ('kafka', 'pubsub') if name in capabilities) or '        pass\n'
     main_source = main_source[:async_close_start] + async_close_source + main_source[async_close_end:]
     files['application/main.py'] = main_source.encode('utf-8')
     has_inbound_http = 'inbound_http' in capabilities

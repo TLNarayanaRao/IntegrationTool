@@ -188,8 +188,32 @@ def create_client(client_class, config: dict[str, Any]):
     kwargs, _ = client_configuration(config)
     ssl_credentials = kwargs.pop("_ssl_channel_credentials", None)
     kwargs.pop("_ca_certificate_file", None)
+    publisher_kwargs: dict[str, Any] = {}
+    if "Publisher" in client_class.__name__:
+        try:
+            from google.cloud import pubsub_v1
+            publisher_kwargs["batch_settings"] = pubsub_v1.types.BatchSettings(
+                max_messages=max(1, int(config.get("batchMaxMessages") or 100)),
+                max_bytes=max(1024, int(config.get("batchMaxBytes") or 1048576)),
+                max_latency=max(0.001, float(config.get("batchDelayThresholdMilliseconds") or 10) / 1000),
+            )
+            publisher_kwargs["publisher_options"] = pubsub_v1.types.PublisherOptions(
+                enable_message_ordering=bool(config.get("enableMessageOrdering", False)),
+                flow_control=pubsub_v1.types.PublishFlowControl(
+                    message_limit=max(1, int(config.get("flowControlMaxMessages") or 1000)),
+                    byte_limit=max(1024, int(config.get("flowControlMaxBytes") or 10485760)),
+                    limit_exceeded_behavior=pubsub_v1.types.LimitExceededBehavior.BLOCK,
+                ),
+            )
+        except (AttributeError, ImportError, TypeError, ValueError):
+            # Older google-cloud-pubsub versions do not expose every tuning
+            # type. Client reuse and asynchronous enqueue still work there.
+            publisher_kwargs = {}
     if ssl_credentials is None:
-        return client_class(**kwargs)
+        try: return client_class(**kwargs, **publisher_kwargs)
+        except TypeError:
+            if publisher_kwargs: return client_class(**kwargs)
+            raise
     from google.pubsub_v1.services.publisher.transports import PublisherGrpcTransport
     from google.pubsub_v1.services.subscriber.transports import SubscriberGrpcTransport
 
@@ -201,7 +225,11 @@ def create_client(client_class, config: dict[str, Any]):
         "credentials": kwargs.get("credentials"),
         "ssl_channel_credentials": ssl_credentials,
     }
-    return client_class(transport=transport_class(**transport_kwargs))
+    transport = transport_class(**transport_kwargs)
+    try: return client_class(transport=transport, **publisher_kwargs)
+    except TypeError:
+        if publisher_kwargs: return client_class(transport=transport)
+        raise
 
 
 def credential_summary(config: dict[str, Any]) -> dict[str, str]:

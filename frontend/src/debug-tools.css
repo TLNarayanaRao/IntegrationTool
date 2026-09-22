@@ -1,0 +1,50 @@
+.debug-bar { overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.debug-bar > b, .debug-bar > button { flex: 0 0 auto; }
+.debug-tools-dialog {
+  width: min(1180px, calc(100vw - 32px));
+  height: min(780px, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.debug-tools-dialog > main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-content: start;
+  overflow: auto;
+  min-height: 0;
+  padding: 14px;
+}
+.debug-tools-dialog > header > span { display: flex; align-items: center; gap: 10px; }
+.debug-tools-dialog > header svg { width: 20px; color: #55dff2; }
+.debug-tools-dialog > header b, .debug-tools-dialog > header small { display: block; }
+.debug-tools-dialog > header small { color: #7898aa; font: 10px "DM Mono"; }
+.debug-tool-section { min-width: 0; border: 1px solid #294b61; border-radius: 8px; background: #081925; padding: 12px; }
+.debug-tool-section h3 { margin: 0 0 10px; color: #70dff2; font: 10px "DM Mono"; letter-spacing: 1px; }
+.debug-tool-section > label { display: grid; grid-template-columns: minmax(130px,.7fr) minmax(220px,1.3fr); align-items: center; gap: 10px; margin: 7px 0; }
+.debug-tool-section label span, .debug-tool-section label small { display: block; }
+.debug-tool-section label small { color: #6e92a5; font: 9px "DM Mono"; }
+.debug-tool-section input, .debug-tool-section textarea { width: 100%; box-sizing: border-box; background: #05131f; border: 1px solid #31536a; color: #d5edf4; border-radius: 5px; padding: 8px; }
+.debug-tool-section textarea { min-height: 100px; resize: vertical; }
+.debug-tool-section p { margin: 7px 0; color: #7fa0b0; font-size: 11px; }
+.debug-tool-section .debug-check { display: flex; gap: 8px; margin-bottom: 12px; }
+.debug-tool-section .debug-check input { width: auto; margin: 0; }
+.debug-watch-results { display: grid; gap: 6px; margin-top: 8px; max-height: 175px; overflow: auto; }
+.debug-watch-results article { border: 1px solid #214457; border-radius: 5px; padding: 7px; background: #06131f; }
+.debug-watch-results code { color: #66e4bd; }
+.debug-watch-results pre, .debug-tool-section > pre, .debug-variable-grid pre { margin: 5px 0 0; white-space: pre-wrap; word-break: break-word; color: #c7e4ec; font: 10px/1.45 "DM Mono"; max-height: 145px; overflow: auto; }
+.debug-variable-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.debug-variable-grid article { min-width: 0; border: 1px solid #214457; border-radius: 5px; padding: 8px; background: #06131f; }
+.debug-variable-grid b { color: #7ca7ba; font: 9px "DM Mono"; }
+.debug-evaluate > div, .debug-edit > div { display: flex; gap: 7px; }
+.debug-evaluate button, .debug-edit button { white-space: nowrap; background: #176e86; color: #e8fbff; border: 1px solid #38a9c6; border-radius: 5px; padding: 0 12px; }
+.debug-exception { grid-column: 1/-1; border-color: #8c4050; background: #23131b; }
+.debug-exception h3 { color: #ff8197; }
+.debug-tools-dialog > footer { align-items: center; }
+.debug-tools-dialog > footer span { flex: 1; color: #89a9b8; font-size: 11px; }
+@media (max-width:800px) {
+  .debug-tools-dialog > main { grid-template-columns: 1fr; }
+  .debug-variable-grid { grid-template-columns: 1fr; }
+  .debug-exception { grid-column: auto; }
+}

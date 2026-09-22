@@ -21,7 +21,7 @@ from .sap import sap_adapter
 from .snowflake import snowflake_adapter
 from .jdbc import jdbc_adapter
 from .amqp import amqp_adapter
-from .java_bridge import JavaBridgeError, test_jms
+from .java_bridge import JavaBridgeError, terminate_execution_processes, test_jms
 from .google_pubsub import client_configuration as pubsub_client_configuration, create_client as create_pubsub_client, credential_summary as pubsub_credential_summary
 from .ai_builder import generate as generate_ai_design
 from .project_logging import append_project_logs, project_log_info, read_project_logs
@@ -34,6 +34,49 @@ debugger = DebugManager(runtime)
 runtime_states: dict[str, dict] = {}
 active_runs: dict[str, asyncio.Task] = {}
 debug_runs: dict[str, asyncio.Task] = {}
+debug_stop_locks: dict[str, asyncio.Lock] = {}
+
+async def _cancel_and_wait(task: asyncio.Task | None, timeout: float = 3.0) -> None:
+    """Cancel an owned runtime task and observe its cleanup before returning."""
+    if not task or task.done() or task is asyncio.current_task(): return
+    task.cancel()
+    try:
+        await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
+    except (asyncio.CancelledError, asyncio.TimeoutError):
+        pass
+    except Exception:
+        # Runtime errors have already been captured in the execution log. Stop
+        # remains a lifecycle operation and must not be blocked by them.
+        pass
+
+async def _stop_debug_session(session_id: str) -> dict:
+    """Stop every task owned by a debug session, then rollback its resources."""
+    lock = debug_stop_locks.setdefault(session_id, asyncio.Lock())
+    async with lock:
+        state = debugger.sessions.get(session_id)
+        if not state: raise ValueError('Debug session not found')
+        if state.get('status') == 'stopped': return debugger.view(state)
+        project = state['project']
+        # Publish the stop intent synchronously. Listener/debug loops inspect
+        # this flag, so they cannot re-arm while cancellation is delivered.
+        state['stopRequested'] = True
+        state['status'] = 'stopping'
+        debug_task = debug_runs.pop(session_id, None)
+        listener_task = active_runs.pop(project.id, None)
+        await asyncio.gather(
+            _cancel_and_wait(debug_task),
+            _cancel_and_wait(listener_task),
+            asyncio.to_thread(terminate_execution_processes, session_id),
+        )
+        pending = state.pop('pendingSapDelivery', None)
+        if pending and not pending.get('transport', {}).get('completed'):
+            try: sap_adapter.acknowledge_idoc(pending['listenerKey'], pending['deliveryId'], False)
+            except Exception: pass
+        view = await debugger.stop(session_id)
+        cursor = int(state.get('persistedLogCount', 0))
+        append_project_logs(project.id, project.name, state['logs'][cursor:], _project_log_directory(project, state.get('environment', 'local')))
+        state['persistedLogCount'] = len(state['logs'])
+        return view
 
 @app.middleware('http')
 async def prevent_stale_studio_entry(request: Request, call_next):
@@ -59,6 +102,7 @@ async def shutdown_native_connectors():
     if pending: await asyncio.gather(*pending, return_exceptions=True)
     active_runs.clear()
     debug_runs.clear()
+    debug_stop_locks.clear()
     sap_adapter.close_all()
     await asyncio.to_thread(runtime.close_publishers)
 
@@ -242,7 +286,7 @@ def _listener_context(item: Project, task, resources: dict, properties: dict, en
         'input': {}, 'vars': {}, 'last': {}, 'resources': resources, 'properties': properties,
         'project': item, 'runtime': runtime, 'logs': [], 'activities': {},
         'tasks': {task.id: {'name': task.name, 'activities': {}}},
-        'context': {'taskId': task.id, 'activityId': '', 'environment': environment, 'debugSessionId': debug_session_id},
+        'context': {'taskId': task.id, 'activityId': '', 'environment': environment, 'debugSessionId': debug_session_id, 'executionId': debug_session_id or item.id},
     }
 
 async def _continuous_event_loop(item: Project, task, activity, environment: str, debug_session_id: str | None = None):
@@ -622,8 +666,14 @@ async def run(project_id: str, http_request: Request, request: RunRequest):
 async def stop_project(project_id: str):
     item = get_project(project_id)
     if not item: raise HTTPException(404, 'Project not found')
-    active = active_runs.get(project_id)
-    if active and not active.done(): active.cancel()
+    # A project may own both a debugger driver task and a continuous listener.
+    # Stop all matching sessions first; the operation is deliberately
+    # idempotent because Studio also sends the project-level stop request.
+    sessions = [session_id for session_id, state in debugger.sessions.items() if getattr(state.get('project'), 'id', None) == project_id and state.get('status') not in ('stopping', 'stopped', 'completed', 'failed')]
+    for session_id in sessions:
+        await _stop_debug_session(session_id)
+    active = active_runs.pop(project_id, None)
+    await _cancel_and_wait(active)
     previous = runtime_states.get(project_id, {})
     environment = str(previous.get('environment') or item.active_environment or 'local')
     now = log_timestamp()
@@ -1724,7 +1774,7 @@ async def start_debug(project_id: str, http_request: Request, request: DebugRequ
     task_id = request.task_id or item.active_task_id
     properties = {prop.key: prop.value for prop in item.properties.get(request.environment, [])}
     try:
-        view = debugger.start(item, task_id, request.input, {resource.id:resource for resource in item.resources}, properties, request.breakpoints, request.environment)
+        view = debugger.start(item, task_id, request.input, {resource.id:resource for resource in item.resources}, properties, request.breakpoints, request.environment, request.breakpoint_conditions, request.watches, request.pause_on_error)
         task = next(value for value in item.tasks if value.id == task_id)
         diagnostics = _startup_diagnostics(item, task, {resource.id: resource for resource in item.resources}, properties, request.environment, 'DEBUG')
         endpoints = _listener_endpoints(item, task, request.environment, str(http_request.base_url).rstrip('/'))
@@ -1765,7 +1815,9 @@ async def start_debug(project_id: str, http_request: Request, request: DebugRequ
 @app.post('/api/debug/{session_id}/action')
 async def debug_action(session_id: str, request: DebugAction):
     try:
-        view = await debugger.action(session_id, request.action)
+        if request.action == 'stop':
+            return await _stop_debug_session(session_id)
+        view = await debugger.action(session_id, request.action, request.model_dump(exclude={'action'}, exclude_none=True))
         state = debugger.sessions[session_id]
         project = state['project']
         pending = state.get('pendingSapDelivery')
@@ -1773,14 +1825,11 @@ async def debug_action(session_id: str, request: DebugAction):
             if not pending.get('transport', {}).get('completed'):
                 sap_adapter.acknowledge_idoc(pending['listenerKey'], pending['deliveryId'], state.get('status') == 'listening')
             state.pop('pendingSapDelivery', None)
-        if request.action == 'stop':
-            active = active_runs.get(project.id)
-            if active and not active.done(): active.cancel()
         cursor = int(state.get('persistedLogCount', 0))
         append_project_logs(project.id, project.name, state['logs'][cursor:], _project_log_directory(project, state.get('environment', 'local')))
         state['persistedLogCount'] = len(state['logs'])
         return view
-    except ValueError as exc: raise HTTPException(404, str(exc))
+    except ValueError as exc: raise HTTPException(404 if str(exc) == 'Debug session not found' else 400, str(exc))
 
 @app.get('/api/debug/{session_id}')
 def debug_state(session_id: str):

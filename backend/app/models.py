@@ -239,6 +239,9 @@ def default_environment_properties() -> list[EnvironmentProperty]:
         ('connections.pubsub.ackDeadlineSeconds', 60, 'integer'),
         ('connections.pubsub.connectionTimeoutSeconds', 30, 'integer'),
         ('connections.pubsub.maxInboundMessageBytes', 20971520, 'integer'), ('connections.pubsub.keepAliveSeconds', 60, 'integer'),
+        ('connections.pubsub.batchMaxMessages', 100, 'integer'), ('connections.pubsub.batchMaxBytes', 1048576, 'integer'),
+        ('connections.pubsub.batchDelayThresholdMilliseconds', 10, 'integer'), ('connections.pubsub.flowControlMaxMessages', 1000, 'integer'),
+        ('connections.pubsub.flowControlMaxBytes', 10485760, 'integer'),
         ('connections.sap.applicationServerHost', 'sap-ecc.example.com', 'string'),
         ('connections.sap.release', 'current', 'string'),
         ('connections.sap.systemNumber', '00', 'string'),
@@ -408,9 +411,20 @@ class AIBuildRequest(BaseModel):
 
 class DebugRequest(RunRequest):
     breakpoints: list[str] = Field(default_factory=list)
+    breakpoint_conditions: dict[str, str] = Field(default_factory=dict)
+    watches: list[str] = Field(default_factory=list)
+    pause_on_error: bool = True
 
 class DebugAction(BaseModel):
-    action: Literal['continue', 'pause', 'step_in', 'step_over', 'step_out', 'jump_in', 'jump_out', 'stop']
+    action: Literal['continue', 'pause', 'step_in', 'step_over', 'step_out', 'jump_in', 'jump_out', 'run_to', 'configure', 'evaluate', 'set_value', 'stop']
+    activity_id: str | None = None
+    expression: str | None = None
+    path: str | None = None
+    value: Any = None
+    breakpoints: list[str] | None = None
+    breakpoint_conditions: dict[str, str] | None = None
+    watches: list[str] | None = None
+    pause_on_error: bool | None = None
 
 class RunResult(BaseModel):
     run_id: str

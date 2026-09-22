@@ -204,13 +204,75 @@ class PublisherReuseTests(unittest.TestCase):
         modules = {'google': google, 'google.cloud': cloud, 'google.cloud.pubsub_v1': pubsub,
                    'google.api_core.retry': retry}
         with patch.dict(sys.modules, modules), patch('app.runtime.pubsub_client_configuration', return_value=({}, 'demo')), patch('app.runtime.create_pubsub_client', side_effect=lambda *_: Publisher()):
-            first = asyncio.run(runtime.messaging('pubsub', {'resourceId': 'p', 'topic': 'events', 'data': 'one'}, context(resource)))
-            second = asyncio.run(runtime.messaging('pubsub', {'resourceId': 'p', 'topic': 'events', 'data': 'two'}, context(resource)))
+            first = asyncio.run(runtime.messaging('pubsub', {'resourceId': 'p', 'topic': 'events', 'data': 'one', 'waitForDelivery': True}, context(resource)))
+            second = asyncio.run(runtime.messaging('pubsub', {'resourceId': 'p', 'topic': 'events', 'data': 'two', 'waitForDelivery': True}, context(resource)))
         self.assertEqual(len(clients), 1)
         self.assertEqual([first['MessageID'], second['MessageID']], ['message-1', 'message-2'])
         self.assertEqual(clients[0].stop_calls, 0)
         runtime.close_publishers()
         self.assertEqual(clients[0].stop_calls, 1)
+
+    def test_pubsub_buffered_publish_reuses_client_across_execution_ids_without_waiting(self):
+        clients = []
+        class Future:
+            def result(self, timeout=None): time.sleep(.2); return 'provider-id'
+            def add_done_callback(self, callback): self.callback = callback
+            def exception(self): return None
+        class Publisher:
+            def __init__(self):
+                clients.append(self); self.transport = types.SimpleNamespace(close=lambda: None)
+            def topic_path(self, project, topic): return f'projects/{project}/topics/{topic}'
+            def publish(self, path, data, **kwargs): return Future()
+            def stop(self): pass
+        google = types.ModuleType('google'); cloud = types.ModuleType('google.cloud'); pubsub = types.ModuleType('google.cloud.pubsub_v1')
+        pubsub.PublisherClient = Publisher; cloud.pubsub_v1 = pubsub; google.cloud = cloud
+        retry = types.ModuleType('google.api_core.retry'); retry.Retry = lambda deadline: object()
+        resource = SharedResource(id='p', type='pubsub', name='PubSub', config={'projectId':'demo', 'serviceAccountJson':'{}'})
+        runtime = WorkflowRuntime(); modules = {'google':google, 'google.cloud':cloud, 'google.cloud.pubsub_v1':pubsub, 'google.api_core.retry':retry}
+        def scoped(scope):
+            value = context(resource); value['context']['executionId'] = scope; return value
+        started = time.perf_counter()
+        with patch.dict(sys.modules, modules), patch('app.runtime.pubsub_client_configuration', return_value=({}, 'demo')), patch('app.runtime.create_pubsub_client', side_effect=lambda *_: Publisher()):
+            first = asyncio.run(runtime.messaging('pubsub', {'resourceId':'p', 'topic':'events', 'data':'one'}, scoped('run-1')))
+            second = asyncio.run(runtime.messaging('pubsub', {'resourceId':'p', 'topic':'events', 'data':'two'}, scoped('run-2')))
+        self.assertLess(time.perf_counter() - started, .1)
+        self.assertEqual(len(clients), 1)
+        self.assertTrue(first['queued']); self.assertFalse(first['deliveryConfirmed'])
+        self.assertIsNone(first['providerMessageId'])
+        self.assertIn('publishLatencyMs', second)
+
+    def test_direct_python_pubsub_reuses_batched_client_and_does_not_wait_by_default(self):
+        clients = []
+        class Future:
+            def result(self, timeout=None): raise AssertionError('buffered publish must not wait')
+            def add_done_callback(self, callback): self.callback = callback
+            def exception(self): return None
+        class Publisher:
+            def __init__(self, **kwargs): clients.append(self); self.transport = types.SimpleNamespace(close=lambda: None); self.stop_calls = 0
+            def topic_path(self, project, topic): return f'projects/{project}/topics/{topic}'
+            def publish(self, path, data, **kwargs): return Future()
+            def stop(self): self.stop_calls += 1
+        pubsub = types.ModuleType('google.cloud.pubsub_v1'); pubsub.PublisherClient = Publisher
+        pubsub.types = types.SimpleNamespace(BatchSettings=lambda **kwargs: kwargs, PublisherOptions=lambda **kwargs: kwargs)
+        cloud = types.ModuleType('google.cloud'); cloud.pubsub_v1 = pubsub
+        service_account = types.ModuleType('google.oauth2.service_account')
+        service_account.Credentials = types.SimpleNamespace(from_service_account_info=lambda info: object())
+        oauth2 = types.ModuleType('google.oauth2'); oauth2.service_account = service_account
+        google = types.ModuleType('google'); google.cloud = cloud; google.oauth2 = oauth2
+        modules = {'google':google, 'google.cloud':cloud, 'google.cloud.pubsub_v1':pubsub, 'google.oauth2':oauth2, 'google.oauth2.service_account':service_account}
+        direct_connectors._PUBSUB_PUBLISHERS.clear()
+        async def publish_twice():
+            connection = {'projectId':'demo'}
+            first = await direct_connectors.pubsub('publish', connection, {'topic':'events', 'message':'one'}, None)
+            second = await direct_connectors.pubsub('publish', connection, {'topic':'events', 'message':'two'}, None)
+            await direct_connectors.close_pubsub()
+            return first, second
+        try:
+            with patch.dict(sys.modules, modules): first, second = asyncio.run(publish_twice())
+            self.assertEqual(len(clients), 1)
+            self.assertFalse(first['deliveryConfirmed']); self.assertTrue(second['queued'])
+            self.assertEqual(clients[0].stop_calls, 1)
+        finally: direct_connectors._PUBSUB_PUBLISHERS.clear()
 
 
 if __name__ == '__main__':

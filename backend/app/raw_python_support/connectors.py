@@ -13,6 +13,7 @@ from typing import Any
 _MEMORY_KAFKA: dict[str, asyncio.Queue] = {}
 _KAFKA_PRODUCERS: dict[tuple[int, str], Any] = {}
 _KAFKA_PRODUCER_LOCKS: dict[tuple[int, str], asyncio.Lock] = {}
+_PUBSUB_PUBLISHERS: dict[str, Any] = {}
 _MEMORY_JMS: dict[tuple[str, str], asyncio.Queue] = {}
 _JMS_LISTENERS: dict[str, Any] = {}
 _MEMORY_ACKS: dict[str, tuple[asyncio.Queue, Any]] = {}
@@ -26,6 +27,18 @@ async def close_kafka() -> None:
     _KAFKA_PRODUCER_LOCKS.clear()
     if producers:
         await asyncio.gather(*(producer.stop() for producer in producers), return_exceptions=True)
+
+
+async def close_pubsub() -> None:
+    """Flush and close cached Google publishers without blocking the loop."""
+    publishers = list(_PUBSUB_PUBLISHERS.values())
+    _PUBSUB_PUBLISHERS.clear()
+    def close(client):
+        try: client.stop()
+        except Exception: pass
+        try: client.transport.close()
+        except Exception: pass
+    if publishers: await asyncio.gather(*(asyncio.to_thread(close, client) for client in publishers))
 
 
 async def jms(kind: str, operation: str, connection: dict, cfg: dict, payload: Any, ctx=None) -> dict:
@@ -306,13 +319,45 @@ async def pubsub(operation: str, connection: dict, cfg: dict, payload: Any) -> d
     project_id = str(cfg.get('projectId') or connection.get('projectId') or '')
     if not project_id: raise ValueError('Pub/Sub projectId is required')
     if operation == 'publish':
+        loop = asyncio.get_running_loop(); publish_started = loop.time()
         topic = str(cfg.get('topic') or '')
-        client = pubsub_v1.PublisherClient(credentials=credentials)
+        publisher_config = {
+            'projectId': project_id,
+            'serviceAccountJson': service_account_json,
+            'endpoint': connection.get('endpoint'),
+            'enableMessageOrdering': bool(cfg.get('orderingKey')),
+            'batchMaxMessages': int(cfg.get('batchMaxMessages') or connection.get('batchMaxMessages') or 100),
+            'batchMaxBytes': int(cfg.get('batchMaxBytes') or connection.get('batchMaxBytes') or 1048576),
+            'batchDelayThresholdMilliseconds': float(cfg.get('batchDelayThresholdMilliseconds') or connection.get('batchDelayThresholdMilliseconds') or 10),
+        }
+        fingerprint = json.dumps(publisher_config, sort_keys=True, default=str)
+        client = _PUBSUB_PUBLISHERS.get(fingerprint)
+        if client is None:
+            kwargs = {'credentials': credentials}
+            try:
+                kwargs['batch_settings'] = pubsub_v1.types.BatchSettings(
+                    max_messages=publisher_config['batchMaxMessages'], max_bytes=publisher_config['batchMaxBytes'],
+                    max_latency=max(.001, publisher_config['batchDelayThresholdMilliseconds'] / 1000),
+                )
+                kwargs['publisher_options'] = pubsub_v1.types.PublisherOptions(enable_message_ordering=publisher_config['enableMessageOrdering'])
+            except (AttributeError, TypeError): pass
+            client = pubsub_v1.PublisherClient(**kwargs)
+            _PUBSUB_PUBLISHERS[fingerprint] = client
         path = topic if topic.startswith('projects/') else client.topic_path(project_id, topic)
         value = cfg.get('message', payload)
         data = value if isinstance(value, bytes) else json.dumps(value, default=str).encode()
-        message_id = await asyncio.to_thread(lambda: client.publish(path, data).result())
-        return {'topic': path, 'messageId': message_id, 'published': True}
+        attributes = {str(key): str(value) for key, value in (cfg.get('attributes') or {}).items()}
+        future = client.publish(path, data, ordering_key=str(cfg.get('orderingKey') or ''), **attributes)
+        raw_wait = cfg.get('waitForDelivery', False)
+        wait_for_delivery = raw_wait if isinstance(raw_wait, bool) else str(raw_wait).strip().lower() in {'1', 'true', 'yes', 'on'}
+        provider_message_id = await asyncio.to_thread(future.result, timeout=float(cfg.get('publishTimeout') or 60)) if wait_for_delivery else None
+        if not wait_for_delivery and hasattr(future, 'add_done_callback'):
+            future.add_done_callback(lambda completed: completed.exception())
+        from uuid import uuid4
+        message_id = provider_message_id or str(uuid4())
+        return {'topic': path, 'messageId': message_id, 'providerMessageId': provider_message_id,
+                'published': True, 'queued': True, 'deliveryConfirmed': wait_for_delivery,
+                'publishLatencyMs': round((loop.time() - publish_started) * 1000, 3)}
     if operation == 'pull':
         subscription = str(cfg.get('subscription') or '')
         client = pubsub_v1.SubscriberClient(credentials=credentials)

@@ -17,6 +17,39 @@ class JavaBridgeError(RuntimeError):
     pass
 
 
+_active_process_lock = threading.Lock()
+_active_processes: dict[str, set[subprocess.Popen]] = {}
+
+
+def terminate_execution_processes(execution_scope: str) -> None:
+    """Terminate short-lived vendor bridge JVMs owned by one execution."""
+    scope = str(execution_scope or '').strip()
+    if not scope: return
+    with _active_process_lock:
+        processes = list(_active_processes.pop(scope, set()))
+    for process in processes:
+        if process.poll() is not None: continue
+        try:
+            process.terminate()
+            process.wait(timeout=1)
+        except (OSError, subprocess.TimeoutExpired):
+            try: process.kill()
+            except OSError: pass
+
+
+def _track_process(scope: str, process: subprocess.Popen) -> None:
+    if not scope: return
+    with _active_process_lock: _active_processes.setdefault(scope, set()).add(process)
+
+
+def _untrack_process(scope: str, process: subprocess.Popen) -> None:
+    if not scope: return
+    with _active_process_lock:
+        values = _active_processes.get(scope)
+        if values: values.discard(process)
+        if not values: _active_processes.pop(scope, None)
+
+
 class SapJcoListener:
     def __init__(self, process: subprocess.Popen, descriptor: Path, max_pending_events: int = 32):
         self.process = process
@@ -344,34 +377,41 @@ def invoke(command: str, config: dict[str, Any], values: dict[str, Any] | None =
             process_env["PATH"] = os.pathsep.join(native_directories + [process_env.get("PATH", "")])
     properties = {"command": command, **(values or {})}
     descriptor = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".properties", delete=False)
+    process = None
+    execution_scope = str(config.get('_executionScope') or '')
     try:
         with descriptor:
             for key, value in properties.items():
                 if value is not None:
                     descriptor.write(f"{_escape_property(key)}={_escape_property(value)}\n")
-        completed = subprocess.run(
+        process = subprocess.Popen(
             _java_command(config, classpath, descriptor.name, family=family),
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout or float(config.get("timeoutSeconds") or 30) + 5,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
             env=process_env,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
+        _track_process(execution_scope, process)
+        try:
+            stdout, stderr = process.communicate(timeout=timeout or float(config.get("timeoutSeconds") or 30) + 5)
+        except subprocess.TimeoutExpired as exc:
+            process.kill(); process.communicate()
+            raise JavaBridgeError(f"Java connector timed out after {exc.timeout:g} seconds") from exc
     except FileNotFoundError as exc:
         raise JavaBridgeError("Java runtime is unavailable. Rebuild the desktop installer so its bundled Java runtime is included.") from exc
-    except subprocess.TimeoutExpired as exc:
-        raise JavaBridgeError(f"Java connector timed out after {exc.timeout:g} seconds") from exc
     finally:
+        if process is not None: _untrack_process(execution_scope, process)
         Path(descriptor.name).unlink(missing_ok=True)
-    stdout = completed.stdout or ""
-    stderr = completed.stderr or ""
+    stdout = stdout or ""
+    stderr = stderr or ""
     lines = [line for line in stdout.splitlines() if line.strip()]
     if not lines:
-        detail = stderr.strip() or f"Java bridge exited with code {completed.returncode}"
+        detail = stderr.strip() or f"Java bridge exited with code {process.returncode}"
         raise JavaBridgeError(detail)
     try:
         output = json.loads(lines[-1])
     except json.JSONDecodeError as exc:
         raise JavaBridgeError(f"Java bridge returned invalid output: {lines[-1]}") from exc
-    if completed.returncode or not output.get("ok", False):
+    if process.returncode or not output.get("ok", False):
         raise JavaBridgeError(str(output.get("message") or stderr.strip() or "Java connector failed"))
     output["loadedJars"] = [jar.name for jar in jars]
     return output

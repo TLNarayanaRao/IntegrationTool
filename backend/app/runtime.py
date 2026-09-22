@@ -310,7 +310,7 @@ class WorkflowRuntime:
             'input': initial, 'vars': {}, 'last': initial, 'resources': resources or {},
             'properties': properties or {}, 'project': project, 'runtime': self, 'logs': logs,
             'activities': activity_outputs, 'tasks': task_outputs,
-            'context': {'taskId': process.id, 'activityId': '', 'environment': getattr(project, 'active_environment', '') if project else '', 'correlationId': correlation_id, 'runId': run_id},
+            'context': {'taskId': process.id, 'activityId': '', 'environment': getattr(project, 'active_environment', '') if project else '', 'correlationId': correlation_id, 'runId': run_id, 'executionId': run_id},
             'transport': transport or {},
             '_process': process, 'groupStack': [], 'jdbcTransactions': {},
         }
@@ -429,6 +429,15 @@ class WorkflowRuntime:
             final_output = context['last'] if isinstance(context['last'], dict) else {'result': context['last']}
             task_state['output'] = final_output
             return finish('completed', final_output)
+        except asyncio.CancelledError:
+            # Cancellation must unwind JDBC transaction groups and critical
+            # sections just like a failed execution. Without this path a
+            # Debug Stop could leave a connection or lock alive on Windows.
+            while context.get('groupStack'):
+                state = context['groupStack'].pop()
+                try: await self._finish_group(state, group_plans[state['id']], context, False)
+                except Exception: pass
+            raise
         except Exception as exc:
             while context.get('groupStack'):
                 state = context['groupStack'].pop()
@@ -604,6 +613,8 @@ class WorkflowRuntime:
     async def execute(self, activity: Activity, ctx: dict):
         # Resolve environment, input, variable, and previous-output expressions in every activity field.
         cfg = self.resolve(activity.config, ctx)
+        execution_scope = str(ctx.get('context', {}).get('executionId') or ctx.get('context', {}).get('debugSessionId') or '')
+        if execution_scope: cfg['_executionScope'] = execution_scope
         for key, expression in activity.config.get('inputMappings', {}).items():
             include, value = self.evaluate_mapping(expression, ctx)
             if include: self.assign_path(cfg, key, value)
@@ -692,6 +703,13 @@ class WorkflowRuntime:
                 try:
                     process = await asyncio.create_subprocess_exec(*arguments, cwd=cfg.get('workingDirectory') or None, env=process_env, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
                     stdout, stderr = await asyncio.wait_for(process.communicate(str(cfg.get('input') or '').encode()), timeout=float(cfg.get('timeoutSeconds') or 300))
+                except asyncio.CancelledError:
+                    if 'process' in locals() and process.returncode is None:
+                        process.terminate()
+                        try: await asyncio.wait_for(process.wait(), timeout=1)
+                        except asyncio.TimeoutError:
+                            process.kill(); await process.wait()
+                    raise
                 except asyncio.TimeoutError as exc:
                     process.kill(); await process.wait(); raise FabricFault('External command exceeded its timeout', fault_type='CommandExecutionError') from exc
                 except (OSError, ValueError) as exc: raise FabricFault(str(exc), fault_type='CommandExecutionError') from exc
@@ -1056,6 +1074,8 @@ class WorkflowRuntime:
         if not resource or resource.type != technology:
             raise RuntimeError(f'{technology.upper()} activity requires a shared {technology.upper()} connection')
         rcfg = self.resolve(resource.config, ctx)
+        execution_scope = str(ctx.get('context', {}).get('executionId') or ctx.get('context', {}).get('debugSessionId') or '')
+        if execution_scope: rcfg['_executionScope'] = execution_scope
         operation = cfg.get('operation', 'publish')
         destination = cfg.get('destination') or cfg.get('queue') or cfg.get('topic') or cfg.get('subscription') or 'default'
         broker_key = f'{technology}:{resource.id}:{destination}'
@@ -1280,11 +1300,23 @@ class WorkflowRuntime:
                 first = messages[0] if messages else {}
                 return {'MessageID':first.get('messageId'),'PublishTime':first.get('publishTime'),'Data':first.get('data'),'Attributes':first.get('attributes',{}),'AckID':first.get('ackId'),'ackId':first.get('ackId'),'messages':messages,'count':len(messages)}
             publish_timeout = max(1.0, float(cfg.get('publishTimeout', 60) or 60))
-            publish_config = {**rcfg, 'projectId': cfg.get('projectId') or rcfg.get('projectId')}
+            # Execution bookkeeping changes on every job and must never be
+            # part of the publisher fingerprint. Including it prevented gRPC
+            # channel reuse and paid TLS/authentication startup on each send.
+            publish_config = {key: value for key, value in rcfg.items() if not str(key).startswith('_')}
+            publish_config.update({
+                'projectId': cfg.get('projectId') or rcfg.get('projectId'),
+                'enableMessageOrdering': bool(cfg.get('orderingKey')),
+                'batchMaxMessages': int(cfg.get('batchMaxMessages') or rcfg.get('batchMaxMessages') or 100),
+                'batchMaxBytes': int(cfg.get('batchMaxBytes') or rcfg.get('batchMaxBytes') or 1048576),
+                'batchDelayThresholdMilliseconds': float(cfg.get('batchDelayThresholdMilliseconds') or rcfg.get('batchDelayThresholdMilliseconds') or 10),
+                'flowControlMaxMessages': int(cfg.get('flowControlMaxMessages') or rcfg.get('flowControlMaxMessages') or 1000),
+                'flowControlMaxBytes': int(cfg.get('flowControlMaxBytes') or rcfg.get('flowControlMaxBytes') or 10485760),
+            })
             raw = payload if isinstance(payload, bytes) else (payload.encode() if isinstance(payload, str) else json.dumps(payload).encode())
 
             def publish_pubsub():
-                """Keep gRPC publish and its completion wait off the event loop."""
+                """Enqueue on the persistent batched publisher by default."""
                 publisher, one_shot = self._publisher('pubsub', publish_config, lambda: create_pubsub_client(pubsub_v1.PublisherClient, publish_config))
                 try:
                     path = publisher.topic_path(project_id, destination)
@@ -1295,10 +1327,17 @@ class WorkflowRuntime:
                             retry=Retry(deadline=publish_timeout),
                             timeout=publish_timeout, **attributes,
                         )
-                        message_id = publish_future.result(timeout=publish_timeout + 2)
+                        wait_for_delivery = self.as_bool(cfg.get('waitForDelivery', False)) or one_shot
+                        message_id = publish_future.result(timeout=publish_timeout + 2) if wait_for_delivery else None
+                        if not wait_for_delivery:
+                            # Consume asynchronous errors so the Google future
+                            # cannot emit an unobserved-exception warning. The
+                            # activity intentionally reports queued, not acked.
+                            if hasattr(publish_future, 'add_done_callback'):
+                                publish_future.add_done_callback(lambda future: future.exception())
                     except TimeoutError as exc:
                         raise RuntimeError(f'Google Pub/Sub publish timed out after {publish_timeout:g} seconds. Verify the topic, IAM permission, endpoint, proxy, and firewall settings.') from exc
-                    return path, message_id
+                    return path, message_id, wait_for_delivery
                 finally:
                     if one_shot:
                         try: publisher.stop()
@@ -1306,8 +1345,13 @@ class WorkflowRuntime:
                         try: publisher.transport.close()
                         except Exception: pass
 
-            path, message_id = await asyncio.to_thread(publish_pubsub)
-            return {**envelope, 'TopicName': path, 'MessageID': message_id, 'messageId': message_id, 'published': True}
+            publish_started = perf_counter()
+            path, provider_message_id, delivery_confirmed = await asyncio.to_thread(publish_pubsub)
+            message_id = provider_message_id or envelope['id']
+            return {**envelope, 'TopicName': path, 'MessageID': message_id, 'messageId': message_id,
+                    'providerMessageId': provider_message_id, 'published': True, 'queued': True,
+                    'deliveryConfirmed': delivery_confirmed,
+                    'publishLatencyMs': round((perf_counter() - publish_started) * 1000, 3)}
         raise RuntimeError(f'Unsupported messaging technology {technology}')
 
     @staticmethod
@@ -1930,7 +1974,15 @@ class WorkflowRuntime:
         command = cfg.get('command') or os.getenv('JAVA_WORKER_COMMAND')
         if command:
             proc = await asyncio.create_subprocess_shell(command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-            out, err = await proc.communicate(json.dumps({'className': cfg.get('className'), 'method': cfg.get('method'), 'payload': payload}).encode())
+            try:
+                out, err = await proc.communicate(json.dumps({'className': cfg.get('className'), 'method': cfg.get('method'), 'payload': payload}).encode())
+            except asyncio.CancelledError:
+                if proc.returncode is None:
+                    proc.terminate()
+                    try: await asyncio.wait_for(proc.wait(), timeout=1)
+                    except asyncio.TimeoutError:
+                        proc.kill(); await proc.wait()
+                raise
             if proc.returncode: raise RuntimeError(err.decode() or 'Java worker failed')
             return json.loads(out.decode())
         class_name, method = str(cfg.get('className') or '').strip(), str(cfg.get('method') or '').strip()
@@ -1951,11 +2003,21 @@ class WorkflowRuntime:
             elif artifact.exists() and artifact.suffix.lower() == '.class': classpath += os.pathsep + str(artifact.parent)
             elif not artifact.exists(): raise RuntimeError('Java Invoke requires an existing JAR/class/source artifact or inline source')
             compiler = await asyncio.create_subprocess_exec('javac', '-cp', classpath, '-d', str(root), *compile_inputs, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-            _, compile_error = await compiler.communicate()
+            try: _, compile_error = await compiler.communicate()
+            except asyncio.CancelledError:
+                if compiler.returncode is None: compiler.kill(); await compiler.wait()
+                raise
             if compiler.returncode: raise RuntimeError(f'Java compilation failed: {compile_error.decode().strip()}')
             args = [json.dumps(value, separators=(',', ':')) if isinstance(value, (dict, list)) else str(value) for value in parameters]
             process = await asyncio.create_subprocess_exec('java', '-cp', classpath, 'FabricInvoker', class_name, method, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             try: out, err = await asyncio.wait_for(process.communicate(), timeout=float(cfg.get('timeout') or 60))
+            except asyncio.CancelledError:
+                if process.returncode is None:
+                    process.terminate()
+                    try: await asyncio.wait_for(process.wait(), timeout=1)
+                    except asyncio.TimeoutError:
+                        process.kill(); await process.wait()
+                raise
             except asyncio.TimeoutError: process.kill(); raise RuntimeError('Java method invocation timed out')
             if process.returncode: raise RuntimeError(err.decode().strip() or 'Java method invocation failed')
             value = out.decode().strip()
