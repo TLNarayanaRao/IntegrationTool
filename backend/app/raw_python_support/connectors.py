@@ -11,6 +11,8 @@ from typing import Any
 
 
 _MEMORY_KAFKA: dict[str, asyncio.Queue] = {}
+_KAFKA_PRODUCERS: dict[tuple[int, str], Any] = {}
+_KAFKA_PRODUCER_LOCKS: dict[tuple[int, str], asyncio.Lock] = {}
 _MEMORY_JMS: dict[tuple[str, str], asyncio.Queue] = {}
 _JMS_LISTENERS: dict[str, Any] = {}
 _MEMORY_ACKS: dict[str, tuple[asyncio.Queue, Any]] = {}
@@ -224,15 +226,37 @@ async def kafka(operation: str, connection: dict, cfg: dict, payload: Any) -> di
         raise RuntimeError('Kafka requires the optional aiokafka package') from error
     servers = connection.get('bootstrapServers') or connection.get('bootstrap_servers') or 'localhost:9092'
     if operation == 'publish':
-        producer = AIOKafkaProducer(bootstrap_servers=servers)
-        await producer.start()
-        try:
-            message = cfg.get('message', payload)
-            data = message if isinstance(message, bytes) else json.dumps(message, default=str).encode()
-            metadata = await producer.send_and_wait(topic, data)
-            return {'topic': topic, 'partition': metadata.partition, 'offset': metadata.offset, 'published': True}
-        finally:
-            await producer.stop()
+        publish_started = asyncio.get_running_loop().time()
+        options = {
+            'bootstrap_servers': servers,
+            'client_id': connection.get('clientId') or 'integration-fabric-python',
+            'acks': cfg.get('acks', 'all'),
+            'linger_ms': int(cfg.get('lingerMs') or 0),
+            'request_timeout_ms': int(connection.get('requestTimeoutMilliseconds') or 30000),
+            'retry_backoff_ms': int(connection.get('retryBackoffMilliseconds') or 100),
+        }
+        if connection.get('securityProtocol'): options['security_protocol'] = connection['securityProtocol']
+        if connection.get('saslMechanism'): options['sasl_mechanism'] = connection['saslMechanism']
+        if connection.get('username'): options['sasl_plain_username'] = connection['username']
+        if connection.get('password'): options['sasl_plain_password'] = connection['password']
+        loop = asyncio.get_running_loop()
+        fingerprint = json.dumps(options, sort_keys=True, default=str)
+        producer_key = (id(loop), fingerprint)
+        lock = _KAFKA_PRODUCER_LOCKS.setdefault(producer_key, asyncio.Lock())
+        async with lock:
+            producer = _KAFKA_PRODUCERS.get(producer_key)
+            if producer is None or getattr(producer, '_closed', False):
+                producer = AIOKafkaProducer(**options)
+                await producer.start()
+                _KAFKA_PRODUCERS[producer_key] = producer
+        message = cfg.get('message', payload)
+        data = message if isinstance(message, bytes) else message.encode() if isinstance(message, str) else json.dumps(message, separators=(',', ':'), default=str).encode()
+        key = cfg.get('key')
+        key_bytes = key if isinstance(key, bytes) else str(key).encode() if key is not None else None
+        headers = [(str(name), value if isinstance(value, bytes) else str(value).encode()) for name, value in (cfg.get('headers') or {}).items()]
+        metadata = await producer.send_and_wait(topic, data, key=key_bytes, headers=headers)
+        return {'topic': topic, 'partition': metadata.partition, 'offset': metadata.offset, 'published': True,
+                'publishLatencyMs': round((loop.time() - publish_started) * 1000, 3)}
     if operation == 'receive':
         consumer = AIOKafkaConsumer(topic, bootstrap_servers=servers,
                                    group_id=cfg.get('groupId') or connection.get('groupId'),

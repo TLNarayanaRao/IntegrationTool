@@ -6,6 +6,7 @@ support library.  Unsupported activity semantics are rejected at build time.
 """
 from __future__ import annotations
 
+import ast
 import keyword
 import re
 from pathlib import Path
@@ -40,9 +41,238 @@ SUPPORTED = {
     *((('jdbc', operation) for operation in ('insert', 'update', 'query', 'truncate', 'delete', 'call', 'dynamic'))),
 }
 STRUCTURAL = {'start', 'end', 'log', 'mapper', 'call_task', 'catch', 'throw', 'rethrow'}
+STRUCTURAL_ONLY = {'start', 'end', 'catch'}
+SUPPORTED_GROUP_TYPES = {'if', 'for_each', 'iterate', 'while', 'repeat', 'repeat_on_error',
+                         'critical_section', 'transaction_jdbc'}
+ACTIVITY_CAPABILITY_BY_KIND = {
+    'timer': 'timer', 'confirm': 'confirm', 'throw': 'faults', 'rethrow': 'faults',
+    'log': 'log', 'basic': 'basic', 'mapper': 'mapper', 'call_task': 'call_task',
+    'file': 'file', 'excel': 'excel', 'ftp': 'transfer', 'sftp': 'transfer',
+    'http_response': 'http_response', 'dataweave': 'dataweave', 'python': 'python',
+    'java': 'java', 'kafka': 'kafka', 'pubsub': 'pubsub', 'sap': 'sap',
+    'ems': 'jms', 'jms': 'jms', 'jdbc': 'jdbc', 'snowflake': 'snowflake', 'amqp': 'amqp',
+}
 EVENT_OPERATIONS = {('kafka', 'receive'), ('kafka', 'get'), ('pubsub', 'pull'), ('pubsub', 'subscribe'), ('ems', 'queue_receiver'),
                     ('ems', 'topic_subscriber'), ('jms', 'receive_message'), ('sap', 'idoc_listener'), ('sap', 'rfc_bapi_listener'), ('timer', 'schedule')}
 EVENT_OPERATIONS.update({('http_listener', 'listen'), ('rest', 'receiver'), ('soap', 'service'), ('jms', 'wait_request')})
+
+
+def _activity_capabilities(kind: str, operation: str) -> set[str] | None:
+    """Resolve one persisted activity model to linker capabilities.
+
+    ``None`` deliberately means that the compiler registry has no linker rule;
+    an empty set is a valid rule for structural nodes that need no optional
+    implementation.  This distinction prevents newly added Studio activities
+    from being silently omitted by the exporter.
+    """
+    if kind in STRUCTURAL_ONLY:
+        return set()
+    if kind in {'xml', 'json', 'flat'}:
+        return {'data_formats'}
+    if kind == 'http_listener' or kind == 'rest' and operation == 'receiver' or kind == 'soap' and operation == 'service':
+        return {'inbound_http'}
+    if kind in {'http', 'rest', 'soap'}:
+        return {'http_client'}
+    capability = ACTIVITY_CAPABILITY_BY_KIND.get(kind)
+    return {capability} if capability else None
+
+
+def _validate_capability_registry() -> None:
+    """Require linker metadata for every operation the exporter advertises."""
+    missing = sorted(f'{kind}/{operation or "default"}' for kind, operation in SUPPORTED
+                     if _activity_capabilities(kind, operation) is None)
+    if missing:
+        raise RuntimeError('Raw Python capability registry is incomplete: ' + ', '.join(missing))
+
+
+def _edge_type(edge: dict) -> str:
+    """Normalize transitions saved by older Studio builds.
+
+    Older project files commonly persisted an ordinary transition as either a
+    missing field, an empty string, or JSON null.  They all mean ``success``.
+    """
+    return str(edge.get('type') or 'success')
+
+
+def _project_capabilities(project: dict) -> set[str]:
+    """Compute the executable capability closure for the selected task graph."""
+    capabilities = {'structural'}
+    for task in project.get('tasks', []):
+        for activity in task.get('activities', []):
+            kind = str(activity.get('type') or '')
+            operation = str(activity.get('config', {}).get('operation') or '')
+            if kind not in {'start', 'end', 'catch'}:
+                capabilities.add(f'activity:{kind}/{operation or "default"}')
+            linked = _activity_capabilities(kind, operation)
+            if linked is None:
+                raise RuntimeError(f'Raw Python capability registry has no rule for {kind}/{operation or "default"}')
+            capabilities.update(linked)
+            if kind == 'sap' and operation == 'idoc_listener':
+                source = str(activity.get('config', {}).get('messagingSource') or '').strip().lower().replace(' ', '')
+                if source == 'kafka': capabilities.add('kafka')
+                elif source in {'ems', 'jms'}: capabilities.add('jms')
+                elif source not in {'', 'nomessaging', 'direct', 'sapjcorfc/idoc_inbound_asynchronous'}:
+                    # A property/template-driven messaging source can select a
+                    # different provider per environment, so retain both legal
+                    # provider implementations rather than producing a package
+                    # that fails when its profile changes.
+                    capabilities.update({'kafka', 'jms'})
+        for group in task.get('groups') or []:
+            capabilities.add(f"group:{group.get('type') or 'unknown'}")
+            if group.get('type') == 'transaction_jdbc': capabilities.add('jdbc')
+    return capabilities
+
+
+def _project_artifact_closure(project: dict) -> tuple[list[dict], list[dict]]:
+    """Return resources and schema assets reachable from the selected tasks."""
+    resources = project.get('resources') or []
+    resource_by_id = {str(item.get('id') or ''): item for item in resources}
+    referenced_ids: set[str] = set()
+    dynamic_resource_types: set[str] = set()
+    expected_type = {'ems': 'ems', 'jms': 'jms', 'kafka': 'kafka', 'pubsub': 'pubsub', 'sap': 'sap',
+                     'jdbc': 'jdbc', 'snowflake': 'snowflake', 'amqp': 'amqp', 'ftp': 'ftp', 'sftp': 'sftp',
+                     'http': 'http', 'http_listener': 'http', 'rest': 'http', 'soap': 'http'}
+    def collect(value, activity_type=''):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if isinstance(child, str) and ('resourceid' in key.lower() or key.lower().endswith('connectionid')):
+                    if child in resource_by_id: referenced_ids.add(child)
+                    elif '${' in child and activity_type in expected_type: dynamic_resource_types.add(expected_type[activity_type])
+                collect(child, activity_type)
+        elif isinstance(value, list):
+            for child in value: collect(child, activity_type)
+    for task in project.get('tasks', []):
+        for activity in task.get('activities', []): collect(activity.get('config') or {}, str(activity.get('type') or ''))
+        for group in task.get('groups') or []: collect(group.get('config') or {}, 'jdbc' if group.get('type') == 'transaction_jdbc' else '')
+    for resource in resources:
+        if str(resource.get('type') or '') in dynamic_resource_types: referenced_ids.add(str(resource.get('id') or ''))
+    selected_resources = [resource for resource in resources if str(resource.get('id') or '') in referenced_ids]
+    schema_references: set[str] = set()
+    known_schemas = {str(schema.get('id') or ''): schema for schema in project.get('schemas') or []}
+    known_schemas.update({str(schema.get('name') or ''): schema for schema in project.get('schemas') or []})
+    def collect_schemas(value, key=''):
+        if isinstance(value, dict):
+            for child_key, child in value.items(): collect_schemas(child, str(child_key))
+        elif isinstance(value, list):
+            for child in value: collect_schemas(child, key)
+        elif isinstance(value, str) and 'schema' in key.lower() and value in known_schemas:
+            schema_references.add(value)
+    for task in project.get('tasks', []): collect_schemas(task)
+    selected_schema_ids = {id(known_schemas[name]) for name in schema_references}
+    selected_schemas = [schema for schema in project.get('schemas') or [] if id(schema) in selected_schema_ids]
+    return selected_resources, selected_schemas
+
+
+def _profile_closure(project: dict, profiles: dict[str, list[dict]]) -> dict[str, list[dict]]:
+    searchable = repr({'tasks': project.get('tasks') or [], 'resources': project.get('resources') or [], 'schemas': project.get('schemas') or []})
+    referenced = set(re.findall(r'\$\{properties\.([^}]+)\}', searchable))
+    result = {}
+    for environment, values in profiles.items():
+        by_key = {str(item.get('key') or ''): item for item in values}
+        required, pending = set(referenced), list(referenced)
+        while pending:
+            item = by_key.get(pending.pop())
+            if not item: continue
+            for alias in re.findall(r'\$\{properties\.([^}]+)\}', str(item.get('value') or '')):
+                if alias not in required: required.add(alias); pending.append(alias)
+        result[environment] = [item for item in values if str(item.get('key') or '') in required]
+    return result
+
+
+def _filter_capability_blocks(source: str, capabilities: set[str]) -> str:
+    """Remove marked implementation blocks that are unreachable in this project."""
+    output, keep_stack = [], []
+    marker = re.compile(r'^(\s*)# CAPABILITY ([A-Za-z0-9_:-]+) (START|END)\s*$')
+    for line in source.splitlines():
+        match = marker.match(line)
+        if match:
+            if match.group(3) == 'START': keep_stack.append(match.group(2) in capabilities)
+            elif keep_stack: keep_stack.pop()
+            continue
+        if all(keep_stack) if keep_stack else True: output.append(line)
+    return '\n'.join(output) + '\n'
+
+
+def _prune_module(source: str, roots: set[str]) -> bytes:
+    """Retain selected top-level functions and their transitive Python dependencies."""
+    tree = ast.parse(source)
+    definitions = {node.name: node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+    assignments: dict[str, ast.AST] = {}
+    for node in tree.body:
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name): assignments[target.id] = node
+    kept = set(roots)
+    changed = True
+    while changed:
+        changed = False
+        nodes = [definitions[name] for name in kept if name in definitions] + [assignments[name] for name in kept if name in assignments]
+        referenced = {child.id for node in nodes for child in ast.walk(node) if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load)}
+        additions = referenced & (set(definitions) | set(assignments)) - kept
+        if additions: kept.update(additions); changed = True
+    kept_nodes = [definitions[name] for name in kept if name in definitions] + [assignments[name] for name in kept if name in assignments]
+    used = {child.id for node in kept_nodes for child in ast.walk(node) if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load)} | kept
+    body = []
+    for index, node in enumerate(tree.body):
+        if index == 0 and isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str): body.append(node); continue
+        if isinstance(node, ast.ImportFrom) and node.module == '__future__': body.append(node); continue
+        if isinstance(node, ast.Import):
+            aliases = [alias for alias in node.names if (alias.asname or alias.name.split('.')[0]) in used]
+            if aliases: node.names = aliases; body.append(node)
+            continue
+        if isinstance(node, ast.ImportFrom):
+            aliases = [alias for alias in node.names if (alias.asname or alias.name) in used]
+            if aliases: node.names = aliases; body.append(node)
+            continue
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if node.name in kept: body.append(node)
+            continue
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if any(isinstance(target, ast.Name) and target.id in kept for target in targets): body.append(node)
+    tree.body = body
+    ast.fix_missing_locations(tree)
+    return (ast.unparse(tree) + '\n').encode('utf-8')
+
+
+def _specialize_module(source: str, limits: dict[str, dict[str, set[str]]]) -> str:
+    """Narrow operation/kind branches to the statically reachable variants."""
+    class Specializer(ast.NodeTransformer):
+        active: dict[str, set[str]] = {}
+        def _function(self, node):
+            previous, self.active = self.active, limits.get(node.name, {})
+            node = self.generic_visit(node)
+            self.active = previous
+            return node
+        visit_FunctionDef = _function
+        visit_AsyncFunctionDef = _function
+        def visit_Compare(self, node):
+            node = self.generic_visit(node)
+            if len(node.ops) != 1 or len(node.comparators) != 1 or not isinstance(node.left, ast.Name): return node
+            allowed = self.active.get(node.left.id)
+            if not allowed: return node
+            comparator = node.comparators[0]
+            if isinstance(node.ops[0], (ast.Eq, ast.NotEq)) and isinstance(comparator, ast.Constant) and isinstance(comparator.value, str):
+                possible = comparator.value in allowed
+                if isinstance(node.ops[0], ast.NotEq): possible = not possible
+                if len(allowed) == 1 or not possible: return ast.copy_location(ast.Constant(possible), node)
+            if isinstance(node.ops[0], (ast.In, ast.NotIn)) and isinstance(comparator, (ast.Set, ast.Tuple, ast.List)):
+                values = {item.value for item in comparator.elts if isinstance(item, ast.Constant) and isinstance(item.value, str)}
+                intersection = values & allowed
+                result = bool(intersection)
+                if isinstance(node.ops[0], ast.NotIn): result = bool(allowed - values)
+                if not result or allowed <= values and isinstance(node.ops[0], ast.In) or allowed.isdisjoint(values) and isinstance(node.ops[0], ast.NotIn):
+                    return ast.copy_location(ast.Constant(result), node)
+                comparator.elts = [ast.Constant(value) for value in sorted(intersection if isinstance(node.ops[0], ast.In) else values & allowed)]
+            return node
+        def visit_If(self, node):
+            node = self.generic_visit(node)
+            if isinstance(node.test, ast.Constant) and isinstance(node.test.value, bool): return node.body if node.test.value else node.orelse
+            return node
+    tree = Specializer().visit(ast.parse(source))
+    ast.fix_missing_locations(tree)
+    return ast.unparse(tree) + '\n'
 
 
 def _starter_event(task: dict) -> dict | None:
@@ -54,7 +284,7 @@ def _starter_event(task: dict) -> dict | None:
     candidate = entries[0]
     if candidate['type'] == 'start':
         successors = [edge['target'] for edge in task.get('transitions', [])
-                      if edge['source'] == candidate['id'] and edge.get('type', 'success') == 'success']
+                      if edge['source'] == candidate['id'] and _edge_type(edge) == 'success']
         if len(successors) == 1: candidate = activities.get(successors[0], candidate)
     operation = str(candidate.get('config', {}).get('operation') or '')
     return candidate if (candidate['type'], operation) in EVENT_OPERATIONS else None
@@ -122,7 +352,7 @@ def _simple_group_plans(task: dict) -> list[dict]:
                 plan['depth'] = len(lineage[group['id']])
             plans.extend(compiled)
         return plans
-    if len(groups) != 1 or groups[0].get('type') not in {'if', 'for_each', 'iterate', 'while', 'repeat', 'repeat_on_error', 'critical_section', 'transaction_jdbc'} or groups[0].get('parent_group_id'):
+    if len(groups) != 1 or groups[0].get('type') not in SUPPORTED_GROUP_TYPES or groups[0].get('parent_group_id'):
         raise ValueError(f"{task['name']}: nested or unsupported groups are not yet supported by independent Python code")
     group = groups[0]
     members = set(group.get('member_activity_ids') or [])
@@ -130,9 +360,9 @@ def _simple_group_plans(task: dict) -> list[dict]:
     transitions = task.get('transitions') or []
     entries = {edge['target'] for edge in transitions if edge['source'] not in members and edge['target'] in members}
     exits = [edge for edge in transitions if edge['source'] in members and edge['target'] not in members]
-    if len(entries) != 1 or len(exits) != 1 or exits[0].get('type', 'success') != 'success':
+    if len(entries) != 1 or len(exits) != 1 or _edge_type(exits[0]) != 'success':
         raise ValueError(f"{task['name']}: direct group needs one external entry and one unconditional exit")
-    if any(edge['source'] in members and edge['target'] in members and edge.get('type', 'success') != 'success' for edge in transitions):
+    if any(edge['source'] in members and edge['target'] in members and _edge_type(edge) != 'success' for edge in transitions):
         raise ValueError(f"{task['name']}: direct group cannot contain conditional or error transitions")
     activity_types = {activity['id']: activity['type'] for activity in task['activities']}
     if any(activity_types.get(member) in (None, 'end') for member in members):
@@ -199,6 +429,7 @@ def _direct_literal(value, indent: int = 0) -> str:
 
 
 def validate_raw_python(project: dict) -> None:
+    _validate_capability_registry()
     failures: list[str] = []
     task_ids = {task['id'] for task in project['tasks']}
     for task in project['tasks']:
@@ -220,13 +451,9 @@ def validate_raw_python(project: dict) -> None:
                     failures.append(f"{task['name']} / {activity['name']}: client acknowledgement requires a Starter Task receiver")
             if kind == 'call_task' and str(activity.get('config', {}).get('taskId') or '') not in task_ids:
                 failures.append(f"{task['name']} / {activity['name']}: Call Sub Task needs a static taskId")
-            if starter_event and activity['id'] == starter_event['id']:
-                next_edges = [edge for edge in task.get('transitions', []) if edge['source'] == activity['id']]
-                if len(next_edges) != 1 or next_edges[0].get('type', 'success') != 'success':
-                    failures.append(f"{task['name']} / {activity['name']}: event starter needs one unconditional success edge")
         outgoing: dict[str, int] = {}
         for edge in task.get('transitions', []):
-            if edge.get('type', 'success') == 'success':
+            if _edge_type(edge) == 'success':
                 outgoing[edge['source']] = outgoing.get(edge['source'], 0) + 1
             if edge.get('type') == 'success_condition' and str(edge.get('condition') or '').strip() not in ('true', 'false') and not re.fullmatch(r'\$\{[^}]+\}', str(edge.get('condition') or '')):
                 failures.append(f"{task['name']}: conditional transition {edge.get('id', '')} needs a simple boolean field expression")
@@ -234,7 +461,7 @@ def validate_raw_python(project: dict) -> None:
             failures.append(f"{task['name']}: parallel branches inside groups are not yet supported by direct code")
         for source_id, count in outgoing.items():
             if count <= 1: continue
-            pending = [edge['target'] for edge in task.get('transitions', []) if edge['source'] == source_id and edge.get('type', 'success') == 'success']
+            pending = [edge['target'] for edge in task.get('transitions', []) if edge['source'] == source_id and _edge_type(edge) == 'success']
             visited = set()
             while pending:
                 candidate = pending.pop()
@@ -243,11 +470,11 @@ def validate_raw_python(project: dict) -> None:
                     break
                 if candidate in visited: continue
                 visited.add(candidate)
-                pending.extend(edge['target'] for edge in task.get('transitions', []) if edge['source'] == candidate and edge.get('type', 'success') == 'success')
+                pending.extend(edge['target'] for edge in task.get('transitions', []) if edge['source'] == candidate and _edge_type(edge) == 'success')
         for activity in task['activities']:
             edges = [edge for edge in task.get('transitions', []) if edge['source'] == activity['id']]
             conditions = [edge for edge in edges if edge.get('type') == 'success_condition']
-            if len(conditions) > 1 or conditions and any(edge.get('type', 'success') == 'success' for edge in edges):
+            if len(conditions) > 1 or conditions and any(_edge_type(edge) == 'success' for edge in edges):
                 failures.append(f"{task['name']} / {activity['name']}: parallel conditional branches are not yet supported by direct code")
     if failures:
         raise ValueError('Raw Python export cannot preserve these behaviors yet: ' + '; '.join(failures))
@@ -296,22 +523,117 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
 
 def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str, bytes]:
     validate_raw_python(project)
+    linked_resources, linked_schemas = _project_artifact_closure(project)
+    linked_project = {**project, 'resources': linked_resources, 'schemas': linked_schemas}
+    profiles = _profile_closure(linked_project, profiles)
     root = Path(__file__).with_name('raw_python_support')
-    files = {
-        f'application/{name}': (root / name).read_bytes()
-        for name in ('__init__.py', 'core.py', 'connectors.py', 'activities.py', 'diagnostics.py', 'qualification.py', 'main.py')
-    }
+    capabilities = _project_capabilities(project)
+    operations_by_kind: dict[str, set[str]] = {}
+    for task in project['tasks']:
+        for activity in task['activities']:
+            operations_by_kind.setdefault(str(activity.get('type') or ''), set()).add(str(activity.get('config', {}).get('operation') or ''))
+    files = {f'application/{name}': (root / name).read_bytes()
+             for name in ('__init__.py', 'diagnostics.py', 'qualification.py')}
+    core_source = _filter_capability_blocks((root / 'core.py').read_text(encoding='utf-8'), capabilities)
+    retry_expressions = []
+    if 'kafka' in capabilities: retry_expressions.append("(kind == 'kafka' and raw.get('operation') in {'publish', 'send'})")
+    if 'pubsub' in capabilities: retry_expressions.append("(kind == 'pubsub' and raw.get('operation') == 'publish')")
+    if 'jms' in capabilities: retry_expressions.append("(kind in {'ems', 'jms'} and raw.get('operation') in {'send', 'publish', 'send_message', 'request_reply', 'reply', 'reply_message'})")
+    if 'sap' in capabilities: retry_expressions.append("(kind == 'sap' and raw.get('operation') in {'post_idoc', 'invoke_rfc_bapi', 'reply_rfc_bapi'})")
+    core_source = core_source.replace('False  # OUTBOUND_RETRY_EXPRESSION', ' or '.join(retry_expressions) or 'False')
+    files['application/core.py'] = _prune_module(core_source, {'Context', 'Reference', 'Template', 'resolve', 'group_lock', 'execute_with_policy'})
+    activity_roots: set[str] = set()
+    if 'file' in capabilities: activity_roots.add('file_activity')
+    if 'data_formats' in capabilities: activity_roots.add('data_activity')
+    if 'excel' in capabilities: activity_roots.add('excel_read')
+    if 'transfer' in capabilities: activity_roots.add('transfer')
+    if 'http_client' in capabilities: activity_roots.add('http_request')
+    if 'python' in capabilities: activity_roots.add('python_invoke')
+    if 'java' in capabilities: activity_roots.add('java_invoke')
+    basic_operations = {str(activity.get('config', {}).get('operation') or '') for task in project['tasks'] for activity in task['activities'] if activity['type'] == 'basic'}
+    if 'external_command' in basic_operations: activity_roots.add('external_command')
+    if basic_operations & {'get_shared_variable', 'set_shared_variable'}: activity_roots.add('shared_variable')
+    if activity_roots:
+        activity_source = _specialize_module((root / 'activities.py').read_text(encoding='utf-8'), {
+            'file_activity': {'operation': operations_by_kind.get('file', set())},
+            'data_activity': {'operation': set().union(*(operations_by_kind.get(kind, set()) for kind in ('xml', 'json', 'flat'))),
+                              'kind': {kind for kind in ('xml', 'json', 'flat') if kind in operations_by_kind}},
+            'transfer': {'operation': set().union(*(operations_by_kind.get(kind, set()) for kind in ('ftp', 'sftp'))),
+                         'kind': {kind for kind in ('ftp', 'sftp') if kind in operations_by_kind}},
+        })
+        files['application/activities.py'] = _prune_module(activity_source, activity_roots)
+    connector_roots: set[str] = set()
+    if 'jms' in capabilities: connector_roots.update({'jms', 'acknowledge_jms', 'close_jms'})
+    if 'sap' in capabilities: connector_roots.update({'sap', 'acknowledge_sap', 'close_sap'})
+    for capability in ('jdbc', 'snowflake', 'amqp', 'kafka', 'pubsub'):
+        if capability in capabilities: connector_roots.add(capability)
+    if connector_roots:
+        jms_operations = set().union(*(operations_by_kind.get(kind, set()) for kind in ('ems', 'jms')))
+        kafka_operations = set(operations_by_kind.get('kafka', set()))
+        for task in project['tasks']:
+            for activity in task['activities']:
+                if activity.get('type') != 'sap' or activity.get('config', {}).get('operation') != 'idoc_listener': continue
+                source = str(activity.get('config', {}).get('messagingSource') or '').strip().lower().replace(' ', '')
+                if source == 'kafka': kafka_operations.add('receive')
+                elif source == 'ems': jms_operations.add('queue_receiver')
+                elif source == 'jms': jms_operations.add('receive_message')
+        connector_source = _specialize_module((root / 'connectors.py').read_text(encoding='utf-8'), {
+            'jms': {'operation': jms_operations, 'kind': {kind for kind in ('ems', 'jms') if kind in operations_by_kind} or {'ems', 'jms'}},
+            'sap': {'operation': operations_by_kind.get('sap', set())},
+            'kafka': {'operation': kafka_operations},
+            'pubsub': {'operation': operations_by_kind.get('pubsub', set())},
+            'snowflake': {'operation': operations_by_kind.get('snowflake', set())},
+            'amqp': {'operation': operations_by_kind.get('amqp', set())},
+        })
+        files['application/connectors.py'] = _prune_module(connector_source, connector_roots)
+    files['application/capabilities.py'] = ('"""Capability closure linked into this generated application."""\n'
+        f'CAPABILITIES = {tuple(sorted(capabilities))!r}\n').encode('utf-8')
+    main_source = (root / 'main.py').read_text(encoding='utf-8')
+    delivery_capabilities = capabilities & {'sap', 'jms'}
+    main_source = main_source.replace('# CONNECTOR_IMPORT', 'from . import connectors' if delivery_capabilities else '')
+    ack_start = main_source.index('    # ACKNOWLEDGEMENT_CAPABILITY_START')
+    ack_end = main_source.index('    # ACKNOWLEDGEMENT_CAPABILITY_END', ack_start) + len('    # ACKNOWLEDGEMENT_CAPABILITY_END')
+    acknowledgement = ''
+    if delivery_capabilities:
+        acknowledgement = '    async def acknowledge_delivery(technology: str, listener_key: str, delivery_id: str, success: bool):\n'
+        if delivery_capabilities == {'sap'}: acknowledgement += '        await asyncio.to_thread(connectors.acknowledge_sap, listener_key, delivery_id, success)\n'
+        elif delivery_capabilities == {'jms'}: acknowledgement += '        connectors.acknowledge_jms(listener_key, delivery_id, success)\n'
+        else: acknowledgement += "        if technology == 'sap': await asyncio.to_thread(connectors.acknowledge_sap, listener_key, delivery_id, success)\n        else: connectors.acknowledge_jms(listener_key, delivery_id, success)\n"
+    main_source = main_source[:ack_start] + acknowledgement + main_source[ack_end:]
+    close_start = main_source.index('        # CONNECTOR_CLOSE_START')
+    close_end = main_source.index('        # CONNECTOR_CLOSE_END', close_start) + len('        # CONNECTOR_CLOSE_END')
+    close_source = ''.join(f'        connectors.close_{name}()\n' for name in ('sap', 'jms') if name in delivery_capabilities) or '        pass\n'
+    main_source = main_source[:close_start] + close_source + main_source[close_end:]
+    files['application/main.py'] = main_source.encode('utf-8')
+    has_inbound_http = 'inbound_http' in capabilities
+    if has_inbound_http:
+        files['application/inbound_http.py'] = (root / 'inbound_http.py').read_bytes()
+    else:
+        main_source = files['application/main.py'].decode('utf-8')
+        start = main_source.index('    # HTTP_CAPABILITY_START')
+        end = main_source.index('    # HTTP_CAPABILITY_END', start) + len('    # HTTP_CAPABILITY_END')
+        files['application/main.py'] = (main_source[:start]
+            + "    jobs = [receive_forever(task_id) if task_id in EVENT_STARTERS else run_task(task_id, environment_name=environment_name) for task_id in ids]\n"
+            + main_source[end:]).encode('utf-8')
     # A Python script task can run run.py from an extracted archive.  The
     # __main__ module also makes the .pyifpkg directly executable by CPython
     # as a zip application, without generating or editing a launcher.
     launcher = b'"""Run this exported application with any standard Python interpreter."""\nfrom application.main import main\n\nif __name__ == "__main__":\n    raise SystemExit(main())\n'
     files['run.py'] = launcher
     files['__main__.py'] = launcher
-    files['application/native/__init__.py'] = b'"""Self-contained Python connector adapters; vendor binaries are external."""\n'
-    for name in ('sap.py', 'java_bridge.py', 'jdbc.py', 'snowflake.py', 'amqp.py', 'dataweave.py', 'mapper.py'):
-        files[f'application/native/{name}'] = Path(__file__).with_name(name).read_bytes()
+    native_modules = set()
+    if 'sap' in capabilities: native_modules.update({'sap.py', 'java_bridge.py'})
+    if 'jms' in capabilities or 'java' in capabilities: native_modules.add('java_bridge.py')
+    if 'jdbc' in capabilities: native_modules.update({'jdbc.py', 'java_bridge.py'})
+    if 'snowflake' in capabilities: native_modules.add('snowflake.py')
+    if 'amqp' in capabilities: native_modules.add('amqp.py')
+    if 'dataweave' in capabilities: native_modules.add('dataweave.py')
+    if 'mapper' in capabilities: native_modules.add('mapper.py')
+    if native_modules:
+        files['application/native/__init__.py'] = b'"""Capability-selected native adapters; vendor binaries remain external."""\n'
+        for name in sorted(native_modules): files[f'application/native/{name}'] = Path(__file__).with_name(name).read_bytes()
     files['application/tasks/__init__.py'] = b'"""Generated async tasks."""\n'
-    checks, external_files = raw_python_requirements(project)
+    checks, external_files = raw_python_requirements(linked_project)
     files['application/requirements.py'] = (
         '"""Generated deployment requirements for this application."""\n'
         f'CHECKS = {pformat(checks, width=100, sort_dicts=False)}\n'
@@ -326,10 +648,10 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         for name, values in profiles.items())
     resource_source = ',\n    '.join(
         f'{resource["id"]!r}: Resource(id={resource["id"]!r}, type={resource["type"]!r}, name={resource["name"]!r}, config={_direct_literal(resource["config"], 8)})'
-        for resource in project['resources'])
+        for resource in linked_resources)
     schema_source = ',\n    '.join(
         f'{schema["name"]!r}: {_python_call("Schema", schema, ("name", "content"), 4)}'
-        for schema in project.get('schemas', []))
+        for schema in linked_schemas)
     files['application/config.py'] = (
         '"""Typed, sanitized deployment configuration. Secrets come from environment variables."""\n'
         'from dataclasses import dataclass, field\nfrom typing import Any\nimport json\nimport os\nfrom .core import Reference, Template\n\n'
@@ -387,17 +709,14 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
             '"""Direct async implementation of this Integration Fabric task."""',
             'import asyncio',
             'from application.core import Context, execute_with_policy, resolve, group_lock, Reference, Template',
-            'from application.native.jdbc import jdbc_adapter',
+            *(['from application.native.jdbc import jdbc_adapter'] if any(plan['type'] == 'transaction_jdbc' for plan in group_plans) else []),
             '',
             f'TASK_ID = {task["id"]!r}',
             f'TASK_NAME = {task["name"]!r}',
             '',
             'async def run(ctx: Context, *, start_after: str | None = None, event_output=None, start_at: str | None = None):',
-            '    if start_after is not None:',
-            '        ctx.record(start_after, event_output)',
-            f'    current = start_at if start_at is not None else ({starts[0]!r} if start_after is None else {{' + ', '.join(
-                f'{activity["id"]!r}: {next((edge["target"] for edge in task["transitions"] if edge["source"] == activity["id"] and edge.get("type", "success") == "success"), None)!r}'
-                for activity in task['activities']) + '}.get(start_after))',
+            '    injected_event_activity = start_after if start_at is None else None',
+            f'    current = start_at if start_at is not None else ({starts[0]!r} if start_after is None else start_after)',
             '    steps = 0',
             '    handled_catches = set()',
             '    while current is not None:',
@@ -515,13 +834,17 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
             outgoing = [edge for edge in task['transitions'] if edge['source'] == activity['id']]
             error_target = next((edge['target'] for edge in outgoing if edge.get('type') == 'error'), None)
             conditional = [edge for edge in outgoing if edge.get('type') == 'success_condition']
-            ordinary = next((edge['target'] for edge in outgoing if edge.get('type', 'success') == 'success'), None)
-            ordinary_targets = [edge['target'] for edge in outgoing if edge.get('type', 'success') == 'success']
+            ordinary = next((edge['target'] for edge in outgoing if _edge_type(edge) == 'success'), None)
+            ordinary_targets = [edge['target'] for edge in outgoing if _edge_type(edge) == 'success']
             no_match = next((edge['target'] for edge in outgoing if edge.get('type') == 'success_no_match'), None)
             lines.extend([
                 f'        {prefix} current == {activity["id"]!r}:',
                 '            try:',
-                f'                result = await execute_with_policy({activity["type"]!r}, {_direct_literal(config, 16)}, ctx, {activity["id"]!r}, {activity["name"]!r})',
+                '                if injected_event_activity == current:',
+                '                    result = event_output',
+                '                    injected_event_activity = None',
+                '                else:',
+                f'                    result = await execute_with_policy({activity["type"]!r}, {_direct_literal(config, 20)}, ctx, {activity["id"]!r}, {activity["name"]!r})',
                 '            except Exception as error:',
                 '                ctx.error = error',
             ])

@@ -47,6 +47,16 @@ class RawPythonTests(unittest.TestCase):
         self.assertNotIn(b'${', files['application/config.py'])
         self.assertNotIn(b'${', files['application/tasks/task_0_main.py'])
         self.assertNotIn(b'TRANSITIONS =', files['application/tasks/task_0_main.py'])
+        self.assertNotIn('application/inbound_http.py', files)
+        self.assertNotIn(b"reasons = {200:'OK'", files['application/main.py'])
+        self.assertNotIn(b'http_listener', files['application/main.py'])
+        self.assertNotIn('application/activities.py', files)
+        self.assertFalse(any(name.startswith('application/native/') for name in files))
+        connector_source = files['application/connectors.py']
+        self.assertIn(b'async def kafka', connector_source)
+        self.assertNotIn(b'async def jms', connector_source)
+        self.assertNotIn(b'async def pubsub', connector_source)
+        self.assertNotIn(b'async def sap', connector_source)
         with tempfile.TemporaryDirectory() as folder:
             for name, body in files.items():
                 path = Path(folder) / name
@@ -62,6 +72,55 @@ class RawPythonTests(unittest.TestCase):
                 for name in list(sys.modules):
                     if name == 'application' or name.startswith('application.'):
                         sys.modules.pop(name)
+
+    def test_minimal_project_links_only_structural_runtime(self):
+        project = self.project()
+        project['resources'] = [{'id': 'unused-snowflake', 'type': 'snowflake', 'name': 'Unused', 'config': {'account': 'unused'}}]
+        project['schemas'] = [{'id': 'unused-schema', 'name': 'unused.xsd', 'content': '<schema/>'}]
+        project['tasks'] = [{'id': 'main', 'name': 'Minimal', 'kind': 'starter', 'groups': [],
+            'activities': [{'id': 's', 'type': 'start', 'name': 'Start', 'config': {}},
+                           {'id': 'e', 'type': 'end', 'name': 'End', 'config': {}}],
+            'transitions': [{'source': 's', 'target': 'e'}]}]
+        files = compiler.raw_python_files(project, {'dev': [{'key': 'unused.value', 'value': 'discard-me', 'data_type': 'string'}]})
+        self.assertNotIn('application/activities.py', files)
+        self.assertNotIn('application/connectors.py', files)
+        self.assertNotIn('application/inbound_http.py', files)
+        self.assertFalse(any(name.startswith('application/native/') for name in files))
+        self.assertIn(b"CAPABILITIES = ('structural',)", files['application/capabilities.py'])
+        self.assertNotIn(b'unused-snowflake', files['application/config.py'])
+        self.assertNotIn(b'unused.xsd', files['application/config.py'])
+        self.assertNotIn(b'discard-me', files['application/config.py'])
+        core = files['application/core.py']
+        for unused in (b"kind == 'timer'", b"kind == 'kafka'", b"kind == 'sap'", b"kind == 'file'", b"kind == 'mapper'"):
+            self.assertNotIn(unused, core)
+
+    def test_linker_registry_covers_every_supported_studio_operation(self):
+        compiler._validate_capability_registry()
+        missing = [(kind, operation) for kind, operation in compiler.SUPPORTED
+                   if compiler._activity_capabilities(kind, operation) is None]
+        self.assertEqual(missing, [])
+        self.assertEqual(compiler.SUPPORTED_GROUP_TYPES, {
+            'if', 'for_each', 'iterate', 'while', 'repeat', 'repeat_on_error',
+            'critical_section', 'transaction_jdbc',
+        })
+
+    def test_future_supported_operation_cannot_be_silently_omitted(self):
+        future = ('future_connector', 'future_operation')
+        compiler.SUPPORTED.add(future)
+        try:
+            with self.assertRaisesRegex(RuntimeError, 'future_connector/future_operation'):
+                compiler._validate_capability_registry()
+        finally:
+            compiler.SUPPORTED.remove(future)
+
+    def test_capability_linking_does_not_depend_on_project_or_task_identity(self):
+        first = self.project()
+        second = self.project()
+        second['id'] = 'customer-created-project-947'
+        second['name'] = 'Unseen customer application'
+        for index, task in enumerate(second['tasks']):
+            task['name'] = f'Arbitrary task {index}'
+        self.assertEqual(compiler._project_capabilities(first), compiler._project_capabilities(second))
 
     def test_unsupported_semantics_are_rejected(self):
         project = self.project()
@@ -595,6 +654,7 @@ class RawPythonTests(unittest.TestCase):
                 {'id': 'end', 'type': 'end', 'name': 'End', 'config': {}}],
             'transitions': [{'source': 'listen', 'target': 'respond'}, {'source': 'respond', 'target': 'end'}]}]
         files = compiler.raw_python_files(project, {'local': []})
+        self.assertIn('application/inbound_http.py', files)
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             for name, body in files.items():
@@ -645,8 +705,9 @@ class RawPythonTests(unittest.TestCase):
         project['tasks'] = [{'id': 'main', 'name': 'SAP Kafka', 'kind': 'starter', 'groups': [],
             'activities': [
                 {'id': 'listen', 'type': 'sap', 'name': 'IDoc Listener', 'config': {'operation': 'idoc_listener', 'resourceId': 'sap', 'messagingSource': 'Kafka', 'messagingResourceId': 'kafka', 'messagingDestination': 'sap.idoc'}},
+                {'id': 'seed', 'type': 'kafka', 'name': 'Test Publisher', 'config': {'operation': 'publish', 'resourceId': 'kafka', 'topic': 'sap.idoc'}},
                 {'id': 'end', 'type': 'end', 'name': 'End', 'config': {}}],
-            'transitions': [{'source': 'listen', 'target': 'end'}]}]
+            'transitions': [{'source': 'listen', 'target': 'seed'}, {'source': 'seed', 'target': 'end'}]}]
         files = compiler.raw_python_files(project, {'dev': []})
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -669,12 +730,75 @@ class RawPythonTests(unittest.TestCase):
                 for name in list(sys.modules):
                     if name == 'application' or name.startswith('application.'): sys.modules.pop(name)
 
+    def test_event_starter_accepts_legacy_null_success_transition(self):
+        project = self.project()
+        project['resources'] = [{'id': 'sap', 'type': 'sap', 'name': 'SAP', 'config': {'mode': 'mock'}}]
+        project['tasks'] = [{'id': 'main', 'name': 'Legacy SAP Starter', 'kind': 'starter', 'groups': [],
+            'activities': [
+                {'id': 'listen', 'type': 'sap', 'name': 'IDoc Listener', 'config': {'operation': 'idoc_listener', 'resourceId': 'sap', 'messagingSource': 'Kafka'}},
+                {'id': 'end', 'type': 'end', 'name': 'End', 'config': {}}],
+            'transitions': [{'source': 'listen', 'target': 'end', 'type': None}]}]
+        files = compiler.raw_python_files(project, {'dev': []})
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for name, body in files.items():
+                path = root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(body)
+            sys.path.insert(0, folder)
+            try:
+                from application.config import environment
+                from application.core import Context
+                from application.registry import TASKS
+                properties, resources = environment('dev')
+                payload = {'IDocXML': '<IDOC/>', 'documentNumber': '1'}
+                result = asyncio.run(TASKS['main'](Context({}, properties, resources), start_after='listen', event_output=payload))
+                self.assertEqual(result, payload)
+            finally:
+                sys.path.remove(folder)
+                for name in list(sys.modules):
+                    if name == 'application' or name.startswith('application.'): sys.modules.pop(name)
+
+    def test_event_starter_routes_injected_payload_through_conditions(self):
+        project = self.project()
+        project['resources'] = [{'id': 'sap', 'type': 'sap', 'name': 'SAP', 'config': {'mode': 'mock'}}]
+        project['tasks'] = [{'id': 'main', 'name': 'Conditional SAP Starter', 'kind': 'starter', 'groups': [],
+            'activities': [
+                {'id': 'listen', 'type': 'sap', 'name': 'IDoc Listener', 'config': {'operation': 'idoc_listener', 'resourceId': 'sap', 'messagingSource': 'Kafka'}},
+                {'id': 'accepted', 'type': 'end', 'name': 'Accepted', 'config': {}},
+                {'id': 'rejected', 'type': 'end', 'name': 'Rejected', 'config': {}}],
+            'transitions': [
+                {'source': 'listen', 'target': 'accepted', 'type': 'success_condition', 'condition': '${last.accepted}'},
+                {'source': 'listen', 'target': 'rejected', 'type': 'success_no_match'}]}]
+        files = compiler.raw_python_files(project, {'dev': []})
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for name, body in files.items():
+                path = root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(body)
+            sys.path.insert(0, folder)
+            try:
+                from application.config import environment
+                from application.core import Context
+                from application.registry import TASKS
+                properties, resources = environment('dev')
+                context = Context({}, properties, resources)
+                asyncio.run(TASKS['main'](context, start_after='listen', event_output={'accepted': True}))
+                self.assertIn('accepted', context.outputs)
+                self.assertNotIn('rejected', context.outputs)
+            finally:
+                sys.path.remove(folder)
+                for name in list(sys.modules):
+                    if name == 'application' or name.startswith('application.'): sys.modules.pop(name)
+
     def test_jms_request_reply_round_trip_uses_reply_destination_and_correlation(self):
         project = self.project()
         project['resources'] = [{'id': 'jms', 'type': 'jms', 'name': 'JMS', 'config': {'mode': 'memory'}}]
         project['tasks'] = [{'id': 'main', 'name': 'Request', 'kind': 'starter', 'groups': [],
-            'activities': [{'id': 's', 'type': 'start', 'name': 'Start', 'config': {}}, {'id': 'end', 'type': 'end', 'name': 'End', 'config': {}}],
-            'transitions': [{'source': 's', 'target': 'end'}]}]
+            'activities': [{'id': 's', 'type': 'start', 'name': 'Start', 'config': {}},
+                           {'id': 'send', 'type': 'jms', 'name': 'Send', 'config': {'operation': 'send_message', 'resourceId': 'jms', 'destination': 'orders'}},
+                           {'id': 'request', 'type': 'jms', 'name': 'Request Reply', 'config': {'operation': 'request_reply', 'resourceId': 'jms', 'destination': 'orders'}},
+                           {'id': 'wait', 'type': 'jms', 'name': 'Wait Request', 'config': {'operation': 'wait_request', 'resourceId': 'jms', 'destination': 'orders'}},
+                           {'id': 'reply', 'type': 'jms', 'name': 'Reply', 'config': {'operation': 'reply_message', 'resourceId': 'jms'}},
+                           {'id': 'end', 'type': 'end', 'name': 'End', 'config': {}}],
+            'transitions': [{'source': 's', 'target': 'send'}, {'source': 'send', 'target': 'end'}]}]
         files = compiler.raw_python_files(project, {'dev': []})
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

@@ -151,7 +151,7 @@ def choose_transition(edges: list[dict], source: str, ctx: Context, error: Excep
 async def execute_with_policy(kind: str, raw: dict, ctx: Context, activity_id: str, name: str) -> Any:
     advanced = resolve(raw.get('advanced') or {}, ctx)
     policy = resolve(raw.get('errorPolicy') or {}, ctx)
-    outbound = (kind == 'kafka' and raw.get('operation') in {'publish', 'send'}) or (kind == 'pubsub' and raw.get('operation') == 'publish') or (kind in {'ems', 'jms'} and raw.get('operation') in {'send', 'publish', 'send_message'}) or (kind == 'sap' and raw.get('operation') in {'post_idoc', 'invoke_rfc_bapi'})
+    outbound = False  # OUTBOUND_RETRY_EXPRESSION
     retry_enabled = advanced.get('retryEnabled', ctx.properties.get('advanced.retryEnabled', False))
     attempts = 1 + max(0, int(advanced.get('retryCount', ctx.properties.get('advanced.retryCount', 3)) or 0)) if outbound and retry_enabled else 1
     if policy.get('action') == 'retry':
@@ -174,7 +174,6 @@ async def execute_with_policy(kind: str, raw: dict, ctx: Context, activity_id: s
 
 async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: str) -> Any:
     """Execute supported Python-native operations; never load Fabric JSON or DSL."""
-    from . import activities, connectors
     cfg = resolve({key: value for key, value in raw.items() if key != 'inputMappings'}, ctx)
     for key, value in mapped(raw, ctx).items():
         cfg[key] = value
@@ -186,6 +185,7 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
         return {'type': getattr(ctx.error, 'fault_type', type(ctx.error).__name__),
                 'code': str(getattr(ctx.error, 'code', '') or ''), 'message': str(ctx.error),
                 'details': getattr(ctx.error, 'details', {}) or {}, 'stackTrace': ''}
+    # CAPABILITY timer START
     if kind == 'timer':
         now = datetime.now(timezone.utc)
         run_once = bool(cfg.get('runOnceOnLocalStart', True)) and ctx.environment_name == 'local'
@@ -204,7 +204,10 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
         if delay: await asyncio.sleep(delay)
         return {'scheduledTime': scheduled.isoformat(), 'actualTime': datetime.now(timezone.utc).isoformat(),
                 'sequence': 1, 'triggerMode': trigger_mode, 'payload': ctx.last}
+    # CAPABILITY timer END
+    # CAPABILITY confirm START
     if kind == 'confirm':
+        from . import connectors
         delivery = ctx.transport
         delivery_id, listener_key = delivery.get('deliveryId'), delivery.get('listenerKey')
         if not delivery_id or not listener_key:
@@ -219,9 +222,13 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
             connectors.acknowledge_jms(listener_key, delivery_id, True)
         delivery['completed'] = True
         return {'confirmed': True, 'count': 1, 'ackIds': [str(delivery_id)]}
+    # CAPABILITY confirm END
+    # CAPABILITY faults START
     if kind in {'throw', 'rethrow'}:
         if kind == 'rethrow' and ctx.error: raise ctx.error
         raise RuntimeError(str(cfg.get('message') or 'Business fault'))
+    # CAPABILITY faults END
+    # CAPABILITY log START
     if kind == 'log':
         level = str(cfg.get('level') or 'INFO').upper()
         message = cfg.get('message') or f'{name} payload'
@@ -229,6 +236,8 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
         logging.log(getattr(logging, level, logging.INFO), '%s%s', message,
                     f' | payload={json.dumps(payload, default=str)}' if cfg.get('includePayload') else '')
         return ctx.last
+    # CAPABILITY log END
+    # CAPABILITY basic START
     if kind == 'basic':
         if operation == 'empty': return ctx.last
         if operation == 'assign':
@@ -247,8 +256,13 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
             return {'checkpointId': str(uuid4()), 'name': str(cfg.get('checkpointName') or name),
                     'timestamp': datetime.now(timezone.utc).isoformat(), 'activityId': activity_id}
         if operation in {'get_shared_variable', 'set_shared_variable'}:
+            from . import activities
             return activities.shared_variable(operation, cfg, ctx.last)
-        if operation == 'external_command': return await activities.external_command(cfg)
+        if operation == 'external_command':
+            from . import activities
+            return await activities.external_command(cfg)
+    # CAPABILITY basic END
+    # CAPABILITY mapper START
     if kind == 'mapper':
         from .native.mapper import execute as execute_mapping
         mappings = raw.get('mappings') or []
@@ -266,23 +280,45 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
         document = {'input': ctx.input, 'last': ctx.last, 'properties': ctx.properties,
                     'vars': ctx.variables, 'activities': ctx.outputs, **(ctx.input if isinstance(ctx.input, dict) else {})}
         return execute_mapping(document, normalized, cfg)
+    # CAPABILITY mapper END
+    # CAPABILITY call_task START
     if kind == 'call_task':
         from .registry import TASKS
         target = str(cfg.get('taskId') or '')
         values = mapped(raw, ctx)
         child = Context(values or ctx.last, ctx.properties, ctx.resources)
         return await TASKS[target](child)
-    if kind == 'file': return await asyncio.to_thread(activities.file_activity, operation, cfg, ctx.last)
-    if kind in {'xml', 'json', 'flat'}: return activities.data_activity(kind, operation, cfg, ctx.last)
-    if kind == 'excel': return await asyncio.to_thread(activities.excel_read, cfg)
+    # CAPABILITY call_task END
+    # CAPABILITY file START
+    if kind == 'file':
+        from . import activities
+        return await asyncio.to_thread(activities.file_activity, operation, cfg, ctx.last)
+    # CAPABILITY file END
+    # CAPABILITY data_formats START
+    if kind in {'xml', 'json', 'flat'}:
+        from . import activities
+        return activities.data_activity(kind, operation, cfg, ctx.last)
+    # CAPABILITY data_formats END
+    # CAPABILITY excel START
+    if kind == 'excel':
+        from . import activities
+        return await asyncio.to_thread(activities.excel_read, cfg)
+    # CAPABILITY excel END
+    # CAPABILITY transfer START
     if kind in {'ftp', 'sftp'}:
+        from . import activities
         resource_id = str(cfg.get('resourceId') or '')
         resource = ctx.resources.get(resource_id)
         if not resource or resource.type != kind: raise ValueError(f'{name} requires a shared {kind.upper()} connection')
         return await asyncio.to_thread(activities.transfer, kind, operation, resolve(resource.config, ctx), cfg)
+    # CAPABILITY transfer END
+    # CAPABILITY inbound_http START
     if kind == 'http_listener' or kind == 'rest' and operation == 'receiver' or kind == 'soap' and operation == 'service':
         return ctx.input
+    # CAPABILITY inbound_http END
+    # CAPABILITY http_client START
     if kind in {'http', 'rest', 'soap'}:
+        from . import activities
         resource = ctx.resources.get(str(cfg.get('resourceId') or ''))
         connection = resolve(resource.config, ctx) if resource else {}
         request_cfg = dict(cfg)
@@ -291,9 +327,13 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
             request_cfg['headers'] = {'Content-Type': cfg.get('contentType') or 'text/xml; charset=utf-8', **(cfg.get('headers') or {})}
             if cfg.get('soapAction'): request_cfg['headers']['SOAPAction'] = cfg['soapAction']
         return await asyncio.to_thread(activities.http_request, request_cfg, connection)
+    # CAPABILITY http_client END
+    # CAPABILITY http_response START
     if kind == 'http_response':
         return {'statusCode': int(cfg.get('statusCode') or 200), 'headers': cfg.get('headers') or {},
                 'body': cfg.get('body', ctx.last), 'sent': True}
+    # CAPABILITY http_response END
+    # CAPABILITY dataweave START
     if kind == 'dataweave':
         from .native.dataweave import execute as transform
         transformed = await asyncio.to_thread(transform, str(cfg.get('script') or '%dw 2.0\noutput application/json\n---\npayload'),
@@ -306,53 +346,94 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
             if not variable: raise ValueError('A variable output target requires a variable name')
             ctx.variables[variable] = transformed
         return transformed
-    if kind == 'python': return await activities.python_invoke(cfg, ctx.last)
-    if kind == 'java': return await activities.java_invoke(cfg, ctx.last)
-    if kind in {'kafka', 'pubsub'}:
+    # CAPABILITY dataweave END
+    # CAPABILITY python START
+    if kind == 'python':
+        from . import activities
+        return await activities.python_invoke(cfg, ctx.last)
+    # CAPABILITY python END
+    # CAPABILITY java START
+    if kind == 'java':
+        from . import activities
+        return await activities.java_invoke(cfg, ctx.last)
+    # CAPABILITY java END
+    # CAPABILITY kafka START
+    if kind == 'kafka':
+        from . import connectors
         resource_id = str(cfg.get('resourceId') or '')
         resource = ctx.resources.get(resource_id)
         if not resource: raise ValueError(f'{name} requires a shared {kind} connection')
         connection = resolve(resource.config, ctx)
-        if kind == 'kafka': return await connectors.kafka(operation, connection, cfg, ctx.last)
-        return await connectors.pubsub(operation, connection, cfg, ctx.last)
-    if kind in {'ems', 'jms', 'sap'}:
+        return await connectors.kafka(operation, connection, cfg, ctx.last)
+    # CAPABILITY kafka END
+    # CAPABILITY pubsub START
+    if kind == 'pubsub':
+        from . import connectors
         resource_id = str(cfg.get('resourceId') or '')
         resource = ctx.resources.get(resource_id)
-        if not resource or resource.type != kind:
-            raise ValueError(f'{name} requires a shared {kind} connection')
+        if not resource: raise ValueError(f'{name} requires a shared Pub/Sub connection')
+        return await connectors.pubsub(operation, resolve(resource.config, ctx), cfg, ctx.last)
+    # CAPABILITY pubsub END
+    # CAPABILITY sap START
+    if kind == 'sap':
+        from . import connectors
+        resource_id = str(cfg.get('resourceId') or '')
+        resource = ctx.resources.get(resource_id)
+        if not resource or resource.type != 'sap':
+            raise ValueError(f'{name} requires a shared SAP connection')
         connection = resolve(resource.config, ctx)
-        if kind == 'sap':
-            source = str(cfg.get('messagingSource') or 'NoMessaging').strip().lower().replace(' ', '')
-            if operation == 'idoc_listener' and source not in {'', 'nomessaging', 'direct', 'sapjcorfc/idoc_inbound_asynchronous'}:
-                technology = {'ems': 'ems', 'jms': 'jms', 'kafka': 'kafka'}.get(source)
-                if not technology: raise ValueError(f'Unsupported SAP IDoc messaging source: {cfg.get("messagingSource")}')
-                broker_resource = ctx.resources.get(str(cfg.get('messagingResourceId') or ''))
-                if not broker_resource or broker_resource.type != technology:
-                    raise ValueError(f'{name} requires a shared {technology.upper()} messaging connection')
-                broker_connection = resolve(broker_resource.config, ctx)
-                destination = cfg.get('messagingDestination') or cfg.get('destination') or cfg.get('topic')
-                broker_cfg = {**cfg, 'destination': destination, 'topic': destination, 'maxMessages': 1}
-                if technology == 'kafka': received = await connectors.kafka('receive', broker_connection, broker_cfg, ctx.last)
-                else: received = await connectors.jms(technology, 'queue_receiver' if technology == 'ems' else 'receive_message', broker_connection, broker_cfg, ctx.last, ctx)
-                messages = received.get('messages') if isinstance(received, dict) else []
-                first = messages[0] if isinstance(messages, list) and messages else {}
-                broker_payload = received.get('body') if technology in {'ems', 'jms'} else (first.get('data') if isinstance(first, dict) else first)
-                properties = received.get('properties') or {}
-                return {**received, 'payload': broker_payload, 'SAPIDoc': properties.get('SAPIDoc', {}) if isinstance(properties, dict) else {}, 'messagingSource': technology.upper()}
-            return await connectors.sap(operation, connection, cfg, cfg.get('payload', ctx.last), ctx)
+        source = str(cfg.get('messagingSource') or 'NoMessaging').strip().lower().replace(' ', '')
+        if operation == 'idoc_listener' and source not in {'', 'nomessaging', 'direct', 'sapjcorfc/idoc_inbound_asynchronous'}:
+            technology = {'ems': 'ems', 'jms': 'jms', 'kafka': 'kafka'}.get(source)
+            if not technology: raise ValueError(f'Unsupported SAP IDoc messaging source: {cfg.get("messagingSource")}')
+            broker_resource = ctx.resources.get(str(cfg.get('messagingResourceId') or ''))
+            if not broker_resource or broker_resource.type != technology:
+                raise ValueError(f'{name} requires a shared {technology.upper()} messaging connection')
+            broker_connection = resolve(broker_resource.config, ctx)
+            destination = cfg.get('messagingDestination') or cfg.get('destination') or cfg.get('topic')
+            broker_cfg = {**cfg, 'destination': destination, 'topic': destination, 'maxMessages': 1}
+            if technology == 'kafka': received = await connectors.kafka('receive', broker_connection, broker_cfg, ctx.last)
+            else: received = await connectors.jms(technology, 'queue_receiver' if technology == 'ems' else 'receive_message', broker_connection, broker_cfg, ctx.last, ctx)
+            messages = received.get('messages') if isinstance(received, dict) else []
+            first = messages[0] if isinstance(messages, list) and messages else {}
+            broker_payload = received.get('body') if technology in {'ems', 'jms'} else (first.get('data') if isinstance(first, dict) else first)
+            properties = received.get('properties') or {}
+            return {**received, 'payload': broker_payload, 'SAPIDoc': properties.get('SAPIDoc', {}) if isinstance(properties, dict) else {}, 'messagingSource': technology.upper()}
+        return await connectors.sap(operation, connection, cfg, cfg.get('payload', ctx.last), ctx)
+    # CAPABILITY sap END
+    # CAPABILITY jms START
+    if kind in {'ems', 'jms'}:
+        from . import connectors
+        resource_id = str(cfg.get('resourceId') or '')
+        resource = ctx.resources.get(resource_id)
+        if not resource or resource.type != kind: raise ValueError(f'{name} requires a shared {kind.upper()} connection')
+        connection = resolve(resource.config, ctx)
         cfg['_activityId'] = activity_id
         return await connectors.jms(kind, operation, connection, cfg, cfg.get('data', cfg.get('message', ctx.last)), ctx)
+    # CAPABILITY jms END
+    # CAPABILITY jdbc START
     if kind == 'jdbc':
+        from . import connectors
         resource_id = str(cfg.get('resourceId') or '')
         resource = ctx.resources.get(resource_id)
         if not resource or resource.type != 'jdbc':
             raise ValueError(f'{name} requires a shared JDBC connection')
         return await connectors.jdbc(resolve(resource.config, ctx), cfg, ctx.transactions.get(resource_id))
-    if kind in {'snowflake', 'amqp'}:
+    # CAPABILITY jdbc END
+    # CAPABILITY snowflake START
+    if kind == 'snowflake':
+        from . import connectors
         resource_id = str(cfg.get('resourceId') or '')
         resource = ctx.resources.get(resource_id)
-        if not resource or resource.type != kind: raise ValueError(f'{name} requires a shared {kind.upper()} connection')
-        connection = resolve(resource.config, ctx)
-        if kind == 'snowflake': return await connectors.snowflake(operation, connection, cfg, ctx.last)
-        return await connectors.amqp(operation, connection, cfg, ctx.last)
+        if not resource or resource.type != 'snowflake': raise ValueError(f'{name} requires a shared Snowflake connection')
+        return await connectors.snowflake(operation, resolve(resource.config, ctx), cfg, ctx.last)
+    # CAPABILITY snowflake END
+    # CAPABILITY amqp START
+    if kind == 'amqp':
+        from . import connectors
+        resource_id = str(cfg.get('resourceId') or '')
+        resource = ctx.resources.get(resource_id)
+        if not resource or resource.type != 'amqp': raise ValueError(f'{name} requires a shared AMQP connection')
+        return await connectors.amqp(operation, resolve(resource.config, ctx), cfg, ctx.last)
+    # CAPABILITY amqp END
     raise NotImplementedError(f'Raw Python operation is not implemented: {kind}/{operation}')

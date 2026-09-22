@@ -29,11 +29,17 @@ class WorkflowRuntime:
         self.group_locks: dict[str, asyncio.Lock] = {}
         self._publisher_lock = threading.Lock()
         self._publishers: dict[str, object] = {}
+        self._publisher_operation_locks: dict[str, threading.Lock] = {}
+        self._initialized_transactional_publishers: set[str] = set()
+
+    @staticmethod
+    def _publisher_key(kind: str, config: dict) -> str:
+        fingerprint = hashlib.sha256(json.dumps(config, sort_keys=True, default=str).encode()).hexdigest()
+        return f'{kind}:{fingerprint}'
 
     def _publisher(self, kind: str, config: dict, factory):
         """Reuse broker connections; never retain plaintext credentials in cache keys."""
-        fingerprint = hashlib.sha256(json.dumps(config, sort_keys=True, default=str).encode()).hexdigest()
-        key = f'{kind}:{fingerprint}'
+        key = self._publisher_key(kind, config)
         with self._publisher_lock:
             client = self._publishers.get(key)
             if client is not None: return client, False
@@ -44,10 +50,17 @@ class WorkflowRuntime:
             self._publishers[key] = client
             return client, False
 
+    def _publisher_operation_lock(self, kind: str, config: dict) -> tuple[str, threading.Lock]:
+        key = self._publisher_key(kind, config)
+        with self._publisher_lock:
+            return key, self._publisher_operation_locks.setdefault(key, threading.Lock())
+
     def close_publishers(self):
         with self._publisher_lock:
             clients = list(self._publishers.items())
             self._publishers.clear()
+            self._publisher_operation_locks.clear()
+            self._initialized_transactional_publishers.clear()
         for key, client in clients:
             try:
                 if key.startswith('kafka:'): client.flush(3)
@@ -1180,37 +1193,50 @@ class WorkflowRuntime:
                 return {'messages': messages, 'count': len(messages), 'ackId': messages[0].get('ackId') if messages else None, 'ackIds':[item['ackId'] for item in messages if item.get('ackId')]}
             raw = kafka_bytes(payload, cfg.get('valueSerializer', 'String'))
             key = kafka_bytes(cfg.get('key'), cfg.get('keySerializer', 'String'))
-            producer_cfg = {**common, 'acks': str(cfg.get('acks','all')), 'compression.type': cfg.get('compressionType','none'), 'retries': int(cfg.get('retries',3) or 0), 'batch.size': int(cfg.get('batchSize',16384) or 16384), 'linger.ms': int(cfg.get('lingerMs',0) or 0), 'queue.buffering.max.kbytes': max(1, int(cfg.get('bufferMemory',33554432) or 33554432) // 1024), 'message.max.bytes': int(cfg.get('maxRequestSize',1048576) or 1048576), 'enable.idempotence': bool(cfg.get('enableIdempotence',False)), **mapping(cfg.get('additionalProperties'))}
+            producer_cfg = {**common, 'acks': str(cfg.get('acks','all')), 'compression.type': cfg.get('compressionType','none'), 'retries': int(cfg.get('retries',3) or 0), 'batch.size': int(cfg.get('batchSize',16384) or 16384), 'linger.ms': int(cfg.get('lingerMs',0) or 0), 'queue.buffering.max.kbytes': max(1, int(cfg.get('bufferMemory',33554432) or 33554432) // 1024), 'message.max.bytes': int(cfg.get('maxRequestSize',1048576) or 1048576), 'enable.idempotence': bool(cfg.get('enableIdempotence',False)), 'socket.keepalive.enable': True, **mapping(cfg.get('additionalProperties'))}
             if cfg.get('transactionalId'): producer_cfg['transactional.id'] = cfg['transactionalId']
 
             def publish_kafka():
                 """Wait for this message's acknowledgement, not the entire producer queue."""
                 transactional = bool(cfg.get('transactionalId'))
-                producer, one_shot = (Producer(producer_cfg), True) if transactional else self._publisher('kafka', producer_cfg, lambda: Producer(producer_cfg))
+                producer, one_shot = self._publisher('kafka', producer_cfg, lambda: Producer(producer_cfg))
                 delivered = {}; completed = threading.Event()
-                if transactional: producer.init_transactions(); producer.begin_transaction()
                 def delivery(error, message):
                     if error: delivered['error'] = str(error)
                     else: delivered.update({'partition':message.partition(),'offset':message.offset(),'timestamp':message.timestamp()[1]})
                     completed.set()
-                try:
+                def produce_and_wait():
                     producer.produce(destination, raw, key=key, partition=int(cfg['partitionId']) if cfg.get('assignCustomPartition') else -1, headers=list(attributes.items()), callback=delivery)
-                    timeout = max(1.0, float(cfg.get('publishTimeout') or rcfg.get('requestTimeoutMilliseconds', 30000) / 1000))
+                    timeout = max(.001, float(cfg.get('publishTimeout') or rcfg.get('requestTimeoutMilliseconds', 30000) / 1000))
                     deadline = perf_counter() + timeout
                     while not completed.is_set() and perf_counter() < deadline:
-                        producer.poll(min(.1, max(0, deadline - perf_counter())))
+                        producer.poll(min(.01, max(0, deadline - perf_counter())))
                     if not completed.is_set(): raise TimeoutError(f'Kafka publish timed out after {timeout:g} seconds waiting for broker acknowledgement')
-                    if transactional: producer.commit_transaction()
-                except Exception:
-                    if transactional: producer.abort_transaction()
-                    raise
+                try:
+                    if transactional:
+                        cache_key, operation_lock = self._publisher_operation_lock('kafka', producer_cfg)
+                        with operation_lock:
+                            if one_shot or cache_key not in self._initialized_transactional_publishers:
+                                producer.init_transactions()
+                                if not one_shot: self._initialized_transactional_publishers.add(cache_key)
+                            producer.begin_transaction()
+                            try:
+                                produce_and_wait()
+                                producer.commit_transaction()
+                            except Exception:
+                                producer.abort_transaction()
+                                raise
+                    else:
+                        produce_and_wait()
                 finally:
                     if one_shot: producer.flush(3)
                 if delivered.get('error'): raise RuntimeError(delivered['error'])
                 return delivered
 
+            publish_started = perf_counter()
             delivered = await asyncio.to_thread(publish_kafka)
-            return {**envelope, **delivered, 'messageId':envelope['id'], 'topic':destination, 'published':True}
+            return {**envelope, **delivered, 'messageId':envelope['id'], 'topic':destination, 'published':True,
+                    'publishLatencyMs': round((perf_counter() - publish_started) * 1000, 3)}
         if technology == 'pubsub':
             try: from google.cloud import pubsub_v1
             except ImportError: raise RuntimeError('External Google Pub/Sub mode requires google-cloud-pubsub')
