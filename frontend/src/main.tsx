@@ -2210,7 +2210,7 @@ function App() {
         setValidation({ title: `Validate Project · ${project.name}`, issues });
         throw new Error(`Package blocked by ${blocking.length} project validation error${blocking.length === 1 ? "" : "s"}.`);
       }
-      const { credential, secretsText, controlPlaneUrl, caCertificatePath, format: requestedFormat, ...persistedSettings } = settings;
+      const { credential, secretsText, controlPlaneUrl, caCertificatePath, outputPath, format: requestedFormat, ...persistedSettings } = settings;
       // Python source export is an explicit one-off action. Never persist it
       // as the project's default archive format, or normal Export would
       // unexpectedly create another Python archive.
@@ -2226,7 +2226,7 @@ function App() {
       const blob = await response.blob(), disposition = response.headers.get("content-disposition") || "";
       const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `${settings.artifact_name}-${settings.version}.${settings.format.startsWith("python") ? "pympkg" : settings.format}`;
       if (window.fabricDesktop) {
-        const filePath = await window.fabricDesktop.saveFile({ filename, bytes: [...new Uint8Array(await blob.arrayBuffer())], filters: [{ name: "MINA Deployment Package", extensions: [filename.endsWith(".tar.gz") ? "tar.gz" : filename.split(".").pop() || "mpkg"] }] });
+        const filePath = await window.fabricDesktop.saveFile({ path: outputPath?.trim() || undefined, filename, bytes: [...new Uint8Array(await blob.arrayBuffer())], filters: [{ name: "MINA Deployment Package", extensions: [filename.endsWith(".tar.gz") ? "tar.gz" : filename.split(".").pop() || "mpkg"] }] });
         if (!filePath) return;
         setLogs([{ level: "INFO", message: `Created ${settings.target} deployment package: ${filePath}` }]);
       } else browserDownload(blob, filename);
@@ -3734,6 +3734,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
     starterTaskIds: Array.isArray(packaging?.starterTaskIds) && packaging.starterTaskIds.length ? packaging.starterTaskIds.filter((id: string) => starterTasks.some((task: Task) => task.id === id)) : starterTasks.map((task: Task) => task.id),
     environments: Array.isArray(packaging?.environments) && packaging.environments.length ? packaging.environments.filter((name: string) => environments.includes(name)) : [packaging?.environment || "production"].filter((name: string) => environments.includes(name)),
     format: ["mpkg", "ifpkg", "zip", "tar.gz", "ear"].includes(packaging?.format) ? packaging.format : "mpkg",
+    outputPath: "",
     artifacts: savedArtifacts.length ? savedArtifacts : initialChoices.map((choice) => choice.key),
     image: packaging?.image || "",
     replicas: packaging?.replicas || 1,
@@ -3769,6 +3770,21 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
   const toggleEnvironment = (name: string) => setDraft((current: any) => ({ ...current, environments: current.environments.includes(name) ? current.environments.filter((value: string) => value !== name) : [...current.environments, name] }));
   const toggleStarter = (id: string) => setDraft((current: any) => ({ ...current, starterTaskIds: current.starterTaskIds.includes(id) ? current.starterTaskIds.filter((value: string) => value !== id) : [...current.starterTaskIds, id] }));
   const extension = draft.format.startsWith("python") ? "pympkg" : draft.format;
+  const archiveFilename = `${draft.artifact_name || "integration-application"}-${draft.version || "1.0.0"}-${draft.target}.${extension}`;
+  const browseArchiveOutput = async () => {
+    if (!window.fabricDesktop?.selectArchiveOutput) return;
+    setError("");
+    try {
+      const selected = await window.fabricDesktop.selectArchiveOutput({
+        title: "Choose archive output file",
+        filename: archiveFilename,
+        filters: [{ name: draft.format === "ear" ? "EAR archive" : "MINA archive", extensions: [extension] }],
+      });
+      if (selected) update("outputPath", selected);
+    } catch (failure: any) {
+      setError(failure?.message || "Unable to select the archive output file.");
+    }
+  };
   const compatiblePlanes = targetCatalog.dataPlanes.filter((plane: any) => draft.target === "cloud" ? plane.type === "kubernetes" : plane.type !== "kubernetes");
   const selectedPlane = compatiblePlanes.find((plane: any) => plane.id === draft.dataPlaneId);
   const runtimeCapabilitiesFor = (dataPlaneId: string) => targetCatalog.capabilities.filter((capability: any) => capability.type === "integration-runtime" && capability.dataPlaneId === dataPlaneId);
@@ -3813,12 +3829,18 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
     if (!pythonArchive && draft.format !== "python-engine" && !draft.artifacts.length) { setError("Select at least one deployment artifact."); return; }
     if (!draft.environments.length) { setError("Select at least one environment profile."); return; }
     if (!draft.starterTaskIds.length) { setError("Select at least one Starter Task to package."); return; }
+    const requestedExtension = `.${extension}`;
+    if (!deploy && !pythonArchive && draft.outputPath.trim() && !draft.outputPath.trim().toLowerCase().endsWith(requestedExtension.toLowerCase())) { setError(`Archive output file must end with ${requestedExtension}.`); return; }
     if (deploy && discovering) { setError("Wait for deployment target discovery to finish before deploying."); return; }
     if (deploy && !/^https?:\/\//i.test(draft.controlPlaneUrl.trim())) { setError("Enter the Control Plane URL, including http:// or https://."); return; }
     if (deploy && !draft.dataPlaneId.trim()) { setError("Enter the target data-plane ID."); return; }
     if (deploy && !draft.environments.includes(draft.deploymentEnvironment)) { setError("Choose one of the packaged environment profiles for deployment."); return; }
     setBusy(true);
-    try { await (deploy ? onDeploy({ ...draft, format: pythonArchive ? "python-direct" : draft.format }) : onPackage({ ...draft, format: pythonArchive ? "python-direct" : draft.format })); }
+    const request = { ...draft, format: pythonArchive ? "python-direct" : draft.format };
+    // A workstation output path is relevant only to a standard local export.
+    // Never send it to Control Plane deployment or reuse it for direct Python.
+    if (deploy || pythonArchive) delete request.outputPath;
+    try { await (deploy ? onDeploy(request) : onPackage(request)); }
     catch (failure: any) { setError(failure?.message || "Package generation failed."); }
     finally { setBusy(false); }
   };
@@ -3833,7 +3855,8 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
       </div>
       <section className="package-starters"><header><span><b>TASK STARTERS</b><small>Select the deployable entry points. Called Sub Tasks are discovered recursively and included automatically; unrelated Sub Tasks are excluded.</small></span><button type="button" onClick={() => update("starterTaskIds", starterTasks.map((task: Task) => task.id))}>Select all</button></header><div>{starterTasks.map((task: Task) => <label key={task.id} className={draft.starterTaskIds.includes(task.id) ? "selected" : ""}><input type="checkbox" checked={draft.starterTaskIds.includes(task.id)} onChange={() => toggleStarter(task.id)}/><span><b>{task.name}</b><small>{task.description || "Starter Task"}</small></span></label>)}</div>{!starterTasks.length && <p>No Starter Tasks are available. Create a Starter Task before packaging.</p>}</section>
       <section className="package-environments"><header><span><b>ENVIRONMENT PROFILES</b><small>The application is common; configuration and secret files are generated separately for every selected profile.</small></span><button type="button" onClick={() => update("environments", environments)}>Select all</button></header><div>{environments.map((name: string) => <label key={name} className={draft.environments.includes(name) ? "selected" : ""}><input type="checkbox" checked={draft.environments.includes(name)} onChange={() => toggleEnvironment(name)}/><span><b>{name}</b><small>{draft.environments.includes(name) ? "Included" : "Not packaged"}</small></span></label>)}</div></section>
-      <label>Archive format<select value={draft.format} onChange={(event) => update("format", event.target.value)}><option value="mpkg">MINA deployment package (.mpkg)</option><option value="ifpkg">Legacy deployment package (.ifpkg)</option><option value="zip">ZIP archive (.zip)</option><option value="tar.gz">Compressed TAR (.tar.gz)</option><option value="ear">EAR-compatible ZIP (.ear)</option><option value="python-engine">Python compatibility archive (.pympkg)</option></select></label>
+      <label>Archive format<select value={draft.format} onChange={(event) => setDraft((current: any) => ({ ...current, format: event.target.value, outputPath: "" }))}><option value="mpkg">MINA deployment package (.mpkg)</option><option value="ifpkg">Legacy deployment package (.ifpkg)</option><option value="zip">ZIP archive (.zip)</option><option value="tar.gz">Compressed TAR (.tar.gz)</option><option value="ear">EAR-compatible ZIP (.ear)</option><option value="python-engine">Python compatibility archive (.pympkg)</option></select></label>
+      <label className="package-output-path">Archive output file <small>Used only by Export archive; deployment ignores this workstation path.</small><span><input value={draft.outputPath} onChange={(event) => update("outputPath", event.target.value)} placeholder={window.fabricDesktop ? `C:\\Exports\\${archiveFilename}` : "Your browser will save this archive in its configured Downloads folder."} disabled={!window.fabricDesktop}/>{window.fabricDesktop && <button type="button" onClick={browseArchiveOutput}><FolderOpen/>Browse</button>}</span></label>
       <section className="package-artifacts">
         <header><span><b>SELECT DEPLOYMENT FILES</b><small>Core application, tasks, resources, schemas, and secret requirements are always included.</small></span><button type="button" onClick={() => update("artifacts", deploymentArtifactChoices[draft.target].map((choice) => choice.key))}>Select all</button></header>
         <div>{deploymentArtifactChoices[draft.target].map((choice) => <label key={choice.key} className={draft.artifacts.includes(choice.key) ? "selected" : ""}><input type="checkbox" checked={draft.artifacts.includes(choice.key)} onChange={() => toggleArtifact(choice.key)}/><span><b>{choice.label}</b><small>{choice.detail}</small></span></label>)}</div>

@@ -5,6 +5,7 @@ interface Window {
     isDesktop: boolean;
     platform: string;
     saveFile(options: { path?: string; filename: string; bytes: number[]; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null>;
+    selectArchiveOutput(options: { title?: string; filename: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null>;
     saveProjectFolder(options: { path?: string; folderName: string; project: unknown }): Promise<string | null>;
     openProject(fileType?: "mpackage" | "mpkg" | "legacy" | "ifproject" | "ifpackage" | "ifpkg" | "zip" | "json"): Promise<{ path: string; name: string; bytes?: number[]; project?: unknown; kind?: "file" | "folder" } | null>;
     openProjectFolder(): Promise<{ path: string; name: string; project?: unknown; kind?: "folder" } | null>;

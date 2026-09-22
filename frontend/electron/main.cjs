@@ -170,6 +170,16 @@ ipcMain.handle('fabric:save-file', async (_event, options) => {
   return filePath;
 });
 
+ipcMain.handle('fabric:select-archive-output', async (_event, options = {}) => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: options.title || 'Choose archive output file',
+    defaultPath: options.filename || 'application.ear',
+    filters: options.filters || [{ name: 'MINA archive', extensions: ['ear', 'mpkg', 'zip', 'tar.gz'] }],
+  });
+  if (result.canceled || !result.filePath) return null;
+  return result.filePath;
+});
+
 const safeProjectPart = (value, fallback = 'item') => {
   const normalized = String(value || '').replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '');
   return normalized || fallback;

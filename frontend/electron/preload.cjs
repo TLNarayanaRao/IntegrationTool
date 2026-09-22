@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('fabricDesktop', {
   isDesktop: true,
   saveFile: (options) => ipcRenderer.invoke('fabric:save-file', options),
+  selectArchiveOutput: (options) => ipcRenderer.invoke('fabric:select-archive-output', options),
   saveProjectFolder: (options) => ipcRenderer.invoke('fabric:save-project-folder', options),
   openProject: (fileType) => ipcRenderer.invoke('fabric:open-file', fileType),
   openProjectFolder: () => ipcRenderer.invoke('fabric:open-project-folder'),
