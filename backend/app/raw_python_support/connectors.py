@@ -265,12 +265,16 @@ async def kafka(operation: str, connection: dict, cfg: dict, payload: Any) -> di
         fingerprint = json.dumps(options, sort_keys=True, default=str)
         producer_key = (id(loop), fingerprint)
         lock = _KAFKA_PRODUCER_LOCKS.setdefault(producer_key, asyncio.Lock())
+        producer_reused = False
         async with lock:
             producer = _KAFKA_PRODUCERS.get(producer_key)
             if producer is None or getattr(producer, '_closed', False):
                 producer = AIOKafkaProducer(**options)
                 await producer.start()
                 _KAFKA_PRODUCERS[producer_key] = producer
+            else:
+                producer_reused = True
+        producer_ready = loop.time()
         message = cfg.get('message', payload)
         data = message if isinstance(message, bytes) else message.encode() if isinstance(message, str) else json.dumps(message, separators=(',', ':'), default=str).encode()
         key = cfg.get('key')
@@ -282,12 +286,18 @@ async def kafka(operation: str, connection: dict, cfg: dict, payload: Any) -> di
             metadata = await producer.send_and_wait(topic, data, key=key_bytes, headers=headers)
             return {'topic': topic, 'partition': metadata.partition, 'offset': metadata.offset, 'published': True,
                     'queued': True, 'deliveryConfirmed': True,
+                    'producerReused': producer_reused,
+                    'producerSetupMs': round((producer_ready - publish_started) * 1000, 3),
+                    'sendAndWaitMs': round((loop.time() - producer_ready) * 1000, 3),
                     'publishLatencyMs': round((loop.time() - publish_started) * 1000, 3)}
         # AIOKafkaProducer batches in the background. Awaiting send() applies
         # local buffer backpressure but deliberately does not await the broker
         # delivery future, preserving high-throughput publisher semantics.
         await producer.send(topic, data, key=key_bytes, headers=headers)
         return {'topic': topic, 'published': True, 'queued': True, 'deliveryConfirmed': False,
+                'producerReused': producer_reused,
+                'producerSetupMs': round((producer_ready - publish_started) * 1000, 3),
+                'sendAndWaitMs': round((loop.time() - producer_ready) * 1000, 3),
                 'publishLatencyMs': round((loop.time() - publish_started) * 1000, 3)}
     if operation == 'receive':
         consumer = AIOKafkaConsumer(topic, bootstrap_servers=servers,

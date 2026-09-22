@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import httpx
 from time import perf_counter
+from concurrent.futures import ThreadPoolExecutor
 from .models import Activity, GroupDefinition, ProcessDefinition, Project, RunResult
 from .mapper import apply_function, execute as execute_mapping
 from .dataweave import DataWeaveError, execute as execute_dataweave
@@ -31,6 +32,7 @@ class WorkflowRuntime:
         self._publishers: dict[str, object] = {}
         self._publisher_operation_locks: dict[str, threading.Lock] = {}
         self._initialized_transactional_publishers: set[str] = set()
+        self._kafka_executor = None
 
     @staticmethod
     def _publisher_key(kind: str, config: dict) -> str:
@@ -57,6 +59,10 @@ class WorkflowRuntime:
 
     def close_publishers(self):
         with self._publisher_lock:
+            executor, self._kafka_executor = self._kafka_executor, None
+        if executor is not None:
+            executor.shutdown(wait=True, cancel_futures=True)
+        with self._publisher_lock:
             clients = list(self._publishers.items())
             self._publishers.clear()
             self._publisher_operation_locks.clear()
@@ -68,6 +74,15 @@ class WorkflowRuntime:
                     client.stop()
                     client.transport.close()
             except Exception: pass
+
+    async def _publish_kafka_isolated(self, publish):
+        # Receivers/JCo/JDBC may occupy the default asyncio executor for seconds.
+        # Keep short Kafka enqueue operations off that shared blocking-I/O queue.
+        with self._publisher_lock:
+            if self._kafka_executor is None:
+                self._kafka_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix='mina-kafka')
+            future = self._kafka_executor.submit(publish)
+        return await asyncio.wrap_future(future)
 
     def register_acknowledgement(self, technology: str, message_id: str, callback=None) -> str:
         ack_id = f'{technology}:{message_id}:{uuid.uuid4()}'
@@ -1225,9 +1240,11 @@ class WorkflowRuntime:
                 after enqueueing.  Transactions and explicit confirmation retain the
                 previous delivery-report semantics.
                 """
+                worker_started = perf_counter()
                 transactional = bool(cfg.get('transactionalId'))
                 wait_for_delivery = transactional or self.as_bool(cfg.get('waitForDelivery', False))
                 producer, one_shot = self._publisher('kafka', producer_cfg, lambda: Producer(producer_cfg))
+                producer_ready = perf_counter()
                 delivered = {}; completed = threading.Event()
                 def delivery(error, message):
                     if error: delivered['error'] = str(error)
@@ -1269,10 +1286,13 @@ class WorkflowRuntime:
                 finally:
                     if one_shot: producer.flush(3)
                 if delivered.get('error'): raise RuntimeError(delivered['error'])
-                return {**delivered, 'queued': True, 'deliveryConfirmed': completed.is_set() and not delivered.get('error')}
+                return {**delivered, 'queued': True, 'deliveryConfirmed': completed.is_set() and not delivered.get('error'),
+                        'publisherQueueMs': round((worker_started - publish_started) * 1000, 3),
+                        'producerSetupMs': round((producer_ready - worker_started) * 1000, 3),
+                        'sendAndWaitMs': round((perf_counter() - producer_ready) * 1000, 3)}
 
             publish_started = perf_counter()
-            delivered = await asyncio.to_thread(publish_kafka)
+            delivered = await self._publish_kafka_isolated(publish_kafka)
             return {**envelope, **delivered, 'messageId':envelope['id'], 'topic':destination, 'published':True,
                     'publishLatencyMs': round((perf_counter() - publish_started) * 1000, 3)}
         if technology == 'pubsub':

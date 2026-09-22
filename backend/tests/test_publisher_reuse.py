@@ -2,6 +2,8 @@ import asyncio
 import sys
 import time
 import types
+import threading
+from concurrent.futures import ThreadPoolExecutor
 import unittest
 from unittest.mock import patch
 
@@ -16,6 +18,42 @@ def context(resource):
 
 
 class PublisherReuseTests(unittest.TestCase):
+    def test_kafka_publishes_while_default_executor_is_saturated(self):
+        release = threading.Event()
+        occupied = threading.Event()
+        class Producer:
+            def __init__(self, config): pass
+            def produce(self, *args, **kwargs): pass
+            def poll(self, timeout): pass
+            def flush(self, timeout): return 0
+        kafka = types.ModuleType('confluent_kafka')
+        kafka.Producer = Producer; kafka.Consumer = object; kafka.TopicPartition = object
+        runtime = WorkflowRuntime()
+        resource = SharedResource(id='k', type='kafka', name='Kafka', config={'bootstrapServers': 'localhost:9092'})
+        def blocking_receiver():
+            occupied.set()
+            release.wait(5)
+        async def exercise():
+            loop = asyncio.get_running_loop()
+            loop.set_default_executor(ThreadPoolExecutor(max_workers=1))
+            receiver = loop.run_in_executor(None, blocking_receiver)
+            while not occupied.is_set(): await asyncio.sleep(.001)
+            try:
+                result = await asyncio.wait_for(runtime.messaging('kafka',
+                    {'resourceId': 'k', 'topic': 'events', 'data': 'one'}, context(resource)), timeout=1)
+                self.assertTrue(result['queued'])
+                self.assertFalse(release.is_set())
+                self.assertIn('publisherQueueMs', result)
+                self.assertIn('producerSetupMs', result)
+                self.assertIn('sendAndWaitMs', result)
+            finally:
+                release.set()
+                await receiver
+                runtime.close_publishers()
+                self.assertIsNone(runtime._kafka_executor)
+        with patch.dict(sys.modules, {'confluent_kafka': kafka}):
+            asyncio.run(exercise())
+
     def test_kafka_reuses_producer_and_waits_for_each_delivery(self):
         producers = []
 
@@ -143,6 +181,9 @@ class PublisherReuseTests(unittest.TestCase):
             self.assertEqual(producers[0].stop_calls, 1)
             self.assertEqual(producers[0].messages, [b'one', b'two'])
             self.assertTrue(all('publishLatencyMs' in result for result in results))
+            self.assertFalse(results[0]['producerReused'])
+            self.assertTrue(results[1]['producerReused'])
+            self.assertTrue(all('producerSetupMs' in result and 'sendAndWaitMs' in result for result in results))
         finally:
             direct_connectors._KAFKA_PRODUCERS.clear(); direct_connectors._KAFKA_PRODUCER_LOCKS.clear()
 
