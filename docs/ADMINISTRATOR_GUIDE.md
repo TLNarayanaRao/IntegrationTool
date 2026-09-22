@@ -65,7 +65,7 @@ docker run -d --name fabric-admin -p 9080:9080 \
 | `FABRIC_ADMIN_MAX_EXPANDED_MB` | `1024` | Maximum expanded package size |
 | `FABRIC_ADMIN_MAX_PACKAGE_FILES` | `10000` | Maximum archive members |
 
-The runtime command supports `{application}`, `{package}`, `{environment}`, `{deployment_id}`, and `{instance_id}` placeholders. The desktop installer includes a separate `IntegrationFabricWorker` executable for this purpose. Example:
+The runtime command supports `{application}`, `{package}`, `{environment}`, `{deployment_id}`, and `{instance_id}` placeholders. The desktop installer includes a separate `MINAWorker` executable for this purpose. Example:
 
 ```bash
 export FABRIC_ADMIN_RUNTIME_COMMAND='integration-fabric-runtime --application {application} --environment {environment}'
@@ -74,7 +74,7 @@ export FABRIC_ADMIN_RUNTIME_COMMAND='integration-fabric-runtime --application {a
 On Windows desktop installations, configure the worker executable rather than the Studio sidecar:
 
 ```powershell
-$worker = 'C:\Program Files\MINA Studio\resources\runtime\IntegrationFabricWorker\IntegrationFabricWorker.exe'
+$worker = 'C:\Program Files\MINA Studio\resources\runtime\MINAWorker\MINAWorker.exe'
 $command = "`\"$worker`\" --application `\"{application}`\" --environment `\"{environment}`\""
 [Environment]::SetEnvironmentVariable('FABRIC_ADMIN_RUNTIME_COMMAND', $command, 'Machine')
 ```

@@ -1043,11 +1043,78 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     return files
 
 
-ENGINE_MODULES = (
-    'models.py', 'runtime.py', 'mapper.py', 'dataweave.py', 'sap.py',
-    'snowflake.py', 'jdbc.py', 'amqp.py', 'java_bridge.py',
-    'google_pubsub.py', 'time_utils.py',
-)
+ENGINE_CAPABILITY_MODULES = {
+    'dataweave': 'dataweave', 'sap': 'sap', 'snowflake': 'snowflake',
+    'jdbc': 'jdbc', 'amqp': 'amqp', 'ems': 'java_bridge',
+    'jms': 'java_bridge', 'pubsub': 'google_pubsub',
+}
+
+
+def _engine_lazy_imports(source: str, modules: set[str], package: str) -> str:
+    """Defer optional connector imports until the corresponding code executes.
+
+    Shared engine methods also serve notebooks and event listeners. Keeping
+    their imports lazy allows the selected engine to load without shipping
+    unrelated connectors, while preserving the original implementation.
+    """
+    tree = ast.parse(source)
+    symbols = {}
+    for node in list(tree.body):
+        if isinstance(node, ast.ImportFrom) and node.level == 1 and node.module in modules:
+            for alias in node.names:
+                symbols[alias.asname or alias.name] = (node.module, alias.name)
+            tree.body.remove(node)
+
+    class LazyImports(ast.NodeTransformer):
+        def visit_Name(self, node):
+            if isinstance(node.ctx, ast.Load) and node.id in symbols:
+                module, name = symbols[node.id]
+                return ast.copy_location(ast.Attribute(
+                    value=ast.Call(func=ast.Name(id='_load_engine_module', ctx=ast.Load()),
+                                   args=[ast.Constant(f'{package}.{module}')], keywords=[]),
+                    attr=name, ctx=ast.Load()), node)
+            return node
+
+    tree = LazyImports().visit(tree)
+    if symbols:
+        # Insert after the module docstring and future imports.
+        index = 0
+        while index < len(tree.body) and (isinstance(tree.body[index], ast.Expr) or
+                isinstance(tree.body[index], ast.ImportFrom) and tree.body[index].module == '__future__'):
+            index += 1
+        tree.body.insert(index, ast.ImportFrom(module='importlib', names=[ast.alias(name='import_module', asname='_load_engine_module')], level=0))
+    return ast.unparse(ast.fix_missing_locations(tree)) + '\n'
+
+
+def _engine_module_files(project: dict, source_root: Path) -> dict[str, bytes]:
+    """Link the connector and transitive module closure for packaged tasks."""
+    kinds = {activity['type'] for task in project.get('tasks', []) for activity in task.get('activities', [])}
+    groups = {group['type'] for task in project.get('tasks', []) for group in task.get('groups', [])}
+    if 'transaction_jdbc' in groups:
+        kinds.add('jdbc')
+    optional = set(ENGINE_CAPABILITY_MODULES.values())
+    pending = {'runtime', 'models', 'mapper', 'time_utils'}
+    pending.update(module for kind, module in ENGINE_CAPABILITY_MODULES.items() if kind in kinds)
+    files = {}
+    while pending:
+        module = pending.pop()
+        filename = f'application/engine/{module}.py'
+        if filename in files:
+            continue
+        source = (source_root / f'{module}.py').read_text(encoding='utf-8')
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.level:
+                if node.level != 1 or not node.module or '.' in node.module:
+                    raise ValueError(f'Engine dependency needs a linker rule: {module}: {ast.unparse(node)}')
+                # Only runtime dispatch imports are capability-dependent.
+                # Adapter dependencies (e.g. SAP/JDBC -> Java bridge) are mandatory.
+                if module != 'runtime' or node.module not in optional:
+                    pending.add(node.module)
+        if module == 'runtime':
+            source = _engine_lazy_imports(source, optional, 'application.engine')
+        files[filename] = source.encode('utf-8')
+    return files
 
 
 def _python_literal(value, indent: int) -> str:
@@ -1084,12 +1151,13 @@ def engine_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[
     support = source_root / 'raw_python_support'
     files: dict[str, bytes] = {
         'application/__init__.py': (support / '__init__.py').read_bytes(),
-        'application/main.py': (support / 'engine_main.py').read_bytes(),
+        'application/main.py': _engine_lazy_imports(
+            (support / 'engine_main.py').read_text(encoding='utf-8'),
+            {'engine.sap'}, 'application').encode('utf-8'),
         'application/tasks/__init__.py': b'"""Generated task modules."""\n',
         'application/engine/__init__.py': b'"""Bundled Python execution engine."""\n',
     }
-    for name in ENGINE_MODULES:
-        files[f'application/engine/{name}'] = (source_root / name).read_bytes()
+    files.update(_engine_module_files(project, source_root))
     task_imports: list[str] = []
     task_calls: list[str] = []
     for index, task in enumerate(project['tasks']):

@@ -14,7 +14,7 @@ $env:REQUESTS_CA_BUNDLE = $ca
 
 cd C:\Narayana\Integration-Tool\Software\IntegrationFabric
 
-Get-Process node,electron,IntegrationFabricRuntime -ErrorAction SilentlyContinue |
+Get-Process node,electron,MINARuntime -ErrorAction SilentlyContinue |
     Stop-Process -Force
 
 Remove-Item -LiteralPath '.\frontend\node_modules' -Recurse -Force -ErrorAction SilentlyContinue

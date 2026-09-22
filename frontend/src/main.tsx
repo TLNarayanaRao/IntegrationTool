@@ -77,6 +77,7 @@ import "./studio-ribbon.css";
 import "./packaging-target.css";
 import "./home-screen.css";
 import "./groups.css";
+import "./plain-themes.css";
 const Braces = DataNodeIcon;
 const EDITABLE_CONTROL_SELECTOR =
   'input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [contenteditable="true"], [role="textbox"], [data-keyboard-input="true"]';
@@ -279,6 +280,8 @@ type ValidationIssue = {
   activityId?: string;
 };
 const themeOptions = [
+  { value: "plain-classic", label: "Plain Classic", detail: "Light grey desktop panels, white editors, and blue selections" },
+  { value: "plain-studio", label: "Plain Studio", detail: "Flat white workspace with subtle grey panels and teal selections" },
   { value: "midnight", label: "Midnight Studio", detail: "Deep blue professional workspace" },
   { value: "aurora", label: "Aurora Glass", detail: "Violet glass with teal highlights" },
   { value: "graphite", label: "Graphite Pro", detail: "Neutral engineering workstation" },

@@ -54,12 +54,12 @@
     ],
     "extraResources": [
       {
-        "from": "../backend/dist/IntegrationFabricRuntime",
-        "to": "runtime/IntegrationFabricRuntime"
+        "from": "../backend/dist/MINARuntime",
+        "to": "runtime/MINARuntime"
       },
       {
-        "from": "../backend/dist/IntegrationFabricWorker",
-        "to": "runtime/IntegrationFabricWorker"
+        "from": "../backend/dist/MINAWorker",
+        "to": "runtime/MINAWorker"
       }
     ],
     "win": {

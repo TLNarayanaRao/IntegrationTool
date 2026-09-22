@@ -91,7 +91,7 @@ function startRuntime(port) {
   let args = [];
   let cwd;
   if (app.isPackaged) {
-    executable = path.join(process.resourcesPath, 'runtime', 'IntegrationFabricRuntime', process.platform === 'win32' ? 'IntegrationFabricRuntime.exe' : 'IntegrationFabricRuntime');
+    executable = path.join(process.resourcesPath, 'runtime', 'MINARuntime', process.platform === 'win32' ? 'MINARuntime.exe' : 'MINARuntime');
     cwd = path.dirname(executable);
   } else {
     const root = path.resolve(__dirname, '..', '..');

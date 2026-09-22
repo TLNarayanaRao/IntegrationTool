@@ -1,0 +1,145 @@
+/* Plain desktop themes. Kept last in the cascade to cover legacy dark surfaces. */
+body[data-theme="plain-classic"] {
+  --shell: #e5e5e5;
+  --panel: #f0f0f0;
+  --panel2: #fafafa;
+  --surface: #ffffff;
+  --line: #b5b5b5;
+  --text: #202020;
+  --muted: #555555;
+  --accent: #005a9e;
+  --accent2: #23683c;
+  --selection: #dceafa;
+}
+body[data-theme="plain-studio"] {
+  --shell: #eef1f3;
+  --panel: #f5f7f8;
+  --panel2: #ffffff;
+  --surface: #ffffff;
+  --line: #bbc5cc;
+  --text: #23323d;
+  --muted: #52636f;
+  --accent: #006a80;
+  --accent2: #276b46;
+  --selection: #dceff2;
+}
+body:is([data-theme="plain-classic"], [data-theme="plain-studio"]) {
+  --glow: transparent;
+  color-scheme: light;
+  font-family: "Segoe UI", Arial, sans-serif;
+}
+/* Preserve layout, activity artwork, and interaction affordances. */
+body[data-theme^="plain-"] :is(div, section, aside, main, header, footer, nav, article, button, input, select, textarea, pre, code, label, span, b, strong, small, p, h1, h2, h3, h4, summary, a, kbd, th, td) {
+  color: var(--text) !important;
+  text-shadow: none !important;
+  box-shadow: none !important;
+  border-color: var(--line) !important;
+}
+body[data-theme^="plain-"] :is(.app, .fabric-launch-home, .project-home) {
+  background: var(--shell) !important;
+}
+body[data-theme^="plain-"] :is(header, footer, nav, .studio-ribbon, .menu-bar, .tabs, .pane-title, .canvas-toolbar, .explorer, .monitor, .palette, .config, [class$="-tabs"], [class$="-toolbar"], [class$="-footer"]) {
+  background: var(--panel) !important;
+}
+body[data-theme^="plain-"] :is(.app>main, .runtime-modal, .package-modal, .menu-dropdown, .glossy-menu, .schema-context-menu, .home-card, .project-list, .fabric-live-map, .system-node, .config-body, .property-grid, .group-data-mapper, .group-condition-targets, .package-artifacts, .package-starters, .package-environments, .package-runtime-options, [class$="-modal"], [class$="-dialog"], [class$="-panel"], [class$="-pane"], [class$="-editor"], [class$="-card"], [class$="-picker"], [class$="-popover"]) {
+  background: var(--surface) !important;
+  border-radius: 3px !important;
+}
+body[data-theme^="plain-"] :is(.runtime-modal, .package-modal, [class$="-dialog"], [class$="-modal"]) :is(main, section, article, aside, pre, details) {
+  background: var(--surface) !important;
+}
+body[data-theme^="plain-"] :is(.config, .mapper-studio, .activity-picker, .utility-workbench, .monitor) :is(div, section, article, aside, label, details),
+body[data-theme^="plain-"] :is(.mapper-studio, .utility-workbench, .map-rule, .utility-message, .utility-file-heading, .compare-headings, .compare-syncbar) {
+  background: var(--surface) !important;
+}
+body[data-theme^="plain-"] .launch-buttons>button>span {
+  background: var(--selection) !important;
+  color: var(--accent) !important;
+}
+body[data-theme^="plain-"] :is(button, .tree-row, summary, [role="tab"]) {
+  background: var(--panel) !important;
+  border-radius: 2px !important;
+}
+body[data-theme^="plain-"] :is(input, select, textarea, pre, code, [contenteditable="true"]) {
+  background: var(--surface) !important;
+  color-scheme: light !important;
+  border-radius: 2px !important;
+  caret-color: var(--text);
+}
+body[data-theme^="plain-"] :is(input, textarea)::placeholder {
+  color: var(--muted) !important;
+  opacity: 1;
+}
+body[data-theme^="plain-"] :is(small, kbd, .muted, .theme-picker, .launch-eyebrow) {
+  color: var(--muted) !important;
+}
+body[data-theme^="plain-"] :is(button:hover:not(:disabled), .tree-row:hover, summary:hover, button.active, button.selected, .tree .active, [role="tab"][aria-selected="true"], label.selected) {
+  background: var(--selection) !important;
+  border-color: var(--accent) !important;
+}
+body[data-theme^="plain-"] :is(button.primary, button.primary:hover, .generate-ai-design) {
+  background: var(--accent) !important;
+  color: #ffffff !important;
+}
+body[data-theme^="plain-"] button.primary :is(span, b, small, svg) {
+  color: #ffffff !important;
+}
+body[data-theme^="plain-"] :is(button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: 2px;
+}
+body[data-theme^="plain-"] :is(button:disabled, input:disabled, select:disabled, textarea:disabled) {
+  opacity: .6;
+  cursor: not-allowed;
+}
+body[data-theme^="plain-"] :is(input[type="checkbox"], input[type="radio"]) {
+  accent-color: var(--accent);
+}
+body[data-theme^="plain-"] .canvas {
+  background-color: var(--surface) !important;
+  background-image: radial-gradient(#c8cdd1 .7px, transparent .7px) !important;
+  background-size: 24px 24px !important;
+}
+body[data-theme^="plain-"] .node {
+  background: transparent !important;
+}
+body[data-theme^="plain-"] .node :is(img, svg) {
+  filter: none !important;
+}
+body[data-theme^="plain-"] :is(.node.selected, .node:hover) {
+  outline: 1px solid var(--accent);
+  background: var(--selection) !important;
+}
+body[data-theme^="plain-"] .edge-label rect {
+  fill: var(--surface);
+  opacity: 1;
+  stroke: none;
+}
+/* Dark-theme SVG outlines otherwise swallow the small label glyphs. */
+body[data-theme^="plain-"] .wires .edge-label text {
+  fill: var(--text) !important;
+  stroke: none !important;
+  stroke-width: 0 !important;
+  paint-order: normal;
+  filter: none;
+  text-shadow: none;
+  font: 11px "Segoe UI", Arial, sans-serif;
+}
+body[data-theme^="plain-"] .wires g.selected .edge-line {
+  stroke: var(--accent) !important;
+}
+body[data-theme^="plain-"] :is(button, .pane-title, .folder, .tabs) > svg { color: var(--accent); }
+body[data-theme^="plain-"] :is(.modal-backdrop) {
+  background: #20283055 !important;
+  backdrop-filter: none !important;
+}
+body[data-theme^="plain-"] :is(.runtime-modal::before, .fabric-launch-home::before, .home-aurora, .home-glow) { display: none; }
+body[data-theme^="plain-"] :is(.home-grid, .system-node, .fabric-routes path, .live-indicator i, .brand-orbit::after, .fabric-core>i) { animation: none; }
+body[data-theme^="plain-"] :is(.fabric-core, .fabric-routes path) { filter: none; }
+body[data-theme^="plain-"] :is(.package-error, .validation-issue.error, .ai-builder-error) {
+  background: #fff0f0 !important;
+  color: #a11b22 !important;
+  border-color: #c45157 !important;
+}
+body[data-theme^="plain-"] :is(.danger, .delete-activity, .error) { color: #a11b22 !important; }
+body[data-theme^="plain-"] ::selection { background: var(--selection); color: var(--text); }
