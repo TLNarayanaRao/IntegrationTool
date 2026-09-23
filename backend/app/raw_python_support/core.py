@@ -398,7 +398,9 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
             first = messages[0] if isinstance(messages, list) and messages else {}
             broker_payload = received.get('body') if technology in {'ems', 'jms'} else (first.get('data') if isinstance(first, dict) else first)
             properties = received.get('properties') or {}
-            return {**received, 'payload': broker_payload, 'SAPIDoc': properties.get('SAPIDoc', {}) if isinstance(properties, dict) else {}, 'messagingSource': technology.upper()}
+            from .native.sap import SapAdapter
+            sap_idoc = properties.get('SAPIDoc', {}) if isinstance(properties, dict) else {}
+            return {**received, 'payload': broker_payload, 'SAPIDoc': SapAdapter._normalize_idoc_arrays(sap_idoc, {**connection, **cfg}), 'messagingSource': technology.upper()}
         return await connectors.sap(operation, connection, cfg, cfg.get('payload', ctx.last), ctx)
     # CAPABILITY sap END
     # CAPABILITY jms START

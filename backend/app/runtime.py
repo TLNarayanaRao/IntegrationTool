@@ -952,7 +952,8 @@ class WorkflowRuntime:
                     first = messages[0] if isinstance(messages, list) and messages else {}
                     broker_payload = received.get('body') if technology in ('ems', 'jms') else first.get('data')
                     properties = received.get('properties', {}) if isinstance(received, dict) else {}
-                    return {**received, 'payload': broker_payload, 'SAPIDoc': properties.get('SAPIDoc', {}) if isinstance(properties, dict) else {}, 'messagingSource': technology.upper()}
+                    sap_idoc = properties.get('SAPIDoc', {}) if isinstance(properties, dict) else {}
+                    return {**received, 'payload': broker_payload, 'SAPIDoc': sap_adapter._normalize_idoc_arrays(sap_idoc, sap_cfg), 'messagingSource': technology.upper()}
                 return await sap_adapter.receive_idoc(sap_cfg)
             if operation == 'reply_rfc_bapi' and sap_adapter._mode(sap_cfg) != 'mock':
                 delivery = ctx.get('transport') or {}

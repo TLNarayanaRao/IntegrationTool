@@ -66,6 +66,65 @@ class SapAdapter:
         if element.attrib: result['_attributes'] = dict(element.attrib)
         return result
 
+    @classmethod
+    def _normalize_idoc_arrays(cls, value: Any, cfg: dict) -> Any:
+        """Preserve XSD cardinality, independently of the observed record count.
+
+        Work by schema path (not segment name globally). Do not invent absent
+        optional segments or turn singleton/control-record structures into lists.
+        """
+        selected = cfg.get('selectedIdoc') or {}
+        schema = cfg.get('idocSchema') or selected.get('schema')
+        if not schema and selected.get('segments'):
+            schema = cls._schema(str(cfg.get('idocType') or selected.get('idocType') or 'IDoc'),
+                                 '', '', selected['segments'], selected.get('fields'))
+        if not isinstance(schema, str) or not schema.strip(): return value
+        try: root = ET.fromstring(schema)
+        except ET.ParseError: return value
+        local = lambda name: name.rsplit(':', 1)[-1]
+        types = {node.get('name'): node for node in root if cls._xml_name(node.tag) == 'complexType'}
+        elements = {node.get('name'): node for node in root if cls._xml_name(node.tag) == 'element'}
+        groups = {node.get('name'): node for node in root if cls._xml_name(node.tag) == 'group'}
+        def repeats(node):
+            count = node.get('maxOccurs', '1')
+            return count == 'unbounded' or (count.isdigit() and int(count) > 1)
+        def children(node, inherited=False, seen=frozenset()):
+            if id(node) in seen: return
+            seen = seen | {id(node)}
+            for child in node:
+                kind = cls._xml_name(child.tag)
+                repeated = inherited or repeats(child)
+                if kind == 'element': yield child, repeated
+                elif kind in ('sequence', 'choice', 'all', 'complexContent', 'extension', 'group'):
+                    if kind == 'extension' and local(child.get('base', '')) in types:
+                        yield from children(types[local(child.get('base'))], inherited, seen)
+                    if kind == 'group' and local(child.get('ref', '')) in groups:
+                        yield from children(groups[local(child.get('ref'))], repeated, seen)
+                    yield from children(child, repeated, seen)
+        def normalize(data, declaration):
+            if isinstance(data, list): return [normalize(item, declaration) for item in data]
+            if not isinstance(data, dict): return data
+            declaration = elements.get(local(declaration.get('ref', '')), declaration)
+            complex_type = next((node for node in declaration if cls._xml_name(node.tag) == 'complexType'), None)
+            if complex_type is None: complex_type = types.get(local(declaration.get('type', '')))
+            if complex_type is None: return data
+            result = dict(data)
+            for child, repeated in children(complex_type):
+                name = child.get('name') or local(child.get('ref', ''))
+                if name not in result: continue
+                item = result[name]
+                if repeated and not isinstance(item, list): item = [item]
+                result[name] = normalize(item, child)
+            return result
+        name = str(cfg.get('idocType') or selected.get('idocType') or '')
+        declaration = elements.get(name)
+        if declaration is None and len(elements) == 1: declaration = next(iter(elements.values()))
+        if declaration is None: return value
+        if isinstance(value, dict) and declaration.get('name') in value:
+            name = declaration.get('name')
+            return {**value, name: normalize(value[name], declaration)}
+        return normalize(value, declaration)
+
     @staticmethod
     def _json_to_xml(value: Any, root: str = 'IDoc') -> str:
         def build(parent: ET.Element, name: str, item: Any) -> None:
@@ -748,7 +807,7 @@ class SapAdapter:
                 return {'RfcRequest': request, 'functionName': cfg.get('listenerFunction'), 'invocationProtocol': cfg.get('invocationProtocol', 'Request/Reply'), 'received': True, 'mock': True, 'jcoDiagnostics': []}
             idoc_type = str(cfg.get('idocType') or (cfg.get('selectedIdoc') or {}).get('idocType') or 'MOCKIDOC')
             xml_payload = f'<{re.sub(r"[^A-Za-z0-9_.-]", "_", idoc_type)}><IDOC><EDI_DC40><TABNAM>EDI_DC40</TABNAM><IDOCTYP>{idoc_type}</IDOCTYP></EDI_DC40></IDOC></{re.sub(r"[^A-Za-z0-9_.-]", "_", idoc_type)}>'
-            parsed = self._xml_to_json(ET.fromstring(xml_payload))
+            parsed = self._normalize_idoc_arrays(self._xml_to_json(ET.fromstring(xml_payload)), cfg)
             return {'SAPIDoc': parsed, 'controlRecord': parsed.get('IDOC', {}).get('EDI_DC40', {}), 'payload': xml_payload, 'IDocXML': xml_payload, 'format': 'XML', 'received': True, 'mock': True, 'jcoDiagnostics': []}
         for label, key in (('Program ID', 'programId'), ('Gateway host', 'gatewayHost'), ('Gateway service', 'gatewayService')):
             if not str(cfg.get(key) or '').strip(): raise RuntimeError(f'{label} is required for an SAP IDoc listener')
@@ -831,10 +890,12 @@ class SapAdapter:
             # raw RFC rows remain available separately for low-level JCo
             # diagnostics, but must not be the primary JSON IDoc payload.
             try:
-                parsed_payload = self._xml_to_json(ET.fromstring(xml_payload))
+                parsed_payload = self._normalize_idoc_arrays(self._xml_to_json(ET.fromstring(xml_payload)), cfg)
             except ET.ParseError:
                 parsed_payload = structured
-            control_record = parsed_payload.get('IDOC', {}).get('EDI_DC40', {}) if isinstance(parsed_payload, dict) else {}
+            idoc_record = parsed_payload.get('IDOC', {}) if isinstance(parsed_payload, dict) else {}
+            if isinstance(idoc_record, list): idoc_record = idoc_record[0] if idoc_record else {}
+            control_record = idoc_record.get('EDI_DC40', {}) if isinstance(idoc_record, dict) else {}
             if not control_record:
                 control_record = control
             # Keep the named SAPIDoc JSON view for mappings/debugging, while
@@ -1147,6 +1208,7 @@ class SapAdapter:
             if not idoc_type and xml_text.lstrip().startswith('<'):
                 try: idoc_type = self._xml_name(ET.fromstring(xml_text).tag)
                 except ET.ParseError: pass
+            json_value = self._normalize_idoc_arrays(json_value, {**cfg, 'idocType': idoc_type})
             # The activity output tree presents the selected basic type below
             # SAPIDoc (for example SAPIDoc.ARTMAS05.IDOC).  Keep the historic
             # direct shape too (SAPIDoc.IDOC), but also publish that visible
