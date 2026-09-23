@@ -410,17 +410,22 @@ class AIBuildRequest(BaseModel):
     current_task: dict[str, Any] | None = None
 
 class DebugRequest(RunRequest):
+    test_mode: bool = False
     breakpoints: list[str] = Field(default_factory=list)
     breakpoint_conditions: dict[str, str] = Field(default_factory=dict)
     watches: list[str] = Field(default_factory=list)
     pause_on_error: bool = True
 
 class DebugAction(BaseModel):
-    action: Literal['continue', 'pause', 'step_in', 'step_over', 'step_out', 'jump_in', 'jump_out', 'run_to', 'configure', 'evaluate', 'set_value', 'stop']
+    action: Literal['continue', 'pause', 'step_in', 'step_over', 'step_out', 'jump_in', 'jump_out', 'run_to', 'configure', 'evaluate', 'set_value', 'preview_activity', 'test_activity', 'mock_step', 'stop']
     activity_id: str | None = None
+    task_id: str | None = None
     expression: str | None = None
     path: str | None = None
     value: Any = None
+    fields: dict[str, Any] = Field(default_factory=dict)
+    assertion: str = ''
+    timeout_seconds: float = Field(default=10, ge=0.1, le=60)
     breakpoints: list[str] | None = None
     breakpoint_conditions: dict[str, str] | None = None
     watches: list[str] | None = None

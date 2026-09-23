@@ -54,6 +54,7 @@ import SchemaStudio, { SchemaDoc } from "./SchemaStudio";
 import ActivityEditor, { activityContract, activityReferenceName, DataSourcePane, upstreamActivitySources } from "./ActivityEditor";
 import ActivityPicker from "./ActivityPicker";
 import DataNodeIcon from "./DataNodeIcon";
+import DebugActivityTree from "./DebugActivityTree";
 import FileUtilities, { UtilityMode } from "./FileUtilities";
 import "./styles.css";
 import "./designer.css";
@@ -1245,6 +1246,7 @@ function App() {
     [debugState, setDebugState] = useState<any>(null),
     [jobDataOpen, setJobDataOpen] = useState(false),
     [debugToolsOpen, setDebugToolsOpen] = useState(false),
+    [debugToolsSection, setDebugToolsSection] = useState(5),
     [executionOutputs, setExecutionOutputs] = useState<Record<string, any>>({}),
     [endpoints, setEndpoints] = useState<any[]>([]),
     [runtimeState, setRuntimeState] = useState<any>(null),
@@ -2305,7 +2307,7 @@ function App() {
         setLogs([{ level: "ERROR", message: error?.message || "Run failed" }]);
       } finally { setBusy(false); }
     },
-    debug = async (requestedTaskId?: unknown) => {
+    debug = async (requestedTaskId?: unknown, testMode = false) => {
       setBusy(true);
       setWorkStatus("Starting debugger…");
       try {
@@ -2319,6 +2321,7 @@ function App() {
             task_id: typeof requestedTaskId === "string" ? requestedTaskId : task.id,
             breakpoints,
             breakpoint_conditions: breakpointConditions,
+            test_mode: testMode,
             watches: debugWatches,
             pause_on_error: pauseOnDebugError,
           }),
@@ -2342,6 +2345,7 @@ function App() {
         setDebugState(out);
         setExecutionOutputs(out.activityOutputs || {});
         setLogs(out.logs || [{ level: "ERROR", message: out.detail }]);
+        if (testMode) { setDebugToolsSection(5); setDebugToolsOpen(true); }
         setEndpoints(out.endpoints || []);
         setRuntimeState(out);
       } catch (error: any) {
@@ -2692,6 +2696,7 @@ function App() {
         <TopMenu label="Run" open={menu === "run"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "run" ? null : "run"); }} commands={[
           { label: "Run Active Task", detail: `${task.name} · ${project.active_environment}`, icon: CirclePlay, shortcut: "F5", action: run },
           { label: "Start Debugging", detail: "Honor configured breakpoints", icon: Bug, shortcut: "F6", action: debug },
+          { label: "Start Activity Testing", detail: "Start paused; provide test data without automatically starting listeners", icon: Bug, action: () => debug(undefined, true), disabled: executionActive },
           { label: "Validate Current Task", detail: "Check flow, mappings, connections, and configuration", icon: ShieldCheck, action: () => runValidation("task") },
           { label: "Validate Project", detail: "Check every task, environment, mapping, and package", icon: ShieldCheck, action: () => runValidation("project") },
           { label: "Continue", detail: "Resume the active debug session", icon: CirclePlay, action: () => debugAction("continue"), disabled: !debugState },
@@ -2714,6 +2719,7 @@ function App() {
         <span className="menu-spacer" />
         <ThemePicker theme={theme} setTheme={setTheme} plainMode={plainMode} setPlainMode={setPlainMode} />
       </nav>
+      <div className="studio-ribbon-stack">
       <StudioRibbon
         selectedCount={selectedIds.length}
         newProject={newProject}
@@ -2743,6 +2749,8 @@ function App() {
         moveUp={() => moveSelection(-24)}
         moveDown={() => moveSelection(24)}
       />
+      {debugState && !["completed", "failed", "stopped"].includes(debugState.status) && <DebugRibbon state={debugState} act={debugAction} stop={stopExecution} openJobData={() => setJobDataOpen(true)} openTools={(section: number) => { setDebugToolsSection(section); setDebugToolsOpen(true); }} runToSelected={() => selected && debugAction("run_to", { activity_id: selected })} canRunTo={!!selected} />}
+      </div>
        <header>
          <IntegrationBrandArtwork className="studio-brand-art" />
         <div className="crumb">
@@ -3059,9 +3067,8 @@ function App() {
             </button>
           </span>
         </div>
-        {debugState && <DebugBar state={debugState} act={debugAction} stop={stopExecution} openJobData={() => setJobDataOpen(true)} openTools={() => setDebugToolsOpen(true)} runToSelected={() => selected && debugAction("run_to", { activity_id: selected })} canRunTo={!!selected} />}
         {debugState && jobDataOpen && <DebugJobDataDialog state={debugState} task={task} activities={nodes} onClose={() => setJobDataOpen(false)} />}
-        {debugState && debugToolsOpen && <DebugToolsDialog state={debugState} activities={nodes} breakpoints={breakpoints} conditions={breakpointConditions} watches={debugWatches} pauseOnError={pauseOnDebugError} act={debugAction} onApply={(next: any) => { setBreakpoints(next.breakpoints); setBreakpointConditions(next.conditions); setDebugWatches(next.watches); setPauseOnDebugError(next.pauseOnError); }} onClose={() => setDebugToolsOpen(false)} />}
+        {debugState && debugToolsOpen && <DebugToolsDialog tasks={project.tasks} initialSection={debugToolsSection} state={debugState} activities={nodes} breakpoints={breakpoints} conditions={breakpointConditions} watches={debugWatches} pauseOnError={pauseOnDebugError} act={debugAction} onApply={(next: any) => { setBreakpoints(next.breakpoints); setBreakpointConditions(next.conditions); setDebugWatches(next.watches); setPauseOnDebugError(next.pauseOnError); }} onClose={() => setDebugToolsOpen(false)} />}
         <div
           className="canvas"
           ref={canvas}
@@ -5788,7 +5795,13 @@ function DebugJobDataDialog({ state, task, activities, onClose }: any) {
   return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="runtime-modal debug-job-data-dialog"><header><span><Database/><span><b>Debug Job Data</b><small>{task.name} · inspect input and output captured for each executed activity</small></span></span><button aria-label="Close job data" onClick={onClose}>×</button></header><main><aside className="debug-job-activity-list"><b>EXECUTED ACTIVITIES · {executed.length}</b>{executed.map((activity: any) => <button key={activity.id} className={selectedId === activity.id ? "active" : ""} onClick={() => setSelectedId(activity.id)}><span><b>{activity.name}</b><small>{activity.type}</small></span><i>✓</i></button>)}{!executed.length && <p>No activity data has been captured yet.</p>}</aside><section className="debug-job-payloads"><div className="debug-job-heading"><span><b>{selected?.name || "Activity data"}</b><small>{selected?.activityId || "Select an executed activity"}</small></span>{selected && <code>{selected.type}</code>}</div>{selected ? <div className="debug-job-columns"><article><header>INPUT</header><pre>{formatted(selected.input)}</pre></article><article><header>OUTPUT</header><pre>{formatted(selected.output)}</pre></article></div> : <div className="debug-job-empty">Start or continue the debug session to capture activity job data.</div>}</section></main><footer><span>Data is from the current debug job and is cleared when the session ends.</span><button className="primary" onClick={onClose}>Close</button></footer></div></div>;
 }
 
-function DebugToolsDialog({ state, activities, breakpoints, conditions, watches, pauseOnError, act, onApply, onClose }: any) {
+function DebugToolsDialog({ state, tasks, activities, breakpoints, conditions, watches, pauseOnError, act, onApply, onClose, initialSection = 5 }: any) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const section = dialogRef.current?.querySelectorAll<HTMLElement>(".debug-tool-section")[initialSection];
+    section?.scrollIntoView({ block: "start" });
+    section?.querySelector<HTMLElement>("input, textarea, select")?.focus({ preventScroll: true });
+  }, [initialSection]);
   const [conditionDraft, setConditionDraft] = useState<Record<string, string>>({ ...conditions });
   const [watchText, setWatchText] = useState((watches || []).join("\n"));
   const [pauseDraft, setPauseDraft] = useState(!!pauseOnError);
@@ -5804,52 +5817,111 @@ function DebugToolsDialog({ state, activities, breakpoints, conditions, watches,
   const setRuntimeValue = async () => {
     let value: any = editValue;
     try { value = JSON.parse(editValue); } catch {}
-    await act("set_value", { path: editPath, value });
+    await runTool("set_value", { path: editPath, value });
   };
-  const formatted = (value: any) => JSON.stringify(value ?? {}, null, 2);
-  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="runtime-modal debug-tools-dialog">
-    <header><span><Bug/><span><b>Modern Debug Tools</b><small>Conditional stops, live watches, evaluation, and paused-state editing</small></span></span><button aria-label="Close debug tools" onClick={onClose}>×</button></header>
+  const [testActivity, setTestActivity] = useState(state.currentActivityId || activities[0]?.id || "");
+  const [testTask, setTestTask] = useState(state.currentTaskId || tasks[0]?.id || "");
+  const drafts = useRef<Record<string, any>>({});
+  const [testInput, setTestInput] = useState(JSON.stringify(state.variables?.last ?? {}, null, 2));
+  const [testFields, setTestFields] = useState("{}");
+  const [payloadFormat, setPayloadFormat] = useState("json");
+  const [assertion, setAssertion] = useState("");
+  const [toolError, setToolError] = useState("");
+  const [toolMessage, setToolMessage] = useState("");
+  const [toolBusy, setToolBusy] = useState(false);
+  const selectedProcess = tasks.find((item: any) => item.id === testTask);
+  const entryCandidates = selectedProcess?.activities.filter((item: any) => !selectedProcess.transitions.some((edge: any) => edge.target === item.id)) || [];
+  const entryActivity = selectedProcess?.activities.find((item: any) => item.type === "start") || (entryCandidates.length === 1 ? entryCandidates[0] : null);
+  const selectedTestActivity = selectedProcess?.activities.find((item: any) => item.id === testActivity) || (!testActivity ? entryActivity : null);
+  const selectTestTarget = (taskId: string, activityId: string) => {
+    drafts.current[JSON.stringify([testTask, testActivity])] = { testInput, testFields, payloadFormat, assertion };
+    const draft = drafts.current[JSON.stringify([taskId, activityId])];
+    setTestTask(taskId); setTestActivity(activityId);
+    setTestInput(draft?.testInput ?? "{}"); setTestFields(draft?.testFields ?? "{}");
+    setPayloadFormat(draft?.payloadFormat ?? "json"); setAssertion(draft?.assertion ?? "");
+    setToolError(""); setToolMessage("");
+  };
+  const runTool = async (action: string, options: Record<string, any>) => {
+    setToolError(""); setToolMessage(""); setToolBusy(true);
+    try {
+      const result = await act(action, options);
+      if (!result) throw new Error("Debugger action failed. See the debug log for details.");
+      if (action === "test_activity" && ["failed", "assertion_failed"].includes(result.lastActivityTest?.status)) throw new Error(result.lastActivityTest.error || "Output assertion failed. See the test result below.");
+      setToolMessage(action === "set_value" ? "Value updated. Check Live Variables below." : "Debugger action completed.");
+    } catch (error: any) { setToolError(error.message || "Debugger action failed"); }
+    finally { setToolBusy(false); }
+  };
+  const test = (action: string) => {
+    try {
+      const fields = JSON.parse(testFields);
+      if (!fields || Array.isArray(fields) || typeof fields !== "object") throw new Error("Field overrides must be a JSON object.");
+      if (!selectedTestActivity) throw new Error("Select an activity in this process before testing.");
+      void runTool(action, { task_id: testTask, activity_id: selectedTestActivity.id, value: payloadFormat === "text" ? testInput : JSON.parse(testInput), fields, assertion });
+    } catch (error: any) { setToolError(`Invalid test JSON: ${error.message}`); }
+  };
+  const formatted = (value: any) => value === undefined ? "(not available)" : JSON.stringify(value, null, 2);
+  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div ref={dialogRef} className="runtime-modal debug-tools-dialog">
+    <header><span><Bug/><span><b>Debug & Activity Testing</b><small>Preview mapped inputs, test one activity, or supply a mock result</small></span></span><button aria-label="Close debug tools" onClick={onClose}>×</button></header>
     <main>
       <section className="debug-tool-section"><h3>BREAKPOINTS</h3><label className="debug-check"><input type="checkbox" checked={pauseDraft} onChange={(event) => setPauseDraft(event.target.checked)}/> Pause when an activity throws an error</label>{breakpoints.length ? breakpoints.map((id: string) => { const activity = activities.find((item: any) => item.id === id); return <label key={id}><span>{activity?.name || id}<small>{id}</small></span><input value={conditionDraft[id] || ""} placeholder="Optional condition, e.g. ${last.amount} > 100" onChange={(event) => setConditionDraft((current) => ({ ...current, [id]: event.target.value }))}/></label>; }) : <p>Add a breakpoint from an activity’s context menu. Empty conditions always pause.</p>}</section>
       <section className="debug-tool-section"><h3>WATCH EXPRESSIONS</h3><textarea value={watchText} onChange={(event) => setWatchText(event.target.value)} placeholder={'One expression per line\n${last.orderId}\n${vars.retryCount}'}/><div className="debug-watch-results">{(state.watchValues || []).map((item: any) => <article key={item.expression}><code>{item.expression}</code><pre>{item.error || formatted(item.value)}</pre></article>)}</div></section>
       <section className="debug-tool-section"><h3>LIVE VARIABLES</h3><div className="debug-variable-grid"><article><b>INPUT</b><pre>{formatted(state.variables?.input)}</pre></article><article><b>LAST OUTPUT</b><pre>{formatted(state.variables?.last)}</pre></article><article><b>VARIABLES</b><pre>{formatted(state.variables?.vars)}</pre></article><article><b>PROCESS CONTEXT</b><pre>{formatted(state.variables?.context)}</pre></article></div></section>
       <section className="debug-tool-section debug-evaluate"><h3>EVALUATE</h3><div><input value={expression} onChange={(event) => setExpression(event.target.value)} placeholder="${last.customer.id}"/><button onClick={() => act("evaluate", { expression })}>Evaluate</button></div>{state.lastEvaluation && <pre>{state.lastEvaluation.error || formatted(state.lastEvaluation.value)}</pre>}</section>
-      <section className="debug-tool-section debug-edit"><h3>EDIT PAUSED VALUE</h3><p>Change input.*, last.*, or vars.* while execution is paused.</p><div><input value={editPath} onChange={(event) => setEditPath(event.target.value)} placeholder="vars.retryCount"/><input value={editValue} onChange={(event) => setEditValue(event.target.value)} placeholder='JSON or text value'/><button disabled={state.status !== "paused"} onClick={setRuntimeValue}>Set value</button></div></section>
+      <section className="debug-tool-section debug-edit"><h3>EDIT PAUSED VALUE</h3><p>Replace input or last with an object, array, text, or null. Use vars.name or input.field to change a child value. Input and last are separate values.</p><div><input aria-label="Debug value path" value={editPath} onChange={(event) => setEditPath(event.target.value)} placeholder="input, last, or vars.retryCount"/><input aria-label="Debug value" value={editValue} onChange={(event) => setEditValue(event.target.value)} placeholder='JSON or text value'/><button disabled={state.status !== "paused" || toolBusy} onClick={setRuntimeValue}>Set value</button></div></section>
+      <section className="debug-tool-section debug-activity-test"><h3>ACTIVITY TEST BENCH</h3><p>Pause first. Preview resolves mappings without executing. Run once executes the selected activity with isolated test data and does not advance the paused flow. Real connector, file, and script actions can change external systems. Timeout is 10 seconds; external work already started may continue.</p>
+        <div className="debug-test-workspace">
+        <DebugActivityTree tasks={tasks} taskId={testTask} activityId={testActivity} busy={toolBusy} onSelect={selectTestTarget}/>
+        <div className="debug-test-inputs">
+        <h3>{selectedProcess?.name || "Select a process"}{testActivity && selectedTestActivity ? ` / ${selectedTestActivity.name}` : " / Process input"}</h3>
+        {!testActivity && <p>{entryActivity ? `Process input is supplied to entry activity “${entryActivity.name}”. Run once tests that activity only; it does not run the entire process.` : "This process has no unique entry activity. Select an activity from the tree."}</p>}
+        <label>Payload format<select value={payloadFormat} onChange={event => setPayloadFormat(event.target.value)}><option value="json">JSON (object, array, or scalar)</option><option value="text">Raw text / XML</option></select></label>
+        <label>Test payload / mock output<textarea value={testInput} onChange={event => setTestInput(event.target.value)} spellCheck={false}/></label>
+        <label>Input field overrides (JSON object; applied after mappings)<textarea value={testFields} onChange={event => setTestFields(event.target.value)} placeholder={'{"message":"test", "destination":"test.queue"}'} spellCheck={false}/></label>
+        <label>Output assertion (optional)<input value={assertion} onChange={event => setAssertion(event.target.value)} placeholder="${last.count} > 0"/></label>
+        <div className="debug-test-actions"><button disabled={state.status !== "paused" || toolBusy || !selectedTestActivity} onClick={() => test("preview_activity")}>Preview inputs</button><button disabled={state.status !== "paused" || toolBusy || !selectedTestActivity} onClick={() => test("test_activity")}>Run once (real)</button><button disabled={state.status !== "paused" || toolBusy || testTask !== state.currentTaskId || selectedTestActivity?.id !== state.currentActivityId} onClick={() => test("mock_step")}>Use mock output & step</button><button disabled={toolBusy} onClick={() => { selectTestTarget(state.currentTaskId, state.currentActivityId || ""); setPayloadFormat("json"); setTestInput(formatted(state.variables?.last)); }}>Load paused activity</button></div>
+        {state.lastActivityTest && <><h3>LAST TEST RESULT</h3><pre>{formatted(state.lastActivityTest)}</pre></>}
+        {!!state.testHistory?.length && <details><summary>Recent test results ({state.testHistory.length})</summary><pre>{formatted(state.testHistory)}</pre></details>}
+        </div></div>
+      </section>
+      {toolError && <p role="alert" className="editor-error">{toolError}</p>}{toolMessage && <p role="status">{toolMessage}</p>}
       {state.lastException && <section className="debug-tool-section debug-exception"><h3>LAST EXCEPTION</h3><pre>{formatted(state.lastException)}</pre></section>}
     </main><footer><span>Pause reason: <b>{state.pauseReason || "none"}</b></span><button onClick={onClose}>Close</button><button className="primary" onClick={apply}>Apply debugger settings</button></footer>
   </div></div>;
 }
 
-function DebugBar({ state, act, stop, openJobData, openTools, runToSelected, canRunTo }: any) {
-  const waitingForEvent = state.status === "listening";
-  return (
-    <div className="debug-bar">
-      <Bug />
-      <b>{waitingForEvent ? "ready · waiting for event" : state.status}</b>
-      <button disabled={waitingForEvent} onClick={() => act("continue")}>
-        <CirclePlay /> Continue
-      </button>
-      <button disabled={waitingForEvent} onClick={() => act("pause")}>
-        <Pause /> Pause
-      </button>
-      <button disabled={waitingForEvent} onClick={() => act("step_in")}>
-        <SkipForward /> Step In
-      </button>
-      <button disabled={waitingForEvent} onClick={() => act("step_over")}>
-        <SkipForward /> Step Over
-      </button>
-      <button disabled={waitingForEvent} onClick={() => act("step_out")}>
-        <SkipBack /> Step Out
-      </button>
-      <button disabled={waitingForEvent} onClick={() => act("jump_in")}>Jump In</button>
-      <button disabled={waitingForEvent} onClick={() => act("jump_out")}>Jump Out</button>
-      <button disabled={waitingForEvent || !canRunTo} onClick={runToSelected}><CirclePlay /> Run to selected</button>
-      <button onClick={openJobData}><Database /> Job Data</button>
-      <button onClick={openTools}><Settings2 /> Debug Tools</button>
-      <button className="debug-stop" onClick={stop}>
-        <Square /> Stop
-      </button>
-    </div>
-  );
+function DebugRibbon({ state, act, stop, openJobData, openTools, runToSelected, canRunTo }: any) {
+  const paused = state.status === "paused";
+  const stopping = state.status === "stopping";
+  const command = (label: string, Icon: any, action: () => void, disabled = false, title = label) =>
+    <button type="button" disabled={disabled} onClick={action} title={title} aria-label={label}><Icon/><span>{label}</span></button>;
+  return <section className="studio-ribbon debug-ribbon" aria-label="Debug ribbon">
+    <div className="debug-ribbon-status"><Bug/><b>DEBUG</b><span role="status">{state.status === "listening" ? "Waiting for event" : state.status}</span></div>
+    <div className="ribbon-group"><b>EXECUTION</b><div>
+      {command("Continue", CirclePlay, () => act("continue"), !paused)}
+      {command("Pause", Pause, () => act("pause"), state.status !== "running")}
+      {command("Stop", Square, stop, stopping, "Stop debugging and clean up resources")}
+    </div></div>
+    <div className="ribbon-group"><b>STEP & NAVIGATE</b><div>
+      {command("Step In", ArrowDown, () => act("step_in"), !paused)}
+      {command("Step Over", SkipForward, () => act("step_over"), !paused)}
+      {command("Step Out", ArrowUp, () => act("step_out"), !paused)}
+      {command("Jump In", SkipForward, () => act("jump_in"), !paused)}
+      {command("Jump Out", SkipBack, () => act("jump_out"), !paused)}
+      {command("Run to Selected", CirclePlay, runToSelected, !paused || !canRunTo)}
+    </div></div>
+    <div className="ribbon-group"><b>INSPECT & CONFIGURE</b><div>
+      {command("Breakpoints", Bug, () => openTools(0), stopping)}
+      {command("Watches", Search, () => openTools(1), stopping)}
+      {command("Variables", Database, () => openTools(2), stopping)}
+      {command("Evaluate", CodeXml, () => openTools(3), !paused)}
+      {command("Job Data", BookOpen, openJobData)}
+    </div></div>
+    <div className="ribbon-group"><b>DATA & ACTIVITY TESTING</b><div>
+      {command("Edit Payload", ClipboardPaste, () => openTools(4), !paused)}
+      {command("Preview Inputs", Search, () => openTools(5), !paused, "Open the test bench to provide data and preview resolved inputs")}
+      {command("Test Activity", CheckCircle2, () => openTools(5), !paused, "Open the test bench to configure and run a real activity test")}
+      {command("Mock Output", WandSparkles, () => openTools(5), !paused, "Open the test bench to supply mock output and step")}
+    </div></div>
+  </section>;
 }
 createRoot(document.getElementById("root")!).render(<StudioErrorBoundary><App /></StudioErrorBoundary>);

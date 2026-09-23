@@ -1775,12 +1775,17 @@ async def start_debug(project_id: str, http_request: Request, request: DebugRequ
     properties = {prop.key: prop.value for prop in item.properties.get(request.environment, [])}
     try:
         view = debugger.start(item, task_id, request.input, {resource.id:resource for resource in item.resources}, properties, request.breakpoints, request.environment, request.breakpoint_conditions, request.watches, request.pause_on_error)
+        if request.test_mode:
+            test_state = debugger.sessions[view['sessionId']]
+            test_state.update(listenerMode=False, status='paused', pauseReason='activity-testing')
+            test_state['logs'] = [entry for entry in test_state['logs'] if entry.get('kind') != 'listener']
+            test_state['frames'][-1]['context']['logs'] = test_state['logs']
         task = next(value for value in item.tasks if value.id == task_id)
         diagnostics = _startup_diagnostics(item, task, {resource.id: resource for resource in item.resources}, properties, request.environment, 'DEBUG')
         endpoints = _listener_endpoints(item, task, request.environment, str(http_request.base_url).rstrip('/'))
         events = effective_event_activities(task.activities, task.transitions)
         event = events[0] if len(events) == 1 else None
-        if event and _is_continuous_event(event):
+        if event and _is_continuous_event(event) and not request.test_mode:
             endpoints = [_event_subscription(item, task, event, request.environment)]
         state = debugger.sessions[view['sessionId']]
         runtime_states.setdefault(project_id, {})['environment'] = request.environment
@@ -1788,9 +1793,9 @@ async def start_debug(project_id: str, http_request: Request, request: DebugRequ
         state['logs'][:] = diagnostics + _lifecycle_logs(item, endpoints) + state['logs']
         append_project_logs(project_id, item.name, state['logs'], _project_log_directory(item, request.environment))
         state['persistedLogCount'] = len(state['logs'])
-        if event and _is_continuous_event(event):
+        if event and _is_continuous_event(event) and not request.test_mode:
             _start_continuous_listener(item, task, event, request.environment, view['sessionId'])
-        elif not request.breakpoints:
+        elif not request.breakpoints and not request.test_mode:
             # Run without breakpoints in the background. This lets the Studio
             # poll the debug session and paint each activity/parallel branch
             # while it executes instead of receiving only the final snapshot.
@@ -1817,7 +1822,7 @@ async def debug_action(session_id: str, request: DebugAction):
     try:
         if request.action == 'stop':
             return await _stop_debug_session(session_id)
-        view = await debugger.action(session_id, request.action, request.model_dump(exclude={'action'}, exclude_none=True))
+        view = await debugger.action(session_id, request.action, request.model_dump(exclude={'action'}, exclude_unset=True))
         state = debugger.sessions[session_id]
         project = state['project']
         pending = state.get('pendingSapDelivery')

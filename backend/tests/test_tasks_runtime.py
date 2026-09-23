@@ -9,6 +9,31 @@ from unittest.mock import patch
 class TaskRuntimeTests(unittest.TestCase):
     def setUp(self): self.client = TestClient(app)
 
+    def test_activity_testing_starts_paused_and_accepts_whole_payload(self):
+        self.assertEqual(self.client.post('/api/projects', json=self.project()).status_code, 200)
+        session = None
+        try:
+            with patch('app.main._start_continuous_listener') as listener:
+                response = self.client.post('/api/projects/task-runtime-test/debug', json={
+                    'task_id': 'main', 'input': {}, 'test_mode': True})
+                self.assertEqual(response.status_code, 200, response.text)
+                state = response.json()
+                session = state['sessionId']
+                self.assertEqual(state['status'], 'paused')
+                self.assertEqual(state['currentActivityId'], 's')
+                listener.assert_not_called()
+            endpoint = f'/api/debug/{session}/action'
+            edited = self.client.post(endpoint, json={'action': 'set_value', 'path': 'input', 'value': None})
+            self.assertEqual(edited.status_code, 200, edited.text)
+            self.assertIsNone(edited.json()['variables']['input'])
+            tested = self.client.post(endpoint, json={'action': 'test_activity', 'activity_id': 's', 'value': [1, 2]})
+            self.assertEqual(tested.status_code, 200, tested.text)
+            self.assertEqual(tested.json()['lastActivityTest']['output'], [1, 2])
+            self.assertEqual(tested.json()['currentActivityId'], 's')
+        finally:
+            if session: self.client.post(f'/api/debug/{session}/action', json={'action': 'stop'})
+            self.client.delete('/api/projects/task-runtime-test')
+
     def test_package_failure_reports_cause_and_persists_diagnostics(self):
         self.assertEqual(self.client.post('/api/projects', json=self.project()).status_code, 200)
         try:

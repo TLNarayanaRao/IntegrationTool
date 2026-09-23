@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+from copy import deepcopy
 from datetime import datetime, timezone
 from time import perf_counter
 from uuid import uuid4
@@ -116,6 +117,69 @@ class DebugManager:
         if action == 'stop':
             return await self.stop(session_id)
         options = options or {}
+        if action in ('preview_activity', 'test_activity', 'mock_step'):
+            if state['status'] != 'paused' or state.get('_testing'):
+                raise ValueError('Pause the debugger before testing or supplying an activity result')
+            frame = state['frames'][-1]
+            task_id = options.get('task_id') or frame['taskId']
+            task = next((item for item in state['project'].tasks if item.id == task_id), None)
+            if not task: raise ValueError('Selected process was not found in the debug project')
+            activity_id = options.get('activity_id') or frame['activityId']
+            activity = next((item for item in task.activities if item.id == activity_id), None)
+            if not activity: raise ValueError('Select an activity in the selected process')
+            if action == 'mock_step':
+                if task.id != frame['taskId'] or activity_id != frame['activityId']:
+                    raise ValueError('Mock output can only be supplied for the currently paused activity')
+                if 'value' not in options: raise ValueError('Supply a mock output value')
+                state['_mockOutput'] = deepcopy(options['value'])
+                state['_mockActivityId'] = activity_id
+                try:
+                    return await self.action(session_id, 'step_over')
+                finally:
+                    state.pop('_mockOutput', None)
+                    state.pop('_mockActivityId', None)
+            source = frame['context']
+            ctx = {**source, **{key: deepcopy(source.get(key, {})) for key in
+                               ('input', 'last', 'vars', 'context', 'activities', 'tasks', 'properties')},
+                   'logs': [], 'groupStack': [], 'jdbcTransactions': {}}
+            if 'value' in options:
+                ctx['input'] = deepcopy(options['value'])
+                ctx['last'] = deepcopy(options['value'])
+            ctx['context']['activityId'] = activity.id
+            ctx['context']['taskId'] = task.id
+            ctx['_process'] = task
+            if task.id != frame['taskId']:
+                ctx['vars'] = {}
+                ctx['activities'] = deepcopy(source.get('tasks', {}).get(task.id, {}).get('activities', {}))
+            ctx['_debugInputOverrides'] = {activity.id: deepcopy(options.get('fields') or {})}
+            result = {'activityId': activity.id, 'activityName': activity.name, 'taskId': task.id,
+                      'mode': action, 'input': ctx['input'], 'status': 'preview'}
+            started = perf_counter()
+            state['_testing'] = True
+            try:
+                result['resolvedInputs'] = self.runtime.resolve_activity_config(activity, ctx)
+                if action == 'test_activity':
+                    result['output'] = await asyncio.wait_for(self.runtime.execute_with_policy(activity, ctx),
+                        timeout=float(options.get('timeout_seconds', 10)))
+                    result['status'] = 'passed'
+                    if options.get('assertion'):
+                        ctx['last'] = result['output']
+                        passed = bool(self.runtime.condition(options['assertion'], ctx))
+                        result['assertion'] = {'expression': options['assertion'], 'passed': passed}
+                        result['status'] = 'passed' if passed else 'assertion_failed'
+            except Exception as exc:
+                result.update(status='failed', error=str(exc) or type(exc).__name__)
+            finally:
+                state['_testing'] = False
+            result['durationMs'] = round((perf_counter() - started) * 1000, 3)
+            result['logs'] = ctx['logs']
+            state['lastActivityTest'] = result
+            state['testHistory'] = (state.get('testHistory', []) + [
+                {key: result.get(key) for key in ('activityId', 'activityName', 'mode', 'status', 'durationMs', 'error')}
+            ])[-30:]
+            return self.view(state)
+        if state.get('_testing') and action not in ('configure', 'evaluate'):
+            raise ValueError('An activity test is already running')
         if action == 'configure':
             if options.get('breakpoints') is not None: state['breakpoints'] = set(options['breakpoints'])
             if options.get('breakpoint_conditions') is not None: state['breakpointConditions'] = dict(options['breakpoint_conditions'])
@@ -133,10 +197,16 @@ class DebugManager:
             frame = state.get('frames', [])[-1] if state.get('frames') else None
             path = str(options.get('path') or '').strip()
             root, _, child = path.partition('.')
-            if not frame or root not in ('input', 'last', 'vars') or not child: raise ValueError('Editable paths must start with input., last., or vars.')
-            target = frame['context'].setdefault(root, {})
-            if not isinstance(target, dict): raise ValueError(f'{root} is not an editable object')
-            self.runtime.assign_path(target, child, options.get('value'))
+            if not frame or root not in ('input', 'last', 'vars'): raise ValueError('Editable paths are input, last, vars, or their dotted child paths')
+            value = deepcopy(options.get('value'))
+            if not child:
+                if root == 'vars' and not isinstance(value, dict): raise ValueError('vars must be a JSON object')
+                frame['context'][root] = value
+            else:
+                target = deepcopy(frame['context'].get(root, {}))
+                if not isinstance(target, dict): raise ValueError(f'{root} is not an object; replace the entire {root} value instead')
+                self.runtime.assign_path(target, child, value)
+                frame['context'][root] = target
             state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'debug', 'message': f'Debug value changed: {path}', 'sessionId': session_id})
             return self.view(state)
         if state.get('stopRequested'):
@@ -214,9 +284,11 @@ class DebugManager:
             frame['activityId'] = ''; state['status'] = 'completed'; return
         frame['activityId'] = entered
         activity = next(item for item in task.activities if item.id == frame['activityId'])
+        if '_mockOutput' in state and state.get('_mockActivityId') != activity.id:
+            raise ValueError('Group scheduling changed the current activity; supply mock output at its next pause')
         state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'activity', 'message': f'Activity started: {task.name} / {activity.name}', 'activityId': activity.id, 'taskId': task.id, 'activityType': activity.type, 'operation': activity.config.get('operation') or activity.type})
         activity_started = perf_counter()
-        if activity.type == 'call_task':
+        if activity.type == 'call_task' and '_mockOutput' not in state:
             dynamic_id = self.runtime.resolve(activity.config.get('dynamicTaskId', ''), ctx)
             target_id = str(dynamic_id or activity.config.get('taskId') or '').strip()
             target = next((item for item in project.tasks if (item.id == target_id or item.name.casefold() == target_id.casefold()) and item.kind == 'subtask'), None)
@@ -236,7 +308,12 @@ class DebugManager:
         ctx['context']['activityId'] = activity.id
         activity_input = ctx['last']
         try:
-            ctx['last'] = await self.runtime.execute_with_policy(activity, ctx)
+            if '_mockOutput' in state:
+                ctx['last'] = state.pop('_mockOutput')
+                state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'debug',
+                                     'message': f'Mock output supplied: {activity.name}', 'activityId': activity.id})
+            else:
+                ctx['last'] = await self.runtime.execute_with_policy(activity, ctx)
         except Exception as exc:
             duration = round((perf_counter() - activity_started) * 1000, 3)
             state['logs'].append({'time': log_timestamp(), 'level': 'ERROR', 'kind': 'activity', 'message': f'Activity failed: {task.name} / {activity.name} in {duration:.3f} ms: {exc}', 'activityId': activity.id, 'taskId': task.id, 'durationMs': duration})
@@ -313,7 +390,8 @@ class DebugManager:
         frame = state['frames'][-1] if state.get('frames') else None
         ctx = frame.get('context', {}) if frame else {}
         watch_values = []
+        # Keep testing results separate from the actual workflow outputs.
         for expression in state.get('watches', []):
             try: watch_values.append({'expression': expression, 'value': self._evaluate(expression, ctx)})
             except Exception as exc: watch_values.append({'expression': expression, 'error': str(exc)})
-        return {'sessionId': state['id'], 'status': state['status'], 'pauseReason': state.get('pauseReason'), 'currentActivityId': current.id if current else None, 'currentActivityIds': list(dict.fromkeys(active_ids)), 'currentTaskId': state['frames'][-1]['taskId'] if state['frames'] else None, 'currentGroupIds': [item['id'] for item in group_stack], 'groupIterations': {item['id']: item.get('iteration', 0) for item in group_stack}, 'callStack': [{'taskId': frame['taskId'], 'activityId': frame['activityId'], 'groupIds': [item['id'] for item in frame['context'].get('groupStack', [])]} for frame in state['frames']], 'logs': state['logs'], 'output': state.get('output', {}), 'activityOutputs': execution_state.get('activities', {}), 'taskOutputs': execution_state.get('tasks', {}), 'endpoints': state.get('endpoints', []), 'breakpoints': sorted(state.get('breakpoints', set())), 'breakpointConditions': state.get('breakpointConditions', {}), 'pauseOnError': state.get('pauseOnError', True), 'watches': state.get('watches', []), 'watchValues': watch_values, 'variables': {'input': ctx.get('input', {}), 'last': ctx.get('last', {}), 'vars': ctx.get('vars', {}), 'context': ctx.get('context', {})}, 'lastException': state.get('lastException'), 'lastEvaluation': state.get('lastEvaluation')}
+        return {'lastActivityTest': state.get('lastActivityTest'), 'testHistory': state.get('testHistory', []), 'sessionId': state['id'], 'status': state['status'], 'pauseReason': state.get('pauseReason'), 'currentActivityId': current.id if current else None, 'currentActivityIds': list(dict.fromkeys(active_ids)), 'currentTaskId': state['frames'][-1]['taskId'] if state['frames'] else None, 'currentGroupIds': [item['id'] for item in group_stack], 'groupIterations': {item['id']: item.get('iteration', 0) for item in group_stack}, 'callStack': [{'taskId': frame['taskId'], 'activityId': frame['activityId'], 'groupIds': [item['id'] for item in frame['context'].get('groupStack', [])]} for frame in state['frames']], 'logs': state['logs'], 'output': state.get('output', {}), 'activityOutputs': execution_state.get('activities', {}), 'taskOutputs': execution_state.get('tasks', {}), 'endpoints': state.get('endpoints', []), 'breakpoints': sorted(state.get('breakpoints', set())), 'breakpointConditions': state.get('breakpointConditions', {}), 'pauseOnError': state.get('pauseOnError', True), 'watches': state.get('watches', []), 'watchValues': watch_values, 'variables': {'input': ctx.get('input', {}), 'last': ctx.get('last', {}), 'vars': ctx.get('vars', {}), 'context': ctx.get('context', {})}, 'lastException': state.get('lastException'), 'lastEvaluation': state.get('lastEvaluation')}

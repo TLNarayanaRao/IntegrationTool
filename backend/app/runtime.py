@@ -625,7 +625,7 @@ class WorkflowRuntime:
         if activity.type == 'sap': return operation in ('idoc_acknowledgment','idoc_confirmation','post_idoc','invoke_rfc_bapi','reply_rfc_bapi','read_table')
         return False
 
-    async def execute(self, activity: Activity, ctx: dict):
+    def resolve_activity_config(self, activity: Activity, ctx: dict):
         # Resolve environment, input, variable, and previous-output expressions in every activity field.
         cfg = self.resolve(activity.config, ctx)
         execution_scope = str(ctx.get('context', {}).get('executionId') or ctx.get('context', {}).get('debugSessionId') or '')
@@ -633,12 +633,18 @@ class WorkflowRuntime:
         for key, expression in activity.config.get('inputMappings', {}).items():
             include, value = self.evaluate_mapping(expression, ctx)
             if include: self.assign_path(cfg, key, value)
+        for key, value in ctx.get('_debugInputOverrides', {}).get(activity.id, {}).items():
+            self.assign_path(cfg, key, value)
         if activity.type in ('ftp','sftp','http','http_listener','http_response','rest','soap','sap') and cfg.get('resourceId'):
             shared = ctx['resources'].get(cfg['resourceId'])
             if not shared: raise RuntimeError(f'{activity.name} requires a valid shared connection')
             cfg = {**self.resolve(shared.config, ctx), **cfg}
             if activity.type in ('http','rest','soap') and cfg.get('baseUrl') and cfg.get('url','').startswith('/'):
                 cfg['url'] = cfg['baseUrl'].rstrip('/') + cfg['url']
+        return cfg
+
+    async def execute(self, activity: Activity, ctx: dict):
+        cfg = self.resolve_activity_config(activity, ctx)
         if activity.type == 'start':
             mapped = self.map_input_values(activity.config.get('inputMappings', {}), ctx)
             return self.unwrap_boundary(mapped, 'payload', ctx['input'])
