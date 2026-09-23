@@ -33,6 +33,7 @@ class WorkflowRuntime:
         self._publisher_operation_locks: dict[str, threading.Lock] = {}
         self._initialized_transactional_publishers: set[str] = set()
         self._kafka_executor = None
+        self._jms_executor = None
 
     @staticmethod
     def _publisher_key(kind: str, config: dict) -> str:
@@ -60,8 +61,11 @@ class WorkflowRuntime:
     def close_publishers(self):
         with self._publisher_lock:
             executor, self._kafka_executor = self._kafka_executor, None
+            jms_executor, self._jms_executor = self._jms_executor, None
         if executor is not None:
             executor.shutdown(wait=True, cancel_futures=True)
+        if jms_executor is not None:
+            jms_executor.shutdown(wait=True, cancel_futures=True)
         with self._publisher_lock:
             clients = list(self._publishers.items())
             self._publishers.clear()
@@ -82,6 +86,28 @@ class WorkflowRuntime:
             if self._kafka_executor is None:
                 self._kafka_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix='mina-kafka')
             future = self._kafka_executor.submit(publish)
+        return await asyncio.wrap_future(future)
+
+    async def _publish_jms_isolated(self, config, destination, payload, options):
+        """Keep sends off the shared executor occupied by blocking receivers.
+
+        Bound concurrent JVM launches; preserve synchronous delivery confirmation
+        and do not retry potentially delivered messages automatically.
+        """
+        queued = perf_counter()
+        def publish():
+            started = perf_counter()
+            output = execute_jms(config, 'send', destination, payload, options)
+            completed = perf_counter()
+            return {**output, 'publishTiming': {
+                'queueMs': round((started - queued) * 1000, 3),
+                'bridgeMs': round((completed - started) * 1000, 3),
+                'totalMs': round((completed - queued) * 1000, 3),
+            }}
+        with self._publisher_lock:
+            if self._jms_executor is None:
+                self._jms_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix='mina-jms-send')
+            future = self._jms_executor.submit(publish)
         return await asyncio.wrap_future(future)
 
     def register_acknowledgement(self, technology: str, message_id: str, callback=None) -> str:
@@ -1181,7 +1207,7 @@ class WorkflowRuntime:
                     # EMS/JMS and the in-process providers.
                     ack_id = self.register_acknowledgement(technology, message_id) if client_ack else None
                     return {**output, 'body': body, 'ackId': ack_id, 'ackIds': [ack_id] if ack_id else [], 'messages': [{'id':message_id, 'data':body, 'attributes':output.get('properties', {}), 'ackId':ack_id}], 'count': 1}
-                output = await asyncio.to_thread(execute_jms, rcfg, 'send', str(destination), payload, options)
+                output = await self._publish_jms_isolated(rcfg, str(destination), payload, options)
                 return {**output, 'destination':destination, 'timestamp':timestamp, 'published':True}
             except JavaBridgeError as exc:
                 raise FabricFault(str(exc), fault_type='JMSConnectionException') from exc

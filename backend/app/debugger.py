@@ -342,6 +342,10 @@ class DebugManager:
             raise
         duration = round((perf_counter() - activity_started) * 1000, 3)
         state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'activity', 'message': f'Activity completed: {task.name} / {activity.name} in {duration:.3f} ms', 'activityId': activity.id, 'taskId': task.id, 'durationMs': duration})
+        if isinstance(ctx['last'], dict) and isinstance(ctx['last'].get('publishTiming'), dict):
+            timing = ctx['last']['publishTiming']
+            state['logs'][-1]['publishTiming'] = timing
+            state['logs'][-1]['message'] += f" (send queue {timing.get('queueMs', 0)} ms; Java bridge {timing.get('bridgeMs', 0)} ms)"
         self.runtime.record_activity_output(activity, ctx['last'], ctx, activity_input)
         outgoing = [edge for edge in task.transitions if edge.source == activity.id]
         chosen_edges = self.runtime.select_group_transitions(self.runtime.eligible_success_transitions(outgoing, ctx), ctx, plans)
