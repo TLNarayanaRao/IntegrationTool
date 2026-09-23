@@ -673,6 +673,10 @@ async def stop_project(project_id: str):
     for session_id in sessions:
         await _stop_debug_session(session_id)
     active = active_runs.pop(project_id, None)
+    if active and not active.done(): active.cancel()
+    # Release application-scoped persistent EMS/JMS senders, including a send
+    # blocked in its Java worker. Debug session scopes are closed separately.
+    await asyncio.to_thread(runtime.close_application_senders, project_id)
     await _cancel_and_wait(active)
     previous = runtime_states.get(project_id, {})
     environment = str(previous.get('environment') or item.active_environment or 'local')

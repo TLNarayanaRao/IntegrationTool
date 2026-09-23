@@ -34,6 +34,15 @@ class WorkflowRuntime:
         self._initialized_transactional_publishers: set[str] = set()
         self._kafka_executor = None
         self._jms_executor = None
+        self._jms_scope_id = uuid.uuid4().hex
+
+    def jms_application_scope(self, project_id: str) -> str:
+        """Stable across jobs, isolated across applications and runtime instances."""
+        return f'mina-run:{self._jms_scope_id}:{project_id}'
+
+    def close_application_senders(self, project_id: str):
+        if self._jms_executor is not None:
+            close_jms_senders(self.jms_application_scope(project_id), force=True)
 
     @staticmethod
     def _publisher_key(kind: str, config: dict) -> str:
@@ -341,7 +350,7 @@ class WorkflowRuntime:
         if delay: await asyncio.sleep(delay)
         return plans[state['id']]['entry']
 
-    async def run(self, process: ProcessDefinition, initial: dict, resources=None, properties=None, entry_activity_id=None, project: Project | None=None, execution_state: dict | None=None, event_output: Any = _NO_EVENT_OUTPUT, transport: dict | None = None) -> RunResult:
+    async def run(self, process: ProcessDefinition, initial: dict, resources=None, properties=None, entry_activity_id=None, project: Project | None=None, execution_state: dict | None=None, event_output: Any = _NO_EVENT_OUTPUT, transport: dict | None = None, jms_sender_scope: str | None = None) -> RunResult:
         run_id, logs = str(uuid.uuid4()), []
         started = datetime.now(timezone.utc)
         correlation_id = str(initial.get('correlationId') or initial.get('correlation_id') or run_id) if isinstance(initial, dict) else run_id
@@ -353,7 +362,8 @@ class WorkflowRuntime:
             'input': initial, 'vars': {}, 'last': initial, 'resources': resources or {},
             'properties': properties or {}, 'project': project, 'runtime': self, 'logs': logs,
             'activities': activity_outputs, 'tasks': task_outputs,
-            'context': {'taskId': process.id, 'activityId': '', 'environment': getattr(project, 'active_environment', '') if project else '', 'correlationId': correlation_id, 'runId': run_id, 'executionId': run_id},
+            'context': {'taskId': process.id, 'activityId': '', 'environment': getattr(project, 'active_environment', '') if project else '', 'correlationId': correlation_id, 'runId': run_id, 'executionId': run_id,
+                        'jmsSenderScope': jms_sender_scope or self.jms_application_scope(project.id if project else process.id)},
             'transport': transport or {},
             '_process': process, 'groupStack': [], 'jdbcTransactions': {},
         }
@@ -454,7 +464,8 @@ class WorkflowRuntime:
                     results = await asyncio.gather(*(
                         self.run(process, branch_initial, resources=resources, properties=properties,
                                  entry_activity_id=edge.target, project=project,
-                                 execution_state=execution_state, transport=transport)
+                                 execution_state=execution_state, transport=transport,
+                                 jms_sender_scope=context['context']['jmsSenderScope'])
                         for edge in chosen_edges
                     ), return_exceptions=True)
                     failed = None
@@ -1104,7 +1115,8 @@ class WorkflowRuntime:
             mapped_values = self.map_input_values(activity.config.get('inputMappings', {}), ctx)
             mapped = self.unwrap_boundary(mapped_values, 'payload', ctx['last'] if isinstance(ctx['last'], dict) else {'value':ctx['last']})
             execution_state = {'activities': ctx.setdefault('activities', {}), 'tasks': ctx.setdefault('tasks', {})}
-            invocation = self.run(task, mapped, ctx['resources'], ctx['properties'], project=project, execution_state=execution_state)
+            invocation = self.run(task, mapped, ctx['resources'], ctx['properties'], project=project, execution_state=execution_state,
+                                  jms_sender_scope=ctx.get('context', {}).get('debugSessionId') or ctx.get('context', {}).get('jmsSenderScope'))
             if cfg.get('spawn'):
                 asyncio.create_task(invocation)
                 return {'spawned': True, 'taskId': task.id}
@@ -1124,6 +1136,8 @@ class WorkflowRuntime:
             raise RuntimeError(f'{technology.upper()} activity requires a shared {technology.upper()} connection')
         rcfg = self.resolve(resource.config, ctx)
         execution_scope = str(ctx.get('context', {}).get('executionId') or ctx.get('context', {}).get('debugSessionId') or '')
+        if technology in ('ems', 'jms'):
+            execution_scope = str(ctx.get('context', {}).get('debugSessionId') or ctx.get('context', {}).get('jmsSenderScope') or execution_scope)
         if execution_scope: rcfg['_executionScope'] = execution_scope
         operation = cfg.get('operation', 'publish')
         destination = cfg.get('destination') or cfg.get('queue') or cfg.get('topic') or cfg.get('subscription') or 'default'

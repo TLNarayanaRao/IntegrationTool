@@ -1,4 +1,5 @@
 import shutil
+import asyncio
 import subprocess
 import tempfile
 import unittest
@@ -7,6 +8,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app import java_bridge as bridge
+from app.models import Project
+from app.runtime import WorkflowRuntime
 
 
 @unittest.skipUnless(shutil.which('javac') and shutil.which('java'), 'JDK required')
@@ -44,6 +47,42 @@ class JmsSenderWorkerTests(unittest.TestCase):
         self.assertEqual(first['messageId'], '1:1:1:1:8:99:one')
         self.assertEqual(second['messageId'], '1:1:2:2:4:0:two')
         self.assertIn('providerSendMs', second)
+
+    def test_run_jobs_reuse_sender_and_application_stop_is_isolated(self):
+        config = {key: value for key, value in self.config.items() if key != '_executionScope'}
+        project = Project(id='run-app', name='Run app', resources=[{
+            'id': 'ems', 'name': 'EMS', 'type': 'ems', 'config': {**config, 'mode': 'external'}}],
+            tasks=[{'id': 'main', 'name': 'Main', 'kind': 'starter', 'activities': [
+                {'id': 'start', 'name': 'Start', 'type': 'start'},
+                {'id': 'send', 'name': 'Send', 'type': 'ems', 'config': {
+                    'operation': 'send', 'resourceId': 'ems', 'destination': 'queue', 'message': 'hello'}},
+                {'id': 'end', 'name': 'End', 'type': 'end'}],
+                'transitions': [{'id': 'a', 'source': 'start', 'target': 'send'}, {'id': 'b', 'source': 'send', 'target': 'end'}]}])
+        runtime = WorkflowRuntime()
+        async def exercise():
+            async def run(item):
+                result = await runtime.run(item.tasks[0], {}, {r.id: r for r in item.resources}, {}, project=item)
+                self.assertEqual(result.status, 'completed', result.logs)
+                return result
+            try:
+                results = [await run(project) for _ in range(12)]
+                self.assertEqual(len({result.run_id for result in results}), 12)
+                self.assertEqual(len(bridge._jms_senders), 1)
+                worker = next(iter(bridge._jms_senders.values()))['worker']
+                other = project.model_copy(update={'id': 'other-app'})
+                await run(other)
+                self.assertEqual(len(bridge._jms_senders), 2)
+                runtime.close_application_senders(project.id)
+                self.assertIsNotNone(worker.process.poll())
+                self.assertEqual(len(bridge._jms_senders), 1)
+                other_worker = next(iter(bridge._jms_senders.values()))['worker']
+                await run(other)
+                self.assertIs(next(iter(bridge._jms_senders.values()))['worker'], other_worker)
+                await run(project)  # Restart creates a fresh sender.
+                self.assertEqual(len(bridge._jms_senders), 2)
+            finally:
+                runtime.close_publishers()
+        asyncio.run(exercise())
 
     def test_failed_send_is_not_replayed_and_next_send_reconnects(self):
         bridge.execute_jms(self.config, 'send', 'queue', 'one')

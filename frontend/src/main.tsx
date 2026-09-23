@@ -1170,7 +1170,15 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
     if (item.type === "excel" && !String(item.config.filePath || item.config.inputMappings?.filePath || "").trim()) add("error", "Excel", `${item.name} has no workbook path.`, "Enter a workbook path or map filePath in Input.", item.id);
     if (item.type === "basic" && operation === "external_command" && !String(item.config.command || item.config.inputMappings?.command || "").trim()) add("error", "External Command", `${item.name} has no executable command.`, "Enter a command or map it in Input.", item.id);
     if ((item.type === "file" || item.type === "ftp" || item.type === "sftp") && !String(item.config.path || item.config.remotePath || "").trim()) add("warning", "Configuration", `${item.name} has no file path.`, "Configure the source or target path.", item.id);
-    if (item.type === "sap" && operation.includes("idoc") && !item.config.idocType) add("mapping", "SAP IDoc", `${item.name} has no IDoc type/schema.`, "Retrieve an IDoc type from the SAP shared connection and select it here.", item.id);
+    if (item.type === "sap" && operation.includes("idoc")) {
+      // Match the runtime's shared-connection inheritance. A fetched IDoc is
+      // often selected on the connection, not copied into every activity.
+      const connection = project.resources.find((resource) => resource.id === item.config.resourceId && resource.type === "sap");
+      const sapConfig = { ...(connection?.config || {}), ...item.config };
+      const selectedIdoc = sapConfig.idocCatalog?.find((entry: any) => entry.idocType === sapConfig.idocType) || sapConfig.selectedIdoc;
+      const idocType = sapConfig.idocType || selectedIdoc?.idocType;
+      if (!String(idocType || "").trim()) add("error", "SAP IDoc configuration", `${item.name} has no IDoc type configured or inherited from its SAP connection.`, "Retrieve and select an IDoc type on the selected SAP shared connection, or select one in activity Configuration. Input mappings are not required for a listener; a parser can consume the previous activity output.", item.id);
+    }
     if (item.type === "sap" && operation === "idoc_listener" && !["", "nomessaging", "direct"].includes(String(item.config.messagingSource || "NoMessaging").toLowerCase().replace(/\s/g, ""))) {
       if (!item.config.messagingResourceId) add("error", "SAP IDoc messaging", `${item.name} has no messaging shared connection.`, "Select the EMS, JMS, or Kafka connection used by the IDoc bridge.", item.id);
       else if (project.resources.find((resource) => resource.id === item.config.messagingResourceId)?.type !== String(item.config.messagingSource).toLowerCase()) add("error", "SAP IDoc messaging", `${item.name} has a mismatched messaging connection.`, `Select a ${item.config.messagingSource} shared connection.`, item.id);
