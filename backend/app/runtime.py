@@ -1,5 +1,5 @@
 from __future__ import annotations
-import ast, asyncio, base64, csv, ftplib, gzip, hashlib, importlib.util, io, json, os, re, shlex, shutil, sqlite3, sys, tempfile, threading, traceback, uuid
+import ast, asyncio, base64, copy, csv, ftplib, gzip, hashlib, importlib.util, io, json, os, re, shlex, shutil, sqlite3, sys, tempfile, threading, traceback, uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import httpx
@@ -547,9 +547,10 @@ class WorkflowRuntime:
     @staticmethod
     def record_activity_output(activity: Activity, result, ctx: dict, input_value: Any = _NO_EVENT_OUTPUT):
         """Retain every executed activity result for downstream mappings and debugging."""
-        record = {'activityId': activity.id, 'name': activity.name, 'type': activity.type, 'output': result}
+        record = {'activityId': activity.id, 'name': activity.name, 'type': activity.type, 'output': copy.deepcopy(result)}
+        input_value = ctx.get('_resolvedActivityInputs', {}).pop(activity.id, input_value)
         if input_value is not _NO_EVENT_OUTPUT:
-            record['input'] = input_value
+            record['input'] = copy.deepcopy(input_value)
         if activity.type in ('xml', 'flat') and activity.config.get('operation') == 'parse' and isinstance(result, dict) and result.get('xml'):
             record['displayOutput'] = result['xml']
         record.update(ctx.pop('_activityMetadata', {}))
@@ -667,13 +668,19 @@ class WorkflowRuntime:
     def resolve_activity_config(self, activity: Activity, ctx: dict):
         # Resolve environment, input, variable, and previous-output expressions in every activity field.
         cfg = self.resolve(activity.config, ctx)
+        mapped_input = {}
         execution_scope = str(ctx.get('context', {}).get('executionId') or ctx.get('context', {}).get('debugSessionId') or '')
         if execution_scope: cfg['_executionScope'] = execution_scope
         for key, expression in activity.config.get('inputMappings', {}).items():
             include, value = self.evaluate_mapping(expression, ctx)
-            if include: self.assign_path(cfg, key, value)
+            if include:
+                self.assign_path(cfg, key, value)
+                self.assign_path(mapped_input, key, copy.deepcopy(value))
         for key, value in ctx.get('_debugInputOverrides', {}).get(activity.id, {}).items():
             self.assign_path(cfg, key, value)
+            self.assign_path(mapped_input, key, copy.deepcopy(value))
+        if activity.config.get('inputMappings') or ctx.get('_debugInputOverrides', {}).get(activity.id):
+            ctx.setdefault('_resolvedActivityInputs', {})[activity.id] = mapped_input
         if activity.type in ('ftp','sftp','http','http_listener','http_response','rest','soap','sap') and cfg.get('resourceId'):
             shared = ctx['resources'].get(cfg['resourceId'])
             if not shared: raise RuntimeError(f'{activity.name} requires a valid shared connection')

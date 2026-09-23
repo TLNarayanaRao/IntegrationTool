@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import MapperStudio from "./MapperStudio";
+import MappingExpressionInput from "./MappingExpressionInput";
 import DataNodeIcon from "./DataNodeIcon";
 import { functionExpression, mapperFunctionCatalog, mapperFunctionCategories } from "./mapper-functions";
 const Braces = DataNodeIcon;
@@ -1992,6 +1993,13 @@ function isComplexSchemaType(fieldType: any): boolean {
   return type === "complex" || type === "json" || type.includes("array") || type.endsWith("[]") || type.includes("complex[]") || type.includes("object[]");
 }
 function MappingBinding({ expression, sources, onChange, onConstantChange, fieldType = "string", structural = false }: any) {
+  const completionPaths = ["input", "last", ...(sources || []).flatMap((source: ActivitySource) => {
+    const root = activityReferenceName(source.activity.name);
+    const fields = dataTreeRows(source.fields);
+    return [root, ...fields.map(field => `${root}.${field.path}`),
+      ...(source.activity.type === "start" ? fields.map(field => `input.${field.path}`) : []),
+      ...(source.distance === 1 ? fields.map(field => `last.${field.path}`) : [])];
+  })];
   const hasValue = expression !== undefined && expression !== null && expression !== "";
   const editableExpression = mappingSource(expression);
   const type = String(fieldType).toLowerCase();
@@ -2012,7 +2020,7 @@ function MappingBinding({ expression, sources, onChange, onConstantChange, field
   useEffect(() => { setLiteralDraft(literalValue); setLiteralError(""); }, [literalValue]);
 
   if (structural || isComplexSchemaType(fieldType)) {
-    return <div className={`mapping-binding structural-binding ${hasValue ? "mapped" : ""}`}><Braces/><input aria-label="Object mapping expression" value={typeof editableExpression === "string" ? editableExpression : ""} placeholder="Drop an object source or enter an expression" onChange={(event) => onChange(event.target.value)} />{hasValue && <button type="button" title="Clear structural statement" onClick={(event) => { event.stopPropagation(); onChange(""); }}>×</button>}</div>;
+    return <div className={`mapping-binding structural-binding ${hasValue ? "mapped" : ""}`}><Braces/><MappingExpressionInput label="Object mapping expression" value={editableExpression} paths={completionPaths} onChange={onChange}/>{hasValue && <button type="button" title="Clear structural statement" onClick={(event) => { event.stopPropagation(); onChange(""); }}>×</button>}</div>;
   }
 
   const commitConstant = (raw: string): boolean => {
@@ -2039,7 +2047,7 @@ function MappingBinding({ expression, sources, onChange, onConstantChange, field
   };
 
   return <div className={`mapping-binding ${hasValue ? "mapped" : ""} ${literalError ? "literal-invalid" : ""}`}>
-    <span>{describeMapping(expression, sources)}</span>
+    <MappingExpressionInput value={editableExpression} paths={completionPaths} onChange={onChange}/>
     {hasValue && <button type="button" title="Clear value" onClick={(event) => { event.stopPropagation(); onChange(""); }}>×</button>}
     <details
       ref={constantPanel}

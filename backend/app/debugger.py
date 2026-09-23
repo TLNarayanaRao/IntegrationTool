@@ -22,7 +22,7 @@ class DebugManager:
         starters = starters or [item for item in task.activities if item.id not in incoming]
         if not starters: raise ValueError('Task has no starting activity')
         session_id = str(uuid4())
-        execution_state = {'activities': {}, 'tasks': {task.id: {'name': task.name, 'activities': {}}}}
+        execution_state = {'activities': {}, 'tasks': {task.id: {'name': task.name, 'input': deepcopy(initial), 'activities': {}}}}
         logs = [{'time': log_timestamp(), 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Debug session started: {project.name} / {task.name}', 'taskId': task.id, 'sessionId': session_id}]
         group_plans = self.runtime.compile_groups(task)
         context = {'input': initial, 'vars': {}, 'last': initial, 'resources': resources, 'properties': properties, 'project': project, 'runtime': self.runtime, 'logs': logs, 'activities': execution_state['activities'], 'tasks': execution_state['tasks'], 'context': {'taskId': task.id, 'activityId': starters[0].id, 'environment': environment, 'debugSessionId': session_id, 'executionId': session_id}, '_process': task, 'groupStack': [], 'jdbcTransactions': {}}
