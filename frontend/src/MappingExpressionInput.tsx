@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { mapperFunctionCatalog } from "./mapper-functions";
-import { completeMapping } from "./mappingCompletion";
+import { completeMapping, mappingPathSuggestions } from "./mappingCompletion";
 
 export default function MappingExpressionInput({ value, onChange, paths = [], label = "Mapping expression" }: any) {
   const id = useId();
@@ -17,7 +17,7 @@ export default function MappingExpressionInput({ value, onChange, paths = [], la
   const [caret, setCaret] = useState<number | null>(null);
   const prefix = text.slice(0, caret ?? text.length), suffix = text.slice(caret ?? text.length);
   const token = prefix.match(/(?:\$\{?|)([\w.@\[\]-]+)$/)?.[1] || "";
-  const options = token ? [...new Set<string>(paths)].filter(path => path.toLowerCase().startsWith(token.toLowerCase()))
+  const options = token ? mappingPathSuggestions(paths, prefix)
     .map(path => ({ label: path, insert: `\${${path}}` }))
     .concat(mapperFunctionCatalog.filter(fn => fn.name.toLowerCase().startsWith(token.toLowerCase())).map(fn => ({ label: fn.signature, insert: fn.template }))).slice(0, 30) : [];
   const choose = (option: { insert: string }) => {
@@ -29,10 +29,11 @@ export default function MappingExpressionInput({ value, onChange, paths = [], la
     <input ref={input} aria-label={label} role="combobox" aria-autocomplete="list" aria-expanded={open && !!options.length}
       aria-activedescendant={open && options.length ? `${id}-${Math.min(index, options.length - 1)}` : undefined}
       aria-controls={id} value={text} placeholder="Type a data path or function…" style={{ width: "100%", boxSizing: "border-box" }}
-      onFocus={() => { setRect(input.current?.getBoundingClientRect() || null); setOpen(true); }} onBlur={() => setOpen(false)}
+      onFocus={event => { setCaret(event.currentTarget.selectionStart); setRect(input.current?.getBoundingClientRect() || null); setOpen(true); }} onBlur={() => setOpen(false)}
       onSelect={event => setCaret(event.currentTarget.selectionStart)}
       onChange={event => { setRect(input.current?.getBoundingClientRect() || null); setCaret(event.target.selectionStart); onChange(event.target.value); setIndex(0); setOpen(true); }}
       onKeyDown={event => {
+        if (event.ctrlKey && event.code === "Space") { event.preventDefault(); event.stopPropagation(); setRect(input.current?.getBoundingClientRect() || null); setCaret(event.currentTarget.selectionStart); setOpen(true); setIndex(0); return; }
         if (event.key === "Escape") { setOpen(false); event.stopPropagation(); }
         if (!open || !options.length) return;
         if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); event.stopPropagation(); setIndex((index + (event.key === "ArrowDown" ? 1 : options.length - 1)) % options.length); }
