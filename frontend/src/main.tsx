@@ -55,6 +55,9 @@ import ActivityEditor, { activityContract, activityReferenceName, DataSourcePane
 import ActivityPicker from "./ActivityPicker";
 import DataNodeIcon from "./DataNodeIcon";
 import DebugActivityTree from "./DebugActivityTree";
+import DebugJobData from "./DebugJobData";
+import { copyTask } from "./copyTask";
+import { repairCopiedTask } from "./repairCopiedTask";
 import FileUtilities, { UtilityMode } from "./FileUtilities";
 import "./styles.css";
 import "./designer.css";
@@ -1031,7 +1034,8 @@ const normalizeProject = (value: any): Project => {
       groups: Array.isArray(task.groups) ? task.groups.map((group: any) => ({ ...group, member_activity_ids: Array.isArray(group.member_activity_ids) ? group.member_activity_ids : [], config: group.config && typeof group.config === "object" ? group.config : {}, position: group.position || { x: 100, y: 100 }, size: group.size || { width: 420, height: 220 }, parent_group_id: group.parent_group_id || null })) : [],
     });
   });
-  const migratedTasks = normalizedTasks.map((task: Task) => {
+  const migratedTasks = normalizedTasks.map((rawTask: Task) => {
+    const task = repairCopiedTask(rawTask);
     const aliases = Object.fromEntries(task.activities.map((activity: Node) => [activity.id, activityReferenceName(activity.name)]));
     const references = Object.fromEntries(task.activities.flatMap((activity: Node) => [
       [activity.id, aliases[activity.id]],
@@ -1052,8 +1056,8 @@ const normalizeProject = (value: any): Project => {
     return {
       ...task,
       activities: task.activities.map((activity: Node) => ({ ...activity, id: aliases[activity.id], name: aliases[activity.id], config: migrate(activity.config) })),
-      transitions: task.transitions.map((transition) => ({ ...transition, source: aliases[transition.source] || transition.source, target: aliases[transition.target] || transition.target })),
-      groups: (task.groups || []).map((group) => ({ ...group, member_activity_ids: group.member_activity_ids.map((id) => aliases[id] || id) })),
+      transitions: task.transitions.map((transition) => ({ ...transition, condition: migrate(transition.condition), source: aliases[transition.source] || transition.source, target: aliases[transition.target] || transition.target })),
+      groups: (task.groups || []).map((group) => ({ ...group, config: migrate(group.config), member_activity_ids: group.member_activity_ids.map((id) => aliases[id] || id) })),
     };
   });
   const fallback = structuredClone(initial);
@@ -2114,7 +2118,7 @@ function App() {
   }, [project, selectedIds]);
   const projectFilename = (extension: string) => `${project.name.replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-|-$/g, "") || project.id}.${extension}`;
   const persistProject = async () => {
-    const response = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(project) });
+    const response = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(normalizeProject(project)) });
     const contentType = response.headers.get("content-type") || "";
     if (!contentType.includes("application/json")) throw new Error("The project API returned HTML instead of project JSON. Verify the local runtime is running on port 8787.");
     const output = await response.json();
@@ -2609,15 +2613,7 @@ function App() {
     if (!copied) { setLogs([{ level: "WARN", message: "Project Explorer clipboard is empty." }]); return; }
     const stamp = Date.now();
     if (target === "tasks" && copied.type === "task") {
-      const item = { ...structuredClone(copied.value), id: `task-${stamp}`, name: `${copied.value.name} Copy` };
-      const usedNames = new Set<string>();
-      item.activities = item.activities.map((activity: Node) => {
-        const id = uniqueActivityName(activityReferenceName(`${activity.name}-Copy`), usedNames);
-        return { ...activity, id, name: id, config: rewriteActivityReference(activity.config, activity.id, id) };
-      });
-      const ids = Object.fromEntries(copied.value.activities.map((activity: Node, index: number) => [activity.id, item.activities[index].id]));
-      item.transitions = item.transitions.map((edge: Edge, index: number) => ({ ...edge, id: `edge-${stamp}-${index}`, source: ids[edge.source], target: ids[edge.target] }));
-      item.groups = (item.groups || []).map((group: GroupDefinition) => ({ ...group, member_activity_ids: group.member_activity_ids.map((activityId) => ids[activityId] || activityId) }));
+      const item = copyTask(repairCopiedTask(copied.value), `task-${crypto.randomUUID()}`, `${copied.value.name} Copy`);
       setProject((current) => ({ ...current, tasks: [...current.tasks, item] }));
     } else if (target === "resources" && copied.type === "resource") setProject((current) => ({ ...current, resources: [...current.resources, { ...structuredClone(copied.value), id: `resource-${stamp}`, name: `${copied.value.name} Copy` }] }));
     else if (target === "schemas" && copied.type === "schema") setProject((current) => ({ ...current, schemas: [...current.schemas, { ...structuredClone(copied.value), id: `schema-${stamp}`, name: copied.value.name.replace(/\.xsd$/i, "-copy.xsd") }] }));
@@ -3067,7 +3063,7 @@ function App() {
             </button>
           </span>
         </div>
-        {debugState && jobDataOpen && <DebugJobDataDialog state={debugState} task={task} activities={nodes} onClose={() => setJobDataOpen(false)} />}
+        {debugState && jobDataOpen && <DebugJobData state={debugState} tasks={project.tasks} onClose={() => setJobDataOpen(false)} />}
         {debugState && debugToolsOpen && <DebugToolsDialog tasks={project.tasks} initialSection={debugToolsSection} state={debugState} activities={nodes} breakpoints={breakpoints} conditions={breakpointConditions} watches={debugWatches} pauseOnError={pauseOnDebugError} act={debugAction} onApply={(next: any) => { setBreakpoints(next.breakpoints); setBreakpointConditions(next.conditions); setDebugWatches(next.watches); setPauseOnDebugError(next.pauseOnError); }} onClose={() => setDebugToolsOpen(false)} />}
         <div
           className="canvas"
@@ -5786,13 +5782,6 @@ function ConnectionConfig({ resource, update }: any) {
       </label>
     </div>
   );
-}
-function DebugJobDataDialog({ state, task, activities, onClose }: any) {
-  const records = state.activityOutputs || {}, executed = activities.filter((activity: any) => records[activity.id]);
-  const [selectedId, setSelectedId] = useState(executed[0]?.id || activities[0]?.id || "");
-  const selected = records[selectedId];
-  const formatted = (value: any) => value === undefined ? "(not captured)" : typeof value === "string" ? value : JSON.stringify(value, null, 2);
-  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="runtime-modal debug-job-data-dialog"><header><span><Database/><span><b>Debug Job Data</b><small>{task.name} · inspect input and output captured for each executed activity</small></span></span><button aria-label="Close job data" onClick={onClose}>×</button></header><main><aside className="debug-job-activity-list"><b>EXECUTED ACTIVITIES · {executed.length}</b>{executed.map((activity: any) => <button key={activity.id} className={selectedId === activity.id ? "active" : ""} onClick={() => setSelectedId(activity.id)}><span><b>{activity.name}</b><small>{activity.type}</small></span><i>✓</i></button>)}{!executed.length && <p>No activity data has been captured yet.</p>}</aside><section className="debug-job-payloads"><div className="debug-job-heading"><span><b>{selected?.name || "Activity data"}</b><small>{selected?.activityId || "Select an executed activity"}</small></span>{selected && <code>{selected.type}</code>}</div>{selected ? <div className="debug-job-columns"><article><header>INPUT</header><pre>{formatted(selected.input)}</pre></article><article><header>OUTPUT</header><pre>{formatted(selected.output)}</pre></article></div> : <div className="debug-job-empty">Start or continue the debug session to capture activity job data.</div>}</section></main><footer><span>Data is from the current debug job and is cleared when the session ends.</span><button className="primary" onClick={onClose}>Close</button></footer></div></div>;
 }
 
 function DebugToolsDialog({ state, tasks, activities, breakpoints, conditions, watches, pauseOnError, act, onApply, onClose, initialSection = 5 }: any) {

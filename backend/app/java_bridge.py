@@ -9,6 +9,9 @@ import tempfile
 import asyncio
 import queue
 import threading
+import time
+import hashlib
+import atexit
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +28,7 @@ def terminate_execution_processes(execution_scope: str) -> None:
     """Terminate short-lived vendor bridge JVMs owned by one execution."""
     scope = str(execution_scope or '').strip()
     if not scope: return
+    close_jms_senders(scope, force=True)
     with _active_process_lock:
         processes = list(_active_processes.pop(scope, set()))
     for process in processes:
@@ -253,8 +257,15 @@ class SapJcoWorker:
         with self._lock:
             try:
                 self.process.stdin.write(f"{action}\t{request_id}" + (f"\t{encoded}" if values is not None else "") + "\n"); self.process.stdin.flush()
+                deadline = time.monotonic() + timeout
                 while True:
-                    response = self._responses.get(timeout=timeout)
+                    if self._closed.is_set(): raise JavaBridgeError(f"{self.connector_name} worker was stopped")
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0: raise queue.Empty()
+                    try: response = self._responses.get(timeout=min(.2, remaining))
+                    except queue.Empty:
+                        if self.process.poll() is not None: raise JavaBridgeError(f"{self.connector_name} worker exited")
+                        continue
                     if response.get("requestId") == request_id: break
             except (OSError, queue.Empty) as exc:
                 raise JavaBridgeError(f"{self.connector_name} worker request failed or timed out: {exc}") from exc
@@ -493,6 +504,114 @@ def test_jms(config: dict[str, Any]) -> dict[str, Any]:
     return invoke("jms.test", config, jms_values(config), family="jms", timeout=float(config.get("connectionTimeoutSeconds") or 30) + 5)
 
 
+_jms_senders_lock = threading.Lock()
+_jms_senders: dict[str, dict] = {}
+_jms_reaper_started = False
+
+
+def _reap_jms_senders() -> None:
+    while True:
+        time.sleep(30)
+        expired = []
+        with _jms_senders_lock:
+            for key, entry in list(_jms_senders.items()):
+                if time.monotonic() - entry.get('lastUsed', time.monotonic()) < 60: continue
+                if not entry['lock'].acquire(blocking=False): continue
+                entry['stopped'] = True
+                del _jms_senders[key]
+                expired.append(entry)
+        for entry in expired:
+            try:
+                if entry.get('worker'): entry['worker'].close()
+            finally: entry['lock'].release()
+
+
+def close_jms_senders(scope: str | None = None, *, force: bool = False) -> None:
+    with _jms_senders_lock:
+        entries = [entry for entry in _jms_senders.values() if scope is None or entry['scope'] == scope]
+        for key, entry in list(_jms_senders.items()):
+            if entry in entries:
+                entry['stopped'] = True
+                del _jms_senders[key]
+    for entry in entries:
+        worker = entry.get('worker')
+        if worker:
+            if force and worker.process.poll() is None:
+                try: worker.process.terminate()
+                except OSError: pass
+            worker.close()
+
+
+atexit.register(close_jms_senders, force=True)
+
+
+def _start_jms_sender(config: dict[str, Any], values: dict[str, Any]) -> SapJcoWorker:
+    classpath, jars = _classpath(config, 'jms')
+    descriptor = tempfile.NamedTemporaryFile('w', encoding='utf-8', suffix='.properties', delete=False)
+    process = None
+    try:
+        with descriptor:
+            for key, value in {'command': 'jms.sender_worker', **values}.items():
+                if value is not None: descriptor.write(f'{_escape_property(key)}={_escape_property(value)}\n')
+        process = subprocess.Popen(_java_command(config, classpath, descriptor.name, family='jms'),
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            encoding='utf-8', errors='replace', creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), bufsize=1)
+        _track_process(str(config.get('_executionScope') or ''), process)
+        return SapJcoWorker(process, Path(descriptor.name), [jar.name for jar in jars],
+            float(config.get('connectionTimeoutSeconds') or 30) + 5, 'JMS sender')
+    except Exception:
+        if process is not None and process.poll() is None:
+            process.kill(); process.wait(timeout=5)
+        Path(descriptor.name).unlink(missing_ok=True)
+        raise
+    finally:
+        if process is not None: _untrack_process(str(config.get('_executionScope') or ''), process)
+
+
+def _send_jms_reused(config: dict[str, Any], values: dict[str, Any], timeout: float) -> dict:
+    global _jms_reaper_started
+    # Scope isolation keeps Debug Stop from closing another application's sender.
+    identity = config
+    key = hashlib.sha256(json.dumps(identity, sort_keys=True, default=str).encode()).hexdigest()
+    with _jms_senders_lock:
+        if not _jms_reaper_started:
+            threading.Thread(target=_reap_jms_senders, name='mina-jms-idle-cleanup', daemon=True).start()
+            _jms_reaper_started = True
+        entry = _jms_senders.get(key)
+        if entry is None and len(_jms_senders) < 8:
+            entry = {'lock': threading.Lock(), 'worker': None, 'scope': str(config.get('_executionScope') or ''), 'stopped': False, 'lastUsed': time.monotonic()}
+            _jms_senders[key] = entry
+    if entry is None:
+        # Bound persistent JVMs when dynamic destinations/configuration have high cardinality.
+        return invoke('jms.send', config, values, family='jms', timeout=timeout)
+    with entry['lock']:
+        if entry['stopped']: raise JavaBridgeError('JMS sender was stopped')
+        worker = entry.get('worker')
+        reused = worker is not None and worker.process.poll() is None
+        try:
+            if not reused:
+                if worker: worker.close()
+                worker = _start_jms_sender(config, values)
+                entry['worker'] = worker
+            if entry['stopped']: raise JavaBridgeError('JMS sender was stopped')
+            _track_process(entry['scope'], worker.process)
+            result = worker.request('send', values, timeout=timeout)
+            return {**result, 'senderReused': reused}
+        except Exception:
+            with _jms_senders_lock:
+                if _jms_senders.get(key) is entry: del _jms_senders[key]
+            entry['stopped'] = True
+            if worker:
+                if worker.process.poll() is None:
+                    try: worker.process.terminate()
+                    except OSError: pass
+                worker.close()
+            raise
+        finally:
+            entry['lastUsed'] = time.monotonic()
+            if worker: _untrack_process(entry['scope'], worker.process)
+
+
 def execute_jms(config: dict[str, Any], operation: str, destination: str, payload: Any = None, options: dict[str, Any] | None = None) -> dict[str, Any]:
     options = options or {}
     values = {
@@ -506,7 +625,9 @@ def execute_jms(config: dict[str, Any], operation: str, destination: str, payloa
     }
     for key, value in (options.get("properties") or {}).items():
         values[f"messageProperty.{key}"] = value
-    return invoke(f"jms.{operation}", config, values, family="jms", timeout=max(10, float(values["timeoutMs"] or 0) / 1000 + 10))
+    timeout = max(10, float(values['timeoutMs'] or 0) / 1000 + 10)
+    if operation == 'send': return _send_jms_reused(config, values, timeout)
+    return invoke(f"jms.{operation}", config, values, family="jms", timeout=timeout)
 
 
 def start_jms_listener(config: dict[str, Any], destination: str, options: dict[str, Any] | None = None) -> SapJcoListener:

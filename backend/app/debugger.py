@@ -299,7 +299,8 @@ class DebugManager:
                 child_context = {**ctx, 'input': mapped, 'last': mapped, 'context': {'taskId': target.id, 'activityId': starter.id, 'environment': project.active_environment, 'debugSessionId': state['id'], 'executionId': state['id']}, '_process': target, 'groupStack': [], 'jdbcTransactions': {}}
                 ctx['tasks'].setdefault(target.id, {'name': target.name, 'activities': {}})
                 state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'call', 'message': f'Entering Sub Task: {target.name}', 'activityId': activity.id, 'taskId': task.id, 'calledTaskId': target.id})
-                state['frames'].append({'taskId': target.id, 'activityId': starter.id, 'context': child_context})
+                ctx['tasks'][target.id]['input'] = mapped
+                state['frames'].append({'taskId': target.id, 'activityId': starter.id, 'context': child_context, 'callInput': mapped})
                 # Step In pauses on the child Start; Continue keeps the debug
                 # engine running through the child frame and returns to the
                 # caller only after the child End completes.
@@ -367,7 +368,8 @@ class DebugManager:
                 return
             parent = state['frames'][-1]; parent['context']['last'] = completed['context']['last']
             parent_task = next(item for item in project.tasks if item.id == parent['taskId']); call = next(item for item in parent_task.activities if item.id == parent['activityId'])
-            self.runtime.record_activity_output(call, completed['context']['last'], parent['context'])
+            parent['context']['_activityMetadata'] = {'calledTaskId': completed['taskId']}
+            self.runtime.record_activity_output(call, completed['context']['last'], parent['context'], completed.get('callInput'))
             edge = next((item for item in parent_task.transitions if item.source == call.id and item.type == 'success'), None)
             if edge: parent['activityId'] = edge.target
             return

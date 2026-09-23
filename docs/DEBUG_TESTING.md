@@ -1,5 +1,18 @@
 # Activity debugging and testing
 
+## Job Data tree
+
+The ribbon's **Job Data** window shows processes, call activities, and nested
+subtask activities in an expandable tree (initially expanded). Select a process
+or activity to inspect its captured input and output. Data is keyed by process
+and activity, not by a flattened activity ID. Completed calls record the actual
+called task, including dynamically resolved calls. Unexecuted activities are
+labelled as not captured. Repeated invocations show the latest captured values
+for that task/activity; this is not a per-invocation execution-history viewer.
+
+Windows installations must be rebuilt and updated with the new installer to
+receive these UI/backend changes; restarting an older installation is insufficient.
+
 During an active debug session, a dedicated Debug ribbon appears underneath the
 Studio ribbon. It provides Continue, Pause, Stop, Step In/Over/Out, Jump In/Out,
 Run to Selected, Breakpoints, Watches, Variables, Evaluate, Job Data, Edit Payload,

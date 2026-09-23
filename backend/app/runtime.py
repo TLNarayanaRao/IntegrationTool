@@ -12,7 +12,7 @@ from .sap import sap_adapter
 from .snowflake import snowflake_adapter
 from .jdbc import jdbc_adapter
 from .amqp import amqp_adapter
-from .java_bridge import JavaBridgeError, execute_jms
+from .java_bridge import JavaBridgeError, execute_jms, close_jms_senders
 from .google_pubsub import client_configuration as pubsub_client_configuration, create_client as create_pubsub_client
 from .time_utils import log_timestamp
 
@@ -59,6 +59,8 @@ class WorkflowRuntime:
             return key, self._publisher_operation_locks.setdefault(key, threading.Lock())
 
     def close_publishers(self):
+        # Capability-pruned exports without JMS must not import its native bridge.
+        if self._jms_executor is not None: close_jms_senders(force=True)
         with self._publisher_lock:
             executor, self._kafka_executor = self._kafka_executor, None
             jms_executor, self._jms_executor = self._jms_executor, None

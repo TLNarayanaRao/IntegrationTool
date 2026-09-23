@@ -108,6 +108,11 @@ class TaskRuntimeTests(unittest.TestCase):
         returned = self.client.post(f"/api/debug/{debug.json()['sessionId']}/action", json={'action':'step_out'})
         self.assertEqual(returned.json()['currentTaskId'], 'main')
         self.assertEqual(returned.json()['currentActivityId'], 'p')
+        captured = returned.json()['taskOutputs']
+        self.assertEqual(captured['child']['input'], {'value': 42})
+        self.assertEqual(captured['child']['activities']['ce']['output'], {'answer': {'value': 42}})
+        self.assertEqual(captured['main']['activities']['c']['calledTaskId'], 'child')
+        self.assertEqual(captured['main']['activities']['c']['input'], {'value': 42})
         self.assertEqual(returned.json()['activityOutputs']['c']['output'], {'answer': {'value': 42}})
         json_file = self.client.get('/api/projects/task-runtime-test/json')
         self.assertEqual(json_file.status_code, 200)

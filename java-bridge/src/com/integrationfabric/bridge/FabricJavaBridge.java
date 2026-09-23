@@ -733,6 +733,7 @@ public final class FabricJavaBridge {
             invoke(connection, "start");
             if (operation.equals("test")) return map("message", "Native JMS connection succeeded");
             session = invoke(connection, "createSession", false, operation.equals("listen") ? 2 : 1);
+            if (operation.equals("sender_worker")) return jmsSenderWorker(session, context);
             String destinationName = required(p, "destination");
             Object destination;
             if (context != null && bool(p, "jndiDestination", false)) destination = context.lookup(destinationName);
@@ -783,19 +784,7 @@ public final class FabricJavaBridge {
             if (operation.equals("send")) {
                 Object producer = invoke(session, "createProducer", destination);
                 try {
-                    Object message = invoke(session, "createTextMessage", p.getProperty("body", ""));
-                    setIfPresent(message, "setJMSCorrelationID", p, "correlationId");
-                    setIfPresent(message, "setJMSType", p, "messageType");
-                    if (!p.getProperty("replyTo", "").isBlank()) {
-                        Object replyDestination = invoke(session, bool(p, "replyTopic", false) ? "createTopic" : "createQueue", p.getProperty("replyTo"));
-                        invoke(message, "setJMSReplyTo", replyDestination);
-                    }
-                    for (String name : p.stringPropertyNames()) if (name.startsWith("messageProperty.")) invoke(message, "setStringProperty", name.substring(16), p.getProperty(name));
-                    invoke(producer, "setDeliveryMode", bool(p, "persistent", true) ? 2 : 1);
-                    invoke(producer, "setPriority", integer(p, "priority", 4));
-                    invoke(producer, "setTimeToLive", number(p, "expiration", 0));
-                    invoke(producer, "send", message);
-                    return map("messageId", invoke(message, "getJMSMessageID"), "destination", destinationName, "published", true);
+                    return jmsSend(session, producer, destinationName, p);
                 } finally { close(producer); }
             }
             if (operation.equals("request")) {
@@ -869,6 +858,67 @@ public final class FabricJavaBridge {
     /** Keep one physical JDBC connection alive for the complete transaction
      * group. Requests are serialized over stdin so a connection is never used
      * concurrently and commit/rollback always applies to the same session. */
+    private static Map<String, Object> jmsSend(Object session, Object producer, String destinationName, Properties p) throws Exception {
+        Object message = invoke(session, "createTextMessage", p.getProperty("body", ""));
+        setIfPresent(message, "setJMSCorrelationID", p, "correlationId");
+        setIfPresent(message, "setJMSType", p, "messageType");
+        if (!p.getProperty("replyTo", "").isBlank()) {
+            Object replyDestination = invoke(session, bool(p, "replyTopic", false) ? "createTopic" : "createQueue", p.getProperty("replyTo"));
+            invoke(message, "setJMSReplyTo", replyDestination);
+        }
+        for (String name : p.stringPropertyNames()) if (name.startsWith("messageProperty.")) invoke(message, "setStringProperty", name.substring(16), p.getProperty(name));
+        invoke(producer, "setDeliveryMode", bool(p, "persistent", true) ? 2 : 1);
+        invoke(producer, "setPriority", integer(p, "priority", 4));
+        invoke(producer, "setTimeToLive", number(p, "expiration", 0));
+        long started = System.nanoTime();
+        invoke(producer, "send", message);
+        return map("messageId", invoke(message, "getJMSMessageID"), "destination", destinationName, "published", true,
+                   "providerSendMs", (System.nanoTime() - started) / 1000000.0);
+    }
+
+    private static Map<String, Object> jmsSenderWorker(Object session, InitialContext context) throws Exception {
+        Map<String, Object> producers = new LinkedHashMap<>();
+        try (BufferedReader commands = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
+            System.out.println(json(map("event", "ready", "ok", true))); System.out.flush();
+            String line;
+            while ((line = commands.readLine()) != null) {
+                String[] parts = line.split("\t", 3);
+                if (parts[0].equals("stop")) break;
+                Map<String, Object> result;
+                boolean failed = false;
+                try {
+                    if (!parts[0].equals("send") || parts.length < 3) throw new IllegalArgumentException("Invalid JMS sender command");
+                    Properties call = new Properties();
+                    call.load(new StringReader(new String(Base64.getDecoder().decode(parts[2]), StandardCharsets.UTF_8)));
+                    String destinationName = required(call, "destination");
+                    String cacheKey = bool(call, "topic", false) + ":" + bool(call, "jndiDestination", false) + ":" + destinationName;
+                    Object producer = producers.get(cacheKey);
+                    if (producer == null) {
+                        Object destination = context != null && bool(call, "jndiDestination", false)
+                            ? context.lookup(destinationName)
+                            : invoke(session, bool(call, "topic", false) ? "createTopic" : "createQueue", destinationName);
+                        if (producers.size() >= 32) {
+                            String oldest = producers.keySet().iterator().next();
+                            close(producers.remove(oldest));
+                        }
+                        producer = invoke(session, "createProducer", destination);
+                        producers.put(cacheKey, producer);
+                    }
+                    result = jmsSend(session, producer, destinationName, call);
+                    result.put("ok", true);
+                } catch (Throwable error) {
+                    result = map("ok", false, "message", String.valueOf(error.getMessage() == null ? error : error.getMessage()));
+                    failed = true;
+                }
+                result.put("requestId", parts.length > 1 ? parts[1] : "");
+                System.out.println(json(result)); System.out.flush();
+                // Never replay an uncertain send. A later caller may establish a new connection.
+                if (failed) break;
+            }
+        } finally { for (Object producer : producers.values()) close(producer); }
+        return map("stopped", true);
+    }
+
     private static Map<String, Object> jdbcWorker(Connection connection) throws Exception {
         connection.setAutoCommit(false);
         System.out.println(json(map("event", "ready", "ok", true, "pid", ProcessHandle.current().pid(), "autoCommit", false))); System.out.flush();

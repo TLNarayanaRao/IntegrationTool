@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Activity, ChevronDown, ChevronRight, Search, Workflow } from "lucide-react";
 import { debugCallTarget, debugTaskMatches } from "./debugTaskTree";
 
-export default function DebugActivityTree({ tasks, taskId, activityId, busy, onSelect }: any) {
+export default function DebugActivityTree({ tasks, taskId, activityId, busy, onSelect, records, expandCalls = false }: any) {
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const term = query.trim().toLowerCase();
@@ -12,7 +12,8 @@ export default function DebugActivityTree({ tasks, taskId, activityId, busy, onS
   const select = (task: any, activity?: any) => {
     const selected = taskId === task.id && activityId === (activity?.id || "");
     const Icon = !activity || activity.type === "call_task" ? Workflow : Activity;
-    return <button type="button" disabled={busy} className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => onSelect(task.id, activity?.id || "")}><Icon/><span>{activity?.name || task.name}<small>{activity ? activity.type === "call_task" ? "Call Sub Task" : activity.type : `${task.kind === "subtask" ? "Subprocess" : "Process"} · ${task.activities.length} activities`}</small></span></button>;
+    const captured = activity ? records?.[task.id]?.activities?.[activity.id] : records?.[task.id];
+    return <button type="button" disabled={busy} className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => onSelect(task.id, activity?.id || "")}><Icon/><span>{activity?.name || task.name}<small>{activity ? activity.type === "call_task" ? "Call Sub Task" : activity.type : `${task.kind === "subtask" ? "Subprocess" : "Process"} · ${task.activities.length} activities`}{records ? captured ? " · captured" : " · not captured" : ""}</small></span></button>;
   };
   const renderTask = (task: any, path: string[], ancestors: string[], showAll = false): React.ReactNode => {
     const key = JSON.stringify(path);
@@ -22,11 +23,12 @@ export default function DebugActivityTree({ tasks, taskId, activityId, busy, onS
     return <li key={key}>
       <div className="debug-tree-process">{!cycle && toggle(key, expanded, task.name)}{select(task)}</div>
       {cycle ? <p className="debug-tree-note">Recursive reference — expand this task from its root to inspect it.</p> : expanded && <ul>{task.activities.map((activity: any) => {
-        const { target, deferred } = activity.type === "call_task" ? debugCallTarget(tasks, activity) : { target: null, deferred: false };
+        const capturedTarget = records?.[task.id]?.activities?.[activity.id]?.calledTaskId;
+        const { target, deferred } = activity.type === "call_task" ? debugCallTarget(tasks, capturedTarget ? { ...activity, config: { taskId: capturedTarget } } : activity) : { target: null, deferred: false };
         if (!all && !matches(activity) && !(target && debugTaskMatches(tasks, target, term))) return null;
         const callPath = [...path, activity.id];
         const callKey = JSON.stringify(callPath);
-        const callOpen = !!term || collapsed[callKey] === false;
+        const callOpen = !!term || !(collapsed[callKey] ?? !expandCalls);
         return <li key={activity.id}>
           {target ? <div className="debug-tree-process">{toggle(callKey, callOpen, activity.name)}{select(task, activity)}</div> : select(task, activity)}
           {activity.type === "call_task" && deferred && <p className="debug-tree-note">{target ? "Configured fallback shown; runtime target may differ." : "Dynamic target — determined at runtime."}</p>}

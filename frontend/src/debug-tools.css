@@ -76,3 +76,6 @@
 @media(max-width:800px) { .debug-test-workspace { grid-template-columns:minmax(155px,32%) minmax(0,1fr); gap:8px; } }
 .debug-test-tree .debug-tree-note { font-size:10px; color:var(--muted); margin:4px 5px 8px 25px; overflow-wrap:anywhere; }
 .debug-test-tree nav > ul { min-width:230px; }
+.debug-job-data-dialog > main > .debug-test-tree { position:static; height:100%; max-height:none; box-sizing:border-box; overflow:hidden; }
+.debug-job-data-dialog > main > .debug-test-tree nav { flex:1; }
+@media(max-width:760px) { .debug-job-data-dialog > main > .debug-test-tree { max-height:210px; } }
