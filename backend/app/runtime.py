@@ -1280,6 +1280,10 @@ class WorkflowRuntime:
                 producer, one_shot = self._publisher('kafka', producer_cfg, lambda: Producer(producer_cfg))
                 producer_ready = perf_counter()
                 delivered = {}; completed = threading.Event()
+                # Cached, non-transactional confirmations must not occupy a send
+                # worker for the entire broker round trip. Four slow deliveries
+                # used to prevent even buffered sends to healthy brokers.
+                async_confirmation = wait_for_delivery and not transactional and not one_shot
                 def delivery(error, message):
                     if error: delivered['error'] = str(error)
                     else: delivered.update({'partition':message.partition(),'offset':message.offset(),'timestamp':message.timestamp()[1]})
@@ -1316,17 +1320,35 @@ class WorkflowRuntime:
                                 producer.abort_transaction()
                                 raise
                     else:
-                        produce_record(wait_for_delivery)
+                        produce_record(wait_for_delivery and not async_confirmation)
                 finally:
                     if one_shot: producer.flush(3)
                 if delivered.get('error'): raise RuntimeError(delivered['error'])
-                return {**delivered, 'queued': True, 'deliveryConfirmed': completed.is_set() and not delivered.get('error'),
+                result = {**delivered, 'queued': True, 'deliveryConfirmed': completed.is_set() and not delivered.get('error'),
                         'publisherQueueMs': round((worker_started - publish_started) * 1000, 3),
                         'producerSetupMs': round((producer_ready - worker_started) * 1000, 3),
                         'sendAndWaitMs': round((perf_counter() - producer_ready) * 1000, 3)}
+                pending = (producer, completed, delivered, producer_ready) if async_confirmation else None
+                return result, pending
 
             publish_started = perf_counter()
-            delivered = await self._publish_kafka_isolated(publish_kafka)
+            delivered, pending = await self._publish_kafka_isolated(publish_kafka)
+            if pending is not None:
+                producer, completed, report, producer_ready = pending
+                timeout = max(.001, float(cfg.get('publishTimeout') or float(rcfg.get('requestTimeoutMilliseconds') or 30000) / 1000))
+                deadline = perf_counter() + timeout
+                while not completed.is_set():
+                    if perf_counter() >= deadline:
+                        raise TimeoutError(f'Kafka publish timed out after {timeout:g} seconds waiting for broker acknowledgement; delivery may still occur')
+                    # poll(0) serves delivery callbacks without blocking a worker.
+                    # Yield between polls rather than spinning on the event loop.
+                    await self._publish_kafka_isolated(lambda: producer.poll(0))
+                    if not completed.is_set():
+                        await asyncio.sleep(min(.005, max(0, deadline - perf_counter())))
+                if report.get('error'): raise RuntimeError(report['error'])
+                delivered.update(report)
+                delivered['deliveryConfirmed'] = True
+                delivered['sendAndWaitMs'] = round((perf_counter() - producer_ready) * 1000, 3)
             return {**envelope, **delivered, 'messageId':envelope['id'], 'topic':destination, 'published':True,
                     'publishLatencyMs': round((perf_counter() - publish_started) * 1000, 3)}
         if technology == 'pubsub':

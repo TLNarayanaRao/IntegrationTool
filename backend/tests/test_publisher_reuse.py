@@ -18,6 +18,82 @@ def context(resource):
 
 
 class PublisherReuseTests(unittest.TestCase):
+    def test_slow_kafka_acknowledgements_do_not_block_new_sends(self):
+        release = threading.Event()
+        enqueued = []
+        callbacks = []
+        lock = threading.Lock()
+        class Producer:
+            def __init__(self, config): pass
+            def produce(self, topic, value, **kwargs):
+                with lock:
+                    enqueued.append(value)
+                    callbacks.append(kwargs['callback'])
+            def poll(self, timeout):
+                if not release.is_set():
+                    if timeout: time.sleep(min(timeout, .001))
+                    return
+                with lock:
+                    pending = list(callbacks)
+                    callbacks.clear()
+                for callback in pending:
+                    callback(None, types.SimpleNamespace(partition=lambda: 0, offset=lambda: 1, timestamp=lambda: (1, 1)))
+            def flush(self, timeout): return 0
+        kafka = types.ModuleType('confluent_kafka')
+        kafka.Producer = Producer; kafka.Consumer = object; kafka.TopicPartition = object
+        runtime = WorkflowRuntime()
+        resource = SharedResource(id='k', type='kafka', name='Kafka', config={'bootstrapServers': 'localhost:9092'})
+        async def exercise():
+            waiting = [asyncio.create_task(runtime.messaging('kafka',
+                {'resourceId': 'k', 'topic': 'slow', 'data': str(index), 'waitForDelivery': True, 'publishTimeout': 5},
+                context(resource))) for index in range(4)]
+            try:
+                async def wait_for_enqueue():
+                    while len(enqueued) < 4: await asyncio.sleep(.001)
+                await asyncio.wait_for(wait_for_enqueue(), 1)
+                result = await asyncio.wait_for(runtime.messaging('kafka',
+                    {'resourceId': 'k', 'topic': 'fast', 'data': 'new'}, context(resource)), .3)
+                self.assertTrue(result['queued'])
+                self.assertFalse(result['deliveryConfirmed'])
+                self.assertTrue(all(not task.done() for task in waiting))
+                release.set()
+                results = await asyncio.gather(*waiting)
+                self.assertTrue(all(result['deliveryConfirmed'] for result in results))
+                self.assertEqual(len(enqueued), 5)  # no retransmission
+            finally:
+                release.set()
+                await asyncio.gather(*waiting, return_exceptions=True)
+                runtime.close_publishers()
+        with patch.dict(sys.modules, {'confluent_kafka': kafka}):
+            asyncio.run(exercise())
+
+    def test_async_kafka_confirmation_errors_and_timeouts_are_not_success(self):
+        class Producer:
+            error = None
+            def __init__(self, config): self.callback = None
+            def produce(self, *args, **kwargs): self.callback = kwargs['callback']; self.polls = 0
+            def poll(self, timeout):
+                if self.callback:
+                    self.polls += 1
+                    if self.error and self.polls >= 3:
+                        callback, self.callback = self.callback, None
+                        callback(self.error, None)
+            def flush(self, timeout): return 0
+        kafka = types.ModuleType('confluent_kafka')
+        kafka.Producer = Producer; kafka.Consumer = object; kafka.TopicPartition = object
+        resource = SharedResource(id='k', type='kafka', name='Kafka', config={'bootstrapServers': 'localhost:9092'})
+        runtime = WorkflowRuntime()
+        config = {'resourceId': 'k', 'topic': 'events', 'data': 'one', 'waitForDelivery': True, 'publishTimeout': .02}
+        with patch.dict(sys.modules, {'confluent_kafka': kafka}):
+            try:
+                with self.assertRaisesRegex(TimeoutError, 'delivery may still occur'):
+                    asyncio.run(runtime.messaging('kafka', config, context(resource)))
+                Producer.error = 'broker rejected message'
+                with self.assertRaisesRegex(RuntimeError, 'broker rejected message'):
+                    asyncio.run(runtime.messaging('kafka', config, context(resource)))
+            finally:
+                runtime.close_publishers()
+
     def test_kafka_publishes_while_default_executor_is_saturated(self):
         release = threading.Event()
         occupied = threading.Event()

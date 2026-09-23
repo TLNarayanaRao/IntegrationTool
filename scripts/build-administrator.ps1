@@ -13,6 +13,9 @@ try {
         else { python -m venv .venv }
     }
     & .\.venv\Scripts\python.exe -m pip install -r requirements.txt pyinstaller
+    if ($LASTEXITCODE -ne 0) { throw 'Administrator dependency installation failed.' }
+    & .\.venv\Scripts\python.exe "$root\scripts\verify-web-dependencies.py"
+    if ($LASTEXITCODE -ne 0) { throw 'Administrator web dependency verification failed.' }
     $buildInfo = Join-Path $admin 'build\build_info.json'
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $buildInfo) | Out-Null
     @{ version = $Version; builtAt = [DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath $buildInfo -Encoding utf8

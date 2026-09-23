@@ -80,6 +80,8 @@ try {
     Assert-CommandSucceeded 'Python build-tool installation' $LASTEXITCODE
     & $buildPython -m pip install -r requirements.txt
     Assert-CommandSucceeded 'Python runtime dependency installation' $LASTEXITCODE
+    & $buildPython "$root\scripts\verify-web-dependencies.py"
+    Assert-CommandSucceeded 'Web dependency security version verification' $LASTEXITCODE
     & $buildPython "$root\scripts\verify-runtime-dependencies.py"
     Assert-CommandSucceeded 'Runtime connector dependency verification' $LASTEXITCODE
     & $buildPython -m compileall -q app run_sidecar.py

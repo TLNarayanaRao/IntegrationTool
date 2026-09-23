@@ -6,6 +6,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Java bridge build failed.' }
 Push-Location "$root/backend"
 if (!(Test-Path .venv)) { py -3.12 -m venv .venv }
 & .\.venv\Scripts\pip install -r requirements.txt pyinstaller
+if ($LASTEXITCODE -ne 0) { throw 'Runtime dependency installation failed.' }
+& .\.venv\Scripts\python.exe "$root\scripts\verify-web-dependencies.py"
+if ($LASTEXITCODE -ne 0) { throw 'Web dependency verification failed.' }
 & .\.venv\Scripts\pyinstaller --noconfirm --name IntegrationFabric --add-data "..\frontend\dist;frontend\dist" --add-data "app;app" --paths . run_desktop.py
 Pop-Location
 if (!(Test-Path "$root/backend/dist/IntegrationFabric/IntegrationFabric.exe")) { throw 'PyInstaller runtime output was not created.' }
