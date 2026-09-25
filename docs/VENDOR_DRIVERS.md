@@ -10,7 +10,7 @@ C:\ProgramData\MINA Studio\drivers
 
 Set `FABRIC_DRIVER_HOME` to override the complete root, or enter a **Driver JAR directory** in an individual shared connection. Source checkouts also search `D:\Integration-tool\IntegrationFabric\drivers` as a development fallback.
 
-## TIBCO EMS / JMS
+## EMS / JMS
 
 Place the EMS client files in:
 
@@ -21,11 +21,7 @@ C:\ProgramData\MINA Studio\drivers\jms\jakarta.jms-api-2.0.3.jar
 
 For older EMS releases, use the matching `jms-2.0.jar` supplied with that EMS installation. Add `tibjmsufo.jar` for unshared-state failover. Do not mix JARs from different EMS releases.
 
-The default direct factory class is:
-
-```text
-com.tibco.tibjms.TibjmsConnectionFactory
-```
+The EMS direct factory class is supplied by the runtime default. If overriding it, use the exact fully qualified class name from your licensed driver documentation. Java class names are provider identifiers and must not be renamed.
 
 Direct mode uses the EMS URL, username, and password. JNDI mode additionally uses the configured initial-context factory, provider URL, credentials, and connection-factory JNDI name.
 

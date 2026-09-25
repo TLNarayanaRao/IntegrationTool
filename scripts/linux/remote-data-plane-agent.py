@@ -23,7 +23,7 @@ PLANE = os.environ.get("DATA_PLANE_ID", dp.get("id", "")); NAMESPACE = os.enviro
 INTERVAL = int(os.environ.get("HEARTBEAT_SECONDS", dp.get("heartbeat_seconds", "30")))
 CAPACITY = int(os.environ.get("AVAILABLE_CAPACITY", dp.get("available_capacity", "20")))
 VERSION = os.environ.get("AGENT_VERSION", dp.get("agent_version", "1.0.0"))
-ROOT = Path(os.environ.get("FABRIC_AGENT_ROOT", f"/opt/tibco/esb/IntegrationFabricSoftware/agent/{PLANE}"))
+ROOT = Path(os.environ.get("FABRIC_AGENT_ROOT", f"/opt/mina/agent/{PLANE}"))
 APP_ROOT = ROOT / "applications"; LOG_ROOT = ROOT / "logs"; APP_ROOT.mkdir(parents=True, exist_ok=True); LOG_ROOT.mkdir(parents=True, exist_ok=True)
 COMMAND = os.environ.get("FABRIC_RUNTIME_COMMAND", cp.get("runtime_command", "")) or f"{ROOT.parent.parent}/runtime/integration-fabric-runtime --application {{application}} --environment {{environment}}"
 workers = {}

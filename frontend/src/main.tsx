@@ -453,7 +453,7 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
     ],
   },
   {
-    name: "TIBCO EMS",
+    name: "EMS",
     icon: MessageSquare,
     items: [
       ["queue_receiver", "EMS Queue Receiver"],
@@ -1240,7 +1240,7 @@ function App() {
       Resources: true,
       "Starters & Tasks": true,
       File: true,
-      "TIBCO EMS": true,
+      "EMS": true,
       Kafka: true,
       "GCP Pub/Sub": true,
     }),
@@ -2717,7 +2717,7 @@ function App() {
           { label: "Compare Files", detail: "Side-by-side text or binary file comparison", icon: Scissors, action: () => setUtilityMode("compare") },
         ]}/>
         <TopMenu label="Help" open={menu === "help"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "help" ? null : "help"); }} commands={[
-          { label: "Installed Activity Guide", detail: "Offline product activity and runtime documentation", icon: BookOpen, action: () => window.open("/help/activity-reference.html", "_blank", "noopener") },
+          { label: "MINA Documentation", detail: "Searchable product reference, activity tabs and downloadable PDF", icon: BookOpen, action: () => window.open("/help/index.html", "_blank", "noopener") },
           { label: "Keyboard Shortcuts", detail: "Designer and runtime commands", icon: Settings2, action: () => setHelpDialog("shortcuts") },
           { label: "About MINA", detail: "Product and project information", icon: Workflow, action: () => setHelpDialog("about") },
         ]}/>
@@ -4479,7 +4479,7 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, im
           <button className="create-project" onClick={() => setCreateOpen(true)}><span><FilePlus2/></span><b>Create new project<small>Start with the standard project structure</small></b><ChevronRight/></button>
           <button className="import-project" onClick={beginImport} disabled={importing}><span><Download/></span><b>{importing ? "Opening project…" : "Import existing project"}<small>Choose .mpackage, .mpkg, ZIP, JSON, or a legacy MINA package</small></b><ChevronRight/></button>
           <button className="sample-projects" onClick={() => setSamplesOpen(true)}><span><BookOpen/></span><b>Explore sample projects<small>Editable, installed examples for mapping, APIs, data, JDBC, and messaging</small></b><ChevronRight/></button>
-          <button className="installed-guide" onClick={() => window.open("/help/activity-reference.html", "_blank", "noopener")}><span><BookOpen/></span><b>Open installed activity guide<small>Offline configuration, mapping, runtime, and error reference</small></b><ChevronRight/></button>
+          <button className="installed-guide" onClick={() => window.open("/help/index.html", "_blank", "noopener")}><span><BookOpen/></span><b>Open MINA documentation<small>Searchable tree, activity reference, guides and PDF manual</small></b><ChevronRight/></button>
         </div>
         {sourceOpen && <OpenProjectSourceDialog onClose={() => setSourceOpen(false)} onFile={(type: any) => { setSourceOpen(false); setImporting(true); void importFromFileSystem(type).finally(() => setImporting(false)); }} onFolder={() => { setSourceOpen(false); setImporting(true); void importProjectFolder().finally(() => setImporting(false)); }}/>} 
       </section>
@@ -4506,7 +4506,7 @@ function Context({
     http: { label: "HTTP Connection", description: "Listener, outbound HTTP and TLS" },
     ftp: { label: "FTP Connection", description: "File transfer over FTP" },
     sftp: { label: "SFTP Connection", description: "Secure SSH file transfer" },
-    ems: { label: "EMS Connection", description: "TIBCO EMS queues and topics" },
+    ems: { label: "EMS Connection", description: "EMS queues and topics" },
     jms: { label: "JMS Connection", description: "Provider-neutral JMS queues and topics" },
     kafka: { label: "Kafka Connection", description: "Kafka brokers and security" },
     pubsub: { label: "Pub/Sub Connection", description: "Google Cloud messaging" },
@@ -4793,7 +4793,7 @@ const connectionFieldSets: Record<string, any[]> = {
   ems: [
     { key: "serverUrl", label: "JMS connection URL", required: true, placeholder: "tcp://ems-host:7222" },
     { key: "driverDirectory", label: "EMS/JMS driver JAR directory", placeholder: "Blank uses C:\\ProgramData\\MINA Studio\\drivers\\jms" },
-    { key: "connectionFactoryClass", label: "Native connection factory class", placeholder: "com.tibco.tibjms.TibjmsConnectionFactory" },
+    { key: "connectionFactoryClass", label: "Native connection factory class", placeholder: "Fully qualified class name from your driver documentation" },
     { key: "connectionFactoryType", label: "Connection factory type", options: ["Direct", "JNDI"] },
     { key: "messagingStyle", label: "Messaging style", options: ["Generic", "Queue/Topic"] },
     { key: "username", label: "Username", required: true }, { key: "password", label: "Password", required: true, password: true },
@@ -4833,7 +4833,7 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "sslKeyLocation", label: "SSL key location", when: (config: any) => ["SSL", "SASL_SSL"].includes(config.securityProtocol) }, { key: "sslKeyPassword", label: "SSL key password", password: true, when: (config: any) => ["SSL", "SASL_SSL"].includes(config.securityProtocol) },
     { key: "schemaRegistryUrl", label: "Schema Registry URL" }, { key: "schemaRegistryUsername", label: "Schema Registry username" },
     { key: "schemaRegistryPassword", label: "Schema Registry password", password: true },
-    { key: "schemaRegistryVendor", label: "Schema Registry vendor", options: ["Confluent", "TIBCO", "Apicurio"] },
+    { key: "schemaRegistryVendor", label: "Schema Registry vendor", options: ["Confluent", "Other", "Apicurio"] },
     { key: "useTicketCache", label: "Use Kerberos ticket cache", options: ["false", "true"], when: (config: any) => config.authenticationType === "GSSAPI" }, { key: "keytabFile", label: "Kerberos keytab file", when: (config: any) => config.authenticationType === "GSSAPI" }, { key: "principalName", label: "Kerberos principal", when: (config: any) => config.authenticationType === "GSSAPI" },
     { key: "jaasConfigFile", label: "OAuth JAAS config file", when: (config: any) => config.authenticationType === "OAUTHBEARER" }, { key: "loginCallbackHandler", label: "OAuth login callback handler", when: (config: any) => config.authenticationType === "OAUTHBEARER" },
     { key: "requestTimeoutMilliseconds", label: "Request timeout (ms)" }, { key: "connectionTimeoutMilliseconds", label: "Connection timeout (ms)" },

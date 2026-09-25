@@ -1,19 +1,19 @@
 # Linux Control Plane: Direct Run Guide
 
 > Current standard layout: copy `administrator/`, `backend/`, `drivers/`,
-> `java-bridge/`, and `scripts/` into `/opt/tibco/esb/IntegrationFabricSoftware`.
+> `java-bridge/`, and `scripts/` into `/opt/mina`.
 > Run `scripts/linux/setup-integration-fabric-linux.sh` from that directory.
 > The commands in this guide that reference the older `integrationfabric/source`
 > layout are retained as historical alternatives; do not mix the two layouts.
 
-This guide runs the MINA Control Plane directly from the shell. It does not use `systemctl` or require a systemd service. The Unix team only needs to provision `/opt/tibco/esb/IntegrationFabricSoftware` and its permissions.
+This guide runs the MINA Control Plane directly from the shell. It does not use `systemctl` or require a systemd service. The Unix team only needs to provision `/opt/mina` and its permissions.
 
 ## Directory layout
 
 All Control Plane state, packages, runtime files, drivers, and logs are kept below one root directory:
 
 ```text
-/opt/tibco/esb/integrationfabric/
+/opt/mina/
 ├── source/
 ├── control-plane/
 ├── control-plane-data/
@@ -40,7 +40,7 @@ sudo apt-get install -y python3 python3-venv python3-pip build-essential
 Build the Administrator package:
 
 ```bash
-cd /opt/tibco/esb/integrationfabric/source
+cd /opt/mina/source
 chmod +x scripts/build-administrator.sh
 ./scripts/build-administrator.sh 2.4.0
 ```
@@ -86,13 +86,13 @@ chmod +x scripts/build-administrator-linux.sh
 The generated archive is:
 
 ```text
-/opt/tibco/esb/integrationfabric/source/administrator/release/IntegrationFabricAdministrator-2.4.0-Linux-x64.tar.gz
+/opt/mina/source/administrator/release/IntegrationFabricAdministrator-2.4.0-Linux-x64.tar.gz
 ```
 
 ## Clean setup from the copied Linux archive
 
 For a fresh machine, copy the Linux Administrator archive into
-`/opt/tibco/esb/IntegrationFabricSoftware/administrator/release/`, and copy
+`/opt/mina/administrator/release/`, and copy
 `backend/`, `drivers/`, and `java-bridge/` beside the `administrator/` and
 `scripts/` folders. Then run the setup script. It creates the Control Plane
 layout, runtime virtual environment, runtime adapter, and INI file:
@@ -108,7 +108,7 @@ dependencies to be available. To build version `1.0.0`, run:
 
 The setup script also accepts an already extracted Linux Administrator folder:
 copy `IntegrationFabricAdministrator` and its `_internal/` directory below
-`/opt/tibco/esb/IntegrationFabricSoftware/administrator/` and set
+`/opt/mina/administrator/` and set
 `FABRIC_BUILD_ADMIN=false`.
 
 The shared requirements file excludes the Windows-only
@@ -129,7 +129,7 @@ FABRIC_PYTHON=/usr/bin/python3.12 \
 ```
 
 ```bash
-cd /opt/tibco/esb/IntegrationFabricSoftware
+cd /opt/mina
 chmod +x scripts/linux/setup-integration-fabric-linux.sh
 ./scripts/linux/setup-integration-fabric-linux.sh 2.4.0
 ```
@@ -141,29 +141,29 @@ another path.
 ## Install the Control Plane files
 
 ```bash
-mkdir -p /opt/tibco/esb/integrationfabric/control-plane
-mkdir -p /opt/tibco/esb/integrationfabric/control-plane-data
-mkdir -p /opt/tibco/esb/integrationfabric/runtime/data
-mkdir -p /opt/tibco/esb/integrationfabric/apps
-mkdir -p /opt/tibco/esb/integrationfabric/drivers
-mkdir -p /opt/tibco/esb/integrationfabric/logs/control-plane
-mkdir -p /opt/tibco/esb/integrationfabric/logs/runtime
-mkdir -p /opt/tibco/esb/integrationfabric/run
+mkdir -p /opt/mina/control-plane
+mkdir -p /opt/mina/control-plane-data
+mkdir -p /opt/mina/runtime/data
+mkdir -p /opt/mina/apps
+mkdir -p /opt/mina/drivers
+mkdir -p /opt/mina/logs/control-plane
+mkdir -p /opt/mina/logs/runtime
+mkdir -p /opt/mina/run
 
-tar -xzf /opt/tibco/esb/integrationfabric/source/administrator/release/IntegrationFabricAdministrator-2.4.0-Linux-x64.tar.gz \
-  -C /opt/tibco/esb/integrationfabric/control-plane \
+tar -xzf /opt/mina/source/administrator/release/IntegrationFabricAdministrator-2.4.0-Linux-x64.tar.gz \
+  -C /opt/mina/control-plane \
   --strip-components=1
 
-cp /opt/tibco/esb/integrationfabric/control-plane/IntegrationFabricAdministrator \
-   /opt/tibco/esb/integrationfabric/control-plane/integration-fabric-control-plane
+cp /opt/mina/control-plane/IntegrationFabricAdministrator \
+   /opt/mina/control-plane/integration-fabric-control-plane
 
-chmod +x /opt/tibco/esb/integrationfabric/control-plane/integration-fabric-control-plane
+chmod +x /opt/mina/control-plane/integration-fabric-control-plane
 ```
 
 The copy step provides the requested executable name:
 
 ```text
-/opt/tibco/esb/integrationfabric/control-plane/integration-fabric-control-plane
+/opt/mina/control-plane/integration-fabric-control-plane
 ```
 
 ## Install the runtime adapter before deploying applications
@@ -173,15 +173,15 @@ Building and installing the Administrator only starts the Control Plane APIs. It
 Copy the Linux-compatible application runtime source and drivers below the same root, then create its virtual environment:
 
 ```bash
-mkdir -p /opt/tibco/esb/integrationfabric/runtime
-python3.12 -m venv /opt/tibco/esb/integrationfabric/runtime/.venv
-/opt/tibco/esb/integrationfabric/runtime/.venv/bin/pip install   -r /opt/tibco/esb/integrationfabric/source/backend/requirements.txt
+mkdir -p /opt/mina/runtime
+python3.12 -m venv /opt/mina/runtime/.venv
+/opt/mina/runtime/.venv/bin/pip install   -r /opt/mina/source/backend/requirements.txt
 ```
 
 Create the runtime adapter at exactly this path:
 
 ```bash
-vi /opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime
+vi /opt/mina/runtime/integration-fabric-runtime
 ```
 
 Use this content:
@@ -189,40 +189,40 @@ Use this content:
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-export PYTHONPATH=/opt/tibco/esb/integrationfabric/source/backend
-export FABRIC_DRIVER_HOME=/opt/tibco/esb/integrationfabric/source/drivers
-exec /opt/tibco/esb/IntegrationFabricSoftware/runtime/.venv/bin/python \
-  /opt/tibco/esb/IntegrationFabricSoftware/backend/run_deployment.py "$@"
+export PYTHONPATH=/opt/mina/source/backend
+export FABRIC_DRIVER_HOME=/opt/mina/source/drivers
+exec /opt/mina/runtime/.venv/bin/python \
+  /opt/mina/backend/run_deployment.py "$@"
 ```
 
 Make it executable and verify it exists:
 
 ```bash
-chmod 755 /opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime
-ls -l /opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime
-/opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime --help
+chmod 755 /opt/mina/runtime/integration-fabric-runtime
+ls -l /opt/mina/runtime/integration-fabric-runtime
+/opt/mina/runtime/integration-fabric-runtime --help
 ```
 
 The adapter path in the INI file must match this path exactly:
 
 ```ini
-runtime_command=/opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime --application {application} --environment {environment}
+runtime_command=/opt/mina/runtime/integration-fabric-runtime --application {application} --environment {environment}
 ```
 
 If this file is missing, application deployment fails with:
-`[Errno 2] No such file or directory: '/opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime'`.
+`[Errno 2] No such file or directory: '/opt/mina/runtime/integration-fabric-runtime'`.
 
 ## Configure the current shell
 
 Run these commands in the same shell that starts the Control Plane:
 
 ```bash
-export FABRIC_ADMIN_HOME=/opt/tibco/esb/integrationfabric/control-plane
+export FABRIC_ADMIN_HOME=/opt/mina/control-plane
 export FABRIC_ADMIN_HOST=0.0.0.0
 export FABRIC_ADMIN_PORT=9080
-export FABRIC_ADMIN_DATA_DIR=/opt/tibco/esb/integrationfabric/control-plane-data
-export FABRIC_ADMIN_LOG_DIR=/opt/tibco/esb/integrationfabric/logs/control-plane
-export FABRIC_ADMIN_PID_DIR=/opt/tibco/esb/integrationfabric/run
+export FABRIC_ADMIN_DATA_DIR=/opt/mina/control-plane-data
+export FABRIC_ADMIN_LOG_DIR=/opt/mina/logs/control-plane
+export FABRIC_ADMIN_PID_DIR=/opt/mina/run
 
 export FABRIC_ADMIN_API_KEY=dev-api-key-if
 export FABRIC_ADMIN_SECRET_KEY=dev-api-key-if
@@ -233,12 +233,12 @@ export FABRIC_ADMIN_SECRET_KEY=dev-api-key-if
 ## Start directly in the background
 
 ```bash
-cd /opt/tibco/esb/integrationfabric/control-plane
+cd /opt/mina/control-plane
 
 nohup ./integration-fabric-control-plane \
-  >> /opt/tibco/esb/integrationfabric/logs/control-plane/administrator.log 2>&1 &
+  >> /opt/mina/logs/control-plane/administrator.log 2>&1 &
 
-echo $! > /opt/tibco/esb/integrationfabric/run/control-plane.pid
+echo $! > /opt/mina/run/control-plane.pid
 ```
 
 This is equivalent to running the executable with `&`, but `nohup` allows it to continue after the terminal session closes.
@@ -251,7 +251,7 @@ does not depend on `build-administrator.sh`, which may be an older Windows
 copy. Edit the INI file before starting:
 
 ```bash
-cd /opt/tibco/esb/integrationfabric/control-plane
+cd /opt/mina/control-plane
 vi integration-fabric-control-plane.ini
 chmod 600 integration-fabric-control-plane.ini
 chmod +x start-control-plane.sh
@@ -273,24 +273,24 @@ INI file, use `restart`; no shell profile changes are required. A different
 configuration file can be selected with:
 
 ```bash
-FABRIC_ADMIN_INI=/opt/tibco/esb/integrationfabric/control-plane/custom.ini \
+FABRIC_ADMIN_INI=/opt/mina/control-plane/custom.ini \
   ./start-control-plane.sh restart
 ```
 
 To run it only for the current terminal session instead:
 
 ```bash
-cd /opt/tibco/esb/integrationfabric/control-plane
+cd /opt/mina/control-plane
 ./integration-fabric-control-plane \
-  >> /opt/tibco/esb/integrationfabric/logs/control-plane/administrator.log 2>&1 &
-echo $! > /opt/tibco/esb/integrationfabric/run/control-plane.pid
+  >> /opt/mina/logs/control-plane/administrator.log 2>&1 &
+echo $! > /opt/mina/run/control-plane.pid
 ```
 
 ## Verify the process and health
 
 ```bash
-cat /opt/tibco/esb/integrationfabric/run/control-plane.pid
-ps -fp "$(cat /opt/tibco/esb/integrationfabric/run/control-plane.pid)"
+cat /opt/mina/run/control-plane.pid
+ps -fp "$(cat /opt/mina/run/control-plane.pid)"
 
 curl http://localhost:9080/api/health
 ```
@@ -324,19 +324,19 @@ http://<linux-host>:9080/docs
 The Control Plane needs the runtime adapter above to start on-premises applications. The INI file is preferred for direct-run deployments:
 
 ```bash
-vi /opt/tibco/esb/integrationfabric/control-plane/integration-fabric-control-plane.ini
+vi /opt/mina/control-plane/integration-fabric-control-plane.ini
 ```
 
 Set:
 
 ```ini
-runtime_command=/opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime --application {application} --environment {environment}
+runtime_command=/opt/mina/runtime/integration-fabric-runtime --application {application} --environment {environment}
 ```
 
 If you are not using the INI file, configure the adapter in the same shell that starts the Control Plane:
 
 ```bash
-export FABRIC_ADMIN_RUNTIME_COMMAND='/opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime --application {application} --environment {environment}'
+export FABRIC_ADMIN_RUNTIME_COMMAND='/opt/mina/runtime/integration-fabric-runtime --application {application} --environment {environment}'
 ```
 
 The runtime command supports these placeholders:
@@ -352,7 +352,7 @@ The runtime command supports these placeholders:
 For Linux application packages, use this install-root convention in Studio:
 
 ```text
-/opt/tibco/esb/integrationfabric/apps/<application-name>
+/opt/mina/apps/<application-name>
 ```
 
 After adding the runtime command, stop and restart the Control Plane from the same shell so it inherits the variable.
@@ -363,15 +363,15 @@ Use the included API script to upload a package, create its deployment, and
 start it automatically:
 
 ```bash
-chmod +x /opt/tibco/esb/integrationfabric/source/scripts/linux/deploy-application.sh
+chmod +x /opt/mina/source/scripts/linux/deploy-application.sh
 export FABRIC_CONTROL_PLANE_URL=http://localhost:19080
 export FABRIC_CONTROL_PLANE_KEY=dev-api-key-if
 export FABRIC_DATA_PLANE=localhost
 export FABRIC_NAMESPACE=default
-export FABRIC_SECRETS_FILE=/opt/tibco/esb/temp/linux/deployment-secrets.json
+export FABRIC_SECRETS_FILE=/opt/mina/staging/deployment-secrets.json
 
-/opt/tibco/esb/integrationfabric/source/scripts/linux/deploy-application.sh \
-  /opt/tibco/esb/temp/linux/my-application.mpkg dev
+/opt/mina/source/scripts/linux/deploy-application.sh \
+  /opt/mina/staging/my-application.mpkg dev
 ```
 
 The script prints the generated Deployment ID. To deploy without starting,
@@ -383,26 +383,26 @@ set `FABRIC_START_AFTER_DEPLOY=false`. For a delivery-team token, set
 Control Plane process logs:
 
 ```bash
-tail -f /opt/tibco/esb/integrationfabric/logs/control-plane/administrator.log
+tail -f /opt/mina/logs/control-plane/administrator.log
 ```
 
 Control Plane application state, uploaded packages, deployment records, and deployment instance logs are stored below:
 
 ```text
-/opt/tibco/esb/integrationfabric/control-plane-data/
+/opt/mina/control-plane-data/
 ```
 
 Runtime application logs are stored below:
 
 ```text
-/opt/tibco/esb/integrationfabric/logs/runtime/
+/opt/mina/logs/runtime/
 ```
 
 ## Stop manually
 
 ```bash
-kill "$(cat /opt/tibco/esb/integrationfabric/run/control-plane.pid)"
-rm -f /opt/tibco/esb/integrationfabric/run/control-plane.pid
+kill "$(cat /opt/mina/run/control-plane.pid)"
+rm -f /opt/mina/run/control-plane.pid
 ```
 
 Allow a short period for graceful shutdown. Use `kill -9` only if the process does not terminate normally.
@@ -412,8 +412,8 @@ Allow a short period for graceful shutdown. Use `kill -9` only if the process do
 - Do not copy the Windows `.exe` to Linux.
 - Do not run the Control Plane from the Windows `backend` or Studio installation.
 - SAP JCo native libraries and the Java bridge must be Linux-compatible.
-- Configure SAP JCo drivers below `/opt/tibco/esb/integrationfabric/drivers`.
-- Existing packages containing `/opt/integration-fabric/...` should be regenerated with the new `/opt/tibco/esb/integrationfabric/...` install root.
+- Configure SAP JCo drivers below `/opt/mina/drivers`.
+- Existing packages containing `/opt/integration-fabric/...` should be regenerated with the new `/opt/mina/...` install root.
 - If the Linux shell closes and `nohup` was not used, the background process may stop.
 
 ## Files and folders to copy from the repository
@@ -465,16 +465,16 @@ administrator/run_admin.py
 scripts/build-administrator.sh
 ```
 
-After copying to `/opt/tibco/esb/integrationfabric/source`, use it as the build source and install the generated Control Plane under:
+After copying to `/opt/mina/source`, use it as the build source and install the generated Control Plane under:
 
 ```text
-/opt/tibco/esb/integrationfabric/control-plane
+/opt/mina/control-plane
 ```
 
 Example Linux staging commands:
 
 ```bash
-mkdir -p /opt/tibco/esb/integrationfabric/source
+mkdir -p /opt/mina/source
 ```
 
 Do not copy the entire Windows `Software` directory blindly. In particular, exclude `.venv`, `__pycache__`, `node_modules`, Windows `dist` folders, Windows `.exe` files, `.dll` files, and any Windows-generated Java runtime.
@@ -496,7 +496,7 @@ IntegrationFabric/
 
 The `administrator/app` directory contains the Control Plane API and lifecycle implementation. The `administrator/web` directory contains the bundled browser UI. The Linux build script creates the Linux-native Administrator executable.
 
-Copy the complete repository to `/opt/tibco/esb/integrationfabric/source` if you want the build process, tests, documentation, and deployment tools available on the Linux host:
+Copy the complete repository to `/opt/mina/source` if you want the build process, tests, documentation, and deployment tools available on the Linux host:
 
 ```bash
 rsync -a --delete \
@@ -505,7 +505,7 @@ rsync -a --delete \
   --exclude='*/__pycache__' \
   --exclude='*/dist' \
   --exclude='*/node_modules' \
-  <repository>/ /opt/tibco/esb/integrationfabric/source/
+  <repository>/ /opt/mina/source/
 ```
 
 The minimum source-only copy does not require `frontend/`, `images/`, `java-sdk/`, `drivers/`, or `backend/` to run the Control Plane UI and management APIs.
@@ -531,38 +531,38 @@ IntegrationFabric/
 Install the backend dependencies into a Linux virtual environment:
 
 ```bash
-python3 -m venv /opt/tibco/esb/integrationfabric/runtime/.venv
-/opt/tibco/esb/integrationfabric/runtime/.venv/bin/pip install -r \
-  /opt/tibco/esb/integrationfabric/source/backend/requirements.txt
+python3 -m venv /opt/mina/runtime/.venv
+/opt/mina/runtime/.venv/bin/pip install -r \
+  /opt/mina/source/backend/requirements.txt
 ```
 
 For SAP, build the Java bridge on Linux with a Linux JDK 17 or newer. The existing `java-bridge/build` directory may contain Windows DLLs and `java.exe`; it must not be reused on Linux. Place Linux-compatible SAP JCo files below:
 
 ```text
-/opt/tibco/esb/integrationfabric/drivers/
+/opt/mina/drivers/
 ```
 
 Then set:
 
 ```bash
-export FABRIC_DRIVER_HOME=/opt/tibco/esb/integrationfabric/drivers
-export PYTHONPATH=/opt/tibco/esb/integrationfabric/source/backend
+export FABRIC_DRIVER_HOME=/opt/mina/drivers
+export PYTHONPATH=/opt/mina/source/backend
 ```
 
-Create `/opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime` with:
+Create `/opt/mina/runtime/integration-fabric-runtime` with:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-export PYTHONPATH=/opt/tibco/esb/integrationfabric/source/backend
-exec /opt/tibco/esb/IntegrationFabricSoftware/runtime/.venv/bin/python \
-  /opt/tibco/esb/IntegrationFabricSoftware/backend/run_deployment.py "$@"
+export PYTHONPATH=/opt/mina/source/backend
+exec /opt/mina/runtime/.venv/bin/python \
+  /opt/mina/backend/run_deployment.py "$@"
 ```
 
 Configure the Control Plane before starting it:
 
 ```bash
-export FABRIC_ADMIN_RUNTIME_COMMAND='/opt/tibco/esb/integrationfabric/runtime/integration-fabric-runtime --application {application} --environment {environment}'
+export FABRIC_ADMIN_RUNTIME_COMMAND='/opt/mina/runtime/integration-fabric-runtime --application {application} --environment {environment}'
 ```
 
 ### Optional files
@@ -600,7 +600,7 @@ The Linux scripts now include a real remote data-plane agent. It is a normal for
 The central configuration is:
 
 ```text
-/opt/tibco/esb/IntegrationFabricSoftware/scripts/linux/integration-fabric-control-plane.ini
+/opt/mina/scripts/linux/integration-fabric-control-plane.ini
 ```
 
 Use one `[data-plane]` section per agent process and map the delivery-team aliases in `[data-teams]`:
@@ -620,7 +620,7 @@ Each agent sends heartbeats, polls its assigned deployments, downloads the packa
 Start the complete flow after editing the INI:
 
 ```bash
-cd /opt/tibco/esb/IntegrationFabricSoftware/scripts/linux
+cd /opt/mina/scripts/linux
 chmod 700 *.sh
 ./00-setup-and-register.sh
 ```
@@ -628,8 +628,8 @@ chmod 700 *.sh
 For multiple data planes on one Linux host, create a separate INI copy for each plane and run one agent per INI:
 
 ```bash
-FABRIC_CONFIG_FILE=team1.ini ./05-start-data-plane-agent.sh > /opt/tibco/esb/IntegrationFabricSoftware/logs/team1-agent.log 2>&1 &
-FABRIC_CONFIG_FILE=team2.ini ./05-start-data-plane-agent.sh > /opt/tibco/esb/IntegrationFabricSoftware/logs/team2-agent.log 2>&1 &
+FABRIC_CONFIG_FILE=team1.ini ./05-start-data-plane-agent.sh > /opt/mina/logs/team1-agent.log 2>&1 &
+FABRIC_CONFIG_FILE=team2.ini ./05-start-data-plane-agent.sh > /opt/mina/logs/team2-agent.log 2>&1 &
 ```
 
 The updated `administrator` executable must be rebuilt and copied to the target Control Plane before using remote lifecycle operations. If the old executable is still running, it will continue to return the previous localhost-only adapter error.

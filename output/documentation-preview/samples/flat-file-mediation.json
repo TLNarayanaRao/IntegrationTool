@@ -1,0 +1,9 @@
+{
+  "id":"sample-flat-file-mediation","name":"Sample - CSV to XML Mediation","description":"Runnable typed CSV parser that publishes an XML document.","active_environment":"local","active_task_id":"main",
+  "tasks":[{"id":"main","name":"Parse Customer CSV","kind":"starter","input_schema":{"type":"object","properties":{"csv":{"type":"string"}}},"activities":[
+    {"id":"start","type":"start","name":"Start","position":{"x":55,"y":160},"config":{}},
+    {"id":"parse","type":"flat","name":"Parse Customer Data","position":{"x":270,"y":160},"config":{"operation":"parse","inputSource":"String","text":"${input.csv}","format":"delimited","delimiter":",","header":true,"fields":"id,name,active,balance","fieldTypes":"integer,string,boolean,decimal","rootElement":"customers","recordElement":"customer","trimValues":true,"strictColumns":true}},
+    {"id":"log","type":"log","name":"Log Parsed XML","position":{"x":510,"y":160},"config":{"level":"INFO","message":"CSV records parsed","includePayload":true}},
+    {"id":"end","type":"end","name":"End","position":{"x":740,"y":160},"config":{"inputMappings":{"document":"${activities.parse.output.xml}","recordCount":"${activities.parse.output.recordCount}"}}}
+  ],"transitions":[{"id":"e1","source":"start","target":"parse","type":"success"},{"id":"e2","source":"parse","target":"log","type":"success"},{"id":"e3","source":"log","target":"end","type":"success"}]}]
+}

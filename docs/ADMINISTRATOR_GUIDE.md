@@ -4,7 +4,7 @@
 
 MINA Control Plane is the self-hosted management plane for MINA data planes, capabilities, applications, resources, access assignments, observability, and immutable deployment packages. A data plane represents an on-premises runtime host or Kubernetes runtime boundary. Capabilities are provisioned into a data-plane namespace, while applications are deployed to a selected data plane, namespace, and compatible Integration Runtime capability.
 
-The implementation follows the main TIBCO Platform Control Plane concepts without copying its hosted service: separation of control and data planes, namespace-scoped capabilities and applications, platform resources, role assignments, health/heartbeat inventory, application lifecycle, audit, and observability dashboards.
+MINA separates control and data planes and provides namespace-scoped capabilities and applications, platform resources, role assignments, health/heartbeat inventory, application lifecycle, audit, and observability dashboards.
 
 ## Organization and delivery-team isolation
 

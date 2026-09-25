@@ -1,0 +1,15 @@
+{
+  "fingerprint": "f10445c487db52643cc63e193a6f3fd80083fb0b76c08d83b50a07853b290d74",
+  "files": {
+    "documentation-data.json": "de4ec25bc256fba53dd25742b913ec6de71450f204ce0af07579ead595ed30d5",
+    "documentation-data.js": "815776fd3331c4d997064e1df70d0790a5c3c7980780e2ad2917463a59fa532f",
+    "MINA-Documentation.pdf": "014d06bdb78ff7d24b7d6281048c8c748abf475e219e0f641b5da0a6e2392ffc"
+  },
+  "counts": {
+    "activities": 96,
+    "groups": 11,
+    "functions": 85,
+    "connections": 12,
+    "pages": 225
+  }
+}

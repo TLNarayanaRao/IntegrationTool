@@ -971,7 +971,7 @@ class SapAdapter:
         def max_occurs(item: dict) -> str:
             # SAP's complete IDoc metadata reports OCCMAX for a segment
             # occurrence within its parent. The generated IDoc schema follows
-            # the standard SAP/TIBCO convention: the envelope/header and
+            # the IDoc envelope convention: the envelope/header and
             # level-1 segments occur once, top-level level-2 business segments
             # may repeat, and nested segments use their declared OCCMAX.
             try:
@@ -1328,7 +1328,7 @@ class SapAdapter:
                 'IDOC_CONTROL_REC_40': [control],
                 'IDOC_DATA_REC_40': data,
             }
-            # TIBCO's sender uses transactional RFC by default for Post IDoc;
+            # Post IDoc uses transactional RFC by default;
             # IDoc Reader defaults to queued RFC so ordering can be retained.
             call_cfg.setdefault('transactional', True)
             configured_protocol = str(call_cfg.get('transactionProtocol') or call_cfg.get('idocInputMode') or '').strip().lower()

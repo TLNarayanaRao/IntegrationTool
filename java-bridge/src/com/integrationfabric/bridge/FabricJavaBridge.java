@@ -1029,7 +1029,7 @@ public final class FabricJavaBridge {
             break;
         }
         if (selected == null) throw new NoSuchMethodException(target.getClass().getName() + "." + name + "/" + args.length);
-        // Several JMS providers, including TIBCO EMS, return package-private
+        // Several JMS providers, including EMS, return package-private
         // implementation classes such as TibjmsxSessionImp. A public method on
         // that class is still inaccessible to callers in another package. Use
         // the equivalent method declared by its public JMS interface instead.

@@ -5,7 +5,7 @@
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_load-linux-config.sh"
-ROOT="${FABRIC_ROOT:-/opt/tibco/esb/IntegrationFabricSoftware}"
+ROOT="${FABRIC_ROOT:-/opt/mina}"
 VERSION="${FABRIC_VERSION:-1.0.0}"
 
 echo "[1/6] Setting up the Linux Administrator and runtime"

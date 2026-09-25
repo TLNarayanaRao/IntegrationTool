@@ -10,7 +10,7 @@ from typing import Any
 
 
 class SnowflakeAdapterError(RuntimeError):
-    def __init__(self, message: str, code: str = "TIBCO-BW-PALETTE-SNOWFLAKE_DATABASE_JDBC-500009"):
+    def __init__(self, message: str, code: str = "MINA-SNOWFLAKE_DATABASE_JDBC-500009"):
         super().__init__(message)
         self.code = code
 
@@ -111,7 +111,7 @@ def connect(config: dict):
     try:
         import snowflake.connector
     except ImportError as exc:
-        raise SnowflakeAdapterError("External Snowflake connections require snowflake-connector-python", "TIBCO-BW-PALETTE-SNOWFLAKE_DATABASE_JDBC-500017") from exc
+        raise SnowflakeAdapterError("External Snowflake connections require snowflake-connector-python", "MINA-SNOWFLAKE_DATABASE_JDBC-500017") from exc
     authentication = str(config.get("authenticationType") or "Username/Password").lower()
     provider = str(config.get("provider") or "Snowflake")
     options: dict[str, Any] = {
@@ -219,7 +219,7 @@ def _mock_execute(operation: str, cfg: dict, records: list[dict]) -> dict:
 def _create_table(cursor, table: str, cfg: dict):
     metadata = cfg.get("columns") or cfg.get("entityMetadata", {}).get("columns") or []
     if not metadata:
-        raise SnowflakeAdapterError("Create Table from XSD requires resolved column metadata", "TIBCO-BW-PALETTE-SNOWFLAKE_DATABASE_JDBC-500022")
+        raise SnowflakeAdapterError("Create Table from XSD requires resolved column metadata", "MINA-SNOWFLAKE_DATABASE_JDBC-500022")
     fields = []
     xsd_to_snowflake = {"integer": "NUMBER", "decimal": "NUMBER", "double": "DOUBLE", "boolean": "BOOLEAN", "date": "DATE", "time": "TIME", "dateTime": "TIMESTAMP_TZ", "base64Binary": "BINARY", "anyType": "VARIANT", "string": "VARCHAR"}
     for column in metadata:
@@ -249,7 +249,7 @@ def execute(connection_config: dict, cfg: dict, payload: Any) -> dict:
             names = [item[0] for item in cursor.description or []]
             maximum = int(cfg.get("maximumRows") or 100)
             if maximum < 0:
-                raise SnowflakeAdapterError("Maximum Rows cannot be negative", "TIBCO-BW-PALETTE-SNOWFLAKE_DATABASE_JDBC-500014")
+                raise SnowflakeAdapterError("Maximum Rows cannot be negative", "MINA-SNOWFLAKE_DATABASE_JDBC-500014")
             rows = cursor.fetchall() if maximum == 0 else cursor.fetchmany(maximum)
             return {"rows": [dict(zip(names, row)) for row in rows], "rowCount": len(rows)}
         if operation == "insert":

@@ -7,6 +7,9 @@
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
+    "docs:build": "node scripts/build-documentation.mjs",
+    "docs:check": "node scripts/build-documentation.mjs --check",
+    "prebuild": "npm run docs:check",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",

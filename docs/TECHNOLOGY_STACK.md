@@ -119,7 +119,7 @@ SAP JCo and IDoc libraries must be obtained and licensed by the customer. They a
 | `azure-servicebus` | Azure Service Bus messaging |
 | `azure-identity` | Azure OAuth and managed identity credentials |
 | `pika` | RabbitMQ AMQP 0.9.1 operations |
-| TIBCO EMS through Java/JMS bridge | EMS send, receive, queue, topic, request/reply, and acknowledgment patterns |
+| EMS through Java/JMS bridge | EMS send, receive, queue, topic, request/reply, and acknowledgment patterns |
 | Generic JMS through Java bridge | JMS-compatible provider operations where a provider JAR is supplied |
 
 Listener implementations use bounded queues and background readers where needed. This prevents large messages or bursts from blocking connector stdout pipes and places backpressure on the upstream transport instead of allowing unlimited in-memory growth.

@@ -201,4 +201,4 @@ An on-premises package contains an Administrator deployment descriptor. A cloud 
 The `.mpackage` file is the editable Studio project package. The `.mpkg` file is the immutable deployment artifact. Studio and Control Plane continue accepting legacy `.ifproject`, `.ifpackage`, and `.ifpkg` files during the compatibility period.
 # Vendor Java connector bridge
 
-Desktop builds require JDK 17 or newer (`javac` and `jlink`). The build bundles a minimal Java runtime automatically; target machines do not need Java installed. TIBCO EMS, Microsoft SQL Server JDBC, and Oracle JDBC JAR placement is documented in [VENDOR_DRIVERS.md](VENDOR_DRIVERS.md).
+Desktop builds require JDK 17 or newer (`javac` and `jlink`). The build bundles a minimal Java runtime automatically; target machines do not need Java installed. EMS, Microsoft SQL Server JDBC, and Oracle JDBC JAR placement is documented in [VENDOR_DRIVERS.md](VENDOR_DRIVERS.md).

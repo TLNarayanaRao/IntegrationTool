@@ -1,0 +1,8 @@
+{
+  "id":"sample-scheduler-logging","name":"Sample - Scheduled Integration","description":"Runnable scheduler and structured logging example.","active_environment":"local","active_task_id":"main",
+  "tasks":[{"id":"main","name":"Scheduled Health Check","kind":"starter","activities":[
+    {"id":"schedule","type":"timer","name":"Every Five Minutes","position":{"x":70,"y":160},"config":{"operation":"schedule","scheduleMode":"cron","cronExpression":"*/5 * * * *","timezone":"local","runOnceOnLocalStart":true}},
+    {"id":"log","type":"log","name":"Log Trigger","position":{"x":320,"y":160},"config":{"level":"INFO","message":"Scheduled integration fired","includePayload":true}},
+    {"id":"end","type":"end","name":"End","position":{"x":550,"y":160},"config":{"inputMappings":{"trigger":"${activities.schedule.output}"}}}
+  ],"transitions":[{"id":"e1","source":"schedule","target":"log","type":"success"},{"id":"e2","source":"log","target":"end","type":"success"}]}]
+}

@@ -1,0 +1,10 @@
+{
+  "id":"sample-snowflake-analytics","name":"Sample - Snowflake Analytics Query","description":"Configure Snowflake connection properties before running the parameterized query.","active_environment":"local","active_task_id":"main",
+  "resources":[{"id":"analytics-snowflake","type":"snowflake","name":"Analytics Snowflake","config":{"account":"${properties.connections.snowflake.account}","warehouse":"${properties.connections.snowflake.warehouse}","database":"${properties.connections.snowflake.database}","schema":"${properties.connections.snowflake.schema}","username":"${properties.connections.snowflake.username}","password":"${properties.connections.snowflake.password}","role":"${properties.connections.snowflake.role}"}}],
+  "tasks":[{"id":"main","name":"Query Daily Orders","kind":"starter","activities":[
+    {"id":"start","type":"start","name":"Start","position":{"x":55,"y":160},"config":{}},
+    {"id":"query","type":"snowflake","name":"Query Daily Orders","position":{"x":280,"y":160},"config":{"operation":"query","resourceId":"analytics-snowflake","sql":"SELECT ORDER_DATE, STATUS, COUNT(*) AS ORDER_COUNT, SUM(TOTAL) AS TOTAL_AMOUNT FROM ORDERS WHERE ORDER_DATE >= ? GROUP BY ORDER_DATE, STATUS ORDER BY ORDER_DATE DESC","parameters":[{"name":"fromDate","type":"DATE","value":"${input.fromDate}"}],"maximumRows":1000}},
+    {"id":"log","type":"log","name":"Log Analytics Result","position":{"x":530,"y":160},"config":{"level":"INFO","message":"Snowflake analytics query completed","includePayload":true}},
+    {"id":"end","type":"end","name":"End","position":{"x":770,"y":160},"config":{"inputMappings":{"rows":"${activities.query.output.rows}"}}}
+  ],"transitions":[{"id":"e1","source":"start","target":"query","type":"success"},{"id":"e2","source":"query","target":"log","type":"success"},{"id":"e3","source":"log","target":"end","type":"success"}]}]
+}

@@ -1,15 +1,12 @@
-# TIBCO EMS client libraries
+# EMS / JMS client libraries
 
-Place the licensed TIBCO EMS/JMS client JARs in this directory, then restart the
-Integration Studio local runtime.
+Place your licensed, version-compatible JMS client JARs in this directory for
+source development, then restart the MINA runtime. Do not rename driver JARs or
+Java classes, and do not mix client-library versions.
 
-The runtime loads every `*.jar` file in this directory into the shared TIBCO EMS
-connector classpath. Do not rename the JARs and do not add their IDs to project
-connections.
+Installed Windows runtimes use `C:\ProgramData\MINA Studio\drivers\jms`.
+Linux runtimes use `/opt/mina/drivers/jms`. Set `FABRIC_DRIVER_HOME` to override
+the driver root, or configure **Driver JAR directory** on a shared connection.
 
-The default absolute directory is:
-
-`C:\Users\ltangirala\OneDrive - PetSmart\Documents\PetSmart-Integration-Tool\java-runtime\lib\tibco-ems`
-
-For a different machine-wide directory, set `TIBCO_EMS_JAR_PATH` before starting
-the Java runtime. This is a platform setting and is not stored in projects.
+The runtime loads JARs into the connector classpath. See
+[Vendor driver installation](../../docs/VENDOR_DRIVERS.md) for prerequisites.

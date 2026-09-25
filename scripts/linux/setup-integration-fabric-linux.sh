@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # MINA Linux environment setup. No systemctl is used.
-FABRIC_ROOT="${FABRIC_ROOT:-/opt/tibco/esb/IntegrationFabricSoftware}"
+FABRIC_ROOT="${FABRIC_ROOT:-/opt/mina}"
 TEMP_ROOT="${FABRIC_TEMP_ROOT:-$FABRIC_ROOT/administrator/release}"
 VERSION="${1:-${FABRIC_ADMIN_VERSION:-}}"
 PYTHON_BIN="${FABRIC_PYTHON:-/usr/bin/python3.12}"

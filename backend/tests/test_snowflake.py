@@ -10,6 +10,10 @@ from app.snowflake import SnowflakeAdapterError, entity_metadata, execute, list_
 
 
 class SnowflakeConnectorTests(unittest.TestCase):
+    def test_error_codes_use_mina_product_identity(self):
+        error = SnowflakeAdapterError("Test error")
+        self.assertEqual(error.code, "MINA-SNOWFLAKE_DATABASE_JDBC-500009")
+
     def setUp(self):
         self.resource = SharedResource(
             id="snowflake-main", type="snowflake", name="Snowflake JDBC",

@@ -2,8 +2,8 @@
 
 MINA uses the licensed SAP Java Connector (JCo) supplied by the
 customer. The connector is not redistributed with Studio. This implementation
-interoperates with SAP ECC through public RFC/JCo contracts; it is not SAP or
-TIBCO software and does not include either vendor's proprietary implementation.
+interoperates with SAP ECC through public RFC/JCo contracts. MINA is an independent
+product and does not include third-party proprietary connector implementations.
 
 MINA itself is **not SAP-certified** merely because it uses JCo.
 SAP permits JCo to connect external applications to SAP in both directions, but

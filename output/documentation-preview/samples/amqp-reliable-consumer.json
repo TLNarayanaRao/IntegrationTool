@@ -1,0 +1,10 @@
+{
+  "id":"sample-amqp-reliable-consumer","name":"Sample - AMQP Reliable Consumer","description":"Configure the AMQP connection and queue, then run this continuously listening starter.","active_environment":"local","active_task_id":"main",
+  "resources":[{"id":"orders-amqp","type":"amqp","name":"Orders AMQP","config":{"url":"${properties.connections.amqp.url}","username":"${properties.connections.amqp.username}","password":"${properties.connections.amqp.password}","virtualHost":"${properties.connections.amqp.virtualHost}","tlsEnabled":false}}],
+  "tasks":[{"id":"main","name":"Consume AMQP Orders","kind":"starter","activities":[
+    {"id":"receive","type":"amqp","name":"Receive Order","position":{"x":60,"y":160},"config":{"operation":"receive","resourceId":"orders-amqp","queue":"${properties.messaging.ordersQueue}","autoAcknowledge":false,"prefetchCount":10}},
+    {"id":"log","type":"log","name":"Log Order","position":{"x":310,"y":160},"config":{"level":"INFO","message":"AMQP order received","includePayload":true}},
+    {"id":"confirm","type":"confirm","name":"Confirm Message","position":{"x":540,"y":160},"config":{"inputMappings":{"ackId":"${activities.receive.output.ackId}"},"failIfMissing":true}},
+    {"id":"end","type":"end","name":"End","position":{"x":780,"y":160},"config":{}}
+  ],"transitions":[{"id":"e1","source":"receive","target":"log","type":"success"},{"id":"e2","source":"log","target":"confirm","type":"success"},{"id":"e3","source":"confirm","target":"end","type":"success"}]}]
+}
