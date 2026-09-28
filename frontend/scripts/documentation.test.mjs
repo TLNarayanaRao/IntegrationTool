@@ -51,3 +51,23 @@ test('viewer assets are bundled and text is not injected as HTML', () => {
  assert.doesNotMatch(read('documentation.js'), /\.innerHTML\s*=|\beval\(/);
  assert.match(read('documentation.js'), /textContent/);
 });
+test('developer source map covers every activity and group with verified locations', () => {
+ for(const p of model.pages.filter(p=>p.type||p.id.startsWith('group-'))){
+  const guide=model.pages.find(d=>d.id===`developer-${p.id}`);
+  assert.ok(guide?.developer,p.id);
+  assert.ok(guide.sourceRefs.length>0,p.id);
+ }
+ for(const page of model.pages.filter(p=>p.developer)) for(const ref of page.sourceRefs||[]){
+  const source=fs.readFileSync(new URL(`../../${ref.file}`,import.meta.url),'utf8');
+  assert.ok(ref.line>0);
+  if(ref.symbol!=='(module)') assert.ok(source.split(/\r?\n/)[ref.line-1].includes(ref.symbol),`${ref.file}:${ref.line}`);
+ }
+ for(const key of ['tasks','run','debug','mapping','functions','drag-drop','groups','export','logging','function-index']) assert.ok(model.pages.some(p=>p.id===`developer-${key}`));
+});
+test('separate developer PDF model contains only developer topics', () => {
+ const dev=JSON.parse(read('developer-data.json'));
+ assert.equal(dev.manual,'developer');
+ assert.ok(dev.pages.length>100);
+ assert.ok(dev.pages.every(p=>p.developer));
+ assert.equal(fs.readFileSync(new URL('MINA-Developer-Guide.pdf',base)).subarray(0,5).toString(),'%PDF-');
+});

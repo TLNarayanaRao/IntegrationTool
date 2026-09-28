@@ -1,0 +1,152 @@
+// Source-navigation guide. Anchors are verified during generation; no source code
+// or customer files are served by the help site.
+const p=text=>({kind:'p',text});
+const code=text=>({kind:'code',text});
+const section=(title,blocks)=>({title,blocks});
+const table=(columns,rows)=>({kind:'table',columns,rows});
+const rt='backend/app/runtime.py', ui='frontend/src/main.tsx', ed='frontend/src/ActivityEditor.tsx';
+const raw='backend/app/raw_python.py', core='backend/app/raw_python_support/core.py';
+const connectors='backend/app/raw_python_support/connectors.py', acts='backend/app/raw_python_support/activities.py';
+export const developerSources=[ui,ed,rt,raw,core,connectors,acts,
+ 'frontend/scripts/developer-documentation.mjs','frontend/src/ActivityPicker.tsx','frontend/src/MapperStudio.tsx',
+ 'frontend/src/MappingExpressionInput.tsx','frontend/src/mappingCompletion.ts','frontend/src/mapper-functions.ts',
+ 'frontend/src/copyTask.ts','frontend/src/repairCopiedTask.ts','frontend/src/DebugJobData.tsx',
+ 'frontend/src/DebugActivityTree.tsx','frontend/src/debugTaskTree.ts','frontend/src/DebugPayloadEditor.tsx',
+ 'frontend/src/groups.css','frontend/src/activity-editor.css','frontend/src/canvas-selection.css',
+ 'backend/app/main.py','backend/app/models.py','backend/app/store.py','backend/app/debugger.py',
+ 'backend/app/mapper.py','backend/app/jdbc.py','backend/app/snowflake.py','backend/app/amqp.py',
+ 'backend/app/sap.py','backend/app/java_bridge.py','backend/app/google_pubsub.py','backend/app/dataweave.py',
+ 'backend/app/project_logging.py','backend/app/raw_python_support/main.py','backend/run_deployment.py',
+ 'java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java',
+ ...['activity_packs','amqp_jdbc_excel_command','debug_input_capture','debug_testing','engine_export',
+ 'groups_runtime','jms_publish_performance','mapper_code_general','project_logging','publisher_reuse',
+ 'raw_python','sap_idoc_arrays','sap_mapper','snowflake','tasks_runtime','google_pubsub']
+ .map(name=>`backend/tests/test_${name}.py`)];
+
+export function developerPages(activities,groups,functions,sources){
+ const pages=[], refs=[];
+ const locate=(file,needle,label)=>{
+  const text=sources.get(file);
+  if(text===undefined)throw new Error(`Developer guide source missing: ${file}`);
+  const index=needle?text.indexOf(needle):0;
+  if(index<0)throw new Error(`Developer guide anchor missing: ${file} :: ${needle}`);
+  const ref={file,line:text.slice(0,index).split('\n').length,symbol:needle||'(module)',role:label};
+  refs.push(ref);return ref;
+ };
+ const refTable=items=>table(['Responsibility','Source location / search anchor'],items.map(r=>[r.role,`${r.file}:${r.line}\n${r.symbol}`]));
+ const r=(file,needle,label)=>locate(file,needle,label);
+ const add=(id,title,category,sections,sourceRefs=[])=>pages.push({id,title,category:`Developer guide / ${category}`,sections,developer:true,sourceRefs});
+ const tests=(...names)=>names.map(n=>r(`backend/tests/test_${n}.py`,'',`Regression suite: ${n}`));
+ const common=[r(ui,'const packs:','Palette labels, types, operations and icons'),r(ui,'const addActivity =','Create a canvas activity and its initial config'),r(ed,'export function activityContract(','Configuration/Input/Output/Errors contract'),r(ed,'function resolvedActivityContract(','Project-specific schema resolution'),r(ed,'function runtimeMappableInputs(','Configuration keys exposed for mapping'),r(ed,'function FieldEditor(','Shared configuration field renderer'),r(ed,'function InputEditor(','Input mappings editor'),r(ed,'function OutputEditor(','Output schema editor'),r(ed,'function AdvancedEditor(','Advanced logging/retry UI'),r(ed,'function ErrorEditor(','Error handling UI')];
+ const execution=[r('backend/app/models.py','class Activity(','Persisted activity model'),r('backend/app/main.py',"@app.post('/api/projects/{project_id}/run')",'Run HTTP API'),r(rt,'async def run(self,','Graph scheduler'),r(rt,'async def execute_with_policy(','Retry/logging policy wrapper'),r(rt,'def resolve_activity_config(','Resolve configuration and input mappings'),r(rt,'async def execute(self,','Activity dispatch'),r(rt,'def record_activity_output(','Publish outputs and captured inputs'),r('backend/app/debugger.py','async def step(','Debug stepping over the runtime')];
+ add('developer-overview','Developer guide: where to change MINA','Start here',[
+  section('Architecture',[p('This is a source-maintenance guide, separate from the activity user manual. Frontend code is React/TypeScript, core engine code is Python, and native connector work can execute in Java. Paths are relative to your repository checkout, not the installed program directory. Line numbers are regenerated from verified anchors and refer to this documentation build.'),code('Palette / canvas -> ActivityEditor -> saved Project\nRun API -> WorkflowRuntime.run -> execute_with_policy\n -> resolve_activity_config -> execute -> adapter / native bridge\n -> record_activity_output -> Run result / Debug Job Data\n\nRaw Python export -> raw_python_files -> generated task modules\n -> raw_python_support (specialized helpers) -> adapters / bridge'),p('The source tables tell you where to start, not that every option is fully implemented. Read the operational guide for known behavior gaps. A passing unit test or this code index does not establish provider certification.')]),
+  section('How to navigate',[p('Expand Developer guide > Activities for one page per palette activity. Features covers tasks, groups, Run, Debug, mapping, functions and drag-and-drop. Each source table provides a file:line plus a stable search anchor. Use your editor Go to File and Go to Line; if your checkout differs, search the anchor. The site deliberately does not expose source files or local filesystem URLs.'),code('Example from repository root:\nrg -n "def resolve_activity_config" backend/app/runtime.py\nrg -n "file_activity" backend/app/raw_python_support/activities.py'),p('Do not edit frontend/dist, installed app.asar, generated task archives or packaged engine copies as the permanent fix. Edit repository sources, regenerate/rebuild, and redistribute. Preserve saved activity IDs and config keys when changing labels.')]),
+  section('Change checklist',[p('1. Decide whether the change is visual, schema, runtime, transport or export behavior. 2. Follow the relevant source map. 3. Preserve existing project defaults/aliases or add an explicit migration. 4. Update runtime and direct-export implementations where they differ. 5. Add normal, error, cancellation and legacy-project tests. 6. Regenerate docs, build and test a newly packaged install.'),code('cd backend\npython -m unittest discover -s tests\ncd ../frontend\nnpm run docs:build\nnode --test scripts/documentation.test.mjs\nnpm run build'),p('Use a development environment with the project dependencies installed. Provider tests require isolated test infrastructure and licensed drivers. Never use production queues, write APIs or secrets in documentation fixtures.')]),
+ ],[...common,...execution]);
+
+ const adapters={
+  file:[rt,"if activity.type == 'file':",'Local file execution; read is the fall-through after write/list/delete/rename/copy/poll branches',acts,'def file_activity('],
+  ftp:[rt,'def ftp(','FTP operations using the selected operation',acts,'def transfer('],
+  sftp:[rt,'def sftp(','SFTP operations using the selected operation',acts,'def transfer('],
+  jdbc:['backend/app/jdbc.py','def execute(','JDBC adapter; uses transaction when supplied',connectors,'async def jdbc('],
+  snowflake:['backend/app/snowflake.py','def execute(','Snowflake operation adapter',connectors,'async def snowflake('],
+  amqp:['backend/app/amqp.py','def send(','AMQP send adapter; get handles receives',connectors,'async def amqp('],
+  sap:['backend/app/sap.py','def execute(','SAP operation dispatch; listeners use receive_idoc',connectors,'async def sap('],
+  ems:[rt,'async def messaging(','EMS operation routing and body/ack handling',connectors,'async def jms('],
+  jms:[rt,'async def messaging(','JMS operation routing and body/ack handling',connectors,'async def jms('],
+  kafka:[rt,'async def messaging(','Kafka producer/consumer operation dispatch',connectors,'async def kafka('],
+  pubsub:[rt,'async def messaging(','Pub/Sub publish/receive dispatch',connectors,'async def pubsub('],
+  xml:[rt,'def parse_xml_activity(','XML parse; render_xml_activity handles render',acts,'def data_activity('],
+  json:[rt,'def json_activity(','JSON parse/render and validation',acts,'def data_activity('],
+  flat:[rt,'def flat_data(','Flat record parse/render',acts,'def data_activity('],
+  excel:[rt,'def read_excel(','Workbook reading',acts,'def excel_read('],
+  mapper:['backend/app/mapper.py','def execute(','Schema mapping engine',core,'async def execute('],
+  dataweave:['backend/app/dataweave.py','def execute_details(','Transformation script parser and evaluator',core,'async def execute('],
+  java:[rt,'async def java_worker(','Java invocation worker',acts,'async def java_invoke('],
+  python:[rt,'async def python_worker(','Python invocation worker',acts,'async def python_invoke('],
+  http:[rt,"if activity.type == 'http':",'HTTP client request',acts,'def http_request('],
+  rest:[rt,"if activity.type == 'rest' and",'REST outbound request; inbound path enters invoke_listener',acts,'def http_request('],
+  soap:[rt,"if activity.type == 'soap' and",'SOAP outbound request; service path enters invoke_listener',acts,'def http_request('],
+ };
+ const testFamily={file:'activity_packs',ftp:'activity_packs',sftp:'activity_packs',jdbc:'amqp_jdbc_excel_command',snowflake:'snowflake',amqp:'amqp_jdbc_excel_command',sap:'sap_mapper',ems:'jms_publish_performance',jms:'jms_publish_performance',kafka:'publisher_reuse',pubsub:'google_pubsub',xml:'activity_packs',json:'activity_packs',flat:'activity_packs',excel:'amqp_jdbc_excel_command',mapper:'mapper_code_general',dataweave:'mapper_code_general',java:'mapper_code_general',python:'mapper_code_general',basic:'mapper_code_general'};
+ for(const a of activities){
+  const {type,operation}=a;
+  const relevant=[...common,...execution];
+  const text=sources.get(ed);const needle=`if (n.type === "${type}")`;
+  if(text.includes(needle))relevant.push(r(ed,needle,`Contract branch: ${type}; select operation ${operation}`));
+  const adapter=adapters[type];
+  if(adapter){relevant.push(r(...adapter.slice(0,3)),r(adapter[3],adapter[4],`Direct Python implementation; inspect operation ${operation}`));}
+  else{
+   const dispatch=`if activity.type == '${type}':`;
+   relevant.push(r(rt,sources.get(rt).includes(dispatch)?dispatch:'async def execute(self,',`Engine ${type} dispatch; operation ${operation}`),r(core,'async def execute(',`Direct helper dispatch for ${type}; task graph may also be generated inline`));
+  }
+  if(type==='file'&&operation==='read')relevant.push(r(rt,"content = path.read_text(",'Text read implementation'),r(rt,"path.read_bytes()",'Binary read implementation'));
+  if(type==='xml'&&operation==='render')relevant.push(r(rt,'def render_xml_activity(','XML render implementation'));
+  if(type==='amqp'&&operation!=='send')relevant.push(r('backend/app/amqp.py','def get(','Receive adapter and acknowledgement callback'));
+  if(type==='sap'&&operation.includes('listener'))relevant.push(r('backend/app/sap.py','async def receive_idoc(','Inbound SAP adapter'),r('backend/app/main.py','async def _continuous_sap_event_loop(','Continuous SAP jobs'));
+  if(['ems','jms','sap','java'].includes(type))relevant.push(r('backend/app/java_bridge.py','', 'Python/native worker lifecycle'),r('java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java','', 'Native Java connector implementation'));
+  if(type==='pubsub')relevant.push(r('backend/app/google_pubsub.py','def create_client(','Credential/channel client factory'));
+  if(['http_listener','http_response','rest','soap'].includes(type))relevant.push(r('backend/app/main.py','async def invoke_listener(','Inbound HTTP/REST/SOAP hosting and response boundary'),r('backend/app/raw_python_support/main.py','async def run_application(','Direct-export application hosting'));
+  if(['start','end','call_task'].includes(type))relevant.push(r('backend/app/models.py','class ProcessDefinition(','Task graph and interface schema'));
+  relevant.push(r(raw,'def raw_python_files(','Direct graph/code generation'),r(raw,'def _activity_capabilities(','Export capability selection'),...tests(testFamily[type]||'tasks_runtime','raw_python','engine_export'));
+  const changed=type==='file'&&operation==='read'
+   ? 'Example: adding a streaming/size-limit option requires a palette default if needed, a Configuration field in activityContract, mapping exposure via runtimeMappableInputs, a check before read_text/read_bytes in WorkflowRuntime.execute, and equivalent behavior in file_activity for direct exports. Keep existing textContent/content/binaryContent/fileInfo keys compatible. Current reads materialize whole contents; changing the output to a stream changes the contract and cannot be a silent replacement.'
+   : `When changing ${a.title}, select type=${type} and operation=${operation}, not merely the displayed label. The shared dispatcher may serve several activities. Add/adjust editor fields, resolved input values and returned output keys together; preserve behavior of the other operations sharing this handler.`;
+  add(`developer-${a.id}`,`${a.title}: source map`,`Activities / ${a.category.replace('Activities / ','')}`,[
+   section('Trace',[p(`Saved identity: type=${type}; config.operation=${operation}. ${a.title} is a palette definition rendered by shared React components, not necessarily its own frontend file or Python module.`),code(`main.tsx packs -> addActivity -> ActivityEditor\nProject.tasks[].activities[] -> Run API / DebugManager\nWorkflowRuntime.execute_with_policy -> execute\n${adapter?`${adapter[0]} :: ${adapter[1]}`:`${rt} :: execute (${type})`}\nrecord_activity_output -> downstream mappings / Job Data`),p('For event starters the API/listener loop supplies event_output before the graph continues; a manual single-activity test is not equivalent to the continuous listener lifecycle.')]),
+   section('Source locations',[refTable(relevant)]),
+   section('What to change',[p(changed),p('Configuration tab: activityContract and FieldEditor. Input tab: runtimeMappableInputs/InputEditor; mappings persist as config.inputMappings and are resolved before execute. Output tab: contract/resolved schema plus actual returned keys. Advanced tab: advancedDefaults/AdvancedEditor and execute_with_policy. Errors tab: declared faults/ErrorEditor plus real exceptions and run/debug propagation. UI declarations do not automatically implement runtime behavior.'),p('For provider operations, inspect the adapter and Java bridge where listed. Moving work to a thread does not automatically make native I/O cancellable. Preserve acknowledgement, session ownership and worker cleanup when changing performance or timeouts.')]),
+   section('Tests and exports',[p(`Relevant suites are starting points, not a claim of exhaustive coverage of ${operation}. Add a regression that executes this exact type/operation with resolved mappings and asserts the returned shape. Exercise empty input, invalid values, provider errors and cancellation as applicable.`),code(`cd backend\npython -m unittest tests.test_${testFamily[type]||'tasks_runtime'} tests.test_raw_python tests.test_engine_export`),p('Engine-based export reuses/prunes engine modules. Raw Python export generates task code and specializes raw_python_support; review both paths and capability filtering. Re-export a fixture and execute it in a clean test environment. Do not patch only an already-generated archive.')]),
+  ],relevant);
+ }
+
+ const feature=(id,title,description,flow,change,locations)=>add(`developer-${id}`,title,'Features',[
+  section('Responsibility',[p(description),code(flow)]),section('Source locations',[refTable(locations)]),section('Safe change procedure',[p(change),p('Add tests at the affected boundary, not only the UI. Regenerate this source guide after edits: anchors are checked during docs:build and participating source changes invalidate docs:check.')])
+ ],locations);
+ feature('tasks','Tasks, sub-tasks, persistence and copy','Tasks own activity/transition/group graphs. Calls use saved task references; activity IDs also participate in mapping expressions.',
+  'Task editor -> normalizeProject -> persistProject -> API -> store.save_project\nCall Sub Task -> runtime call_task branch -> child run -> caller output',
+  'For a new task setting, change both the frontend Task representation and ProcessDefinition validation/defaults. Preserve IDs during a copy or rewrite references consistently. Test nested calls, failed children, interfaces, old imports and missing referenced tasks. A renamed label must not silently break expressions.',[
+   r(ui,'const normalizeProject =','Loaded-project normalization'),r(ui,'const persistProject =','Browser save API'),r('frontend/src/copyTask.ts','export function copyTask','Task cloning'),r('frontend/src/repairCopiedTask.ts','', 'Legacy copy reference repair'),r('backend/app/models.py','class ProcessDefinition(','Python task schema'),r('backend/app/store.py','def save_project(','Disk persistence'),r(rt,"if activity.type == 'call_task':",'Nested execution'),...tests('tasks_runtime')]);
+ feature('run','Run, continuous events and Stop','Run coordinates application listeners/jobs while WorkflowRuntime schedules activities and groups.',
+  'main.tsx run -> POST /projects/{id}/run -> listener registration or runtime.run\nStop -> stop_project -> cancel jobs -> connector cleanup',
+  'Distinguish a one-shot run from a long-lived event starter. Preserve transport context and acknowledgement timing when spawning jobs. For Stop, test active I/O, idle listeners and worker cleanup. Do not equate cancelling an asyncio task with undoing an external send.',[
+   r(ui,'const run = async','Run action'),r('backend/app/main.py','async def run(project_id:','Run API'),r('backend/app/main.py','async def _continuous_event_loop(','Broker/event polling lifecycle'),r('backend/app/main.py','async def _continuous_sap_event_loop(','SAP event lifecycle'),r('backend/app/main.py','async def stop_project(','Stop endpoint'),r(rt,'async def run(self,','Graph execution'),r('backend/run_deployment.py','', 'Packaged engine command-line host'),...tests('tasks_runtime','publisher_reuse')]);
+ feature('debug','Debug controls, test bench and Job Data','Debug maintains sessions, frames, breakpoints, watches, captured inputs/outputs and isolated activity tests.',
+  'DebugRibbon / DebugToolsDialog -> debugAction -> DebugManager.action\n -> step / runtime.execute_with_policy -> DebugManager.view -> Job Data',
+  'For a new debug action update the client request, DebugAction model and DebugManager.action validation together. Capture resolved activity input separately from previous output. Test pause/resume, nested frames, injected data, run-once side effects and stop during I/O. Test bench execution can modify real systems.',[
+   r(ui,'debug = async','Start debug request'),r(ui,'debugAction = async','Debug action transport'),r(ui,'function DebugRibbon(','Ribbon controls'),r(ui,'function DebugToolsDialog(','Test bench/tools'),r('frontend/src/DebugJobData.tsx','', 'Input/output/variables viewer'),r('frontend/src/DebugActivityTree.tsx','', 'Activity-selection tree'),r('frontend/src/debugTaskTree.ts','', 'Nested task traversal'),r('frontend/src/DebugPayloadEditor.tsx','', 'Test payload editor'),r('backend/app/main.py','async def start_debug(','Debug API'),r('backend/app/debugger.py','async def action(','Debug commands'),r('backend/app/debugger.py','async def step(','Frame execution'),r('backend/app/debugger.py','async def stop(','Session cleanup'),r('backend/app/debugger.py','def view(','Serializable debug state'),r(rt,'def record_activity_output(','Resolved input/output capture'),...tests('debug_testing','debug_input_capture')]);
+ feature('mapping','Input mapping, schema mapper and suggestions','The generic input editor and the dedicated schema mapper are separate UIs; runtime expression resolution and structural mapping are also distinct layers.',
+  'DataSourcePane -> MappingBinding / InputEditor -> config.inputMappings\nresolve_activity_config -> map_input_values -> evaluate_mapping / resolve\nMapper activity -> mapper.execute -> output validation',
+  'For a new expression syntax update completion/parser/runtime together. Preserve structured mapping rules and array cardinality; never turn expression strings into unrestricted eval. Compare Map & Test with Run, Debug and direct-export behavior using the same fixture.',[
+   r(ed,'export function upstreamActivitySources(','Available upstream Data tree'),r(ed,'export function DataSourcePane(','Data/functions/properties browser'),r(ed,'function MappingBinding(','Target field control'),r(ed,'function ExpandedInputMappingDialog(','Expanded mapping popup'),r('frontend/src/MapperStudio.tsx','export default function MapperStudio','Dedicated schema mapper'),r('frontend/src/MappingExpressionInput.tsx','', 'Completion UI/keyboard behavior'),r('frontend/src/mappingCompletion.ts','export function mappingPathSuggestions','Suggestion matching'),r(rt,'def map_input_values(','Input mapping evaluation'),r(rt,'def evaluate_mapping(','Structured rule evaluation'),r(rt,'def resolve(self,','Reference/expression resolution'),r('backend/app/mapper.py','def execute(','Transformation mapping'),r('backend/app/main.py','def mapper_test(','Map & Test endpoint'),...tests('mapper_code_general','sap_idoc_arrays')]);
+ feature('functions','Built-in and project functions','The function catalog controls discoverability; Python evaluation controls results. A catalog entry alone is not executable functionality.',
+  'mapper-functions.ts template -> expression mapping -> evaluate_function_expression\n -> mapper.apply_function / project custom-function expression',
+  'Add the editor signature, description and insertion template; implement its Python semantics and input validation; update export dependencies if necessary. Test nulls, coercion, arrays, timezone/encoding and invalid arity. Maintain matching semantics in direct archives.',[
+   r('frontend/src/mapper-functions.ts','', 'All builtin catalog entries'),r(ed,'export function DataSourcePane(','Function picker and custom function editing'),r('backend/app/mapper.py','def apply_function(','Builtin implementation dispatch'),r(rt,'def evaluate_function_expression(','Function expression evaluation'),r('backend/app/models.py','class Project(','Persisted custom functions'),r(raw,'def raw_python_files(','Export function usage'),...tests('mapper_code_general','raw_python')]);
+ feature('drag-drop','Canvas and mapper drag-and-drop','Palette creation, moving canvas nodes, connecting transitions and mapping data are different gestures and data-transfer contracts.',
+  'Palette onDragStart -> canvas onDrop -> addActivity -> task.activities\nNode pointer drag -> coordinates / selection -> saved position\nDataSourcePane drag -> MappingBinding drop -> inputMappings',
+  'Do not change only the drop handler. Check source MIME/data payload, zoom/scroll coordinate conversion, event propagation, nested-group coordinates and undo/persistence. Preserve keyboard input by excluding editable controls from global shortcuts. Verify drag/drop in browser and packaged desktop, plus mapping into the expanded popup.',[
+   r(ui,'onDragStart={(e) =>','Palette drag source'),r(ui,'onDrop={(e) =>','Canvas drop target'),r(ui,'const addActivity =','Activity creation'),r(ui,'function editableControlFromEvent(','Editable-control shortcut guard'),r(ui,'function activityWireGeometry(','Transition geometry'),r('frontend/src/ActivityPicker.tsx','export default function ActivityPicker','Picker insertion'),r(ed,'export function DataSourcePane(','Mapping drag sources'),r(ed,'function MappingBinding(','Mapping drop targets'),r(ui,'function GroupExpressionTarget(','Group condition drop target'),r('frontend/src/canvas-selection.css','', 'Selection visuals')]);
+ feature('groups','Groups: editor, graph boundaries and runtime state','A group includes visual membership plus scheduling, iteration variables, failure handling and resource lifecycle.',
+  'GroupEditor -> GroupDefinition -> compile_groups\nenter_group_boundaries -> _begin_group -> activities\nleave_group_boundaries / retry_failed_group -> _finish_group',
+  'Keep editor defaults, parent_group_id/member_activity_ids validation and runtime plans aligned. Test nested entry/exit, skip branches, retries, cancellation and restoration of loop variables. Transaction groups must close the exact owned connection on every exit. Critical sections are runtime-local, not distributed locks.',[
+   r(ui,'const addGroup =','Create group'),r(ui,'function groupConfigDefaults(','Editor defaults'),r(ui,'function GroupEditor(','Group configuration'),r('frontend/src/groups.css','', 'Group rendering'),r('backend/app/models.py','class GroupDefinition(','Saved group schema'),r(rt,'def compile_groups(','Group graph plans'),r(rt,'async def _begin_group(','Enter resources/conditions/iteration'),r(rt,'async def _finish_group(','Commit/rollback/release'),r(rt,'async def leave_group_boundaries(','Iteration and nested exit'),r(rt,'async def retry_failed_group(','Retry scope'),r('backend/app/jdbc.py','class JavaJdbcTransaction','Native transaction session'),r(raw,'def _simple_group_plans(','Direct-export group planning'),...tests('groups_runtime','raw_python')]);
+ for(const g of groups){
+  const refsForGroup=[r(ui,'function groupConfigDefaults(',`${g.title} defaults; match group type ${g.id.replace('group-','')}`),r(ui,'function GroupEditor(','Group-specific condition/iteration controls'),r(rt,'async def _begin_group(','Type-specific entry branch'),r(rt,'async def leave_group_boundaries(','Type-specific loop/exit branch'),r(rt,'async def retry_failed_group(','Error/retry handling'),r(rt,'async def _finish_group(','Resource release'),r(raw,'def _simple_group_plans(','Export nesting/graph planning'),...tests('groups_runtime','raw_python')];
+  add(`developer-${g.id}`,`${g.title}: source map`,'Groups',[section('Behavior to preserve',[...g.sections.find(s=>s.title==='Configuration').blocks.filter(b=>b.kind==='p'),p('Use the group type branch in these shared methods. Do not create a UI-only group option; update validation, runtime entry/exit and direct-export scheduling together.')]),section('Source locations',[refTable(refsForGroup)]),section('Regression focus',[p('Test zero/one/multiple iterations or selected branches as applicable; nested groups; an activity fault; cancellation; and a saved/archive round trip. Verify variables, locks and sessions are restored or released at scope exit.')])],refsForGroup);
+ }
+ feature('export','Engine archives versus direct Python generation','The two archive forms have different code-generation and packaging responsibilities.',
+  'PackageDialog -> package_project -> build_deployment_archive\nengine_python_files -> pruned engine modules\nraw_python_files -> task Python + specialized support modules',
+  'Changing runtime.py alone is insufficient when direct archives use raw_python_support. Update capability roots and generated import closure without adding unrelated helpers to every project. Validate a minimal one-activity archive, a mixed project, nested groups and a clean-environment execution. Keep vendor files and secrets out of generic archives.',[
+   r(ui,'function PackageDialog(','Packaging UI'),r('backend/app/main.py','def build_deployment_archive(','Archive orchestration'),r(raw,'def _activity_capabilities(','Capability registry'),r(raw,'def raw_python_files(','Direct application generation'),r(raw,'def engine_python_files(','Engine archive generation'),r(raw,'def _engine_module_files(','Engine module pruning'),r(core,'async def execute(','Direct support dispatch'),r('backend/app/raw_python_support/main.py','async def run_application(','Direct application lifecycle'),...tests('raw_python','engine_export')]);
+ feature('logging','Logs, faults and observable execution data','Log activity output, activity-policy payload logs and persistent project log files are separate responsibilities.',
+  'execute_with_policy / Log activity -> runtime.log -> project_logging\nAPI runtime-state / logs -> Studio panels',
+  'Keep secrets and large payloads out of logs by default. Preserve timestamps, activity identity, error codes, environment path selection and rolling-file behavior. Test write permissions and failure logging as well as successful execution.',[
+   r(rt,'def log(self,','Runtime event emission'),r(rt,"if activity.type == 'log':",'Log activity body'),r(rt,'def fault_payload(','Fault envelope'),r('backend/app/project_logging.py','', 'Persistent log files/rotation'),r('backend/app/main.py','def project_logs(','Logs API'),...tests('project_logging','debug_input_capture')]);
+ add('developer-function-index','Every built-in function: implementation index','Functions',[
+  section('Where to edit',[p('Every catalog function is listed below. Most built-ins share apply_function rather than having one Python function per name. Search the quoted function name or its aliases inside apply_function; changing the catalog does not add execution support. Runtime expression parsing and custom functions also pass through evaluate_function_expression.'),refTable([r('backend/app/mapper.py','def apply_function(','Implementation/aliases'),r(rt,'def evaluate_function_expression(','Expression call parsing'),r('frontend/src/mapper-functions.ts','', 'Signatures/templates')])]),
+  section('Catalog index',[table(['Function / signature','Frontend definition / backend entry'],functions.map(fn=>{const name=fn.title;const ref=r('frontend/src/mapper-functions.ts',`"${name}"`,`Function catalog: ${name}`);return [name+'\n'+fn.sections.find(s=>s.title==='Signature').blocks[0].text,`${ref.file}:${ref.line}\nbackend/app/mapper.py :: apply_function\nSearch literal/alias: ${name}`];}))]),
+ ]);
+ return {pages,refs};
+}

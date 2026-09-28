@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import ts from 'typescript';
 import { connectorDetails, connectorFieldHelp } from './connector-documentation.mjs';
+import { developerPages, developerSources } from './developer-documentation.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const out = path.join(root, 'frontend/public/help');
 const read = name => fs.readFile(path.join(root, name), 'utf8');
@@ -22,7 +23,7 @@ const guides = [
  ['Connectors', 'KAFKA_PUBLISHING.md'], ['Security', 'SECURITY_REVIEW_2026-09-22.md'],
  ['Security', 'WEB_DEPENDENCY_SECURITY.md'],
 ];
-const sourceFiles = ['frontend/src/main.tsx', 'frontend/src/ActivityEditor.tsx', 'frontend/src/ActivityPicker.tsx', 'frontend/src/mapper-functions.ts', 'frontend/package.json', 'backend/app/runtime.py', 'backend/app/sap.py', 'backend/app/java_bridge.py', 'java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java', 'frontend/scripts/connector-documentation.mjs', 'frontend/scripts/build-documentation.mjs', 'scripts/build-documentation-pdf.py', 'frontend/public/help/documentation.js', 'frontend/public/help/documentation.css', 'frontend/public/help/index.html', ...guides.map(([, f]) => `docs/${f}`)];
+const sourceFiles = [...new Set(['frontend/src/main.tsx', 'frontend/src/ActivityEditor.tsx', 'frontend/src/ActivityPicker.tsx', 'frontend/src/mapper-functions.ts', 'frontend/package.json', 'backend/app/runtime.py', 'backend/app/sap.py', 'backend/app/java_bridge.py', 'java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java', 'frontend/scripts/connector-documentation.mjs', 'frontend/scripts/build-documentation.mjs', 'scripts/build-documentation-pdf.py', 'frontend/public/help/documentation.js', 'frontend/public/help/documentation.css', 'frontend/public/help/index.html', ...developerSources, ...guides.map(([, f]) => `docs/${f}`)])];
 const sources = new Map(await Promise.all(sourceFiles.map(async name => [name, await read(name)])));
 const fingerprint = sha(sourceFiles.map(name => `${name}\n${sources.get(name)}`).join('\n'));
 if (process.argv.includes('--check')) {
@@ -161,6 +162,8 @@ function markdown(text) {
  flush(); return blocks;
 }
 for(const [category,file] of guides){const text=sources.get(`docs/${file}`);add(`guide-${slug(file.replace(/\.md$/,''))}`,text.match(/^# (.+)$/m)?.[1]||file,category,[section('Guide',markdown(text))],{source:`docs/${file}`});}
+const development=developerPages(pages.filter(p=>p.type),pages.filter(p=>p.id.startsWith('group-')),pages.filter(p=>p.id.startsWith('function-')),sources);
+pages.push(...development.pages);
 const unique=new Set();for(const page of pages){if(unique.has(page.id))throw new Error(`Duplicate documentation ID: ${page.id}`);unique.add(page.id);}
 const version=JSON.parse(sources.get('frontend/package.json')).version;
 const model={version,fingerprint,counts:{activities:activityCount,groups:groupDefs.length,functions:mapperFunctionCatalog.length,connections:Object.keys(defs.connectionFieldSets).length,pages:pages.length},pages};
@@ -170,6 +173,10 @@ await fs.writeFile(path.join(out,'documentation-data.js'),`window.MINA_DOCUMENTA
 const python=process.env.MINA_DOCS_PYTHON || 'python';
 const result=spawnSync(python,[path.join(root,'scripts/build-documentation-pdf.py'),path.join(out,'documentation-data.json'),path.join(out,'MINA-Documentation.pdf')],{stdio:'inherit'});
 if(result.error||result.status!==0)throw new Error('PDF generation failed. Set MINA_DOCS_PYTHON to a Python environment with scripts/documentation-requirements.txt installed. '+(result.error||''));
-const files={};for(const file of ['documentation-data.json','documentation-data.js','MINA-Documentation.pdf']) files[file]=sha(await fs.readFile(path.join(out,file)));
+const developerModel={...model,counts:{...model.counts,pages:development.pages.length},manual:'developer',title:'Developer Guide and Source Map',pages:development.pages};
+await fs.writeFile(path.join(out,'developer-data.json'),JSON.stringify(developerModel,null,2)+'\n');
+const developerResult=spawnSync(python,[path.join(root,'scripts/build-documentation-pdf.py'),path.join(out,'developer-data.json'),path.join(out,'MINA-Developer-Guide.pdf')],{stdio:'inherit'});
+if(developerResult.error||developerResult.status!==0)throw new Error('Developer PDF generation failed.');
+const files={};for(const file of ['documentation-data.json','documentation-data.js','MINA-Documentation.pdf','developer-data.json','MINA-Developer-Guide.pdf']) files[file]=sha(await fs.readFile(path.join(out,file)));
 await fs.writeFile(path.join(out,'documentation-build.json'),JSON.stringify({fingerprint,files,counts:model.counts},null,2)+'\n');
 console.log(JSON.stringify(model.counts));

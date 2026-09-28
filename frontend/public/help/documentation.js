@@ -48,6 +48,9 @@
   const page=pages.get(route());main.replaceChildren();
   if(!page){main.append(node('h1','Topic not found'),node('p','Choose a topic from the index.'));return;}
   document.title=`${page.title} | MINA Documentation`;
+  const download=document.getElementById('pdf-download');
+  download.href=page.developer?'MINA-Developer-Guide.pdf':'MINA-Documentation.pdf';
+  download.textContent=page.developer?'Developer PDF':'Download PDF';
   const article=node('article');article.append(node('p',page.category,'breadcrumb'),node('h1',page.title));
   if(page.id==='overview')article.append(node('p',`${model.counts.activities} activities · ${model.counts.groups} groups · ${model.counts.functions} functions · ${model.counts.connections} connection types`,'counts'));
   const tabs=node('div',undefined,'tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label',`${page.title} sections`);
