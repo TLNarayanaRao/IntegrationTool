@@ -13,7 +13,7 @@
       {"id":"ems-end","type":"end","name":"End","position":{"x":760,"y":160},"config":{}}
     ],"transitions":[{"id":"ee1","source":"ems-receive","target":"ems-log","type":"success"},{"id":"ee2","source":"ems-log","target":"ems-confirm","type":"success"},{"id":"ee3","source":"ems-confirm","target":"ems-end","type":"success"}]},
     {"id":"kafka-task","name":"Kafka Topic Consumer","kind":"starter","activities":[
-      {"id":"kafka-receive","type":"kafka","name":"Receive Kafka Record","position":{"x":60,"y":160},"config":{"operation":"receive","resourceId":"kafka-connection","topic":"${properties.messaging.ordersTopic}","groupId":"integration-fabric-sample","enableAutoCommit":false}},
+      {"id":"kafka-receive","type":"kafka","name":"Receive Kafka Record","position":{"x":60,"y":160},"config":{"operation":"receive","resourceId":"kafka-connection","topic":"${properties.messaging.ordersTopic}","groupId":"mina-sample","enableAutoCommit":false}},
       {"id":"kafka-log","type":"log","name":"Log Kafka Record","position":{"x":320,"y":160},"config":{"level":"INFO","message":"Kafka order received","includePayload":true}},
       {"id":"kafka-end","type":"end","name":"End","position":{"x":570,"y":160},"config":{}}
     ],"transitions":[{"id":"ke1","source":"kafka-receive","target":"kafka-log","type":"success"},{"id":"ke2","source":"kafka-log","target":"kafka-end","type":"success"}]},

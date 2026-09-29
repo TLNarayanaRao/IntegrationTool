@@ -55,17 +55,37 @@ try {
     $venvPath = "$root\backend\.venv"
     $buildPython = Join-Path $venvPath 'Scripts\python.exe'
     if (Test-Path $buildPython) {
-        $existingVersion = & $buildPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
-        Assert-CommandSucceeded 'Existing Python version detection' $LASTEXITCODE
-        if ($existingVersion.Trim() -ne '3.11') {
+        $existingVersion = & $buildPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            # A checked-in or previously created venv can retain a launcher
+            # for a Python installation that was later removed. Do not block
+            # a fresh package build on that stale interpreter; use the
+            # isolated packaging environment below instead.
+            Write-Warning "backend\.venv references an unavailable Python interpreter; using an isolated Python 3.11 packaging environment."
+            $venvPath = "$root\backend\build\.venv311"
+            $buildPython = Join-Path $venvPath 'Scripts\python.exe'
+        } elseif ($existingVersion.Trim() -ne '3.11') {
             Write-Host "backend\.venv uses Python $existingVersion; using an isolated Python 3.11 packaging environment instead."
             $venvPath = "$root\backend\build\.venv311"
             $buildPython = Join-Path $venvPath 'Scripts\python.exe'
         }
     }
     if (!(Test-Path $buildPython)) {
-        if (Get-Command py -ErrorAction SilentlyContinue) { py -3.11 -m venv $venvPath }
-        else { python -m venv $venvPath }
+        $creator = $env:MINA_BUILD_PYTHON
+        $creatorArgs = @()
+        if ([string]::IsNullOrWhiteSpace($creator)) {
+            if (Get-Command py -ErrorAction SilentlyContinue) {
+                $creator = 'py'; $creatorArgs = @('-3.11')
+            } else {
+                $creator = 'python'
+            }
+        }
+        $creatorVersion = & $creator @creatorArgs -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+        Assert-CommandSucceeded 'Python 3.11 packaging interpreter detection' $LASTEXITCODE
+        if ($creatorVersion.Trim() -ne '3.11') {
+            throw "Desktop runtime builds require Python 3.11, but '$creator' resolves to Python $creatorVersion. Install Python 3.11 x64 or set MINA_BUILD_PYTHON to its python.exe."
+        }
+        & $creator @creatorArgs -m venv $venvPath
         Assert-CommandSucceeded 'Python 3.11 packaging environment creation' $LASTEXITCODE
     }
     $runtimePython = & $buildPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"

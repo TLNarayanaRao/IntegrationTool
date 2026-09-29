@@ -81,10 +81,10 @@ function startRuntime(port) {
   runtimeLogPath = path.join(logDirectory, 'runtime-startup.log');
   const environment = {
     ...process.env,
-    FABRIC_PORT: String(port),
-    FABRIC_DATA_DIR: path.join(app.getPath('userData'), 'workspace-data'),
-    FABRIC_LOG_LEVEL: process.env.FABRIC_LOG_LEVEL || 'info',
-    FABRIC_BUILD_VERSION: app.getVersion(),
+    MINA_PORT: String(port),
+    MINA_DATA_DIR: path.join(app.getPath('userData'), 'workspace-data'),
+    MINA_LOG_LEVEL: process.env.MINA_LOG_LEVEL || 'info',
+    MINA_BUILD_VERSION: app.getVersion(),
     PYTHONUTF8: '1',
   };
   let executable;
@@ -97,7 +97,7 @@ function startRuntime(port) {
     const root = path.resolve(__dirname, '..', '..');
     const windowsPython = path.join(root, 'backend', '.venv', 'Scripts', 'python.exe');
     const unixPython = path.join(root, 'backend', '.venv', 'bin', 'python');
-    executable = process.env.FABRIC_PYTHON || (fs.existsSync(windowsPython) ? windowsPython : unixPython);
+    executable = process.env.MINA_PYTHON || (fs.existsSync(windowsPython) ? windowsPython : unixPython);
     args = ['run_sidecar.py'];
     cwd = path.join(root, 'backend');
   }
@@ -135,7 +135,7 @@ async function createWindow() {
     minHeight: 720,
     backgroundColor: '#071522',
     title: 'MINA Studio',
-    icon: path.join(__dirname, 'integration-fabric-icon.svg'),
+    icon: path.join(__dirname, 'mina-icon.svg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -147,15 +147,15 @@ async function createWindow() {
   mainWindow.on('close', (event) => {
     // BrowserWindow's native close button bypasses the renderer's project
     // close modal. Ask the renderer to resolve unsaved work first; it invokes
-    // fabric:complete-window-close only after Save or Discard.
+    // mina:complete-window-close only after Save or Discard.
     if (windowCloseApproved || app.isQuitting) return;
     event.preventDefault();
-    mainWindow.webContents.send('fabric:request-window-close');
+    mainWindow.webContents.send('mina:request-window-close');
   });
-  await mainWindow.loadURL(process.env.FABRIC_DEV_URL || `http://127.0.0.1:${runtimePort}`);
+  await mainWindow.loadURL(process.env.MINA_DEV_URL || `http://127.0.0.1:${runtimePort}`);
 }
 
-ipcMain.handle('fabric:save-file', async (_event, options) => {
+ipcMain.handle('mina:save-file', async (_event, options) => {
   let filePath = options.path;
   if (!filePath) {
     const result = await dialog.showSaveDialog(mainWindow, {
@@ -170,7 +170,7 @@ ipcMain.handle('fabric:save-file', async (_event, options) => {
   return filePath;
 });
 
-ipcMain.handle('fabric:select-archive-output', async (_event, options = {}) => {
+ipcMain.handle('mina:select-archive-output', async (_event, options = {}) => {
   const result = await dialog.showSaveDialog(mainWindow, {
     title: options.title || 'Choose archive output file',
     defaultPath: options.filename || 'application.ear',
@@ -238,7 +238,7 @@ const readProjectFolder = (folderPath) => {
   return { path: folderPath, name: path.basename(folderPath), project, kind: 'folder' };
 };
 
-ipcMain.handle('fabric:save-project-folder', async (_event, options) => {
+ipcMain.handle('mina:save-project-folder', async (_event, options) => {
   let folderPath = options.path;
   if (!folderPath) {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -271,7 +271,7 @@ ipcMain.handle('fabric:save-project-folder', async (_event, options) => {
     activity.config.projectArtifact = relative.replaceAll('\\', '/');
   }));
   const metadata = { ...project, tasks: undefined, resources: undefined, schemas: undefined, properties: undefined, packaging: undefined, process: undefined,
-    layout: { format: 'integration-fabric-folder-project', version: 1, tasks: taskFiles, resources: resourceFiles, schemas: schemaFiles, properties: propertyFiles, packaging: 'packaging/packaging.json' } };
+    layout: { format: 'mina-folder-project', version: 1, tasks: taskFiles, resources: resourceFiles, schemas: schemaFiles, properties: propertyFiles, packaging: 'packaging/packaging.json' } };
   writeProjectJson(path.join(folderPath, 'project.json'), metadata);
   tasks.forEach((item, index) => writeProjectJson(path.join(folderPath, taskFiles[index]), item));
   resources.forEach((item, index) => writeProjectJson(path.join(folderPath, resourceFiles[index]), item));
@@ -281,7 +281,7 @@ ipcMain.handle('fabric:save-project-folder', async (_event, options) => {
   return folderPath;
 });
 
-ipcMain.handle('fabric:open-file', async (_event, fileType) => {
+ipcMain.handle('mina:open-file', async (_event, fileType) => {
   const extensions = fileType === 'mpackage' ? ['mpackage']
     : fileType === 'mpkg' ? ['mpkg']
     : fileType === 'legacy' ? ['ifproject', 'ifpackage', 'ifpkg']
@@ -303,7 +303,7 @@ ipcMain.handle('fabric:open-file', async (_event, fileType) => {
   return { path: filePath, name: path.basename(filePath), bytes: [...fs.readFileSync(filePath)], kind: 'file' };
 });
 
-ipcMain.handle('fabric:open-utility-file', async (_event, options = {}) => {
+ipcMain.handle('mina:open-utility-file', async (_event, options = {}) => {
   const extensions = Array.isArray(options.extensions) ? options.extensions.map((value) => String(value).replace(/^\./, '')).filter((value) => /^[A-Za-z0-9]+$/.test(value)).slice(0, 20) : [];
   const result = await dialog.showOpenDialog(mainWindow, {
     title: String(options.title || 'Open file').slice(0, 120),
@@ -316,7 +316,7 @@ ipcMain.handle('fabric:open-utility-file', async (_event, options = {}) => {
   return { id, name: path.basename(filePath), size: stats.size, modified: stats.mtimeMs };
 });
 
-ipcMain.handle('fabric:read-utility-file-chunk', async (_event, options = {}) => {
+ipcMain.handle('mina:read-utility-file-chunk', async (_event, options = {}) => {
   const filePath = utilityFiles.get(String(options.id || ''));
   if (!filePath) throw new Error('The file handle is closed or was not selected by this Studio session.');
   const stats = await fs.promises.stat(filePath), offset = Math.floor(Math.max(0, Math.min(Number(options.offset) || 0, stats.size)));
@@ -329,7 +329,7 @@ ipcMain.handle('fabric:read-utility-file-chunk', async (_event, options = {}) =>
   } finally { await handle.close(); }
 });
 
-ipcMain.handle('fabric:save-utility-file-window', async (_event, options = {}) => {
+ipcMain.handle('mina:save-utility-file-window', async (_event, options = {}) => {
   const filePath = utilityFiles.get(String(options.id || ''));
   if (!filePath) throw new Error('The file handle is closed or was not selected by this Studio session.');
   const stats = await fs.promises.stat(filePath), expectedModified = Number(options.expectedModified);
@@ -338,7 +338,7 @@ ipcMain.handle('fabric:save-utility-file-window', async (_event, options = {}) =
   const originalLength = Math.floor(Math.max(0, Math.min(Number(options.originalLength) || 0, stats.size - offset)));
   const replacement = Buffer.from(String(options.base64 || ''), 'base64');
   if (replacement.length > 64 * 1024 * 1024) throw new Error('The edited window exceeds the 64 MB safe-save limit. Save smaller windows instead.');
-  const temporaryPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${crypto.randomUUID()}.fabric-tmp`);
+  const temporaryPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${crypto.randomUUID()}.mina-tmp`);
   let source, target;
   try {
     source = await fs.promises.open(filePath, 'r');
@@ -370,7 +370,7 @@ ipcMain.handle('fabric:save-utility-file-window', async (_event, options = {}) =
   }
 });
 
-ipcMain.handle('fabric:save-utility-file-as', async (_event, options = {}) => {
+ipcMain.handle('mina:save-utility-file-as', async (_event, options = {}) => {
   const extensions = Array.isArray(options.extensions) ? options.extensions.map((value) => String(value).replace(/^\./, '')).filter((value) => /^[A-Za-z0-9]+$/.test(value)).slice(0, 20) : [];
   const result = await dialog.showSaveDialog(mainWindow, {
     title: String(options.title || 'Save file as').slice(0, 120),
@@ -380,7 +380,7 @@ ipcMain.handle('fabric:save-utility-file-as', async (_event, options = {}) => {
   if (result.canceled || !result.filePath) return null;
   const replacement = Buffer.from(String(options.base64 || ''), 'base64');
   if (replacement.length > 64 * 1024 * 1024) throw new Error('The editor content exceeds the 64 MB safe-save limit. Save smaller windows instead.');
-  const filePath = result.filePath, temporaryPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${crypto.randomUUID()}.fabric-tmp`);
+  const filePath = result.filePath, temporaryPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${crypto.randomUUID()}.mina-tmp`);
   try {
     await fs.promises.writeFile(temporaryPath, replacement, { flag: 'wx' });
     await fs.promises.rename(temporaryPath, filePath);
@@ -393,25 +393,25 @@ ipcMain.handle('fabric:save-utility-file-as', async (_event, options = {}) => {
   return { id, name: path.basename(filePath), size: stats.size, modified: stats.mtimeMs };
 });
 
-ipcMain.handle('fabric:close-utility-file', (_event, id) => utilityFiles.delete(String(id || '')));
-ipcMain.handle('fabric:exit', () => {
+ipcMain.handle('mina:close-utility-file', (_event, id) => utilityFiles.delete(String(id || '')));
+ipcMain.handle('mina:exit', () => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
   return true;
 });
-ipcMain.handle('fabric:complete-window-close', () => {
+ipcMain.handle('mina:complete-window-close', () => {
   if (!mainWindow || mainWindow.isDestroyed()) return true;
   windowCloseApproved = true;
   mainWindow.close();
   return true;
 });
 
-ipcMain.handle('fabric:open-project-folder', async () => {
+ipcMain.handle('mina:open-project-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, { title: 'Open MINA project folder', buttonLabel: 'Open folder', properties: ['openDirectory'] });
   if (result.canceled || !result.filePaths[0]) return null;
   return readProjectFolder(result.filePaths[0]);
 });
 
-ipcMain.handle('fabric:open-project-source', async () => {
+ipcMain.handle('mina:open-project-source', async () => {
   const choice = await dialog.showMessageBox(mainWindow, {
     type: 'question',
     title: 'Open MINA project',
@@ -432,7 +432,7 @@ ipcMain.handle('fabric:open-project-source', async () => {
   return { path: filePath, name: path.basename(filePath), bytes: [...fs.readFileSync(filePath)], kind: 'file' };
 });
 
-ipcMain.handle('fabric:select-code-artifact', async (_event, kind) => {
+ipcMain.handle('mina:select-code-artifact', async (_event, kind) => {
   const filters = kind === 'python'
     ? [{ name: 'Python module or package', extensions: ['py', 'zip', 'whl'] }]
     : [{ name: 'Java class or library', extensions: ['jar', 'class', 'java'] }];
@@ -450,7 +450,7 @@ app.on('window-all-closed', () => app.quit());
 app.on('before-quit', (event) => {
   if (!windowCloseApproved && mainWindow && !mainWindow.isDestroyed()) {
     event.preventDefault();
-    mainWindow.webContents.send('fabric:request-window-close');
+    mainWindow.webContents.send('mina:request-window-close');
     return;
   }
   app.isQuitting = true;

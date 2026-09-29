@@ -22,7 +22,7 @@ async def run_task(task_id: str, payload=None, environment_name: str = DEFAULT_E
 
 
 async def run_application(environment_name: str = DEFAULT_ENVIRONMENT):
-    enabled = os.environ.get('FABRIC_ENABLED_STARTERS')
+    enabled = os.environ.get('MINA_ENABLED_STARTERS')
     ids = [task_id for task_id in STARTERS if not enabled or task_id in json.loads(enabled)]
     if not ids: raise ValueError('No Starter Tasks are enabled')
     # ACKNOWLEDGEMENT_CAPABILITY_START
@@ -108,7 +108,7 @@ async def managed_run(awaitable):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description='Run the generated Python application')
-    parser.add_argument('--environment', default=os.environ.get('FABRIC_ENVIRONMENT', DEFAULT_ENVIRONMENT))
+    parser.add_argument('--environment', default=os.environ.get('MINA_ENVIRONMENT', DEFAULT_ENVIRONMENT))
     parser.add_argument('--task', choices=list(TASKS), help='Run one task, including a Sub Task')
     parser.add_argument('--input', default='{}', help='JSON input for --task')
     parser.add_argument('--check', action='store_true', help='Validate target runtime dependencies without starting the application')
@@ -140,7 +140,7 @@ def main() -> int:
             asyncio.run(managed_run(run_application(args.environment)))
             # A one-shot starter is still a managed application when launched
             # by Control Plane. Notebook/CLI invocation returns immediately.
-            if os.environ.get('FABRIC_DEPLOYMENT_ID'):
+            if os.environ.get('MINA_DEPLOYMENT_ID'):
                 asyncio.run(asyncio.Event().wait())
     except Exception:
         logging.exception('Python application failed')

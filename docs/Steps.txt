@@ -12,7 +12,7 @@ $env:NODE_EXTRA_CA_CERTS = $ca
 $env:PIP_CERT = $ca
 $env:REQUESTS_CA_BUNDLE = $ca
 
-cd C:\Narayana\Integration-Tool\Software\IntegrationFabric
+cd C:\Narayana\Integration-Tool\Software\MINA
 
 Get-Process node,electron,MINARuntime -ErrorAction SilentlyContinue |
     Stop-Process -Force

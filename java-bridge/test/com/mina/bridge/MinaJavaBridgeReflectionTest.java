@@ -1,9 +1,9 @@
-package com.integrationfabric.bridge;
+package com.mina.bridge;
 
 import java.lang.reflect.Method;
 
 /** Regression test for providers that return package-private JMS implementations. */
-public final class FabricJavaBridgeReflectionTest {
+public final class MinaJavaBridgeReflectionTest {
     public interface PublicSessionContract {
         String createConsumer(String destination);
     }
@@ -13,7 +13,7 @@ public final class FabricJavaBridgeReflectionTest {
     }
 
     public static void main(String[] args) throws Exception {
-        Method invoke = FabricJavaBridge.class.getDeclaredMethod("invoke", Object.class, String.class, Object[].class);
+        Method invoke = MinaJavaBridge.class.getDeclaredMethod("invoke", Object.class, String.class, Object[].class);
         invoke.setAccessible(true);
         Object result = invoke.invoke(null, new Object[]{new ProviderSessionImplementation(), "createConsumer", new Object[]{"orders"}});
         if (!"consumer:orders".equals(result)) throw new AssertionError("Public interface invocation failed: " + result);

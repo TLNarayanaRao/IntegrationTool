@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # 00 - Execute the complete Linux setup and Control Plane registration flow.
-# Edit integration-fabric-control-plane.ini, then run this script.
+# Edit mina-control-plane.ini, then run this script.
 # No systemctl is used. Set START_AGENT=false to register resources only.
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_load-linux-config.sh"
-ROOT="${FABRIC_ROOT:-/opt/mina}"
-VERSION="${FABRIC_VERSION:-1.0.0}"
+ROOT="${MINA_ROOT:-/opt/mina}"
+VERSION="${MINA_VERSION:-1.0.0}"
 
 echo "[1/6] Setting up the Linux Administrator and runtime"
-FABRIC_ROOT="$ROOT" FABRIC_PYTHON="${FABRIC_PYTHON:-/usr/bin/python3.12}" FABRIC_ADMIN_PORT="${FABRIC_CONTROL_PLANE_PORT:-19080}" FABRIC_ADMIN_HOST="${FABRIC_CONTROL_PLANE_HOST:-0.0.0.0}" FABRIC_ADMIN_API_KEY="$ADMIN_KEY" FABRIC_ADMIN_SECRET_KEY="${ADMIN_SECRET_KEY:-$ADMIN_KEY}" \
-  "$SCRIPT_DIR/setup-integration-fabric-linux.sh" "$VERSION"
+MINA_ROOT="$ROOT" MINA_PYTHON="${MINA_PYTHON:-/usr/bin/python3.12}" MINA_ADMIN_PORT="${MINA_CONTROL_PLANE_PORT:-19080}" MINA_ADMIN_HOST="${MINA_CONTROL_PLANE_HOST:-0.0.0.0}" MINA_ADMIN_API_KEY="$ADMIN_KEY" MINA_ADMIN_SECRET_KEY="${ADMIN_SECRET_KEY:-$ADMIN_KEY}" \
+  "$SCRIPT_DIR/setup-mina-linux.sh" "$VERSION"
 
 echo "[2/7] Starting Control Plane"
 CP_DIR="$ROOT/control-plane"
@@ -38,7 +38,7 @@ echo "[6/7] Creating or updating user"
 
 if [[ "${START_AGENT:-true}" == "true" ]]; then
   echo "[7/7] Starting data-plane heartbeat agent"
-  AGENT_LOG="${FABRIC_AGENT_LOG:-$ROOT/logs/data-plane-agent.log}"
+  AGENT_LOG="${MINA_AGENT_LOG:-$ROOT/logs/data-plane-agent.log}"
   mkdir -p "$(dirname "$AGENT_LOG")"
   nohup "$SCRIPT_DIR/05-start-data-plane-agent.sh" >"$AGENT_LOG" 2>&1 &
   echo "Data-plane agent started with PID $!; log: $AGENT_LOG"

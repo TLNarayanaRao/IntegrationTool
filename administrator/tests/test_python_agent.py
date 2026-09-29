@@ -80,7 +80,7 @@ class PythonAgentTests(unittest.TestCase):
             args, options = captured[0]
             self.assertEqual(args[0][1:3], ['-m', 'application.main'])
             self.assertNotIn('redacted-in-test', str(args))
-            self.assertEqual(options['env']['FABRIC_ENABLED_STARTERS'], '["main"]')
+            self.assertEqual(options['env']['MINA_ENABLED_STARTERS'], '["main"]')
             self.assertEqual(reported[0]['state'], 'RUNNING')
             async def reconcile_changed():
                 await agent._reconcile_local(item)
@@ -89,7 +89,7 @@ class PythonAgentTests(unittest.TestCase):
             with patch('administrator.agent.main.subprocess.Popen', side_effect=lambda *args, **kwargs: (captured.append((args, kwargs)) or Process())):
                 asyncio.run(reconcile_changed())
             self.assertEqual(len(captured), 2, 'unchanged configuration should reuse the process; a starter change should restart it')
-            self.assertEqual(captured[-1][1]['env']['FABRIC_ENABLED_STARTERS'], '[]')
+            self.assertEqual(captured[-1][1]['env']['MINA_ENABLED_STARTERS'], '[]')
             asyncio.run(agent.close())
 
 

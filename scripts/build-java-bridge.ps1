@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$source = "$root\java-bridge\src\com\integrationfabric\bridge\FabricJavaBridge.java"
+$source = "$root\java-bridge\src\com\mina\bridge\MinaJavaBridge.java"
 $output = "$root\java-bridge\build"
 $classes = "$output\classes"
 $runtime = "$output\runtime"

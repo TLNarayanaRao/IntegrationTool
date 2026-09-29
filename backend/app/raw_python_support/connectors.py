@@ -58,7 +58,7 @@ async def jms(kind: str, operation: str, connection: dict, cfg: dict, payload: A
             return {'destination': destination, 'published': True}
         if request_reply:
             from uuid import uuid4
-            correlation_id, reply_to = str(cfg.get('correlationId') or uuid4()), str(cfg.get('replyTo') or f'_fabric.reply.{uuid4()}')
+            correlation_id, reply_to = str(cfg.get('correlationId') or uuid4()), str(cfg.get('replyTo') or f'_mina.reply.{uuid4()}')
             await queue.put({'body': payload, 'correlationId': correlation_id, 'replyTo': reply_to})
             reply_queue = _MEMORY_JMS.setdefault((kind, reply_to), asyncio.Queue())
             timeout = max(.001, float(cfg.get('receiveTimeout') or cfg.get('timeoutMs') or 30000) / 1000)
@@ -251,7 +251,7 @@ async def kafka(operation: str, connection: dict, cfg: dict, payload: Any) -> di
         publish_started = asyncio.get_running_loop().time()
         options = {
             'bootstrap_servers': servers,
-            'client_id': connection.get('clientId') or 'integration-fabric-python',
+            'client_id': connection.get('clientId') or 'mina-python',
             'acks': cfg.get('acks', 'all'),
             'linger_ms': int(cfg.get('lingerMs') or 0),
             'request_timeout_ms': int(connection.get('requestTimeoutMilliseconds') or 30000),

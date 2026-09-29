@@ -10,21 +10,21 @@ Set it independently in `local.properties`, `dev.properties`, `qa.properties`, `
 
 `D:\IntegrationLogs\dev\<project-name>\<project-name>.log`
 
-Relative values are resolved beneath the Fabric data directory. Environment variables and `~` are expanded. When the property is blank, each project has an isolated structured log at the default location:
+Relative values are resolved beneath the Mina data directory. Environment variables and `~` are expanded. When the property is blank, each project has an isolated structured log at the default location:
 
-`<Fabric data directory>/logs/<project-name>/<project-name>.log`
+`<Mina data directory>/logs/<project-name>/<project-name>.log`
 
 Log and audit timestamps use Arizona time by default (`America/Phoenix`, shown
-with the `-07:00` offset). Set `FABRIC_LOG_TIMEZONE` to another IANA timezone
+with the `-07:00` offset). Set `MINA_LOG_TIMEZONE` to another IANA timezone
 when a deployment requires a different display timezone. Scheduler and token
 expiry calculations continue to use UTC internally.
 
 The active file automatically rolls at 10 MB. Four numbered archives are retained by default (`<project-name>.log.1` through `<project-name>.log.4`), so an individual file never grows without bound. Each line is UTF-8 JSON and includes the project, timestamp, level, message, and available run, correlation, task, activity, duration, and exception context. Failed package builds also write a `packaging` record with a traceback to this log, and the API returns the log path with the error. The exact resolved path is shown in Studio's **Execution / Debug** panel after clicking the disk button.
 
-Packaged desktop installations place the Fabric data directory under the Studio user-data location configured through `FABRIC_DATA_DIR`. Administrators may override logging without changing code:
+Packaged desktop installations place the Mina data directory under the Studio user-data location configured through `MINA_DATA_DIR`. Administrators may override logging without changing code:
 
-- `FABRIC_RUNTIME_LOG_DIR`: process-wide fallback root when the active environment's `runtime.logDirectory` property is blank.
-- `FABRIC_PROJECT_LOG_MAX_BYTES`: maximum bytes per active or archived file; default `10485760` (10 MB).
-- `FABRIC_PROJECT_LOG_BACKUP_COUNT`: number of rolling archives; default `4`.
+- `MINA_RUNTIME_LOG_DIR`: process-wide fallback root when the active environment's `runtime.logDirectory` property is blank.
+- `MINA_PROJECT_LOG_MAX_BYTES`: maximum bytes per active or archived file; default `10485760` (10 MB).
+- `MINA_PROJECT_LOG_BACKUP_COUNT`: number of rolling archives; default `4`.
 
 Payload bodies are written only when the activity's **Automatic payload logging** option is enabled. Passwords and secrets should never be deliberately mapped into log messages.

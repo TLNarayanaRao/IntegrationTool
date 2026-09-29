@@ -301,7 +301,7 @@ async def python_invoke(cfg: dict, payload: Any) -> dict:
         function_name = str(cfg.get('function') or '').strip()
         if not function_name: raise ValueError('Python Invoke requires a function name')
         source, artifact = str(cfg.get('sourceCode') or ''), Path(str(cfg.get('artifactPath') or '')).expanduser()
-        module_name = str(cfg.get('moduleName') or artifact.stem or 'fabric_inline')
+        module_name = str(cfg.get('moduleName') or artifact.stem or 'mina_inline')
         if source:
             namespace = {'__name__': module_name}; exec(compile(source, f'<{module_name}>', 'exec'), namespace); function = namespace.get(function_name)
         elif artifact.suffix.lower() == '.py' and artifact.exists():
@@ -321,16 +321,16 @@ async def python_invoke(cfg: dict, payload: Any) -> dict:
 
 
 async def java_invoke(cfg: dict, payload: Any) -> dict:
-    """Invoke a Java method without introducing a Fabric runtime dependency."""
+    """Invoke a Java method without introducing a Mina runtime dependency."""
     class_name, method = str(cfg.get('className') or '').strip(), str(cfg.get('method') or '').strip()
     if not class_name or not method: raise ValueError('Java Invoke requires a class name and method')
     artifact, source = Path(str(cfg.get('artifactPath') or '')).expanduser(), str(cfg.get('sourceCode') or '')
     parameters = cfg.get('parameters')
     if not isinstance(parameters, list): parameters = [cfg.get('payload', payload)]
-    helper = '''import java.lang.reflect.*; public class FabricInvoker { public static void main(String[] a) throws Exception { Class<?> c=Class.forName(a[0]); Method found=null; for(Method m:c.getMethods()) if(m.getName().equals(a[1])&&m.getParameterCount()==a.length-2){found=m;break;} if(found==null) throw new NoSuchMethodException(a[0]+"."+a[1]); Object[] v=new Object[found.getParameterCount()]; Class<?>[] t=found.getParameterTypes(); for(int i=0;i<v.length;i++){String s=a[i+2]; v[i]=t[i]==String.class?s:t[i]==int.class||t[i]==Integer.class?Integer.valueOf(s):t[i]==long.class||t[i]==Long.class?Long.valueOf(s):t[i]==double.class||t[i]==Double.class?Double.valueOf(s):t[i]==boolean.class||t[i]==Boolean.class?Boolean.valueOf(s):s;} Object target=Modifier.isStatic(found.getModifiers())?null:c.getDeclaredConstructor().newInstance(); Object out=found.invoke(target,v); if(out!=null) System.out.print(out); }}'''
-    with tempfile.TemporaryDirectory(prefix='fabric-java-') as folder:
-        root = Path(folder); (root / 'FabricInvoker.java').write_text(helper, encoding='utf-8')
-        classpath, compile_inputs = str(root), [str(root / 'FabricInvoker.java')]
+    helper = '''import java.lang.reflect.*; public class MinaInvoker { public static void main(String[] a) throws Exception { Class<?> c=Class.forName(a[0]); Method found=null; for(Method m:c.getMethods()) if(m.getName().equals(a[1])&&m.getParameterCount()==a.length-2){found=m;break;} if(found==null) throw new NoSuchMethodException(a[0]+"."+a[1]); Object[] v=new Object[found.getParameterCount()]; Class<?>[] t=found.getParameterTypes(); for(int i=0;i<v.length;i++){String s=a[i+2]; v[i]=t[i]==String.class?s:t[i]==int.class||t[i]==Integer.class?Integer.valueOf(s):t[i]==long.class||t[i]==Long.class?Long.valueOf(s):t[i]==double.class||t[i]==Double.class?Double.valueOf(s):t[i]==boolean.class||t[i]==Boolean.class?Boolean.valueOf(s):s;} Object target=Modifier.isStatic(found.getModifiers())?null:c.getDeclaredConstructor().newInstance(); Object out=found.invoke(target,v); if(out!=null) System.out.print(out); }}'''
+    with tempfile.TemporaryDirectory(prefix='mina-java-') as folder:
+        root = Path(folder); (root / 'MinaInvoker.java').write_text(helper, encoding='utf-8')
+        classpath, compile_inputs = str(root), [str(root / 'MinaInvoker.java')]
         if source:
             java_file = root / f'{class_name.rsplit(".", 1)[-1]}.java'; java_file.write_text(source, encoding='utf-8'); compile_inputs.append(str(java_file))
         elif artifact.exists() and artifact.suffix.lower() == '.java': compile_inputs.append(str(artifact)); classpath += os.pathsep + str(artifact.parent)
@@ -341,7 +341,7 @@ async def java_invoke(cfg: dict, payload: Any) -> dict:
         _, compile_error = await compiler.communicate()
         if compiler.returncode: raise RuntimeError(f'Java compilation failed: {compile_error.decode().strip()}')
         args = [json.dumps(value, separators=(',', ':')) if isinstance(value, (dict, list)) else str(value) for value in parameters]
-        process = await asyncio.create_subprocess_exec('java', '-cp', classpath, 'FabricInvoker', class_name, method, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        process = await asyncio.create_subprocess_exec('java', '-cp', classpath, 'MinaInvoker', class_name, method, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         try: out, err = await asyncio.wait_for(process.communicate(), timeout=float(cfg.get('timeout') or 60))
         except asyncio.TimeoutError: process.kill(); await process.wait(); raise RuntimeError('Java method invocation timed out')
         if process.returncode: raise RuntimeError(err.decode().strip() or 'Java method invocation failed')

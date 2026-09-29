@@ -13,7 +13,7 @@ def initialize_telemetry() -> dict[str, Any]:
     global _tracer, _status
     endpoint = str(os.getenv('OTEL_EXPORTER_OTLP_ENDPOINT') or '').strip()
     requested = str(os.getenv('OTEL_TRACES_EXPORTER') or '').strip().lower()
-    _status = {'registered': False, 'configured': bool(endpoint or requested), 'exporter': 'none', 'serviceName': os.getenv('OTEL_SERVICE_NAME', 'integration-fabric') or 'integration-fabric', 'error': None}
+    _status = {'registered': False, 'configured': bool(endpoint or requested), 'exporter': 'none', 'serviceName': os.getenv('OTEL_SERVICE_NAME', 'mina') or 'mina', 'error': None}
     try:
         from opentelemetry import trace
         from opentelemetry.sdk.resources import Resource
@@ -29,7 +29,7 @@ def initialize_telemetry() -> dict[str, Any]:
             provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
             _status['exporter'] = 'console'
         trace.set_tracer_provider(provider)
-        _tracer = trace.get_tracer('integration-fabric')
+        _tracer = trace.get_tracer('mina')
         _status['registered'] = True
     except Exception as exc:
         _status['error'] = f'{exc.__class__.__name__}: {exc}'

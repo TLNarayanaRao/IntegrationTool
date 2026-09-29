@@ -17,9 +17,9 @@ class ProjectLoggingTests(unittest.TestCase):
     def test_project_log_rolls_and_can_be_read_back(self):
         project_id = "rolling-log-test"
         with tempfile.TemporaryDirectory() as folder:
-            os.environ["FABRIC_RUNTIME_LOG_DIR"] = folder
-            os.environ["FABRIC_PROJECT_LOG_MAX_BYTES"] = "1024"
-            os.environ["FABRIC_PROJECT_LOG_BACKUP_COUNT"] = "2"
+            os.environ["MINA_RUNTIME_LOG_DIR"] = folder
+            os.environ["MINA_PROJECT_LOG_MAX_BYTES"] = "1024"
+            os.environ["MINA_PROJECT_LOG_BACKUP_COUNT"] = "2"
             try:
                 for index in range(30):
                     append_project_logs(project_id, "Rolling Log Test", [{"level": "INFO", "message": f"record-{index}-" + "x" * 120}])
@@ -30,9 +30,9 @@ class ProjectLoggingTests(unittest.TestCase):
             finally:
                 for key in [key for key in _handlers if key[0] == project_id]:
                     _handlers.pop(key).close()
-                os.environ.pop("FABRIC_RUNTIME_LOG_DIR", None)
-                os.environ.pop("FABRIC_PROJECT_LOG_MAX_BYTES", None)
-                os.environ.pop("FABRIC_PROJECT_LOG_BACKUP_COUNT", None)
+                os.environ.pop("MINA_RUNTIME_LOG_DIR", None)
+                os.environ.pop("MINA_PROJECT_LOG_MAX_BYTES", None)
+                os.environ.pop("MINA_PROJECT_LOG_BACKUP_COUNT", None)
 
     def test_environment_properties_seed_a_user_configurable_log_directory(self):
         project = Project.model_validate({"id": "property-log-test", "name": "Property Log Test"})

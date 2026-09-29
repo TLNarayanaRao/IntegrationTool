@@ -47,7 +47,7 @@ async def serve_http(task_ids: list[str], environment_name: str):
                     if header_bytes > 65536: raise ValueError('HTTP headers exceed 64 KiB')
                     if line in {b'\r\n', b'\n', b''}: break
                     name, value = line.decode('iso-8859-1').split(':', 1); headers[name.strip()] = value.strip()
-                maximum = max(1024 ** 2, int(os.environ.get('FABRIC_HTTP_MAX_BODY_BYTES', 64 * 1024 ** 2)))
+                maximum = max(1024 ** 2, int(os.environ.get('MINA_HTTP_MAX_BODY_BYTES', 64 * 1024 ** 2)))
                 length = int(headers.get('Content-Length') or 0)
                 if length > maximum: raise OverflowError(f'HTTP payload exceeds {maximum} bytes')
                 raw_body = await asyncio.wait_for(reader.readexactly(length), timeout=300) if length else b''

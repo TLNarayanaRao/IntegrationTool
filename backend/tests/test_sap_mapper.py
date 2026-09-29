@@ -228,7 +228,7 @@ class SapMapperTests(unittest.TestCase):
 
     def test_sap_idoc_transaction_contract_selects_tids_and_bounded_listener_settings(self):
         adapter = SapAdapter()
-        values = adapter._listener_values({'mode':'mock', 'programId':'FABRIC_IDOC', 'gatewayHost':'sapqa2', 'gatewayService':'sapgw00', 'maximumConnections':12, 'ackTimeoutSeconds':420})
+        values = adapter._listener_values({'mode':'mock', 'programId':'MINA_IDOC', 'gatewayHost':'sapqa2', 'gatewayService':'sapgw00', 'maximumConnections':12, 'ackTimeoutSeconds':420})
         self.assertEqual(values['jco.server.connection_count'], 12)
         self.assertEqual(values['jco.server.ack_timeout_seconds'], 420)
         self.assertEqual(values['jco.server.tid_management'], 'active')

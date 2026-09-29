@@ -53,7 +53,7 @@ def local_proposal(requirement: str, scope: str, current_task: dict | None = Non
         if any(activity['id'].lower() == activity_id.lower() for activity in activities):
             activity_id = f'{activity_id}-{index + 1}'
         config: dict[str, Any] = {'operation': operation}
-        if kind == 'kafka' and operation == 'receive': config.update({'topic': '${properties.connections.kafka.topic}', 'groupId': 'integration-fabric', 'maxMessages': 1, 'valueDeserializer': 'String'})
+        if kind == 'kafka' and operation == 'receive': config.update({'topic': '${properties.connections.kafka.topic}', 'groupId': 'mina', 'maxMessages': 1, 'valueDeserializer': 'String'})
         if kind == 'log': config.update({'level': 'INFO', 'message': '${last}', 'includePayload': True})
         if kind == 'sap' and operation == 'idoc_parser': config.update({'idocType': 'ARTMAS05', 'idocOutputMode': 'JSON', 'parserEngine': 'Built-in', 'validateIdocType': True, 'inputMappings': {'IDoc': '${last}'}})
         if kind == 'sap' and operation == 'post_idoc': config.update({'idocType': 'ARTMAS05', 'inputFormat': 'XML', 'idocInputMode': 'tRFC', 'inputMappings': {'payload': '${Parse-ARTMAS05-IDoc.SAPIDoc}'}})
@@ -85,9 +85,9 @@ def _schema() -> dict[str, Any]:
 async def generate(requirement: str, scope='task', current_task: dict | None = None) -> dict[str, Any]:
     key = os.getenv('OPENAI_API_KEY')
     if not key: return local_proposal(requirement, scope, current_task)
-    model = os.getenv('INTEGRATION_FABRIC_AI_MODEL', 'gpt-5')
+    model = os.getenv('MINA_AI_MODEL', 'gpt-5')
     prompt = f'''Build a MINA middleware {scope} from this requirement:\n{requirement}\nUse only these activity types and operations: {json.dumps(CATALOG)}. A starter task must have exactly one event activity. Catch activities have no incoming transition. Add explicit HTTP Send Response for request/reply listeners. Return a fully connected, editable design; do not include credentials.'''
-    payload = {'model':model,'input':prompt,'text':{'format':{'type':'json_schema','name':'integration_fabric_design','strict':False,'schema':_schema()}}}
+    payload = {'model':model,'input':prompt,'text':{'format':{'type':'json_schema','name':'mina_design','strict':False,'schema':_schema()}}}
     async with httpx.AsyncClient(timeout=90) as client:
         response = await client.post('https://api.openai.com/v1/responses', headers={'authorization':f'Bearer {key}','content-type':'application/json'}, json=payload)
         response.raise_for_status(); body = response.json()

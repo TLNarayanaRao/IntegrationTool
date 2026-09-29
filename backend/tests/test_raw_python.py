@@ -40,10 +40,10 @@ class RawPythonTests(unittest.TestCase):
             ],
         }
 
-    def test_generated_python_runs_without_fabric_runtime_or_json_descriptors(self):
+    def test_generated_python_runs_without_mina_runtime_or_json_descriptors(self):
         files = compiler.raw_python_files(self.project(), {'dev': [{'key': 'x', 'value': 1, 'data_type': 'integer'}, {'key': 'kafka.servers', 'value': 'localhost:9092', 'data_type': 'string'}]})
         self.assertTrue(all(name.endswith('.py') for name in files))
-        self.assertNotIn('fabric_dsl.py', '\n'.join(files))
+        self.assertNotIn('mina_dsl.py', '\n'.join(files))
         self.assertNotIn(b'${', files['application/config.py'])
         self.assertNotIn(b'${', files['application/tasks/task_0_main.py'])
         self.assertNotIn(b'TRANSITIONS =', files['application/tasks/task_0_main.py'])
@@ -69,6 +69,32 @@ class RawPythonTests(unittest.TestCase):
                 from application.main import run_task
                 result = asyncio.run(run_task('main', {'value': 42}, 'dev'))
                 self.assertEqual(result['count'], 1)
+            finally:
+                sys.path.remove(folder)
+                for name in list(sys.modules):
+                    if name == 'application' or name.startswith('application.'):
+                        sys.modules.pop(name)
+
+    def test_generated_python_resolves_concise_connection_property_references(self):
+        """`${connections.*}` remains valid in direct Python deployments."""
+        project = self.project()
+        project['resources'][0]['config']['bootstrapServers'] = '${connections.kafka.bootstrapServers}'
+        files = compiler.raw_python_files(project, {'dev': [
+            {'key': 'connections.kafka.bootstrapServers', 'value': 'broker-a:9092', 'data_type': 'string'},
+        ]})
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for name, body in files.items():
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(body)
+            sys.path.insert(0, folder)
+            try:
+                from application.config import environment
+                from application.core import Context, resolve
+                properties, resources = environment('dev')
+                context = Context({}, properties, resources)
+                self.assertEqual(resolve(resources['k1'].config['bootstrapServers'], context), 'broker-a:9092')
             finally:
                 sys.path.remove(folder)
                 for name in list(sys.modules):
@@ -655,7 +681,7 @@ class RawPythonTests(unittest.TestCase):
             project['tasks'] = [{'id': 'main', 'name': 'Portable Data', 'kind': 'starter', 'groups': [],
                 'activities': [
                     {'id': 's', 'type': 'start', 'name': 'Start', 'config': {}},
-                    {'id': 'write', 'type': 'file', 'name': 'Write', 'config': {'operation': 'write', 'path': str(output_file), 'textContent': '{"name":"fabric"}', 'overwrite': True}},
+                    {'id': 'write', 'type': 'file', 'name': 'Write', 'config': {'operation': 'write', 'path': str(output_file), 'textContent': '{"name":"mina"}', 'overwrite': True}},
                     {'id': 'read', 'type': 'file', 'name': 'Read', 'config': {'operation': 'read', 'path': str(output_file)}},
                     {'id': 'parse', 'type': 'json', 'name': 'Parse', 'config': {'operation': 'parse', 'inputMappings': {'jsonString': '${activities.read.output.textContent}'}}},
                     {'id': 'map', 'type': 'mapper', 'name': 'Map', 'config': {'mappings': [{'target': 'upperName', 'source': 'upper(activities.parse.output.value.name)'}]}},
@@ -668,7 +694,7 @@ class RawPythonTests(unittest.TestCase):
                 path = root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(body)
             run = subprocess.run([sys.executable, str(root / 'run.py'), '--task', 'main'], capture_output=True, text=True, timeout=20)
             self.assertEqual(run.returncode, 0, run.stderr)
-            self.assertEqual(json.loads(run.stdout), 'FABRIC')
+            self.assertEqual(json.loads(run.stdout), 'MINA')
             check = subprocess.run([sys.executable, str(root / 'run.py'), '--check'], capture_output=True, text=True, timeout=20)
             self.assertEqual(check.returncode, 0, check.stderr)
             self.assertTrue(json.loads(check.stdout)['ready'])

@@ -1,14 +1,14 @@
 PS C:\Narayana\Integration-Tool\Software\frontend> npm.cmd run desktop:installer
 
-> integration-fabric-studio@1.0.2 desktop:installer
+> mina-studio@1.0.2 desktop:installer
 > npm run desktop:prepare && electron-builder --win nsis
 
 
-> integration-fabric-studio@1.0.2 desktop:prepare
+> mina-studio@1.0.2 desktop:prepare
 > powershell -ExecutionPolicy Bypass -File ../scripts/build-electron-sidecar.ps1
 
 
-> integration-fabric-studio@1.0.2 build
+> mina-studio@1.0.2 build
 > tsc -b && vite build
 
 vite v8.2.2 building client environment for production...

@@ -17,7 +17,7 @@ export const developerSources=[ui,ed,rt,raw,core,connectors,acts,
  'backend/app/mapper.py','backend/app/jdbc.py','backend/app/snowflake.py','backend/app/amqp.py',
  'backend/app/sap.py','backend/app/java_bridge.py','backend/app/google_pubsub.py','backend/app/dataweave.py',
  'backend/app/project_logging.py','backend/app/raw_python_support/main.py','backend/run_deployment.py',
- 'java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java',
+ 'java-bridge/src/com/mina/bridge/MinaJavaBridge.java',
  ...['activity_packs','amqp_jdbc_excel_command','debug_input_capture','debug_testing','engine_export',
  'groups_runtime','jms_publish_performance','mapper_code_general','project_logging','publisher_reuse',
  'raw_python','sap_idoc_arrays','sap_mapper','snowflake','tasks_runtime','google_pubsub']
@@ -85,7 +85,7 @@ export function developerPages(activities,groups,functions,sources){
   if(type==='xml'&&operation==='render')relevant.push(r(rt,'def render_xml_activity(','XML render implementation'));
   if(type==='amqp'&&operation!=='send')relevant.push(r('backend/app/amqp.py','def get(','Receive adapter and acknowledgement callback'));
   if(type==='sap'&&operation.includes('listener'))relevant.push(r('backend/app/sap.py','async def receive_idoc(','Inbound SAP adapter'),r('backend/app/main.py','async def _continuous_sap_event_loop(','Continuous SAP jobs'));
-  if(['ems','jms','sap','java'].includes(type))relevant.push(r('backend/app/java_bridge.py','', 'Python/native worker lifecycle'),r('java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java','', 'Native Java connector implementation'));
+  if(['ems','jms','sap','java'].includes(type))relevant.push(r('backend/app/java_bridge.py','', 'Python/native worker lifecycle'),r('java-bridge/src/com/mina/bridge/MinaJavaBridge.java','', 'Native Java connector implementation'));
   if(type==='pubsub')relevant.push(r('backend/app/google_pubsub.py','def create_client(','Credential/channel client factory'));
   if(['http_listener','http_response','rest','soap'].includes(type))relevant.push(r('backend/app/main.py','async def invoke_listener(','Inbound HTTP/REST/SOAP hosting and response boundary'),r('backend/app/raw_python_support/main.py','async def run_application(','Direct-export application hosting'));
   if(['start','end','call_task'].includes(type))relevant.push(r('backend/app/models.py','class ProcessDefinition(','Task graph and interface schema'));

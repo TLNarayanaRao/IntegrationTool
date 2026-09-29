@@ -6,24 +6,24 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Upload, create, and start an MINA application deployment.
 # No systemctl is used.
 # Usage: ./deploy-application.sh <package.mpkg|package.ear> <environment> (legacy .ifpkg is accepted)
-# Required: FABRIC_CONTROL_PLANE_KEY (or FABRIC_ADMIN_API_KEY)
-# Optional: FABRIC_CONTROL_PLANE_URL, FABRIC_DATA_PLANE, FABRIC_NAMESPACE,
-#           FABRIC_CAPABILITY_ID, FABRIC_TEAM_ID, FABRIC_INSTANCES,
-#           FABRIC_SECRETS_FILE, FABRIC_START_AFTER_DEPLOY=false
+# Required: MINA_CONTROL_PLANE_KEY (or MINA_ADMIN_API_KEY)
+# Optional: MINA_CONTROL_PLANE_URL, MINA_DATA_PLANE, MINA_NAMESPACE,
+#           MINA_CAPABILITY_ID, MINA_TEAM_ID, MINA_INSTANCES,
+#           MINA_SECRETS_FILE, MINA_START_AFTER_DEPLOY=false
 
-BASE_URL="${FABRIC_CONTROL_PLANE_URL:-${CONTROL_PLANE_URL:-http://localhost:19080}}"; BASE_URL="${BASE_URL%/}"
-KEY="${FABRIC_CONTROL_PLANE_KEY:-${FABRIC_ADMIN_API_KEY:-${ADMIN_KEY:-}}}"
+BASE_URL="${MINA_CONTROL_PLANE_URL:-${CONTROL_PLANE_URL:-http://localhost:19080}}"; BASE_URL="${BASE_URL%/}"
+KEY="${MINA_CONTROL_PLANE_KEY:-${MINA_ADMIN_API_KEY:-${ADMIN_KEY:-}}}"
 PACKAGE_FILE="${1:-}"; ENVIRONMENT="${2:-dev}"
-DATA_PLANE="${FABRIC_DATA_PLANE:-${DATA_PLANE_ID:-localhost}}"; NAMESPACE="${FABRIC_NAMESPACE:-${DATA_PLANE_NAMESPACE:-default}}"
-CAPABILITY_ID="${FABRIC_CAPABILITY_ID:-${FABRIC_CAPABILITY_ID_OVERRIDE:-integration-runtime-${DATA_PLANE}-${NAMESPACE}}}"; TEAM_ID="${FABRIC_TEAM_ID:-${DELIVERY_TEAM_ID:-}}"
-INSTANCES="${FABRIC_INSTANCES:-1}"; SECRETS_FILE="${FABRIC_SECRETS_FILE:-}"
-START="${FABRIC_START_AFTER_DEPLOY:-true}"
+DATA_PLANE="${MINA_DATA_PLANE:-${DATA_PLANE_ID:-localhost}}"; NAMESPACE="${MINA_NAMESPACE:-${DATA_PLANE_NAMESPACE:-default}}"
+CAPABILITY_ID="${MINA_CAPABILITY_ID:-${MINA_CAPABILITY_ID_OVERRIDE:-integration-runtime-${DATA_PLANE}-${NAMESPACE}}}"; TEAM_ID="${MINA_TEAM_ID:-${DELIVERY_TEAM_ID:-}}"
+INSTANCES="${MINA_INSTANCES:-1}"; SECRETS_FILE="${MINA_SECRETS_FILE:-}"
+START="${MINA_START_AFTER_DEPLOY:-true}"
 die() { echo "ERROR: $*" >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || die "curl is required"
 command -v python3 >/dev/null 2>&1 || die "python3 is required"
 [[ -f "$PACKAGE_FILE" ]] || die "Package not found. Usage: $0 <package> <environment>"
-[[ -n "$KEY" ]] || die "Set FABRIC_CONTROL_PLANE_KEY"
-[[ "$INSTANCES" =~ ^[1-9][0-9]*$ ]] || die "FABRIC_INSTANCES must be a positive integer"
+[[ -n "$KEY" ]] || die "Set MINA_CONTROL_PLANE_KEY"
+[[ "$INSTANCES" =~ ^[1-9][0-9]*$ ]] || die "MINA_INSTANCES must be a positive integer"
 AUTH=(-H "X-Admin-Key: $KEY")
 
 # Step 1: verify the target Control Plane is reachable.
@@ -62,6 +62,6 @@ if [[ "$START" == "true" ]]; then
   curl --fail-with-body --silent --show-error -X POST "${AUTH[@]}" "$BASE_URL/api/deployments/$DEPLOYMENT_ID/start" >/dev/null || die "Deployment created but start failed"
   echo "Deployment started"
 else
-  echo "Deployment created but not started (FABRIC_START_AFTER_DEPLOY=$START)"
+  echo "Deployment created but not started (MINA_START_AFTER_DEPLOY=$START)"
 fi
 echo "Details: $BASE_URL/api/deployments/$DEPLOYMENT_ID"

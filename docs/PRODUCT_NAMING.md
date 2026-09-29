@@ -12,7 +12,7 @@ projects, credentials, installation directories and diagnostic logs are not
 rewritten by a branding update.
 
 New Linux setup defaults to `/opt/mina`. Existing installations must continue to
-set `FABRIC_ROOT` and `FABRIC_AGENT_ROOT` to their actual directories and preserve
+set `MINA_ROOT` and `MINA_AGENT_ROOT` to their actual directories and preserve
 their deployed INI paths; changing an example does not migrate files on disk.
 
 New Snowflake faults use the `MINA-SNOWFLAKE_DATABASE_JDBC-` prefix, retaining the

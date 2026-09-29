@@ -7,7 +7,7 @@ Raw Python (`.pympkg`) is a separate deployment type. Existing JSON-based
 The archive contains `manifest.json` as Control Plane metadata and Python-only
 source under `application/`. `main.py` is the entry point; `project.py` and
 `tasks/` assemble typed Python task, group, resource, schema, and environment
-models. No project, task, resource, or environment JSON and no Fabric DSL is
+models. No project, task, resource, or environment JSON and no Mina DSL is
 packaged. The Python engine modules bundled into the archive are the same
 implementation used by Studio, preserving group scheduling, transaction
 boundaries, exception handling, mapping, and connector behavior. This is not
@@ -34,27 +34,27 @@ Kafka, Pub/Sub, confirm, mapping, groups, and JDBC transactions. External
 connectors still require actual services, Python client packages, and vendor
 drivers. SAP/JCo, EMS/JMS, and Java JDBC modes require a Java runtime, bridge
 classes, and licensed vendor JARs; SAP also needs its matching native library.
-Set `FABRIC_DRIVER_HOME` or mount driver files under the default agent driver
+Set `MINA_DRIVER_HOME` or mount driver files under the default agent driver
 directory. The Python agent image builds the Java bridge but does not
 redistribute licensed vendor binaries.
 
 ## Agent deployment
 
 For a Windows/Linux host, install `backend/requirements.txt` and
-`administrator/requirements-agent.txt`. Set `FABRIC_CONTROL_PLANE_URL`,
-`FABRIC_AGENT_KEY`, `FABRIC_DATA_PLANE_ID`, and `FABRIC_AGENT_MODE=local`, then
+`administrator/requirements-agent.txt`. Set `MINA_CONTROL_PLANE_URL`,
+`MINA_AGENT_KEY`, `MINA_DATA_PLANE_ID`, and `MINA_AGENT_MODE=local`, then
 run `python -m administrator.agent.main` from the project root. A local Control
-Plane can instead launch the archive directly; set `FABRIC_PYTHON_EXECUTABLE`
+Plane can instead launch the archive directly; set `MINA_PYTHON_EXECUTABLE`
 if its own Python lacks the backend runtime dependencies.
 
 For Kubernetes, build `Dockerfile.python-agent`. Create the
-`fabric-agent-credentials` Secret containing `control-plane-key`, set the
+`mina-agent-credentials` Secret containing `control-plane-key`, set the
 correct URL, image, data-plane ID, and namespace in
 `deploy/kubernetes/python-agent.yaml`, and apply it. The agent reconciles
 Raw Python deployments into per-application workloads, keeps its Control
 Plane credential separate from application secrets, and reports replica
 readiness. If SAP/JCo or EMS/JMS driver files are needed, set
-`FABRIC_K8S_DRIVER_PVC` on the agent to mount a read-only driver volume into
+`MINA_K8S_DRIVER_PVC` on the agent to mount a read-only driver volume into
 the application pods.
 
 The data plane needs a matching namespace and Integration Runtime capability.

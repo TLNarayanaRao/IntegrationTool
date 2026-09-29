@@ -9,8 +9,8 @@ if (!(Test-Path .venv)) { py -3.12 -m venv .venv }
 if ($LASTEXITCODE -ne 0) { throw 'Runtime dependency installation failed.' }
 & .\.venv\Scripts\python.exe "$root\scripts\verify-web-dependencies.py"
 if ($LASTEXITCODE -ne 0) { throw 'Web dependency verification failed.' }
-& .\.venv\Scripts\pyinstaller --noconfirm --name IntegrationFabric --add-data "..\frontend\dist;frontend\dist" --add-data "app;app" --paths . run_desktop.py
+& .\.venv\Scripts\pyinstaller --noconfirm --name MINA --add-data "..\frontend\dist;frontend\dist" --add-data "app;app" --paths . run_desktop.py
 Pop-Location
-if (!(Test-Path "$root/backend/dist/IntegrationFabric/IntegrationFabric.exe")) { throw 'PyInstaller runtime output was not created.' }
-Copy-Item -Recurse -Force "$root/java-bridge/build" "$root/backend/dist/IntegrationFabric/java-bridge"
+if (!(Test-Path "$root/backend/dist/MINA/MINA.exe")) { throw 'PyInstaller runtime output was not created.' }
+Copy-Item -Recurse -Force "$root/java-bridge/build" "$root/backend/dist/MINA/java-bridge"
 if (Get-Command makensis -ErrorAction SilentlyContinue) { makensis "$root\scripts\installer.nsi" } else { Write-Host 'PyInstaller build complete. Install NSIS to generate setup.exe.' }

@@ -13,7 +13,7 @@ except ImportError:  # The remote agent runs on Linux; keep source importable el
     fcntl = None
 
 HERE = Path(__file__).resolve().parent
-CONFIG = Path(os.environ.get("FABRIC_CONFIG_FILE", HERE / "integration-fabric-control-plane.ini"))
+CONFIG = Path(os.environ.get("MINA_CONFIG_FILE", HERE / "mina-control-plane.ini"))
 cfg = configparser.ConfigParser(); cfg.read(CONFIG)
 TEAM_MAPPING = dict(cfg["data-teams"]) if "data-teams" in cfg else {}
 cp = cfg["control-plane"]; dp = cfg["data-plane"]; runtime_cfg = cfg["runtime"] if "runtime" in cfg else {}
@@ -23,9 +23,9 @@ PLANE = os.environ.get("DATA_PLANE_ID", dp.get("id", "")); NAMESPACE = os.enviro
 INTERVAL = int(os.environ.get("HEARTBEAT_SECONDS", dp.get("heartbeat_seconds", "30")))
 CAPACITY = int(os.environ.get("AVAILABLE_CAPACITY", dp.get("available_capacity", "20")))
 VERSION = os.environ.get("AGENT_VERSION", dp.get("agent_version", "1.0.0"))
-ROOT = Path(os.environ.get("FABRIC_AGENT_ROOT", f"/opt/mina/agent/{PLANE}"))
+ROOT = Path(os.environ.get("MINA_AGENT_ROOT", f"/opt/mina/agent/{PLANE}"))
 APP_ROOT = ROOT / "applications"; LOG_ROOT = ROOT / "logs"; APP_ROOT.mkdir(parents=True, exist_ok=True); LOG_ROOT.mkdir(parents=True, exist_ok=True)
-COMMAND = os.environ.get("FABRIC_RUNTIME_COMMAND", cp.get("runtime_command", "")) or f"{ROOT.parent.parent}/runtime/integration-fabric-runtime --application {{application}} --environment {{environment}}"
+COMMAND = os.environ.get("MINA_RUNTIME_COMMAND", cp.get("runtime_command", "")) or f"{ROOT.parent.parent}/runtime/mina-runtime --application {{application}} --environment {{environment}}"
 workers = {}
 _cpu_sample = None
 
@@ -155,10 +155,33 @@ def stop(deployment_id):
                     worker.kill()
                 worker.wait(timeout=5)
 
+def is_raw_python_package(package_dir):
+    """Return true for a direct-Python archive exported by Studio.
+
+    The original Control Plane archive has ``application/project.json`` and
+    the first Python archive format has ``application/python/project.py``.
+    Direct Python archives intentionally contain neither: their executable
+    entry point is ``application/main.py``.
+    """
+    return (package_dir / "application" / "main.py").is_file()
+
+def raw_python_command(package_dir, environment):
+    """Build the command for a direct-Python archive.
+
+    Prefer the runtime virtual environment beside the agent root so the
+    generated application gets the same connector dependencies as a normal
+    deployment.  An explicit MINA_PYTHON_EXECUTABLE remains available for
+    installations that keep their runtime elsewhere.
+    """
+    runtime_python = ROOT.parent.parent / "runtime" / ".venv" / "bin" / "python"
+    executable = os.environ.get("MINA_PYTHON_EXECUTABLE") or (str(runtime_python) if runtime_python.is_file() else sys.executable)
+    return [executable, "-m", "application.main", "--environment", str(environment)]
+
 def start(deployment):
     deployment_id = deployment["id"]; stop(deployment_id)
     package_dir = APP_ROOT / deployment_id
-    if not (package_dir / "application" / "project.json").exists() and not (package_dir / "application" / "python" / "project.py").exists():
+    has_legacy_descriptor = (package_dir / "application" / "project.json").is_file() or (package_dir / "application" / "python" / "project.py").is_file()
+    if not has_legacy_descriptor and not is_raw_python_package(package_dir):
         blob = call("GET", f"/api/data-planes/{PLANE}/agent/deployments/{deployment_id}/package")
         if package_dir.exists(): __import__("shutil").rmtree(package_dir)
         safe_zip_extract(blob, package_dir)
@@ -166,13 +189,18 @@ def start(deployment):
     enabled = json.dumps([key for key, value in (deployment.get("starterStates") or {}).items() if value != "STOPPED"])
     for ordinal in range(int(deployment.get("desiredInstances", 1))):
         instance_id = f"{deployment_id[:8]}-{ordinal + 1}"; log = LOG_ROOT / f"{instance_id}.log"
-        command = COMMAND.replace("{application}", str(package_dir / "application")).replace("{package}", str(package_dir)).replace("{environment}", str(deployment.get("environment", "local"))).replace("{deployment_id}", deployment_id).replace("{instance_id}", instance_id)
-        env = os.environ.copy(); env.update({"FABRIC_DEPLOYMENT_ID": deployment_id, "FABRIC_INSTANCE_ID": instance_id, "FABRIC_ENVIRONMENT": deployment.get("environment", "local"), "FABRIC_ENABLED_STARTERS": enabled})
+        environment = deployment.get("environment", "local")
+        if is_raw_python_package(package_dir):
+            command_parts = raw_python_command(package_dir, environment)
+        else:
+            command = COMMAND.replace("{application}", str(package_dir / "application")).replace("{package}", str(package_dir)).replace("{environment}", str(environment)).replace("{deployment_id}", deployment_id).replace("{instance_id}", instance_id)
+            command_parts = shlex.split(command)
+        env = os.environ.copy(); env.update({"MINA_DEPLOYMENT_ID": deployment_id, "MINA_INSTANCE_ID": instance_id, "MINA_ENVIRONMENT": deployment.get("environment", "local"), "MINA_ENABLED_STARTERS": enabled})
         env.update({str(k): str(v) for k, v in (deployment.get("secrets") or {}).items()})
         handle = log.open("ab")
         try:
             process = subprocess.Popen(
-                shlex.split(command), cwd=package_dir, env=env,
+                command_parts, cwd=package_dir, env=env,
                 stdout=handle, stderr=subprocess.STDOUT,
                 start_new_session=(os.name == "posix"),
             )

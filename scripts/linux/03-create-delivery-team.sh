@@ -3,7 +3,7 @@
 # Usage: SCOPES_JSON='[{"dataPlaneId":"customer-plane","namespace":"BDDcustomer"}]' ./03-create-delivery-team.sh team-id "Team Name" [description]
 set -euo pipefail
 source "$(dirname "$0")/_load-linux-config.sh"
-BASE="${CONTROL_PLANE_URL:-http://127.0.0.1:19080}"; KEY="${ADMIN_KEY:?Set admin_key in integration-fabric-control-plane.ini}"
+BASE="${CONTROL_PLANE_URL:-http://127.0.0.1:19080}"; KEY="${ADMIN_KEY:?Set admin_key in mina-control-plane.ini}"
 ID="${1:-${DELIVERY_TEAM_ID:-}}"; NAME="${2:-${DELIVERY_TEAM_NAME:-Delivery Team}}"; DESCRIPTION="${3:-${DELIVERY_TEAM_DESCRIPTION:-Delivery team}}"; SCOPES="${SCOPES_JSON:-${DELIVERY_TEAM_SCOPES_JSON:-}}"; [[ -n "$ID" && -n "$SCOPES" ]] || { echo 'Set [delivery-team] id and scopes_json in the INI' >&2; exit 2; }
 PAYLOAD=$(python3 -c 'import json,sys; print(json.dumps({"id":sys.argv[1],"name":sys.argv[2],"kind":"delivery","description":sys.argv[3],"namespaceScopes":json.loads(sys.argv[4])}))' "$ID" "$NAME" "$DESCRIPTION" "$SCOPES")
 RESPONSE_FILE=$(mktemp)

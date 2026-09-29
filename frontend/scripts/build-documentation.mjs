@@ -23,7 +23,7 @@ const guides = [
  ['Connectors', 'KAFKA_PUBLISHING.md'], ['Security', 'SECURITY_REVIEW_2026-09-22.md'],
  ['Security', 'WEB_DEPENDENCY_SECURITY.md'],
 ];
-const sourceFiles = [...new Set(['frontend/src/main.tsx', 'frontend/src/ActivityEditor.tsx', 'frontend/src/ActivityPicker.tsx', 'frontend/src/mapper-functions.ts', 'frontend/package.json', 'backend/app/runtime.py', 'backend/app/sap.py', 'backend/app/java_bridge.py', 'java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java', 'frontend/scripts/connector-documentation.mjs', 'frontend/scripts/build-documentation.mjs', 'scripts/build-documentation-pdf.py', 'frontend/public/help/documentation.js', 'frontend/public/help/documentation.css', 'frontend/public/help/index.html', ...developerSources, ...guides.map(([, f]) => `docs/${f}`)])];
+const sourceFiles = [...new Set(['frontend/src/main.tsx', 'frontend/src/ActivityEditor.tsx', 'frontend/src/ActivityPicker.tsx', 'frontend/src/mapper-functions.ts', 'frontend/package.json', 'backend/app/runtime.py', 'backend/app/sap.py', 'backend/app/java_bridge.py', 'java-bridge/src/com/mina/bridge/MinaJavaBridge.java', 'frontend/scripts/connector-documentation.mjs', 'frontend/scripts/build-documentation.mjs', 'scripts/build-documentation-pdf.py', 'frontend/public/help/documentation.js', 'frontend/public/help/documentation.css', 'frontend/public/help/index.html', ...developerSources, ...guides.map(([, f]) => `docs/${f}`)])];
 const sources = new Map(await Promise.all(sourceFiles.map(async name => [name, await read(name)])));
 const fingerprint = sha(sourceFiles.map(name => `${name}\n${sources.get(name)}`).join('\n'));
 if (process.argv.includes('--check')) {

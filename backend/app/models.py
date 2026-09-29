@@ -215,7 +215,7 @@ def default_environment_properties() -> list[EnvironmentProperty]:
         ('connections.jms.reconnectAttempts', 3, 'integer'), ('connections.jms.reconnectDelayMs', 5000, 'integer'),
         ('connections.kafka.bootstrapServers', 'localhost:9092', 'string'),
         ('connections.kafka.clientId', '', 'string'),
-        ('connections.kafka.groupId', 'integration-fabric', 'string'),
+        ('connections.kafka.groupId', 'mina', 'string'),
         ('connections.kafka.securityProtocol', 'PLAINTEXT', 'string'),
         ('connections.kafka.saslMechanism', 'PLAIN', 'string'),
         ('connections.kafka.username', '', 'string'),

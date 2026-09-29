@@ -1,0 +1,27 @@
+#Steps to Build Control plane
+cd /opt/tibco/esb/mina
+
+export MINA_PYTHON=/usr/bin/python3.12
+export MINA_PYPI_INDEX_URL=https://pypi.org/simple
+
+MINA_PYTHON=/usr/bin/python3.12 ./scripts/build-administrator-linux.sh 1.0.5
+
+cd /opt/tibco/esb/mina/control-plane
+./start-control-plane.sh stop
+
+cd /opt/tibco/esb/mina
+
+tar -xzf administrator/release/MinaAdministrator-1.0.5-Linux-x64.tar.gz   -C /opt/tibco/esb/mina/control-plane   --strip-components=1
+  
+cd /opt/tibco/esb/mina/control-plane
+chmod +x start-control-plane.sh 
+./start-control-plane.sh start &
+
+
+#Stop or kill the remote data plane 
+pgrep -af remote-data-plane-agent.py
+
+start the data plane agent
+
+cd /opt/tibco/esb/mina/
+./scripts/linux/05-start-data-plane-agent.sh &

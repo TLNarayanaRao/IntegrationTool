@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 interface Window {
-  fabricDesktop?: {
+  minaDesktop?: {
     isDesktop: boolean;
     platform: string;
     saveFile(options: { path?: string; filename: string; bytes: number[]; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null>;

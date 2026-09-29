@@ -1,5 +1,5 @@
 param(
-    [string]$Version = $env:FABRIC_VERSION,
+    [string]$Version = $env:MINA_VERSION,
     [ValidateSet('nsis', 'dir')]
     [string]$Target = 'nsis'
 )

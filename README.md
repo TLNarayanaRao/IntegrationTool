@@ -48,7 +48,7 @@ Control Plane installation, data-plane and capability management, access, securi
 ## Kubernetes runtime
 
 ```bash
-docker build -t integration-fabric:0.1.0 .
+docker build -t mina:0.1.0 .
 kubectl apply -f deploy/kubernetes/
 ```
 

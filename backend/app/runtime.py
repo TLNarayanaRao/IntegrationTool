@@ -18,7 +18,7 @@ from .time_utils import log_timestamp
 
 class RuntimeErrorWithLogs(Exception): pass
 _NO_EVENT_OUTPUT = object()
-class FabricFault(Exception):
+class MinaFault(Exception):
     def __init__(self, message: str, *, fault_type='UserDefinedException', code='', details=None, cause=None):
         super().__init__(message); self.fault_type = fault_type; self.code = code; self.details = details or {}; self.cause = cause
 
@@ -155,15 +155,15 @@ class WorkflowRuntime:
         for group in process.groups:
             config = group.config or {}
             if group.type in ('if', 'while') and not str(config.get('condition') or '').strip():
-                raise FabricFault(f'Group {group.name} requires a boolean condition', fault_type='GROUP_VALIDATION')
+                raise MinaFault(f'Group {group.name} requires a boolean condition', fault_type='GROUP_VALIDATION')
             if group.type in ('iterate', 'for_each') and config.get('source') in (None, '') and config.get('collection') in (None, '') and not (group.type == 'for_each' and config.get('start') is not None and config.get('end') is not None):
-                raise FabricFault(f'Group {group.name} requires a collection expression', fault_type='GROUP_VALIDATION')
+                raise MinaFault(f'Group {group.name} requires a collection expression', fault_type='GROUP_VALIDATION')
             if group.type == 'repeat' and not str(config.get('condition') or '').strip() and config.get('count') is None and config.get('iterations') is None:
-                raise FabricFault(f'Group {group.name} requires a Repeat Until True condition', fault_type='GROUP_VALIDATION')
+                raise MinaFault(f'Group {group.name} requires a Repeat Until True condition', fault_type='GROUP_VALIDATION')
             if group.type == 'repeat_on_error' and not str(config.get('stopCondition') or '').strip():
-                raise FabricFault(f'Group {group.name} requires a Repeat-on-Error stop condition', fault_type='GROUP_VALIDATION')
+                raise MinaFault(f'Group {group.name} requires a Repeat-on-Error stop condition', fault_type='GROUP_VALIDATION')
             members = descendants(group.id)
-            if not members: raise FabricFault(f'Group {group.name} is empty', fault_type='GROUP_VALIDATION')
+            if not members: raise MinaFault(f'Group {group.name} is empty', fault_type='GROUP_VALIDATION')
             internal_incoming = {edge.target for edge in process.transitions if edge.source in members and edge.target in members}
             external_entries = {edge.target for edge in process.transitions if edge.source not in members and edge.target in members}
             entries = external_entries or (members - internal_incoming)
@@ -171,14 +171,14 @@ class WorkflowRuntime:
             for source_id in members:
                 fanout = [edge for edge in process.transitions if edge.source == source_id and edge.target in members and edge.type == 'success']
                 if len(fanout) > 1 and group.type != 'pick_first':
-                    raise FabricFault(f'Group {group.name} contains a parallel fan-out; use separate top-level branches until grouped branch joining is qualified', fault_type='GROUP_UNSUPPORTED')
+                    raise MinaFault(f'Group {group.name} contains a parallel fan-out; use separate top-level branches until grouped branch joining is qualified', fault_type='GROUP_UNSUPPORTED')
             exit_sources = {edge.source for edge in exit_edges}
             terminal = {activity.id for activity in process.activities if activity.id in members and not any(edge.source == activity.id and edge.target in members for edge in process.transitions)}
             exits = exit_sources or terminal
             if len(entries) != 1 and group.type != 'pick_first':
-                raise FabricFault(f'Group {group.name} must have exactly one entry activity; found {len(entries)}', fault_type='GROUP_VALIDATION')
+                raise MinaFault(f'Group {group.name} must have exactly one entry activity; found {len(entries)}', fault_type='GROUP_VALIDATION')
             if len(exits) != 1 and group.type != 'pick_first':
-                raise FabricFault(f'Group {group.name} must have exactly one exit activity; found {len(exits)}', fault_type='GROUP_VALIDATION')
+                raise MinaFault(f'Group {group.name} must have exactly one exit activity; found {len(exits)}', fault_type='GROUP_VALIDATION')
             plans[group.id] = {'group': group, 'members': members, 'entries': entries, 'entry': next(iter(entries)) if entries else None, 'exits': exits, 'exit': next(iter(exits)) if exits else None, 'exitEdges': exit_edges}
         return plans
 
@@ -218,7 +218,7 @@ class WorkflowRuntime:
         should_run = True
         if kind in ('if', 'while'):
             expression = str(cfg.get('condition') or '')
-            if not expression: raise FabricFault(f'{group.name} requires a condition', fault_type='GROUP_VALIDATION')
+            if not expression: raise MinaFault(f'{group.name} requires a condition', fault_type='GROUP_VALIDATION')
             should_run = self.condition(expression, ctx)
             if kind == 'while':
                 self._set_group_variable(state, ctx, str(cfg.get('indexVariable') or 'index'), 1)
@@ -227,7 +227,7 @@ class WorkflowRuntime:
             source_value = cfg.get('collection', cfg.get('source'))
             if kind == 'for_each' and source_value in (None, ''):
                 start, end, increment = int(self.resolve(cfg.get('start', 1), ctx)), int(self.resolve(cfg.get('end', 1), ctx)), int(self.resolve(cfg.get('increment', 1), ctx) or 1)
-                if increment == 0: raise FabricFault(f'{group.name} increment cannot be zero', fault_type='GROUP_VALIDATION')
+                if increment == 0: raise MinaFault(f'{group.name} increment cannot be zero', fault_type='GROUP_VALIDATION')
                 items = list(range(start, end + (1 if increment > 0 else -1), increment))
             else:
                 source = self.resolve(source_value or [], ctx)
@@ -262,9 +262,9 @@ class WorkflowRuntime:
             inferred = {str(self.resolve(item.config.get('resourceId'), ctx) or '') for item in jdbc_members} - {''}
             if not resource_id and len(inferred) == 1: resource_id = next(iter(inferred))
             if not resource_id or len(inferred - {resource_id}) > 0:
-                raise FabricFault(f'{group.name} must use one JDBC shared connection', fault_type='JDBCTransactionException')
+                raise MinaFault(f'{group.name} must use one JDBC shared connection', fault_type='JDBCTransactionException')
             resource = ctx['resources'].get(resource_id)
-            if not resource or resource.type != 'jdbc': raise FabricFault(f'{group.name} requires a valid JDBC connection', fault_type='JDBCTransactionException')
+            if not resource or resource.type != 'jdbc': raise MinaFault(f'{group.name} requires a valid JDBC connection', fault_type='JDBCTransactionException')
             connection_config = self.resolve(resource.config, ctx)
             state['resourceId'] = resource_id
             state['connection'] = await asyncio.to_thread(jdbc_adapter.connect, connection_config)
@@ -322,7 +322,7 @@ class WorkflowRuntime:
                         self._set_group_variable(state, ctx, str(cfg.get('indexVariable') or 'index'), state['iteration'] + 1)
                         self._set_group_variable(state, ctx, 'currentIndex', state['iteration'] + 1)
                     maximum = max(1, int(self.resolve(cfg.get('maxIterations', 10000), ctx) or 10000))
-                    if state['iteration'] >= maximum: raise FabricFault(f'{group.name} exceeded maxIterations={maximum}', fault_type='GROUP_ITERATION_LIMIT')
+                    if state['iteration'] >= maximum: raise MinaFault(f'{group.name} exceeded maxIterations={maximum}', fault_type='GROUP_ITERATION_LIMIT')
                     self._publish_group_context(state, group, ctx, state['items'][state['iteration']] if group.type in ('for_each', 'iterate') else None)
                     self.log(ctx['logs'], 'DEBUG', f'Group iteration: {group.name} #{state["iteration"] + 1}', kind='group', groupId=group.id, groupType=group.type, iteration=state['iteration'])
                     return plan['entry']
@@ -390,7 +390,7 @@ class WorkflowRuntime:
             while True:
                 step_count += 1
                 if step_count > max(100000, len(process.activities) * 10000):
-                    raise FabricFault('Execution step limit exceeded; check group loop conditions', fault_type='GROUP_ITERATION_LIMIT')
+                    raise MinaFault('Execution step limit exceeded; check group loop conditions', fault_type='GROUP_ITERATION_LIMIT')
                 entered = await self.enter_group_boundaries(current.id, context, group_plans)
                 if entered is None: break
                 if entered != current.id:
@@ -584,7 +584,7 @@ class WorkflowRuntime:
     @classmethod
     def _next_cron_time(cls, expression: str, now: datetime) -> datetime:
         parts = expression.split()
-        if len(parts) != 5: raise FabricFault('Cron expression requires five fields: minute hour day month weekday', fault_type='SCHEDULER')
+        if len(parts) != 5: raise MinaFault('Cron expression requires five fields: minute hour day month weekday', fault_type='SCHEDULER')
         candidate = now.replace(second=0, microsecond=0) + timedelta(minutes=1)
         for _ in range(527040):
             weekday = (candidate.weekday() + 1) % 7
@@ -592,9 +592,9 @@ class WorkflowRuntime:
                 if (cls._cron_field_matches(parts[0], candidate.minute, 0, 59) and cls._cron_field_matches(parts[1], candidate.hour, 0, 23) and cls._cron_field_matches(parts[2], candidate.day, 1, 31) and cls._cron_field_matches(parts[3], candidate.month, 1, 12) and cls._cron_field_matches(parts[4], weekday, 0, 6)):
                     return candidate
             except ValueError as error:
-                raise FabricFault(str(error), fault_type='SCHEDULER') from error
+                raise MinaFault(str(error), fault_type='SCHEDULER') from error
             candidate += timedelta(minutes=1)
-        raise FabricFault('Cron expression did not produce an execution time within one year', fault_type='SCHEDULER')
+        raise MinaFault('Cron expression did not produce an execution time within one year', fault_type='SCHEDULER')
 
     async def execute_with_policy(self, activity: Activity, ctx: dict):
         policy = self.resolve(activity.config.get('errorPolicy', {}), ctx)
@@ -715,12 +715,12 @@ class WorkflowRuntime:
                 trigger_mode = 'cron'
             else:
                 raw = str(cfg.get('scheduledDateTime') or '').strip()
-                if not raw: raise FabricFault('Scheduler requires a date/time or local Run once option', fault_type='SCHEDULER')
+                if not raw: raise MinaFault('Scheduler requires a date/time or local Run once option', fault_type='SCHEDULER')
                 try:
                     scheduled = datetime.fromisoformat(raw.replace('Z', '+00:00'))
                     if scheduled.tzinfo is None: scheduled = scheduled.astimezone()
                     scheduled = scheduled.astimezone(timezone.utc)
-                except ValueError as error: raise FabricFault(f'Invalid scheduler date/time: {raw}', fault_type='SCHEDULER') from error
+                except ValueError as error: raise MinaFault(f'Invalid scheduler date/time: {raw}', fault_type='SCHEDULER') from error
                 trigger_mode = 'dateTime'
             delay = max(0.0, (scheduled - now).total_seconds())
             self.log(ctx['logs'], 'INFO', f'Scheduler armed for {scheduled.isoformat()}', activity.id, kind='scheduler', triggerMode=trigger_mode, waitSeconds=round(delay, 3))
@@ -759,10 +759,10 @@ class WorkflowRuntime:
                 self.shared_variables[name] = value; return {'name': name, 'value': value}
             if operation == 'external_command':
                 command = str(cfg.get('command') or cfg.get('commandToExecute') or '').strip()
-                if not command: raise FabricFault('External Command requires a command to execute', fault_type='InvalidInputException')
+                if not command: raise MinaFault('External Command requires a command to execute', fault_type='InvalidInputException')
                 arguments = shlex.split(command, posix=os.name != 'nt')
                 if os.name == 'nt': arguments = [item[1:-1] if len(item) > 1 and item[0] == item[-1] and item[0] in ('"', "'") else item for item in arguments]
-                if not arguments: raise FabricFault('External Command is empty', fault_type='InvalidInputException')
+                if not arguments: raise MinaFault('External Command is empty', fault_type='InvalidInputException')
                 environment = cfg.get('environment') or {}
                 if isinstance(environment, str):
                     environment = dict(item.split('=', 1) for item in environment.split(',') if '=' in item)
@@ -778,18 +778,18 @@ class WorkflowRuntime:
                             process.kill(); await process.wait()
                     raise
                 except asyncio.TimeoutError as exc:
-                    process.kill(); await process.wait(); raise FabricFault('External command exceeded its timeout', fault_type='CommandExecutionError') from exc
-                except (OSError, ValueError) as exc: raise FabricFault(str(exc), fault_type='CommandExecutionError') from exc
+                    process.kill(); await process.wait(); raise MinaFault('External command exceeded its timeout', fault_type='CommandExecutionError') from exc
+                except (OSError, ValueError) as exc: raise MinaFault(str(exc), fault_type='CommandExecutionError') from exc
                 output, error = stdout.decode(cfg.get('encoding') or 'utf-8', errors='replace'), stderr.decode(cfg.get('encoding') or 'utf-8', errors='replace')
                 output_file = str(cfg.get('outputFile') or cfg.get('outputFilename') or '').strip()
                 if output_file:
                     try: Path(output_file).write_text(output + error, encoding=cfg.get('encoding') or 'utf-8')
-                    except OSError as exc: raise FabricFault(str(exc), fault_type='FileIOError') from exc
+                    except OSError as exc: raise MinaFault(str(exc), fault_type='FileIOError') from exc
                 split = str(cfg.get('outputLineSplitting') or 'None')
                 if split == 'AtOperatingSystemLineEnd': output, error = output.splitlines(), error.splitlines()
                 elif split == 'AtSpecifiedToken':
                     token = str(cfg.get('splitToken') or '')
-                    if not token: raise FabricFault('A split token is required', fault_type='InvalidInputException')
+                    if not token: raise MinaFault('A split token is required', fault_type='InvalidInputException')
                     output, error = output.split(token), error.split(token)
                 return {'returnCode': process.returncode, 'output': output if cfg.get('provideCommandOutput', True) else None, 'error': error if cfg.get('provideCommandOutput', True) else None, 'outputFile': output_file or None}
             raise RuntimeError(f'Unsupported Basic/General operation {operation}')
@@ -801,11 +801,11 @@ class WorkflowRuntime:
                 except ValueError: details = {'text': details}
             if cfg.get('stackTrace'):
                 details = {**(details if isinstance(details, dict) else {'value': details}), 'stackTrace': cfg.get('stackTrace')}
-            raise FabricFault(str(cfg.get('message') or 'Business fault'), fault_type=str(cfg.get('errorType') or cfg.get('type') or 'UserDefinedException'), code=str(cfg.get('code') or ''), details=details)
+            raise MinaFault(str(cfg.get('message') or 'Business fault'), fault_type=str(cfg.get('errorType') or cfg.get('type') or 'UserDefinedException'), code=str(cfg.get('code') or ''), details=details)
         if activity.type == 'rethrow':
             fault = ctx.get('context', {}).get('error')
-            if not fault: raise FabricFault('Rethrow requires an active caught exception', fault_type='RethrowException')
-            raise FabricFault(fault.get('message', 'Rethrown exception'), fault_type=fault.get('type', 'RethrowException'), code=fault.get('code', ''), details=fault.get('details', {}), cause=fault)
+            if not fault: raise MinaFault('Rethrow requires an active caught exception', fault_type='RethrowException')
+            raise MinaFault(fault.get('message', 'Rethrown exception'), fault_type=fault.get('type', 'RethrowException'), code=fault.get('code', ''), details=fault.get('details', {}), cause=fault)
         if activity.type in ('http_listener',) or (activity.type == 'rest' and cfg.get('operation') == 'receiver') or (activity.type == 'soap' and cfg.get('operation') == 'service'):
             return ctx['last']
         if activity.type == 'http_response':
@@ -907,7 +907,7 @@ class WorkflowRuntime:
                     ctx.setdefault('vars', {})[name] = transformed
                 return transformed
             except DataWeaveError as exc:
-                raise FabricFault(str(exc), fault_type='DATAWEAVE_SYNTAX', cause=exc.__class__.__name__) from exc
+                raise MinaFault(str(exc), fault_type='DATAWEAVE_SYNTAX', cause=exc.__class__.__name__) from exc
         if activity.type == 'sap':
             resource = ctx['resources'].get(cfg.get('resourceId'))
             if not resource or resource.type != 'sap': raise RuntimeError('SAP activity requires an SAP ECC shared connection')
@@ -1044,18 +1044,18 @@ class WorkflowRuntime:
             return {'path': str(path), 'content': content, 'textContent':content, 'fileInfo':info, **info}
         if activity.type == 'jdbc':
             resource = ctx['resources'].get(cfg.get('resourceId'))
-            if not resource or resource.type != 'jdbc': raise FabricFault('JDBC activity requires a valid shared JDBC connection', fault_type='JDBCConnectionNotFoundException')
+            if not resource or resource.type != 'jdbc': raise MinaFault('JDBC activity requires a valid shared JDBC connection', fault_type='JDBCConnectionNotFoundException')
             transaction = ctx.get('jdbcTransactions', {}).get(cfg.get('resourceId'))
             try: return await asyncio.to_thread(jdbc_adapter.execute, self.resolve(resource.config, ctx), cfg, transaction, transaction is None)
-            except Exception as exc: raise FabricFault(str(exc), fault_type=getattr(exc, 'fault_type', 'JDBCSQLException')) from exc
+            except Exception as exc: raise MinaFault(str(exc), fault_type=getattr(exc, 'fault_type', 'JDBCSQLException')) from exc
         if activity.type == 'snowflake':
             resource = ctx['resources'].get(cfg.get('resourceId'))
-            if not resource or resource.type != 'snowflake': raise FabricFault('Snowflake activity requires a valid Snowflake JDBC shared connection', fault_type='SNOWFLAKE_CONNECTION')
+            if not resource or resource.type != 'snowflake': raise MinaFault('Snowflake activity requires a valid Snowflake JDBC shared connection', fault_type='SNOWFLAKE_CONNECTION')
             try: return await asyncio.to_thread(snowflake_adapter.execute, self.resolve(resource.config, ctx), cfg, ctx.get('last'))
-            except Exception as exc: raise FabricFault(str(exc), fault_type='SNOWFLAKE_DATABASE_JDBC', code=str(getattr(exc, 'code', '') or '500009')) from exc
+            except Exception as exc: raise MinaFault(str(exc), fault_type='SNOWFLAKE_DATABASE_JDBC', code=str(getattr(exc, 'code', '') or '500009')) from exc
         if activity.type == 'amqp':
             resource = ctx['resources'].get(cfg.get('resourceId'))
-            if not resource or resource.type != 'amqp': raise FabricFault('AMQP activity requires a valid AMQP shared connection', fault_type='AMQPConnectionException')
+            if not resource or resource.type != 'amqp': raise MinaFault('AMQP activity requires a valid AMQP shared connection', fault_type='AMQPConnectionException')
             rcfg, operation = self.resolve(resource.config, ctx), str(cfg.get('operation') or 'get')
             destination = str(cfg.get('queueName') or cfg.get('topicName') or cfg.get('entityName') or rcfg.get('entityName') or 'default')
             if rcfg.get('mode') == 'memory':
@@ -1073,7 +1073,7 @@ class WorkflowRuntime:
                     return {'received': True, **message}
                 if operation == 'dead_letter':
                     token = str(cfg.get('settlementToken') or ''); pending = self.acknowledgements.pop(token, None)
-                    if not pending: raise FabricFault('Settlement token was not found or expired', fault_type='AMQPPluginException')
+                    if not pending: raise MinaFault('Settlement token was not found or expired', fault_type='AMQPPluginException')
                     dead_key = f"{pending.get('destination', key)}:$deadletter"; self.messages.setdefault(dead_key, []).append({**pending.get('message', {}), 'deadLetterReason': cfg.get('deadLetterReason'), 'deadLetterErrorDescription': cfg.get('deadLetterErrorDescription')})
                     return {'status': 'Success', 'settlementToken': token, 'messageId': pending.get('messageId')}
             try:
@@ -1086,31 +1086,31 @@ class WorkflowRuntime:
                     return {'received': True, **message}
                 if operation == 'dead_letter':
                     token = str(cfg.get('settlementToken') or ''); pending = self.acknowledgements.pop(token, None)
-                    if not pending: raise FabricFault('Settlement token was not found or expired', fault_type='AMQPPluginException')
+                    if not pending: raise MinaFault('Settlement token was not found or expired', fault_type='AMQPPluginException')
                     result = pending.get('callback')(True) if pending.get('callback') else None
                     if asyncio.iscoroutine(result): await result
                     return {'status': 'Success', 'settlementToken': token, 'messageId': pending.get('messageId')}
-            except FabricFault: raise
-            except Exception as exc: raise FabricFault(str(exc), fault_type=getattr(exc, 'fault_type', 'AMQPPluginException')) from exc
+            except MinaFault: raise
+            except Exception as exc: raise MinaFault(str(exc), fault_type=getattr(exc, 'fault_type', 'AMQPPluginException')) from exc
         if activity.type == 'excel':
             try: return await asyncio.to_thread(self.read_excel, cfg)
-            except Exception as exc: raise FabricFault(str(exc), fault_type='EXCEL_READ') from exc
+            except Exception as exc: raise MinaFault(str(exc), fault_type='EXCEL_READ') from exc
         if activity.type == 'ftp': return await asyncio.to_thread(self.ftp, cfg, ctx)
         if activity.type == 'sftp': return await asyncio.to_thread(self.sftp, cfg, ctx)
         if activity.type == 'xml':
             try:
                 if cfg.get('operation') == 'parse': return self.parse_xml_activity(cfg, ctx)
                 return self.render_xml_activity(cfg, ctx)
-            except FabricFault: raise
-            except (ValueError, TypeError, UnicodeError, LookupError) as exc: raise FabricFault(str(exc), fault_type='XMLParseException' if cfg.get('operation') == 'parse' else 'XMLRenderException', cause=exc.__class__.__name__) from exc
+            except MinaFault: raise
+            except (ValueError, TypeError, UnicodeError, LookupError) as exc: raise MinaFault(str(exc), fault_type='XMLParseException' if cfg.get('operation') == 'parse' else 'XMLRenderException', cause=exc.__class__.__name__) from exc
         if activity.type == 'json':
             try: return self.json_activity(cfg, ctx)
-            except FabricFault: raise
-            except (ValueError, TypeError, UnicodeError) as exc: raise FabricFault(str(exc), fault_type='JSONParserException' if cfg.get('operation') == 'parse' else 'JSONRenderException', cause=exc.__class__.__name__) from exc
+            except MinaFault: raise
+            except (ValueError, TypeError, UnicodeError) as exc: raise MinaFault(str(exc), fault_type='JSONParserException' if cfg.get('operation') == 'parse' else 'JSONRenderException', cause=exc.__class__.__name__) from exc
         if activity.type == 'flat':
             try: return self.flat_data(cfg, ctx)
-            except FabricFault: raise
-            except (ValueError, TypeError, csv.Error) as exc: raise FabricFault(str(exc), fault_type='ParseDataException' if cfg.get('operation') == 'parse' else 'RenderDataException', cause=exc.__class__.__name__) from exc
+            except MinaFault: raise
+            except (ValueError, TypeError, csv.Error) as exc: raise MinaFault(str(exc), fault_type='ParseDataException' if cfg.get('operation') == 'parse' else 'RenderDataException', cause=exc.__class__.__name__) from exc
         if activity.type == 'call_task':
             project = ctx.get('project')
             if not project: raise RuntimeError('Call Sub Task requires project execution context')
@@ -1166,14 +1166,14 @@ class WorkflowRuntime:
                 try: return base64.b64decode(value, validate=True) if isinstance(value, str) else bytes(value)
                 except (ValueError, TypeError): return str(value).encode()
             if kind == 'avro schema':
-                raise FabricFault('Avro Schema serialization requires the configured Schema Registry runtime', fault_type='KafkaSchemaRegistryException')
+                raise MinaFault('Avro Schema serialization requires the configured Schema Registry runtime', fault_type='KafkaSchemaRegistryException')
             return value if isinstance(value, bytes) else str(value).encode()
         def kafka_value(raw, deserializer: str):
             if raw is None: return None
             kind = str(deserializer or 'String').lower()
             if kind == 'byte array': return base64.b64encode(raw).decode()
             if kind == 'json': return json.loads(raw.decode())
-            if kind == 'avro schema': raise FabricFault('Avro Schema deserialization requires the configured Schema Registry runtime', fault_type='KafkaSchemaRegistryException')
+            if kind == 'avro schema': raise MinaFault('Avro Schema deserialization requires the configured Schema Registry runtime', fault_type='KafkaSchemaRegistryException')
             return raw.decode(errors='replace')
         attributes = {str(key): str(value) for key, value in {**mapping(cfg.get('dynamicProperties')), **mapping(cfg.get('attributes')), **mapping(cfg.get('headers'))}.items()}
         timestamp = log_timestamp()
@@ -1207,7 +1207,7 @@ class WorkflowRuntime:
             if str(rcfg.get('connectionFactoryType', 'Direct')).lower() == 'jndi':
                 required.update({'JNDI context factory':rcfg.get('jndiContextFactory'), 'JNDI provider URL':rcfg.get('jndiProviderUrl'), 'JNDI username':rcfg.get('jndiUsername'), 'JNDI password':rcfg.get('jndiPassword'), 'JNDI connection factory':rcfg.get('connectionFactory')})
             missing = [name for name, value in required.items() if not str(value or '').strip()]
-            if missing: raise FabricFault(f"Required connection values are missing: {', '.join(missing)}", fault_type='JMSConnectionException')
+            if missing: raise MinaFault(f"Required connection values are missing: {', '.join(missing)}", fault_type='JMSConnectionException')
             options = {**cfg, 'topic': 'topic' in operation or operation in ('publish', 'topic_subscriber'), 'clientAcknowledge': client_ack, 'properties': attributes}
             try:
                 if operation == 'request_reply':
@@ -1234,11 +1234,11 @@ class WorkflowRuntime:
                 output = await self._publish_jms_isolated(rcfg, str(destination), payload, options)
                 return {**output, 'destination':destination, 'timestamp':timestamp, 'published':True}
             except JavaBridgeError as exc:
-                raise FabricFault(str(exc), fault_type='JMSConnectionException') from exc
+                raise MinaFault(str(exc), fault_type='JMSConnectionException') from exc
         if technology == 'kafka':
             try: from confluent_kafka import Consumer, Producer, TopicPartition
             except ImportError: raise RuntimeError('External Kafka mode requires confluent-kafka')
-            common = {'bootstrap.servers': rcfg['bootstrapServers'], 'client.id': rcfg.get('clientId') or 'integration-fabric', 'request.timeout.ms': int(rcfg.get('requestTimeoutMilliseconds', 30000) or 30000), 'reconnect.backoff.ms': int(rcfg.get('reconnectBackoffMilliseconds', 50) or 50), 'retry.backoff.ms': int(rcfg.get('retryBackoffMilliseconds', 100) or 100), **mapping(rcfg.get('clientProperties'))}
+            common = {'bootstrap.servers': rcfg['bootstrapServers'], 'client.id': rcfg.get('clientId') or 'mina', 'request.timeout.ms': int(rcfg.get('requestTimeoutMilliseconds', 30000) or 30000), 'reconnect.backoff.ms': int(rcfg.get('reconnectBackoffMilliseconds', 50) or 50), 'retry.backoff.ms': int(rcfg.get('retryBackoffMilliseconds', 100) or 100), **mapping(rcfg.get('clientProperties'))}
             if rcfg.get('securityProtocol'): common['security.protocol'] = rcfg['securityProtocol']
             sasl_mechanism = rcfg.get('saslMechanism') or ('PLAIN' if str(rcfg.get('authenticationType') or '').strip().lower() == 'api key / secret' else '')
             if sasl_mechanism: common['sasl.mechanism'] = sasl_mechanism
@@ -1250,7 +1250,7 @@ class WorkflowRuntime:
             if rcfg.get('sslKeyPassword'): common['ssl.key.password'] = rcfg['sslKeyPassword']
             if rcfg.get('principalName'): common['sasl.kerberos.principal'] = rcfg['principalName']
             if operation in receive_ops:
-                consumer_cfg = {**common, 'group.id': cfg.get('groupId') or rcfg.get('groupId', 'integration-fabric'), 'auto.offset.reset': cfg.get('autoOffsetReset', cfg.get('offsetReset', 'earliest')), 'enable.auto.commit': bool(cfg.get('enableAutoCommit', not client_ack)), 'fetch.min.bytes': int(cfg.get('fetchMinBytes', 1) or 1), 'max.poll.records': int(cfg.get('maxPollRecords', cfg.get('maxMessages', 1)) or 1), 'session.timeout.ms': int(cfg.get('sessionTimeoutMs', 45000) or 45000), 'heartbeat.interval.ms': int(cfg.get('heartbeatIntervalMs', 3000) or 3000), **mapping(cfg.get('additionalProperties'))}
+                consumer_cfg = {**common, 'group.id': cfg.get('groupId') or rcfg.get('groupId', 'mina'), 'auto.offset.reset': cfg.get('autoOffsetReset', cfg.get('offsetReset', 'earliest')), 'enable.auto.commit': bool(cfg.get('enableAutoCommit', not client_ack)), 'fetch.min.bytes': int(cfg.get('fetchMinBytes', 1) or 1), 'max.poll.records': int(cfg.get('maxPollRecords', cfg.get('maxMessages', 1)) or 1), 'session.timeout.ms': int(cfg.get('sessionTimeoutMs', 45000) or 45000), 'heartbeat.interval.ms': int(cfg.get('heartbeatIntervalMs', 3000) or 3000), **mapping(cfg.get('additionalProperties'))}
                 consumer = Consumer(consumer_cfg); topics = [item.strip() for item in str(destination).split(';') if item.strip()]
                 if self.as_bool(cfg.get('assignCustomPartition', False)):
                     partitions = []
@@ -1547,7 +1547,7 @@ class WorkflowRuntime:
     def resolve(self, value, ctx):
         if isinstance(value, dict): return {key: self.resolve(item, ctx) for key, item in value.items()}
         if isinstance(value, list): return [self.resolve(item, ctx) for item in value]
-        if isinstance(value, str) and value.startswith('__fabric_constant__:'):
+        if isinstance(value, str) and value.startswith('__mina_constant__:'):
             try: return json.loads(value.split(':', 1)[1])
             except (TypeError, ValueError, json.JSONDecodeError): return value
         if value == '${last}': return ctx['last']
@@ -1847,7 +1847,7 @@ class WorkflowRuntime:
         parsed = self.parse_xml(source)
         if self.as_bool(cfg.get('validateOutput', False)):
             schema = self.configured_schema(cfg, ctx)
-            if not schema: raise FabricFault('Validate Output requires a project or inline XSD in Output Editor', fault_type='ValidationException')
+            if not schema: raise MinaFault('Validate Output requires a project or inline XSD in Output Editor', fault_type='ValidationException')
             self.validate_xml_root(parsed['root'], schema)
         return parsed
 
@@ -1857,7 +1857,7 @@ class WorkflowRuntime:
         source = cfg.get(root_name, cfg.get('value', cfg.get('source', ctx['last'])))
         if isinstance(source, dict) and root_name in source and not ('root' in source and 'value' in source): source = source[root_name]
         if self.as_bool(cfg.get('validateInput', False)):
-            if not schema: raise FabricFault('Validate Input requires a project or inline XSD in Input Editor', fault_type='ValidationException')
+            if not schema: raise MinaFault('Validate Input requires a project or inline XSD in Input Editor', fault_type='ValidationException')
             actual_root = source.get('root') if isinstance(source, dict) and 'root' in source else root_name
             self.validate_xml_root(actual_root, schema)
         encoding = cfg.get('encoding') or 'UTF-8'
@@ -1871,10 +1871,10 @@ class WorkflowRuntime:
     def validate_xml_root(root_name, schema):
         from xml.etree import ElementTree
         try: schema_root = ElementTree.fromstring(schema)
-        except ElementTree.ParseError as exc: raise FabricFault(f'Selected XSD is invalid: {exc}', fault_type='ValidationException') from exc
+        except ElementTree.ParseError as exc: raise MinaFault(f'Selected XSD is invalid: {exc}', fault_type='ValidationException') from exc
         expected = next((item.attrib.get('name') for item in list(schema_root) if item.tag.rsplit('}',1)[-1] == 'element' and item.attrib.get('name')), None)
         actual = str(root_name or '').rsplit('}',1)[-1]
-        if expected and actual != expected: raise FabricFault(f'XML root {actual!r} does not match XSD root {expected!r}', fault_type='ValidationException', details={'expectedRoot':expected,'actualRoot':actual})
+        if expected and actual != expected: raise MinaFault(f'XML root {actual!r} does not match XSD root {expected!r}', fault_type='ValidationException', details={'expectedRoot':expected,'actualRoot':actual})
 
     def parse_xml(self, source):
         from xml.etree import ElementTree
@@ -1956,23 +1956,23 @@ class WorkflowRuntime:
     def validate_json_if_requested(self, value, cfg, ctx, flag):
         if not self.as_bool(cfg.get(flag, False)): return
         content = self.configured_schema(cfg, ctx)
-        if not content: raise FabricFault(f'{flag} requires a project or inline schema in the schema editor', fault_type='ValidationException')
+        if not content: raise MinaFault(f'{flag} requires a project or inline schema in the schema editor', fault_type='ValidationException')
         try: schema = json.loads(content)
         except ValueError: return
-        if schema.get('type') == 'object' and not isinstance(value, dict): raise FabricFault('JSON value must be an object according to the selected schema', fault_type='ValidationException')
+        if schema.get('type') == 'object' and not isinstance(value, dict): raise MinaFault('JSON value must be an object according to the selected schema', fault_type='ValidationException')
         missing = [key for key in schema.get('required', []) if not isinstance(value, dict) or key not in value]
-        if missing: raise FabricFault(f'Missing required JSON fields: {", ".join(missing)}', fault_type='ValidationException', details={'missing':missing})
+        if missing: raise MinaFault(f'Missing required JSON fields: {", ".join(missing)}', fault_type='ValidationException', details={'missing':missing})
 
     def flat_data(self, cfg, ctx):
         source, delimiter = cfg.get('text', cfg.get('records', cfg.get('source', ctx['last']))), str(cfg.get('delimiter', ','))
         if cfg.get('operation') == 'parse' and str(cfg.get('inputSource', 'String')).lower() in ('file', 'file path', 'filepath'):
             file_path = cfg.get('filePath') or (source.get('path') if isinstance(source, dict) else source)
             if not file_path:
-                raise FabricFault('Parse Data file input requires a file path', fault_type='ParseDataException')
+                raise MinaFault('Parse Data file input requires a file path', fault_type='ParseDataException')
             try:
                 source = Path(str(file_path)).expanduser().read_text(encoding=str(cfg.get('fileEncoding') or cfg.get('encoding') or 'utf-8-sig'))
             except (OSError, UnicodeError) as exc:
-                raise FabricFault(f'Unable to read Parse Data input file {file_path!s}: {exc}', fault_type='ParseDataException', details={'filePath': str(file_path)}) from exc
+                raise MinaFault(f'Unable to read Parse Data input file {file_path!s}: {exc}', fault_type='ParseDataException', details={'filePath': str(file_path)}) from exc
         fields = [item.strip() for item in cfg.get('fields', '').split(',') if item.strip()]
         types = [item.strip().lower() for item in str(cfg.get('fieldTypes', '')).split(',') if item.strip()]
         if not fields:
@@ -2025,7 +2025,7 @@ class WorkflowRuntime:
                 records = []
                 for line in str(source).splitlines():
                     if not line and self.as_bool(cfg.get('skipBlankLines', True)): continue
-                    if self.as_bool(cfg.get('strictColumns', False)) and len(line) != sum(widths): raise FabricFault(f'Fixed-width line length {len(line)} does not match configured width {sum(widths)}', fault_type='ParseDataException')
+                    if self.as_bool(cfg.get('strictColumns', False)) and len(line) != sum(widths): raise MinaFault(f'Fixed-width line length {len(line)} does not match configured width {sum(widths)}', fault_type='ParseDataException')
                     offset, record = 0, {}
                     for index, (name, width) in enumerate(zip(fields, widths)): record[name], offset = typed(line[offset:offset + width].rstrip(str(cfg.get('fillCharacter', ' ')) or ' '), index), offset + width
                     records.append(record)
@@ -2049,10 +2049,10 @@ class WorkflowRuntime:
                 rows = [re.split(pattern, line) for line in lines]
             if self.as_bool(cfg.get('header', True)) and rows: names, rows = rows[0], rows[1:]
             else: names = fields
-            if not names: raise FabricFault('Parse Data requires header fields or configured field names', fault_type='ParseDataException')
+            if not names: raise MinaFault('Parse Data requires header fields or configured field names', fault_type='ParseDataException')
             records = []
             for row in rows:
-                if self.as_bool(cfg.get('strictColumns', False)) and len(row) != len(names): raise FabricFault(f'Column count {len(row)} does not match schema field count {len(names)}', fault_type='ParseDataException')
+                if self.as_bool(cfg.get('strictColumns', False)) and len(row) != len(names): raise MinaFault(f'Column count {len(row)} does not match schema field count {len(names)}', fault_type='ParseDataException')
                 records.append({name: typed(row[index] if index < len(row) else '', index) for index, name in enumerate(names)})
             return parsed_xml_result(records, names)
         records = source.get('records', source) if isinstance(source, dict) else source
@@ -2089,11 +2089,11 @@ class WorkflowRuntime:
         source = str(cfg.get('sourceCode') or '')
         parameters = cfg.get('parameters')
         if not isinstance(parameters, list): parameters = [cfg.get('payload', payload)]
-        helper = '''import java.lang.reflect.*; public class FabricInvoker { public static void main(String[] a) throws Exception { Class<?> c=Class.forName(a[0]); Method found=null; for(Method m:c.getMethods()) if(m.getName().equals(a[1])&&m.getParameterCount()==a.length-2){found=m;break;} if(found==null) throw new NoSuchMethodException(a[0]+"."+a[1]); Object[] v=new Object[found.getParameterCount()]; Class<?>[] t=found.getParameterTypes(); for(int i=0;i<v.length;i++){String s=a[i+2]; v[i]=t[i]==String.class?s:t[i]==int.class||t[i]==Integer.class?Integer.valueOf(s):t[i]==long.class||t[i]==Long.class?Long.valueOf(s):t[i]==double.class||t[i]==Double.class?Double.valueOf(s):t[i]==boolean.class||t[i]==Boolean.class?Boolean.valueOf(s):s;} Object target=Modifier.isStatic(found.getModifiers())?null:c.getDeclaredConstructor().newInstance(); Object out=found.invoke(target,v); if(out!=null) System.out.print(out); }}'''
-        with tempfile.TemporaryDirectory(prefix='fabric-java-') as folder:
-            root = Path(folder); (root / 'FabricInvoker.java').write_text(helper, encoding='utf-8')
+        helper = '''import java.lang.reflect.*; public class MinaInvoker { public static void main(String[] a) throws Exception { Class<?> c=Class.forName(a[0]); Method found=null; for(Method m:c.getMethods()) if(m.getName().equals(a[1])&&m.getParameterCount()==a.length-2){found=m;break;} if(found==null) throw new NoSuchMethodException(a[0]+"."+a[1]); Object[] v=new Object[found.getParameterCount()]; Class<?>[] t=found.getParameterTypes(); for(int i=0;i<v.length;i++){String s=a[i+2]; v[i]=t[i]==String.class?s:t[i]==int.class||t[i]==Integer.class?Integer.valueOf(s):t[i]==long.class||t[i]==Long.class?Long.valueOf(s):t[i]==double.class||t[i]==Double.class?Double.valueOf(s):t[i]==boolean.class||t[i]==Boolean.class?Boolean.valueOf(s):s;} Object target=Modifier.isStatic(found.getModifiers())?null:c.getDeclaredConstructor().newInstance(); Object out=found.invoke(target,v); if(out!=null) System.out.print(out); }}'''
+        with tempfile.TemporaryDirectory(prefix='mina-java-') as folder:
+            root = Path(folder); (root / 'MinaInvoker.java').write_text(helper, encoding='utf-8')
             classpath = str(root)
-            compile_inputs = [str(root / 'FabricInvoker.java')]
+            compile_inputs = [str(root / 'MinaInvoker.java')]
             if source:
                 java_file = root / f'{class_name.rsplit(".", 1)[-1]}.java'; java_file.write_text(source, encoding='utf-8'); compile_inputs.append(str(java_file))
             elif artifact.exists() and artifact.suffix.lower() == '.java': compile_inputs.append(str(artifact)); classpath += os.pathsep + str(artifact.parent)
@@ -2107,7 +2107,7 @@ class WorkflowRuntime:
                 raise
             if compiler.returncode: raise RuntimeError(f'Java compilation failed: {compile_error.decode().strip()}')
             args = [json.dumps(value, separators=(',', ':')) if isinstance(value, (dict, list)) else str(value) for value in parameters]
-            process = await asyncio.create_subprocess_exec('java', '-cp', classpath, 'FabricInvoker', class_name, method, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            process = await asyncio.create_subprocess_exec('java', '-cp', classpath, 'MinaInvoker', class_name, method, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             try: out, err = await asyncio.wait_for(process.communicate(), timeout=float(cfg.get('timeout') or 60))
             except asyncio.CancelledError:
                 if process.returncode is None:
@@ -2128,7 +2128,7 @@ class WorkflowRuntime:
             function_name = str(cfg.get('function') or '').strip()
             if not function_name: raise RuntimeError('Python Invoke requires a function name')
             source, artifact = str(cfg.get('sourceCode') or ''), Path(str(cfg.get('artifactPath') or '')).expanduser()
-            module_name = str(cfg.get('moduleName') or artifact.stem or 'fabric_inline')
+            module_name = str(cfg.get('moduleName') or artifact.stem or 'mina_inline')
             if source:
                 namespace = {'__name__': module_name}; exec(compile(source, f'<{module_name}>', 'exec'), namespace); function = namespace.get(function_name)
             elif artifact.suffix.lower() == '.py' and artifact.exists():

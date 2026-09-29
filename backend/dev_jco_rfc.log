@@ -2,7 +2,7 @@
 **** Log file opened at 2026-09-02 09:11:22 MST (GMT-07:00 Mountain Standard Time) Rel. 3.1.13 (2025-10-31) [754.623]
 Error:     >Wed Sep 02 09:11:22,076<    RfcException raised by system [<unknown>]:
 	message: Connect to SAP gateway failed
-	connection parameters: TYPE=A DESTINATION=integration-fabric-sap ASHOST=sap-ecc.example.com SYSNR=00 PCS=1
+	connection parameters: TYPE=A DESTINATION=mina-sap ASHOST=sap-ecc.example.com SYSNR=00 PCS=1
 
 LOCATION    CPIC (TCP/IP) on local host with Unicode
 ERROR       hostname 'sap-ecc.example.com' unknown
@@ -38,7 +38,7 @@ Error: [1]    >Wed Sep 02 09:30:48,178<    RfcException raised by system [QA2|sa
 **** Log file opened at 2026-09-03 10:16:32 MST (GMT-07:00 Mountain Standard Time) Rel. 3.1.13 (2025-10-31) [754.623]
 Error:     >Thu Sep 03 10:16:32,156<    RfcException raised by system [<unknown>]:
 	message: Connect to SAP gateway failed
-	connection parameters: TYPE=A DESTINATION=int-fabric-sap-ecc ASHOST=sapqa2 SYSNR=00 PCS=1
+	connection parameters: TYPE=A DESTINATION=int-mina-sap-ecc ASHOST=sapqa2 SYSNR=00 PCS=1
 
 LOCATION    CPIC (TCP/IP) on local host with Unicode
 ERROR       partner '172.17.88.86:3300' not reached
@@ -1425,7 +1425,7 @@ COUNTER     2
 **** Log file opened at 2026-09-08 16:16:31 MST (GMT-07:00 Mountain Standard Time) Rel. 3.1.13 (2025-10-31) [754.623]
 Exception thrown [Tue Sep 08 16:16:31,922]: Exception thrown by application running in JCoServer
 java.lang.RuntimeException: java.util.concurrent.TimeoutException
-	at com.integrationfabric.bridge.FabricJavaBridge.lambda$listen$7(FabricJavaBridge.java:462)
+	at com.mina.bridge.MinaJavaBridge.lambda$listen$7(MinaJavaBridge.java:462)
 	at jdk.proxy1/jdk.proxy1.$Proxy3.handleRequest(Unknown Source)
 	at com.sap.conn.jco.rt.AbstractServerWorker$FunctionDispatcher.handleRequest(AbstractServerWorker.java:1135)
 	at com.sap.conn.jco.rt.AbstractServerWorker.dispatchRequest(AbstractServerWorker.java:264)
@@ -1443,6 +1443,6 @@ java.lang.RuntimeException: java.util.concurrent.TimeoutException
 Caused by: java.util.concurrent.TimeoutException
 	at java.base/java.util.concurrent.CompletableFuture.timedGet(Unknown Source)
 	at java.base/java.util.concurrent.CompletableFuture.get(Unknown Source)
-	at com.integrationfabric.bridge.FabricJavaBridge.lambda$listen$7(FabricJavaBridge.java:446)
+	at com.mina.bridge.MinaJavaBridge.lambda$listen$7(MinaJavaBridge.java:446)
 	... 14 more
 

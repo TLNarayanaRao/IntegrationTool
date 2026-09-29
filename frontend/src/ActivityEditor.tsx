@@ -1803,7 +1803,7 @@ function FieldEditor({ field, value, set, resources, tasks, properties = [], sel
             ))}
         </select>
       ) : field.type === "artifact" ? (
-        <span className="artifact-picker"><input value={value || ""} placeholder={`Select a ${field.artifactType} artifact…`} onChange={(e) => change(e.target.value)}/><button type="button" onClick={async () => { const selected = await window.fabricDesktop?.selectCodeArtifact(field.artifactType || "java"); if (selected?.path) change(selected.path); }}>Browse…</button></span>
+        <span className="artifact-picker"><input value={value || ""} placeholder={`Select a ${field.artifactType} artifact…`} onChange={(e) => change(e.target.value)}/><button type="button" onClick={async () => { const selected = await window.minaDesktop?.selectCodeArtifact(field.artifactType || "java"); if (selected?.path) change(selected.path); }}>Browse…</button></span>
       ) : field.type === "idoc" ? (
         <select value={value || resources.find((resource: any) => resource.id === selectedResourceId)?.config?.selectedIdoc?.idocType || ""} onChange={(e) => change(e.target.value)}>
           <option value="">Select an IDoc fetched by the SAP connection…</option>
@@ -1929,7 +1929,7 @@ export function DataSourcePane({ properties, sources = [], customFunctions = [],
     const expression = functionExpression(definition, selectedSource || "${last}");
     return <button className="source-tree-node mapper-function-source" key={definition.name} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("expression", expression); event.dataTransfer.setData("sourceType", "function"); }} onClick={() => setSelectedSource(expression)} title={`${definition.signature} — ${definition.description}`}><DataNodeIcon/><span><b>{definition.name}</b><small>{definition.signature}</small><em>{definition.description}</em></span><code>fx</code></button>;
   };
-  const constantItem = (label: string, value: any, type: string) => <button className="source-tree-node constant-source" key={label} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("expression", `__fabric_constant__:${JSON.stringify(value)}`); event.dataTransfer.setData("sourceType", type); }} title={`Drag ${label} onto a simple target field`}><Braces/><span><b>{label}</b><small>{JSON.stringify(value)}</small></span><code>{type}</code></button>;
+  const constantItem = (label: string, value: any, type: string) => <button className="source-tree-node constant-source" key={label} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("expression", `__mina_constant__:${JSON.stringify(value)}`); event.dataTransfer.setData("sourceType", type); }} title={`Drag ${label} onto a simple target field`}><Braces/><span><b>{label}</b><small>{JSON.stringify(value)}</small></span><code>{type}</code></button>;
   const createFunction = () => {
     const name = window.prompt("Custom XPath function name", "normalizeCustomerId")?.trim();
     if (!name) return;
@@ -1965,7 +1965,7 @@ function describeMapping(expression: any, sources: ActivitySource[]): string {
   if (expression === undefined || expression === null || expression === "") return "Drop a source field or enter a constant";
   if (typeof expression === "object" && expression?.$rule) return `${expression.$rule} › ${describeMapping(expression.source, sources)}`;
   if (typeof expression !== "string") return `Constant › ${JSON.stringify(expression)}`;
-  if (expression.startsWith("__fabric_constant__:")) return `Constant › ${expression.slice(20)}`;
+  if (expression.startsWith("__mina_constant__:")) return `Constant › ${expression.slice(20)}`;
   if (expression === "${input}") return "Initial task input";
   const activityPath = expression.match(/^\$\{(?:activities\.([^.}]+)\.output|([^.}]+))(?:\.([^}]+))?\}$/);
   if (activityPath) {
@@ -2154,7 +2154,7 @@ function TransformInputEditor({ config, properties, sources, runtimeVariables = 
   properties = Object.assign([...(properties || [])], { customFunctions, updateCustomFunctions });
   const fields = transformSchemaFields(config), resize = useSourcePaneWidth(expanded ? 360 : 280), tree = useTreeCollapse(), root = useRef<HTMLDivElement>(null), [selected, setSelected] = useState(fields[0]?.path || ""), [contextMenu, setContextMenu] = useState<any>(null), [dialogOpen, setDialogOpen] = useState(false), [draftMappings, setDraftMappings] = useState<any[]>([]), mappings = Array.isArray(config.mappings) ? config.mappings : [];
   const mapTo = (target: string, source: any, sourceRepeating = false) => {
-    if (typeof source === "string" && source.startsWith("__fabric_constant__:")) {
+    if (typeof source === "string" && source.startsWith("__mina_constant__:")) {
       try { mapConstant(target, JSON.parse(source.slice(20))); } catch { /* Ignore malformed drag data. */ }
       return;
     }

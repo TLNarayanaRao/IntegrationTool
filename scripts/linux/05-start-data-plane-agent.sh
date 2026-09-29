@@ -13,4 +13,4 @@
 #   AGENT_VERSION=1.0.0 HEARTBEAT_SECONDS=30 AVAILABLE_CAPACITY=50
 set -euo pipefail
 source "$(dirname "$0")/_load-linux-config.sh"
-exec "${FABRIC_PYTHON:-python3}" "$(dirname "$0")/remote-data-plane-agent.py" "$@"
+exec "${MINA_PYTHON:-python3}" "$(dirname "$0")/remote-data-plane-agent.py" "$@"

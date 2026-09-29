@@ -14,7 +14,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "desktop:dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && cross-env FABRIC_DEV_URL=http://127.0.0.1:5173 electron .\"",
+    "desktop:dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && cross-env MINA_DEV_URL=http://127.0.0.1:5173 electron .\"",
     "desktop:prepare": "powershell -ExecutionPolicy Bypass -File ../scripts/build-electron-sidecar.ps1",
     "desktop:installer": "powershell -ExecutionPolicy Bypass -File ../scripts/build-studio.ps1 -Target nsis",
     "desktop:unpacked": "powershell -ExecutionPolicy Bypass -File ../scripts/build-studio.ps1 -Target dir",
@@ -48,7 +48,7 @@
     "wait-on": "latest"
   },
   "build": {
-    "appId": "io.integrationfabric.studio",
+    "appId": "io.mina.studio",
     "productName": "MINA Studio",
     "electronDist": "node_modules/electron/dist",
     "directories": {
@@ -70,7 +70,7 @@
       }
     ],
     "win": {
-      "icon": "electron/integration-fabric-icon.svg",
+      "icon": "electron/mina-icon.svg",
       "target": [
         "nsis"
       ],

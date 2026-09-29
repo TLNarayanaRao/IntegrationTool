@@ -1,6 +1,6 @@
 # MINA Postman collections
 
-These collections target the self-hosted Control Plane at `http://127.0.0.1:9080`. Import the five JSON collection files and `postman-environment.local.json`, then select the environment in Postman. Set `adminKey` to `FABRIC_ADMIN_API_KEY` when that variable is configured.
+These collections target the self-hosted Control Plane at `http://127.0.0.1:9080`. Import the five JSON collection files and `postman-environment.local.json`, then select the environment in Postman. Set `adminKey` to `MINA_ADMIN_API_KEY` when that variable is configured.
 
 ## Collections
 

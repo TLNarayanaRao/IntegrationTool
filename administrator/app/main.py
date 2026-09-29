@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 from .time_utils import log_timestamp
 
 def administrator_version() -> str:
-    override = os.environ.get("FABRIC_ADMIN_VERSION", "").strip()
+    override = os.environ.get("MINA_ADMIN_VERSION", "").strip()
     if override:
         return override
     bundle_root = Path(getattr(sys, "_MEIPASS", Path(__file__).parents[1]))
@@ -48,7 +48,7 @@ def administrator_version() -> str:
 ADMIN_VERSION = administrator_version()
 RUN_ID = uuid4().hex
 STARTED_AT = time.time()
-DATA_DIR = Path(os.environ.get("FABRIC_ADMIN_DATA_DIR", Path(__file__).parents[1] / "data")).expanduser().resolve()
+DATA_DIR = Path(os.environ.get("MINA_ADMIN_DATA_DIR", Path(__file__).parents[1] / "data")).expanduser().resolve()
 PACKAGES_DIR, STAGING_DIR, LOGS_DIR = DATA_DIR / "packages", DATA_DIR / "staging", DATA_DIR / "logs"
 DEPLOYMENTS_FILE, PACKAGES_FILE = DATA_DIR / "deployments.json", DATA_DIR / "packages.json"
 MACHINES_FILE, SECRETS_FILE, AUDIT_FILE, KEY_FILE = DATA_DIR / "machines.json", DATA_DIR / "secrets.json", DATA_DIR / "audit.json", DATA_DIR / ".secret.key"
@@ -59,11 +59,11 @@ ALERTS_FILE = DATA_DIR / "alerts.json"
 PROCESS_STATES_FILE = DATA_DIR / "process-states.json"
 TELEMETRY_FILE = DATA_DIR / "telemetry-history.json"
 TECHNOLOGY_TEAM_ID = "technology-team"
-MAX_PACKAGE_BYTES = int(os.environ.get("FABRIC_ADMIN_MAX_PACKAGE_MB", "250")) * 1024 * 1024
-MAX_EXPANDED_BYTES = int(os.environ.get("FABRIC_ADMIN_MAX_EXPANDED_MB", "1024")) * 1024 * 1024
-MAX_MEMBERS = int(os.environ.get("FABRIC_ADMIN_MAX_PACKAGE_FILES", "10000"))
-RUNTIME_COMMAND = os.environ.get("FABRIC_ADMIN_RUNTIME_COMMAND", "").strip()
-API_KEY = os.environ.get("FABRIC_ADMIN_API_KEY", "").strip()
+MAX_PACKAGE_BYTES = int(os.environ.get("MINA_ADMIN_MAX_PACKAGE_MB", "250")) * 1024 * 1024
+MAX_EXPANDED_BYTES = int(os.environ.get("MINA_ADMIN_MAX_EXPANDED_MB", "1024")) * 1024 * 1024
+MAX_MEMBERS = int(os.environ.get("MINA_ADMIN_MAX_PACKAGE_FILES", "10000"))
+RUNTIME_COMMAND = os.environ.get("MINA_ADMIN_RUNTIME_COMMAND", "").strip()
+API_KEY = os.environ.get("MINA_ADMIN_API_KEY", "").strip()
 STATE_LOCK = threading.RLock()
 PROCESS_HANDLES: dict[str, subprocess.Popen] = {}
 
@@ -242,7 +242,7 @@ async def authenticate(request: Request, call_next):
 
 def secret_cipher() -> Fernet:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    configured = os.environ.get("FABRIC_ADMIN_SECRET_KEY", "").encode()
+    configured = os.environ.get("MINA_ADMIN_SECRET_KEY", "").encode()
     if configured:
         return Fernet(base64.urlsafe_b64encode(hashlib.sha256(configured).digest()))
     if not KEY_FILE.exists():
@@ -274,7 +274,7 @@ def checked_name(name: str) -> str:
 
 
 def validate_manifest(manifest: Any, names: set[str]) -> dict:
-    if not isinstance(manifest, dict) or manifest.get("format") not in {"mina-deployment", "integration-fabric-deployment"}:
+    if not isinstance(manifest, dict) or manifest.get("format") not in {"mina-deployment", "mina-deployment"}:
         raise ValueError("manifest.json is not a MINA deployment descriptor")
     # Studio 2.x deployment archives use manifest format version 2. The
     # archive layout and required descriptor files remain compatible with the
@@ -549,7 +549,7 @@ def initialize() -> None:
 def health():
     deployments = read_json(DEPLOYMENTS_FILE, [])
     planes = data_plane_inventory()
-    return {"status": "ok", "component": "integration-fabric-control-plane", "version": ADMIN_VERSION, "uptimeSeconds": int(time.time() - STARTED_AT), "runtimeAdapterConfigured": bool(RUNTIME_COMMAND), "dataPlanes": len(planes), "onlineDataPlanes": len([item for item in planes if item.get("status") == "ONLINE"]), "capabilities": len(read_json(CAPABILITIES_FILE, [])), "packages": len(package_inventory()), "deployments": len([item for item in deployments if item.get("state") != "UNDEPLOYED"]), "failedDeployments": len([item for item in deployments if item.get("state") == "FAILED"])}
+    return {"status": "ok", "component": "mina-control-plane", "version": ADMIN_VERSION, "uptimeSeconds": int(time.time() - STARTED_AT), "runtimeAdapterConfigured": bool(RUNTIME_COMMAND), "dataPlanes": len(planes), "onlineDataPlanes": len([item for item in planes if item.get("status") == "ONLINE"]), "capabilities": len(read_json(CAPABILITIES_FILE, [])), "packages": len(package_inventory()), "deployments": len([item for item in deployments if item.get("state") != "UNDEPLOYED"]), "failedDeployments": len([item for item in deployments if item.get("state") == "FAILED"])}
 
 
 @app.get("/api/session")
@@ -611,7 +611,7 @@ def agent_package(plane_id: str, deployment_id: str, request: Request):
         for path in root.rglob("*"):
             if path.is_file(): archive.write(path, path.relative_to(root).as_posix())
     body = buffer.getvalue()
-    return Response(body, media_type="application/zip", headers={"Content-Disposition": f"attachment; filename={safe(item.get('id', deployment_id))}.zip", "x-fabric-package-sha256": hashlib.sha256(body).hexdigest()})
+    return Response(body, media_type="application/zip", headers={"Content-Disposition": f"attachment; filename={safe(item.get('id', deployment_id))}.zip", "x-mina-package-sha256": hashlib.sha256(body).hexdigest()})
 
 
 @app.post("/api/data-planes/{plane_id}/agent/deployments/{deployment_id}/report")
@@ -1013,7 +1013,7 @@ def delete_team(team_id: str, request: Request):
 @app.post("/api/teams/{team_id}/tokens")
 def issue_team_token(team_id: str, payload: TeamTokenRequest, request: Request):
     require_technology(request); team = team_record(team_id)
-    if team_id == TECHNOLOGY_TEAM_ID: raise HTTPException(400, "Use FABRIC_ADMIN_API_KEY for Technology Team access")
+    if team_id == TECHNOLOGY_TEAM_ID: raise HTTPException(400, "Use MINA_ADMIN_API_KEY for Technology Team access")
     allowed = {"Application Manager", "Application Viewer"}
     if not payload.roles or any(role not in allowed for role in payload.roles): raise HTTPException(400, "Delivery tokens support Application Manager or Application Viewer roles")
     if payload.expiresAt:
@@ -1211,7 +1211,7 @@ def deployment_package_path(item: dict) -> Path:
 def runtime_arguments(item: dict, instance_id: str) -> list[str] | str:
     package_path = deployment_package_path(item)
     if (item.get("pythonSource") or {}).get("entrypoint") == "application/main.py":
-        return [os.environ.get('FABRIC_PYTHON_EXECUTABLE') or sys.executable, "-m", "application.main", "--environment", item["environment"]]
+        return [os.environ.get('MINA_PYTHON_EXECUTABLE') or sys.executable, "-m", "application.main", "--environment", item["environment"]]
     command = RUNTIME_COMMAND
     for marker, value in {"{application}": str(package_path / "application"), "{package}": str(package_path), "{environment}": item["environment"], "{deployment_id}": item["id"], "{instance_id}": instance_id}.items():
         command = command.replace(marker, value)
@@ -1227,7 +1227,7 @@ def runtime_arguments(item: dict, instance_id: str) -> list[str] | str:
 
 def start_instances(item: dict) -> None:
     if not RUNTIME_COMMAND and (item.get("pythonSource") or {}).get("entrypoint") != "application/main.py":
-        raise HTTPException(409, "No runtime adapter is configured. Set FABRIC_ADMIN_RUNTIME_COMMAND; see the Administrator Guide.")
+        raise HTTPException(409, "No runtime adapter is configured. Set MINA_ADMIN_RUNTIME_COMMAND; see the Administrator Guide.")
     machine = next((value for value in machine_inventory() if value.get("id") == item.get("machine")), None)
     if not machine or machine.get("driver") != "command" or item.get("machine") != "localhost":
         raise HTTPException(409, "This build can execute only the localhost command adapter")
@@ -1237,7 +1237,7 @@ def start_instances(item: dict) -> None:
         log_path = LOGS_DIR / f"{instance_id}.log"
         environment = os.environ.copy()
         enabled_starters = [task_id for task_id, state in (item.get("starterStates") or {}).items() if state != "STOPPED"]
-        environment.update({"FABRIC_DEPLOYMENT_ID": item["id"], "FABRIC_INSTANCE_ID": instance_id, "FABRIC_ENVIRONMENT": item["environment"], "FABRIC_APPLICATION_DIR": str(deployment_package_path(item) / "application"), "FABRIC_ENABLED_STARTERS": json.dumps(enabled_starters), **deployment_secret_values(item["id"])})
+        environment.update({"MINA_DEPLOYMENT_ID": item["id"], "MINA_INSTANCE_ID": instance_id, "MINA_ENVIRONMENT": item["environment"], "MINA_APPLICATION_DIR": str(deployment_package_path(item) / "application"), "MINA_ENABLED_STARTERS": json.dumps(enabled_starters), **deployment_secret_values(item["id"])})
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW") else 0
         with log_path.open("ab") as log_handle:
             process = subprocess.Popen(runtime_arguments(item, instance_id), cwd=deployment_package_path(item), env=environment, stdout=log_handle, stderr=subprocess.STDOUT, creationflags=flags)
@@ -1748,7 +1748,7 @@ def move_deployment(deployment_id: str, payload: dict[str, Any], request: Reques
     write_json(DEPLOYMENTS_FILE, deployments); caller = identity(request); audit("deployment.move", deployment_id, detail=f"{plane_id} / {namespace}", actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID)); record_revision("deployment", deployment_id, "deployment.move", {"dataPlaneId":plane_id, "namespace":namespace, "capabilityId":capability["id"]}, actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID), detail=item["message"]); return item
 
 
-static_candidates = [Path(os.environ["FABRIC_ADMIN_WEB"]) if os.environ.get("FABRIC_ADMIN_WEB") else None, Path(getattr(sys, "_MEIPASS", "")) / "web" if getattr(sys, "_MEIPASS", None) else None, Path(__file__).parents[1] / "web"]
+static_candidates = [Path(os.environ["MINA_ADMIN_WEB"]) if os.environ.get("MINA_ADMIN_WEB") else None, Path(getattr(sys, "_MEIPASS", "")) / "web" if getattr(sys, "_MEIPASS", None) else None, Path(__file__).parents[1] / "web"]
 WEB_DIR = next((candidate for candidate in static_candidates if candidate and candidate.exists()), None)
 if WEB_DIR:
     app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="administrator")

@@ -1,14 +1,14 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: fabric-python-agent
-  namespace: integration-fabric
+  name: mina-python-agent
+  namespace: mina
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: fabric-python-agent
-  namespace: integration-fabric
+  name: mina-python-agent
+  namespace: mina
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
@@ -23,44 +23,44 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: fabric-python-agent
-  namespace: integration-fabric
+  name: mina-python-agent
+  namespace: mina
 subjects:
   - kind: ServiceAccount
-    name: fabric-python-agent
-    namespace: integration-fabric
+    name: mina-python-agent
+    namespace: mina
 roleRef:
   kind: Role
-  name: fabric-python-agent
+  name: mina-python-agent
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: fabric-python-agent
-  namespace: integration-fabric
+  name: mina-python-agent
+  namespace: mina
 spec:
   replicas: 1
   selector:
-    matchLabels: {app: fabric-python-agent}
+    matchLabels: {app: mina-python-agent}
   template:
     metadata:
-      labels: {app: fabric-python-agent}
+      labels: {app: mina-python-agent}
     spec:
-      serviceAccountName: fabric-python-agent
+      serviceAccountName: mina-python-agent
       securityContext: {runAsNonRoot: true, runAsUser: 10001, fsGroup: 10001}
       containers:
         - name: agent
-          image: integration-fabric-python-agent:latest
+          image: mina-python-agent:latest
           env:
-            - {name: FABRIC_AGENT_MODE, value: kubernetes}
-            - {name: FABRIC_AGENT_NAMESPACES, value: integration-fabric}
-            - {name: FABRIC_DATA_PLANE_ID, value: python-kubernetes}
-            - {name: FABRIC_CONTROL_PLANE_URL, value: https://control-plane.example.com}
-            - {name: FABRIC_PYTHON_RUNTIME_IMAGE, value: integration-fabric-python-agent:latest}
-            - name: FABRIC_AGENT_KEY
+            - {name: MINA_AGENT_MODE, value: kubernetes}
+            - {name: MINA_AGENT_NAMESPACES, value: mina}
+            - {name: MINA_DATA_PLANE_ID, value: python-kubernetes}
+            - {name: MINA_CONTROL_PLANE_URL, value: https://control-plane.example.com}
+            - {name: MINA_PYTHON_RUNTIME_IMAGE, value: mina-python-agent:latest}
+            - name: MINA_AGENT_KEY
               valueFrom:
-                secretKeyRef: {name: fabric-agent-credentials, key: control-plane-key}
+                secretKeyRef: {name: mina-agent-credentials, key: control-plane-key}
           resources:
             requests: {cpu: 100m, memory: 128Mi}
             limits: {cpu: "1", memory: 512Mi}

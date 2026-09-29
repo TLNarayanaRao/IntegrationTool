@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Load all sections from the central INI as FABRIC_* shell variables.
-CONFIG_FILE="${FABRIC_CONFIG_FILE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/integration-fabric-control-plane.ini}"
+# Load all sections from the central INI as MINA_* shell variables.
+CONFIG_FILE="${MINA_CONFIG_FILE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/mina-control-plane.ini}"
 [[ -f "$CONFIG_FILE" ]] || { echo "ERROR: INI file not found: $CONFIG_FILE" >&2; return 1 2>/dev/null || exit 1; }
 shopt -s extglob
-fabric_ini_load() {
+mina_ini_load() {
   local section="$1" line key value in_section=0 variable
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%%#*}"; line="${line##+([[:space:]])}"; line="${line%%+([[:space:]])}"
@@ -31,14 +31,14 @@ fabric_ini_load() {
       user:role) variable=USER_ROLE ;;
       user:scope) variable=USER_SCOPE ;;
       user:resource_id) variable=USER_RESOURCE_ID ;;
-      setup:version) variable=FABRIC_VERSION ;;
-      *) variable="FABRIC_${section^^}_${key^^}"; variable="${variable//-/_}" ;;
+      setup:version) variable=MINA_VERSION ;;
+      *) variable="MINA_${section^^}_${key^^}"; variable="${variable//-/_}" ;;
     esac
     printf -v "$variable" '%s' "$value"; export "$variable"
   done < "$CONFIG_FILE"
 }
-fabric_ini_load control-plane; fabric_ini_load runtime; fabric_ini_load data-plane
-fabric_ini_load delivery-team; fabric_ini_load user; fabric_ini_load setup
+mina_ini_load control-plane; mina_ini_load runtime; mina_ini_load data-plane
+mina_ini_load delivery-team; mina_ini_load user; mina_ini_load setup
 CONTROL_PLANE_URL="${CONTROL_PLANE_URL:-http://127.0.0.1:19080}"
 ADMIN_KEY="${ADMIN_KEY:-}"
 DATA_PLANE_ID="${DATA_PLANE_ID:-}"

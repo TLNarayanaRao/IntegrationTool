@@ -11,7 +11,7 @@ ALLOWED = {
     'frontend/src/main.tsx': [FACTORY, JNDI],
     'backend/app/models.py': [FACTORY, JNDI],
     'backend/app/java_bridge.py': [FACTORY],
-    'java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java': [FACTORY],
+    'java-bridge/src/com/mina/bridge/MinaJavaBridge.java': [FACTORY],
     'backend/app/sap.py': ['http://www.tibco.com/xmlns/sapscalar/2015/05'],
 }
 AREAS = ['frontend/src', 'frontend/public', 'frontend/scripts', 'frontend/electron',

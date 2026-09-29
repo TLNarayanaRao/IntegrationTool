@@ -7,7 +7,7 @@ Page directory
 Page instfiles
 Section
   SetOutPath "$INSTDIR"
-  File /r "..\backend\dist\IntegrationFabric\*"
-  CreateShortCut "$DESKTOP\MINA.lnk" "$INSTDIR\IntegrationFabric.exe"
-  CreateShortCut "$SMPROGRAMS\MINA.lnk" "$INSTDIR\IntegrationFabric.exe"
+  File /r "..\backend\dist\MINA\*"
+  CreateShortCut "$DESKTOP\MINA.lnk" "$INSTDIR\MINA.exe"
+  CreateShortCut "$SMPROGRAMS\MINA.lnk" "$INSTDIR\MINA.exe"
 SectionEnd

@@ -2,8 +2,8 @@
 
 > Current standard layout: copy `administrator/`, `backend/`, `drivers/`,
 > `java-bridge/`, and `scripts/` into `/opt/mina`.
-> Run `scripts/linux/setup-integration-fabric-linux.sh` from that directory.
-> The commands in this guide that reference the older `integrationfabric/source`
+> Run `scripts/linux/setup-mina-linux.sh` from that directory.
+> The commands in this guide that reference the older `mina/source`
 > layout are retained as historical alternatives; do not mix the two layouts.
 
 This guide runs the MINA Control Plane directly from the shell. It does not use `systemctl` or require a systemd service. The Unix team only needs to provision `/opt/mina` and its permissions.
@@ -50,7 +50,7 @@ version, select the supported interpreter explicitly:
 
 ```bash
 python3.11 --version
-FABRIC_PYTHON=python3.11 ./scripts/build-administrator-linux.sh 2.4.0
+MINA_PYTHON=python3.11 ./scripts/build-administrator-linux.sh 2.4.0
 ```
 
 The build script validates the Python version before creating its virtual
@@ -61,15 +61,15 @@ or newer. If the default corporate mirror is stale, use the approved internal
 mirror or PyPI explicitly:
 
 ```bash
-export FABRIC_PYPI_INDEX_URL=https://<approved-pypi-mirror>/simple
+export MINA_PYPI_INDEX_URL=https://<approved-pypi-mirror>/simple
 # Or, only when permitted by your network policy:
-# export FABRIC_PYPI_INDEX_URL=https://pypi.org/simple
+# export MINA_PYPI_INDEX_URL=https://pypi.org/simple
 
-FABRIC_PYTHON=/usr/bin/python3.12 \
+MINA_PYTHON=/usr/bin/python3.12 \
   ./scripts/build-administrator-linux.sh 2.4.0
 ```
 
-The build script accepts `FABRIC_PYPI_INDEX_URL` and requires
+The build script accepts `MINA_PYPI_INDEX_URL` and requires
 `pyinstaller>=6.15,<7`; it will no longer silently select the obsolete
 PyInstaller 4.x series.
 
@@ -78,7 +78,7 @@ point instead. It normalizes the existing build script's line endings before
 running it:
 
 ```bash
-cd /opt/temp/IntegrationFabric
+cd /opt/temp/MINA
 chmod +x scripts/build-administrator-linux.sh
 ./scripts/build-administrator-linux.sh 2.4.0
 ```
@@ -86,7 +86,7 @@ chmod +x scripts/build-administrator-linux.sh
 The generated archive is:
 
 ```text
-/opt/mina/source/administrator/release/IntegrationFabricAdministrator-2.4.0-Linux-x64.tar.gz
+/opt/mina/source/administrator/release/MinaAdministrator-2.4.0-Linux-x64.tar.gz
 ```
 
 ## Clean setup from the copied Linux archive
@@ -103,13 +103,13 @@ If there is no `release/` folder, the setup script automatically runs
 dependencies to be available. To build version `1.0.0`, run:
 
 ```bash
-./scripts/linux/setup-integration-fabric-linux.sh 1.0.0
+./scripts/linux/setup-mina-linux.sh 1.0.0
 ```
 
 The setup script also accepts an already extracted Linux Administrator folder:
-copy `IntegrationFabricAdministrator` and its `_internal/` directory below
+copy `MinaAdministrator` and its `_internal/` directory below
 `/opt/mina/administrator/` and set
-`FABRIC_BUILD_ADMIN=false`.
+`MINA_BUILD_ADMIN=false`.
 
 The shared requirements file excludes the Windows-only
 `python-qpid-proton-wheel` package on Linux. If an application uses AMQP 1.0,
@@ -123,19 +123,19 @@ deployed application uses DB2, have the Unix team install the compiler and
 run the setup with:
 
 ```bash
-FABRIC_INSTALL_DB2=true \
-FABRIC_PYTHON=/usr/bin/python3.12 \
-./scripts/linux/setup-integration-fabric-linux.sh 1.0.0
+MINA_INSTALL_DB2=true \
+MINA_PYTHON=/usr/bin/python3.12 \
+./scripts/linux/setup-mina-linux.sh 1.0.0
 ```
 
 ```bash
 cd /opt/mina
-chmod +x scripts/linux/setup-integration-fabric-linux.sh
-./scripts/linux/setup-integration-fabric-linux.sh 2.4.0
+chmod +x scripts/linux/setup-mina-linux.sh
+./scripts/linux/setup-mina-linux.sh 2.4.0
 ```
 
 If the archive is the only Linux Administrator archive in the temp directory,
-the version argument can be omitted. Set `FABRIC_PYTHON` if Python 3.12 is at
+the version argument can be omitted. Set `MINA_PYTHON` if Python 3.12 is at
 another path.
 
 ## Install the Control Plane files
@@ -150,20 +150,20 @@ mkdir -p /opt/mina/logs/control-plane
 mkdir -p /opt/mina/logs/runtime
 mkdir -p /opt/mina/run
 
-tar -xzf /opt/mina/source/administrator/release/IntegrationFabricAdministrator-2.4.0-Linux-x64.tar.gz \
+tar -xzf /opt/mina/source/administrator/release/MinaAdministrator-2.4.0-Linux-x64.tar.gz \
   -C /opt/mina/control-plane \
   --strip-components=1
 
-cp /opt/mina/control-plane/IntegrationFabricAdministrator \
-   /opt/mina/control-plane/integration-fabric-control-plane
+cp /opt/mina/control-plane/MinaAdministrator \
+   /opt/mina/control-plane/mina-control-plane
 
-chmod +x /opt/mina/control-plane/integration-fabric-control-plane
+chmod +x /opt/mina/control-plane/mina-control-plane
 ```
 
 The copy step provides the requested executable name:
 
 ```text
-/opt/mina/control-plane/integration-fabric-control-plane
+/opt/mina/control-plane/mina-control-plane
 ```
 
 ## Install the runtime adapter before deploying applications
@@ -181,7 +181,7 @@ python3.12 -m venv /opt/mina/runtime/.venv
 Create the runtime adapter at exactly this path:
 
 ```bash
-vi /opt/mina/runtime/integration-fabric-runtime
+vi /opt/mina/runtime/mina-runtime
 ```
 
 Use this content:
@@ -190,7 +190,7 @@ Use this content:
 #!/usr/bin/env bash
 set -euo pipefail
 export PYTHONPATH=/opt/mina/source/backend
-export FABRIC_DRIVER_HOME=/opt/mina/source/drivers
+export MINA_DRIVER_HOME=/opt/mina/source/drivers
 exec /opt/mina/runtime/.venv/bin/python \
   /opt/mina/backend/run_deployment.py "$@"
 ```
@@ -198,44 +198,44 @@ exec /opt/mina/runtime/.venv/bin/python \
 Make it executable and verify it exists:
 
 ```bash
-chmod 755 /opt/mina/runtime/integration-fabric-runtime
-ls -l /opt/mina/runtime/integration-fabric-runtime
-/opt/mina/runtime/integration-fabric-runtime --help
+chmod 755 /opt/mina/runtime/mina-runtime
+ls -l /opt/mina/runtime/mina-runtime
+/opt/mina/runtime/mina-runtime --help
 ```
 
 The adapter path in the INI file must match this path exactly:
 
 ```ini
-runtime_command=/opt/mina/runtime/integration-fabric-runtime --application {application} --environment {environment}
+runtime_command=/opt/mina/runtime/mina-runtime --application {application} --environment {environment}
 ```
 
 If this file is missing, application deployment fails with:
-`[Errno 2] No such file or directory: '/opt/mina/runtime/integration-fabric-runtime'`.
+`[Errno 2] No such file or directory: '/opt/mina/runtime/mina-runtime'`.
 
 ## Configure the current shell
 
 Run these commands in the same shell that starts the Control Plane:
 
 ```bash
-export FABRIC_ADMIN_HOME=/opt/mina/control-plane
-export FABRIC_ADMIN_HOST=0.0.0.0
-export FABRIC_ADMIN_PORT=9080
-export FABRIC_ADMIN_DATA_DIR=/opt/mina/control-plane-data
-export FABRIC_ADMIN_LOG_DIR=/opt/mina/logs/control-plane
-export FABRIC_ADMIN_PID_DIR=/opt/mina/run
+export MINA_ADMIN_HOME=/opt/mina/control-plane
+export MINA_ADMIN_HOST=0.0.0.0
+export MINA_ADMIN_PORT=9080
+export MINA_ADMIN_DATA_DIR=/opt/mina/control-plane-data
+export MINA_ADMIN_LOG_DIR=/opt/mina/logs/control-plane
+export MINA_ADMIN_PID_DIR=/opt/mina/run
 
-export FABRIC_ADMIN_API_KEY=dev-api-key-if
-export FABRIC_ADMIN_SECRET_KEY=dev-api-key-if
+export MINA_ADMIN_API_KEY=dev-api-key-if
+export MINA_ADMIN_SECRET_KEY=dev-api-key-if
 ```
 
-`FABRIC_ADMIN_SECRET_KEY` must remain stable. Changing it can make previously encrypted deployment secrets unreadable.
+`MINA_ADMIN_SECRET_KEY` must remain stable. Changing it can make previously encrypted deployment secrets unreadable.
 
 ## Start directly in the background
 
 ```bash
 cd /opt/mina/control-plane
 
-nohup ./integration-fabric-control-plane \
+nohup ./mina-control-plane \
   >> /opt/mina/logs/control-plane/administrator.log 2>&1 &
 
 echo $! > /opt/mina/run/control-plane.pid
@@ -245,15 +245,15 @@ This is equivalent to running the executable with `&`, but `nohup` allows it to 
 
 ## Configure and run with an INI file
 
-The Linux package includes `integration-fabric-control-plane.ini` and
+The Linux package includes `mina-control-plane.ini` and
 `start-control-plane.sh`. The self-contained `build-administrator-linux.sh`
 does not depend on `build-administrator.sh`, which may be an older Windows
 copy. Edit the INI file before starting:
 
 ```bash
 cd /opt/mina/control-plane
-vi integration-fabric-control-plane.ini
-chmod 600 integration-fabric-control-plane.ini
+vi mina-control-plane.ini
+chmod 600 mina-control-plane.ini
 chmod +x start-control-plane.sh
 ```
 
@@ -273,7 +273,7 @@ INI file, use `restart`; no shell profile changes are required. A different
 configuration file can be selected with:
 
 ```bash
-FABRIC_ADMIN_INI=/opt/mina/control-plane/custom.ini \
+MINA_ADMIN_INI=/opt/mina/control-plane/custom.ini \
   ./start-control-plane.sh restart
 ```
 
@@ -281,7 +281,7 @@ To run it only for the current terminal session instead:
 
 ```bash
 cd /opt/mina/control-plane
-./integration-fabric-control-plane \
+./mina-control-plane \
   >> /opt/mina/logs/control-plane/administrator.log 2>&1 &
 echo $! > /opt/mina/run/control-plane.pid
 ```
@@ -300,7 +300,7 @@ The health response should show:
 ```json
 {
   "status": "ok",
-  "component": "integration-fabric-control-plane",
+  "component": "mina-control-plane",
   "runtimeAdapterConfigured": false
 }
 ```
@@ -324,19 +324,19 @@ http://<linux-host>:9080/docs
 The Control Plane needs the runtime adapter above to start on-premises applications. The INI file is preferred for direct-run deployments:
 
 ```bash
-vi /opt/mina/control-plane/integration-fabric-control-plane.ini
+vi /opt/mina/control-plane/mina-control-plane.ini
 ```
 
 Set:
 
 ```ini
-runtime_command=/opt/mina/runtime/integration-fabric-runtime --application {application} --environment {environment}
+runtime_command=/opt/mina/runtime/mina-runtime --application {application} --environment {environment}
 ```
 
 If you are not using the INI file, configure the adapter in the same shell that starts the Control Plane:
 
 ```bash
-export FABRIC_ADMIN_RUNTIME_COMMAND='/opt/mina/runtime/integration-fabric-runtime --application {application} --environment {environment}'
+export MINA_ADMIN_RUNTIME_COMMAND='/opt/mina/runtime/mina-runtime --application {application} --environment {environment}'
 ```
 
 The runtime command supports these placeholders:
@@ -364,19 +364,19 @@ start it automatically:
 
 ```bash
 chmod +x /opt/mina/source/scripts/linux/deploy-application.sh
-export FABRIC_CONTROL_PLANE_URL=http://localhost:19080
-export FABRIC_CONTROL_PLANE_KEY=dev-api-key-if
-export FABRIC_DATA_PLANE=localhost
-export FABRIC_NAMESPACE=default
-export FABRIC_SECRETS_FILE=/opt/mina/staging/deployment-secrets.json
+export MINA_CONTROL_PLANE_URL=http://localhost:19080
+export MINA_CONTROL_PLANE_KEY=dev-api-key-if
+export MINA_DATA_PLANE=localhost
+export MINA_NAMESPACE=default
+export MINA_SECRETS_FILE=/opt/mina/staging/deployment-secrets.json
 
 /opt/mina/source/scripts/linux/deploy-application.sh \
   /opt/mina/staging/my-application.mpkg dev
 ```
 
 The script prints the generated Deployment ID. To deploy without starting,
-set `FABRIC_START_AFTER_DEPLOY=false`. For a delivery-team token, set
-`FABRIC_CONTROL_PLANE_KEY` to that token and set `FABRIC_TEAM_ID` when required.
+set `MINA_START_AFTER_DEPLOY=false`. For a delivery-team token, set
+`MINA_CONTROL_PLANE_KEY` to that token and set `MINA_TEAM_ID` when required.
 
 ## View logs
 
@@ -413,7 +413,7 @@ Allow a short period for graceful shutdown. Use `kill -9` only if the process do
 - Do not run the Control Plane from the Windows `backend` or Studio installation.
 - SAP JCo native libraries and the Java bridge must be Linux-compatible.
 - Configure SAP JCo drivers below `/opt/mina/drivers`.
-- Existing packages containing `/opt/integration-fabric/...` should be regenerated with the new `/opt/mina/...` install root.
+- Existing packages containing `/opt/mina/...` should be regenerated with the new `/opt/mina/...` install root.
 - If the Linux shell closes and `nohup` was not used, the background process may stop.
 
 ## Files and folders to copy from the repository
@@ -431,10 +431,10 @@ C:\Narayana\Integration-Tool\Software
 Copy the following folders and files to this Linux staging location:
 
 ```text
-/opt/temp/IntegrationFabric/
+/opt/temp/MINA/
 ├── administrator/
 │   ├── app/
-│   ├── bin/fabricadmin
+│   ├── bin/minaadmin
 │   ├── web/
 │   ├── requirements.txt
 │   └── run_admin.py
@@ -458,7 +458,7 @@ For Control Plane-only operation, the minimum transfer is:
 
 ```text
 administrator/app/
-administrator/bin/fabricadmin
+administrator/bin/minaadmin
 administrator/web/
 administrator/requirements.txt
 administrator/run_admin.py
@@ -484,7 +484,7 @@ Do not copy the entire Windows `Software` directory blindly. In particular, excl
 If the Linux machine will build the Control Plane itself, copy:
 
 ```text
-IntegrationFabric/
+MINA/
 ├── administrator/
 │   ├── app/
 │   ├── web/
@@ -512,10 +512,10 @@ The minimum source-only copy does not require `frontend/`, `images/`, `java-sdk/
 
 ### Required for deployed on-premises applications
 
-To allow the Control Plane to start packaged applications through `FABRIC_ADMIN_RUNTIME_COMMAND`, also copy or install:
+To allow the Control Plane to start packaged applications through `MINA_ADMIN_RUNTIME_COMMAND`, also copy or install:
 
 ```text
-IntegrationFabric/
+MINA/
 ├── backend/
 │   ├── app/
 │   ├── requirements.txt
@@ -545,11 +545,11 @@ For SAP, build the Java bridge on Linux with a Linux JDK 17 or newer. The existi
 Then set:
 
 ```bash
-export FABRIC_DRIVER_HOME=/opt/mina/drivers
+export MINA_DRIVER_HOME=/opt/mina/drivers
 export PYTHONPATH=/opt/mina/source/backend
 ```
 
-Create `/opt/mina/runtime/integration-fabric-runtime` with:
+Create `/opt/mina/runtime/mina-runtime` with:
 
 ```bash
 #!/usr/bin/env bash
@@ -562,7 +562,7 @@ exec /opt/mina/runtime/.venv/bin/python \
 Configure the Control Plane before starting it:
 
 ```bash
-export FABRIC_ADMIN_RUNTIME_COMMAND='/opt/mina/runtime/integration-fabric-runtime --application {application} --environment {environment}'
+export MINA_ADMIN_RUNTIME_COMMAND='/opt/mina/runtime/mina-runtime --application {application} --environment {environment}'
 ```
 
 ### Optional files
@@ -600,7 +600,7 @@ The Linux scripts now include a real remote data-plane agent. It is a normal for
 The central configuration is:
 
 ```text
-/opt/mina/scripts/linux/integration-fabric-control-plane.ini
+/opt/mina/scripts/linux/mina-control-plane.ini
 ```
 
 Use one `[data-plane]` section per agent process and map the delivery-team aliases in `[data-teams]`:
@@ -628,8 +628,8 @@ chmod 700 *.sh
 For multiple data planes on one Linux host, create a separate INI copy for each plane and run one agent per INI:
 
 ```bash
-FABRIC_CONFIG_FILE=team1.ini ./05-start-data-plane-agent.sh > /opt/mina/logs/team1-agent.log 2>&1 &
-FABRIC_CONFIG_FILE=team2.ini ./05-start-data-plane-agent.sh > /opt/mina/logs/team2-agent.log 2>&1 &
+MINA_CONFIG_FILE=team1.ini ./05-start-data-plane-agent.sh > /opt/mina/logs/team1-agent.log 2>&1 &
+MINA_CONFIG_FILE=team2.ini ./05-start-data-plane-agent.sh > /opt/mina/logs/team2-agent.log 2>&1 &
 ```
 
 The updated `administrator` executable must be rebuilt and copied to the target Control Plane before using remote lifecycle operations. If the old executable is still running, it will continue to return the previous localhost-only adapter error.

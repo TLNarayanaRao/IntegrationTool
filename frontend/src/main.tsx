@@ -782,7 +782,7 @@ const defaultProperties: Property[] = [
   { key: "connections.jms.reconnectDelayMs", value: 5000, data_type: "integer" },
   { key: "connections.kafka.bootstrapServers", value: "localhost:9092", data_type: "string" },
   { key: "connections.kafka.clientId", value: "", data_type: "string" },
-  { key: "connections.kafka.groupId", value: "integration-fabric", data_type: "string" },
+  { key: "connections.kafka.groupId", value: "mina", data_type: "string" },
   { key: "connections.kafka.securityProtocol", value: "PLAINTEXT", data_type: "string" },
   { key: "connections.kafka.saslMechanism", value: "PLAIN", data_type: "string" },
   { key: "connections.kafka.username", value: "", data_type: "string" },
@@ -1358,7 +1358,7 @@ function App() {
   }, []);
   const [closed, setClosed] = useState(true),
     [theme, setTheme] = useState(
-      localStorage.getItem("integration-fabric-theme") || "midnight",
+      localStorage.getItem("mina-theme") || "midnight",
     );
   const [unsavedPrompt, setUnsavedPrompt] = useState(false);
   const [plainMode, setPlainMode] = useState<"light" | "dark">(() =>
@@ -1378,7 +1378,7 @@ function App() {
     [helpDialog, setHelpDialog] = useState<"about" | "shortcuts" | null>(null),
     [treeHeight, setTreeHeight] = useState(305),
     [configHeight, setConfigHeight] = useState(285),
-    [explorerWidth, setExplorerWidth] = useState(Number(localStorage.getItem("integration-fabric-explorer-width")) || 245),
+    [explorerWidth, setExplorerWidth] = useState(Number(localStorage.getItem("mina-explorer-width")) || 245),
     [paletteOpen, setPaletteOpen] = useState(true);
   useEffect(() => {
     if (closed) return;
@@ -1388,7 +1388,7 @@ function App() {
       autosaveTimer.current = null;
       void fetch(`/api/projects/${snapshot.id}`, {
         method: "PUT",
-        headers: { "content-type": "application/json", "x-fabric-autosave": "true" },
+        headers: { "content-type": "application/json", "x-mina-autosave": "true" },
         body: JSON.stringify(snapshot),
         keepalive: true,
       }).catch((error) => console.warn("MINA autosave failed", error));
@@ -1513,9 +1513,9 @@ function App() {
   }, [project, historyVersion]);
   useEffect(() => {
     document.body.dataset.theme = theme;
-    localStorage.setItem("integration-fabric-theme", theme);
+    localStorage.setItem("mina-theme", theme);
   }, [theme]);
-  useEffect(() => localStorage.setItem("integration-fabric-explorer-width", String(explorerWidth)), [explorerWidth]);
+  useEffect(() => localStorage.setItem("mina-explorer-width", String(explorerWidth)), [explorerWidth]);
   useEffect(() => setSystemLogInfo(null), [project.id]);
   useEffect(() => {
     const missingEnd = project.tasks.some((item) => !item.activities.some((activity) => activity.type === "end"));
@@ -1800,7 +1800,7 @@ function App() {
         subscription: "",
         message: "${last}",
         attributes: {},
-        groupId: "integration-fabric",
+        groupId: "mina",
         maxMessages: 1,
       });
     if (d.type === "ems") Object.assign(config, { messagingStyle: d.operation?.includes("topic") ? "Topic" : "Queue", messageType: "Text", acknowledgeMode: ["queue_receiver", "topic_subscriber"].includes(d.operation || "") ? "Auto" : undefined, deliveryMode: "Persistent", priority: 4, expiration: 0, queue: d.operation === "queue_receiver" ? "${properties.connections.ems.destination}" : undefined, topic: d.operation === "topic_subscriber" ? "${properties.connections.ems.destination}" : undefined, maxSessions: "${properties.connections.ems.sessionCount}", flowLimit: "${properties.connections.ems.flowLimit}", receiveTimeout: "${properties.connections.ems.receiveTimeoutMs}", dynamicProperties: "{}" });
@@ -2159,11 +2159,11 @@ function App() {
       if (picker && !handle) handle = await picker({ suggestedName: filename, types: [{ description: format === "package" ? "MINA Project" : "MINA Project JSON", accept: { [format === "package" ? "application/zip" : "application/json"]: [`.${extension}`] } }] });
       await persistProject();
       const blob = await fetchProjectFile(format);
-      if (window.fabricDesktop) {
+      if (window.minaDesktop) {
         const existingPath = format === "package" && !forceNew && typeof handle === "string" ? handle : undefined;
-        const filePath = await window.fabricDesktop.saveFile({ path: existingPath, filename, bytes: [...new Uint8Array(await blob.arrayBuffer())], filters: [{ name: format === "package" ? "MINA Project" : "MINA JSON", extensions: [extension] }] });
+        const filePath = await window.minaDesktop.saveFile({ path: existingPath, filename, bytes: [...new Uint8Array(await blob.arrayBuffer())], filters: [{ name: format === "package" ? "MINA Project" : "MINA JSON", extensions: [extension] }] });
         if (!filePath) { setLogs([{ level: "INFO", message: "Project file save cancelled." }]); return; }
-        if (format === "package") { projectFileHandle.current = filePath; localStorage.setItem(`integration-fabric-project-path:${project.id}`, filePath); }
+        if (format === "package") { projectFileHandle.current = filePath; localStorage.setItem(`mina-project-path:${project.id}`, filePath); }
         setLogs([{ level: "INFO", message: `Saved complete project to ${filePath}.` }]);
       } else if (handle) {
         const writable = await handle.createWritable(); await writable.write(blob); await writable.close();
@@ -2183,12 +2183,12 @@ function App() {
     try {
       const saved = await persistProject();
       const folderName = projectFilename("").replace(/\.$/, "");
-      if (window.fabricDesktop) {
+      if (window.minaDesktop) {
         const remembered = typeof projectFileHandle.current === "string" && !/\.(mpackage|ifproject|ifpackage|zip|json)$/i.test(projectFileHandle.current) ? projectFileHandle.current : undefined;
-        const folderPath = await window.fabricDesktop.saveProjectFolder({ path: remembered, folderName, project: saved });
+        const folderPath = await window.minaDesktop.saveProjectFolder({ path: remembered, folderName, project: saved });
         if (!folderPath) { setLogs([{ level: "INFO", message: "Project folder save cancelled." }]); return; }
         projectFileHandle.current = folderPath;
-        localStorage.setItem(`integration-fabric-project-path:${project.id}`, folderPath);
+        localStorage.setItem(`mina-project-path:${project.id}`, folderPath);
         setLogs([{ level: "INFO", message: `Saved project folder: ${folderPath}` }]);
         return;
       }
@@ -2249,8 +2249,8 @@ function App() {
       if (!response.ok) { const detail = await response.json().catch(() => ({})); throw new Error(detail.detail || `Package generation failed (HTTP ${response.status}). Check the project log for details.`); }
       const blob = await response.blob(), disposition = response.headers.get("content-disposition") || "";
       const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `${settings.artifact_name}-${settings.version}.${settings.format.startsWith("python") ? "pympkg" : settings.format}`;
-      if (window.fabricDesktop) {
-        const filePath = await window.fabricDesktop.saveFile({ path: outputPath?.trim() || undefined, filename, bytes: [...new Uint8Array(await blob.arrayBuffer())], filters: [{ name: "MINA Deployment Package", extensions: [filename.endsWith(".tar.gz") ? "tar.gz" : filename.split(".").pop() || "mpkg"] }] });
+      if (window.minaDesktop) {
+        const filePath = await window.minaDesktop.saveFile({ path: outputPath?.trim() || undefined, filename, bytes: [...new Uint8Array(await blob.arrayBuffer())], filters: [{ name: "MINA Deployment Package", extensions: [filename.endsWith(".tar.gz") ? "tar.gz" : filename.split(".").pop() || "mpkg"] }] });
         if (!filePath) return;
         setLogs([{ level: "INFO", message: `Created ${settings.target} deployment package: ${filePath}` }]);
       } else browserDownload(blob, filename);
@@ -2490,8 +2490,8 @@ function App() {
   const importFromFileSystem = async (fileType?: "mpackage" | "mpkg" | "legacy" | "ifproject" | "ifpackage" | "ifpkg" | "zip" | "json") => {
     setWorkStatus("Opening project from filesystem…");
     try {
-    if (window.fabricDesktop) {
-      const selectedFile = await window.fabricDesktop.openProject(fileType);
+    if (window.minaDesktop) {
+      const selectedFile = await window.minaDesktop.openProject(fileType);
       if (!selectedFile) return;
       if (selectedFile.kind === "folder" && selectedFile.project) {
         const projectValue = selectedFile.project as any;
@@ -2503,14 +2503,14 @@ function App() {
         const first = normalized.tasks?.[0]?.activities?.[0]?.id || "";
         setSelected(first); setSelectedIds(first ? [first] : []);
         projectFileHandle.current = selectedFile.path;
-        localStorage.setItem(`integration-fabric-project-path:${imported.id}`, selectedFile.path);
+        localStorage.setItem(`mina-project-path:${imported.id}`, selectedFile.path);
         setLogs([{ level: "INFO", message: `Opened complete project folder ${selectedFile.path}.` }]);
         return;
       }
       if (!selectedFile.bytes) return;
       const imported = await importProject(new File([new Uint8Array(selectedFile.bytes)], selectedFile.name));
       projectFileHandle.current = null;
-      if (imported?.id) localStorage.removeItem(`integration-fabric-project-path:${imported.id}`);
+      if (imported?.id) localStorage.removeItem(`mina-project-path:${imported.id}`);
       return;
     }
     const picker = (window as any).showOpenFilePicker;
@@ -2526,13 +2526,13 @@ function App() {
     } finally { setWorkStatus(""); }
   };
   const importProjectFolder = async () => {
-    if (!window.fabricDesktop?.openProjectFolder) {
+    if (!window.minaDesktop?.openProjectFolder) {
       setLogs([{ level: "INFO", message: "Project folder import is available in the desktop application. Use an .mpackage file in browser mode (legacy .ifproject is also accepted)." }]);
       return;
     }
     setWorkStatus("Opening project folder…");
     try {
-      const selected = await window.fabricDesktop.openProjectFolder();
+      const selected = await window.minaDesktop.openProjectFolder();
       if (!selected?.project) return;
       const projectValue = selected.project as any;
       const response = await fetch(`/api/projects/${projectValue.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(projectValue) });
@@ -2543,14 +2543,14 @@ function App() {
       const first = normalized.tasks?.[0]?.activities?.[0]?.id || "";
       setSelected(first); setSelectedIds(first ? [first] : []);
       projectFileHandle.current = selected.path;
-      localStorage.setItem(`integration-fabric-project-path:${imported.id}`, selected.path);
+      localStorage.setItem(`mina-project-path:${imported.id}`, selected.path);
       setLogs([{ level: "INFO", message: `Opened complete project folder ${selected.path}.` }]);
     } catch (error: any) {
       if (error?.name !== "AbortError") setLogs([{ level: "ERROR", message: error?.message || "Project folder import failed" }]);
     } finally { setWorkStatus(""); }
   };
   const openGenericProject = () => {
-    if (window.fabricDesktop) setOpenSourceOpen(true);
+    if (window.minaDesktop) setOpenSourceOpen(true);
     else void importFromFileSystem();
   };
   const exportGenericProject = (type?: string) => {
@@ -2582,15 +2582,15 @@ function App() {
     };
   const exitStudio = () => {
     const exit = () => {
-      if (window.fabricDesktop?.completeWindowClose) void window.fabricDesktop.completeWindowClose();
+      if (window.minaDesktop?.completeWindowClose) void window.minaDesktop.completeWindowClose();
       else window.close();
     };
     if (projectDirty) { pendingLeaveAction.current = exit; setUnsavedPrompt(true); return; }
     exit();
   };
   useEffect(() => {
-    if (!window.fabricDesktop?.onWindowCloseRequested) return;
-    return window.fabricDesktop.onWindowCloseRequested(() => {
+    if (!window.minaDesktop?.onWindowCloseRequested) return;
+    return window.minaDesktop.onWindowCloseRequested(() => {
       // A second native-close click while the modal is already open must not
       // replace the pending save/discard action.
       if (!unsavedPrompt) exitStudio();
@@ -3653,8 +3653,8 @@ function GroupExpressionTarget({ label, value, onChange, placeholder, help, kind
     event.preventDefault();
     const expression = event.dataTransfer.getData("expression");
     if (!expression) return;
-    if (expression.startsWith("__fabric_constant__:")) {
-      try { onChange(JSON.parse(expression.slice("__fabric_constant__:".length))); }
+    if (expression.startsWith("__mina_constant__:")) {
+      try { onChange(JSON.parse(expression.slice("__mina_constant__:".length))); }
       catch { onChange(expression); }
     } else onChange(expression);
   };
@@ -3795,10 +3795,10 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
   const extension = draft.format.startsWith("python") ? "pympkg" : draft.format;
   const archiveFilename = `${draft.artifact_name || "integration-application"}-${draft.version || "1.0.0"}-${draft.target}.${extension}`;
   const browseArchiveOutput = async () => {
-    if (!window.fabricDesktop?.selectArchiveOutput) return;
+    if (!window.minaDesktop?.selectArchiveOutput) return;
     setError("");
     try {
-      const selected = await window.fabricDesktop.selectArchiveOutput({
+      const selected = await window.minaDesktop.selectArchiveOutput({
         title: "Choose archive output file",
         filename: archiveFilename,
         filters: [{ name: draft.format === "ear" ? "EAR archive" : "MINA archive", extensions: [extension] }],
@@ -3879,14 +3879,14 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
       <section className="package-starters"><header><span><b>TASK STARTERS</b><small>Select the deployable entry points. Called Sub Tasks are discovered recursively and included automatically; unrelated Sub Tasks are excluded.</small></span><button type="button" onClick={() => update("starterTaskIds", starterTasks.map((task: Task) => task.id))}>Select all</button></header><div>{starterTasks.map((task: Task) => <label key={task.id} className={draft.starterTaskIds.includes(task.id) ? "selected" : ""}><input type="checkbox" checked={draft.starterTaskIds.includes(task.id)} onChange={() => toggleStarter(task.id)}/><span><b>{task.name}</b><small>{task.description || "Starter Task"}</small></span></label>)}</div>{!starterTasks.length && <p>No Starter Tasks are available. Create a Starter Task before packaging.</p>}</section>
       <section className="package-environments"><header><span><b>ENVIRONMENT PROFILES</b><small>The application is common; configuration and secret files are generated separately for every selected profile.</small></span><button type="button" onClick={() => update("environments", environments)}>Select all</button></header><div>{environments.map((name: string) => <label key={name} className={draft.environments.includes(name) ? "selected" : ""}><input type="checkbox" checked={draft.environments.includes(name)} onChange={() => toggleEnvironment(name)}/><span><b>{name}</b><small>{draft.environments.includes(name) ? "Included" : "Not packaged"}</small></span></label>)}</div></section>
       <label>Archive format<select value={draft.format} onChange={(event) => setDraft((current: any) => ({ ...current, format: event.target.value, outputPath: "" }))}><option value="mpkg">MINA deployment package (.mpkg)</option><option value="ifpkg">Legacy deployment package (.ifpkg)</option><option value="zip">ZIP archive (.zip)</option><option value="tar.gz">Compressed TAR (.tar.gz)</option><option value="ear">EAR-compatible ZIP (.ear)</option><option value="python-engine">Python compatibility archive (.pympkg)</option></select></label>
-      <label className="package-output-path">Archive output file <small>Used only by Export archive; deployment ignores this workstation path.</small><span><input value={draft.outputPath} onChange={(event) => update("outputPath", event.target.value)} placeholder={window.fabricDesktop ? `C:\\Exports\\${archiveFilename}` : "Your browser will save this archive in its configured Downloads folder."} disabled={!window.fabricDesktop}/>{window.fabricDesktop && <button type="button" onClick={browseArchiveOutput}><FolderOpen/>Browse</button>}</span></label>
+      <label className="package-output-path">Archive output file <small>Used only by Export archive; deployment ignores this workstation path.</small><span><input value={draft.outputPath} onChange={(event) => update("outputPath", event.target.value)} placeholder={window.minaDesktop ? `C:\\Exports\\${archiveFilename}` : "Your browser will save this archive in its configured Downloads folder."} disabled={!window.minaDesktop}/>{window.minaDesktop && <button type="button" onClick={browseArchiveOutput}><FolderOpen/>Browse</button>}</span></label>
       <section className="package-artifacts">
         <header><span><b>SELECT DEPLOYMENT FILES</b><small>Core application, tasks, resources, schemas, and secret requirements are always included.</small></span><button type="button" onClick={() => update("artifacts", deploymentArtifactChoices[draft.target].map((choice) => choice.key))}>Select all</button></header>
         <div>{deploymentArtifactChoices[draft.target].map((choice) => <label key={choice.key} className={draft.artifacts.includes(choice.key) ? "selected" : ""}><input type="checkbox" checked={draft.artifacts.includes(choice.key)} onChange={() => toggleArtifact(choice.key)}/><span><b>{choice.label}</b><small>{choice.detail}</small></span></label>)}</div>
       </section>
       {draft.target === "cloud" ? <section className="package-runtime-options">
         <h3>Cloud runtime configuration</h3>
-        <label>Container image<input value={draft.image} onChange={(event) => update("image", event.target.value)} placeholder={`integration-fabric/${draft.artifact_name}:${draft.version}`}/></label>
+        <label>Container image<input value={draft.image} onChange={(event) => update("image", event.target.value)} placeholder={`mina/${draft.artifact_name}:${draft.version}`}/></label>
         <label>Container/listener port<input type="number" min="1" max="65535" value={draft.containerPort} onChange={(event) => update("containerPort", Number(event.target.value))}/></label>
         <label>Initial replicas<input type="number" min="1" value={draft.replicas} onChange={(event) => update("replicas", Number(event.target.value))}/></label>
         <label>Minimum replicas<input type="number" min="1" value={draft.minimumReplicas} onChange={(event) => update("minimumReplicas", Number(event.target.value))}/></label>
@@ -3897,7 +3897,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
         <h3>On-premises runtime configuration</h3>
         <label>Runtime instances<input type="number" min="1" value={draft.instances} onChange={(event) => update("instances", Number(event.target.value))}/></label>
         <label>Graceful shutdown (seconds)<input type="number" min="1" value={draft.gracefulShutdownSeconds} onChange={(event) => update("gracefulShutdownSeconds", Number(event.target.value))}/></label>
-        <label>Install root<input value={draft.installRoot} onChange={(event) => update("installRoot", event.target.value)} placeholder={`/opt/integrationfabric/apps/${draft.artifact_name}`}/></label>
+        <label>Install root<input value={draft.installRoot} onChange={(event) => update("installRoot", event.target.value)} placeholder={`/opt/mina/apps/${draft.artifact_name}`}/></label>
         <label>Windows install root<input value={draft.windowsInstallRoot} onChange={(event) => update("windowsInstallRoot", event.target.value)} placeholder={`C:\\ProgramData\\MINA\\apps\\${draft.artifact_name}`}/></label>
         <label className="package-toggle"><input type="checkbox" checked={!!draft.startOnBoot} onChange={(event) => update("startOnBoot", event.target.checked)}/> Start application after Administrator deployment</label>
       </section>}
@@ -4406,8 +4406,8 @@ function IntegrationBrandArtwork({ className = "" }: { className?: string }) {
 function ProjectWelcome({ createProject, importProject, importFromFileSystem, importProjectFolder, theme, setTheme, plainMode, setPlainMode }: any) {
   const input = useRef<HTMLInputElement>(null), [createOpen, setCreateOpen] = useState(false), [samplesOpen, setSamplesOpen] = useState(false), [sourceOpen, setSourceOpen] = useState(false), [name, setName] = useState("New Integration Application"), [importing, setImporting] = useState(false);
   const beginImport = async () => {
-    if (!window.fabricDesktop && !(window as any).showOpenFilePicker) { input.current?.click(); return; }
-    if (window.fabricDesktop) { setSourceOpen(true); return; }
+    if (!window.minaDesktop && !(window as any).showOpenFilePicker) { input.current?.click(); return; }
+    if (window.minaDesktop) { setSourceOpen(true); return; }
     setImporting(true);
     try { await importFromFileSystem(); } finally { setImporting(false); }
   };
@@ -4421,12 +4421,12 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, im
     const value = name.trim();
     if (value) createProject(value);
   };
-  return <div className="project-home fabric-launch-home">
+  return <div className="project-home mina-launch-home">
      <header><IntegrationBrandArtwork className="home-brand-art"/><ThemePicker theme={theme} setTheme={setTheme} plainMode={plainMode} setPlainMode={setPlainMode}/></header>
      <main>
-      <section className="fabric-live-map" aria-label="Animated system integration fabric">
+      <section className="mina-live-map" aria-label="Animated system integration mina">
         <div className="home-grid"/><div className="home-aurora one"/><div className="home-aurora two"/>
-        <svg className="fabric-routes" viewBox="0 0 1000 620" preserveAspectRatio="none" aria-hidden="true">
+        <svg className="mina-routes" viewBox="0 0 1000 620" preserveAspectRatio="none" aria-hidden="true">
           <defs><linearGradient id="home-route" x1="0" x2="1"><stop offset="0" stopColor="#38d8ff"/><stop offset=".5" stopColor="#7b75ff"/><stop offset="1" stopColor="#43e6a8"/></linearGradient><filter id="home-glow-filter"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
           <path id="route-api" d="M300 101 C345 110 360 225 414 276"/>
           <path id="route-sap" d="M300 288.4 C340 288 370 300 410 304"/>
@@ -4469,7 +4469,7 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, im
         <div className="system-node target kafka-system"><img className="vendor-logo kafka-logo" src="/vendor-logos/apache-kafka.svg" alt=""/><span><b>Kafka</b><small>Topics · Event streams</small></span></div>
         <div className="system-node target pubsub-system"><img className="vendor-logo pubsub-logo" src="/vendor-logos/gcp-pubsub.png" alt=""/><span><b>GCP Pub/Sub</b><small>Topics · Subscriptions</small></span></div>
         <div className="system-node edge rabbitmq"><img className="vendor-logo rabbitmq-logo" src="/vendor-logos/rabbitmq.svg" alt=""/><span><b>RabbitMQ</b><small>Queues · Exchanges</small></span></div>
-        <div className="fabric-core"><i/><span><Workflow/><b>MINA</b><strong>STUDIO</strong><small>DESIGN · CONNECT · RUN</small></span></div>
+        <div className="mina-core"><i/><span><Workflow/><b>MINA</b><strong>STUDIO</strong><small>DESIGN · CONNECT · RUN</small></span></div>
         <div className="live-indicator"><i/> LIVE MINA</div>
       </section>
       <section className="launch-actions">
@@ -4857,7 +4857,7 @@ const connectionFieldSets: Record<string, any[]> = {
   sap: [
     { key: "mode", label: "Runtime adapter", options: ["mock", "external"] },
     { key: "driverDirectory", label: "SAP JCo driver directory", placeholder: "Blank uses C:\\ProgramData\\MINA Studio\\drivers\\sap" },
-    { key: "destinationName", label: "JCo destination name", placeholder: "integration-fabric-sap" },
+    { key: "destinationName", label: "JCo destination name", placeholder: "mina-sap" },
     { key: "release", label: "SAP release", options: ["current", "720", "730"] },
     { key: "connectionType", label: "Connection type", options: ["dedicated", "logongroup", "snc", "sncwithlogongroup", "websocket"] },
     { key: "applicationServerHost", label: "Application server host" }, { key: "systemNumber", label: "System number" },
@@ -5138,7 +5138,7 @@ function ConnectionDialog({ type, onClose, onCreate }: any) {
           type === "sap" ? "${properties.connections.sap.applicationServerHost}" : undefined,
         driverDirectory:
           type === "sap" ? "${properties.connections.sap.driverDirectory}" : undefined,
-        destinationName: type === "sap" ? "integration-fabric-sap" : undefined,
+        destinationName: type === "sap" ? "mina-sap" : undefined,
         systemNumber:
           type === "sap" ? "${properties.connections.sap.systemNumber}" : undefined,
         client: type === "sap" ? "${properties.connections.sap.client}" : undefined,

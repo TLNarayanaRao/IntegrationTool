@@ -294,7 +294,7 @@ def _application_root() -> Path:
 
 
 def _bridge_home() -> Path:
-    override = os.environ.get("FABRIC_JAVA_BRIDGE_HOME")
+    override = os.environ.get("MINA_JAVA_BRIDGE_HOME")
     if override:
         return Path(override).expanduser().resolve()
     if getattr(sys, "frozen", False):
@@ -303,7 +303,7 @@ def _bridge_home() -> Path:
 
 
 def _java_executable() -> Path | str:
-    override = os.environ.get("FABRIC_JAVA")
+    override = os.environ.get("MINA_JAVA")
     if override:
         return override
     bundled = _bridge_home() / "runtime" / "bin" / ("java.exe" if os.name == "nt" else "java")
@@ -322,12 +322,12 @@ def _java_command(config: dict[str, Any], classpath: str, descriptor: str, famil
     return [
         str(_java_executable()), f"-Xms{initial}m", f"-Xmx{maximum}m",
         "-XX:+ExitOnOutOfMemoryError", *native_options, "-cp", classpath,
-        "com.integrationfabric.bridge.FabricJavaBridge", descriptor,
+        "com.mina.bridge.MinaJavaBridge", descriptor,
     ]
 
 
 def default_driver_home() -> Path:
-    override = os.environ.get("FABRIC_DRIVER_HOME")
+    override = os.environ.get("MINA_DRIVER_HOME")
     if override:
         return Path(override).expanduser().resolve()
     if os.name == "nt" and os.environ.get("PROGRAMDATA"):
@@ -343,12 +343,12 @@ def driver_directories(config: dict[str, Any], family: str) -> list[Path]:
     candidates.append(default_driver_home() / family)
     # Keep existing installations operational after the MINA rebrand.
     if os.name == "nt" and os.environ.get("PROGRAMDATA"):
-        legacy_windows_brand = "Integration" + " Fabric Studio"
+        legacy_windows_brand = "Integration" + " Mina Studio"
         candidates.append(Path(os.environ["PROGRAMDATA"]) / legacy_windows_brand / "drivers" / family)
     elif os.name != "nt":
-        candidates.append(Path("/opt/integrationfabric/drivers") / family)
+        candidates.append(Path("/opt/mina/drivers") / family)
     else:
-        candidates.append(Path.home() / ".integration-fabric" / "drivers" / family)
+        candidates.append(Path.home() / ".mina" / "drivers" / family)
     candidates.append(_application_root() / "drivers" / family)
     unique: list[Path] = []
     for path in candidates:
@@ -362,7 +362,7 @@ def _classpath(config: dict[str, Any], family: str) -> tuple[str, list[Path]]:
     classes = _bridge_home() / "classes"
     if not classes.exists():
         raise JavaBridgeError(
-            f"The Java bridge classes are missing at {classes}. Build scripts/build-java-bridge.ps1 on the build host and set FABRIC_JAVA_BRIDGE_HOME to the directory containing classes on the runtime."
+            f"The Java bridge classes are missing at {classes}. Build scripts/build-java-bridge.ps1 on the build host and set MINA_JAVA_BRIDGE_HOME to the directory containing classes on the runtime."
         )
     directories = driver_directories(config, family)
     jars = sorted({jar.resolve() for directory in directories if directory.exists() for jar in directory.rglob("*.jar")})

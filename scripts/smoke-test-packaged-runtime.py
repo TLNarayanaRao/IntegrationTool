@@ -27,9 +27,9 @@ def main() -> int:
         print(f"Runtime executable does not exist: {executable}", file=sys.stderr)
         return 2
     port = free_port()
-    with tempfile.TemporaryDirectory(prefix="integration-fabric-smoke-") as data_dir:
+    with tempfile.TemporaryDirectory(prefix="mina-smoke-") as data_dir:
         environment = os.environ.copy()
-        environment.update(FABRIC_PORT=str(port), FABRIC_DATA_DIR=data_dir, FABRIC_LOG_LEVEL="info", PYTHONUTF8="1")
+        environment.update(MINA_PORT=str(port), MINA_DATA_DIR=data_dir, MINA_LOG_LEVEL="info", PYTHONUTF8="1")
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         process = subprocess.Popen([str(executable)], cwd=executable.parent, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, creationflags=flags)
         try:

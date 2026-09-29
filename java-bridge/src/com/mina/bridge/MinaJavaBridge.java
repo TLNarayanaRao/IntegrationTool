@@ -1,4 +1,4 @@
-package com.integrationfabric.bridge;
+package com.mina.bridge;
 
 import java.io.*;
 import java.lang.reflect.*;
@@ -19,8 +19,8 @@ import javax.naming.Context;
 import javax.naming.InitialContext;
 
 /** Vendor-neutral process bridge for licensed SAP JCo, JMS providers, and JDBC drivers. */
-public final class FabricJavaBridge {
-    private FabricJavaBridge() {}
+public final class MinaJavaBridge {
+    private MinaJavaBridge() {}
     private static FileChannel listenerLockChannel;
     private static FileLock listenerLock;
 
@@ -51,7 +51,7 @@ public final class FabricJavaBridge {
     private static Map<String, Object> sap(String operation, Properties p) throws Exception {
         Class<?> environment = Class.forName("com.sap.conn.jco.ext.Environment");
         Class<?> providerType = Class.forName("com.sap.conn.jco.ext.DestinationDataProvider");
-        String destinationName = p.getProperty("destinationName", "integration-fabric-sap");
+        String destinationName = p.getProperty("destinationName", "mina-sap");
         Properties destination = new Properties();
         for (String key : p.stringPropertyNames()) if (key.startsWith("jco.client.") || key.startsWith("jco.destination.")) destination.setProperty(key, p.getProperty(key));
         Object provider = Proxy.newProxyInstance(providerType.getClassLoader(), new Class<?>[]{providerType}, (proxy, method, args) -> {
@@ -490,7 +490,7 @@ public final class FabricJavaBridge {
         System.out.flush();
         System.out.println(json(map("event", "listening", "serverName", serverName, "programId", server.getProperty("jco.server.progid"), "gatewayHost", server.getProperty("jco.server.gwhost"), "gatewayService", server.getProperty("jco.server.gwserv"), "repositoryDestination", repositoryName, "javaVersion", System.getProperty("java.version"), "javaVendor", System.getProperty("java.vendor"), "jcoServerClass", jcoServer.getClass().getName())));
         System.out.flush();
-        synchronized (FabricJavaBridge.class) { FabricJavaBridge.class.wait(); }
+        synchronized (MinaJavaBridge.class) { MinaJavaBridge.class.wait(); }
         return map("message", "SAP JCo listener stopped");
     }
 
@@ -502,7 +502,7 @@ public final class FabricJavaBridge {
      */
     private static void acquireListenerLock(String programId) throws IOException {
         String safe = programId.replaceAll("[^A-Za-z0-9_.-]", "_");
-        Path path = Paths.get(System.getProperty("java.io.tmpdir"), "integration-fabric-sap-" + safe + ".lock");
+        Path path = Paths.get(System.getProperty("java.io.tmpdir"), "mina-sap-" + safe + ".lock");
         listenerLockChannel = FileChannel.open(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
         try {
             listenerLock = listenerLockChannel.tryLock();

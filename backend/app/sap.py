@@ -629,7 +629,7 @@ class SapAdapter:
     def _jco_values(self, cfg: dict) -> dict:
         self._validate_config(cfg)
         params = self._params(cfg)
-        return {'destinationName': str(cfg.get('destinationName') or 'integration-fabric-sap'),
+        return {'destinationName': str(cfg.get('destinationName') or 'mina-sap'),
                 **{f'jco.client.{key}': value for key, value in params.items()},
                 'jco.destination.pool_capacity': max(1, int(cfg.get('poolCapacity') or cfg.get('maximumConnections') or 8)),
                 'jco.destination.peak_limit': max(1, int(cfg.get('peakLimit') or cfg.get('maximumConnections') or 8)),
@@ -763,9 +763,9 @@ class SapAdapter:
         return control, data
 
     def _listener_values(self, cfg: dict) -> dict:
-        destination_name = str(cfg.get('destinationName') or 'integration-fabric-sap-listener')
+        destination_name = str(cfg.get('destinationName') or 'mina-sap-listener')
         program_id = str(cfg.get('programId') or cfg.get('progid') or 'sap-listener')
-        default_tid_store = os.path.join(os.getenv('FABRIC_DATA_DIR', os.getcwd()), 'sap-tids-' + re.sub(r'[^A-Za-z0-9_.-]', '_', program_id) + '.properties')
+        default_tid_store = os.path.join(os.getenv('MINA_DATA_DIR', os.getcwd()), 'sap-tids-' + re.sub(r'[^A-Za-z0-9_.-]', '_', program_id) + '.properties')
         tid_management = str(cfg.get('tidManagement') or 'active').strip().lower()
         values = {
             'destinationName': destination_name,

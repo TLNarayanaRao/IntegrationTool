@@ -3,9 +3,9 @@ from contextlib import closing
 from pathlib import Path
 from .models import Project
 
-DATA_DIR = Path(os.environ.get('FABRIC_DATA_DIR', Path(__file__).parents[1] / 'data')).expanduser().resolve()
+DATA_DIR = Path(os.environ.get('MINA_DATA_DIR', Path(__file__).parents[1] / 'data')).expanduser().resolve()
 PROJECTS_DIR = DATA_DIR / 'projects'
-LEGACY_DB = DATA_DIR / 'fabric.db'
+LEGACY_DB = DATA_DIR / 'mina.db'
 
 def safe_component(value: str) -> str:
     if not value or not re.fullmatch(r'[A-Za-z0-9_.-]+', value) or value in ('.','..'):

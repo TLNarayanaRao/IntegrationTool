@@ -18,7 +18,7 @@ import httpx
 
 from .bootstrap import extract_python_package, MAX_ARCHIVE_BYTES
 
-LOG = logging.getLogger('integrationfabric.agent')
+LOG = logging.getLogger('mina.agent')
 
 
 @dataclass(frozen=True)
@@ -28,21 +28,21 @@ class Settings:
     plane_id: str
     mode: str = 'local'
     state_dir: Path = Path('agent-state')
-    image: str = 'integration-fabric-python-agent:latest'
+    image: str = 'mina-python-agent:latest'
     poll_seconds: float = 5.0
     namespaces: tuple[str, ...] = ('default',)
 
     @classmethod
     def from_environment(cls) -> 'Settings':
         return cls(
-            control_plane_url=os.environ['FABRIC_CONTROL_PLANE_URL'].rstrip('/'),
-            key=os.environ['FABRIC_AGENT_KEY'],
-            plane_id=os.environ['FABRIC_DATA_PLANE_ID'],
-            mode=os.environ.get('FABRIC_AGENT_MODE', 'local').lower(),
-            state_dir=Path(os.environ.get('FABRIC_AGENT_STATE_DIR', 'agent-state')).resolve(),
-            image=os.environ.get('FABRIC_PYTHON_RUNTIME_IMAGE', 'integration-fabric-python-agent:latest'),
-            poll_seconds=max(1.0, float(os.environ.get('FABRIC_AGENT_POLL_SECONDS', '5'))),
-            namespaces=tuple(value.strip() for value in os.environ.get('FABRIC_AGENT_NAMESPACES', 'default').split(',') if value.strip()),
+            control_plane_url=os.environ['MINA_CONTROL_PLANE_URL'].rstrip('/'),
+            key=os.environ['MINA_AGENT_KEY'],
+            plane_id=os.environ['MINA_DATA_PLANE_ID'],
+            mode=os.environ.get('MINA_AGENT_MODE', 'local').lower(),
+            state_dir=Path(os.environ.get('MINA_AGENT_STATE_DIR', 'agent-state')).resolve(),
+            image=os.environ.get('MINA_PYTHON_RUNTIME_IMAGE', 'mina-python-agent:latest'),
+            poll_seconds=max(1.0, float(os.environ.get('MINA_AGENT_POLL_SECONDS', '5'))),
+            namespaces=tuple(value.strip() for value in os.environ.get('MINA_AGENT_NAMESPACES', 'default').split(',') if value.strip()),
         )
 
 
@@ -111,7 +111,7 @@ class PythonAgent:
         response = await self._request('GET', self._endpoint(f'/agent/deployments/{item["id"]}/package'))
         body = response.content
         if len(body) > MAX_ARCHIVE_BYTES: raise ValueError('Deployment package exceeds agent size limit')
-        digest = response.headers.get('x-fabric-package-sha256', '')
+        digest = response.headers.get('x-mina-package-sha256', '')
         if digest and hashlib.sha256(body).hexdigest() != digest: raise ValueError('Deployment package digest mismatch')
         return body, digest
 
@@ -170,10 +170,10 @@ class PythonAgent:
         secret_file.write_text(json.dumps(item.get('secrets') or {}), encoding='utf-8')
         if os.name != 'nt': secret_file.chmod(0o600)
         enabled = [task for task, state in (item.get('starterStates') or {}).items() if state != 'STOPPED']
-        environment = {**os.environ, 'FABRIC_DEPLOYMENT_ID': deployment_id,
-                       'FABRIC_ENVIRONMENT': item['environment'], 'FABRIC_SECRET_FILE': str(secret_file),
-                       'FABRIC_ENABLED_STARTERS': json.dumps(enabled)}
-        python = os.environ.get('FABRIC_PYTHON_EXECUTABLE') or sys.executable
+        environment = {**os.environ, 'MINA_DEPLOYMENT_ID': deployment_id,
+                       'MINA_ENVIRONMENT': item['environment'], 'MINA_SECRET_FILE': str(secret_file),
+                       'MINA_ENABLED_STARTERS': json.dumps(enabled)}
+        python = os.environ.get('MINA_PYTHON_EXECUTABLE') or sys.executable
         instances = []
         for index in range(max(1, int(item.get('desiredInstances') or 1))):
             log_file = directory / f'instance-{index+1}.log'
@@ -204,7 +204,7 @@ class PythonAgent:
 
     @staticmethod
     def _k8s_name(deployment_id: str) -> str:
-        return 'fabric-' + re.sub(r'[^a-z0-9-]', '-', deployment_id.lower())[:50].strip('-')
+        return 'mina-' + re.sub(r'[^a-z0-9-]', '-', deployment_id.lower())[:50].strip('-')
 
     async def _reconcile_kubernetes(self, item: dict):
         from kubernetes.client.exceptions import ApiException
@@ -225,8 +225,8 @@ class PythonAgent:
             return
         if item.get('state') not in {'DEPLOYED', 'RUNNING'}: return
         if (item.get('pythonSource') or {}).get('entrypoint') != 'application/main.py': return
-        labels = {'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'integration-fabric-python-agent',
-                  'integration-fabric-deployment': item['id']}
+        labels = {'app.kubernetes.io/name': name, 'app.kubernetes.io/managed-by': 'mina-python-agent',
+                  'mina-deployment': item['id']}
         secret_values = item.get('secrets') or {}
         def apply_secret(secret_name: str, values: dict):
             body = {'apiVersion': 'v1', 'kind': 'Secret', 'metadata': {'name': secret_name, 'namespace': namespace, 'labels': labels},
@@ -239,36 +239,36 @@ class PythonAgent:
         await asyncio.to_thread(apply_secret, runtime_secret_name, {'secrets.json': json.dumps(secret_values)})
         enabled = [task for task, state in (item.get('starterStates') or {}).items() if state != 'STOPPED']
         common_env = [
-            {'name': 'FABRIC_CONTROL_PLANE_URL', 'value': self.settings.control_plane_url},
-            {'name': 'FABRIC_DATA_PLANE_ID', 'value': self.settings.plane_id},
-            {'name': 'FABRIC_DEPLOYMENT_ID', 'value': item['id']},
-            {'name': 'FABRIC_APPLICATION_ID', 'value': str(item.get('applicationId') or '')},
-            {'name': 'FABRIC_ENVIRONMENT', 'value': item['environment']},
-            {'name': 'FABRIC_ENABLED_STARTERS', 'value': json.dumps(enabled)},
+            {'name': 'MINA_CONTROL_PLANE_URL', 'value': self.settings.control_plane_url},
+            {'name': 'MINA_DATA_PLANE_ID', 'value': self.settings.plane_id},
+            {'name': 'MINA_DEPLOYMENT_ID', 'value': item['id']},
+            {'name': 'MINA_APPLICATION_ID', 'value': str(item.get('applicationId') or '')},
+            {'name': 'MINA_ENVIRONMENT', 'value': item['environment']},
+            {'name': 'MINA_ENABLED_STARTERS', 'value': json.dumps(enabled)},
         ]
         shared_mount = {'name': 'application', 'mountPath': '/work'}
-        auth_mount = {'name': 'agent-credential', 'mountPath': '/run/fabric-agent', 'readOnly': True}
-        runtime_mount = {'name': 'runtime-secrets', 'mountPath': '/run/fabric', 'readOnly': True}
+        auth_mount = {'name': 'agent-credential', 'mountPath': '/run/mina-agent', 'readOnly': True}
+        runtime_mount = {'name': 'runtime-secrets', 'mountPath': '/run/mina', 'readOnly': True}
         volumes = [{'name': 'application', 'emptyDir': {}},
                    {'name': 'agent-credential', 'secret': {'secretName': agent_secret_name}},
                    {'name': 'runtime-secrets', 'secret': {'secretName': runtime_secret_name}}]
         driver_mounts = []
-        driver_pvc = os.environ.get('FABRIC_K8S_DRIVER_PVC', '').strip()
+        driver_pvc = os.environ.get('MINA_K8S_DRIVER_PVC', '').strip()
         if driver_pvc:
             volumes.append({'name': 'vendor-drivers', 'persistentVolumeClaim': {'claimName': driver_pvc}})
-            driver_mounts.append({'name': 'vendor-drivers', 'mountPath': '/opt/integration-fabric/drivers', 'readOnly': True})
+            driver_mounts.append({'name': 'vendor-drivers', 'mountPath': '/opt/mina/drivers', 'readOnly': True})
         pod = {'metadata': {'labels': labels}, 'spec': {
             'securityContext': {'runAsNonRoot': True, 'runAsUser': 10001, 'fsGroup': 10001},
             'volumes': volumes,
             'initContainers': [{'name': 'package-fetch', 'image': self.settings.image,
                                 'command': ['python', '-m', 'administrator.agent.bootstrap'],
-                                'env': common_env + [{'name': 'FABRIC_AGENT_KEY_FILE', 'value': '/run/fabric-agent/agentKey'},
-                                                     {'name': 'FABRIC_APPLICATION_WORKDIR', 'value': '/work'}],
+                                'env': common_env + [{'name': 'MINA_AGENT_KEY_FILE', 'value': '/run/mina-agent/agentKey'},
+                                                     {'name': 'MINA_APPLICATION_WORKDIR', 'value': '/work'}],
                                 'volumeMounts': [shared_mount, auth_mount]}],
             'containers': [{'name': 'python-runtime', 'image': self.settings.image,
                             'command': ['python', '-m', 'application.main', '--environment', item['environment']],
                             'workingDir': '/work',
-                            'env': common_env + [{'name': 'FABRIC_SECRET_FILE', 'value': '/run/fabric/secrets.json'},
+                            'env': common_env + [{'name': 'MINA_SECRET_FILE', 'value': '/run/mina/secrets.json'},
                                                  {'name': 'PYTHONPATH', 'value': '/work:/opt/agent'}],
                             'volumeMounts': [shared_mount, runtime_mount, *driver_mounts],
                             'ports': [{'name': 'http', 'containerPort': 8787}],
@@ -276,10 +276,10 @@ class PythonAgent:
                                           'limits': {'cpu': '1', 'memory': '1Gi'}}}]}}
         revision = hashlib.sha256(json.dumps({'packageId': item['packageId'], 'secrets': secret_values,
                                               'starters': enabled, 'environment': item['environment']}, sort_keys=True).encode()).hexdigest()
-        pod['metadata']['annotations'] = {'integration-fabric/revision': revision}
+        pod['metadata']['annotations'] = {'mina/revision': revision}
         body = {'apiVersion': 'apps/v1', 'kind': 'Deployment', 'metadata': {'name': name, 'namespace': namespace, 'labels': labels},
                 'spec': {'replicas': max(1, int(item.get('desiredInstances') or 1)),
-                         'selector': {'matchLabels': {'integration-fabric-deployment': item['id']}}, 'template': pod}}
+                         'selector': {'matchLabels': {'mina-deployment': item['id']}}, 'template': pod}}
         def apply_deployment():
             try: apps.create_namespaced_deployment(namespace, body)
             except ApiException as error:
@@ -288,7 +288,7 @@ class PythonAgent:
             return apps.read_namespaced_deployment(name, namespace)
         deployed = await asyncio.to_thread(apply_deployment)
         service = {'apiVersion': 'v1', 'kind': 'Service', 'metadata': {'name': name, 'namespace': namespace, 'labels': labels},
-                   'spec': {'selector': {'integration-fabric-deployment': item['id']},
+                   'spec': {'selector': {'mina-deployment': item['id']},
                             'ports': [{'name': 'http', 'port': 8787, 'targetPort': 'http'}]}}
         def apply_service():
             try: core.create_namespaced_service(namespace, service)
@@ -335,7 +335,7 @@ async def _main():
 
 
 def main() -> int:
-    logging.basicConfig(level=os.environ.get('FABRIC_AGENT_LOG_LEVEL', 'INFO'), format='%(asctime)s %(levelname)s %(message)s')
+    logging.basicConfig(level=os.environ.get('MINA_AGENT_LOG_LEVEL', 'INFO'), format='%(asctime)s %(levelname)s %(message)s')
     try: asyncio.run(_main())
     except KeyboardInterrupt: return 0
     return 0

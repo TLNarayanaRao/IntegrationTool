@@ -63,6 +63,13 @@ class Context:
 
 
 def lookup(path: str, ctx: Context) -> Any:
+    # Environment properties are stored as flat keys so that property names
+    # such as ``connections.sap.applicationServer`` remain valid Python
+    # deployment configuration.  Studio permits both the explicit
+    # ``${properties.<key>}`` form and the concise ``${<key>}`` form.  Check
+    # the complete path before treating dots as object-navigation separators.
+    if path in ctx.properties:
+        return ctx.properties[path]
     head, _, rest = path.partition('.')
     if head == 'properties' and rest in ctx.properties:
         return ctx.properties[rest]
@@ -173,7 +180,7 @@ async def execute_with_policy(kind: str, raw: dict, ctx: Context, activity_id: s
 
 
 async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: str) -> Any:
-    """Execute supported Python-native operations; never load Fabric JSON or DSL."""
+    """Execute supported Python-native operations; never load Mina JSON or DSL."""
     cfg = resolve({key: value for key, value in raw.items() if key != 'inputMappings'}, ctx)
     for key, value in mapped(raw, ctx).items():
         cfg[key] = value

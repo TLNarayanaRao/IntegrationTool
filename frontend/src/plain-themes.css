@@ -57,13 +57,13 @@ body[data-theme^="plain-"] :is(div, section, aside, main, header, footer, nav, a
   box-shadow: none !important;
   border-color: var(--line) !important;
 }
-body[data-theme^="plain-"] :is(.app, .fabric-launch-home, .project-home) {
+body[data-theme^="plain-"] :is(.app, .mina-launch-home, .project-home) {
   background: var(--shell) !important;
 }
 body[data-theme^="plain-"] :is(header, footer, nav, .studio-ribbon, .menu-bar, .tabs, .pane-title, .canvas-toolbar, .explorer, .monitor, .palette, .config, [class$="-tabs"], [class$="-toolbar"], [class$="-footer"]) {
   background: var(--panel) !important;
 }
-body[data-theme^="plain-"] :is(.app>main, .runtime-modal, .package-modal, .menu-dropdown, .glossy-menu, .schema-context-menu, .home-card, .project-list, .fabric-live-map, .system-node, .config-body, .property-grid, .group-data-mapper, .group-condition-targets, .package-artifacts, .package-starters, .package-environments, .package-runtime-options, [class$="-modal"], [class$="-dialog"], [class$="-panel"], [class$="-pane"], [class$="-editor"], [class$="-card"], [class$="-picker"], [class$="-popover"]) {
+body[data-theme^="plain-"] :is(.app>main, .runtime-modal, .package-modal, .menu-dropdown, .glossy-menu, .schema-context-menu, .home-card, .project-list, .mina-live-map, .system-node, .config-body, .property-grid, .group-data-mapper, .group-condition-targets, .package-artifacts, .package-starters, .package-environments, .package-runtime-options, [class$="-modal"], [class$="-dialog"], [class$="-panel"], [class$="-pane"], [class$="-editor"], [class$="-card"], [class$="-picker"], [class$="-popover"]) {
   background: var(--surface) !important;
   border-radius: var(--plain-panel-radius) !important;
 }
@@ -155,9 +155,9 @@ body[data-theme^="plain-"] :is(.modal-backdrop) {
   background: #20283055 !important;
   backdrop-filter: none !important;
 }
-body[data-theme^="plain-"] :is(.runtime-modal::before, .fabric-launch-home::before, .home-aurora, .home-glow) { display: none; }
-body[data-theme^="plain-"] :is(.home-grid, .system-node, .fabric-routes path, .live-indicator i, .brand-orbit::after, .fabric-core>i) { animation: none; }
-body[data-theme^="plain-"] :is(.fabric-core, .fabric-routes path) { filter: none; }
+body[data-theme^="plain-"] :is(.runtime-modal::before, .mina-launch-home::before, .home-aurora, .home-glow) { display: none; }
+body[data-theme^="plain-"] :is(.home-grid, .system-node, .mina-routes path, .live-indicator i, .brand-orbit::after, .mina-core>i) { animation: none; }
+body[data-theme^="plain-"] :is(.mina-core, .mina-routes path) { filter: none; }
 body[data-theme^="plain-"] :is(.package-error, .validation-issue.error, .ai-builder-error) {
   background: #fff0f0 !important;
   color: #a11b22 !important;
@@ -369,7 +369,7 @@ body[data-theme^="plain-"] :is(.pane-splitter, .source-splitter, .config-splitte
 body[data-theme="plain-studio"] :is(
   .runtime-modal, .package-modal, .property-modal, .input-mapper-dialog,
   .mapper-studio, .schema-studio, .utility-workbench, .sample-gallery,
-  .activity-picker, .sap-idoc-picker, .sap-idoc-browser, .fabric-live-map,
+  .activity-picker, .sap-idoc-picker, .sap-idoc-browser, .mina-live-map,
   .menu-dropdown, .glossy-menu, .canvas-menu, .task-tab-context,
   .schema-context-menu, .mapping-context-menu, .resource-menu,
   .connection-create-menu, .connection-property-browser, .connection-property-picker,

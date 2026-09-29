@@ -72,7 +72,7 @@ class AdministratorTests(unittest.TestCase):
         self.assertEqual(manifest['runtime'], 'python-async-standalone')
         self.assertEqual(manifest['pythonSource']['entrypoint'], 'application/main.py')
 
-    def test_raw_python_runtime_arguments_do_not_use_fabric_worker(self):
+    def test_raw_python_runtime_arguments_do_not_use_mina_worker(self):
         item = {'packageStoragePath': 'team/raw-orders/1.0.0', 'environment': 'dev',
                 'pythonSource': {'entrypoint': 'application/main.py', 'formatVersion': 2}}
         with patch.object(main, 'RUNTIME_COMMAND', ''):
@@ -80,7 +80,7 @@ class AdministratorTests(unittest.TestCase):
                              [sys.executable, '-m', 'application.main', '--environment', 'dev'])
 
     def test_administrator_version_accepts_build_or_runtime_override(self):
-        with patch.dict("os.environ", {"FABRIC_ADMIN_VERSION": "3.4.5"}):
+        with patch.dict("os.environ", {"MINA_ADMIN_VERSION": "3.4.5"}):
             self.assertEqual(main.administrator_version(), "3.4.5")
 
     def test_control_desk_assets_are_served(self):
@@ -145,7 +145,7 @@ class AdministratorTests(unittest.TestCase):
         self.assertEqual(len(package["sha256"]), 64)
         self.assertEqual(package["starterTaskIds"], ["main"])
 
-        legacy = self.client.post("/api/packages", files={"file": ("orders.ifpkg", package_bytes(package_format="integration-fabric-deployment"), "application/zip")})
+        legacy = self.client.post("/api/packages", files={"file": ("orders.ifpkg", package_bytes(package_format="mina-deployment"), "application/zip")})
         self.assertEqual(legacy.status_code, 200, legacy.text)
 
         missing = self.client.post("/api/deployments", json={"packageId": "orders:1.2.3", "environment": "dev", "machine": "localhost", "instances": 1})
@@ -175,7 +175,7 @@ class AdministratorTests(unittest.TestCase):
         self.assertIn("Unsafe package path", unsafe.json()["detail"])
         broken = io.BytesIO()
         with zipfile.ZipFile(broken, "w") as archive:
-            archive.writestr("manifest.json", json.dumps({"format": "integration-fabric-deployment", "formatVersion": 1}))
+            archive.writestr("manifest.json", json.dumps({"format": "mina-deployment", "formatVersion": 1}))
         response = self.upload(broken.getvalue())
         self.assertEqual(response.status_code, 400)
 
@@ -251,7 +251,7 @@ class AdministratorTests(unittest.TestCase):
         self.assertEqual(principal.status_code, 200, principal.text)
         observed = self.client.get(f"/api/observability?dataPlaneId={plane_id}").json()
         self.assertEqual(observed["dataPlanes"][0]["cpuPercent"], 21)
-        self.assertEqual(self.client.get("/api/health").json()["component"], "integration-fabric-control-plane")
+        self.assertEqual(self.client.get("/api/health").json()["component"], "mina-control-plane")
 
     def test_delivery_team_assets_are_namespace_and_api_isolated(self):
         plane = self.client.post("/api/data-planes", json={"id":"shared-cluster", "name":"Shared Cluster", "type":"kubernetes", "host":"cluster.example", "namespaces":["team-a", "team-b"]}).json()

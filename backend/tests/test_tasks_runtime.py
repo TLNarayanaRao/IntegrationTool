@@ -248,7 +248,7 @@ class TaskRuntimeTests(unittest.TestCase):
             self.assertEqual(manifest['includedTaskIds'], ['main', 'child'])
         self.client.delete('/api/projects/task-runtime-test')
 
-    def test_python_archive_contains_direct_async_source_without_fabric_descriptors(self):
+    def test_python_archive_contains_direct_async_source_without_mina_descriptors(self):
         self.assertEqual(self.client.post('/api/projects', json=self.project()).status_code, 200)
         response = self.client.get('/api/projects/task-runtime-test/package?target=on-prem&environments=dev&starters=main&archive=python')
         self.assertEqual(response.status_code, 200, response.text)
@@ -263,7 +263,7 @@ class TaskRuntimeTests(unittest.TestCase):
             self.assertNotIn('application/project.json', names)
             self.assertNotIn('application/tasks/main.json', names)
             self.assertNotIn('application/resources/kafka/k1.json', names)
-            self.assertNotIn('application/python/fabric_dsl.py', names)
+            self.assertNotIn('application/python/mina_dsl.py', names)
             self.assertIn(b'async def run(initial=', archive.read('application/tasks/task_0_main.py'))
             task_source = archive.read('application/tasks/task_0_main.py')
             self.assertIn(b"Activity(\n            id='s'", task_source)

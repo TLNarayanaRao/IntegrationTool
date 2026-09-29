@@ -51,7 +51,7 @@ class AmqpJdbcExcelCommandTests(unittest.TestCase):
         drivers = ["PostgreSQL Unicode(x64)", "ODBC Driver 18 for SQL Server"]
         connection_string = _sqlserver_connection_string({
             "url": "jdbc:sqlserver://db.example.test:1433;databaseName=orders;encrypt=true;trustServerCertificate=true",
-            "username": "fabric",
+            "username": "mina",
             "password": "p;ass}word",
         }, drivers)
         self.assertIn("DRIVER={ODBC Driver 18 for SQL Server}", connection_string)
@@ -82,7 +82,7 @@ class AmqpJdbcExcelCommandTests(unittest.TestCase):
 
     def test_database_jdbc_urls_are_normalized_for_native_drivers(self):
         self.assertEqual(_connection_url({"url": "jdbc:postgresql://db01:5432/orders"}, "jdbc:"), "postgresql://db01:5432/orders")
-        db2 = _db2_connection_string({"url": "jdbc:db2://db02:50001/inventory", "username": "fabric", "password": "secret"})
+        db2 = _db2_connection_string({"url": "jdbc:db2://db02:50001/inventory", "username": "mina", "password": "secret"})
         self.assertIn("DATABASE=inventory", db2)
         self.assertIn("HOSTNAME=db02", db2)
         self.assertIn("PORT=50001", db2)

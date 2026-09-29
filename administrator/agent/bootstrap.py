@@ -52,20 +52,20 @@ def extract_python_package(body: bytes, destination: Path, expected_sha256: str 
 
 
 def main() -> int:
-    base = os.environ['FABRIC_CONTROL_PLANE_URL'].rstrip('/')
-    plane_id = os.environ['FABRIC_DATA_PLANE_ID']
-    deployment_id = os.environ['FABRIC_DEPLOYMENT_ID']
-    credential_file = Path(os.environ['FABRIC_AGENT_KEY_FILE'])
+    base = os.environ['MINA_CONTROL_PLANE_URL'].rstrip('/')
+    plane_id = os.environ['MINA_DATA_PLANE_ID']
+    deployment_id = os.environ['MINA_DEPLOYMENT_ID']
+    credential_file = Path(os.environ['MINA_AGENT_KEY_FILE'])
     key = credential_file.read_text(encoding='utf-8').strip()
     request = urllib.request.Request(
         f'{base}/api/data-planes/{plane_id}/agent/deployments/{deployment_id}/package',
         headers={'x-control-plane-key': key},
     )
     with urllib.request.urlopen(request, timeout=120) as response:
-        digest = response.headers.get('x-fabric-package-sha256', '')
+        digest = response.headers.get('x-mina-package-sha256', '')
         body = response.read(MAX_ARCHIVE_BYTES + 1)
-    manifest = extract_python_package(body, Path(os.environ.get('FABRIC_APPLICATION_WORKDIR', '/work')), digest)
-    if manifest.get('applicationId') != os.environ.get('FABRIC_APPLICATION_ID'):
+    manifest = extract_python_package(body, Path(os.environ.get('MINA_APPLICATION_WORKDIR', '/work')), digest)
+    if manifest.get('applicationId') != os.environ.get('MINA_APPLICATION_ID'):
         raise ValueError('Package application identity does not match the deployment')
     print(f"Python application staged: {manifest.get('applicationName')}", flush=True)
     return 0

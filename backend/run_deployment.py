@@ -25,7 +25,7 @@ def load_project(application: Path):
         # Control Plane authorizes their upload through application-manager
         # RBAC before this worker imports the generated source package.
         try:
-            package_name = f'_fabric_generated_{hashlib.sha256(str(application).encode()).hexdigest()[:16]}'
+            package_name = f'_mina_generated_{hashlib.sha256(str(application).encode()).hexdigest()[:16]}'
             spec = importlib.util.spec_from_file_location(package_name, python_descriptor, submodule_search_locations=[str(python_descriptor.parent)])
             if not spec or not spec.loader: raise ValueError('Python application module could not be loaded')
             module = importlib.util.module_from_spec(spec)
@@ -90,13 +90,13 @@ async def run_deployment(application: Path, environment: str) -> None:
     runtime_api.append_project_logs = record_logs
     resources = {resource.id: resource for resource in project.resources}
     tasks = [task for task in project.tasks if task.kind == "starter"]
-    enabled = os.environ.get("FABRIC_ENABLED_STARTERS", "").strip()
+    enabled = os.environ.get("MINA_ENABLED_STARTERS", "").strip()
     if enabled:
         try:
             enabled_ids = set(json.loads(enabled))
             tasks = [task for task in tasks if task.id in enabled_ids]
         except (TypeError, ValueError, json.JSONDecodeError):
-            print(json.dumps({"level": "WARNING", "kind": "configuration", "message": "Ignoring invalid FABRIC_ENABLED_STARTERS"}), flush=True)
+            print(json.dumps({"level": "WARNING", "kind": "configuration", "message": "Ignoring invalid MINA_ENABLED_STARTERS"}), flush=True)
     if not tasks:
         raise ValueError("The packaged application has no enabled Starter Tasks")
 
@@ -133,7 +133,7 @@ def main() -> int:
     # separate a quoted option value while CreateProcess parses the command.
     parser.add_argument("environment_positional", nargs="?")
     args = parser.parse_args()
-    environment = args.environment or args.environment_positional or os.environ.get("FABRIC_ENVIRONMENT", "local")
+    environment = args.environment or args.environment_positional or os.environ.get("MINA_ENVIRONMENT", "local")
     try:
         asyncio.run(run_deployment(Path(args.application).resolve(), environment))
     except KeyboardInterrupt:

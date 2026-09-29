@@ -27,11 +27,11 @@ def _credentials_with_ca(credentials, ca_file: str):
     class CACredentials(type(credentials)):
         def __init__(self, source, certificate_file):
             self.__dict__.update(source.__dict__)
-            self._integration_fabric_ca_file = certificate_file
+            self._mina_ca_file = certificate_file
 
         def refresh(self, request):
             session = requests.Session()
-            session.verify = _merged_ca_bundle(self._integration_fabric_ca_file)
+            session.verify = _merged_ca_bundle(self._mina_ca_file)
             return super().refresh(Request(session=session))
 
     return CACredentials(credentials, ca_file)
@@ -52,7 +52,7 @@ def _merged_ca_bundle(ca_file: str) -> str:
         system_bundle = b""
     merged = system_bundle.rstrip() + b"\n" + custom.lstrip()
     identity = hashlib.sha256(merged).hexdigest()[:24]
-    destination = Path(tempfile.gettempdir()) / f"integration-fabric-pubsub-ca-{identity}.pem"
+    destination = Path(tempfile.gettempdir()) / f"mina-pubsub-ca-{identity}.pem"
     if not destination.exists():
         destination.write_bytes(merged)
     return str(destination)

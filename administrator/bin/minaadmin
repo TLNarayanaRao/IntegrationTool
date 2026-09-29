@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-FABRIC_ADMIN_HOME="${FABRIC_ADMIN_HOME:-/opt/integrationfabric/control-plane}"
-PID_DIR="${FABRIC_ADMIN_PID_DIR:-/opt/integrationfabric/run}"
-LOG_DIR="${FABRIC_ADMIN_LOG_DIR:-/opt/integrationfabric/logs/control-plane}"
-EXECUTABLE="$FABRIC_ADMIN_HOME/IntegrationFabricAdministrator"
-PID_FILE="$PID_DIR/fabricadmin.pid"
+MINA_ADMIN_HOME="${MINA_ADMIN_HOME:-/opt/mina/control-plane}"
+PID_DIR="${MINA_ADMIN_PID_DIR:-/opt/mina/run}"
+LOG_DIR="${MINA_ADMIN_LOG_DIR:-/opt/mina/logs/control-plane}"
+EXECUTABLE="$MINA_ADMIN_HOME/MinaAdministrator"
+PID_FILE="$PID_DIR/minaadmin.pid"
 mkdir -p "$PID_DIR" "$LOG_DIR"
 case "${1:-status}" in
   start)
@@ -20,5 +20,5 @@ case "${1:-status}" in
     if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then echo "RUNNING PID $(cat "$PID_FILE")"; else echo "STOPPED"; fi
     ;;
   run) exec "$EXECUTABLE" ;;
-  *) echo "Usage: fabricadmin {start|stop|status|run}"; exit 2 ;;
+  *) echo "Usage: minaadmin {start|stop|status|run}"; exit 2 ;;
 esac

@@ -1,25 +1,25 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('fabricDesktop', {
+contextBridge.exposeInMainWorld('minaDesktop', {
   isDesktop: true,
-  saveFile: (options) => ipcRenderer.invoke('fabric:save-file', options),
-  selectArchiveOutput: (options) => ipcRenderer.invoke('fabric:select-archive-output', options),
-  saveProjectFolder: (options) => ipcRenderer.invoke('fabric:save-project-folder', options),
-  openProject: (fileType) => ipcRenderer.invoke('fabric:open-file', fileType),
-  openProjectFolder: () => ipcRenderer.invoke('fabric:open-project-folder'),
-  openProjectSource: () => ipcRenderer.invoke('fabric:open-project-source'),
-  selectCodeArtifact: (kind) => ipcRenderer.invoke('fabric:select-code-artifact', kind),
-  openUtilityFile: (options) => ipcRenderer.invoke('fabric:open-utility-file', options),
-  readUtilityFileChunk: (options) => ipcRenderer.invoke('fabric:read-utility-file-chunk', options),
-  saveUtilityFileWindow: (options) => ipcRenderer.invoke('fabric:save-utility-file-window', options),
-  saveUtilityFileAs: (options) => ipcRenderer.invoke('fabric:save-utility-file-as', options),
-  closeUtilityFile: (id) => ipcRenderer.invoke('fabric:close-utility-file', id),
+  saveFile: (options) => ipcRenderer.invoke('mina:save-file', options),
+  selectArchiveOutput: (options) => ipcRenderer.invoke('mina:select-archive-output', options),
+  saveProjectFolder: (options) => ipcRenderer.invoke('mina:save-project-folder', options),
+  openProject: (fileType) => ipcRenderer.invoke('mina:open-file', fileType),
+  openProjectFolder: () => ipcRenderer.invoke('mina:open-project-folder'),
+  openProjectSource: () => ipcRenderer.invoke('mina:open-project-source'),
+  selectCodeArtifact: (kind) => ipcRenderer.invoke('mina:select-code-artifact', kind),
+  openUtilityFile: (options) => ipcRenderer.invoke('mina:open-utility-file', options),
+  readUtilityFileChunk: (options) => ipcRenderer.invoke('mina:read-utility-file-chunk', options),
+  saveUtilityFileWindow: (options) => ipcRenderer.invoke('mina:save-utility-file-window', options),
+  saveUtilityFileAs: (options) => ipcRenderer.invoke('mina:save-utility-file-as', options),
+  closeUtilityFile: (id) => ipcRenderer.invoke('mina:close-utility-file', id),
   platform: process.platform,
-  exit: () => ipcRenderer.invoke('fabric:exit'),
-  completeWindowClose: () => ipcRenderer.invoke('fabric:complete-window-close'),
+  exit: () => ipcRenderer.invoke('mina:exit'),
+  completeWindowClose: () => ipcRenderer.invoke('mina:complete-window-close'),
   onWindowCloseRequested: (listener) => {
     const callback = () => listener();
-    ipcRenderer.on('fabric:request-window-close', callback);
-    return () => ipcRenderer.removeListener('fabric:request-window-close', callback);
+    ipcRenderer.on('mina:request-window-close', callback);
+    return () => ipcRenderer.removeListener('mina:request-window-close', callback);
   },
 });

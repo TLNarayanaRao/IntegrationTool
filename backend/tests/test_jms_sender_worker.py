@@ -20,7 +20,7 @@ class JmsSenderWorkerTests(unittest.TestCase):
         cls.classes = Path(cls.folder.name)
         root = Path(__file__).resolve().parents[2]
         subprocess.run(['javac', '-encoding', 'UTF-8', '-d', str(cls.classes),
-            str(root / 'java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java'),
+            str(root / 'java-bridge/src/com/mina/bridge/MinaJavaBridge.java'),
             str(Path(__file__).parent / 'fixtures/FakeJmsFactory.java')], check=True, capture_output=True)
 
     @classmethod

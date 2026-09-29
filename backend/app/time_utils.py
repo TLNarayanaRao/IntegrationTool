@@ -10,7 +10,7 @@ except ImportError:  # pragma: no cover
     ZoneInfo = None  # type: ignore[assignment,misc]
 
 ARIZONA_TIMEZONE = timezone(timedelta(hours=-7), "MST")
-configured = os.getenv("FABRIC_LOG_TIMEZONE", "America/Phoenix").strip()
+configured = os.getenv("MINA_LOG_TIMEZONE", "America/Phoenix").strip()
 if configured and configured != "America/Phoenix" and ZoneInfo is not None:
     try:
         LOG_TIMEZONE = ZoneInfo(configured)

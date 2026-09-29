@@ -18,8 +18,8 @@ _lock = RLock()
 
 
 def log_settings() -> tuple[int, int]:
-    max_bytes = max(1024, int(os.getenv("FABRIC_PROJECT_LOG_MAX_BYTES", DEFAULT_MAX_BYTES)))
-    backups = max(1, int(os.getenv("FABRIC_PROJECT_LOG_BACKUP_COUNT", DEFAULT_BACKUP_COUNT)))
+    max_bytes = max(1024, int(os.getenv("MINA_PROJECT_LOG_MAX_BYTES", DEFAULT_MAX_BYTES)))
+    backups = max(1, int(os.getenv("MINA_PROJECT_LOG_BACKUP_COUNT", DEFAULT_BACKUP_COUNT)))
     return max_bytes, backups
 
 
@@ -36,7 +36,7 @@ def _log_component(project_id: str, project_name: str = "") -> str:
 
 def project_log_path(project_id: str, project_name: str = "", configured_directory: str = "") -> Path:
     configured = os.path.expandvars(str(configured_directory or "").strip())
-    root = Path(configured or os.getenv("FABRIC_RUNTIME_LOG_DIR", DATA_DIR / "logs")).expanduser()
+    root = Path(configured or os.getenv("MINA_RUNTIME_LOG_DIR", DATA_DIR / "logs")).expanduser()
     if not root.is_absolute():
         root = DATA_DIR / root
     root = root.resolve()
@@ -70,7 +70,7 @@ def append_project_logs(project_id: str, project_name: str, entries: list[dict],
         for supplied in entries:
             entry = {"projectId": project_id, "project": project_name, **supplied}
             record = logging.LogRecord(
-                name=f"integration-fabric.{project_id}", level=getattr(logging, str(entry.get("level", "INFO")).upper(), logging.INFO),
+                name=f"mina.{project_id}", level=getattr(logging, str(entry.get("level", "INFO")).upper(), logging.INFO),
                 pathname="", lineno=0, msg=json.dumps(entry, ensure_ascii=False, default=str, separators=(",", ":")), args=(), exc_info=None,
             )
             handler.emit(record)

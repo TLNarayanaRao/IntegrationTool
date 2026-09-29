@@ -1,6 +1,6 @@
 """Export a deliberately independent, executable Python application.
 
-This compiler does not serialize the Fabric project model into Python.  Each
+This compiler does not serialize the Mina project model into Python.  Each
 task becomes an async state machine and uses only the small generated Python
 support library.  Unsupported activity semantics are rejected at build time.
 """
@@ -209,15 +209,23 @@ def _project_artifact_closure(project: dict) -> tuple[list[dict], list[dict]]:
 
 def _profile_closure(project: dict, profiles: dict[str, list[dict]]) -> dict[str, list[dict]]:
     searchable = repr({'tasks': project.get('tasks') or [], 'resources': project.get('resources') or [], 'schemas': project.get('schemas') or []})
-    referenced = set(re.findall(r'\$\{properties\.([^}]+)\}', searchable))
+    expressions = set(re.findall(r'\$\{([^}]+)\}', searchable))
+    explicit_properties = {value.removeprefix('properties.') for value in expressions if value.startswith('properties.')}
     result = {}
     for environment, values in profiles.items():
         by_key = {str(item.get('key') or ''): item for item in values}
-        required, pending = set(referenced), list(referenced)
+        # Studio accepts both `${properties.connections.sap.host}` and the
+        # concise `${connections.sap.host}` form.  Treat an expression as a
+        # profile reference when it exactly matches a declared property key;
+        # expressions such as `${input.id}` remain runtime expressions.
+        required = set(explicit_properties)
+        required.update(value for value in expressions if value in by_key)
+        pending = list(required)
         while pending:
             item = by_key.get(pending.pop())
             if not item: continue
-            for alias in re.findall(r'\$\{properties\.([^}]+)\}', str(item.get('value') or '')):
+            aliases = set(re.findall(r'\$\{([^}]+)\}', str(item.get('value') or '')))
+            for alias in {value.removeprefix('properties.') for value in aliases if value.startswith('properties.')} | (aliases & set(by_key)):
                 if alias not in required: required.add(alias); pending.append(alias)
         result[environment] = [item for item in values if str(item.get('key') or '') in required]
     return result
@@ -446,7 +454,7 @@ def _simple_group_plans(task: dict) -> list[dict]:
 
 
 def _direct_literal(value, indent: int = 0) -> str:
-    """Compile expressions into Python reference objects, never Fabric syntax."""
+    """Compile expressions into Python reference objects, never Mina syntax."""
     if isinstance(value, str):
         matches = list(re.finditer(r'\$\{([^}]+)\}', value))
         if len(matches) == 1 and matches[0].span() == (0, len(value)):
@@ -1200,7 +1208,7 @@ def engine_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[
         for name, values in profiles.items())
     project_header = _python_call('Project', project_fields, ('id', 'name', 'description', 'active_environment', 'active_task_id'), 4).rsplit('\n', 1)[0] + '\n'
     files['application/project.py'] = (
-        '"""Typed Python application assembly; no Fabric descriptor is loaded."""\n'
+        '"""Typed Python application assembly; no Mina descriptor is loaded."""\n'
         'from .engine.models import CustomFunction, EnvironmentProperty, Project, SchemaAsset, SharedResource\n'
         + '\n'.join(task_imports) + '\n\n'
         'def build_project() -> Project:\n'

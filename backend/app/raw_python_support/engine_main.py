@@ -2,7 +2,7 @@
 
 The bundled execution engine is the same Python engine Studio uses. The
 project, tasks, resources, and profiles are constructed by Python modules;
-no Fabric JSON descriptor or source DSL is read at runtime.
+no Mina JSON descriptor or source DSL is read at runtime.
 """
 from __future__ import annotations
 
@@ -20,16 +20,16 @@ from .engine.sap import sap_adapter
 from .project import build_project
 
 
-LOG = logging.getLogger('integrationfabric.python')
+LOG = logging.getLogger('mina.python')
 RUNTIME = WorkflowRuntime()
 
 
 def _secrets() -> dict[str, Any]:
     values: dict[str, Any] = {}
-    source = os.environ.get('FABRIC_SECRET_FILE')
+    source = os.environ.get('MINA_SECRET_FILE')
     if source:
         values.update(json.loads(Path(source).read_text(encoding='utf-8')))
-    inline = os.environ.get('FABRIC_SECRET_VALUES')
+    inline = os.environ.get('MINA_SECRET_VALUES')
     if inline:
         values.update(json.loads(inline))
     return values
@@ -186,18 +186,18 @@ async def _serve_http(project, listeners, environment: str) -> None:
             return JSONResponse(output)
         app.add_api_route(path, endpoint, methods=methods)
         LOG.info('HTTP listener ready: %s %s', ','.join(methods), path)
-    port = int(os.environ.get('FABRIC_HTTP_PORT') or 8787)
-    server = uvicorn.Server(uvicorn.Config(app, host=os.environ.get('FABRIC_HTTP_HOST', '0.0.0.0'), port=port, log_level='info'))
+    port = int(os.environ.get('MINA_HTTP_PORT') or 8787)
+    server = uvicorn.Server(uvicorn.Config(app, host=os.environ.get('MINA_HTTP_HOST', '0.0.0.0'), port=port, log_level='info'))
     await server.serve()
 
 
 async def run_application(environment_name: str = 'local') -> None:
     project = prepare(environment_name)
-    enabled = os.environ.get('FABRIC_ENABLED_STARTERS')
+    enabled = os.environ.get('MINA_ENABLED_STARTERS')
     enabled_ids = set(json.loads(enabled)) if enabled else None
     starters = [task for task in project.tasks if task.kind == 'starter' and (enabled_ids is None or task.id in enabled_ids)]
     if not starters:
-        if not os.environ.get('FABRIC_DEPLOYMENT_ID'):
+        if not os.environ.get('MINA_DEPLOYMENT_ID'):
             raise ValueError('No Starter Tasks are enabled')
         LOG.info('All Starter Tasks are stopped; Python application remains idle')
         await asyncio.Event().wait()
@@ -214,17 +214,17 @@ async def run_application(environment_name: str = 'local') -> None:
             jobs.append(_receive_forever(project, task, event, environment_name))
     if http_listeners: jobs.append(_serve_http(project, http_listeners, environment_name))
     await asyncio.gather(*jobs)
-    if os.environ.get('FABRIC_DEPLOYMENT_ID'):
+    if os.environ.get('MINA_DEPLOYMENT_ID'):
         await asyncio.Event().wait()
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description='Run an exported Python integration application')
-    parser.add_argument('--environment', default=os.environ.get('FABRIC_ENVIRONMENT', 'local'))
+    parser.add_argument('--environment', default=os.environ.get('MINA_ENVIRONMENT', 'local'))
     parser.add_argument('--task', help='Run an individual task')
     parser.add_argument('--input', default='{}')
     args = parser.parse_args()
-    logging.basicConfig(level=os.environ.get('FABRIC_LOG_LEVEL', 'INFO'), format='%(asctime)s %(levelname)s %(message)s')
+    logging.basicConfig(level=os.environ.get('MINA_LOG_LEVEL', 'INFO'), format='%(asctime)s %(levelname)s %(message)s')
     try:
         if args.task:
             print(json.dumps(asyncio.run(run_task(args.task, json.loads(args.input), args.environment)), default=str))

@@ -8,7 +8,7 @@ The default machine-wide driver root on Windows is:
 C:\ProgramData\MINA Studio\drivers
 ```
 
-Set `FABRIC_DRIVER_HOME` to override the complete root, or enter a **Driver JAR directory** in an individual shared connection. Source checkouts also search `D:\Integration-tool\IntegrationFabric\drivers` as a development fallback.
+Set `MINA_DRIVER_HOME` to override the complete root, or enter a **Driver JAR directory** in an individual shared connection. Source checkouts also search `D:\Integration-tool\MINA\drivers` as a development fallback.
 
 ## EMS / JMS
 

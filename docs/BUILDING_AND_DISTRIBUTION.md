@@ -20,7 +20,7 @@ Prerequisites:
 Run from a normal PowerShell or Command Prompt. PowerShell is used internally by the npm build script, but installed Studio users do not need PowerShell, Node.js, or Python.
 
 ```powershell
-cd D:\Integration-tool\IntegrationFabric\frontend
+cd D:\Integration-tool\MINA\frontend
 npm ci
 npm run desktop:installer -- -Version 2.4.0
 ```
@@ -31,7 +31,7 @@ Output:
 frontend\release\MINAStudio-2.4.0-Setup.exe
 ```
 
-`-Version` is injected into Electron Builder at build time; `package.json` is not edited. It must be a semantic version. CI can set `$env:FABRIC_VERSION = '2.4.0'` and run `npm run desktop:installer` without passing the argument. When neither is supplied, the version in `frontend/package.json` is used as the fallback.
+`-Version` is injected into Electron Builder at build time; `package.json` is not edited. It must be a semantic version. CI can set `$env:MINA_VERSION = '2.4.0'` and run `npm run desktop:installer` without passing the argument. When neither is supplied, the version in `frontend/package.json` is used as the fallback.
 
 The installer is machine-wide so different Windows users can launch Studio in parallel. Each user gets an independent local runtime port and workspace data directory under that user's application-data profile.
 
@@ -98,7 +98,7 @@ frontend\release\win-unpacked\MINA Studio.exe
 For production distribution, configure a company `.pfx` code-signing certificate through environment variables. A signing certificate is optional for producing an installer, but recommended for publisher identity and SmartScreen reputation:
 
 ```powershell
-$env:WIN_CSC_LINK = 'C:\Certificates\integration-fabric-signing.pfx'
+$env:WIN_CSC_LINK = 'C:\Certificates\mina-signing.pfx'
 $env:WIN_CSC_KEY_PASSWORD = '<password-from-secret-store>'
 npm.cmd run desktop:installer
 ```
@@ -108,7 +108,7 @@ Do not put the certificate or password in `package.json` or source control. Elec
 ## Build Control Plane on Windows
 
 ```powershell
-cd D:\Integration-tool\IntegrationFabric
+cd D:\Integration-tool\MINA
 .\scripts\build-administrator.ps1 -Version 2.4.0
 ```
 
@@ -121,20 +121,20 @@ npm run administrator:windows -- -Version 2.4.0
 Outputs:
 
 ```text
-administrator\dist\IntegrationFabricAdministrator\IntegrationFabricAdministrator.exe
-administrator\release\IntegrationFabricAdministrator-2.4.0-Windows-x64.zip
+administrator\dist\MinaAdministrator\MinaAdministrator.exe
+administrator\release\MinaAdministrator-2.4.0-Windows-x64.zip
 ```
 
-The ZIP is a PyInstaller **one-directory** distribution. Copy or extract the complete `IntegrationFabricAdministrator` directory, including its `_internal`, `web`, and `bin` content. Copying only `IntegrationFabricAdministrator.exe` will not work reliably.
+The ZIP is a PyInstaller **one-directory** distribution. Copy or extract the complete `MinaAdministrator` directory, including its `_internal`, `web`, and `bin` content. Copying only `MinaAdministrator.exe` will not work reliably.
 
 Run it:
 
 ```powershell
-$env:FABRIC_ADMIN_DATA_DIR = "D:\IntegrationFabricAdmin\data"
-& .\administrator\dist\IntegrationFabricAdministrator\IntegrationFabricAdministrator.exe
+$env:MINA_ADMIN_DATA_DIR = "D:\MINAAdmin\data"
+& .\administrator\dist\MinaAdministrator\MinaAdministrator.exe
 ```
 
-Open `http://localhost:9080`. To listen on a different address or port, set `FABRIC_ADMIN_HOST` and `FABRIC_ADMIN_PORT`.
+Open `http://localhost:9080`. To listen on a different address or port, set `MINA_ADMIN_HOST` and `MINA_ADMIN_PORT`.
 
 ## Build Control Plane on Linux
 
@@ -150,28 +150,28 @@ sudo apt-get install -y python3 python3-venv
 Build:
 
 ```bash
-cd /path/to/IntegrationFabric
-chmod +x scripts/build-administrator.sh administrator/bin/fabricadmin
+cd /path/to/MINA
+chmod +x scripts/build-administrator.sh administrator/bin/minaadmin
 ./scripts/build-administrator.sh 2.4.0
 ```
 
 Output:
 
 ```text
-administrator/release/IntegrationFabricAdministrator-2.4.0-Linux-x64.tar.gz
+administrator/release/MinaAdministrator-2.4.0-Linux-x64.tar.gz
 ```
 
 Install and start:
 
 ```bash
-sudo mkdir -p /opt/integrationfabric/control-plane
-sudo tar -xzf administrator/release/IntegrationFabricAdministrator-2.4.0-Linux-x64.tar.gz \
-  -C /opt/integrationfabric/control-plane --strip-components=1
-sudo chmod +x /opt/integrationfabric/control-plane/IntegrationFabricAdministrator
-sudo chmod +x /opt/integrationfabric/control-plane/bin/fabricadmin
-export FABRIC_ADMIN_HOME=/opt/integrationfabric/control-plane
-/opt/integrationfabric/control-plane/bin/fabricadmin start
-/opt/integrationfabric/control-plane/bin/fabricadmin status
+sudo mkdir -p /opt/mina/control-plane
+sudo tar -xzf administrator/release/MinaAdministrator-2.4.0-Linux-x64.tar.gz \
+  -C /opt/mina/control-plane --strip-components=1
+sudo chmod +x /opt/mina/control-plane/MinaAdministrator
+sudo chmod +x /opt/mina/control-plane/bin/minaadmin
+export MINA_ADMIN_HOME=/opt/mina/control-plane
+/opt/mina/control-plane/bin/minaadmin start
+/opt/mina/control-plane/bin/minaadmin status
 ```
 
 The default Administrator URL is `http://linux-host:9080`. A Windows Administrator build cannot run on Linux. Build the Linux tarball on Linux (or a Linux CI runner), or use the container image. In either operating system, deploy the entire generated bundle rather than copying only the executable.
@@ -181,10 +181,10 @@ For production configuration, API authentication, encrypted secrets, package val
 ## Run Control Plane as a container
 
 ```bash
-docker build -f Dockerfile.administrator --build-arg FABRIC_VERSION=2.4.0 -t integration-fabric-administrator:2.4.0 .
-docker run -d --name fabric-admin -p 9080:9080 \
-  -v fabric-admin-data:/var/lib/integration-fabric/administrator \
-  integration-fabric-administrator:2.4.0
+docker build -f Dockerfile.administrator --build-arg MINA_VERSION=2.4.0 -t mina-administrator:2.4.0 .
+docker run -d --name mina-admin -p 9080:9080 \
+  -v mina-admin-data:/var/lib/mina/administrator \
+  mina-administrator:2.4.0
 ```
 
 ## Create deployment packages in Studio

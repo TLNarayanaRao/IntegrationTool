@@ -8,7 +8,7 @@ MINA separates control and data planes and provides namespace-scoped capabilitie
 
 ## Organization and delivery-team isolation
 
-The built-in **Technology Team** is the permanent Control Plane owner. It registers data planes, provisions capabilities, configures platform resources, creates delivery teams, assigns principals, issues or revokes delivery credentials, and can govern all assets. Set `FABRIC_ADMIN_API_KEY` for its production credential.
+The built-in **Technology Team** is the permanent Control Plane owner. It registers data planes, provisions capabilities, configures platform resources, creates delivery teams, assigns principals, issues or revokes delivery credentials, and can govern all assets. Set `MINA_ADMIN_API_KEY` for its production credential.
 
 Each data delivery team must be assigned one or more exclusive `{data plane, namespace}` scopes. The same namespace cannot be assigned to two active delivery teams. Packages, extracted package storage, deployments, environment requirements, encrypted secrets, runtime logs, lifecycle operations, and application observability carry an immutable `teamId`. Backend authorization returns `404` when another delivery team probes an asset identifier, preventing both access and asset discovery.
 
@@ -23,10 +23,10 @@ Control Plane does not rebuild a Studio project. A package already contains the 
 ### Development
 
 ```powershell
-cd D:\Integration-tool\IntegrationFabric\administrator
+cd D:\Integration-tool\MINA\administrator
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-$env:FABRIC_ADMIN_DATA_DIR = "D:\IntegrationFabricAdmin\data"
+$env:MINA_ADMIN_DATA_DIR = "D:\MINAAdmin\data"
 .\.venv\Scripts\python.exe run_admin.py
 ```
 
@@ -34,41 +34,41 @@ Open `http://localhost:9080`. OpenAPI is available at `http://localhost:9080/doc
 
 ### Windows distribution
 
-Build with `scripts/build-administrator.ps1 -Version 2.4.0`, extract the generated versioned ZIP, and run `IntegrationFabricAdministrator.exe`. The output is a one-directory native Windows distribution, so copy the complete extracted directory—not only the `.exe`. Use `bin\fabricadmin.cmd start|stop|status|run` for service-style local control.
+Build with `scripts/build-administrator.ps1 -Version 2.4.0`, extract the generated versioned ZIP, and run `MinaAdministrator.exe`. The output is a one-directory native Windows distribution, so copy the complete extracted directory—not only the `.exe`. Use `bin\minaadmin.cmd start|stop|status|run` for service-style local control.
 
 ### Linux distribution
 
-Build on Linux with `scripts/build-administrator.sh 2.4.0`, extract the generated tarball under `/opt/integrationfabric/control-plane`, set `FABRIC_ADMIN_HOME`, and use `bin/fabricadmin start|stop|status|run`. PyInstaller output is operating-system specific: build the Linux bundle on Linux and deploy the entire extracted directory.
+Build on Linux with `scripts/build-administrator.sh 2.4.0`, extract the generated tarball under `/opt/mina/control-plane`, set `MINA_ADMIN_HOME`, and use `bin/minaadmin start|stop|status|run`. PyInstaller output is operating-system specific: build the Linux bundle on Linux and deploy the entire extracted directory.
 
 ### Container
 
 ```bash
-docker build -f Dockerfile.administrator --build-arg FABRIC_VERSION=2.4.0 -t integration-fabric-administrator:2.4.0 .
-docker run -d --name fabric-admin -p 9080:9080 \
-  -e FABRIC_ADMIN_API_KEY='replace-me' \
-  -e FABRIC_ADMIN_SECRET_KEY='retrieve-from-secret-manager' \
-  -v fabric-admin-data:/var/lib/integration-fabric/administrator \
-  integration-fabric-administrator:2.4.0
+docker build -f Dockerfile.administrator --build-arg MINA_VERSION=2.4.0 -t mina-administrator:2.4.0 .
+docker run -d --name mina-admin -p 9080:9080 \
+  -e MINA_ADMIN_API_KEY='replace-me' \
+  -e MINA_ADMIN_SECRET_KEY='retrieve-from-secret-manager' \
+  -v mina-admin-data:/var/lib/mina/administrator \
+  mina-administrator:2.4.0
 ```
 
 ## Configuration
 
 | Variable | Default | Meaning |
 |---|---:|---|
-| `FABRIC_ADMIN_HOST` | `0.0.0.0` | HTTP bind address |
-| `FABRIC_ADMIN_PORT` | `9080` | HTTP port |
-| `FABRIC_ADMIN_DATA_DIR` | `administrator/data` | Repository, state, encrypted secrets, logs, and audit location |
-| `FABRIC_ADMIN_API_KEY` | empty | If set, `/api/*` except health requires `X-Admin-Key` |
-| `FABRIC_ADMIN_SECRET_KEY` | generated local key | Stable encryption passphrase; supply from a secret manager in clustered/production installs |
-| `FABRIC_ADMIN_RUNTIME_COMMAND` | empty | Administrator-approved runtime command template |
-| `FABRIC_ADMIN_MAX_PACKAGE_MB` | `250` | Maximum uploaded archive size |
-| `FABRIC_ADMIN_MAX_EXPANDED_MB` | `1024` | Maximum expanded package size |
-| `FABRIC_ADMIN_MAX_PACKAGE_FILES` | `10000` | Maximum archive members |
+| `MINA_ADMIN_HOST` | `0.0.0.0` | HTTP bind address |
+| `MINA_ADMIN_PORT` | `9080` | HTTP port |
+| `MINA_ADMIN_DATA_DIR` | `administrator/data` | Repository, state, encrypted secrets, logs, and audit location |
+| `MINA_ADMIN_API_KEY` | empty | If set, `/api/*` except health requires `X-Admin-Key` |
+| `MINA_ADMIN_SECRET_KEY` | generated local key | Stable encryption passphrase; supply from a secret manager in clustered/production installs |
+| `MINA_ADMIN_RUNTIME_COMMAND` | empty | Administrator-approved runtime command template |
+| `MINA_ADMIN_MAX_PACKAGE_MB` | `250` | Maximum uploaded archive size |
+| `MINA_ADMIN_MAX_EXPANDED_MB` | `1024` | Maximum expanded package size |
+| `MINA_ADMIN_MAX_PACKAGE_FILES` | `10000` | Maximum archive members |
 
 The runtime command supports `{application}`, `{package}`, `{environment}`, `{deployment_id}`, and `{instance_id}` placeholders. The desktop installer includes a separate `MINAWorker` executable for this purpose. Example:
 
 ```bash
-export FABRIC_ADMIN_RUNTIME_COMMAND='integration-fabric-runtime --application {application} --environment {environment}'
+export MINA_ADMIN_RUNTIME_COMMAND='mina-runtime --application {application} --environment {environment}'
 ```
 
 On Windows desktop installations, configure the worker executable rather than the Studio sidecar:
@@ -76,10 +76,10 @@ On Windows desktop installations, configure the worker executable rather than th
 ```powershell
 $worker = 'C:\Program Files\MINA Studio\resources\runtime\MINAWorker\MINAWorker.exe'
 $command = "`\"$worker`\" --application `\"{application}`\" --environment `\"{environment}`\""
-[Environment]::SetEnvironmentVariable('FABRIC_ADMIN_RUNTIME_COMMAND', $command, 'Machine')
+[Environment]::SetEnvironmentVariable('MINA_ADMIN_RUNTIME_COMMAND', $command, 'Machine')
 ```
 
-The runtime receives `FABRIC_APPLICATION_DIR`, `FABRIC_ENVIRONMENT`, `FABRIC_DEPLOYMENT_ID`, `FABRIC_INSTANCE_ID`, and decrypted deployment secret values in its process environment. The command comes only from trusted Administrator configuration; package contents cannot provide an executable command.
+The runtime receives `MINA_APPLICATION_DIR`, `MINA_ENVIRONMENT`, `MINA_DEPLOYMENT_ID`, `MINA_INSTANCE_ID`, and decrypted deployment secret values in its process environment. The command comes only from trusted Administrator configuration; package contents cannot provide an executable command.
 
 ## Package and deployment workflow
 
@@ -87,7 +87,7 @@ The runtime receives `FABRIC_APPLICATION_DIR`, `FABRIC_ENVIRONMENT`, `FABRIC_DEP
 2. Select **Export archive** for an offline bundle, or enter the Control Plane URL, credential, team, data plane, namespace, capability, deployment environment, and required secrets and select **Deploy to Control Plane**. Studio builds the archive once, uploads those exact bytes, creates the deployment, and reports the Control Plane deployment ID/state. Credentials and secret values are transient and are not saved in the project or package.
 3. Alternatively, upload an exported archive in **Applications**. Administrator rejects traversal paths, links/devices, duplicate paths, oversized expansion, unsupported formats, missing project/task artifacts, and invalid manifests.
 4. Review checksum, target, profiles, selected task metadata, and secret requirements.
-5. For local on-premises deployment, **Start** uses `FABRIC_ADMIN_RUNTIME_COMMAND`. Generated packages contain Linux `install.sh`/`deploy.sh` and Windows `install.ps1`/`deploy.ps1`/`start.ps1` assets. If the command adapter is not configured, startup fails visibly rather than reporting a false running state.
+5. For local on-premises deployment, **Start** uses `MINA_ADMIN_RUNTIME_COMMAND`. Generated packages contain Linux `install.sh`/`deploy.sh` and Windows `install.ps1`/`deploy.ps1`/`start.ps1` assets. If the command adapter is not configured, startup fails visibly rather than reporting a false running state.
 6. For cloud deployment, the Control Plane records the desired application, environment, replicas, namespace, and capability. The registered Kubernetes data-plane agent applies the generated Dockerfile, ConfigMap, Secret, Deployment, Service, HPA, and Kustomize assets; Studio does not incorrectly invoke the local command adapter for cloud targets.
 7. Use **Details** for instance PIDs and logs. **Stop** performs normal termination; **Kill** is forced; **Restart** stops and recreates desired instances; **Undeploy** removes deployment secrets and the active inventory record.
 
@@ -97,7 +97,7 @@ Legal lifecycle transitions are enforced. Package deletion is blocked while any 
 
 Application health is evaluated per deployment. For the local command adapter, Control Plane verifies each managed runtime PID. Remote and Kubernetes agents report `HEALTHY`, `DEGRADED`, `UNHEALTHY`, or `UNKNOWN` in the `deploymentHealth` object of their data-plane heartbeat; Control Plane does not infer application health merely because the data plane is online. Health checks can be disabled per deployment.
 
-Starter Task start/stop changes the deployment's desired starter set. A running local deployment is restarted with `FABRIC_ENABLED_STARTERS` containing only enabled task IDs. Remote and Kubernetes runtime agents reconcile the same desired state and may report their observed task state with the health heartbeat. Whole-application lifecycle state and individual Starter Task state remain separate.
+Starter Task start/stop changes the deployment's desired starter set. A running local deployment is restarted with `MINA_ENABLED_STARTERS` containing only enabled task IDs. Remote and Kubernetes runtime agents reconcile the same desired state and may report their observed task state with the health heartbeat. Whole-application lifecycle state and individual Starter Task state remain separate.
 
 ## Control-plane model and screens
 
@@ -138,8 +138,8 @@ Starter Task start/stop changes the deployment's desired starter set. A running 
 
 - Put Control Plane behind TLS/reverse proxy and set an API key. Restrict the data directory to the service identity.
 - Permission enforcement is performed on every backend API call. UI filtering is informational and is not the security boundary.
-- Back up the entire data directory together with the external `FABRIC_ADMIN_SECRET_KEY`. Losing or changing the key makes stored secrets unreadable.
+- Back up the entire data directory together with the external `MINA_ADMIN_SECRET_KEY`. Losing or changing the key makes stored secrets unreadable.
 - Rotate a secret with the secret API while stopped, then restart. The API returns secret names/configuration state only.
 - A `FAILED` deployment preserves its error and logs. Correct the adapter or configuration and select **Restart**.
-- `No runtime adapter is configured` means package validation and deployment creation are working, but `FABRIC_ADMIN_RUNTIME_COMMAND` has not been supplied.
+- `No runtime adapter is configured` means package validation and deployment creation are working, but `MINA_ADMIN_RUNTIME_COMMAND` has not been supplied.
 - Control Plane PID reconciliation detects local processes that exited unexpectedly. Data-plane registration and heartbeat APIs provide the management-plane inventory. Remote command execution still requires a trusted data-plane agent/tunnel; this repository does not silently execute remote commands or claim a remote application is running without that adapter.

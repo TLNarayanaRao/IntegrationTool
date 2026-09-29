@@ -42,7 +42,7 @@ network access. Keep management APIs behind TLS and an authenticated boundary.
 
 **Evidence:** `administrator/app/main.py:1238-1243` copies the full administrator
 environment into application subprocesses. `administrator/agent/main.py:173-184`
-does the same for agent deployments. Agent configuration reads `FABRIC_AGENT_KEY`
+does the same for agent deployments. Agent configuration reads `MINA_AGENT_KEY`
 from that environment (`administrator/agent/main.py:39`). Raw Python deployments
 are started under the same OS identity, not a separate tenant security boundary.
 
