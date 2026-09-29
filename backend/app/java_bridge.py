@@ -294,7 +294,7 @@ def _application_root() -> Path:
 
 
 def _bridge_home() -> Path:
-    override = os.environ.get("MINA_JAVA_BRIDGE_HOME")
+    override = os.environ.get("MINA_JAVA_BRIDGE_HOME") or os.environ.get("FABRIC_JAVA_BRIDGE_HOME")
     if override:
         return Path(override).expanduser().resolve()
     if getattr(sys, "frozen", False):
@@ -303,7 +303,7 @@ def _bridge_home() -> Path:
 
 
 def _java_executable() -> Path | str:
-    override = os.environ.get("MINA_JAVA")
+    override = os.environ.get("MINA_JAVA") or os.environ.get("FABRIC_JAVA")
     if override:
         return override
     bundled = _bridge_home() / "runtime" / "bin" / ("java.exe" if os.name == "nt" else "java")
@@ -327,7 +327,7 @@ def _java_command(config: dict[str, Any], classpath: str, descriptor: str, famil
 
 
 def default_driver_home() -> Path:
-    override = os.environ.get("MINA_DRIVER_HOME")
+    override = os.environ.get("MINA_DRIVER_HOME") or os.environ.get("FABRIC_DRIVER_HOME")
     if override:
         return Path(override).expanduser().resolve()
     if os.name == "nt" and os.environ.get("PROGRAMDATA"):
@@ -343,12 +343,12 @@ def driver_directories(config: dict[str, Any], family: str) -> list[Path]:
     candidates.append(default_driver_home() / family)
     # Keep existing installations operational after the MINA rebrand.
     if os.name == "nt" and os.environ.get("PROGRAMDATA"):
-        legacy_windows_brand = "Integration" + " Mina Studio"
+        legacy_windows_brand = "Integration" + " Fabric Studio"
         candidates.append(Path(os.environ["PROGRAMDATA"]) / legacy_windows_brand / "drivers" / family)
     elif os.name != "nt":
-        candidates.append(Path("/opt/mina/drivers") / family)
+        candidates.append(Path("/opt/integrationfabric/drivers") / family)
     else:
-        candidates.append(Path.home() / ".mina" / "drivers" / family)
+        candidates.append(Path.home() / ".integration-fabric" / "drivers" / family)
     candidates.append(_application_root() / "drivers" / family)
     unique: list[Path] = []
     for path in candidates:

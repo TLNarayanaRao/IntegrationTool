@@ -145,7 +145,7 @@ class AdministratorTests(unittest.TestCase):
         self.assertEqual(len(package["sha256"]), 64)
         self.assertEqual(package["starterTaskIds"], ["main"])
 
-        legacy = self.client.post("/api/packages", files={"file": ("orders.ifpkg", package_bytes(package_format="mina-deployment"), "application/zip")})
+        legacy = self.client.post("/api/packages", files={"file": ("orders.ifpkg", package_bytes(package_format="integration-fabric-deployment"), "application/zip")})
         self.assertEqual(legacy.status_code, 200, legacy.text)
 
         missing = self.client.post("/api/deployments", json={"packageId": "orders:1.2.3", "environment": "dev", "machine": "localhost", "instances": 1})

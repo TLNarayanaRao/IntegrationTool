@@ -1483,9 +1483,9 @@ async def import_project(file: UploadFile = File(...)):
             with zipfile.ZipFile(io.BytesIO(raw)) as archive:
                 manifest = json.loads(archive.read('manifest.json'))
                 package_format = manifest.get('format')
-                if package_format in {'mina-project', 'mina-project'}:
+                if package_format in {'mina-project', 'integration-fabric-project'}:
                     payload = archive.read('project.json')
-                elif package_format in {'mina-deployment', 'mina-deployment'}:
+                elif package_format in {'mina-deployment', 'integration-fabric-deployment'}:
                     # Deployment .mpkg and legacy .ifpkg archives keep the importable project
                     # under application/project.json.
                     payload = archive.read('application/project.json')

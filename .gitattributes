@@ -1,0 +1,2 @@
+# PDF cross-reference offsets must not undergo platform newline conversion.
+*.pdf binary

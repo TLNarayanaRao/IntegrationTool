@@ -197,6 +197,9 @@ def start(deployment):
             command_parts = shlex.split(command)
         env = os.environ.copy(); env.update({"MINA_DEPLOYMENT_ID": deployment_id, "MINA_INSTANCE_ID": instance_id, "MINA_ENVIRONMENT": deployment.get("environment", "local"), "MINA_ENABLED_STARTERS": enabled})
         env.update({str(k): str(v) for k, v in (deployment.get("secrets") or {}).items()})
+        # Older exported archives still consume the original launch contract.
+        for key in ('DEPLOYMENT_ID', 'INSTANCE_ID', 'ENVIRONMENT', 'ENABLED_STARTERS'):
+            env['FABRIC_' + key] = env['MINA_' + key]
         handle = log.open("ab")
         try:
             process = subprocess.Popen(

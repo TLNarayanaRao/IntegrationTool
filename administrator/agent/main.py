@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 
 from .bootstrap import extract_python_package, MAX_ARCHIVE_BYTES
+from ..app.compat import env_value, required_env, application_environment
 
 LOG = logging.getLogger('mina.agent')
 
@@ -35,14 +36,14 @@ class Settings:
     @classmethod
     def from_environment(cls) -> 'Settings':
         return cls(
-            control_plane_url=os.environ['MINA_CONTROL_PLANE_URL'].rstrip('/'),
-            key=os.environ['MINA_AGENT_KEY'],
-            plane_id=os.environ['MINA_DATA_PLANE_ID'],
-            mode=os.environ.get('MINA_AGENT_MODE', 'local').lower(),
-            state_dir=Path(os.environ.get('MINA_AGENT_STATE_DIR', 'agent-state')).resolve(),
-            image=os.environ.get('MINA_PYTHON_RUNTIME_IMAGE', 'mina-python-agent:latest'),
-            poll_seconds=max(1.0, float(os.environ.get('MINA_AGENT_POLL_SECONDS', '5'))),
-            namespaces=tuple(value.strip() for value in os.environ.get('MINA_AGENT_NAMESPACES', 'default').split(',') if value.strip()),
+            control_plane_url=required_env('MINA_CONTROL_PLANE_URL').rstrip('/'),
+            key=required_env('MINA_AGENT_KEY'),
+            plane_id=required_env('MINA_DATA_PLANE_ID'),
+            mode=env_value('MINA_AGENT_MODE', 'local').lower(),
+            state_dir=Path(env_value('MINA_AGENT_STATE_DIR', 'agent-state')).resolve(),
+            image=env_value('MINA_PYTHON_RUNTIME_IMAGE', 'mina-python-agent:latest'),
+            poll_seconds=max(1.0, float(env_value('MINA_AGENT_POLL_SECONDS', '5'))),
+            namespaces=tuple(value.strip() for value in env_value('MINA_AGENT_NAMESPACES', 'default').split(',') if value.strip()),
         )
 
 
@@ -173,7 +174,9 @@ class PythonAgent:
         environment = {**os.environ, 'MINA_DEPLOYMENT_ID': deployment_id,
                        'MINA_ENVIRONMENT': item['environment'], 'MINA_SECRET_FILE': str(secret_file),
                        'MINA_ENABLED_STARTERS': json.dumps(enabled)}
-        python = os.environ.get('MINA_PYTHON_EXECUTABLE') or sys.executable
+        environment.update(application_environment({key: environment[key] for key in
+            ('MINA_DEPLOYMENT_ID', 'MINA_ENVIRONMENT', 'MINA_SECRET_FILE', 'MINA_ENABLED_STARTERS')}))
+        python = env_value('MINA_PYTHON_EXECUTABLE') or sys.executable
         instances = []
         for index in range(max(1, int(item.get('desiredInstances') or 1))):
             log_file = directory / f'instance-{index+1}.log'
@@ -246,6 +249,7 @@ class PythonAgent:
             {'name': 'MINA_ENVIRONMENT', 'value': item['environment']},
             {'name': 'MINA_ENABLED_STARTERS', 'value': json.dumps(enabled)},
         ]
+        common_env += [{'name': 'FABRIC_' + value['name'].removeprefix('MINA_'), 'value': value['value']} for value in common_env]
         shared_mount = {'name': 'application', 'mountPath': '/work'}
         auth_mount = {'name': 'agent-credential', 'mountPath': '/run/mina-agent', 'readOnly': True}
         runtime_mount = {'name': 'runtime-secrets', 'mountPath': '/run/mina', 'readOnly': True}
@@ -253,7 +257,7 @@ class PythonAgent:
                    {'name': 'agent-credential', 'secret': {'secretName': agent_secret_name}},
                    {'name': 'runtime-secrets', 'secret': {'secretName': runtime_secret_name}}]
         driver_mounts = []
-        driver_pvc = os.environ.get('MINA_K8S_DRIVER_PVC', '').strip()
+        driver_pvc = env_value('MINA_K8S_DRIVER_PVC', '').strip()
         if driver_pvc:
             volumes.append({'name': 'vendor-drivers', 'persistentVolumeClaim': {'claimName': driver_pvc}})
             driver_mounts.append({'name': 'vendor-drivers', 'mountPath': '/opt/mina/drivers', 'readOnly': True})
@@ -269,6 +273,7 @@ class PythonAgent:
                             'command': ['python', '-m', 'application.main', '--environment', item['environment']],
                             'workingDir': '/work',
                             'env': common_env + [{'name': 'MINA_SECRET_FILE', 'value': '/run/mina/secrets.json'},
+                                                 {'name': 'FABRIC_SECRET_FILE', 'value': '/run/mina/secrets.json'},
                                                  {'name': 'PYTHONPATH', 'value': '/work:/opt/agent'}],
                             'volumeMounts': [shared_mount, runtime_mount, *driver_mounts],
                             'ports': [{'name': 'http', 'containerPort': 8787}],
@@ -335,7 +340,7 @@ async def _main():
 
 
 def main() -> int:
-    logging.basicConfig(level=os.environ.get('MINA_AGENT_LOG_LEVEL', 'INFO'), format='%(asctime)s %(levelname)s %(message)s')
+    logging.basicConfig(level=env_value('MINA_AGENT_LOG_LEVEL', 'INFO'), format='%(asctime)s %(levelname)s %(message)s')
     try: asyncio.run(_main())
     except KeyboardInterrupt: return 0
     return 0

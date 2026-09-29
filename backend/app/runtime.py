@@ -154,6 +154,8 @@ class WorkflowRuntime:
         plans: dict[str, dict] = {}
         for group in process.groups:
             config = group.config or {}
+            if group.type == 'pick_first':
+                raise MinaFault(f'Group {group.name}: Pick First is not runtime-qualified; concurrent branch cancellation and cleanup are not supported', fault_type='GROUP_UNSUPPORTED')
             if group.type in ('if', 'while') and not str(config.get('condition') or '').strip():
                 raise MinaFault(f'Group {group.name} requires a boolean condition', fault_type='GROUP_VALIDATION')
             if group.type in ('iterate', 'for_each') and config.get('source') in (None, '') and config.get('collection') in (None, '') and not (group.type == 'for_each' and config.get('start') is not None and config.get('end') is not None):
