@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('minaDesktop', {
   isDesktop: true,
+  getAppInfo: () => ipcRenderer.invoke('mina:app-info'),
   saveFile: (options) => ipcRenderer.invoke('mina:save-file', options),
   selectArchiveOutput: (options) => ipcRenderer.invoke('mina:select-archive-output', options),
   saveProjectFolder: (options) => ipcRenderer.invoke('mina:save-project-folder', options),

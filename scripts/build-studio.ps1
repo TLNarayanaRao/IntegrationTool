@@ -18,7 +18,9 @@ if ($Version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.
 }
 
 Push-Location $frontend
+$previousVersion = $env:MINA_VERSION
 try {
+    $env:MINA_VERSION = $Version
     Write-Host "Building MINA Studio version $Version ($Target)"
     & npm.cmd run desktop:prepare
     if ($LASTEXITCODE -ne 0) { throw "Studio preparation failed with exit code $LASTEXITCODE." }
@@ -26,5 +28,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Electron Builder failed with exit code $LASTEXITCODE." }
     Write-Host "Studio version $Version ready under $frontend\release"
 } finally {
+    $env:MINA_VERSION = $previousVersion
     Pop-Location
 }

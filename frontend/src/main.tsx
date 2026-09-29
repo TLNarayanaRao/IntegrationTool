@@ -1,4 +1,5 @@
 import React, { Component, ErrorInfo, useEffect, useMemo, useRef, useState } from "react";
+import AboutMina from "./AboutMina";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
@@ -4231,7 +4232,7 @@ function TopMenu({ label, open, toggle, commands }: any) {
   return <div className="menu-root"><button className={open ? "active" : ""} onClick={toggle}>{label}</button>{open && <div className="menu-dropdown command-menu glossy-menu" onClick={(event) => event.stopPropagation()}>{commands.map((command: any) => { const Icon = command.icon; return <button key={command.label} disabled={command.disabled} onClick={() => { command.action(); toggle({ stopPropagation() {} }); }}><Icon/><span><b>{command.label}</b><small>{command.detail}</small></span>{command.shortcut && <kbd>{command.shortcut}</kbd>}</button>; })}</div>}</div>;
 }
 function HelpDialog({ mode, onClose }: any) {
-  return <div className="modal-backdrop"><div className="runtime-modal help-dialog"><header><b>{mode === "shortcuts" ? "Keyboard Shortcuts" : "About MINA"}</b><button onClick={onClose}>×</button></header><main>{mode === "shortcuts" ? <div className="shortcut-grid"><kbd>Ctrl+Z</kbd><span>Undo Studio change (100 levels)</span><kbd>Ctrl+Y</kbd><span>Redo Studio change</span><kbd>Ctrl+Shift+Z</kbd><span>Redo Studio change</span><kbd>Delete</kbd><span>Delete selected activity or transition</span><kbd>Ctrl+S</kbd><span>Save project</span><kbd>F5</kbd><span>Run active task</span><kbd>F6</kbd><span>Start debugging</span><kbd>Right-click</kbd><span>Open context commands or activity search</span><kbd>Drag</kbd><span>Move activities on the canvas</span></div> : <div className="about-panel"><Workflow/><h2>MINA Studio</h2><p>MINA — Mediation, Integration &amp; Automation.</p><code>Project: {location.pathname === "/" ? "Local Studio" : location.pathname}</code></div>}</main><footer><button className="primary" onClick={onClose}>Close</button></footer></div></div>;
+  return <div className="modal-backdrop"><div className="runtime-modal help-dialog"><header><b>{mode === "shortcuts" ? "Keyboard Shortcuts" : "About MINA"}</b><button onClick={onClose}>×</button></header><main>{mode === "shortcuts" ? <div className="shortcut-grid"><kbd>Ctrl+Z</kbd><span>Undo Studio change (100 levels)</span><kbd>Ctrl+Y</kbd><span>Redo Studio change</span><kbd>Ctrl+Shift+Z</kbd><span>Redo Studio change</span><kbd>Delete</kbd><span>Delete selected activity or transition</span><kbd>Ctrl+S</kbd><span>Save project</span><kbd>F5</kbd><span>Run active task</span><kbd>F6</kbd><span>Start debugging</span><kbd>Right-click</kbd><span>Open context commands or activity search</span><kbd>Drag</kbd><span>Move activities on the canvas</span></div> : <AboutMina/>}</main><footer><button className="primary" onClick={onClose}>Close</button></footer></div></div>;
 }
 function FileMenu({
   stop,

@@ -7,6 +7,10 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 let mainWindow;
+ipcMain.handle('mina:app-info', (event) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error('Untrusted application information request');
+  return { version: app.getVersion(), platform: process.platform, packaged: app.isPackaged };
+});
 let runtimeProcess;
 let runtimeStartupError;
 let runtimeLogPath;

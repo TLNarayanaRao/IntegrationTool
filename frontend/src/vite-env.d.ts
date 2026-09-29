@@ -3,6 +3,7 @@
 interface Window {
   minaDesktop?: {
     isDesktop: boolean;
+    getAppInfo?(): Promise<{ version: string; platform: string; packaged: boolean }>;
     platform: string;
     saveFile(options: { path?: string; filename: string; bytes: number[]; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null>;
     selectArchiveOutput(options: { title?: string; filename: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null>;
