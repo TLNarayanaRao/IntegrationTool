@@ -116,6 +116,26 @@ class AdministratorTests(unittest.TestCase):
     def upload(self, body=None):
         return self.client.post("/api/packages", files={"file": ("orders.mpkg", body or package_bytes(), "application/zip")})
 
+    def test_package_delete_blocks_deployments_then_removes_archive(self):
+        package = self.upload().json()
+        url = f"/api/packages/orders/1.2.3?teamId={package['teamId']}"
+        destination = main.PACKAGES_DIR / package['storagePath']
+        for state in ('RUNNING', 'STOPPED', 'FAILED', 'DEPLOYED'):
+            main.write_json(main.DEPLOYMENTS_FILE, [{'id': 'delete-guard', 'packageId': 'orders:1.2.3', 'teamId': package['teamId'], 'state': state, 'instances': []}])
+            self.assertEqual(self.client.delete(url).status_code, 409)
+            self.assertTrue(destination.exists())
+        main.write_json(main.DEPLOYMENTS_FILE, [{'id': 'delete-guard', 'packageId': 'orders:1.2.3', 'teamId': package['teamId'], 'state': 'UNDEPLOYED', 'instances': []}])
+        self.assertEqual(self.client.delete(url).status_code, 200)
+        self.assertFalse(destination.exists())
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(self.client.delete(url).status_code, 404)
+        self.assertTrue(any(item.get('action') == 'package.delete' for item in main.read_json(main.AUDIT_FILE, [])))
+
+    def test_packages_view_exposes_delete_action(self):
+        script = self.client.get('/control-desk.js').text
+        self.assertIn('data-desk-package="delete"', script)
+        self.assertIn('await deletePackage(button.dataset.package, button.dataset.team)', script)
+
     def test_package_deployment_secrets_lifecycle_and_audit(self):
         uploaded = self.upload()
         self.assertEqual(uploaded.status_code, 200, uploaded.text)

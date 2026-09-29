@@ -18,7 +18,11 @@
     "desktop:prepare": "powershell -ExecutionPolicy Bypass -File ../scripts/build-electron-sidecar.ps1",
     "desktop:installer": "powershell -ExecutionPolicy Bypass -File ../scripts/build-studio.ps1 -Target nsis",
     "desktop:unpacked": "powershell -ExecutionPolicy Bypass -File ../scripts/build-studio.ps1 -Target dir",
-    "administrator:windows": "powershell -ExecutionPolicy Bypass -File ../scripts/build-administrator.ps1"
+    "administrator:windows": "powershell -ExecutionPolicy Bypass -File ../scripts/build-administrator.ps1",
+    "control-plane:desktop": "electron control-plane-desktop",
+    "control-plane:installer": "powershell -ExecutionPolicy Bypass -File ../scripts/build-control-plane-desktop.ps1",
+    "control-plane:unpacked": "powershell -ExecutionPolicy Bypass -File ../scripts/build-control-plane-desktop.ps1 -Target dir",
+    "control-plane:test": "node --test control-plane-desktop/*.test.cjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",

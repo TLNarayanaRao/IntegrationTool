@@ -3,6 +3,7 @@ output/mina-overview/
 frontend/node_modules/
 frontend/dist/
 frontend/release/
+frontend/release-control-plane/
 frontend/*.tsbuildinfo
 java-bridge/build/
 drivers/**/*.jar

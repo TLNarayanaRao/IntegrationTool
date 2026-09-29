@@ -1,0 +1,8 @@
+{
+  "name": "mina-control-plane-desktop",
+  "version": "1.0.3",
+  "description": "Windows client for a remote MINA Control Plane",
+  "author": "MINA",
+  "main": "main.cjs",
+  "private": true
+}

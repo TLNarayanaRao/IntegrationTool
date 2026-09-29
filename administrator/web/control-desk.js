@@ -50,7 +50,7 @@ function deskDeploymentRow(item) {
 }
 
 function deskPackageRow(item) {
-  return `<div class="desk-package"><span class="desk-package-icon">▣</span><span><b>${esc(item.applicationName)}</b><small>${esc(item.packageId)} · ${esc(item.target)} · ${esc(teamName(item.teamId))}</small></span><span>${status(item.status)}</span><span class="desk-package-env">${(item.environments||[]).map(env=>`<em>${esc(env)}</em>`).join('')}</span><span class="desk-package-actions"><button data-desk-package="inspect" data-package="${esc(item.packageId)}" data-team="${esc(item.teamId)}">Inspect</button><button class="primary" data-desk-package="deploy" data-package="${esc(item.packageId)}" data-team="${esc(item.teamId)}">Deploy</button></span></div>`;
+  return `<div class="desk-package"><span class="desk-package-icon">▣</span><span><b>${esc(item.applicationName)}</b><small>${esc(item.packageId)} · ${esc(item.target)} · ${esc(teamName(item.teamId))}</small></span><span>${status(item.status)}</span><span class="desk-package-env">${(item.environments||[]).map(env=>`<em>${esc(env)}</em>`).join('')}</span><span class="desk-package-actions"><button data-desk-package="inspect" data-package="${esc(item.packageId)}" data-team="${esc(item.teamId)}">Inspect</button><button class="primary" data-desk-package="deploy" data-package="${esc(item.packageId)}" data-team="${esc(item.teamId)}">Deploy</button><button class="danger" data-desk-package="delete" data-package="${esc(item.packageId)}" data-team="${esc(item.teamId)}" title="Delete this package archive">Delete</button></span></div>`;
 }
 
 function renderControlDeskApps() {
@@ -204,6 +204,12 @@ q('#content').addEventListener('click', async event => {
   if (button.dataset.deskPlane) return dataPlaneDetails(button.dataset.deskPlane);
   if (button.dataset.deskSection) {desk.section=button.dataset.deskSection;return renderControlDeskApps()}
   if (button.dataset.deskDeployment) {desk.tab='overview';return deskInspect(button.dataset.deskDeployment)}
+  if (button.dataset.deskPackage === 'delete') {
+    button.disabled = true;
+    try { await deletePackage(button.dataset.package, button.dataset.team); }
+    finally { button.disabled = false; }
+    return;
+  }
   if (button.dataset.deskPackage) return button.dataset.deskPackage==='deploy'?openDeploy(button.dataset.package,button.dataset.team):packageDetails(button.dataset.package,button.dataset.team);
   if (button.hasAttribute('data-desk-close')) {desk.selected=null;desk.serial++;q('#deskInspector').innerHTML=deskEmpty('Select an application','Inspect and operate a deployment here.');return deskRenderList()}
   if (button.dataset.deskTab) {desk.tab=button.dataset.deskTab;return deskInspect(desk.selected)}
