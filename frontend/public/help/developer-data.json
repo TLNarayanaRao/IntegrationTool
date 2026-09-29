@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "eff09e7752ee040ef863b6190b3d21d29943d95358c4a7067b786bc785256f44",
+  "fingerprint": "648138fbb8a59f53dbe968278d6cc7e585ed7eac82b10e7d27e13ebaa04fb4ca",
   "counts": {
     "activities": 96,
     "groups": 11,
@@ -292,7 +292,7 @@
                 ],
                 [
                   "Direct helper dispatch for start; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Task graph and interface schema",
@@ -300,7 +300,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -481,7 +481,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for start; task graph may also be generated inline"
         },
@@ -493,7 +493,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -637,11 +637,11 @@
                 ],
                 [
                   "Direct helper dispatch for timer; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -822,13 +822,13 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for timer; task graph may also be generated inline"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -972,7 +972,7 @@
                 ],
                 [
                   "Direct helper dispatch for call_task; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Task graph and interface schema",
@@ -980,7 +980,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -1161,7 +1161,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for call_task; task graph may also be generated inline"
         },
@@ -1173,7 +1173,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -1317,7 +1317,7 @@
                 ],
                 [
                   "Direct helper dispatch for end; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Task graph and interface schema",
@@ -1325,7 +1325,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -1506,7 +1506,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for end; task graph may also be generated inline"
         },
@@ -1518,7 +1518,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -1674,7 +1674,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -1873,7 +1873,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -2021,7 +2021,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -2208,7 +2208,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -2356,7 +2356,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -2543,7 +2543,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -2691,7 +2691,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -2878,7 +2878,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -3026,7 +3026,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -3213,7 +3213,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -3361,7 +3361,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -3548,7 +3548,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -3696,7 +3696,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -3883,7 +3883,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -4027,7 +4027,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -4208,7 +4208,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -4352,7 +4352,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -4533,7 +4533,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -4677,7 +4677,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -4858,7 +4858,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -5002,7 +5002,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -5183,7 +5183,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -5327,7 +5327,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -5508,7 +5508,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -5652,7 +5652,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -5833,7 +5833,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -5977,7 +5977,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -6158,7 +6158,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -6302,7 +6302,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -6483,7 +6483,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -6627,7 +6627,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -6808,7 +6808,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -6952,7 +6952,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -7133,7 +7133,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -7277,7 +7277,7 @@
                 ],
                 [
                   "Direct helper dispatch for http_listener; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Inbound HTTP/REST/SOAP hosting and response boundary",
@@ -7289,7 +7289,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -7470,7 +7470,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for http_listener; task graph may also be generated inline"
         },
@@ -7488,7 +7488,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -7632,7 +7632,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -7813,7 +7813,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -7957,7 +7957,7 @@
                 ],
                 [
                   "Direct helper dispatch for http_response; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Inbound HTTP/REST/SOAP hosting and response boundary",
@@ -7969,7 +7969,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -8150,7 +8150,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for http_response; task graph may also be generated inline"
         },
@@ -8168,7 +8168,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -8320,7 +8320,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -8513,7 +8513,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -8665,7 +8665,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -8858,7 +8858,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -9014,7 +9014,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -9213,7 +9213,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -9369,7 +9369,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -9568,7 +9568,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -9716,11 +9716,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -9906,14 +9906,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -10061,11 +10061,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -10251,14 +10251,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -10406,11 +10406,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -10596,14 +10596,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -10751,11 +10751,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -10941,14 +10941,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -11096,11 +11096,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -11286,14 +11286,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -11441,11 +11441,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -11631,14 +11631,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -11786,11 +11786,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -11976,14 +11976,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -12131,11 +12131,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -12321,14 +12321,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -12476,11 +12476,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -12666,14 +12666,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -12821,11 +12821,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -13011,14 +13011,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -13166,11 +13166,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -13356,14 +13356,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -13511,11 +13511,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -13701,14 +13701,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -13856,7 +13856,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -14043,7 +14043,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -14191,7 +14191,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -14378,7 +14378,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -14526,7 +14526,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -14713,7 +14713,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -14865,7 +14865,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -15058,7 +15058,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -15210,7 +15210,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -15403,7 +15403,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -15555,11 +15555,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -15751,14 +15751,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -15910,11 +15910,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -16106,14 +16106,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -16265,11 +16265,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -16461,14 +16461,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -16620,11 +16620,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -16816,14 +16816,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -16983,11 +16983,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -17191,14 +17191,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -17350,11 +17350,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -17546,14 +17546,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -17705,11 +17705,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -17901,14 +17901,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -18060,11 +18060,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -18256,14 +18256,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -18415,11 +18415,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -18611,14 +18611,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -18778,11 +18778,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -18986,14 +18986,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -19145,11 +19145,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -19341,14 +19341,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -19500,11 +19500,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -19696,14 +19696,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -19855,11 +19855,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -20051,14 +20051,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -20206,7 +20206,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -20393,7 +20393,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -20541,7 +20541,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -20728,7 +20728,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -20876,7 +20876,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -21063,7 +21063,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -21211,7 +21211,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -21398,7 +21398,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -21546,7 +21546,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -21733,7 +21733,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -21881,7 +21881,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -22068,7 +22068,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -22216,7 +22216,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -22403,7 +22403,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -22551,7 +22551,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -22738,7 +22738,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -22886,7 +22886,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -23073,7 +23073,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -23221,7 +23221,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -23408,7 +23408,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -23556,7 +23556,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -23743,7 +23743,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -23891,7 +23891,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -24078,7 +24078,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -24230,7 +24230,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -24423,7 +24423,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -24575,7 +24575,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -24768,7 +24768,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -24916,7 +24916,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -25103,7 +25103,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -25255,7 +25255,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -25448,7 +25448,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -25592,7 +25592,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -25773,7 +25773,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -25921,7 +25921,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -26108,7 +26108,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -26252,7 +26252,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -26433,7 +26433,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -26577,7 +26577,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -26758,7 +26758,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -26902,7 +26902,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -27083,7 +27083,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -27227,7 +27227,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -27408,7 +27408,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -27556,7 +27556,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -27743,7 +27743,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -27883,11 +27883,11 @@
                 ],
                 [
                   "Direct Python implementation; inspect operation map",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -28062,13 +28062,13 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct Python implementation; inspect operation map"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -28212,11 +28212,11 @@
                 ],
                 [
                   "Direct Python implementation; inspect operation transform",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -28397,13 +28397,13 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct Python implementation; inspect operation transform"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -28547,11 +28547,11 @@
                 ],
                 [
                   "Direct helper dispatch for log; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -28732,13 +28732,13 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for log; task graph may also be generated inline"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -28882,11 +28882,11 @@
                 ],
                 [
                   "Direct helper dispatch for catch; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -29067,13 +29067,13 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for catch; task graph may also be generated inline"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -29217,11 +29217,11 @@
                 ],
                 [
                   "Direct helper dispatch for throw; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -29402,13 +29402,13 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for throw; task graph may also be generated inline"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -29552,11 +29552,11 @@
                 ],
                 [
                   "Direct helper dispatch for rethrow; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -29737,13 +29737,13 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for rethrow; task graph may also be generated inline"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -29887,11 +29887,11 @@
                 ],
                 [
                   "Direct helper dispatch for confirm; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -30072,13 +30072,13 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for confirm; task graph may also be generated inline"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -30230,11 +30230,11 @@
                 ],
                 [
                   "Native Java connector implementation",
-                  "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java:1\n(module)"
+                  "java-bridge/src/com/mina/bridge/MinaJavaBridge.java:1\n(module)"
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -30426,14 +30426,14 @@
           "role": "Python/native worker lifecycle"
         },
         {
-          "file": "java-bridge/src/com/integrationfabric/bridge/FabricJavaBridge.java",
+          "file": "java-bridge/src/com/mina/bridge/MinaJavaBridge.java",
           "line": 1,
           "symbol": "(module)",
           "role": "Native Java connector implementation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -30581,7 +30581,7 @@
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -30768,7 +30768,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -30912,11 +30912,11 @@
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -31097,13 +31097,13 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for basic; task graph may also be generated inline"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -31247,11 +31247,11 @@
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -31432,13 +31432,13 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for basic; task graph may also be generated inline"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -31582,11 +31582,11 @@
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -31767,13 +31767,13 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for basic; task graph may also be generated inline"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -31917,11 +31917,11 @@
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -32102,13 +32102,13 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for basic; task graph may also be generated inline"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -32252,11 +32252,11 @@
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -32437,13 +32437,13 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for basic; task graph may also be generated inline"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -32587,11 +32587,11 @@
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Export capability selection",
@@ -32772,13 +32772,13 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for basic; task graph may also be generated inline"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct graph/code generation"
         },
@@ -33528,7 +33528,7 @@
                 ],
                 [
                   "Export function usage",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Regression suite: mapper_code_general",
@@ -33590,7 +33590,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Export function usage"
         },
@@ -33832,7 +33832,7 @@
                 ],
                 [
                   "Direct-export group planning",
-                  "backend/app/raw_python.py:362\ndef _simple_group_plans("
+                  "backend/app/raw_python.py:370\ndef _simple_group_plans("
                 ],
                 [
                   "Regression suite: groups_runtime",
@@ -33930,7 +33930,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 362,
+          "line": 370,
           "symbol": "def _simple_group_plans(",
           "role": "Direct-export group planning"
         },
@@ -34006,7 +34006,7 @@
                 ],
                 [
                   "Export nesting/graph planning",
-                  "backend/app/raw_python.py:362\ndef _simple_group_plans("
+                  "backend/app/raw_python.py:370\ndef _simple_group_plans("
                 ],
                 [
                   "Regression suite: groups_runtime",
@@ -34070,7 +34070,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 362,
+          "line": 370,
           "symbol": "def _simple_group_plans(",
           "role": "Export nesting/graph planning"
         },
@@ -34146,7 +34146,7 @@
                 ],
                 [
                   "Export nesting/graph planning",
-                  "backend/app/raw_python.py:362\ndef _simple_group_plans("
+                  "backend/app/raw_python.py:370\ndef _simple_group_plans("
                 ],
                 [
                   "Regression suite: groups_runtime",
@@ -34210,7 +34210,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 362,
+          "line": 370,
           "symbol": "def _simple_group_plans(",
           "role": "Export nesting/graph planning"
         },
@@ -34286,7 +34286,7 @@
                 ],
                 [
                   "Export nesting/graph planning",
-                  "backend/app/raw_python.py:362\ndef _simple_group_plans("
+                  "backend/app/raw_python.py:370\ndef _simple_group_plans("
                 ],
                 [
                   "Regression suite: groups_runtime",
@@ -34350,7 +34350,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 362,
+          "line": 370,
           "symbol": "def _simple_group_plans(",
           "role": "Export nesting/graph planning"
         },
@@ -34426,7 +34426,7 @@
                 ],
                 [
                   "Export nesting/graph planning",
-                  "backend/app/raw_python.py:362\ndef _simple_group_plans("
+                  "backend/app/raw_python.py:370\ndef _simple_group_plans("
                 ],
                 [
                   "Regression suite: groups_runtime",
@@ -34490,7 +34490,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 362,
+          "line": 370,
           "symbol": "def _simple_group_plans(",
           "role": "Export nesting/graph planning"
         },
@@ -34566,7 +34566,7 @@
                 ],
                 [
                   "Export nesting/graph planning",
-                  "backend/app/raw_python.py:362\ndef _simple_group_plans("
+                  "backend/app/raw_python.py:370\ndef _simple_group_plans("
                 ],
                 [
                   "Regression suite: groups_runtime",
@@ -34630,7 +34630,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 362,
+          "line": 370,
           "symbol": "def _simple_group_plans(",
           "role": "Export nesting/graph planning"
         },
@@ -34706,7 +34706,7 @@
                 ],
                 [
                   "Export nesting/graph planning",
-                  "backend/app/raw_python.py:362\ndef _simple_group_plans("
+                  "backend/app/raw_python.py:370\ndef _simple_group_plans("
                 ],
                 [
                   "Regression suite: groups_runtime",
@@ -34770,7 +34770,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 362,
+          "line": 370,
           "symbol": "def _simple_group_plans(",
           "role": "Export nesting/graph planning"
         },
@@ -34846,7 +34846,7 @@
                 ],
                 [
                   "Export nesting/graph planning",
-                  "backend/app/raw_python.py:362\ndef _simple_group_plans("
+                  "backend/app/raw_python.py:370\ndef _simple_group_plans("
                 ],
                 [
                   "Regression suite: groups_runtime",
@@ -34910,7 +34910,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 362,
+          "line": 370,
           "symbol": "def _simple_group_plans(",
           "role": "Export nesting/graph planning"
         },
@@ -34986,7 +34986,7 @@
                 ],
                 [
                   "Export nesting/graph planning",
-                  "backend/app/raw_python.py:362\ndef _simple_group_plans("
+                  "backend/app/raw_python.py:370\ndef _simple_group_plans("
                 ],
                 [
                   "Regression suite: groups_runtime",
@@ -35050,7 +35050,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 362,
+          "line": 370,
           "symbol": "def _simple_group_plans(",
           "role": "Export nesting/graph planning"
         },
@@ -35126,7 +35126,7 @@
                 ],
                 [
                   "Export nesting/graph planning",
-                  "backend/app/raw_python.py:362\ndef _simple_group_plans("
+                  "backend/app/raw_python.py:370\ndef _simple_group_plans("
                 ],
                 [
                   "Regression suite: groups_runtime",
@@ -35190,7 +35190,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 362,
+          "line": 370,
           "symbol": "def _simple_group_plans(",
           "role": "Export nesting/graph planning"
         },
@@ -35266,7 +35266,7 @@
                 ],
                 [
                   "Export nesting/graph planning",
-                  "backend/app/raw_python.py:362\ndef _simple_group_plans("
+                  "backend/app/raw_python.py:370\ndef _simple_group_plans("
                 ],
                 [
                   "Regression suite: groups_runtime",
@@ -35330,7 +35330,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 362,
+          "line": 370,
           "symbol": "def _simple_group_plans(",
           "role": "Export nesting/graph planning"
         },
@@ -35406,7 +35406,7 @@
                 ],
                 [
                   "Export nesting/graph planning",
-                  "backend/app/raw_python.py:362\ndef _simple_group_plans("
+                  "backend/app/raw_python.py:370\ndef _simple_group_plans("
                 ],
                 [
                   "Regression suite: groups_runtime",
@@ -35470,7 +35470,7 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 362,
+          "line": 370,
           "symbol": "def _simple_group_plans(",
           "role": "Export nesting/graph planning"
         },
@@ -35530,19 +35530,19 @@
                 ],
                 [
                   "Direct application generation",
-                  "backend/app/raw_python.py:568\ndef raw_python_files("
+                  "backend/app/raw_python.py:576\ndef raw_python_files("
                 ],
                 [
                   "Engine archive generation",
-                  "backend/app/raw_python.py:1143\ndef engine_python_files("
+                  "backend/app/raw_python.py:1151\ndef engine_python_files("
                 ],
                 [
                   "Engine module pruning",
-                  "backend/app/raw_python.py:1089\ndef _engine_module_files("
+                  "backend/app/raw_python.py:1097\ndef _engine_module_files("
                 ],
                 [
                   "Direct support dispatch",
-                  "backend/app/raw_python_support/core.py:175\nasync def execute("
+                  "backend/app/raw_python_support/core.py:182\nasync def execute("
                 ],
                 [
                   "Direct application lifecycle",
@@ -35596,25 +35596,25 @@
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 568,
+          "line": 576,
           "symbol": "def raw_python_files(",
           "role": "Direct application generation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 1143,
+          "line": 1151,
           "symbol": "def engine_python_files(",
           "role": "Engine archive generation"
         },
         {
           "file": "backend/app/raw_python.py",
-          "line": 1089,
+          "line": 1097,
           "symbol": "def _engine_module_files(",
           "role": "Engine module pruning"
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 175,
+          "line": 182,
           "symbol": "async def execute(",
           "role": "Direct support dispatch"
         },
