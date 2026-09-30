@@ -605,6 +605,42 @@ class RawPythonTests(unittest.TestCase):
                     if name == 'application' or name.startswith('application.'):
                         sys.modules.pop(name)
 
+    def test_sap_early_confirm_ignores_unavailable_generic_ack_mapping(self):
+        project = self.project()
+        project['resources'] = [{'id': 'sap', 'type': 'sap', 'name': 'SAP', 'config': {'mode': 'mock'}}]
+        project['tasks'] = [{'id': 'main', 'name': 'Inbound', 'kind': 'starter', 'groups': [],
+            'activities': [
+                {'id': 'recv', 'type': 'sap', 'name': 'IDoc Listener', 'config': {'operation': 'idoc_listener', 'resourceId': 'sap'}},
+                {'id': 'confirm', 'type': 'confirm', 'name': 'Confirm', 'config': {
+                    'operation': 'acknowledge', 'failIfMissing': True,
+                    'inputMappings': {'ackId': '${IDoc-Parser.ackId}'}}}],
+            'transitions': [{'source': 'recv', 'target': 'confirm'}]}]
+        files = compiler.raw_python_files(project, {'dev': []})
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for name, body in files.items():
+                path = root / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(body)
+            sys.path.insert(0, folder)
+            try:
+                from application import connectors
+                from application.core import Context, execute_with_policy
+                class FakeSap:
+                    def __init__(self): self.decisions = []
+                    def acknowledge_idoc(self, listener_key, delivery_id, success):
+                        self.decisions.append((listener_key, delivery_id, success))
+                fake = FakeSap(); connectors._SAP_ADAPTER = fake
+                context = Context({}, {}, {}, environment_name='dev')
+                context.transport = {'technology': 'sap', 'listenerKey': 'listener-1', 'deliveryId': 'delivery-1'}
+                result = asyncio.run(execute_with_policy(
+                    'confirm', project['tasks'][0]['activities'][1]['config'], context, 'confirm', 'Confirm'))
+                self.assertTrue(result['confirmed'])
+                self.assertEqual(fake.decisions, [('listener-1', 'delivery-1', True)])
+            finally:
+                sys.path.remove(folder)
+                for name in list(sys.modules):
+                    if name == 'application' or name.startswith('application.'):
+                        sys.modules.pop(name)
+
     def test_sap_inbound_delivery_is_acknowledged_after_generated_flow(self):
         project = self.project()
         project['resources'] = [{'id': 'sap', 'type': 'sap', 'name': 'SAP', 'config': {'mode': 'mock'}}]

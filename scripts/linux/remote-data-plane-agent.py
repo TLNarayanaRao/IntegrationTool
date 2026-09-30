@@ -253,6 +253,23 @@ def reconcile(deployments):
 def main():
     if not PLANE or not KEY: raise SystemExit("Set [data-plane] id and [control-plane] admin_key in the INI")
     agent_lock = acquire_agent_lock()
+    stopping = False
+
+    # Runtime workers are started in their own process groups.  Without an
+    # explicit signal handler, stopping the agent can orphan a Python worker
+    # and its Java bridge; an orphaned SAP bridge retains the Program ID lock.
+    def shutdown(_signum, _frame):
+        nonlocal stopping
+        if stopping:
+            return
+        stopping = True
+        print("Remote data-plane agent stopping; terminating managed runtime workers.", flush=True)
+        for deployment_id in list(workers):
+            stop(deployment_id)
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, shutdown)
+    signal.signal(signal.SIGINT, shutdown)
     print(f"Remote data-plane agent started: {PLANE}/{NAMESPACE} -> {BASE}; data teams: {', '.join(TEAM_MAPPING.values()) or 'all assigned teams'}", flush=True)
     while True:
         stage = "heartbeat"

@@ -199,8 +199,28 @@ async def execute_with_policy(kind: str, raw: dict, ctx: Context, activity_id: s
 
 async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: str) -> Any:
     """Execute supported Python-native operations; never load Mina JSON or DSL."""
-    cfg = resolve({key: value for key, value in raw.items() if key != 'inputMappings'}, ctx)
-    for key, value in mapped(raw, ctx).items():
+    # SAP tRFC confirmation is identified by the live listener delivery,
+    # rather than a generic broker acknowledgement token.  A Confirm activity
+    # placed after an IDoc Parser can therefore retain an editor-created
+    # ``ackId`` mapping without attempting to resolve a field that SAP never
+    # exposes.  This mirrors the regular runtime's early-confirm behaviour.
+    sap_early_confirm = (
+        kind == 'confirm'
+        and ctx.transport.get('technology') == 'sap'
+        and ctx.transport.get('deliveryId')
+        and ctx.transport.get('listenerKey')
+    )
+    ignored_confirm_handles = {'ackId', 'ackIds', 'acknowledgementHandle'} if sap_early_confirm else set()
+    static_config = {
+        key: value for key, value in raw.items()
+        if key != 'inputMappings' and key not in ignored_confirm_handles
+    }
+    cfg = resolve(static_config, ctx)
+    input_mappings = {
+        key: value for key, value in (raw.get('inputMappings') or {}).items()
+        if key not in ignored_confirm_handles
+    }
+    for key, value in mapped({'inputMappings': input_mappings}, ctx).items():
         cfg[key] = value
     operation = str(cfg.get('operation') or '')
     if kind == 'start': return mapped(raw, ctx).get('payload', ctx.input)
