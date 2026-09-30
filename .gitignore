@@ -25,6 +25,8 @@ administrator/dist/
 administrator/release/
 administrator/*.spec
 
+linux-dependencies/
+
 *.pyc
 __pycache__/
 .env

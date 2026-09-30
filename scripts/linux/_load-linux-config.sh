@@ -32,6 +32,7 @@ mina_ini_load() {
       user:scope) variable=USER_SCOPE ;;
       user:resource_id) variable=USER_RESOURCE_ID ;;
       setup:version) variable=MINA_VERSION ;;
+      setup:install_root) variable=MINA_INSTALL_ROOT ;;
       *) variable="MINA_${section^^}_${key^^}"; variable="${variable//-/_}" ;;
     esac
     printf -v "$variable" '%s' "$value"; export "$variable"
@@ -45,4 +46,4 @@ DATA_PLANE_ID="${DATA_PLANE_ID:-}"
 DATA_PLANE_NAMESPACE="${DATA_PLANE_NAMESPACE:-default}"
 HEARTBEAT_SECONDS="${HEARTBEAT_SECONDS:-30}"
 AVAILABLE_CAPACITY="${AVAILABLE_CAPACITY:-20}"
-export CONTROL_PLANE_URL ADMIN_KEY HEARTBEAT_SECONDS AVAILABLE_CAPACITY
+export CONTROL_PLANE_URL ADMIN_KEY HEARTBEAT_SECONDS AVAILABLE_CAPACITY MINA_INSTALL_ROOT

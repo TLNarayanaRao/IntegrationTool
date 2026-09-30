@@ -5,7 +5,7 @@
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/_load-linux-config.sh"
-ROOT="${MINA_ROOT:-/opt/mina}"
+ROOT="${MINA_ROOT:-${MINA_INSTALL_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}}"
 VERSION="${MINA_VERSION:-1.0.0}"
 
 echo "[1/6] Setting up the Linux Administrator and runtime"

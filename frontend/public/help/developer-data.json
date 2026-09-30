@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "dad559f67d0f6ee5cebadb06af140fd2777895b5f4039346de0dde6df17f8034",
+  "fingerprint": "8c1ec2b26ed15ae259005f57dfd191e7eb0458aea5b3218eab250de986879e69",
   "counts": {
     "activities": 96,
     "groups": 11,
@@ -292,7 +292,7 @@
                 ],
                 [
                   "Direct helper dispatch for start; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Task graph and interface schema",
@@ -481,7 +481,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for start; task graph may also be generated inline"
         },
@@ -637,7 +637,7 @@
                 ],
                 [
                   "Direct helper dispatch for timer; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
@@ -822,7 +822,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for timer; task graph may also be generated inline"
         },
@@ -972,7 +972,7 @@
                 ],
                 [
                   "Direct helper dispatch for call_task; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Task graph and interface schema",
@@ -1161,7 +1161,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for call_task; task graph may also be generated inline"
         },
@@ -1317,7 +1317,7 @@
                 ],
                 [
                   "Direct helper dispatch for end; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Task graph and interface schema",
@@ -1506,7 +1506,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for end; task graph may also be generated inline"
         },
@@ -7277,7 +7277,7 @@
                 ],
                 [
                   "Direct helper dispatch for http_listener; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Inbound HTTP/REST/SOAP hosting and response boundary",
@@ -7470,7 +7470,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for http_listener; task graph may also be generated inline"
         },
@@ -7957,7 +7957,7 @@
                 ],
                 [
                   "Direct helper dispatch for http_response; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Inbound HTTP/REST/SOAP hosting and response boundary",
@@ -8150,7 +8150,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for http_response; task graph may also be generated inline"
         },
@@ -27883,7 +27883,7 @@
                 ],
                 [
                   "Direct Python implementation; inspect operation map",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
@@ -28062,7 +28062,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct Python implementation; inspect operation map"
         },
@@ -28212,7 +28212,7 @@
                 ],
                 [
                   "Direct Python implementation; inspect operation transform",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
@@ -28397,7 +28397,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct Python implementation; inspect operation transform"
         },
@@ -28547,7 +28547,7 @@
                 ],
                 [
                   "Direct helper dispatch for log; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
@@ -28732,7 +28732,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for log; task graph may also be generated inline"
         },
@@ -28882,7 +28882,7 @@
                 ],
                 [
                   "Direct helper dispatch for catch; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
@@ -29067,7 +29067,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for catch; task graph may also be generated inline"
         },
@@ -29217,7 +29217,7 @@
                 ],
                 [
                   "Direct helper dispatch for throw; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
@@ -29402,7 +29402,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for throw; task graph may also be generated inline"
         },
@@ -29552,7 +29552,7 @@
                 ],
                 [
                   "Direct helper dispatch for rethrow; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
@@ -29737,7 +29737,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for rethrow; task graph may also be generated inline"
         },
@@ -29887,7 +29887,7 @@
                 ],
                 [
                   "Direct helper dispatch for confirm; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
@@ -30072,7 +30072,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for confirm; task graph may also be generated inline"
         },
@@ -30912,7 +30912,7 @@
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
@@ -31097,7 +31097,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for basic; task graph may also be generated inline"
         },
@@ -31247,7 +31247,7 @@
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
@@ -31432,7 +31432,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for basic; task graph may also be generated inline"
         },
@@ -31582,7 +31582,7 @@
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
@@ -31767,7 +31767,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for basic; task graph may also be generated inline"
         },
@@ -31917,7 +31917,7 @@
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
@@ -32102,7 +32102,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for basic; task graph may also be generated inline"
         },
@@ -32252,7 +32252,7 @@
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
@@ -32437,7 +32437,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for basic; task graph may also be generated inline"
         },
@@ -32587,7 +32587,7 @@
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Direct graph/code generation",
@@ -32772,7 +32772,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct helper dispatch for basic; task graph may also be generated inline"
         },
@@ -35542,7 +35542,7 @@
                 ],
                 [
                   "Direct support dispatch",
-                  "backend/app/raw_python_support/core.py:182\nasync def execute("
+                  "backend/app/raw_python_support/core.py:200\nasync def execute("
                 ],
                 [
                   "Direct application lifecycle",
@@ -35614,7 +35614,7 @@
         },
         {
           "file": "backend/app/raw_python_support/core.py",
-          "line": 182,
+          "line": 200,
           "symbol": "async def execute(",
           "role": "Direct support dispatch"
         },

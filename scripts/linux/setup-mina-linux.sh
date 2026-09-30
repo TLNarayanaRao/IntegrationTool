@@ -2,7 +2,8 @@
 set -Eeuo pipefail
 
 # MINA Linux environment setup. No systemctl is used.
-MINA_ROOT="${MINA_ROOT:-/opt/mina}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MINA_ROOT="${MINA_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 TEMP_ROOT="${MINA_TEMP_ROOT:-$MINA_ROOT/administrator/release}"
 VERSION="${1:-${MINA_ADMIN_VERSION:-}}"
 PYTHON_BIN="${MINA_PYTHON:-/usr/bin/python3.12}"
@@ -103,18 +104,13 @@ cat > "$CP/mina-control-plane.ini" <<EOF
 [control-plane]
 host=$HOST
 port=$PORT
-home=$CP
-data_dir=$DATA
-log_dir=$LOGS/control-plane
-pid_dir=$PID
 api_key=$API_KEY
 secret_key=$API_SECRET
-runtime_command=$RUNTIME/mina-runtime --application {application} --environment {environment}
 
 [runtime]
-data_dir=$RUNTIME/data
-log_dir=$LOGS/runtime
-driver_home=$DRIVERS
+
+[setup]
+install_root=$MINA_ROOT
 EOF
 chmod 600 "$CP/mina-control-plane.ini"
 

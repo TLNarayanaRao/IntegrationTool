@@ -17,15 +17,24 @@ CONFIG = Path(os.environ.get("MINA_CONFIG_FILE", HERE / "mina-control-plane.ini"
 cfg = configparser.ConfigParser(); cfg.read(CONFIG)
 TEAM_MAPPING = dict(cfg["data-teams"]) if "data-teams" in cfg else {}
 cp = cfg["control-plane"]; dp = cfg["data-plane"]; runtime_cfg = cfg["runtime"] if "runtime" in cfg else {}
+setup_cfg = cfg["setup"] if "setup" in cfg else {}
 BASE = os.environ.get("CONTROL_PLANE_URL", cp.get("control_plane_url", f"http://{cp.get('host','127.0.0.1')}:{cp.get('port','19080')}" )).rstrip("/")
 KEY = os.environ.get("ADMIN_KEY", cp.get("admin_key", ""))
 PLANE = os.environ.get("DATA_PLANE_ID", dp.get("id", "")); NAMESPACE = os.environ.get("DATA_PLANE_NAMESPACE", dp.get("namespace", "default"))
 INTERVAL = int(os.environ.get("HEARTBEAT_SECONDS", dp.get("heartbeat_seconds", "30")))
 CAPACITY = int(os.environ.get("AVAILABLE_CAPACITY", dp.get("available_capacity", "20")))
 VERSION = os.environ.get("AGENT_VERSION", dp.get("agent_version", "1.0.0"))
-ROOT = Path(os.environ.get("MINA_AGENT_ROOT", f"/opt/mina/agent/{PLANE}"))
+INSTALL_ROOT = Path(os.environ.get("MINA_INSTALL_ROOT", setup_cfg.get("install_root", str(HERE.parent.parent)))).expanduser()
+ROOT = Path(os.environ.get("MINA_AGENT_ROOT", str(INSTALL_ROOT / "agent" / PLANE)))
 APP_ROOT = ROOT / "applications"; LOG_ROOT = ROOT / "logs"; APP_ROOT.mkdir(parents=True, exist_ok=True); LOG_ROOT.mkdir(parents=True, exist_ok=True)
-COMMAND = os.environ.get("MINA_RUNTIME_COMMAND", cp.get("runtime_command", "")) or f"{ROOT.parent.parent}/runtime/mina-runtime --application {{application}} --environment {{environment}}"
+COMMAND = os.environ.get("MINA_RUNTIME_COMMAND", cp.get("runtime_command", "")) or f"{INSTALL_ROOT}/runtime/mina-runtime --application {{application}} --environment {{environment}}"
+# Generated Python archives keep their application source isolated below the
+# agent directory.  Native SAP/JMS/JDBC activities still share one platform
+# Java bridge, which lives beside ``runtime`` at the MINA installation root.
+# Preserve an explicit operator override, but otherwise make that shared
+# bridge discoverable by every worker the agent starts.
+DEFAULT_JAVA_BRIDGE_HOME = INSTALL_ROOT / "java-bridge" / "build"
+DEFAULT_DRIVER_HOME = INSTALL_ROOT / "drivers"
 workers = {}
 _cpu_sample = None
 
@@ -196,6 +205,10 @@ def start(deployment):
             command = COMMAND.replace("{application}", str(package_dir / "application")).replace("{package}", str(package_dir)).replace("{environment}", str(environment)).replace("{deployment_id}", deployment_id).replace("{instance_id}", instance_id)
             command_parts = shlex.split(command)
         env = os.environ.copy(); env.update({"MINA_DEPLOYMENT_ID": deployment_id, "MINA_INSTANCE_ID": instance_id, "MINA_ENVIRONMENT": deployment.get("environment", "local"), "MINA_ENABLED_STARTERS": enabled})
+        if not env.get("MINA_JAVA_BRIDGE_HOME") and DEFAULT_JAVA_BRIDGE_HOME.is_dir():
+            env["MINA_JAVA_BRIDGE_HOME"] = str(DEFAULT_JAVA_BRIDGE_HOME)
+        if not env.get("MINA_DRIVER_HOME") and DEFAULT_DRIVER_HOME.is_dir():
+            env["MINA_DRIVER_HOME"] = str(DEFAULT_DRIVER_HOME)
         env.update({str(k): str(v) for k, v in (deployment.get("secrets") or {}).items()})
         # Older exported archives still consume the original launch contract.
         for key in ('DEPLOYMENT_ID', 'INSTANCE_ID', 'ENVIRONMENT', 'ENABLED_STARTERS'):
