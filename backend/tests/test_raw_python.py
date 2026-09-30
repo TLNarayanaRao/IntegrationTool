@@ -21,6 +21,38 @@ spec.loader.exec_module(compiler)
 
 
 class RawPythonTests(unittest.TestCase):
+    def test_exported_sap_ignores_inactive_snc_mappings(self):
+        project = self.project()
+        project['resources'] = [{'id': 'sap', 'type': 'sap', 'name': 'SAP', 'config': {}}]
+        project['tasks'] = [{'id': 'main', 'name': 'Main', 'kind': 'starter', 'groups': [],
+            'activities': [{'id': 'sap', 'type': 'sap', 'name': 'SAP', 'config': {'operation': 'idoc_listener', 'resourceId': 'sap'}}], 'transitions': []}]
+        files = compiler.raw_python_files(project, {'qa': []})
+        # Test the generated helper, not just the source template. No provider calls.
+        import types
+        module = types.ModuleType('sap_export_regression')
+        sys.modules[module.__name__] = module
+        try:
+            exec(compile(files['application/core.py'], 'core.py', 'exec'), module.__dict__)
+            ctx = module.Context({}, {'connections.sap.host': 'example.invalid', 'sap.type': 'dedicated'}, {})
+            raw = {'connectionType': module.Reference('properties.sap.type'),
+                   'applicationServerHost': module.Reference('properties.connections.sap.host'),
+                   **{key: module.Reference('properties.connections.sap.' + key) for key in
+                      ('sncPartnerName', 'sncLibraryPath', 'sncMyName', 'sncQop')}}
+            resolved = module.resolve_sap_connection(raw, ctx)
+            self.assertEqual(resolved['applicationServerHost'], 'example.invalid')
+            self.assertNotIn('sncPartnerName', resolved)
+            self.assertIn('sncPartnerName', raw)  # Do not mutate saved configuration.
+            ctx.properties['sap.type'] = 'snc'
+            with self.assertRaisesRegex(KeyError, 'connections.sap.sncPartnerName'): module.resolve_sap_connection(raw, ctx)
+            for key in ('sncPartnerName', 'sncLibraryPath', 'sncMyName', 'sncQop'):
+                ctx.properties['connections.sap.' + key] = 'configured'
+            self.assertEqual(module.resolve_sap_connection(raw, ctx)['sncPartnerName'], 'configured')
+            ctx.properties['sap.type'] = 'dedicated'
+            del ctx.properties['connections.sap.host']
+            with self.assertRaises(KeyError): module.resolve_sap_connection(raw, ctx)
+        finally:
+            sys.modules.pop(module.__name__, None)
+
     def project(self):
         return {
             'id': 'example', 'name': 'Example', 'schemas': [],

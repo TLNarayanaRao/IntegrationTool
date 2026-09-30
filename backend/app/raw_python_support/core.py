@@ -79,9 +79,14 @@ def lookup(path: str, ctx: Context) -> Any:
         if head in ctx.outputs: value = ctx.outputs[head].get('output')
         else: raise KeyError(f'Unknown expression root: {head}')
     for part in rest.split('.') if rest else []:
-        if isinstance(value, dict): value = value[part]
-        elif isinstance(value, (list, tuple)): value = value[int(part)]
-        else: value = getattr(value, part)
+        try:
+            if isinstance(value, dict): value = value[part]
+            elif isinstance(value, (list, tuple)): value = value[int(part)]
+            else: value = getattr(value, part)
+        except (KeyError, IndexError, AttributeError, ValueError) as error:
+            if head == 'properties':
+                raise KeyError(f'Missing property {rest!r} in environment {ctx.environment_name!r}') from error
+            raise
     return value
 
 
@@ -103,6 +108,19 @@ def assign_path(target: dict, path: str, value: Any) -> None:
     for part in parts[:-1]:
         cursor = cursor.setdefault(part, {})
     cursor[parts[-1]] = value
+
+
+def resolve_sap_connection(raw: dict, ctx: Context) -> dict:
+    """Resolve only active SNC fields; never suppress missing active mappings."""
+    connection_type = str(resolve(raw.get('connectionType', 'dedicated'), ctx) or 'dedicated').strip().lower()
+    snc_mode = resolve(raw.get('sncMode', ''), ctx)
+    snc_enabled = connection_type in {'snc', 'sncwithlogongroup'} or str(snc_mode).strip().lower() not in {'', '0', 'false', 'none', 'off'}
+    snc_fields = {'sncPartnerName', 'sncLibraryPath', 'sncMyName', 'sncQop',
+                  'snc_partnername', 'snc_lib', 'snc_myname', 'snc_qop'}
+    active = {key: value for key, value in raw.items() if snc_enabled or key not in snc_fields}
+    active['connectionType'] = connection_type
+    if 'sncMode' in active: active['sncMode'] = snc_mode if snc_enabled else ''
+    return resolve(active, ctx)
 
 
 def _cron_matches(field: str, value: int, minimum: int, maximum: int) -> bool:
@@ -388,7 +406,7 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
         resource = ctx.resources.get(resource_id)
         if not resource or resource.type != 'sap':
             raise ValueError(f'{name} requires a shared SAP connection')
-        connection = resolve(resource.config, ctx)
+        connection = resolve_sap_connection(resource.config, ctx)
         source = str(cfg.get('messagingSource') or 'NoMessaging').strip().lower().replace(' ', '')
         if operation == 'idoc_listener' and source not in {'', 'nomessaging', 'direct', 'sapjcorfc/idoc_inbound_asynchronous'}:
             technology = {'ems': 'ems', 'jms': 'jms', 'kafka': 'kafka'}.get(source)
