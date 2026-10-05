@@ -8,6 +8,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 from typing import Any
+from .native.mapping_literals import parse_literal
 
 
 REFERENCE = re.compile(r'^\$\{([^}]+)\}$')
@@ -104,6 +105,20 @@ def resolve(value: Any, ctx: Context) -> Any:
     return value
 
 
+def mapping_expression(value: Any) -> Any:
+    """Keep field references symbolic until the mapper enters its loop scope."""
+    if isinstance(value, Reference): return '${' + value.path + '}'
+    if isinstance(value, Template): return ''.join(str(mapping_expression(part)) for part in value.parts)
+    if isinstance(value, dict): return {key: mapping_expression(child) for key, child in value.items()}
+    if isinstance(value, list): return [mapping_expression(child) for child in value]
+    return value
+
+
+def mapping_document(ctx: Context) -> dict:
+    return {**(ctx.last if isinstance(ctx.last, dict) else {}), 'input': ctx.input,
+            'last': ctx.last, 'properties': ctx.properties, 'vars': ctx.variables, 'activities': ctx.outputs}
+
+
 def assign_path(target: dict, path: str, value: Any) -> None:
     parts = path.split('.')
     cursor = target
@@ -153,10 +168,39 @@ def _next_cron(expression: str, now: datetime) -> datetime:
 
 
 def mapped(config: dict, ctx: Context) -> dict:
+    entries = config.get('inputMappings') or {}
+    if any(isinstance(value, dict) and '$rule' in value or
+           isinstance(value, (str, Template)) and re.match(r'[\w:-]+\(', str(mapping_expression(value)).strip())
+           for value in entries.values()):
+        from .native.mapper import execute as execute_mapping
+        rules = []
+        for path, value in entries.items():
+            if isinstance(value, dict) and '$rule' in value:
+                rule = mapping_expression(value)
+                rule = {**rule, 'operator': rule['$rule']}
+            elif isinstance(value, (Reference, Template)) or isinstance(value, str) and (
+                    value.startswith('${') or re.match(r'[\w:-]+\(', value.strip()) or
+                    len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'")):
+                rule = {'source': mapping_expression(value)}
+            else:
+                literal, parsed = parse_literal(value)
+                rule = {'constant': literal if parsed else resolve(value, ctx)}
+            rules.append({**rule, 'target': path})
+        return execute_mapping(mapping_document(ctx), rules, {'validateOutput': False, 'nullPolicy': 'keep', 'inputMappingSemantics': True, 'customFunctions': config.get('customFunctions') or ctx.attributes.get('customFunctions', [])})
     result = {}
-    for path, expression in (config.get('inputMappings') or {}).items():
-        assign_path(result, path, resolve(expression, ctx))
+    for path, expression in entries.items():
+        literal, parsed = parse_literal(expression)
+        value = literal if parsed else resolve(expression, ctx)
+        assign_path(result, path, value)
     return result
+
+
+def condition(expression: Any, ctx: Context) -> bool:
+    from .native.mapper import execute as execute_mapping
+    # Use the same scope-aware expression engine as field mappings. Values are
+    # resolved before comparison, never interpolated into executable Python.
+    result = execute_mapping(mapping_document(ctx), [dict(target='passed', operator='if', condition=expression, constant=True)], {'validateOutput': False, 'customFunctions': ctx.attributes.get('customFunctions', [])})
+    return bool(result.get('passed'))
 
 
 def choose_transition(edges: list[dict], source: str, ctx: Context, error: Exception | None = None) -> str | None:
@@ -165,10 +209,7 @@ def choose_transition(edges: list[dict], source: str, ctx: Context, error: Excep
         return next((edge['target'] for edge in outgoing if edge.get('type') == 'error'), None)
     conditional = [edge for edge in outgoing if edge.get('type') == 'success_condition']
     for edge in conditional:
-        condition = edge.get('condition') or False
-        if isinstance(condition, str) and condition.lower() in {'true', 'false'}:
-            condition = condition.lower() == 'true'
-        if bool(resolve(condition, ctx)):
+        if condition(edge.get('condition'), ctx):
             return edge['target']
     if conditional:
         return next((edge['target'] for edge in outgoing if edge.get('type') == 'success_no_match'), None)
@@ -215,18 +256,24 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
     ignored_confirm_handles = {'ackId', 'ackIds', 'acknowledgementHandle'} if sap_early_confirm else set()
     static_config = {
         key: value for key, value in raw.items()
-        if key != 'inputMappings' and key not in ignored_confirm_handles
+        if key not in {'inputMappings', 'mappings', 'customFunctions', 'targetSchema', 'targetSchemaText', 'schemaText', 'interfaceSchemaText', 'lookupTables', 'testCases', 'templateHistory', 'contractBaseline'} and key not in ignored_confirm_handles
     }
     cfg = resolve(static_config, ctx)
+    cfg.update({key: value for key, value in raw.items() if key in {'targetSchema', 'targetSchemaText', 'schemaText', 'interfaceSchemaText', 'lookupTables', 'testCases', 'templateHistory', 'contractBaseline'}})
+    if raw.get('customFunctions'):
+        cfg['customFunctions'] = raw['customFunctions']
+        ctx.attributes['customFunctions'] = raw['customFunctions']
     input_mappings = {
         key: value for key, value in (raw.get('inputMappings') or {}).items()
         if key not in ignored_confirm_handles
     }
-    for key, value in mapped({'inputMappings': input_mappings}, ctx).items():
+    resolved_input = mapped({'inputMappings': input_mappings, 'customFunctions': raw.get('customFunctions')}, ctx)
+    if kind == 'json': cfg['_mappedInput'] = resolved_input
+    for key, value in resolved_input.items():
         cfg[key] = value
     operation = str(cfg.get('operation') or '')
-    if kind == 'start': return mapped(raw, ctx).get('payload', ctx.input)
-    if kind == 'end': return mapped(raw, ctx).get('result', ctx.last)
+    if kind == 'start': return resolved_input.get('payload', ctx.input)
+    if kind == 'end': return resolved_input.get('result', ctx.last)
     if kind == 'catch':
         if not ctx.error: return ctx.last
         return {'type': getattr(ctx.error, 'fault_type', type(ctx.error).__name__),
@@ -286,6 +333,9 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
     # CAPABILITY log END
     # CAPABILITY basic START
     if kind == 'basic':
+        if operation in {'deduplicate', 'message_receipt', 'replay_messages', 'aggregate_messages', 'split_records'}:
+            from .native.message_state import operate
+            return await asyncio.to_thread(operate, operation, cfg, cfg.get('payload', ctx.last))
         if operation == 'empty': return ctx.last
         if operation == 'assign':
             key = str(cfg.get('variable') or '')
@@ -311,22 +361,18 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
     # CAPABILITY basic END
     # CAPABILITY mapper START
     if kind == 'mapper':
-        from .native.mapper import execute as execute_mapping
+        from .native.mapper import execute_async as execute_mapping_async
         mappings = raw.get('mappings') or []
         rules = [{'target': key, 'source': value} for key, value in mappings.items()] if isinstance(mappings, dict) else mappings
         normalized = []
         for rule in rules:
             if not isinstance(rule, dict): continue
             item = dict(rule)
-            for field_name in ('source', 'select', 'condition'):
-                value = item.get(field_name)
-                if isinstance(value, Reference): item[field_name] = value.path
-                elif isinstance(value, Template): item[field_name] = resolve(value, ctx)
-            if 'constant' in item: item['constant'] = resolve(item['constant'], ctx)
+            for field_name in ('source', 'select', 'condition', 'whens', 'otherwise'):
+                if field_name in item: item[field_name] = mapping_expression(item[field_name])
             normalized.append(item)
-        document = {'input': ctx.input, 'last': ctx.last, 'properties': ctx.properties,
-                    'vars': ctx.variables, 'activities': ctx.outputs, **(ctx.input if isinstance(ctx.input, dict) else {})}
-        return execute_mapping(document, normalized, cfg)
+        document = mapping_document(ctx)
+        return await execute_mapping_async(document, normalized, cfg)
     # CAPABILITY mapper END
     # CAPABILITY call_task START
     if kind == 'call_task':

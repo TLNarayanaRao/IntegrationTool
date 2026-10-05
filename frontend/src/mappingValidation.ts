@@ -46,6 +46,7 @@ export function validateMapping(value: unknown, fieldType: string, paths: string
     if (type === "any" || type === "anytype") return quoted || typeof literal !== "string";
     if (type.includes("array") || type.endsWith("[]")) return Array.isArray(literal);
     if (["object", "json", "complex"].includes(type)) return literal !== null && typeof literal === "object" && !Array.isArray(literal);
+    if (type === "null") return literal === null;
     if (type === "boolean") return literal === true || literal === false;
     if (["integer", "int", "long", "short", "byte", "nonnegativeinteger", "positiveinteger"].includes(type)) return !quoted && /^-?\d+$/.test(text) && Number.isSafeInteger(Number(text)) && (type !== "nonnegativeinteger" || Number(text) >= 0) && (type !== "positiveinteger" || Number(text) > 0);
     if (["number", "decimal", "double", "float"].includes(type)) return !quoted && /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(text) && Number.isFinite(Number(text));

@@ -53,7 +53,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import SchemaStudio, { SchemaDoc } from "./SchemaStudio";
-import ActivityEditor, { activityContract, activityReferenceName, DataSourcePane, upstreamActivitySources } from "./ActivityEditor";
+import ActivityEditor, { activityContract, activityReferenceName, activityMappingIssues, activityInputMappingTypes, DataSourcePane, upstreamActivitySources } from "./ActivityEditor";
 import ActivityPicker from "./ActivityPicker";
 import DataNodeIcon from "./DataNodeIcon";
 import DebugActivityTree from "./DebugActivityTree";
@@ -608,6 +608,11 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
       { type: "basic", operation: "external_command", label: "External Command", asset: "external-command.svg" },
       { type: "basic", operation: "assign", label: "Assign", asset: "general-assign.svg" },
       { type: "basic", operation: "checkpoint", label: "Checkpoint", asset: "general-checkpoint.svg" },
+      { type: "basic", operation: "deduplicate", label: "Deduplicate Message", asset: "general-checkpoint.svg" },
+      { type: "basic", operation: "message_receipt", label: "Message Receipt", asset: "general-checkpoint.svg" },
+      { type: "basic", operation: "replay_messages", label: "Replay Messages", asset: "general-checkpoint.svg" },
+      { type: "basic", operation: "aggregate_messages", label: "Aggregate Messages", asset: "general-checkpoint.svg" },
+      { type: "basic", operation: "split_records", label: "Split Records", asset: "general-checkpoint.svg" },
       { type: "basic", operation: "sleep", label: "Sleep", asset: "general-sleep.svg" },
       { type: "basic", operation: "get_shared_variable", label: "Get Shared Variable", asset: "general-shared-get.svg" },
       { type: "basic", operation: "set_shared_variable", label: "Set Shared Variable", asset: "general-shared-set.svg" },
@@ -1138,6 +1143,9 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
   const connectionTypes = new Set(["jdbc", "snowflake", "amqp", "ftp", "sftp", "http", "ems", "jms", "kafka", "pubsub", "sap"]);
   task.activities.forEach((item) => {
     const operation = item.config.operation || "";
+    for (const issue of activityMappingIssues(item,task,project.tasks,project.schemas,project.resources)) {
+      add('error','Input mapping',`${item.name} / ${issue.path}: ${issue.error}`,'Correct the mapping in the Input tab before exporting or deploying.',item.id);
+    }
     if (item.type === "timer") {
       const mode = item.config.scheduleMode || "dateTime";
       if (mode === "dateTime" && !item.config.scheduledDateTime && item.config.runOnceOnLocalStart === false) add("error", "Scheduler", `${item.name} has no execution date and time.`, "Choose a date/time or enable local Run once for testing.", item.id);
@@ -1152,7 +1160,7 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
       if (dynamic.startsWith("${") && !dynamic.endsWith("}")) add("error", "Task", `${item.name} has an incomplete dynamic Sub Task expression.`, "Close the expression with } or enter a literal Sub Task ID/name.", item.id);
     }
     if (["mapper", "transform", "ai_transform"].includes(item.type)) {
-      if (!Object.keys(item.config.targetSchema || {}).length && !item.config.targetSchemaId) add("mapping", "Mapper", `${item.name} has no target schema.`, "Select an XSD from Project Schemas or define an inline target schema.", item.id);
+      if (!Object.keys(item.config.targetSchema || {}).length && !String(item.config.targetSchemaText || "").trim() && !item.config.targetSchemaId) add("mapping", "Mapper", `${item.name} has no target schema.`, "Select an XSD from Project Schemas or define an inline target schema.", item.id);
       if (!(item.config.mappings || []).length) add("mapping", "Mapper", `${item.name} has no field mappings.`, "Map execution-path fields to the target schema.", item.id);
     }
     if (item.type === "dataweave") {
@@ -2243,7 +2251,7 @@ function App() {
       // as the project's default archive format, or normal Export would
       // unexpectedly create another Python archive.
       const regularFormat = ["mpkg", "ifpkg", "zip", "tar.gz", "ear"].includes(requestedFormat) ? requestedFormat : ( ["mpkg", "ifpkg", "zip", "tar.gz", "ear"].includes(project.packaging?.format) ? project.packaging.format : "mpkg" );
-      const next = { ...project, packaging: { ...project.packaging, ...persistedSettings, format: regularFormat } };
+      const next = { ...project, tasks:project.tasks.map(task=>({...task,activities:task.activities.map(node=>({...node,config:{...node.config,inputMappingTypes:activityInputMappingTypes(node,task,project.tasks,project.schemas,project.resources)}}))})), packaging: { ...project.packaging, ...persistedSettings, format: regularFormat } };
       const saved = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
       if (!saved.ok) { const detail = await saved.json().catch(() => ({})); throw new Error(detail.detail || `Unable to save packaging configuration (HTTP ${saved.status}).`); }
       setProject(normalizeProject(await saved.json()));
@@ -2278,7 +2286,7 @@ function App() {
       if (!secrets || Array.isArray(secrets) || typeof secrets !== "object") throw new Error("Deployment secrets must be a JSON object.");
       const { credential, secretsText, controlPlaneUrl, caCertificatePath, format: requestedFormat, ...persistedSettings } = settings;
       const regularFormat = ["mpkg", "ifpkg", "zip", "tar.gz", "ear"].includes(requestedFormat) ? requestedFormat : "mpkg";
-      const next = { ...project, packaging: { ...project.packaging, ...persistedSettings, format: regularFormat } };
+      const next = { ...project, tasks:project.tasks.map(task=>({...task,activities:task.activities.map(node=>({...node,config:{...node.config,inputMappingTypes:activityInputMappingTypes(node,task,project.tasks,project.schemas,project.resources)}}))})), packaging: { ...project.packaging, ...persistedSettings, format: regularFormat } };
       const saved = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
       if (!saved.ok) throw new Error("Unable to save packaging configuration.");
       setProject(normalizeProject(await saved.json()));

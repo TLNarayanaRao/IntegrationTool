@@ -133,13 +133,39 @@ def _value_to_xml(name: str, value: Any) -> ET.Element:
 
 def data_activity(kind: str, operation: str, cfg: dict, payload: Any) -> dict:
     if kind == 'json':
+        def validate(value, flag):
+            if not _bool(cfg.get(flag)): return
+            from .native.mapper import validate_output
+            schema = cfg.get('schemaText')
+            if not schema: raise ValueError(f'{flag} requires a project or inline JSON schema')
+            errors = validate_output(value, schema)
+            if errors: raise ValueError('JSON schema validation failed: ' + '; '.join(errors))
         if operation == 'parse':
-            text = cfg.get('jsonString', cfg.get('text', payload))
-            return {'value': json.loads(text) if isinstance(text, (str, bytes, bytearray)) else text}
-        value = cfg.get('value', payload)
-        if _bool(cfg.get('omitNulls')) and isinstance(value, dict): value = {k: v for k, v in value.items() if v is not None}
-        return {'jsonString': json.dumps(value, indent=int(cfg.get('indent') or 2) if _bool(cfg.get('prettyPrint')) else None,
-                                         ensure_ascii=_bool(cfg.get('asciiOnly')), default=str)}
+            text = cfg.get('jsonString', cfg.get('value', cfg.get('source', cfg.get('text', payload))))
+            if isinstance(text, dict): text = text.get('jsonString') or text.get('content') or text.get('body') or text
+            policy = str(cfg.get('duplicateKeyPolicy', 'Last wins')).lower()
+            def pairs(items):
+                result = {}
+                for key, value in items:
+                    if key in result and policy == 'error': raise ValueError(f'Duplicate JSON key: {key}')
+                    if key not in result or policy != 'first wins': result[key] = value
+                return result
+            value = json.loads(text, object_pairs_hook=pairs) if isinstance(text, (str, bytes, bytearray)) else text
+            validate(value, 'validateOutput')
+            return value
+        value = cfg.get('value', cfg.get('source', payload))
+        mapped = cfg.get('_mappedInput') or {}
+        if mapped and not any(key in mapped for key in ('value', 'source')):
+            value = next(iter(mapped.values())) if str(cfg.get('rootStyle', 'With root')).lower() == 'anonymous' and len(mapped) == 1 else mapped
+        validate(value, 'validateInput')
+        def without_nulls(item):
+            if isinstance(item, dict): return {key: without_nulls(child) for key, child in item.items() if child is not None}
+            if isinstance(item, list): return [without_nulls(child) for child in item if child is not None]
+            return item
+        if _bool(cfg.get('omitNulls')): value = without_nulls(value)
+        indent = int(cfg.get('indent', 2)) if _bool(cfg.get('prettyPrint'), True) else None
+        content = json.dumps(value, indent=indent, ensure_ascii=_bool(cfg.get('asciiOnly')), separators=None if indent is not None else (',', ':'))
+        return {'content': content, 'jsonString': content}
     if kind == 'xml':
         if operation == 'parse':
             raw = cfg.get('xmlBinary') or cfg.get('xmlString', cfg.get('text', payload))
@@ -226,13 +252,8 @@ def transfer(kind: str, operation: str, connection: dict, cfg: dict) -> dict:
             output = io.BytesIO(); client.retrbinary(f'RETR {remote}', output.write); raw = output.getvalue()
             return {'contentBase64': base64.b64encode(raw).decode(), 'content': raw.decode(errors='replace') if not _bool(cfg.get('binary')) else None, 'size': len(raw)}
         finally: client.quit()
-    try: import paramiko
-    except ImportError as error: raise RuntimeError('SFTP requires the optional paramiko package') from error
-    client = paramiko.SSHClient()
-    if _bool(cfg.get('verifyHostKey'), _bool(connection.get('verifyHostKey'), True)): client.load_system_host_keys()
-    else: client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(str(connection.get('host') or ''), port=int(connection.get('port') or 22), username=connection.get('username'), password=connection.get('password'), key_filename=connection.get('privateKeyPath'), timeout=float(cfg.get('timeout') or 30))
-    sftp = client.open_sftp()
+    from .native.sftp import open_connection
+    client, sftp = open_connection({**connection, **cfg})
     try:
         if cfg.get('workingDirectory'): sftp.chdir(str(cfg['workingDirectory']))
         if operation == 'change_dir': sftp.chdir(remote); return {'remotePath': sftp.getcwd(), 'success': True}

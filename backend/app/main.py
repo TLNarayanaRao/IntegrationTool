@@ -13,9 +13,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from .models import AIBuildRequest, DebugAction, DebugRequest, Project, RunRequest, SharedResource, effective_event_activities
 from .store import delete_project, get_project, list_projects, project_dir, save_project, safe_component
+from .project_import import MAX_IMPORT_BYTES, project_payload
 from .runtime import WorkflowRuntime
 from .debugger import DebugManager
-from .mapper import execute as execute_mapping, recommend, validate_output
+from .mapper import execute as execute_mapping, recommend, rewrite_references, validate_output
 from .dataweave import DataWeaveError, execute_details as execute_dataweave
 from .sap import sap_adapter
 from .snowflake import snowflake_adapter
@@ -594,12 +595,15 @@ def project_logs(project_id: str, limit: int = 1000, environment: str = 'local')
     return {**project_log_info(project_id, item.name, directory), 'environment': environment, 'propertyKey': 'runtime.logDirectory', 'configuredDirectory': directory, 'entries': read_project_logs(project_id, item.name, limit, directory)}
 
 @app.post('/api/projects', response_model=Project)
-def create_project(item: Project): return save_project(item)
+def create_project(item: Project):
+    try: return save_project(item)
+    except ValueError as error: raise HTTPException(400, str(error)) from error
 
 @app.put('/api/projects/{project_id}', response_model=Project)
 def update_project(project_id: str, item: Project):
     if project_id != item.id: raise HTTPException(400, 'Project id mismatch')
-    return save_project(item)
+    try: return save_project(item)
+    except ValueError as error: raise HTTPException(400, str(error)) from error
 
 @app.delete('/api/projects/{project_id}')
 def remove_project(project_id: str):
@@ -1477,24 +1481,11 @@ async def package_and_deploy_project(project_id: str, payload: ControlPlaneDeplo
 
 @app.post('/api/projects/import', response_model=Project)
 async def import_project(file: UploadFile = File(...)):
-    raw = await file.read()
+    raw = await file.read(MAX_IMPORT_BYTES + 1)
     try:
-        if raw[:2] == b'PK':
-            with zipfile.ZipFile(io.BytesIO(raw)) as archive:
-                manifest = json.loads(archive.read('manifest.json'))
-                package_format = manifest.get('format')
-                if package_format in {'mina-project', 'integration-fabric-project'}:
-                    payload = archive.read('project.json')
-                elif package_format in {'mina-deployment', 'integration-fabric-deployment'}:
-                    # Deployment .mpkg and legacy .ifpkg archives keep the importable project
-                    # under application/project.json.
-                    payload = archive.read('application/project.json')
-                else:
-                    raise ValueError('Unsupported project package')
-        else: payload = raw
-        item = Project.model_validate_json(payload)
+        item = Project.model_validate_json(project_payload(raw))
+        return await asyncio.to_thread(save_project, item)
     except Exception as exc: raise HTTPException(400, f'Invalid MINA project: {exc}')
-    return save_project(item)
 
 @app.post('/api/connections/test')
 async def test_connection(resource: SharedResource):
@@ -1668,18 +1659,18 @@ def mapper_test(payload: dict):
         normalized = []
         for mapping in mappings:
             rule = dict(mapping)
-            for key in ('source', 'select'):
+            for key in ('source', 'select', 'otherwise'):
                 value = rule.get(key)
-                if not isinstance(value, str) or not value.startswith('${'):
+                if not isinstance(value, str):
                     continue
-                rule[key] = test_path(value)
+                rule[key] = rewrite_references(value, test_path)
             if isinstance(rule.get('condition'), str):
-                rule['condition'] = re.sub(r'\$\{[^}]+\}', lambda match: test_path(match.group(0)), rule['condition'])
+                rule['condition'] = rewrite_references(rule['condition'], test_path)
             if isinstance(rule.get('whens'), list):
                 rule['whens'] = [{
                     **branch,
-                    'condition': re.sub(r'\$\{[^}]+\}', lambda match: test_path(match.group(0)), str(branch.get('condition') or '')),
-                    'source': test_path(branch['source']) if isinstance(branch.get('source'), str) and branch['source'].startswith('${') else branch.get('source'),
+                    'condition': rewrite_references(str(branch.get('condition') or ''), test_path),
+                    'source': rewrite_references(branch['source'], test_path) if isinstance(branch.get('source'), str) else branch.get('source'),
                 } for branch in rule['whens']]
             normalized.append(rule)
         options = {**(payload.get('options') or {}), 'validateOutput': False}
@@ -1704,6 +1695,29 @@ def mapper_test(payload: dict):
         mapped_targets = sorted({str(rule.get('target')) for rule in active if rule.get('target')})
         return {'output': output, 'valid': not errors, 'validationErrors': errors, 'mappingCount': len(active), 'mappedTargets': mapped_targets, 'diagnostics': {'mappedTargetCount': len(mapped_targets), 'loopCount': len([rule for rule in active if rule.get('operator') in ('for-each', 'for-each-group')]), 'conditionalCount': len([rule for rule in active if rule.get('operator') in ('if', 'when-otherwise', 'choose')])}}
     except Exception as exc: raise HTTPException(400, f'Mapping failed: {exc}')
+
+@app.post('/api/mapper/suite')
+def mapper_suite(payload: dict):
+    from .transformation import run_cases
+    try: return run_cases(payload.get('config') or {}, payload.get('cases'))
+    except (ValueError, TypeError, KeyError) as error: raise HTTPException(400, str(error))
+
+
+@app.post('/api/mapper/schema-impact')
+def mapper_schema_impact(payload: dict):
+    from .transformation import schema_impact
+    try: return schema_impact(payload.get('previous'), payload.get('current'), payload.get('mappings'))
+    except (ValueError, TypeError, KeyError) as error: raise HTTPException(400, str(error))
+
+
+@app.post('/api/mapper/template')
+def mapper_template(payload: dict):
+    from .transformation import template, read_template
+    try:
+        if payload.get('asset'): return {'config': read_template(payload['asset']), 'name': payload['asset']['name'], 'version': payload['asset']['version']}
+        return template(payload.get('config') or {}, payload.get('name'), payload.get('version'))
+    except (ValueError, TypeError, KeyError) as error: raise HTTPException(400, str(error))
+
 
 @app.post('/api/dataweave/test')
 def dataweave_test(payload: dict):

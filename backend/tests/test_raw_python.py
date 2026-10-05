@@ -335,7 +335,7 @@ class RawPythonTests(unittest.TestCase):
             'groups': [{'id': 'if1', 'name': 'If', 'type': 'if', 'member_activity_ids': ['assign'], 'config': {'condition': '${input.enabled} == true'}}]}]
         files = compiler.raw_python_files(project, {'dev': []})
         source = files['application/tasks/task_0_main.py']
-        self.assertIn(b"if current == 'assign' and not ((resolve(Reference('input.enabled'), ctx) == True)):", source)
+        self.assertIn(b"if current == 'assign' and not (condition('${input.enabled} == true', ctx)):", source)
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             for name, body in files.items():
@@ -752,7 +752,7 @@ class RawPythonTests(unittest.TestCase):
                     {'id': 'write', 'type': 'file', 'name': 'Write', 'config': {'operation': 'write', 'path': str(output_file), 'textContent': '{"name":"mina"}', 'overwrite': True}},
                     {'id': 'read', 'type': 'file', 'name': 'Read', 'config': {'operation': 'read', 'path': str(output_file)}},
                     {'id': 'parse', 'type': 'json', 'name': 'Parse', 'config': {'operation': 'parse', 'inputMappings': {'jsonString': '${activities.read.output.textContent}'}}},
-                    {'id': 'map', 'type': 'mapper', 'name': 'Map', 'config': {'mappings': [{'target': 'upperName', 'source': 'upper(activities.parse.output.value.name)'}]}},
+                    {'id': 'map', 'type': 'mapper', 'name': 'Map', 'config': {'mappings': [{'target': 'upperName', 'source': 'upper(activities.parse.output.name)'}]}},
                     {'id': 'end', 'type': 'end', 'name': 'End', 'config': {'inputMappings': {'result': '${activities.map.output.upperName}'}}}],
                 'transitions': [{'source': 's', 'target': 'write'}, {'source': 'write', 'target': 'read'},
                                 {'source': 'read', 'target': 'parse'}, {'source': 'parse', 'target': 'map'}, {'source': 'map', 'target': 'end'}]}]

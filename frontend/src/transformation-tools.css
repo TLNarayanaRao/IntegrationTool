@@ -1,0 +1,16 @@
+.transformation-tools { padding: 10px; border: 1px solid var(--border, #345064); border-radius: 5px; }
+.transformation-tools details { margin: 8px 0; }
+.transformation-tools summary { cursor: pointer; font-weight: 600; }
+.transformation-tools label { display: block; margin: 8px 0; }
+.transformation-tools input, .transformation-tools textarea { display: block; width: 100%; box-sizing: border-box; }
+.transformation-tools textarea { min-height: 95px; resize: vertical; font: inherit; }
+.transformation-tools button { margin: 4px; }
+.transformation-test-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.transformation-case { display: flex; gap: 8px; align-items: center; }
+.transformation-case b { flex: 1; overflow-wrap: anywhere; }
+.transformation-tools pre, .transformation-results { max-height: 260px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.transformation-results article { padding: 8px; margin-top: 8px; border: 1px solid var(--border, #345064); }
+.transformation-results .invalid { background: #4b1620; color: #ffe0e5; }
+@media (max-width: 650px) { .transformation-test-pair { grid-template-columns: 1fr; } }
+
+.transform-map-test .transformation-tools textarea { flex: none; min-height: 95px; resize: vertical; }

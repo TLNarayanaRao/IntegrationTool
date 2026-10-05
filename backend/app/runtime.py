@@ -6,13 +6,16 @@ import httpx
 from time import perf_counter
 from concurrent.futures import ThreadPoolExecutor
 from .models import Activity, GroupDefinition, ProcessDefinition, Project, RunResult
-from .mapper import apply_function, execute as execute_mapping
+from .mapper import _function_arguments, apply_function, evaluate_condition, get_path, rewrite_references, validate_output, execute as execute_mapping, execute_async as execute_mapping_async
 from .dataweave import DataWeaveError, execute as execute_dataweave
 from .sap import sap_adapter
 from .snowflake import snowflake_adapter
 from .jdbc import jdbc_adapter
 from .amqp import amqp_adapter
 from .java_bridge import JavaBridgeError, execute_jms, close_jms_senders
+from .sftp import open_connection as open_sftp_connection
+from .mapping_literals import parse_literal
+from .message_state import operate as mediation_operation
 from .google_pubsub import client_configuration as pubsub_client_configuration, create_client as create_pubsub_client
 from .time_utils import log_timestamp
 
@@ -669,7 +672,13 @@ class WorkflowRuntime:
 
     def resolve_activity_config(self, activity: Activity, ctx: dict):
         # Resolve environment, input, variable, and previous-output expressions in every activity field.
-        cfg = self.resolve(activity.config, ctx)
+        literal_keys = {'mappings', 'inputMappings', 'targetSchema', 'targetSchemaText', 'schemaText', 'interfaceSchemaText', 'lookupTables', 'testCases', 'templateHistory', 'customFunctions', 'contractBaseline'}
+        cfg = self.resolve({key: value for key, value in activity.config.items() if key not in literal_keys}, ctx)
+        cfg.update({key: value for key, value in activity.config.items() if key in literal_keys})
+        if activity.type in ('mapper', 'transform', 'ai_transform') and cfg.get('targetSchemaId'):
+            content = self.schema_content(cfg['targetSchemaId'], ctx)
+            if not content: raise MinaFault('Selected Mapper target schema was not found', fault_type='ValidationException')
+            cfg.update(targetSchema={}, targetSchemaText=content)
         mapped_input = {}
         execution_scope = str(ctx.get('context', {}).get('executionId') or ctx.get('context', {}).get('debugSessionId') or '')
         if execution_scope: cfg['_executionScope'] = execution_scope
@@ -679,6 +688,7 @@ class WorkflowRuntime:
                 if isinstance(value, dict) and isinstance(target.get(key), dict): merge_input(target[key], value)
                 else: target[key] = copy.deepcopy(value)
         merge_input(cfg, mapped_input)
+        if activity.type in ('start', 'end', 'json'): cfg['_mappedInput'] = mapped_input
         for key, value in ctx.get('_debugInputOverrides', {}).get(activity.id, {}).items():
             self.assign_path(cfg, key, value)
             self.assign_path(mapped_input, key, copy.deepcopy(value))
@@ -695,10 +705,10 @@ class WorkflowRuntime:
     async def execute(self, activity: Activity, ctx: dict):
         cfg = self.resolve_activity_config(activity, ctx)
         if activity.type == 'start':
-            mapped = self.map_input_values(activity.config.get('inputMappings', {}), ctx)
+            mapped = cfg['_mappedInput']
             return self.unwrap_boundary(mapped, 'payload', ctx['input'])
         if activity.type == 'end':
-            mapped = self.map_input_values(activity.config.get('inputMappings', {}), ctx)
+            mapped = cfg['_mappedInput']
             return self.unwrap_boundary(mapped, 'result', ctx['last'])
         if activity.type == 'timer':
             now = datetime.now(timezone.utc)
@@ -732,6 +742,8 @@ class WorkflowRuntime:
             return {'scheduledTime': scheduled.isoformat(), 'actualTime': fired.isoformat(), 'sequence': 1, 'triggerMode': trigger_mode, 'payload': ctx['last']}
         if activity.type == 'basic':
             operation = str(cfg.get('operation') or 'empty')
+            if operation in {'deduplicate', 'message_receipt', 'replay_messages', 'aggregate_messages', 'split_records'}:
+                return await asyncio.to_thread(mediation_operation, operation, cfg, cfg.get('payload', ctx['last']))
             if operation == 'empty': return ctx['last']
             if operation == 'assign':
                 name, value = str(cfg.get('variable') or '').strip(), cfg.get('value', ctx['last'])
@@ -878,21 +890,21 @@ class WorkflowRuntime:
             rules = []
             for rule in activity.config.get('mappings', []) or []:
                 normalized = {**rule}
-                if 'constant' in rule: normalized['constant'] = self.resolve(rule['constant'], ctx)
                 for key in ('source', 'select'):
                     value = normalized.get(key)
                     if isinstance(value, str) and value.startswith('${') and value.endswith('}'):
                         normalized[key] = value[2:-1]
                 if isinstance(normalized.get('condition'), str):
-                    normalized['condition'] = re.sub(r'\$\{([^}]+)\}', r'\1', normalized['condition'])
+                    normalized['condition'] = rewrite_references(normalized['condition'], lambda value: value[2:-1])
                 if isinstance(normalized.get('whens'), list):
                     normalized['whens'] = [{
                         **branch,
-                        'condition': re.sub(r'\$\{([^}]+)\}', r'\1', str(branch.get('condition') or '')),
+                        'condition': rewrite_references(str(branch.get('condition') or ''), lambda value: value[2:-1]),
                         'source': branch['source'][2:-1] if isinstance(branch.get('source'), str) and branch['source'].startswith('${') and branch['source'].endswith('}') else branch.get('source'),
                     } for branch in normalized['whens']]
                 rules.append(normalized)
-            return execute_mapping(source, rules, cfg)
+            functions = list({item['name']: item for item in [*cfg.get('customFunctions', []), *[item.model_dump() for item in getattr(ctx.get('project'), 'custom_functions', [])]]}.values())
+            return await execute_mapping_async(source, rules, {**cfg, 'customFunctions': functions})
         if activity.type == 'dataweave':
             try:
                 transformed = execute_dataweave(
@@ -1514,27 +1526,33 @@ class WorkflowRuntime:
             return result
         return evaluate(mappings, ctx)
 
+    def mapping_value(self, expression, ctx):
+        literal, parsed = parse_literal(expression)
+        return literal if parsed else self.resolve(expression, ctx)
+
     def evaluate_mapping(self, expression, ctx) -> tuple[bool, Any]:
         """Evaluate the structured mapping statements used by every activity Input tab."""
         if not isinstance(expression, dict) or '$rule' not in expression:
-            return True, self.resolve(expression, ctx)
+            literal, parsed = parse_literal(expression)
+            if parsed: return True, literal
+            return True, self.mapping_value(expression, ctx)
         rule = str(expression.get('$rule', '')).lower()
         source_expression = expression.get('select') or expression.get('source')
         if rule == 'if':
             if not self.condition(expression.get('condition', ''), ctx): return False, None
-            return True, self.resolve(source_expression, ctx)
+            return True, self.mapping_value(source_expression, ctx)
         if rule == 'when-otherwise':
-            if self.condition(expression.get('condition', ''), ctx): return True, self.resolve(source_expression, ctx)
-            return True, self.resolve(expression.get('otherwise'), ctx)
+            if self.condition(expression.get('condition', ''), ctx): return True, self.mapping_value(source_expression, ctx)
+            return True, self.mapping_value(expression.get('otherwise'), ctx)
         if rule == 'choose':
             branches = expression.get('whens') or []
             if not branches and isinstance(expression.get('source'), str):
                 try: branches = json.loads(expression['source'])
                 except (TypeError, ValueError, json.JSONDecodeError): branches = []
             for branch in branches:
-                if self.condition(branch.get('condition', ''), ctx): return True, self.resolve(branch.get('source'), ctx)
-            return True, self.resolve(expression.get('otherwise'), ctx)
-        source = self.resolve(source_expression, ctx)
+                if self.condition(branch.get('condition', ''), ctx): return True, self.mapping_value(branch.get('source'), ctx)
+            return True, self.mapping_value(expression.get('otherwise'), ctx)
+        source = self.mapping_value(source_expression, ctx)
         if rule == 'for-each':
             values = source if isinstance(source, list) else ([] if source in (None, '') else [source])
             return True, values
@@ -1557,35 +1575,30 @@ class WorkflowRuntime:
 
     @staticmethod
     def split_function_args(raw: str) -> list[str]:
-        args, start, depth, quote = [], 0, 0, None
-        for index, char in enumerate(raw):
-            if quote:
-                if char == quote and (index == 0 or raw[index - 1] != '\\'): quote = None
-            elif char in ('"', "'"): quote = char
-            elif char == '(': depth += 1
-            elif char == ')': depth = max(0, depth - 1)
-            elif char == ',' and depth == 0: args.append(raw[start:index].strip()); start = index + 1
-        if raw.strip(): args.append(raw[start:].strip())
-        return args
+        return _function_arguments(raw)
 
-    def evaluate_function_expression(self, expression: str, ctx: dict, variables: dict | None = None):
+    def evaluate_function_expression(self, expression: str, ctx: dict, variables: dict | None = None, depth: int = 0):
+        if depth > 32: raise RuntimeError('Custom function recursion exceeded 32 calls')
         variables = variables or {}
         text = expression.strip()
         if text in variables: return variables[text]
-        if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'"): return text[1:-1]
-        if re.fullmatch(r'-?\d+(\.\d+)?', text): return float(text) if '.' in text else int(text)
+        if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'"):
+            return ast.literal_eval(text)
+        if re.fullmatch(r'[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?', text): return float(text) if any(char in text for char in '.eE') else int(text)
         if text.lower() in ('true()', 'true'): return True
         if text.lower() in ('false()', 'false'): return False
+        if text.lower() in ('null', '()'): return None
         call = re.fullmatch(r'([\w:-]+)\((.*)\)', text, re.S)
         if not call: return self.resolve(text, ctx)
-        name = call.group(1); args = [self.evaluate_function_expression(item, ctx, variables) for item in self.split_function_args(call.group(2))]
+        name = call.group(1); args = [self.evaluate_function_expression(item, ctx, variables, depth + 1) for item in self.split_function_args(call.group(2))]
         if name.startswith('custom:'):
             function_name = name.split(':', 1)[1]
             project = ctx.get('project')
             definition = next((item for item in (getattr(project, 'custom_functions', []) if project else []) if item.name == function_name), None)
             if not definition: raise RuntimeError(f'Custom function {function_name!r} was not found in this project')
-            bindings = {f'${parameter}': args[index] if index < len(args) else None for index, parameter in enumerate(definition.parameters)}
-            return self.evaluate_function_expression(definition.expression, ctx, bindings)
+            if len(args) != len(definition.parameters): raise RuntimeError(f'Custom function {function_name!r} expects {len(definition.parameters)} arguments, received {len(args)}')
+            bindings = dict(zip(('$' + parameter for parameter in definition.parameters), args))
+            return self.evaluate_function_expression(definition.expression, ctx, bindings, depth + 1)
         try: return apply_function(name, args[0] if args else None, args[1:])
         except (TypeError, ValueError, IndexError) as exc: raise RuntimeError(str(exc)) from exc
 
@@ -1642,70 +1655,14 @@ class WorkflowRuntime:
         return value
 
     def condition(self, expression, ctx):
-        expression = str(expression or '').strip()
-        def split_logical(value, keyword):
-            depth = 0; quote = None; start = 0; parts = []; token = f' {keyword} '; index = 0
-            while index < len(value):
-                char = value[index]
-                if quote:
-                    if char == quote and (index == 0 or value[index-1] != '\\'): quote = None
-                elif char in ('"', "'"): quote = char
-                elif char == '(': depth += 1
-                elif char == ')': depth = max(0, depth - 1)
-                elif depth == 0 and value[index:index+len(token)].lower() == token:
-                    parts.append(value[start:index].strip()); start = index + len(token); index = start - 1
-                index += 1
-            if parts: parts.append(value[start:].strip())
-            return parts
-        for keyword, evaluator in (('or', any), ('and', all)):
-            parts = split_logical(expression, keyword)
-            if parts: return evaluator(self.condition(part, ctx) for part in parts)
-        if expression.lower().startswith('not(') and expression.endswith(')'): return not self.condition(expression[4:-1], ctx)
-        function = re.fullmatch(r'(exists|empty|contains|startsWith|endsWith|matches)\((.*)\)', expression, re.I)
-        if function:
-            raw = function.group(2); args = []; depth = 0; quote = None; start = 0
-            for index, char in enumerate(raw):
-                if quote:
-                    if char == quote and (index == 0 or raw[index-1] != '\\'): quote = None
-                elif char in ('"', "'"): quote = char
-                elif char == '(': depth += 1
-                elif char == ')': depth = max(0, depth - 1)
-                elif char == ',' and depth == 0: args.append(raw[start:index].strip()); start = index + 1
-            args.append(raw[start:].strip())
-            def value(arg):
-                if len(arg) >= 2 and arg[0] == arg[-1] and arg[0] in ('"', "'"): return arg[1:-1]
-                if re.fullmatch(r'-?\d+(\.\d+)?', arg): return float(arg) if '.' in arg else int(arg)
-                return self.resolve(arg, ctx)
-            values = [value(arg) for arg in args]
-            name = function.group(1).lower()
-            if name == 'exists': return bool(values and values[0] is not None and values[0] != '')
-            if name == 'empty': return not values or values[0] is None or values[0] == '' or values[0] == [] or values[0] == {}
-            if len(values) < 2: return False
-            left, right = str(values[0]), str(values[1])
-            if name == 'contains': return right in left
-            if name == 'startswith': return left.startswith(right)
-            if name == 'endswith': return left.endswith(right)
-            if name == 'matches': return re.search(right, left) is not None
-        for operator in ('==', '!=', '>=', '<=', '>', '<', '='):
-            if operator in expression:
-                left, right = (part.strip() for part in expression.split(operator, 1))
-                def comparison_value(raw):
-                    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ('"', "'"):
-                        return raw[1:-1]
-                    if re.fullmatch(r'-?\d+(\.\d+)?', raw):
-                        return float(raw) if '.' in raw else int(raw)
-                    return self.resolve(raw, ctx)
-                left, right = comparison_value(left), comparison_value(right)
-                try:
-                    if operator in ('=', '=='): return left == right or str(left) == str(right)
-                    if operator == '!=': return left != right and str(left) != str(right)
-                    if operator == '>=': return left >= right
-                    if operator == '<=': return left <= right
-                    if operator == '>': return left > right
-                    if operator == '<': return left < right
-                except TypeError: return False
-        if expression.lower() in ('true', 'true()', 'false', 'false()'): return expression.lower() in ('true', 'true()')
-        return bool(self.resolve(expression, ctx))
+        def operand(text):
+            reference = re.fullmatch(r'\$\{([^}]+)\}', text)
+            if reference:
+                path = reference.group(1)
+                if path.split('.')[0] in ('input', 'last', 'vars', 'properties', 'activities', 'tasks', 'context'):
+                    return get_path(ctx, path)
+            return self.evaluate_function_expression(text, ctx)
+        return evaluate_condition(expression, operand)
 
     def jdbc(self, cfg, ctx):
         resource = ctx['resources'].get(cfg.get('resourceId'))
@@ -1800,13 +1757,7 @@ class WorkflowRuntime:
             except Exception: client.close()
 
     def sftp(self, cfg, ctx):
-        try: import paramiko
-        except ImportError: raise RuntimeError('SFTP activities require the optional paramiko package')
-        ssh = paramiko.SSHClient(); ssh.load_system_host_keys()
-        if cfg.get('knownHostsFile'): ssh.load_host_keys(cfg['knownHostsFile'])
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy() if cfg.get('allowUnknownHostKey') else paramiko.RejectPolicy())
-        ssh.connect(cfg['host'], port=int(cfg.get('port', 22)), username=cfg.get('username'), password=cfg.get('password') or None, key_filename=cfg.get('privateKeyFile') or None, timeout=float(cfg.get('timeout', 30)), allow_agent=bool(cfg.get('useSshAgent', False)), look_for_keys=bool(cfg.get('useSshAgent', False)))
-        client = ssh.open_sftp()
+        ssh, client = open_sftp_connection(cfg)
         try:
             if cfg.get('workingDirectory'): client.chdir(cfg['workingDirectory'])
             operation, remote = cfg.get('operation'), cfg.get('remotePath', '')
@@ -1985,7 +1936,11 @@ class WorkflowRuntime:
             self.validate_json_if_requested(value, cfg, ctx, 'validateOutput')
             return value
         schema = self.configured_schema(cfg, ctx); root_name = self.schema_root_name(schema)
-        if root_name and root_name in cfg:
+        if cfg.get('_mappedInput') and not any(key in cfg['_mappedInput'] for key in ('value', 'source')):
+            source = cfg['_mappedInput']
+            if str(cfg.get('rootStyle', 'With root')).lower() == 'anonymous' and len(source) == 1:
+                source = next(iter(source.values()))
+        elif root_name and root_name in cfg:
             source = {root_name: cfg[root_name]} if str(cfg.get('rootStyle', 'With root')).lower() != 'anonymous' else cfg[root_name]
         self.validate_json_if_requested(source, cfg, ctx, 'validateInput')
         if self.as_bool(cfg.get('omitNulls', False)):
@@ -2004,9 +1959,8 @@ class WorkflowRuntime:
         if not content: raise MinaFault(f'{flag} requires a project or inline schema in the schema editor', fault_type='ValidationException')
         try: schema = json.loads(content)
         except ValueError: return
-        if schema.get('type') == 'object' and not isinstance(value, dict): raise MinaFault('JSON value must be an object according to the selected schema', fault_type='ValidationException')
-        missing = [key for key in schema.get('required', []) if not isinstance(value, dict) or key not in value]
-        if missing: raise MinaFault(f'Missing required JSON fields: {", ".join(missing)}', fault_type='ValidationException', details={'missing':missing})
+        errors = validate_output(value, schema)
+        if errors: raise MinaFault('JSON schema validation failed: ' + '; '.join(errors), fault_type='ValidationException', details={'errors': errors})
 
     def flat_data(self, cfg, ctx):
         source, delimiter = cfg.get('text', cfg.get('records', cfg.get('source', ctx['last']))), str(cfg.get('delimiter', ','))

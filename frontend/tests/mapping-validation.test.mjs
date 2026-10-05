@@ -45,3 +45,10 @@ test('validates known source paths and nested function references', () => {
   assert.ok(validateMapping('concat("a", "b"', 'string', paths));
   assert.equal(validateMapping('concat("literal ${Unknown.value}", "!")', 'string', paths), '');
 });
+
+test('nullable string contracts do not bypass quote validation', () => {
+  assert.equal(validateMapping('null', 'string|null'), '');
+  assert.equal(validateMapping('"Ada"', 'string|null'), '');
+  for (const value of ['123','unquoted','true']) assert.match(validateMapping(value,'string|null'), /quotes/);
+  assert.ok(validateMapping('123','null'));
+});

@@ -1,3 +1,4 @@
+import TransformationTools from "./TransformationTools";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -205,6 +206,8 @@ function useTreeCollapse() {
   });
   return {
     collapsed,
+    collapseAll: (paths:string[]) => setCollapsed(new Set(paths)),
+    expandAll: () => setCollapsed(new Set()),
     toggle,
     visible: (path: string) => parentTreePaths(path).every((parent) => !collapsed.has(parent)),
   };
@@ -1182,6 +1185,11 @@ export function activityContract(n: any): Contract {
     const basic: Record<string, Contract> = {
       empty: { configuration: [], input: [], output: [d("payload", "Unchanged payload", "object")], errors: [] },
       assign: { configuration: [f("variable", "Process variable", "text", "Name stored in process variables.")], input: [d("value", "Assigned value", "object", true)], output: [d("name", "Variable name"), d("value", "Assigned value", "object")], errors: commonErrors.slice(2) },
+      split_records: {configuration:[f("batchSize", "Records per batch", "number")], input:[d("payload", "Records", "array")], output:[d("batches", "Record batches", "array"),d("count", "Record count", "integer")], errors:[{type:"InvalidInputException",description:"Records or batch size are invalid."}]},
+      deduplicate: {configuration:[f("stateFile", "Durable state file", "text"), {...f("namespace", "Message namespace", "text", "Use the same namespace for claims, receipts and replay."), required:true}, f("maxStateSizeMb", "State capacity (MB)", "number"), f("leaseSeconds", "Claim lease (seconds)", "number")], input:[d("messageKey", "Stable message key", "string"),d("payload", "Message payload", "any")], output:[d("accepted", "Claim accepted", "boolean"),d("duplicate", "Duplicate delivery", "boolean"),d("messageKey", "Message key", "string"),d("claimToken", "Claim token", "string"),d("status", "Claim status", "string"),d("payload", "Message payload", "any")], errors:[{type:"MessageStateException",description:"Durable state could not be read or written."}]},
+      message_receipt: {configuration:[f("stateFile", "Durable state file", "text"), {...f("namespace", "Message namespace", "text", "Use the same namespace for claims, receipts and replay."), required:true}, f("maxStateSizeMb", "State capacity (MB)", "number"), {...f("action", "Receipt action", "select", "Complete after downstream work; fail retains the message for explicit replay."), options:["complete","fail"]},f("retentionSeconds", "Completed-key retention (seconds)", "number")], input:[d("messageKey", "Message key", "string"),d("claimToken", "Claim token", "string"),d("error", "Failure reason", "string")], output:[d("messageKey", "Message key", "string"),d("status", "Receipt status", "string")], errors:[{type:"MessageStateException",description:"Claim token is missing, stale or expired."}]},
+      replay_messages: {configuration:[f("stateFile", "Durable state file", "text"), {...f("namespace", "Message namespace", "text", "Use the same namespace for claims, receipts and replay."), required:true}, f("maxStateSizeMb", "State capacity (MB)", "number"), {...f("action", "Replay action", "select", "List failed/expired messages or explicitly requeue one key. No downstream work runs automatically."), options:["list","requeue","purge"]},f("limit", "Maximum replay records", "number")], input:[d("messageKey", "Key to requeue", "string")], output:[d("messages", "Replay candidates", "array"),d("count", "Candidate count", "integer")], errors:[{type:"MessageStateException",description:"Message is not eligible for replay or state is unavailable."}]},
+      aggregate_messages: {configuration:[f("stateFile", "Durable state file", "text"), {...f("namespace", "Message namespace", "text", "Use the same namespace for claims, receipts and replay."), required:true}, f("maxStateSizeMb", "State capacity (MB)", "number"),{...f("action", "Aggregation action", "select", "Append a message; flush emits a partial group only after its timeout."), options:["append","flush"]},f("expectedCount", "Completion count", "number"),f("maxGroupItems", "Maximum group records", "number"),f("timeoutSeconds", "Group timeout (seconds)", "number")], input:[d("correlationKey", "Correlation key", "string"),d("messageId", "Stable message ID", "string"),d("payload", "Message payload", "any")], output:[d("ready", "Group ready for delivery", "boolean"),d("records", "Completed group records", "array"),d("count", "Group count", "integer"),d("timedOut", "Group timed out", "boolean"),d("status", "Group status", "string")], errors:[{type:"MessageStateException",description:"Correlation, completion settings or capacity are invalid."}]},
       checkpoint: { configuration: [f("checkpointName", "Checkpoint name", "text", "Optional logical name stored in runtime execution metadata."), f("includeProcessState", "Include process state", "boolean")], input: [], output: [d("checkpointId", "Checkpoint ID"), d("timestamp", "Checkpoint timestamp", "dateTime")], errors: [{ type: "CheckpointException", description: "The process state could not be persisted." }] },
       sleep: { configuration: [f("duration", "Duration", "number"), { ...f("unit", "Unit", "select"), options: ["milliseconds", "seconds", "minutes"] }], input: [d("duration", "Dynamic duration", "number")], output: [d("sleptMilliseconds", "Elapsed delay", "integer")], errors: [{ type: "INTERRUPTED", description: "The wait was interrupted or cancelled." }] },
       get_context: { configuration: [], input: [], output: [d("taskId", "Task ID"), d("activityId", "Activity ID"), d("environment", "Environment"), d("correlationId", "Correlation ID")], errors: [] },
@@ -1384,6 +1392,45 @@ function ActivityEditorGuidance({ type }: { type: string }) {
   return <section className="activity-editor-guidance"><h3>Editor guidance</h3>{wording.map(text => <p key={text}>{text}</p>)}</section>;
 }
 
+export function activityInputMappingTypes(node:any, task:any, tasks:any[], schemas:any[], resources:any[]) {
+  const fields = runtimeMappableInputs(node, resolvedActivityContract(node, task, tasks, schemas, resources));
+  return Object.fromEntries(dataTreeRows(fields).map(field => [field.path, field.validationType || field.type || 'any']));
+}
+
+export function activityMappingIssues(node:any, task:any, tasks:any[], schemas:any[], resources:any[]) {
+  const config = node.config || {}, issues:Array<{path:string; error:string}> = [];
+  const mapper = isMapperActivity(node.type);
+  const fields = mapper ? transformSchemaFields(config) : [];
+  const types = mapper ? Object.fromEntries(fields.map(field => [field.path, field.type])) : activityInputMappingTypes(node, task, tasks, schemas, resources);
+  const paths = mappingCompletionPaths(upstreamActivitySources(node, task, tasks, schemas, resources));
+  const check = (path:string, value:any, constant = false) => {
+    const expression = constant && typeof value === 'string' ? JSON.stringify(value) : value && typeof value === 'object' ? JSON.stringify(value) : value;
+    const error = validateMapping(expression, types[path] || 'any', paths);
+    if (error) issues.push({path,error});
+  };
+  const rules = mapper ? config.mappings || [] : Object.entries(config.inputMappings || {}).map(([target,value]:any) => ({target,...(value && typeof value === 'object' && value.$rule ? value : {source:value})}));
+  for (const rule of rules) {
+    if (rule.enabled === false) continue;
+    const operator = rule.operator || rule.$rule;
+    if (['for-each','for-each-group'].includes(operator)) continue;
+    if (rule.constant !== undefined) {check(rule.target,rule.constant,true);continue;}
+    if (operator === 'choose') {
+      let branches = rule.whens;
+      if (!branches) {try {branches = JSON.parse(rule.source || '[]');} catch {branches = [];}}
+      if (!Array.isArray(branches) || !branches.length) {issues.push({path:rule.target,error:'At least one When condition is required.'});continue;}
+      for (const branch of branches) {
+        if (!String(branch.condition || '').trim()) issues.push({path:rule.target,error:'Enter a When condition.'});
+        check(rule.target,branch.source);
+      }
+    } else {
+      if (['if','when-otherwise'].includes(operator) && !String(rule.condition || '').trim()) issues.push({path:rule.target,error:'Enter a condition.'});
+      check(rule.target,rule.select || rule.source);
+    }
+    if (rule.otherwise !== undefined) check(rule.target,rule.otherwise);
+  }
+  return issues;
+}
+
 export default function ActivityEditor({
   node,
   task,
@@ -1400,7 +1447,9 @@ export default function ActivityEditor({
 }: any) {
   const mappingSources = useActivityMappingSources(node, task, tasks, schemas, resources);
   const contract = resolvedActivityContract(node, task, tasks, schemas || [], resources || []),
-    cfg = node.config || {},
+    storedConfig = node.config || {},
+    selectedTargetSchema = isMapperActivity(node.type) && storedConfig.targetSchemaId ? (schemas || []).find((schema: any) => schema.id === storedConfig.targetSchemaId) : undefined,
+    cfg = selectedTargetSchema ? { ...storedConfig, targetSchema: {}, targetSchemaText: selectedTargetSchema.content } : storedConfig,
     selectedSapConnection = node.type === "sap" ? resources.find((resource: any) => resource.id === cfg.resourceId) : null,
     selectedSapConfig = selectedSapConnection?.config || {},
     derivedConfiguration = node.type === "sap" && cfg.operation === "idoc_listener" ? {
@@ -1500,6 +1549,7 @@ export default function ActivityEditor({
         {mapperOpen && (
           <MapperStudio
             config={cfg}
+            customFunctions={customFunctions}
             schemas={schemas || []}
             onClose={() => setMapperOpen(false)}
             onSave={(next: any) => {
@@ -1518,7 +1568,7 @@ export default function ActivityEditor({
         node={node}
         fields={runtimeMappableInputs(node, contract)}
         mappings={cfg.inputMappings || {}}
-        set={(v: any) => set("inputMappings", v)}
+        set={(v: any) => update({config:{...cfg,inputMappings:v,inputMappingTypes:activityInputMappingTypes(node,task,tasks,schemas || [],resources || [])}})}
         properties={properties}
         sources={upstreamSources}
         runtimeVariables={groupVariables}
@@ -1528,7 +1578,7 @@ export default function ActivityEditor({
       />
     );
   if (tab === "map_test" && isMapperActivity(node.type))
-    return <TransformMapTestEditor node={node} config={cfg} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>;
+    return <TransformMapTestEditor node={node} config={cfg} customFunctions={customFunctions} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>;
   if (tab === "map_test" && node.type === "dataweave")
     return <DataWeaveTestEditor config={cfg} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>;
   if (tab === "output")
@@ -1665,7 +1715,7 @@ function TransformSchemaEditor({ config, schemas, setConfig }: any) {
       return;
     }
     const schema = schemas.find((item: any) => item.id === id);
-    if (schema) setConfig({ targetSchemaId: schema.id, targetSchemaText: schema.content });
+    if (schema) setConfig({ targetSchemaId: schema.id, targetSchema: {}, targetSchemaText: schema.content });
   };
   const id = config.targetSchemaId || "inline", text = id === "inline" ? config.targetSchemaText || JSON.stringify(config.targetSchema || {}, null, 2) : "";
   return <div className="transform-schema-editor"><div className="transform-schema-heading"><Braces/><span><b>TARGET TRANSFORMATION CONTRACT</b></span></div><div className="transform-schema-columns single"><section><header><span><b>Target schema</b></span><select aria-label="Target schema" value={id} onChange={(event) => choose(event.target.value)}><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header>{id === "inline" && <><textarea aria-label="Target inline schema" value={text} onChange={(event) => setConfig({ targetSchemaId: "", targetSchemaText: event.target.value })} placeholder="Paste target JSON Schema or XSD here…" spellCheck={false}/><SchemaHierarchyPreview text={text}/></>}</section></div></div>;
@@ -2078,7 +2128,7 @@ function MappingBindingContent({ expression, sources, onChange, onConstantChange
   const mappingError = validateMapping(expandLoopExpression(editableExpression, sourceScope, completionPaths), validationType, completionPaths);
   const commitMapping = (raw: string) => {
     if (validateMapping(expandLoopExpression(raw, sourceScope, completionPaths), validationType, completionPaths)) return false;
-    const type = String(fieldType).toLowerCase();
+    const type = String(fieldType).toLowerCase().replace(/^xs[d]?:/, '');
     if (/^[\[{]/.test(raw.trim()) && /array|\[\]|object|json/.test(String(validationType).toLowerCase())) {
       try { (onConstantChange || onChange)(JSON.parse(raw)); } catch { /* Preserve expressions; they resolve at runtime. */ }
     }
@@ -2195,7 +2245,7 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
   const openDialog = () => { setDraftMappings(structuredClone(mappings)); setDialogOpen(true); };
   const setValue = (path: string, value: any) => set({ ...mappings, [path]: value });
   return <><div ref={root} className={`activity-tab mapping-editor resizable-mapper visual-field-mapper ${expanded ? "expanded-input-workspace" : ""}`} style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}>
-    <MemoizedDataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}/>
+    <MemoizedDataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}/>
     <section><div className="contract-heading mapping-editor-heading"><SettingsTitle title="Activity input"/>{!expanded && <button type="button" className="edit-input-mapping" onClick={openDialog}><Pencil/> Edit mappings</button>}</div>{before}
       <div className="input-contract-tree"><header><Braces/><b>{node.name}</b></header>{displayRows.map(row => {
         if (row.ancestors.some(key => tree.collapsed.has(key))) return null;
@@ -2223,23 +2273,50 @@ function transformSchemaFields(config: any): SchemaTreeField[] {
   const text = config.targetSchemaText || JSON.stringify(config.targetSchema || {});
   try {
     const schema = JSON.parse(text), fields: SchemaTreeField[] = [];
-    const walk = (node: any, prefix = "", depth = 0) => Object.entries(node?.properties || node || {}).forEach(([name, child]: any) => { const path = prefix ? `${prefix}.${name}` : name, repeating = child?.type === "array" || Array.isArray(child); const item = repeating ? (child?.items || child?.[0] || {}) : child; fields.push({ path, name, type: repeating ? `${item?.type || (item?.properties ? "object" : "value")}[]` : child?.type || typeof child, depth, repeating, minOccurs: repeating ? String(child?.minItems ?? 0) : Array.isArray(node?.required) && node.required.includes(name) ? "1" : "0", maxOccurs: child?.maxItems != null ? String(child.maxItems) : repeating ? "unbounded" : undefined }); if (item?.properties) walk(item, path, depth + 1); });
+    const resolve = (node: any) => {
+      if (!node?.$ref?.startsWith("#/")) return node;
+      const resolved = node.$ref.slice(2).split("/").reduce((value: any, key: string) => value?.[key.replaceAll("~1", "/").replaceAll("~0", "~")], schema);
+      return resolved ? { ...resolved, ...Object.fromEntries(Object.entries(node).filter(([key]) => key !== "$ref")) } : node;
+    };
+    const walk = (raw: any, prefix = "", depth = 0, active: string[] = []) => {
+      if (depth > 32 || raw?.$ref && active.includes(raw.$ref)) return;
+      const node = resolve(raw), nextActive = raw?.$ref ? [...active, raw.$ref] : active;
+      Object.entries(node?.properties || (node?.type || node?.$defs || node?.definitions || node?.$ref ? {} : node || {})).forEach(([name, rawChild]: any) => {
+        const child = resolve(rawChild), path = prefix ? `${prefix}.${name}` : name, repeating = child?.type === "array" || Array.isArray(child), rawItem = repeating ? child?.items || child?.[0] || {} : rawChild, item = resolve(rawItem);
+        const scalarType = (value: any) => Array.isArray(value?.type) ? value.type.join("|") : value?.type || (value?.properties ? "object" : value !== null && typeof value !== "object" ? typeof value : "any");
+        fields.push({path, name, type: repeating ? `${scalarType(item)}[]` : scalarType(child), depth, repeating, minOccurs: repeating ? String(child?.minItems ?? 0) : node?.required?.includes(name) ? "1" : "0", maxOccurs: child?.maxItems != null ? String(child.maxItems) : repeating ? "unbounded" : undefined});
+        if (item?.properties) walk(rawItem, path, depth + 1, nextActive);
+      });
+    };
     walk(schema); return fields;
   } catch {
     try {
       const document = new DOMParser().parseFromString(text, "application/xml");
       if (document.querySelector("parsererror")) return [];
       const local = (element: Element) => element.localName.toLowerCase();
+      const elements = new Map(Array.from(document.documentElement.children).filter(element => local(element) === "element").map(element => [element.getAttribute("name") || "", element]));
       const complexTypes = new Map(Array.from(document.getElementsByTagNameNS("*", "complexType")).map((element) => [element.getAttribute("name") || "", element]));
-      const directElements = (container: Element): Element[] => Array.from(container.children).flatMap((child) => local(child) === "element" ? [child] : ["complextype", "sequence", "all", "choice", "group", "extension"].includes(local(child)) ? directElements(child) : []);
+      const declarations = (container: Element, kind: string, active: Element[] = []): Element[] => {
+        if (active.includes(container)) return [];
+        return Array.from(container.children).flatMap(child => {
+          if (local(child) === kind) return [child];
+          if (!["complextype", "complexcontent", "simplecontent", "sequence", "all", "choice", "group", "extension", "restriction", "attributegroup"].includes(local(child))) return [];
+          const base = local(child) === "extension" ? complexTypes.get(child.getAttribute("base")?.split(":").pop() || "") : undefined;
+          return [...(base ? declarations(base, kind, [...active, container]) : []), ...declarations(child, kind, [...active, container])];
+        });
+      };
+      const directElements = (container: Element) => declarations(container, "element");
       const fields: SchemaTreeField[] = [];
-      const walkElement = (element: Element, prefix = "", depth = 0) => {
-        const name = element.getAttribute("name") || element.getAttribute("ref")?.split(":").pop() || "element", rawType = element.getAttribute("type") || "complex", baseType = rawType.split(":").pop() || rawType, maxOccurs = element.getAttribute("maxOccurs") || "1", repeating = maxOccurs === "unbounded" || Number(maxOccurs) > 1, type = repeating ? `${baseType}[]` : baseType, path = prefix ? `${prefix}.${name}` : name;
-        fields.push({ path, name, type, depth, repeating, minOccurs: element.getAttribute("minOccurs") || "1", maxOccurs });
+      const walkElement = (element: Element, prefix = "", depth = 0, active: string[] = []) => {
+        const occurrence = element;
+        element = elements.get(element.getAttribute("ref")?.split(":").pop() || "") || element;
+        const name = element.getAttribute("name") || element.getAttribute("ref")?.split(":").pop() || "element", rawType = element.getAttribute("type") || "complex", baseType = rawType.split(":").pop() || rawType, maxOccurs = occurrence.getAttribute("maxOccurs") || "1", repeating = maxOccurs === "unbounded" || Number(maxOccurs) > 1, type = repeating ? `${baseType}[]` : baseType, path = prefix ? `${prefix}.${name}` : name;
+        fields.push({ path, name, type, depth, repeating, minOccurs: occurrence.getAttribute("minOccurs") || "1", maxOccurs });
+        if (depth >= 32 || complexTypes.has(baseType) && active.includes(baseType)) return;
         const inline = Array.from(element.children).find((child) => local(child) === "complextype"), referenced = complexTypes.get(baseType);
         const container = inline || referenced || element;
-        Array.from(container.getElementsByTagNameNS("*", "attribute")).filter((attribute) => { let parent: Element | null = attribute.parentElement; while (parent && local(parent) !== "element") parent = parent.parentElement; return parent === element; }).forEach((attribute) => { const attributeName = attribute.getAttribute("name") || attribute.getAttribute("ref")?.split(":").pop() || "attribute"; fields.push({ path: `${path}.@${attributeName}`, name: `@${attributeName}`, type: (attribute.getAttribute("type") || "string").split(":").pop() || "string", depth: depth + 1, repeating: false, minOccurs: attribute.getAttribute("use") === "required" ? "1" : "0", maxOccurs: "1" }); });
-        directElements(container).forEach((child) => walkElement(child, path, depth + 1));
+        declarations(container, "attribute").forEach((attribute) => { const attributeName = attribute.getAttribute("name") || attribute.getAttribute("ref")?.split(":").pop() || "attribute"; fields.push({ path: `${path}.@${attributeName}`, name: `@${attributeName}`, type: (attribute.getAttribute("type") || "string").split(":").pop() || "string", depth: depth + 1, repeating: false, minOccurs: attribute.getAttribute("use") === "required" ? "1" : "0", maxOccurs: "1" }); });
+        directElements(container).forEach((child) => walkElement(child, path, depth + 1, [...active, baseType]));
       };
       Array.from(document.documentElement.children).filter((element) => local(element) === "element").forEach((element) => walkElement(element));
       return fields;
@@ -2249,6 +2326,7 @@ function transformSchemaFields(config: any): SchemaTreeField[] {
 function TransformInputEditor({ config, properties, sources, runtimeVariables = [], setMappings, customFunctions, updateCustomFunctions, expanded = false, editorTitle = "Mapper · Expanded Input Editor" }: any) {
   properties = useMemo(() => Object.assign([...(properties || [])], { customFunctions, updateCustomFunctions }), [properties, customFunctions, updateCustomFunctions]);
   const fields = useMemo<SchemaTreeField[]>(() => transformSchemaFields(config), [config.targetSchemaText, config.targetSchema]), resize = useSourcePaneWidth(expanded ? 360 : 280), tree = useTreeCollapse(), root = useRef<HTMLDivElement>(null), [selected, setSelected] = useState(fields[0]?.path || ""), [contextMenu, setContextMenu] = useState<any>(null), [dialogOpen, setDialogOpen] = useState(false), [draftMappings, setDraftMappings] = useState<any[]>([]), mappings = Array.isArray(config.mappings) ? config.mappings : [];
+  const [targetSearch, setTargetSearch] = useState("");
   const mappingSources = useMemo(() => sources.map((entry:any) => ({...entry, reference:activityReferenceName(entry.activity.name)})), [sources]);
   const loopScopes = useMemo(() => new Map(mappings.filter((rule:any) => ['for-each','for-each-group'].includes(rule.operator)).map((rule:any) => [`${rule.occurrenceId || 'primary'}:${rule.target}`, rule.select || rule.source])), [mappings]);
   const sourceScopeFor = (row:MappingTreeRow):string | undefined => {
@@ -2298,11 +2376,12 @@ function TransformInputEditor({ config, properties, sources, runtimeVariables = 
       return [loopKeys.get(key) || key, rule.select || rule.source];
     }));
   }, [mappings, displayRows]);
+  const filteredRows = useMemo(() => targetSearch.trim() ? displayRows.filter(row=>row.field.path.toLowerCase().includes(targetSearch.trim().toLowerCase())) : displayRows, [displayRows,targetSearch]);
   const contextValue = contextMenu ? mappings.find((item: any) => item.target === contextMenu.path && item.occurrenceId === contextMenu.occurrenceId) : null;
   const contextField = contextMenu ? fields.find((field) => field.path === contextMenu.path) : null;
   const openDialog = () => { setDraftMappings(structuredClone(mappings)); setDialogOpen(true); };
-  return <><div ref={root} className={`activity-tab mapping-editor transform-input-editor resizable-mapper visual-field-mapper ${expanded ? "expanded-input-workspace" : ""}`} style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}><MemoizedDataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}><span/></div><section><div className="contract-heading mapping-editor-heading"><SettingsTitle title="Target schema mapping" />{!expanded && <button type="button" className="edit-input-mapping" onClick={openDialog}><Pencil/> Edit mappings </button>}</div><div className="target-schema-tree">{displayRows.map(row => {
-    if (row.ancestors.some(key => tree.collapsed.has(key))) return null;
+  return <><div ref={root} className={`activity-tab mapping-editor transform-input-editor resizable-mapper visual-field-mapper ${expanded ? "expanded-input-workspace" : ""}`} style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}><MemoizedDataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}><span/></div><section><div className="contract-heading mapping-editor-heading"><SettingsTitle title="Target schema mapping" />{!expanded && <button type="button" className="edit-input-mapping" onClick={openDialog}><Pencil/> Edit mappings </button>}</div><div className="mapper-target-search"><input aria-label="Find target field" placeholder="Find target field…" value={targetSearch} onChange={event=>setTargetSearch(event.target.value)}/><button type="button" onClick={()=>tree.collapseAll(displayRows.filter(row=>row.hasChildren).map(row=>row.key))}>Collapse all</button><button type="button" onClick={tree.expandAll}>Expand all</button></div><div className="target-schema-tree">{filteredRows.map(row => {
+    if (!targetSearch.trim() && row.ancestors.some(key => tree.collapsed.has(key))) return null;
     const field = row.field, rule = row.rule, structural = row.hasChildren || isComplexSchemaType(field.type), canMapStructure = structural && field.repeating;
     if(row.kind !== "field") return <LoopMappingRow key={row.key} row={row} sources={sources} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle} patch={patch => updateRule(field.path,row.occurrenceId,patch)} duplicate={() => duplicateOccurrence(field.path,row.occurrenceId)} remove={() => row.occurrenceId ? removeOccurrence(row.occurrenceId) : updateRule(field.path,undefined,{operator:undefined,select:undefined})}/>;
     const change = (value: any) => {
@@ -2323,7 +2402,7 @@ function TransformOutputEditor({ config }: any) {
   return <div className="activity-tab output-editor"><div className="contract-heading"><SettingsTitle title="Transformer output structure" /></div><div className="output-schema-tree">{fields.map((field) => { if (!tree.visible(field.path)) return null; const group = hasTreeChildren(fields, field); return <div className={group ? "tree-parent-target" : ""} key={field.path} style={{ paddingLeft: 14 + field.depth * 18 }}>{group ? <TreeToggle path={field.path} label={field.name} collapsed={tree.collapsed.has(field.path)} toggle={tree.toggle}/> : <span className="tree-node-dot"/>}<code>{field.name}</code><small>{field.type}</small></div>; })}{!fields.length && <div className="contract-empty">No target schema is configured.</div>}</div></div>;
 }
 
-function TransformMapTestEditor({ node: _node, config, setConfig }: any) {
+function TransformMapTestEditor({ node: _node, config, customFunctions = [], setConfig }: any) {
   const initialInput = config.sampleInput && typeof config.sampleInput === "object" ? config.sampleInput : { customer: { id: "C-100", name: "Sample customer" }, amount: 100 };
   const [inputText, setInputText] = useState(() => JSON.stringify(initialInput, null, 2));
   const [outputText, setOutputText] = useState(() => config.lastTestOutput ? JSON.stringify(config.lastTestOutput, null, 2) : "");
@@ -2334,7 +2413,7 @@ function TransformMapTestEditor({ node: _node, config, setConfig }: any) {
     setStatus("running"); setMessage("Executing mapping rules and formulas…");
     try {
       const input = JSON.parse(inputText);
-      const response = await fetch("/api/mapper/test", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ input, mappings, targetSchema: config.targetSchema || {}, targetSchemaText: config.targetSchemaText || "", options: config }) });
+      const response = await fetch("/api/mapper/test", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ input, mappings, targetSchema: config.targetSchema || {}, targetSchemaText: config.targetSchemaText || "", options: { ...config, customFunctions } }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || result.message || "Mapping test failed");
       setOutputText(JSON.stringify(result.output ?? {}, null, 2));
@@ -2352,6 +2431,7 @@ function TransformMapTestEditor({ node: _node, config, setConfig }: any) {
       <section className="map-test-rules"><header><span><b>APPLIED MAPPINGS &amp; FORMULAS</b></span></header><div>{mappings.map((rule: any, index: number) => <article key={`${rule.target}-${index}`} className={rule.enabled === false ? "disabled" : ""}><em>{index + 1}</em><span><code>{rule.source ?? ("constant" in rule ? JSON.stringify(rule.constant) : "No source")}</code><ArrowRight/><b>{rule.target || "result"}</b><small>{[rule.operator, ...(rule.functions || []).map((fn: any) => typeof fn === "string" ? fn : fn.name)].filter(Boolean).join(" → ") || "Direct mapping"}</small></span></article>)}{!mappings.length && <p>No mappings are saved. Configure target mappings in the Input tab first.</p>}</div></section>
       <section className="map-test-output"><header><span><b>GENERATED OUTPUT</b></span>{outputText && <button type="button" onClick={() => navigator.clipboard?.writeText(outputText)}>Copy output</button>}</header><pre>{outputText || "Run the mapping test to generate output."}</pre></section>
     </main>
+    <TransformationTools config={config} setConfig={setConfig} customFunctions={customFunctions}/>
     <footer className={status}><span>{status === "valid" ? <CheckCircle2/> : status === "error" ? <AlertTriangle/> : <FlaskConical/>}<b>{message}</b></span><button type="button" className="run-map-test" disabled={status === "running" || !mappings.length} onClick={run}><FlaskConical/>{status === "running" ? "Running…" : "Run mapping test"}</button></footer>
   </div>;
 }

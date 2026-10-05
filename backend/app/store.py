@@ -1,14 +1,25 @@
-import json, os, re, shutil, sqlite3
+import json, os, re, shutil, sqlite3, threading
 from contextlib import closing
+from functools import wraps
 from pathlib import Path
+from uuid import uuid4
 from .models import Project
 
 DATA_DIR = Path(os.environ.get('MINA_DATA_DIR', Path(__file__).parents[1] / 'data')).expanduser().resolve()
 PROJECTS_DIR = DATA_DIR / 'projects'
 LEGACY_DB = DATA_DIR / 'mina.db'
+STORE_LOCK = threading.RLock()
+
+
+def synchronized(operation):
+    @wraps(operation)
+    def locked(*args, **kwargs):
+        with STORE_LOCK: return operation(*args, **kwargs)
+    return locked
 
 def safe_component(value: str) -> str:
-    if not value or not re.fullmatch(r'[A-Za-z0-9_.-]+', value) or value in ('.','..'):
+    reserved = {'CON', 'PRN', 'AUX', 'NUL', *(f'COM{i}' for i in range(1, 10)), *(f'LPT{i}' for i in range(1, 10))}
+    if not value or not re.fullmatch(r'[A-Za-z0-9_.-]+', value) or value in ('.','..') or value.endswith('.') or value.split('.')[0].upper() in reserved:
         raise ValueError('Identifiers may contain only letters, numbers, dot, dash, and underscore')
     return value
 
@@ -20,9 +31,12 @@ def project_dir(project_id: str) -> Path:
 
 def write_json(path: Path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + '.tmp')
-    temporary.write_text(json.dumps(value, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
-    temporary.replace(path)
+    temporary = path.with_name(path.name + f'.{uuid4().hex}.tmp')
+    try:
+        temporary.write_text(json.dumps(value, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 def supports_outbound_retry(activity) -> bool:
     operation = str(activity.config.get('operation') or '')
@@ -43,11 +57,16 @@ def clean_activity_policies(project: Project) -> None:
             if not isinstance(advanced, dict): continue
             for key in ('retryEnabled', 'retryCount', 'retryIntervalSeconds'): advanced.pop(key, None)
 
+@synchronized
 def save_project(project: Project) -> Project:
+    # Reject malformed child identifiers before changing any saved files.
+    safe_component(project.id)
+    for item in [*project.tasks, *project.resources]: safe_component(item.id)
+    for items in (project.tasks, project.resources):
+        if len({item.id.casefold() for item in items}) != len(items): raise ValueError('Task and resource identifiers must be unique within their collection')
     clean_activity_policies(project)
     folder = project_dir(project.id); tasks_dir = folder / 'tasks'; resources_dir = folder / 'resources'
     metadata = project.model_dump(exclude={'tasks','resources','process'})
-    write_json(folder / 'project.json', metadata)
     active_task_files = set()
     for task in project.tasks:
         path = tasks_dir / f'{safe_component(task.id)}.json'; write_json(path, task.model_dump()); active_task_files.add(path.resolve())
@@ -58,8 +77,10 @@ def save_project(project: Project) -> Project:
         if path.resolve() not in active_task_files: path.unlink()
     for path in resources_dir.glob('*.json') if resources_dir.exists() else []:
         if path.resolve() not in active_resource_files: path.unlink()
+    write_json(folder / 'project.json', metadata)
     return project
 
+@synchronized
 def get_project(project_id: str) -> Project | None:
     folder = project_dir(project_id); descriptor = folder / 'project.json'
     if not descriptor.exists():
@@ -71,6 +92,7 @@ def get_project(project_id: str) -> Project | None:
     metadata['resources'] = [json.loads(path.read_text(encoding='utf-8')) for path in sorted((folder/'resources').glob('*.json'))] if (folder/'resources').exists() else []
     return Project.model_validate(metadata)
 
+@synchronized
 def list_projects() -> list[Project]:
     PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
     projects = [item for folder in sorted(PROJECTS_DIR.iterdir()) if folder.is_dir() and (item := get_project(folder.name))]
@@ -79,6 +101,7 @@ def list_projects() -> list[Project]:
         if item.id not in known: save_project(item); projects.append(item)
     return sorted(projects, key=lambda item: item.name.lower())
 
+@synchronized
 def delete_project(project_id: str) -> bool:
     folder = project_dir(project_id)
     deleted = folder.exists()

@@ -104,7 +104,7 @@ class AdministratorTests(unittest.TestCase):
         main.TELEMETRY_FILE = root / "telemetry-history.json"
         main.API_KEY = ""
         main.RUNTIME_COMMAND = f'"{sys.executable}" -c "import time; time.sleep(60)"'
-        self.client_context = TestClient(main.app)
+        self.client_context = TestClient(main.app, base_url='http://localhost', client=('127.0.0.1', 50000))
         self.client = self.client_context.__enter__()
 
     def tearDown(self):

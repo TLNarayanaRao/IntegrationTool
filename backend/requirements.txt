@@ -35,3 +35,5 @@ databricks-sdk>=0.40,<1             # Databricks OAuth M2M credential provider
 opentelemetry-api>=1.30,<2
 opentelemetry-sdk>=1.30,<2
 opentelemetry-exporter-otlp-proto-http>=1.30,<2
+
+regex>=2024.11.6,<2027  # Bounded schema pattern matching

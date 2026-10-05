@@ -4,8 +4,26 @@
     "name": "Mapper Foundations",
     "category": "Transformation",
     "description": "Manual field mappings, typed constants, functions, target schema, Map & Test, logging, and task output.",
-    "activities": ["Start", "Mapper", "Log", "End"],
+    "activities": [
+      "Start",
+      "Mapper",
+      "Log",
+      "End"
+    ],
     "file": "/samples/mapper-foundations.json",
+    "ready": true
+  },
+  {
+    "id": "transformation-regression",
+    "name": "Transformation Regression",
+    "category": "Transformation",
+    "description": "Named lookups, saved transformation suites, bounded execution and both Python archive formats.",
+    "activities": [
+      "Start",
+      "Mapper",
+      "End"
+    ],
+    "file": "/samples/transformation-regression.json",
     "ready": true
   },
   {
@@ -13,7 +31,13 @@
     "name": "XML and JSON Mediation",
     "category": "Data formats",
     "description": "Parse an XML order, map its fields, and render a JSON response.",
-    "activities": ["Start", "Parse XML", "Mapper", "Render JSON", "End"],
+    "activities": [
+      "Start",
+      "Parse XML",
+      "Mapper",
+      "Render JSON",
+      "End"
+    ],
     "file": "/samples/xml-json-mediation.json",
     "ready": true
   },
@@ -22,7 +46,12 @@
     "name": "REST Service Mediation",
     "category": "APIs",
     "description": "Continuous REST receiver, request mapping, structured logging, and HTTP response.",
-    "activities": ["REST Receiver", "Mapper", "Log", "HTTP Response"],
+    "activities": [
+      "REST Receiver",
+      "Mapper",
+      "Log",
+      "HTTP Response"
+    ],
     "file": "/samples/rest-service.json",
     "ready": true
   },
@@ -31,7 +60,12 @@
     "name": "JDBC Prepared Query",
     "category": "Database",
     "description": "Typed named SQL parameters, result publication, logging, and environment-driven database connection.",
-    "activities": ["Start", "JDBC Query", "Log", "End"],
+    "activities": [
+      "Start",
+      "JDBC Query",
+      "Log",
+      "End"
+    ],
     "file": "/samples/jdbc-prepared-query.json",
     "ready": false
   },
@@ -40,7 +74,13 @@
     "name": "Event Messaging Patterns",
     "category": "Messaging",
     "description": "Separate EMS, Kafka, and Pub/Sub starter tasks with automatic continuous receiving and acknowledgement patterns.",
-    "activities": ["EMS Receiver", "Kafka Receive", "Pub/Sub Subscribe", "Mapper", "Confirm Message"],
+    "activities": [
+      "EMS Receiver",
+      "Kafka Receive",
+      "Pub/Sub Subscribe",
+      "Mapper",
+      "Confirm Message"
+    ],
     "file": "/samples/event-messaging.json",
     "ready": false
   },
@@ -49,7 +89,11 @@
     "name": "Scheduled Integration",
     "category": "Automation",
     "description": "A scheduler starter that runs immediately in local Run/Debug, writes structured logs, and returns execution metadata.",
-    "activities": ["Scheduler", "Log", "End"],
+    "activities": [
+      "Scheduler",
+      "Log",
+      "End"
+    ],
     "file": "/samples/scheduler-logging.json",
     "ready": true
   },
@@ -58,7 +102,12 @@
     "name": "CSV to XML Mediation",
     "category": "Data formats",
     "description": "Parse typed CSV records into the XML output contract, log the record count, and publish the result.",
-    "activities": ["Start", "Parse Data", "Log", "End"],
+    "activities": [
+      "Start",
+      "Parse Data",
+      "Log",
+      "End"
+    ],
     "file": "/samples/flat-file-mediation.json",
     "ready": true
   },
@@ -67,7 +116,12 @@
     "name": "Transform Order Collection",
     "category": "Transformation",
     "description": "Use the executable DataWeave-compatible Transform language to normalize and enrich an order collection.",
-    "activities": ["Start", "Transform", "Log", "End"],
+    "activities": [
+      "Start",
+      "Transform",
+      "Log",
+      "End"
+    ],
     "file": "/samples/dataweave-orders.json",
     "ready": true
   },
@@ -76,7 +130,12 @@
     "name": "Reusable Sub Task Composition",
     "category": "Orchestration",
     "description": "Map input into a reusable Sub Task, execute it synchronously, and return the child task output to the caller.",
-    "activities": ["Start", "Call Sub Task", "Mapper", "End"],
+    "activities": [
+      "Start",
+      "Call Sub Task",
+      "Mapper",
+      "End"
+    ],
     "file": "/samples/subtask-composition.json",
     "ready": true
   },
@@ -85,7 +144,13 @@
     "name": "Variables and Process Context",
     "category": "General",
     "description": "Assign a process variable, update process context, create a checkpoint, and inspect structured execution output.",
-    "activities": ["Start", "Assign", "Set Context", "Checkpoint", "End"],
+    "activities": [
+      "Start",
+      "Assign",
+      "Set Context",
+      "Checkpoint",
+      "End"
+    ],
     "file": "/samples/general-activities.json",
     "ready": true
   },
@@ -94,7 +159,12 @@
     "name": "Excel Multi-sheet Reader",
     "category": "Data formats",
     "description": "Read every worksheet from an Excel workbook and publish nested JSON keyed by worksheet name.",
-    "activities": ["Start", "Read Excel Workbook", "Log", "End"],
+    "activities": [
+      "Start",
+      "Read Excel Workbook",
+      "Log",
+      "End"
+    ],
     "file": "/samples/excel-multisheet.json",
     "ready": false
   },
@@ -103,7 +173,12 @@
     "name": "Outbound REST Client",
     "category": "APIs",
     "description": "Invoke an environment-configured HTTP API, map its response, and retain request/response diagnostics.",
-    "activities": ["Start", "HTTP Request", "Mapper", "End"],
+    "activities": [
+      "Start",
+      "HTTP Request",
+      "Mapper",
+      "End"
+    ],
     "file": "/samples/outbound-rest-client.json",
     "ready": false
   },
@@ -112,7 +187,12 @@
     "name": "AMQP Reliable Consumer",
     "category": "Messaging",
     "description": "Continuously receive from an AMQP queue, log the message, and confirm successful processing.",
-    "activities": ["AMQP Receive", "Log", "Confirm Message", "End"],
+    "activities": [
+      "AMQP Receive",
+      "Log",
+      "Confirm Message",
+      "End"
+    ],
     "file": "/samples/amqp-reliable-consumer.json",
     "ready": false
   },
@@ -121,7 +201,12 @@
     "name": "Snowflake Analytics Query",
     "category": "Database",
     "description": "Run a parameterized Snowflake query through a shared connection and publish the selected rows.",
-    "activities": ["Start", "Snowflake Query", "Log", "End"],
+    "activities": [
+      "Start",
+      "Snowflake Query",
+      "Log",
+      "End"
+    ],
     "file": "/samples/snowflake-analytics.json",
     "ready": false
   },
@@ -130,7 +215,14 @@
     "name": "SAP IDoc Inbound Mediation",
     "category": "Enterprise applications",
     "description": "Receive an ARTMAS05 IDoc, log the canonical XML, parse its fetched SAP fields into complete JSON, log the JSON, and publish it to a EMS queue.",
-    "activities": ["IDoc Listener", "Log XML", "IDoc Parser", "Log JSON", "EMS Queue Sender", "End"],
+    "activities": [
+      "IDoc Listener",
+      "Log XML",
+      "IDoc Parser",
+      "Log JSON",
+      "EMS Queue Sender",
+      "End"
+    ],
     "file": "/samples/sap-idoc-inbound.json",
     "ready": false
   }

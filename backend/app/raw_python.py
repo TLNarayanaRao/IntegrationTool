@@ -17,6 +17,7 @@ SUPPORTED = {
     ('start', ''), ('end', ''), ('log', ''), ('mapper', ''), ('confirm', 'acknowledge'),
     ('call_task', ''), ('catch', ''), ('throw', ''), ('rethrow', ''),
     ('basic', 'empty'), ('basic', 'assign'), ('basic', 'sleep'), ('basic', 'checkpoint'),
+    *((('basic', operation) for operation in ('deduplicate', 'message_receipt', 'replay_messages', 'aggregate_messages', 'split_records'))),
     ('basic', 'get_shared_variable'), ('basic', 'set_shared_variable'), ('basic', 'external_command'),
     *((('file', operation) for operation in ('read', 'write', 'list', 'delete', 'rename', 'copy', 'poll'))),
     *((('ftp', operation) for operation in ('get', 'put', 'delete', 'dir', 'change_dir'))),
@@ -347,24 +348,8 @@ def _identifier(value: str) -> str:
     return f'_{result}' if result[0].isdigit() else result
 
 
-_CONDITION_ATOM = r'(?:\$\{[^}]+\}|true|false|-?\d+(?:\.\d+)?|"[^"\n]*"|\'[^\'\n]*\')'
-
-
-def _condition_atom_source(value: str) -> str:
-    item = value.strip()
-    if item.lower() in {'true', 'false'}: return item.title()
-    if re.fullmatch(r'-?\d+(?:\.\d+)?', item): return item
-    if len(item) >= 2 and item[0] == item[-1] and item[0] in {'"', "'"}: return repr(item[1:-1])
-    if re.fullmatch(r'\$\{[^}]+\}', item): return f'resolve({_direct_literal(item)}, ctx)'
-    raise ValueError(f'Unsupported direct-code condition: {value!r}')
-
-
 def _condition_source(value: str) -> str:
-    condition = str(value or '').strip()
-    match = re.fullmatch(rf'\s*({_CONDITION_ATOM})\s*(==|!=|>=|<=|>|<)\s*({_CONDITION_ATOM})\s*', condition, re.I)
-    if match:
-        return f'({_condition_atom_source(match.group(1))} {match.group(2)} {_condition_atom_source(match.group(3))})'
-    return f'bool({_condition_atom_source(condition)})'
+    return f'condition({str(value or "").strip()!r}, ctx)'
 
 
 def _simple_group_plans(task: dict) -> list[dict]:
@@ -455,8 +440,15 @@ def _simple_group_plans(task: dict) -> list[dict]:
 
 def _direct_literal(value, indent: int = 0) -> str:
     """Compile expressions into Python reference objects, never Mina syntax."""
+    import json
     if isinstance(value, str):
         if value.startswith('__mina_constant__:'): return repr(value)
+        if value.strip()[:1] in ("'", '"') and value.strip()[-1:] == value.strip()[:1]: return repr(value)
+        if value.strip().startswith(('{', '[')):
+            try:
+                json.loads(value)
+                return repr(value)
+            except (ValueError, TypeError): pass
         matches = list(re.finditer(r'\$\{([^}]+)\}', value))
         if len(matches) == 1 and matches[0].span() == (0, len(value)):
             return f'Reference({matches[0].group(1)!r})'
@@ -473,9 +465,9 @@ def _direct_literal(value, indent: int = 0) -> str:
         if not value: return 'dict()'
         if all(isinstance(key, str) and key.isidentifier() and not keyword.iskeyword(key) for key in value):
             pad = ' ' * indent
-            fields = [f'{pad}    {key}={_direct_literal(item, indent + 4)},' for key, item in value.items()]
+            fields = [f'{pad}    {key}={repr(item) if key in {"constant", "customFunctions", "targetSchema", "targetSchemaText", "schemaText", "interfaceSchemaText", "lookupTables", "testCases", "templateHistory", "contractBaseline"} else _direct_literal(item, indent + 4)},' for key, item in value.items()]
             return 'dict(\n' + '\n'.join(fields) + f'\n{pad})'
-        return '{' + ', '.join(f'{key!r}: {_direct_literal(item, indent)}' for key, item in value.items()) + '}'
+        return '{' + ', '.join(f'{key!r}: {repr(item) if key in {"constant", "customFunctions", "targetSchema", "targetSchemaText", "schemaText", "interfaceSchemaText", "lookupTables", "testCases", "templateHistory", "contractBaseline"} else _direct_literal(item, indent)}' for key, item in value.items()) + '}'
     if isinstance(value, list):
         return '[' + ', '.join(_direct_literal(item, indent) for item in value) + ']'
     return repr(value)
@@ -508,8 +500,7 @@ def validate_raw_python(project: dict) -> None:
         for edge in task.get('transitions', []):
             if _edge_type(edge) == 'success':
                 outgoing[edge['source']] = outgoing.get(edge['source'], 0) + 1
-            if edge.get('type') == 'success_condition' and str(edge.get('condition') or '').strip() not in ('true', 'false') and not re.fullmatch(r'\$\{[^}]+\}', str(edge.get('condition') or '')):
-                failures.append(f"{task['name']}: conditional transition {edge.get('id', '')} needs a simple boolean field expression")
+
         if task.get('groups') and any(count > 1 for count in outgoing.values()):
             failures.append(f"{task['name']}: parallel branches inside groups are not yet supported by direct code")
         for source_id, count in outgoing.items():
@@ -546,6 +537,8 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
     def add(name: str, modules: list[str], install: str, *, any_module: bool = False, java: bool = False):
         if not any(item['name'] == name for item in checks):
             checks.append({'name': name, 'modules': modules, 'install': install, 'any': any_module, 'java': java})
+    if any(token in repr(project.get('schemas', [])) + repr([a.get('config', {}) for t in project.get('tasks', []) for a in t.get('activities', [])]) for token in ('pattern', 'patternProperties')):
+        add('Schema patterns', ['regex'], 'python -m pip install regex')
     if any(kind == 'kafka' for kind, _ in activity_pairs) and needs_external('kafka'): add('Kafka client', ['aiokafka'], 'python -m pip install aiokafka')
     if any(kind == 'pubsub' for kind, _ in activity_pairs): add('Google Pub/Sub client', ['google.cloud.pubsub_v1', 'google.oauth2'], 'python -m pip install google-cloud-pubsub google-auth')
     if any(kind == 'sftp' for kind, _ in activity_pairs): add('SFTP client', ['paramiko'], 'python -m pip install paramiko')
@@ -574,7 +567,30 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
     return checks, sorted(set(external))
 
 
+def validate_export_mappings(project: dict) -> None:
+    """Apply the same literal/type rules to both Python archive builders."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('_export_mapper_validation', Path(__file__).with_name('mapper.py'))
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+    schemas = {schema.get('id'): schema.get('content') for schema in project.get('schemas', [])}
+    failures = []
+    for task in project.get('tasks', []):
+        for activity in task.get('activities', []):
+            config = activity.get('config') or {}
+            if activity.get('type') in ('mapper', 'transform', 'ai_transform'):
+                schema = schemas.get(config.get('targetSchemaId')) or config.get('targetSchemaText') or config.get('targetSchema')
+                errors = validator.validate_mapping_rules(config.get('mappings') or [], schema, custom_functions=[*config.get('customFunctions', []), *project.get('custom_functions', [])])
+            else:
+                schema = task.get('input_schema') if activity.get('type') == 'start' else task.get('output_schema') if activity.get('type') == 'end' else None
+                schema = schemas.get(config.get('interfaceSchemaId')) or config.get('interfaceSchemaText') or schema
+                errors = validator.validate_mapping_rules(config.get('inputMappings') or {}, schema, config.get('inputMappingTypes'), project.get('custom_functions'))
+            failures.extend(f'{task.get("name", task.get("id"))} / {activity.get("name", activity.get("id"))}: {error}' for error in errors)
+    if failures: raise ValueError('Invalid input mappings:\n' + '\n'.join(failures))
+
+
 def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str, bytes]:
+    validate_export_mappings(project)
     validate_raw_python(project)
     linked_resources, linked_schemas = _project_artifact_closure(project)
     linked_project = {**project, 'resources': linked_resources, 'schemas': linked_schemas}
@@ -588,6 +604,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     files = {f'application/{name}': (root / name).read_bytes()
              for name in ('__init__.py', 'diagnostics.py', 'qualification.py')}
     core_source = _filter_capability_blocks((root / 'core.py').read_text(encoding='utf-8'), capabilities)
+    core_source = core_source.replace('from .native.mapping_literals import parse_literal', Path(__file__).with_name('mapping_literals.py').read_text(encoding='utf-8'))
     retry_expressions = []
     if 'kafka' in capabilities: retry_expressions.append("(kind == 'kafka' and raw.get('operation') in {'publish', 'send'})")
     if 'pubsub' in capabilities: retry_expressions.append("(kind == 'pubsub' and raw.get('operation') == 'publish')")
@@ -595,6 +612,8 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     if 'sap' in capabilities: retry_expressions.append("(kind == 'sap' and raw.get('operation') in {'post_idoc', 'invoke_rfc_bapi', 'reply_rfc_bapi'})")
     core_source = core_source.replace('False  # OUTBOUND_RETRY_EXPRESSION', ' or '.join(retry_expressions) or 'False')
     core_roots = {'Context', 'Reference', 'Template', 'resolve', 'execute_with_policy'}
+    if any(task.get('groups') or any(edge.get('type') == 'success_condition' for edge in task.get('transitions', [])) for task in project.get('tasks', [])):
+        core_roots.add('condition')
     if 'group:critical_section' in capabilities:
         core_roots.add('group_lock')
     files['application/core.py'] = _prune_module(core_source, core_roots)
@@ -685,13 +704,23 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     files['run.py'] = launcher
     files['__main__.py'] = launcher
     native_modules = set()
+    if any(activity.get('config', {}).get('operation') in {'deduplicate', 'message_receipt', 'replay_messages', 'aggregate_messages', 'split_records'} for task in project.get('tasks', []) for activity in task.get('activities', [])):
+        native_modules.add('message_state.py')
+    if any(activity.get('type') == 'sftp' for task in project.get('tasks', []) for activity in task.get('activities', [])):
+        native_modules.add('sftp.py')
     if 'sap' in capabilities: native_modules.update({'sap.py', 'java_bridge.py'})
     if 'jms' in capabilities or 'java' in capabilities: native_modules.add('java_bridge.py')
     if 'jdbc' in capabilities: native_modules.update({'jdbc.py', 'java_bridge.py'})
     if 'snowflake' in capabilities: native_modules.add('snowflake.py')
     if 'amqp' in capabilities: native_modules.add('amqp.py')
     if 'dataweave' in capabilities: native_modules.add('dataweave.py')
-    if 'mapper' in capabilities: native_modules.add('mapper.py')
+    if any(activity.get('type') == 'json' and any(activity.get('config', {}).get(flag) for flag in ('validateInput', 'validateOutput')) for task in project.get('tasks', []) for activity in task.get('activities', [])):
+        native_modules.add('mapper.py')
+    if 'mapper' in capabilities or any(task.get('groups') or any(edge.get('type') == 'success_condition' for edge in task.get('transitions', [])) for task in project.get('tasks', [])) or any(
+            isinstance(value, dict) and '$rule' in value or isinstance(value, str) and re.match(r'[\w:-]+\(', value.strip())
+            for task in project.get('tasks', []) for activity in task.get('activities', [])
+            for value in (activity.get('config', {}).get('inputMappings') or {}).values()):
+        native_modules.add('mapper.py')
     if native_modules:
         files['application/native/__init__.py'] = b'"""Capability-selected native adapters; vendor binaries remain external."""\n'
         for name in sorted(native_modules): files[f'application/native/{name}'] = Path(__file__).with_name(name).read_bytes()
@@ -769,6 +798,8 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
             if edge['source'] not in activities or edge['target'] not in activities:
                 raise ValueError(f"Raw Python task {task['name']} contains a dangling transition")
         core_imports = ['Context', 'execute_with_policy', 'resolve', 'Reference', 'Template']
+        if any(edge.get('type') == 'success_condition' for edge in task.get('transitions', [])) or any(plan.get('expression') for plan in group_plans):
+            core_imports.append('condition')
         if any(plan['type'] == 'critical_section' for plan in group_plans):
             core_imports.append('group_lock')
         lines = [
@@ -797,6 +828,8 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
                 '    transaction_connections = {}', '    transaction_resources = {}',
                 '    critical_locks = {}', '    retry_remaining = {}', '    retry_iterations = {}',
             ]
+        if project.get('custom_functions'):
+            lines.insert(lines.index('    while current is not None:'), f'    ctx.attributes["customFunctions"] = {project["custom_functions"]!r}')
         for plan in group_plans:
             if plan['type'] == 'if':
                 lines.extend([
@@ -896,7 +929,15 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
                 ])
         for index, activity in enumerate(task['activities']):
             prefix = 'if' if index == 0 else 'elif'
-            config = activity.get('config') or {}
+            config = {**(activity.get('config') or {})}
+            if activity.get('type') in ('xml', 'json', 'flat') and config.get('schemaId'):
+                selected = next((schema for schema in project.get('schemas', []) if schema.get('id') == config['schemaId'] or schema.get('name') == config['schemaId']), None)
+                if selected: config['schemaText'] = selected['content']
+            if activity.get('type') == 'mapper' and config.get('targetSchemaId'):
+                selected = next((schema for schema in project.get('schemas', []) if schema.get('id') == config['targetSchemaId'] or schema.get('name') == config['targetSchemaId']), None)
+                if not selected: raise ValueError(f'{activity.get("name")}: selected Mapper target schema was not found')
+                config.update(targetSchema={}, targetSchemaText=selected['content'])
+            if project.get('custom_functions'): config['customFunctions'] = list({item['name']:item for item in [*config.get('customFunctions', []), *project['custom_functions']]}.values())
             outgoing = [edge for edge in task['transitions'] if edge['source'] == activity['id']]
             error_target = next((edge['target'] for edge in outgoing if edge.get('type') == 'error'), None)
             conditional = [edge for edge in outgoing if edge.get('type') == 'success_condition']
@@ -978,7 +1019,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
             elif conditional:
                 for condition_index, edge in enumerate(conditional):
                     condition = str(edge.get('condition') or '').strip()
-                    expression = 'True' if condition.lower() == 'true' else 'False' if condition.lower() == 'false' else f'bool(resolve({_direct_literal(condition, 16)}, ctx))'
+                    expression = _condition_source(condition)
                     lines.append(f'                {"if" if condition_index == 0 else "elif"} {expression}: current = {edge["target"]!r}')
                 lines.append(f'                else: current = {no_match!r}')
             elif len(ordinary_targets) > 1:
@@ -1043,6 +1084,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
                 '            if critical_lock.locked(): critical_lock.release()',
             ])
         files[f'application/tasks/{task_modules[task["id"]]}.py'] = ('\n'.join(lines)).encode('utf-8')
+    files.update(_transformation_tools(project, 'application.native'))
     for name, body in files.items():
         if name.endswith('.py'):
             try:
@@ -1055,7 +1097,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
 ENGINE_CAPABILITY_MODULES = {
     'dataweave': 'dataweave', 'sap': 'sap', 'snowflake': 'snowflake',
     'jdbc': 'jdbc', 'amqp': 'amqp', 'ems': 'java_bridge',
-    'jms': 'java_bridge', 'pubsub': 'google_pubsub',
+    'jms': 'java_bridge', 'pubsub': 'google_pubsub', 'sftp': 'sftp', 'basic': 'message_state',
 }
 
 
@@ -1149,6 +1191,51 @@ def _python_call(name: str, values: dict, fields: tuple[str, ...], indent: int =
     return f'{name}(\n' + '\n'.join(arguments) + f'\n{pad})'
 
 
+
+def _transformation_tools(project, package):
+    """Ship portable regression and JSONL tools only for transformation tasks."""
+    assets = {}
+    schemas = {schema['id']: schema.get('content', '') for schema in project.get('schemas', [])}
+    for task in project.get('tasks', []):
+        for activity in task.get('activities', []):
+            if activity.get('type') != 'mapper': continue
+            config = {key:value for key,value in (activity.get('config') or {}).items() if key not in {'templateHistory','contractBaseline','lastTestOutput','sampleInput'}}
+            config['customFunctions'] = list({item['name']: item for item in [*config.get('customFunctions', []), *project.get('custom_functions', [])]}.values())
+            if config.get('targetSchemaId'):
+                config['targetSchema'] = {}
+                config['targetSchemaText'] = schemas[config['targetSchemaId']]
+            assets[f"{task['id']}/{activity['id']}"] = config
+    if not assets: return {}
+    root = Path(__file__).parent
+    files = {f'{package.replace(".", "/")}/transformation.py': (root / 'transformation.py').read_bytes()}
+    prefix = f'from {package}.transformation import run_cases, execute_batches\nASSETS = {assets!r}\n'
+    files['run_tests.py'] = (prefix + """import json, sys
+results = {name: run_cases(config) for name, config in ASSETS.items() if config.get('testCases')}
+print(json.dumps(results, ensure_ascii=False, indent=2))
+raise SystemExit(0 if results and all(result['passed'] for result in results.values()) else 1)
+""").encode()
+    files['transform_jsonl.py'] = (prefix + """import argparse, json, sys
+parser = argparse.ArgumentParser(description='Stream JSON Lines through a saved Mapper without running connectors')
+parser.add_argument('--activity', required=True, choices=sorted(ASSETS))
+parser.add_argument('--batch-size', type=int, default=100)
+arguments = parser.parse_args()
+def records():
+    while True:
+        line = sys.stdin.readline(1024 * 1024 + 1)
+        if not line: return
+        if len(line.encode()) > 1024 * 1024: raise ValueError('JSONL record exceeds 1 MB')
+        if line.strip(): yield json.loads(line)
+try:
+    for batch in execute_batches(records(), ASSETS[arguments.activity], arguments.batch_size):
+        for result in batch:
+            if not result['valid']: raise ValueError('; '.join(result['validationErrors']))
+            print(json.dumps(result['output'], ensure_ascii=False), flush=True)
+except Exception as error:
+    print(str(error), file=sys.stderr)
+    raise SystemExit(1)
+""").encode()
+    return files
+
 def engine_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str, bytes]:
     """Compile every persisted activity/group to Python model constructors.
 
@@ -1156,6 +1243,7 @@ def engine_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[
     Studio, including its SAP JCo and EMS/JMS bridges. Vendor runtimes/JARs
     remain external licensed dependencies of the target data plane.
     """
+    validate_export_mappings(project)
     source_root = Path(__file__).parent
     support = source_root / 'raw_python_support'
     files: dict[str, bytes] = {
@@ -1220,6 +1308,7 @@ def engine_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[
         f'        properties={{ {profile_lines} }},\n'
         f'        tasks=[{", ".join(task_calls)}])\n'
     ).encode('utf-8')
+    files.update(_transformation_tools(project, 'application.engine'))
     for name, body in files.items():
         if name.endswith('.py'):
             try: compile(body, name, 'exec')

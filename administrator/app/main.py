@@ -5,6 +5,7 @@ import base64
 import hashlib
 import hmac
 import io
+import ipaddress
 import json
 import os
 import re
@@ -22,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import uuid4
+from urllib.parse import urlsplit
 
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -140,6 +142,30 @@ def technology_identity() -> dict[str, Any]:
     return {"principalId":"local-owner", "name":"Technology Team Owner", "teamId":TECHNOLOGY_TEAM_ID, "teamKind":"technology", "controlPlaneAccess":True, "roles":["Owner"]}
 
 
+def token_expiry(value: str) -> datetime:
+    expires = datetime.fromisoformat(value)
+    if expires.tzinfo is None: raise ValueError('Token expiry must include a timezone')
+    return expires.astimezone(timezone.utc)
+
+
+def local_owner_request(request: Request) -> bool:
+    # Peer address, never Host/X-Forwarded-For, controls credential-free access.
+    try:
+        if not request.client or not ipaddress.ip_address(request.client.host).is_loopback: return False
+    except ValueError: return False
+    if any(header in request.headers for header in ('forwarded', 'x-forwarded-for', 'x-forwarded-host')): return False
+    if request.headers.get('sec-fetch-site') == 'cross-site': return False
+    origin = request.headers.get('origin')
+    try:
+        expected = urlsplit(str(request.base_url))
+        if expected.hostname != 'localhost' and not ipaddress.ip_address(expected.hostname or '').is_loopback: return False
+        if origin:
+            supplied = urlsplit(origin)
+            if (supplied.scheme, supplied.hostname, supplied.port or (443 if supplied.scheme == 'https' else 80)) != (expected.scheme, expected.hostname, expected.port or (443 if expected.scheme == 'https' else 80)): return False
+    except ValueError: return False
+    return True
+
+
 def resolve_identity(request: Request) -> dict[str, Any] | None:
     presented = (request.headers.get("x-control-plane-key") or request.headers.get("x-admin-key") or "").strip()
     if API_KEY and presented and hmac.compare_digest(presented, API_KEY):
@@ -149,13 +175,15 @@ def resolve_identity(request: Request) -> dict[str, Any] | None:
         token = next((item for item in read_json(TOKENS_FILE, []) if item.get("tokenHash") == digest and item.get("status") == "ACTIVE"), None)
         if token:
             expires = token.get("expiresAt")
-            if expires and datetime.fromisoformat(expires) <= datetime.now(timezone.utc):
-                return None
+            if expires:
+                try:
+                    if token_expiry(expires) <= datetime.now(timezone.utc): return None
+                except (ValueError, TypeError): return None
             team = next((item for item in read_json(TEAMS_FILE, []) if item.get("id") == token.get("teamId") and item.get("status") == "ACTIVE"), None)
             if team:
                 return {"principalId":token.get("principalId"), "name":token.get("principalName") or token.get("name"), "teamId":team["id"], "teamKind":team.get("kind"), "controlPlaneAccess":bool(team.get("controlPlaneAccess")), "roles":token.get("roles") or ["Application Manager"]}
         return None
-    return technology_identity() if not API_KEY else None
+    return technology_identity() if not API_KEY and local_owner_request(request) else None
 
 
 def identity(request: Request) -> dict[str, Any]:
@@ -269,8 +297,12 @@ def required_secrets(manifest: dict, environment: str) -> list[str]:
 def checked_name(name: str) -> str:
     normalized = str(PurePosixPath(name.replace("\\", "/")))
     path = PurePosixPath(normalized)
-    if not normalized or normalized.startswith("/") or ".." in path.parts or re.match(r"^[A-Za-z]:", normalized):
+    if normalized in ('', '.') or normalized.startswith("/") or ".." in path.parts or re.match(r"^[A-Za-z]:", normalized):
         raise ValueError(f"Unsafe package path: {name}")
+    for component in path.parts:
+        if (component.endswith((' ', '.')) or any(ord(char) < 32 or char in ':<>"|?*' for char in component)
+                or component.split('.')[0].upper() in {'CON', 'PRN', 'AUX', 'NUL', *(f'COM{i}' for i in range(1, 10)), *(f'LPT{i}' for i in range(1, 10))}):
+            raise ValueError(f"Unsafe package path: {name}")
     return normalized
 
 
@@ -324,8 +356,14 @@ def validate_manifest(manifest: Any, names: set[str]) -> dict:
 
 
 def inspect_archive(body: bytes) -> tuple[dict, list[tuple[str, bytes]]]:
+    if len(body) > MAX_PACKAGE_BYTES: raise ValueError('Package exceeds the configured upload limit')
     entries: list[tuple[str, bytes]] = []
     expanded = 0
+    names = set()
+    def unique(name):
+        canonical = name.casefold()
+        if canonical in names: raise ValueError(f'Duplicate package path: {name}')
+        names.add(canonical)
     memory = io.BytesIO(body)
     if body[:2] == b"PK":
         with zipfile.ZipFile(memory) as archive:
@@ -334,6 +372,9 @@ def inspect_archive(body: bytes) -> tuple[dict, list[tuple[str, bytes]]]:
                 raise ValueError("Package contains too many files")
             for member in members:
                 name = checked_name(member.filename)
+                unique(name)
+                if (member.external_attr >> 16) & 0o170000 == 0o120000:
+                    raise ValueError(f'Package contains a prohibited symbolic link: {name}')
                 expanded += member.file_size
                 if expanded > MAX_EXPANDED_BYTES:
                     raise ValueError("Expanded package exceeds the configured limit")
@@ -348,6 +389,7 @@ def inspect_archive(body: bytes) -> tuple[dict, list[tuple[str, bytes]]]:
                     raise ValueError(f"Package contains a prohibited entry: {member.name}")
                 if member.isfile():
                     name = checked_name(member.name)
+                    unique(name)
                     expanded += member.size
                     if expanded > MAX_EXPANDED_BYTES:
                         raise ValueError("Expanded package exceeds the configured limit")
@@ -1019,8 +1061,8 @@ def issue_team_token(team_id: str, payload: TeamTokenRequest, request: Request):
     if not payload.roles or any(role not in allowed for role in payload.roles): raise HTTPException(400, "Delivery tokens support Application Manager or Application Viewer roles")
     if payload.expiresAt:
         try:
-            if datetime.fromisoformat(payload.expiresAt) <= datetime.now(timezone.utc): raise ValueError()
-        except ValueError: raise HTTPException(400, "expiresAt must be a future ISO-8601 timestamp")
+            if token_expiry(payload.expiresAt) <= datetime.now(timezone.utc): raise ValueError()
+        except (ValueError, TypeError): raise HTTPException(400, "expiresAt must be a future ISO-8601 timestamp with a timezone")
     raw = "ifcp_" + secrets.token_urlsafe(32); token_id = str(uuid4())
     item = {"id":token_id, "name":payload.name, "teamId":team_id, "principalId":payload.principalId or f"{team_id}-automation", "principalName":payload.name, "roles":payload.roles, "tokenHash":token_hash(raw), "status":"ACTIVE", "createdAt":now(), "expiresAt":payload.expiresAt}
     values = read_json(TOKENS_FILE, []); values.append(item); write_json(TOKENS_FILE, values); audit("team.token.issue", token_id, detail=team_id)

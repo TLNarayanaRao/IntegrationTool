@@ -71,6 +71,11 @@ export const mapperFunctionCatalog: MapperFunctionDefinition[] = [
   fn("Number", "clamp", "clamp(value, minimum, maximum)", "Constrain a number to a range.", "clamp($value, 0, 100)", "clamp(0,100)"),
   ...["min", "max", "sum", "average", "count"].map((name) => fn("Number", name, `${name}(values)`, `${name[0].toUpperCase()}${name.slice(1)} collection values.`, `${name}($value)`)),
 
+  fn("Collection", "lookup", "lookup(value, table, default?)", "Look up a key in an object table.", 'lookup($value, ${input.table}, "Unknown")', 'lookup({})'),
+  fn("Collection", "lookupTable", "lookupTable(value, name, default?)", "Look up a key in a named table saved with this Mapper.", 'lookupTable($value, "countries", "Unknown")', 'lookupTable("countries", "Unknown")'),
+  fn("Collection", "enrich", "enrich(record, fields)", "Merge enrichment fields into a record; enrichment replaces matching fields.", 'enrich($value, ${input.fields})', 'enrich({})'),
+  fn("Collection", "chunks", "chunks(records, size)", "Split records into bounded batches.", 'chunks($value, 100)', 'chunks(100)'),
+  fn("Collection", "joinBy", "joinBy(left, right, leftKey, rightKey)", "Join records by matching keys; every match produces a merged record.", 'joinBy($value, ${input.right}, "id", "id")', 'joinBy([], "id", "id")'),
   fn("Collection", "group", "group(values, path?)", "Group records by a field path, or group equal values. Returns an array of groups.", 'group($value, "product")', 'group("product")'),
   fn("Collection", "top", "top(values, count?)", "Return the highest values in descending order (default: one).", "top($value, 10)", "top(10)"),
   fn("Collection", "distinctValues", "distinctValues(values)", "Remove duplicate values while preserving order.", "distinctValues($value)"),

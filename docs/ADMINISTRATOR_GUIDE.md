@@ -58,7 +58,7 @@ docker run -d --name mina-admin -p 9080:9080 \
 | `MINA_ADMIN_HOST` | `0.0.0.0` | HTTP bind address |
 | `MINA_ADMIN_PORT` | `9080` | HTTP port |
 | `MINA_ADMIN_DATA_DIR` | `administrator/data` | Repository, state, encrypted secrets, logs, and audit location |
-| `MINA_ADMIN_API_KEY` | empty | If set, `/api/*` except health requires `X-Admin-Key` |
+| `MINA_ADMIN_API_KEY` | empty | Owner credential sent in `X-Admin-Key` or `X-Control-Plane-Key`. Credential-free owner access is restricted to direct loopback clients and same-origin browser requests. Remote and reverse-proxy clients must supply an owner key or scoped team token. |
 | `MINA_ADMIN_SECRET_KEY` | generated local key | Stable encryption passphrase; supply from a secret manager in clustered/production installs |
 | `MINA_ADMIN_RUNTIME_COMMAND` | empty | Administrator-approved runtime command template |
 | `MINA_ADMIN_MAX_PACKAGE_MB` | `250` | Maximum uploaded archive size |

@@ -25,10 +25,10 @@ class EngineExportTests(unittest.TestCase):
     def test_unused_resources_do_not_pull_in_connectors(self):
         project = self.project()
         project['resources'] = [dict(id='sap', type='sap', name='Unused SAP', config={})]
-        self.assertEqual(self.modules(project), {'runtime', 'models', 'mapper', 'time_utils'})
+        self.assertEqual(self.modules(project), {'runtime', 'models', 'mapper', 'mapping_literals', 'time_utils'})
 
     def test_connector_dependency_closure(self):
-        base = {'runtime', 'models', 'mapper', 'time_utils'}
+        base = {'runtime', 'models', 'mapper', 'mapping_literals', 'time_utils'}
         for kind, extra in [
             ('sap', {'sap', 'java_bridge'}), ('jdbc', {'jdbc', 'java_bridge', 'snowflake'}),
             ('ems', {'java_bridge'}), ('jms', {'java_bridge'}),

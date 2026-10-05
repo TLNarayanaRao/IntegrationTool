@@ -10,7 +10,7 @@ const names = new Set(['isEventActivity', 'propertyReferences', 'validateTaskDef
 const declarations = ast.statements.filter(statement => ts.isVariableStatement(statement)
   && statement.declarationList.declarations.some(declaration => names.has(declaration.name.getText(ast))));
 assert.equal(declarations.length, names.size);
-const compiled = ts.transpileModule(declarations.map(statement => statement.getText(ast)).join('\n')
+const compiled = ts.transpileModule('const activityMappingIssues = () => [];\n' + declarations.map(statement => statement.getText(ast)).join('\n')
   + '\nexport { validateTaskDefinition, validateProjectDefinition };',
   { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText;
 const { validateTaskDefinition, validateProjectDefinition } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);

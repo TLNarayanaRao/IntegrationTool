@@ -1,0 +1,128 @@
+{
+  "id": "sample-transformation-regression",
+  "name": "Sample - Transformation Regression",
+  "description": "Named lookup tables, saved expected-output cases, bounded execution and portable Python tests. Use input {\"code\":\"US\"}.",
+  "active_environment": "local",
+  "active_task_id": "main",
+  "tasks": [
+    {
+      "id": "main",
+      "name": "Transform Country",
+      "kind": "starter",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "activities": [
+        {
+          "id": "start",
+          "type": "start",
+          "name": "Start",
+          "position": {
+            "x": 70,
+            "y": 160
+          },
+          "config": {}
+        },
+        {
+          "id": "map",
+          "type": "mapper",
+          "name": "Transform Country",
+          "position": {
+            "x": 300,
+            "y": 160
+          },
+          "config": {
+            "targetSchema": {
+              "type": "object",
+              "required": [
+                "country"
+              ],
+              "properties": {
+                "country": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "mappings": [
+              {
+                "target": "country",
+                "source": "lookupTable(${input.code}, \"countries\", \"Unknown\")",
+                "targetType": "string",
+                "enabled": true
+              }
+            ],
+            "lookupTables": {
+              "countries": {
+                "US": "United States",
+                "IN": "India"
+              }
+            },
+            "sampleInput": {
+              "code": "US"
+            },
+            "testCases": [
+              {
+                "name": "Known country",
+                "input": {
+                  "code": "US"
+                },
+                "expected": {
+                  "country": "United States"
+                }
+              },
+              {
+                "name": "Fallback country",
+                "input": {
+                  "code": "GB"
+                },
+                "expected": {
+                  "country": "Unknown"
+                }
+              }
+            ],
+            "maxIterations": 100000,
+            "maxExecutionMs": 30000,
+            "maxOutputSizeKb": 1024
+          }
+        },
+        {
+          "id": "end",
+          "type": "end",
+          "name": "End",
+          "position": {
+            "x": 550,
+            "y": 160
+          },
+          "config": {
+            "inputMappings": {
+              "result": "${last}"
+            }
+          }
+        }
+      ],
+      "transitions": [
+        {
+          "id": "a",
+          "source": "start",
+          "target": "map",
+          "type": "success"
+        },
+        {
+          "id": "b",
+          "source": "map",
+          "target": "end",
+          "type": "success"
+        }
+      ]
+    }
+  ]
+}
