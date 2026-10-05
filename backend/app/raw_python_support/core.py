@@ -380,11 +380,6 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
         return {'statusCode': int(cfg.get('statusCode') or 200), 'headers': cfg.get('headers') or {},
                 'body': cfg.get('body', ctx.last), 'sent': True}
     # CAPABILITY http_response END
-    # CAPABILITY mediation START
-    if kind == 'mediation':
-        from .native.mediation import execute as mediate
-        return mediate(cfg.get('payload', ctx.last), cfg)
-    # CAPABILITY mediation END
     # CAPABILITY dataweave START
     if kind == 'dataweave':
         from .native.dataweave import execute as transform

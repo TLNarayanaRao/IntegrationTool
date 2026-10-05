@@ -196,6 +196,31 @@ def apply_function(name: str, value: Any = None, args: list[Any] | None = None):
     """Execute the built-in integration-mapper function catalog."""
     args = list(args or []); key = str(name or '').lower().replace('-', '').replace('_', '')
     text = '' if value is None else str(value)
+    if key in ('equal', 'notequal', 'greaterthan', 'lessthan', 'greaterorequal', 'lessorequal'):
+        other = args[0] if args else None
+        if key == 'equal': return value == other
+        if key == 'notequal': return value != other
+        if key == 'greaterthan': return value > other
+        if key == 'lessthan': return value < other
+        if key == 'greaterorequal': return value >= other
+        return value <= other
+    if key in ('add', 'subtract', 'multiply', 'divide'):
+        left, right = float(value), float(args[0])
+        if key == 'add': return left + right
+        if key == 'subtract': return left - right
+        if key == 'multiply': return left * right
+        return left / right
+    if key in ('group', 'groupby'):
+        groups = {}
+        for item in value or []:
+            group_key = get_path(item, str(args[0])) if args and args[0] else item
+            token = json.dumps(group_key, sort_keys=True, default=str)
+            groups.setdefault(token, []).append(item)
+        return list(groups.values())
+    if key == 'top':
+        count = int(args[0]) if args else 1
+        if count < 0: raise ValueError('top count must be nonnegative')
+        return sorted(value or [], reverse=True)[:count]
     if key == 'concat': return ''.join('' if item is None else str(item) for item in [value, *args])
     if key in ('uppercase','upper'): return text.upper()
     if key in ('lowercase','lower'): return text.lower()
@@ -409,6 +434,13 @@ def _function_arguments(raw: str) -> list[str]:
 
 def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
     """Execute BW-style mapping statements, including nested repeating targets."""
+    if isinstance(document, dict) and isinstance(document.get('activities'), dict):
+        document = dict(document)
+        for activity_id, record in document['activities'].items():
+            if not isinstance(record, dict) or 'output' not in record: continue
+            name = re.sub(r'[^A-Za-z0-9_-]+', '-', str(record.get('name') or activity_id).strip())
+            name = re.sub(r'-+', '-', name).strip('-') or 'Activity'
+            for alias in (activity_id, name): document.setdefault(alias, record['output'])
     options = options or {}
     result: dict[str, Any] = {}
     raw_rules = [{'target': key, 'source': value} for key, value in mappings.items()] if isinstance(mappings, dict) else mappings or []

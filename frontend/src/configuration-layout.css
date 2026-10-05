@@ -104,7 +104,104 @@
 .mapping-loop-actions { display: flex; gap: 3px; }
 .mapping-loop-actions button { display: grid; place-items: center; width: 22px; height: 22px; padding: 2px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
 .mapping-loop-actions svg { width: 12px; height: 12px; }
+.schema-tree-row.mapping-duplicate-row { background: color-mix(in srgb, var(--panel) 86%, #47d9e9 14%); }
+.mapping-duplicate-row .tree-field > b { font-style: italic; }
+.remove-duplicate-mapping { margin-left: 8px; width: 20px; height: 20px; padding: 0; border: 0; color: var(--text); background: transparent; cursor: pointer; }
+.remove-duplicate-mapping:hover { color: #ff8585; }
 .mapping-grouping-row { border-left-color: #d6b04d; background: color-mix(in srgb, var(--panel) 88%, #b3943d); }
+.compact-condition-tree {
+  grid-column: 1 / -1;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+:is(.input-tree-row, .schema-tree-row):has(> .compact-condition-tree) > :not(.compact-condition-tree) { display: none; }
+.compact-condition-tree .field-condition-heading {
+  min-height: 24px;
+  padding: 2px 5px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  justify-content: flex-start;
+  gap: 4px;
+}
+.compact-condition-tree .field-condition-heading > b { flex: 1; }
+.compact-condition-tree .field-condition-heading button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.compact-condition-tree > .field-condition-branch {
+  padding: 0 0 0 16px;
+  margin: 0;
+  border: 0;
+  border-left: 1px dotted var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+.compact-condition-tree > .field-condition-branch > summary,
+.compact-condition-tree .condition-value-row {
+  display: grid;
+  grid-template-columns: minmax(110px, .72fr) minmax(0, 1.28fr);
+  gap: 8px;
+  align-items: start;
+  margin: 0;
+  padding: 2px 5px;
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  list-style: none;
+}
+.compact-condition-tree summary::-webkit-details-marker { display: none; }
+.compact-condition-tree summary > span { padding-top: 4px; }
+.compact-condition-tree .remove-when-branch {
+  width: 20px;
+  height: 20px;
+  margin: -4px 0 0 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  vertical-align: middle;
+  cursor: pointer;
+}
+.compact-condition-tree .remove-when-branch:disabled { opacity: .35; cursor: not-allowed; }
+.compact-condition-tree .remove-when-branch:not(:disabled):hover,
+.compact-condition-tree .remove-when-branch:focus-visible { color: #ff8585; background: #51252b; }
+.compact-condition-tree summary > span::before { content: '▸'; margin-right: 5px; }
+.compact-condition-tree details[open] > summary > span::before { content: '▾'; }
+.compact-condition-tree .condition-value-row { padding-left: 20px; }
+.compact-condition-tree .condition-value-row > b { padding-top: 5px; font-weight: 500; overflow-wrap: anywhere; }
+.compact-condition-tree .mapping-binding {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.compact-condition-tree :is(input, textarea) { margin: 0 !important; }
+.cardinality-symbol { margin-left: 2px; color: var(--text); font-size: .9em; font-weight: 700; }
+textarea.mapping-expression-multiline {
+  display: block;
+  width: 100%;
+  min-height: 24px !important;
+  max-height: none;
+  margin: 0 !important;
+  padding: 4px 6px;
+  line-height: 1.4;
+  resize: none;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.mapping-binding.mapping-invalid textarea {
+  background: #3b1018 !important;
+  border-color: #a53243 !important;
+  color: #ffd7dc !important;
+}
 @container (max-width: 700px) {
   .mapping-loop-row { grid-template-columns: 18px minmax(0, 1fr) auto; }
   .mapping-loop-row > div { grid-column: 2 / 4; grid-row: 2; }

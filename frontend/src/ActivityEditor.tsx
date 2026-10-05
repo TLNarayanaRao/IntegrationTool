@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
@@ -20,12 +20,12 @@ import {
 } from "lucide-react";
 import MapperStudio from "./MapperStudio";
 import MappingExpressionInput from "./MappingExpressionInput";
+import {autoMapLoopChildren, relativeLoopExpression, expandLoopExpression} from "./mapperLoopMappings";
 import { activityGuidance } from "./activityGuidance";
 import { mappingTreeRows, MappingTreeRow } from "./mappingTree";
 import { validateMapping } from "./mappingValidation";
 import DataNodeIcon from "./DataNodeIcon";
 import { functionExpression, mapperFunctionCatalog, mapperFunctionCategories } from "./mapper-functions";
-import MediationStudio from './MediationStudio';
 const Braces = DataNodeIcon;
 
 // The normalized display name is the graph ID and mapping reference.
@@ -61,6 +61,9 @@ type Field = {
   when?: (config: any) => boolean;
 };
 type DataField = {
+  minOccurs?: string;
+  maxOccurs?: string;
+  repeating?: boolean;
   validationType?: string;
   key: string;
   label: string;
@@ -106,36 +109,42 @@ const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"
 const isMapperActivity = (type: string) => ["mapper", "transform", "ai_transform"].includes(type);
 type MappingWhen = { condition: string; source: any };
 type StructuredMapping = { $rule: "for-each" | "for-each-group" | "if" | "when-otherwise" | "choose"; source?: any; select?: string; groupBy?: string; condition?: string; otherwise?: any; whens?: MappingWhen[]; duplicateOf?: string };
-const mappingSource = (value: any) => value && typeof value === "object" && ("$rule" in value || "operator" in value) ? (value.select || value.source) : value;
+const mappingSource = (value: any): any => {
+  if (value && typeof value === "object" && ("$rule" in value || "operator" in value || ("target" in value && ("source" in value || "constant" in value)))) {
+    return value.constant !== undefined ? JSON.stringify(value.constant) : mappingSource(value.select || value.source || "");
+  }
+  return value;
+};
+
+function cardinalitySymbol(field: { type?: string; validationType?: string; repeating?: boolean; required?: boolean; minOccurs?: string; maxOccurs?: string }): string {
+  const repeating = field.repeating || field.maxOccurs === 'unbounded' || Number(field.maxOccurs) > 1 || /array|\[\]/i.test(field.validationType || field.type || '');
+  const minimum = field.minOccurs != null ? Number(field.minOccurs) : field.required ? 1 : 0;
+  return repeating ? minimum > 0 ? '+' : '*' : minimum === 0 ? '?' : '';
+}
 
 function MappingContextMenu({ menu, value, close, change, remove, duplicate, canDuplicate = false, required = false }: any) {
   const [whenCount, setWhenCount] = useState<string | null>(null);
   useEffect(() => { setWhenCount(null); }, [menu]);
-  const panel = useRef<HTMLDivElement>(null), source = String(mappingSource(value) || ""), [mode, setMode] = useState<StructuredMapping["$rule"] | "">(""), [select, setSelect] = useState(source), [condition, setCondition] = useState(source ? `exists(${source})` : ""), [groupBy, setGroupBy] = useState(""), [otherwise, setOtherwise] = useState(""), [whens, setWhens] = useState<MappingWhen[]>([{ condition: source ? `exists(${source})` : "true()", source }]);
+  const panel = useRef<HTMLDivElement>(null), source = String(mappingSource(value) || "");
   useEffect(() => {
     if (!menu) return;
     const dismiss = (event: PointerEvent) => { if (!panel.current?.contains(event.target as globalThis.Node)) close(); };
-    window.addEventListener("pointerdown", dismiss);
-    return () => window.removeEventListener("pointerdown", dismiss);
+    window.addEventListener("pointerdown", dismiss, true);
+    return () => window.removeEventListener("pointerdown", dismiss, true);
   }, [menu, close]);
-useEffect(() => { if (menu) { const next = String(mappingSource(value) || ""); let storedWhens = value?.whens; if (!storedWhens?.length && (value?.operator || value?.$rule) === "choose") { try { storedWhens = JSON.parse(String(value?.source || "[]")); } catch { storedWhens = []; } } setMode(""); setSelect(next); setCondition(value?.condition || (next ? `exists(${next})` : "")); setGroupBy(value?.groupBy || ""); setOtherwise(value?.otherwise || ""); setWhens(storedWhens?.length ? storedWhens : [{ condition: next ? `exists(${next})` : "true()", source: next }]); } }, [menu, value]);
   if (!menu) return null;
   const apply = (next: StructuredMapping) => { change(next); close(); };
-  const commit = () => {
-    if (!mode) return;
-    if (mode === "choose") {
-      const branches = whens.filter((branch) => branch.condition.trim() && String(branch.source ?? "").trim());
-      if (branches.length) apply({ $rule: "choose", source: JSON.stringify(branches), whens: branches, otherwise });
-      return;
-    }
-    if (select.trim()) apply({ $rule: mode, source: select.trim(), select: select.trim(), condition, groupBy, otherwise });
-  };
   const content = <div ref={panel} className="mapping-context-menu" style={{ left: Math.max(8, Math.min(menu.x, window.innerWidth - 350)), top: Math.max(8, Math.min(menu.y, window.innerHeight - 455)) }} onPointerDown={(event) => event.stopPropagation()}>
     <header><DataNodeIcon/><span><b>{menu.label}</b></span></header>
-    <button className={mode === "for-each" ? "selected" : ""} onClick={() => setMode("for-each")}>For Each…</button>
-    <button className={mode === "for-each-group" ? "selected" : ""} onClick={() => setMode("for-each-group")}>For Each Group…</button>
-    <button disabled={required} className={mode === "if" ? "selected" : ""} onClick={() => setMode("if")}>If…</button>
-    <button onClick={() => { setMode(""); setWhenCount(String(value?.whens?.length || 1)); }}>When / Otherwise…</button>
+    <button onClick={() => apply({...(value && typeof value === 'object' ? value : {}), $rule:'for-each', operator:'for-each', source:mappingSource(value) ?? '', select:undefined, constant:undefined})}>For Each…</button>
+    <button onClick={() => apply({...(value && typeof value === 'object' ? value : {}), $rule:'for-each-group', operator:'for-each-group', source:mappingSource(value) ?? '', select:undefined, constant:undefined, groupBy:value?.groupBy || ''})}>For Each Group…</button>
+    <button disabled={required} onClick={() => {
+      const previous = value && typeof value === 'object' ? value : {};
+      const mappedValue = previous.constant !== undefined ? JSON.stringify(previous.constant) : mappingSource(value) ?? '';
+      apply({...previous, $rule:'if', operator:'if', source:mappedValue, select:undefined, constant:undefined,
+        condition:(previous.$rule || previous.operator) === 'if' ? previous.condition || '' : ''});
+    }}>If…</button>
+    <button onClick={() => setWhenCount(String(value?.whens?.length || 1))}>When / Otherwise…</button>
     {whenCount !== null && <section className="mapping-rule-editor">
       <label>How many When conditions?<input autoFocus type="number" min="1" max="100" step="1" value={whenCount} onChange={event => setWhenCount(event.target.value)}/></label>
 
@@ -145,7 +154,6 @@ useEffect(() => { if (menu) { const next = String(mappingSource(value) || ""); l
         apply({$rule: 'choose', source: JSON.stringify(branches), whens: branches, otherwise: value?.otherwise ?? ''});
       }}>Create branches</button></div>
     </section>}
-    {mode && <section className="mapping-rule-editor">{mode !== "choose" && <label>Source expression<input value={select} placeholder="Drag a source first, or enter its expression" onChange={(event) => setSelect(event.target.value)}/></label>}{mode === "for-each-group" && <label>Group-by child path<input value={groupBy} placeholder="customerId" onChange={(event) => setGroupBy(event.target.value)}/></label>}{(mode === "if" || mode === "when-otherwise") && <label>Condition<input value={condition} onChange={(event) => setCondition(event.target.value)}/></label>}{mode === "when-otherwise" && <label>Otherwise value/expression<input value={otherwise} onChange={(event) => setOtherwise(event.target.value)}/></label>}{mode === "choose" && <div className="mapping-choose-editor">{whens.map((branch, index) => <div key={index}><b>WHEN {index + 1}</b><input aria-label={`When ${index + 1} condition`} value={branch.condition} placeholder="${input.status} = 'ACTIVE'" onChange={(event) => setWhens((items) => items.map((item, current) => current === index ? { ...item, condition: event.target.value } : item))}/><input aria-label={`When ${index + 1} value`} value={String(branch.source ?? "")} placeholder="Value or source expression" onChange={(event) => setWhens((items) => items.map((item, current) => current === index ? { ...item, source: event.target.value } : item))}/><button disabled={whens.length === 1} onClick={() => setWhens((items) => items.filter((_, current) => current !== index))}>Remove</button></div>)}<button onClick={() => setWhens((items) => [...items, { condition: "", source: "" }])}><Plus/> Add When</button><label>Otherwise value/expression<input value={otherwise} onChange={(event) => setOtherwise(event.target.value)}/></label></div>}<div><button onClick={() => setMode("")}>Cancel</button><button className="apply" disabled={mode === "choose" ? !whens.some((branch) => branch.condition.trim() && String(branch.source ?? "").trim()) : !select.trim()} onClick={commit}>Apply mapping</button></div></section>}
     <button disabled={!canDuplicate && !value} onClick={() => { if (duplicate) duplicate(); else change(typeof value === "object" ? { ...value, duplicateOf: `${menu.path}-${Date.now()}` } : { $rule: "if", source: value, condition: "true()", duplicateOf: `${menu.path}-${Date.now()}` }); close(); }}>Duplicate {canDuplicate ? "repeating occurrence" : "mapping"}</button>
     <button disabled={!value} className="danger" onClick={() => { remove(); close(); }}>Delete mapping</button>
   </div>;
@@ -172,6 +180,7 @@ function dataTreeRows(fields: DataField[]): DataTreeRow[] {
       label: field?.label || node.name.replace(/([a-z])([A-Z])/g, "$1 $2"),
       type: field?.type || "object", required: field?.required, help: field?.help,
       validationType: field?.validationType,
+      minOccurs: field?.minOccurs, maxOccurs: field?.maxOccurs, repeating: field?.repeating,
       depth, group, explicit: !!field,
     });
     node.children.forEach((child) => walk(child, depth + 1));
@@ -1097,7 +1106,6 @@ export function activityContract(n: any): Contract {
         },
       ],
     };
-  if (n.type === "mediation") return {configuration: [], input: [d("payload", "Source message", "any")], output: [d("result", "Mediated document (direct activity output)", "any")], errors: [{type: "MEDIATION", description: "Missing required fields, invalid rules, conversion errors or unsupported document shape. Preview identifies the record and rule."}]};
   if (n.type === "dataweave")
     return {
       configuration: [],
@@ -1190,7 +1198,7 @@ export function activityContract(n: any): Contract {
 function schemaDataFields(value: any): DataField[] {
   if (!value) return [];
   const config = typeof value === "string" ? { targetSchemaText: value } : { targetSchema: value };
-  return transformSchemaFields(config).map((field) => d(field.path, field.name, field.type));
+  return transformSchemaFields(config).map((field) => ({...d(field.path, field.name, field.type), minOccurs: field.minOccurs, maxOccurs: field.maxOccurs, repeating: field.repeating, required: Number(field.minOccurs) > 0}));
 }
 
 function activitySchemaText(node: any, schemas: any[]): string {
@@ -1324,7 +1332,6 @@ const activityDocumentation: Record<string, { summary: string; behavior: string 
   kafka: { summary: "Produces, receives, or commits Apache Kafka records.", behavior: "Broker security comes from the shared Kafka connection. Topic, key, headers, value, partitions, offsets, and acknowledgement handles are available for hierarchical mapping." },
   pubsub: { summary: "Publishes, receives, or acknowledges Google Cloud Pub/Sub messages.", behavior: "Project and credential defaults come from the shared connection. Message data, attributes, ordering keys, and acknowledgement handles remain available on the execution path." },
   sap: { summary: "Executes the selected SAP ECC operation.", behavior: "The shared SAP connection supplies system and authentication settings. IDoc metadata selected from SAP defines listener, parser, renderer, and sender structures." },
-  mediation: { summary: "Converts partner messages into a consistent business structure using readable mediation recipes.", behavior: "Configuration provides JSON/XML/CSV formats, source collection, field rules, required fields, defaults, constants, conversions and value lookup. Input payload defaults to the previous activity output; map payload to override it. Output is the transformed document directly, not a result wrapper. Preview uses the same engine as Run, Debug and Python export and explains each rule without contacting connectors. Advanced retry/logging policies are inherited. MEDIATION errors identify failed records/rules without exposing field values. Load Normalize orders, CSV customer onboarding or XML to business JSON for working examples. Limits: 2 MB text, 10,000 records, 200 rules; CSV output is flat. XML attributes become fields, repeated children become lists, mixed text uses _text; DTDs/entities and namespace-prefixed output names are not supported. This is deterministic rule-based mediation, not AI inference or full XSD validation." },
   mapper: { summary: "Maps execution-path data into a selected target schema.", behavior: "The consolidated Mapper includes schema trees, XPath-style functions, repeating For-Each/For-Each-Group rules, AI-assisted recommendations, validation, and an executable test surface." },
   transform: { summary: "Legacy Mapper activity retained for project compatibility.", behavior: "Existing Transform nodes continue to execute with Mapper behavior. New projects should use Mapper for visual/XPath mappings or Transform for DataWeave scripts." },
   ai_transform: { summary: "Legacy AI Mapper activity retained for project compatibility.", behavior: "Existing AI Transform nodes continue to use the consolidated Mapper and its AI recommendation/review workflow." },
@@ -1365,7 +1372,6 @@ function ActivityDocumentation({ node, contract }: { node: any; contract: Contra
 
 function ActivityEditorGuidance({ type }: { type: string }) {
   const groups = ["ActivityEditor", "InputEditor", "MappingContextMenu", "ExpandedInputMappingDialog", "OutputEditor", "AdvancedEditor", "ErrorEditor"];
-  if (type === "mediation") groups.push("MediationStudio", "MediationInputEditor");
   if (["mapper", "transform", "ai_transform", "dataweave"].includes(type)) groups.push("TransformSchemaEditor", "TransformPoliciesEditor", "TransformInputEditor", "TransformOutputEditor", "TransformMapTestEditor");
   if (type === "dataweave") groups.push("DataWeaveScriptEditor", "DataWeaveTestEditor");
   if (type === "timer") groups.push("SchedulerEditor");
@@ -1392,6 +1398,7 @@ export default function ActivityEditor({
   tab,
   update,
 }: any) {
+  const mappingSources = useActivityMappingSources(node, task, tasks, schemas, resources);
   const contract = resolvedActivityContract(node, task, tasks, schemas || [], resources || []),
     cfg = node.config || {},
     selectedSapConnection = node.type === "sap" ? resources.find((resource: any) => resource.id === cfg.resourceId) : null,
@@ -1405,8 +1412,8 @@ export default function ActivityEditor({
       extensionType: cfg.extensionType || selectedSapConfig.selectedIdoc?.extensionType || "",
       invocationProtocol: "tRFC",
     } : cfg,
-    upstreamSources = upstreamActivitySources(node, task, tasks, schemas || [], resources || []),
-    groupVariables = activityGroupVariables(node, task, tasks, schemas || [], resources || []),
+    upstreamSources = mappingSources.sources,
+    groupVariables = mappingSources.variables,
     [mapperOpen, setMapperOpen] = useState(false),
     set = (key: string, value: any) => {
       if (node.type === "sap" && cfg.operation === "idoc_listener" && key === "messagingSource") {
@@ -1486,7 +1493,6 @@ export default function ActivityEditor({
             </button>
           </>
         )}
-        {node.type === "mediation" && <MediationStudio config={cfg} schemas={schemas || []} setConfig={(next: any) => update({config: {...cfg, ...next}})}/>}
         {node.type === "dataweave" && <DataWeaveScriptEditor config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>}
         {(node.type === "start" || node.type === "end") && (
           <TaskBoundarySchemaEditor node={node} config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>
@@ -1504,9 +1510,8 @@ export default function ActivityEditor({
         )}
       </div>
     );
-  if (tab === "map_test" && node.type === "mediation") return <MediationStudio config={cfg} schemas={schemas || []} setConfig={(next:any)=>update({config:{...cfg,...next}})}/>;
   if (tab === "input")
-    return node.type === "mediation" ? <MediationInputEditor node={node} config={cfg} set={(v: any) => set("inputMappings", v)} properties={properties} sources={upstreamSources} runtimeVariables={groupVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions}/> : isMapperActivity(node.type) ? (
+    return isMapperActivity(node.type) ? (
       <TransformInputEditor config={cfg} schemas={schemas || []} properties={properties} sources={upstreamSources} runtimeVariables={groupVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} setMappings={(value: any) => set("mappings", value)}/>
     ) : (
       <InputEditor
@@ -1662,8 +1667,8 @@ function TransformSchemaEditor({ config, schemas, setConfig }: any) {
     const schema = schemas.find((item: any) => item.id === id);
     if (schema) setConfig({ targetSchemaId: schema.id, targetSchemaText: schema.content });
   };
-  const id = config.targetSchemaId || "inline", text = config.targetSchemaText || JSON.stringify(config.targetSchema || {}, null, 2);
-  return <div className="transform-schema-editor"><div className="transform-schema-heading"><Braces/><span><b>TARGET TRANSFORMATION CONTRACT</b></span></div><div className="transform-schema-columns single"><section><header><span><b>Target schema</b></span><select aria-label="Target schema" value={id} onChange={(event) => choose(event.target.value)}><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header><textarea aria-label="Target inline schema" value={text} onChange={(event) => setConfig({ targetSchemaId: "", targetSchemaText: event.target.value })} placeholder="Paste target JSON Schema or XSD here…" spellCheck={false}/><SchemaHierarchyPreview text={text}/></section></div></div>;
+  const id = config.targetSchemaId || "inline", text = id === "inline" ? config.targetSchemaText || JSON.stringify(config.targetSchema || {}, null, 2) : "";
+  return <div className="transform-schema-editor"><div className="transform-schema-heading"><Braces/><span><b>TARGET TRANSFORMATION CONTRACT</b></span></div><div className="transform-schema-columns single"><section><header><span><b>Target schema</b></span><select aria-label="Target schema" value={id} onChange={(event) => choose(event.target.value)}><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header>{id === "inline" && <><textarea aria-label="Target inline schema" value={text} onChange={(event) => setConfig({ targetSchemaId: "", targetSchemaText: event.target.value })} placeholder="Paste target JSON Schema or XSD here…" spellCheck={false}/><SchemaHierarchyPreview text={text}/></>}</section></div></div>;
 }
 
 function TransformPoliciesEditor({ ai, config, setConfig }: any) {
@@ -1903,6 +1908,15 @@ function useSourcePaneWidth(initial = 250) {
   return { width, begin: (event: React.PointerEvent) => { const box = event.currentTarget.parentElement!.getBoundingClientRect(); drag.current = box.left; event.preventDefault(); } };
 }
 type ActivitySource = { activity: any; distance: number; fields: DataField[]; scope?: string };
+function useActivityMappingSources(node:any, task:any, tasks:any[] = [], schemas:any[] = [], resources:any[] = []) {
+  const cache = useRef<{keys:any[]; sources:ActivitySource[]; variables:any[]} | null>(null);
+  const keys = [node.id, task.id, task.transitions, task.groups, task.input_schema, task.output_schema, schemas, resources,
+    ...tasks.filter(item => item.id !== task.id), ...(task.activities || []).filter((item:any) => item.id !== node.id)];
+  if (!cache.current || cache.current.keys.length !== keys.length || keys.some((key,index) => key !== cache.current!.keys[index])) {
+    cache.current = {keys, sources:upstreamActivitySources(node,task,tasks,schemas,resources), variables:activityGroupVariables(node,task,tasks,schemas,resources)};
+  }
+  return cache.current;
+}
 export function upstreamActivitySources(node: any, task: any, tasks: any[] = [], schemas: any[] = [], resources: any[] = []): ActivitySource[] {
   if (!node || !task) return [];
   const reverse = new Map<string, string[]>();
@@ -2028,22 +2042,42 @@ function isComplexSchemaType(fieldType: any): boolean {
   // complex schema branches with child fields remain structural nodes.
   return type === "complex" || type === "json" || type.includes("array") || type.endsWith("[]") || type.includes("complex[]") || type.includes("object[]");
 }
-function MappingBinding({ expression, sources, onChange, onConstantChange, fieldType = "string", validationType = fieldType, structural = false }: any) {
-  const completionPaths = ["input", "last", ...(sources || []).flatMap((source: ActivitySource) => {
+const completionPathCache = new WeakMap<any[], string[]>();
+function mappingCompletionPaths(sources: any[] = []): string[] {
+  const cached = completionPathCache.get(sources);
+  if (cached) return cached;
+  const paths = ["input", "last", ...(sources || []).flatMap((source: ActivitySource) => {
     const root = activityReferenceName(source.activity.name);
     const fields = dataTreeRows(source.fields);
-    return [root, ...fields.map(field => `${root}.${field.path}`),
+    return [root, ...fields.map(field => `${root}.${field.path}`), ...fields.map(field => `activities.${source.activity.id}.output.${field.path}`),
       ...(source.activity.type === "start" ? fields.map(field => `input.${field.path}`) : []),
       ...(source.distance === 1 ? fields.map(field => `last.${field.path}`) : [])];
   })];
+  completionPathCache.set(sources, paths);
+  return paths;
+}
+const MemoizedDataSourcePane = React.memo(DataSourcePane);
+
+function MappingBinding(props: any) {
+  const callbacks = useRef(props);
+  callbacks.current = props;
+  const handlers = useMemo(() => ({
+    onChange: (value:any) => callbacks.current.onChange(expandLoopExpression(value, callbacks.current.sourceScope, mappingCompletionPaths(callbacks.current.sources))),
+    onConstantChange: (value:any) => (callbacks.current.onConstantChange || callbacks.current.onChange)(value),
+  }), []);
+  return <MemoizedMappingBinding {...props} onChange={handlers.onChange} onConstantChange={props.onConstantChange ? handlers.onConstantChange : undefined}/>;
+}
+
+const MemoizedMappingBinding = React.memo(MappingBindingContent);
+function MappingBindingContent({ expression, sources, onChange, onConstantChange, fieldType = "string", validationType = fieldType, structural = false, fieldLabel = "Value", multiline = false, sourceScope }: any) {
+  const completionPaths = mappingCompletionPaths(sources);
   const hasValue = expression !== undefined && expression !== null && expression !== "";
   const sourceValue = mappingSource(expression);
-  const editableExpression = sourceValue && typeof sourceValue === "object" ? JSON.stringify(sourceValue) : sourceValue;
-  const [validationRequested, setValidationRequested] = useState(false);
-  const mappingError = validationRequested ? validateMapping(editableExpression, validationType, completionPaths) : "";
+  const editableExpression = sourceValue && typeof sourceValue === "object" ? JSON.stringify(sourceValue) : relativeLoopExpression(sourceValue, sourceScope);
+  const [conditionsCollapsed, setConditionsCollapsed] = useState(false);
+  const mappingError = validateMapping(expandLoopExpression(editableExpression, sourceScope, completionPaths), validationType, completionPaths);
   const commitMapping = (raw: string) => {
-    setValidationRequested(true);
-    if (validateMapping(raw, validationType, completionPaths)) return;
+    if (validateMapping(expandLoopExpression(raw, sourceScope, completionPaths), validationType, completionPaths)) return false;
     const type = String(fieldType).toLowerCase();
     if (/^[\[{]/.test(raw.trim()) && /array|\[\]|object|json/.test(String(validationType).toLowerCase())) {
       try { (onConstantChange || onChange)(JSON.parse(raw)); } catch { /* Preserve expressions; they resolve at runtime. */ }
@@ -2051,8 +2085,9 @@ function MappingBinding({ expression, sources, onChange, onConstantChange, field
     else if (/^(true|false)$/.test(raw.trim()) && type === "boolean") (onConstantChange || onChange)(raw.trim() === "true");
     else if (/^(number|integer|int|long|short|byte|decimal|double|float)$/.test(type) && Number.isFinite(Number(raw)) && raw.trim()) (onConstantChange || onChange)(Number(raw));
     else if (onConstantChange && /^(['"])[\s\S]*\1$/.test(raw)) onConstantChange(raw.slice(1, -1));
+    return true;
   };
-  const mappingInput = <MappingExpressionInput value={editableExpression} paths={completionPaths} onChange={onChange} onCommit={commitMapping} error={mappingError}/>;
+  const mappingInput = <MappingExpressionInput value={editableExpression} paths={completionPaths} onChange={onChange} onCommit={commitMapping} error={mappingError} multiline={multiline}/>;
 
   const statement = expression?.$rule || expression?.operator;
   if (['choose', 'when-otherwise', 'if'].includes(statement)) {
@@ -2066,25 +2101,29 @@ function MappingBinding({ expression, sources, onChange, onConstantChange, field
       const whens = branches.map((branch: any, current: number) => current === index ? {...branch, ...patch} : branch);
       onChange({...expression, whens, source: JSON.stringify(whens)});
     };
+    const removeBranch = (index: number) => {
+      if ((branches || []).length <= 1) return;
+      const whens = (branches || []).filter((_: any, current: number) => current !== index);
+      onChange({...expression, $rule: 'choose', operator: 'choose', condition: undefined, select: undefined, whens, source: JSON.stringify(whens)});
+    };
     const drop = (event: React.DragEvent, change: (value: string) => void) => {
       event.preventDefault(); event.stopPropagation();
       const value = event.dataTransfer.getData('expression');
       if (value) change(value);
     };
-    return <div className="field-condition-tree" onContextMenu={event => event.stopPropagation()} onDragOver={event => {event.preventDefault(); event.stopPropagation();}} onDrop={event => {event.preventDefault(); event.stopPropagation();}}>
-      <div className="field-condition-heading"><b>{statement === 'if' ? '[If]' : '[Choose]'}</b><button type="button" onClick={() => onChange('')} aria-label="Remove field conditions">Remove conditions</button></div>
-      {(branches || []).map((branch: any, index: number) => <details open className="field-condition-branch" key={index}>
-        <summary>{statement === 'if' ? '[If]' : `[When ${index + 1}]`}</summary>
-        <label onDrop={event => drop(event, condition => updateBranch(index, {condition}))}>Condition<MappingExpressionInput label={`When ${index + 1} condition`} value={branch.condition} paths={completionPaths} onChange={(condition: string) => updateBranch(index, {condition})}/></label>
-        <div onDrop={event => drop(event, source => updateBranch(index, {source}))}><MappingBinding expression={branch.source ?? ''} fieldType={fieldType} validationType={validationType} sources={sources} onChange={(source: any) => updateBranch(index, {source})}/></div>
+    return <div className="field-condition-tree compact-condition-tree" onContextMenu={event => event.stopPropagation()} onDragOver={event => {event.preventDefault(); event.stopPropagation();}} onDrop={event => {event.preventDefault(); event.stopPropagation();}}>
+      <div className="field-condition-heading"><button type="button" aria-label={`${conditionsCollapsed ? "Expand" : "Collapse"} field conditions`} aria-expanded={!conditionsCollapsed} onClick={() => setConditionsCollapsed(!conditionsCollapsed)}>{conditionsCollapsed ? "▸" : "▾"}</button><b>{fieldLabel} · {statement === 'if' ? '[If]' : '[Choose]'}</b><button type="button" title="Remove conditions" onClick={() => onChange('')} aria-label="Remove field conditions">×</button></div>
+      {!conditionsCollapsed && (branches || []).map((branch: any, index: number) => <details open className="field-condition-branch" key={index}>
+        <summary><span>{statement === 'if' ? '[If]' : `[When ${index + 1}]`}{statement !== 'if' && <button type="button" className="remove-when-branch" disabled={(branches || []).length <= 1} title={(branches || []).length <= 1 ? 'At least one When condition is required' : `Delete When ${index + 1}`} aria-label={`Delete When ${index + 1}`} onClick={event => {event.preventDefault(); event.stopPropagation(); removeBranch(index);}} onKeyDown={event => event.stopPropagation()}>×</button>}</span><div onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()} onDrop={event => drop(event, condition => updateBranch(index, {condition}))}><MappingExpressionInput multiline label={`When ${index + 1} condition`} value={branch.condition} paths={completionPaths} onChange={(condition: string) => updateBranch(index, {condition})}/></div></summary>
+        <div className="condition-value-row" onDrop={event => drop(event, source => updateBranch(index, {source}))}><b>{fieldLabel}</b><MappingBinding multiline sourceScope={sourceScope} fieldLabel={fieldLabel} expression={branch.source ?? ''} fieldType={fieldType} validationType={validationType} sources={sources} onChange={(source: any) => updateBranch(index, {source})}/></div>
       </details>)}
-      {statement !== 'if' && <details open className="field-condition-branch" onDrop={event => drop(event, otherwise => onChange({...expression, otherwise}))}><summary>[Otherwise]</summary><MappingBinding expression={expression.otherwise ?? ''} fieldType={fieldType} validationType={validationType} sources={sources} onChange={(otherwise: any) => onChange({...expression, otherwise})}/></details>}
+      {!conditionsCollapsed && statement !== 'if' && <details open className="field-condition-branch" onDrop={event => drop(event, otherwise => onChange({...expression, otherwise}))}><summary><span>[Otherwise]</span></summary><div className="condition-value-row"><b>{fieldLabel}</b><MappingBinding multiline sourceScope={sourceScope} fieldLabel={fieldLabel} expression={expression.otherwise ?? ''} fieldType={fieldType} validationType={validationType} sources={sources} onChange={(otherwise: any) => onChange({...expression, otherwise})}/></div></details>}
     </div>;
   }
 
   return <div className={`mapping-binding compact-mapping-binding ${structural || isComplexSchemaType(fieldType) ? "structural-binding" : ""} ${hasValue ? "mapped" : ""} ${mappingError ? "mapping-invalid" : ""}`}>
     {mappingInput}
-    {hasValue && <button type="button" title="Clear value" aria-label="Clear mapping value" onClick={(event) => { event.stopPropagation(); setValidationRequested(false); onChange(""); }}>×</button>}
+    {hasValue && <button type="button" title="Clear value" aria-label="Clear mapping value" onClick={(event) => { event.stopPropagation(); onChange(""); }}>×</button>}
   </div>;
 }
 
@@ -2096,16 +2135,16 @@ function MappingConnections({ root, mappings }: any) {
     let frame = 0;
     const draw = () => {
       cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
-        const box = container.getBoundingClientRect(), sourceNodes = Array.from(container.querySelectorAll<HTMLElement>("[data-expression]")), targetNodes = Array.from(container.querySelectorAll<HTMLElement>("[data-target]"));
+        const box = container.getBoundingClientRect(), sourceNodes = new Map(Array.from(container.querySelectorAll<HTMLElement>("[data-expression]")).map(item => [item.dataset.expression, item])), targetNodes = new Map(Array.from(container.querySelectorAll<HTMLElement>("[data-target]")).map(item => [item.dataset.target, item]));
         const next: Array<{ key: string; d: string }> = [];
         Object.entries(mappings || {}).forEach(([target, expression]: any) => {
           if (!expression) return;
-          const source = sourceNodes.find((item) => item.dataset.expression === expression), destination = targetNodes.find((item) => item.dataset.target === target);
+          const source = sourceNodes.get(expression), destination = targetNodes.get(target);
           if (!source || !destination || source.offsetParent === null || destination.offsetParent === null) return;
           const a = source.getBoundingClientRect(), b = destination.getBoundingClientRect(), x1 = a.right - box.left, y1 = a.top + a.height / 2 - box.top, x2 = b.left - box.left + 8, y2 = b.top + b.height / 2 - box.top, bend = Math.max(35, (x2 - x1) * .42);
           next.push({ key: target, d: `M${x1},${y1} C${x1 + bend},${y1} ${x2 - bend},${y2} ${x2},${y2}` });
         });
-        setPaths(next);
+        setPaths(previous => previous.length === next.length && previous.every((path, index) => path.key === next[index].key && path.d === next[index].d) ? previous : next);
       });
     };
     draw(); const observer = new ResizeObserver(draw); observer.observe(container); container.addEventListener("scroll", draw, true); container.addEventListener("toggle", draw, true); window.addEventListener("resize", draw);
@@ -2129,22 +2168,6 @@ function ExpandedInputMappingDialog({ title, mappingCount, onClose, onApply, chi
   </div>, document.body);
 }
 
-function MediationInputEditor({node,config,...props}:any) {
-  const [schemaFields,setFields]=useState<any[]>([]), [error,setError]=useState('');
-  useEffect(()=>{const controller=new AbortController();setFields([]);setError('');if(!config.targetSchemaText?.trim())return;
-    fetch('/api/mediation/schema',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({schema:config.targetSchemaText}),signal:controller.signal}).then(async r=>{const value=await r.json();if(!r.ok)throw Error(value.detail||'Invalid target schema');if(!controller.signal.aborted)setFields(value.fields);}).catch(e=>{if(!controller.signal.aborted)setError(e.message);});return ()=>controller.abort();
-  },[config.targetSchemaText]);
-  const targets=new Map<string,any>(schemaFields.map((f:any)=>[f.path,f]));
-  for(const rule of config.rules||[])if(rule.target&&!targets.has(rule.target))targets.set(rule.target,{path:rule.target,type:'any',required:rule.required});
-  const fields: DataField[] = [
-    d('payload', 'Source message / collection (optional)', 'any'),
-    ...Array.from(targets.values()).filter(f => f.path).map(f =>
-      ({ ...d(`targetValues.${f.path}`, f.path, f.type === 'array' ? 'any' : f.type, false,
-        `${f.type}${f.required ? ' · required in target output' : ''}`), validationType: f.type })),
-  ];
-  return <InputEditor {...props} node={node} fields={fields} mappings={config.inputMappings||{}} before={<div className="contract-heading">{error&&<p role="alert">{error}</p>}</div>}/>;
-}
-
 function LoopMappingRow({ row, collapsed, toggle, patch, remove, duplicate, sources }: { row: MappingTreeRow; collapsed: boolean; toggle: (key: string) => void; patch: (value: any) => void; remove: () => void; duplicate?: () => void; sources: any[] }) {
   const grouped = (row.rule.operator || row.rule.$rule) === "for-each-group";
   const paths = ["input", "last", "current-group()", ...(sources || []).flatMap((source: ActivitySource) => [activityReferenceName(source.activity.name), ...source.fields.map(field => `${activityReferenceName(source.activity.name)}.${field.key}`)])];
@@ -2157,14 +2180,14 @@ function LoopMappingRow({ row, collapsed, toggle, patch, remove, duplicate, sour
     } else patch({source:value,select:value});
   }}>
     {row.kind === "loop" ? <TreeToggle path={row.key} label={`${row.field.name} loop`} collapsed={collapsed} toggle={toggle}/> : <i className="tree-elbow"/>}
-    <span className="mapping-loop-label"><Braces/><b>{row.kind === "grouping" ? "Grouping" : `${row.field.name} · [${grouped ? "For-Each-Group" : "For-Each"}]`}</b></span>
+    <span className="mapping-loop-label"><Braces/><b>{row.kind === "grouping" ? "Grouping" : `${row.field.name} - [${grouped ? "For-Each-Group" : "For-Each"}]`}</b></span>
     <MappingExpressionInput label={row.kind === "grouping" ? `${row.field.name} grouping key` : `${row.field.name} loop source`} paths={paths} value={row.kind === "grouping" ? row.rule.groupBy || "" : mappingSource(row.rule)} onChange={(value: string) => patch(row.kind === "grouping" ? { groupBy: value } : { source: value, select: value })}/>
     {row.kind === "loop" && <span className="mapping-loop-actions">{duplicate && <button type="button" aria-label={`Duplicate ${row.field.name} loop`} onClick={duplicate}><Plus/></button>}<button type="button" aria-label={`Remove ${row.field.name} loop`} onClick={remove}><X/></button></span>}
   </div>;
 }
 
 function InputEditor({ node, fields, mappings, set, properties, sources, runtimeVariables = [], customFunctions, updateCustomFunctions, before, expanded = false }: any) {
-  properties = Object.assign([...(properties || [])], { customFunctions, updateCustomFunctions });
+  properties = useMemo(() => Object.assign([...(properties || [])], { customFunctions, updateCustomFunctions }), [properties, customFunctions, updateCustomFunctions]);
   const rows = dataTreeRows(fields), firstTarget = rows.find((row) => row.explicit)?.path || "";
   const resize = useSourcePaneWidth(expanded ? 350 : undefined), tree = useTreeCollapse(), root = useRef<HTMLDivElement>(null), [selected, setSelected] = useState(firstTarget), [contextMenu, setContextMenu] = useState<any>(null), [dialogOpen, setDialogOpen] = useState(false), [draftMappings, setDraftMappings] = useState<any>({});
   const displayRows = mappingTreeRows(rows, mappings);
@@ -2172,13 +2195,13 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
   const openDialog = () => { setDraftMappings(structuredClone(mappings)); setDialogOpen(true); };
   const setValue = (path: string, value: any) => set({ ...mappings, [path]: value });
   return <><div ref={root} className={`activity-tab mapping-editor resizable-mapper visual-field-mapper ${expanded ? "expanded-input-workspace" : ""}`} style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}>
-    <DataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}/>
+    <MemoizedDataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}/>
     <section><div className="contract-heading mapping-editor-heading"><SettingsTitle title="Activity input"/>{!expanded && <button type="button" className="edit-input-mapping" onClick={openDialog}><Pencil/> Edit mappings</button>}</div>{before}
       <div className="input-contract-tree"><header><Braces/><b>{node.name}</b></header>{displayRows.map(row => {
         if (row.ancestors.some(key => tree.collapsed.has(key))) return null;
         const field = row.field;
         if (row.kind !== "field") return <LoopMappingRow key={row.key} row={row} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle} sources={sources} patch={patch => setValue(field.path, {...mappings[field.path], ...patch})} remove={() => setValue(field.path, mappingSource(mappings[field.path]))}/>;
-        const structural = row.hasChildren || isComplexSchemaType(field.validationType || field.type), canMapStructure = structural && (row.hasChildren || /array|\[\]/.test(field.validationType || field.type));
+        const structural = row.hasChildren || isComplexSchemaType(field.validationType || field.type || ''), canMapStructure = structural && (row.hasChildren || /array|\[\]/.test(field.validationType || field.type || ''));
         const showMenu = (event: React.MouseEvent) => { event.preventDefault(); setSelected(field.path); setContextMenu({x:event.clientX, y:event.clientY, path:field.path, label:field.label || field.name}); };
         return <div key={row.key} data-target={row.loopKey || (structural && !canMapStructure) ? undefined : field.path} className={`input-tree-row ${structural ? "structural-row" : ""} ${selected === field.path ? "selected" : ""}`} style={{"--target-depth":row.depth + 1} as React.CSSProperties} onClick={() => setSelected(field.path)} onContextMenu={showMenu} onDragOver={event => {event.preventDefault();event.dataTransfer.dropEffect="copy";}} onDrop={event => {
           event.preventDefault();const value=event.dataTransfer.getData("expression");if(!value)return;
@@ -2187,8 +2210,8 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
           else setValue(field.path,value);
         }}>
           {row.hasChildren ? <TreeToggle path={row.key} label={field.name} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle}/> : <i className="tree-elbow"/>}
-          <span className="target-tree-field"><b>{row.loopKey ? field.name : field.label || field.name}</b>{field.required && <em>required</em>}<small>{field.type}</small></span>
-          {row.loopKey || (row.hasChildren && !mappings[field.path]) ? <span/> : <MappingBinding structural={structural} expression={mappings[field.path] ?? ""} fieldType={field.type} validationType={field.validationType || field.type} sources={sources} onChange={(value: any) => setValue(field.path,value)}/>}
+          <span className="target-tree-field"><b>{row.loopKey ? field.name : field.label || field.name}<sup className="cardinality-symbol">{cardinalitySymbol(field)}</sup></b><small>{field.type}</small></span>
+          {row.loopKey || (row.hasChildren && !mappings[field.path]) ? <span/> : <MappingBinding structural={structural} expression={mappings[field.path] ?? ""} fieldType={field.type} fieldLabel={`${field.label || field.name}${cardinalitySymbol(field)}`} validationType={field.validationType || field.type} sources={sources} onChange={(value: any) => setValue(field.path,value)}/>}
         </div>;
       })}</div>{!fields.length && <div className="contract-empty">No configurable input.</div>}
     </section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextMenu ? mappings[contextMenu.path] : null} close={() => setContextMenu(null)} change={(value: any) => contextMenu && setValue(contextMenu.path,value)} remove={() => {if(!contextMenu)return;const next={...mappings};delete next[contextMenu.path];set(next);}}/>
@@ -2200,7 +2223,7 @@ function transformSchemaFields(config: any): SchemaTreeField[] {
   const text = config.targetSchemaText || JSON.stringify(config.targetSchema || {});
   try {
     const schema = JSON.parse(text), fields: SchemaTreeField[] = [];
-    const walk = (node: any, prefix = "", depth = 0) => Object.entries(node?.properties || node || {}).forEach(([name, child]: any) => { const path = prefix ? `${prefix}.${name}` : name, repeating = child?.type === "array" || Array.isArray(child); const item = repeating ? (child?.items || child?.[0] || {}) : child; fields.push({ path, name, type: repeating ? `${item?.type || (item?.properties ? "object" : "value")}[]` : child?.type || typeof child, depth, repeating, minOccurs: child?.minItems != null ? String(child.minItems) : undefined, maxOccurs: child?.maxItems != null ? String(child.maxItems) : repeating ? "unbounded" : undefined }); if (item?.properties) walk(item, path, depth + 1); });
+    const walk = (node: any, prefix = "", depth = 0) => Object.entries(node?.properties || node || {}).forEach(([name, child]: any) => { const path = prefix ? `${prefix}.${name}` : name, repeating = child?.type === "array" || Array.isArray(child); const item = repeating ? (child?.items || child?.[0] || {}) : child; fields.push({ path, name, type: repeating ? `${item?.type || (item?.properties ? "object" : "value")}[]` : child?.type || typeof child, depth, repeating, minOccurs: repeating ? String(child?.minItems ?? 0) : Array.isArray(node?.required) && node.required.includes(name) ? "1" : "0", maxOccurs: child?.maxItems != null ? String(child.maxItems) : repeating ? "unbounded" : undefined }); if (item?.properties) walk(item, path, depth + 1); });
     walk(schema); return fields;
   } catch {
     try {
@@ -2215,7 +2238,7 @@ function transformSchemaFields(config: any): SchemaTreeField[] {
         fields.push({ path, name, type, depth, repeating, minOccurs: element.getAttribute("minOccurs") || "1", maxOccurs });
         const inline = Array.from(element.children).find((child) => local(child) === "complextype"), referenced = complexTypes.get(baseType);
         const container = inline || referenced || element;
-        Array.from(container.getElementsByTagNameNS("*", "attribute")).filter((attribute) => { let parent: Element | null = attribute.parentElement; while (parent && local(parent) !== "element") parent = parent.parentElement; return parent === element; }).forEach((attribute) => { const attributeName = attribute.getAttribute("name") || attribute.getAttribute("ref")?.split(":").pop() || "attribute"; fields.push({ path: `${path}.@${attributeName}`, name: `@${attributeName}`, type: (attribute.getAttribute("type") || "string").split(":").pop() || "string", depth: depth + 1, repeating: false }); });
+        Array.from(container.getElementsByTagNameNS("*", "attribute")).filter((attribute) => { let parent: Element | null = attribute.parentElement; while (parent && local(parent) !== "element") parent = parent.parentElement; return parent === element; }).forEach((attribute) => { const attributeName = attribute.getAttribute("name") || attribute.getAttribute("ref")?.split(":").pop() || "attribute"; fields.push({ path: `${path}.@${attributeName}`, name: `@${attributeName}`, type: (attribute.getAttribute("type") || "string").split(":").pop() || "string", depth: depth + 1, repeating: false, minOccurs: attribute.getAttribute("use") === "required" ? "1" : "0", maxOccurs: "1" }); });
         directElements(container).forEach((child) => walkElement(child, path, depth + 1));
       };
       Array.from(document.documentElement.children).filter((element) => local(element) === "element").forEach((element) => walkElement(element));
@@ -2223,54 +2246,62 @@ function transformSchemaFields(config: any): SchemaTreeField[] {
     } catch { return []; }
   }
 }
-function TransformInputEditor({ config, properties, sources, runtimeVariables = [], setMappings, customFunctions, updateCustomFunctions, expanded = false }: any) {
-  properties = Object.assign([...(properties || [])], { customFunctions, updateCustomFunctions });
-  const fields = transformSchemaFields(config), resize = useSourcePaneWidth(expanded ? 360 : 280), tree = useTreeCollapse(), root = useRef<HTMLDivElement>(null), [selected, setSelected] = useState(fields[0]?.path || ""), [contextMenu, setContextMenu] = useState<any>(null), [dialogOpen, setDialogOpen] = useState(false), [draftMappings, setDraftMappings] = useState<any[]>([]), mappings = Array.isArray(config.mappings) ? config.mappings : [];
+function TransformInputEditor({ config, properties, sources, runtimeVariables = [], setMappings, customFunctions, updateCustomFunctions, expanded = false, editorTitle = "Mapper · Expanded Input Editor" }: any) {
+  properties = useMemo(() => Object.assign([...(properties || [])], { customFunctions, updateCustomFunctions }), [properties, customFunctions, updateCustomFunctions]);
+  const fields = useMemo<SchemaTreeField[]>(() => transformSchemaFields(config), [config.targetSchemaText, config.targetSchema]), resize = useSourcePaneWidth(expanded ? 360 : 280), tree = useTreeCollapse(), root = useRef<HTMLDivElement>(null), [selected, setSelected] = useState(fields[0]?.path || ""), [contextMenu, setContextMenu] = useState<any>(null), [dialogOpen, setDialogOpen] = useState(false), [draftMappings, setDraftMappings] = useState<any[]>([]), mappings = Array.isArray(config.mappings) ? config.mappings : [];
+  const mappingSources = useMemo(() => sources.map((entry:any) => ({...entry, reference:activityReferenceName(entry.activity.name)})), [sources]);
+  const loopScopes = useMemo(() => new Map(mappings.filter((rule:any) => ['for-each','for-each-group'].includes(rule.operator)).map((rule:any) => [`${rule.occurrenceId || 'primary'}:${rule.target}`, rule.select || rule.source])), [mappings]);
+  const sourceScopeFor = (row:MappingTreeRow):string | undefined => {
+    let path=row.field.path;
+    while(path.includes('.')) { path=path.slice(0,path.lastIndexOf('.')); const scope=loopScopes.get(`${row.occurrenceId || 'primary'}:${path}`); if (typeof scope==='string') return scope; }
+  };
+  const structuralPaths = useMemo(() => {
+    const parents = new Set<string>();
+    for (const field of fields) { let path = field.path; while (path.includes('.')) { path = path.slice(0,path.lastIndexOf('.')); parents.add(path); } }
+    return parents;
+  }, [fields]);
   const mapTo = (target: string, source: any, sourceRepeating = false) => {
     if (typeof source === "string" && source.startsWith("__mina_constant__:")) {
       try { mapConstant(target, JSON.parse(source.slice(20))); } catch { /* Ignore malformed drag data. */ }
       return;
     }
     const targetField = fields.find((field) => field.path === target), explicitlyIndexed = typeof source === "string" && /\[\d+\]/.test(source);
-    const targetIsComplex = !!targetField && (hasTreeChildren(fields, targetField) || isComplexSchemaType(targetField.type));
+    const targetIsComplex = !!targetField && (structuralPaths.has(targetField.path) || isComplexSchemaType(targetField.type));
     if (targetIsComplex && !targetField?.repeating) return;
     const repeat = !!targetField?.repeating && sourceRepeating && !explicitlyIndexed;
     const next = mappings.filter((rule: any) => !(rule.target === target && !rule.occurrenceId));
     next.push({ target, source, targetType: targetField?.type || "any", ...(repeat ? { select: source, operator: "for-each" } : {}), functions: [], enabled: true });
-    if (repeat && typeof source === "string") {
-      const match = source.match(/^\$\{activities\.([^.}]+)\.output(?:\.([^}]+))?\}$/), sourceActivity = match && sources.find((entry: ActivitySource) => entry.activity.id === match[1]), sourceRoot = match?.[2] || "";
-      if (sourceActivity && sourceRoot) {
-        const existingTargets = new Set(next.filter((rule: any) => !rule.occurrenceId).map((rule: any) => rule.target));
-        fields.filter((candidate) => candidate.path.startsWith(`${target}.`)).forEach((candidate) => {
-          const relative = candidate.path.slice(target.length + 1), sourcePath = `${sourceRoot}.${relative}`;
-          if (!existingTargets.has(candidate.path) && sourceActivity.fields.some((sourceField: DataField) => sourceField.key === sourcePath)) {
-            next.push({ target: candidate.path, source: `\${${activityReferenceName(sourceActivity.activity.name)}.${sourcePath}}`, targetType: candidate.type, functions: [], enabled: true, autoGenerated: true });
-          }
-        });
-      }
-    }
-    setMappings(next);
+    setMappings(repeat ? autoMapLoopChildren(fields, next, target, source, mappingSources) : next);
   };
   const mapConstant = (target: string, constant: any) => setMappings([...mappings.filter((rule: any) => !(rule.target === target && !rule.occurrenceId)), { target, constant, targetType: fields.find((field) => field.path === target)?.type || "any", functions: [], enabled: true }]);
   const duplicateOccurrence = (target: string, selectedOccurrence?: string) => {
     const sourceLoop = mappings.find((rule: any) => rule.target === target && ["for-each", "for-each-group"].includes(rule.operator) && rule.occurrenceId === selectedOccurrence);
     if (!sourceLoop) return;
-    const occurrenceId = `occurrence-${Date.now()}`, sourceOccurrence = sourceLoop.occurrenceId;
-    const family = mappings.filter((rule: any) => (rule.target === target || rule.target.startsWith(`${target}.`)) && rule.occurrenceId === sourceOccurrence);
-    setMappings([...mappings, ...family.map((rule: any) => ({ ...rule, occurrenceId, duplicateOf: sourceOccurrence || "primary", autoGenerated: rule.autoGenerated || true }))]);
+    const occurrenceId = `occurrence-${crypto.randomUUID()}`;
+    setMappings([...mappings, { target, targetType: sourceLoop.targetType, operator: sourceLoop.operator,
+      source: "", ...(sourceLoop.operator === "for-each-group" ? { groupBy: "" } : {}),
+      functions: [], enabled: true, occurrenceId, duplicateOf: sourceLoop.occurrenceId || "primary" }]);
   };
   const removeOccurrence = (occurrenceId: string) => setMappings(mappings.filter((rule: any) => rule.occurrenceId !== occurrenceId));
-  const displayRows = mappingTreeRows(fields, mappings);
+  const displayRows = useMemo(() => mappingTreeRows(fields, mappings), [fields, mappings]);
   const updateRule = (target: string, occurrenceId: string | undefined, patch: any) => {
     const previous = mappings.find((item: any) => item.target === target && item.occurrenceId === occurrenceId);
     const next = {...previous, target, occurrenceId, targetType: fields.find(field => field.path === target)?.type || "any", functions: previous?.functions || [], enabled: true, ...patch};
-    setMappings([...mappings.filter((item: any) => item !== previous), next]);
+    const updated = [...mappings.filter((item: any) => item !== previous), next];
+    setMappings(['for-each','for-each-group'].includes(next.operator) && ('source' in patch || 'select' in patch)
+      ? autoMapLoopChildren(fields, updated, target, next.select || next.source, mappingSources, occurrenceId) : updated);
   };
-  const connectionMappings = Object.fromEntries(mappings.filter((rule: any) => rule.enabled !== false && typeof rule.source === "string" && rule.source.startsWith("${")).map((rule: any) => [displayRows.find(row => row.kind === "loop" && row.field.path === rule.target && row.occurrenceId === rule.occurrenceId)?.key ? `${displayRows.find(row => row.kind === "loop" && row.field.path === rule.target && row.occurrenceId === rule.occurrenceId)!.key}:source` : `${rule.occurrenceId || "primary"}:${rule.target}`, rule.select || rule.source]));
+  const connectionMappings = useMemo(() => {
+    const loopKeys = new Map(displayRows.filter(row => row.kind === 'loop').map(row => [`${row.occurrenceId || 'primary'}:${row.field.path}`, `${row.key}:source`]));
+    return Object.fromEntries(mappings.filter((rule:any) => rule.enabled !== false && typeof rule.source === 'string' && rule.source.startsWith('${')).map((rule:any) => {
+      const key = `${rule.occurrenceId || 'primary'}:${rule.target}`;
+      return [loopKeys.get(key) || key, rule.select || rule.source];
+    }));
+  }, [mappings, displayRows]);
   const contextValue = contextMenu ? mappings.find((item: any) => item.target === contextMenu.path && item.occurrenceId === contextMenu.occurrenceId) : null;
   const contextField = contextMenu ? fields.find((field) => field.path === contextMenu.path) : null;
   const openDialog = () => { setDraftMappings(structuredClone(mappings)); setDialogOpen(true); };
-  return <><div ref={root} className={`activity-tab mapping-editor transform-input-editor resizable-mapper visual-field-mapper ${expanded ? "expanded-input-workspace" : ""}`} style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}><DataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}><span/></div><section><div className="contract-heading mapping-editor-heading"><SettingsTitle title="Target schema mapping" />{!expanded && <button type="button" className="edit-input-mapping" onClick={openDialog}><Pencil/> Edit mappings </button>}</div><div className="target-schema-tree">{displayRows.map(row => {
+  return <><div ref={root} className={`activity-tab mapping-editor transform-input-editor resizable-mapper visual-field-mapper ${expanded ? "expanded-input-workspace" : ""}`} style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}><MemoizedDataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}><span/></div><section><div className="contract-heading mapping-editor-heading"><SettingsTitle title="Target schema mapping" />{!expanded && <button type="button" className="edit-input-mapping" onClick={openDialog}><Pencil/> Edit mappings </button>}</div><div className="target-schema-tree">{displayRows.map(row => {
     if (row.ancestors.some(key => tree.collapsed.has(key))) return null;
     const field = row.field, rule = row.rule, structural = row.hasChildren || isComplexSchemaType(field.type), canMapStructure = structural && field.repeating;
     if(row.kind !== "field") return <LoopMappingRow key={row.key} row={row} sources={sources} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle} patch={patch => updateRule(field.path,row.occurrenceId,patch)} duplicate={() => duplicateOccurrence(field.path,row.occurrenceId)} remove={() => row.occurrenceId ? removeOccurrence(row.occurrenceId) : updateRule(field.path,undefined,{operator:undefined,select:undefined})}/>;
@@ -2278,13 +2309,13 @@ function TransformInputEditor({ config, properties, sources, runtimeVariables = 
       if (!row.occurrenceId) {mapTo(field.path,value);return;}
       updateRule(field.path,row.occurrenceId,{source:value,constant:undefined});
     };
-    return <div key={row.key} data-target={row.loopKey || (structural && !canMapStructure) ? undefined : row.key} className={`schema-tree-row ${structural ? "structural-row" : ""} ${selected === field.path ? "selected" : ""}`} style={{paddingLeft:12+row.depth*18}} onClick={() => setSelected(field.path)} onContextMenu={event => {event.preventDefault();if(structural&&!canMapStructure)return;setSelected(field.path);setContextMenu({x:event.clientX,y:event.clientY,path:field.path,label:field.name,occurrenceId:row.occurrenceId});}} onDragOver={event => {if(structural&&!canMapStructure)return;event.preventDefault();event.dataTransfer.dropEffect="copy";}} onDrop={event => {event.preventDefault();const value=event.dataTransfer.getData("expression");if(!value)return;if(row.loopKey)updateRule(field.path,row.occurrenceId,{source:value,select:value});else if(row.occurrenceId)change(value);else mapTo(field.path,value,event.dataTransfer.getData("sourceRepeating")==="true");}}>
+    return <div key={row.key} data-target={row.loopKey || (structural && !canMapStructure) ? undefined : row.key} className={`schema-tree-row ${row.occurrenceId ? "mapping-duplicate-row" : ""} ${row.duplicateRoot ? "mapping-duplicate-root" : ""} ${structural ? "structural-row" : ""} ${selected === field.path ? "selected" : ""}`} style={{paddingLeft:12+row.depth*18}} onClick={() => setSelected(field.path)} onContextMenu={event => {event.preventDefault();if(structural&&!canMapStructure)return;setSelected(field.path);setContextMenu({x:event.clientX,y:event.clientY,path:field.path,label:field.name,occurrenceId:row.occurrenceId});}} onDragOver={event => {if(structural&&!canMapStructure)return;event.preventDefault();event.dataTransfer.dropEffect="copy";}} onDrop={event => {event.preventDefault();const value=event.dataTransfer.getData("expression");if(!value)return;if(row.loopKey)updateRule(field.path,row.occurrenceId,{source:value,select:value});else if(row.occurrenceId)change(value);else mapTo(field.path,value,event.dataTransfer.getData("sourceRepeating")==="true");}}>
       {row.hasChildren ? <TreeToggle path={row.key} label={field.name} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle}/> : <span className="tree-node-dot"/>}
-      <span className="tree-field"><b>{field.name}</b><small>{field.type} · {field.minOccurs || "1"}..{field.maxOccurs || "1"}</small></span>
+      <span className="tree-field"><b>{field.name}<sup className="cardinality-symbol">{cardinalitySymbol(field)}</sup>{row.duplicateRoot && <button type="button" className="remove-duplicate-mapping" aria-label={`Delete duplicate ${field.name}`} title="Delete duplicate occurrence" onClick={event => {event.stopPropagation(); removeOccurrence(row.occurrenceId!);}}>×</button>}</b><small>{field.type} · {field.minOccurs || "1"}..{field.maxOccurs || "1"}</small></span>
       <span className={`mapping-connection ${rule ? "connected" : ""}`}><i/><ArrowRight/></span>
-      {row.loopKey || (structural&&!canMapStructure) ? <span/> : <MappingBinding structural={structural} expression={rule?.operator ? {...rule,$rule:rule.operator} : rule && rule.constant !== undefined ? (typeof rule.constant === "string" ? JSON.stringify(rule.constant) : rule.constant) : rule?.source ?? ""} fieldType={field.type} sources={sources} onChange={(value: any) => value?.$rule ? updateRule(field.path,row.occurrenceId,{...value,operator:value.$rule}) : change(value)} onConstantChange={(value: any) => row.occurrenceId ? updateRule(field.path,row.occurrenceId,{constant:value,source:undefined}) : mapConstant(field.path,value)}/>}
+      {row.loopKey || (structural&&!canMapStructure) ? <span/> : <MappingBinding sourceScope={sourceScopeFor(row)} structural={structural} expression={rule?.operator ? {...rule,$rule:rule.operator} : rule && rule.constant !== undefined ? (typeof rule.constant === "string" ? JSON.stringify(rule.constant) : rule.constant) : rule?.source ?? ""} fieldType={field.type} fieldLabel={`${field.name}${cardinalitySymbol(field)}`} sources={sources} onChange={(value: any) => value?.$rule ? updateRule(field.path,row.occurrenceId,{...value,operator:value.$rule}) : change(value)} onConstantChange={(value: any) => row.occurrenceId ? updateRule(field.path,row.occurrenceId,{constant:value,source:undefined}) : mapConstant(field.path,value)}/>}
     </div>;
-  })}{!fields.length && <div className="contract-empty">Select a project XSD or enter a valid inline target schema on Configuration.</div>}</div></section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextValue} canDuplicate={!!contextField?.repeating && !!contextValue?.operator} duplicate={() => contextMenu && duplicateOccurrence(contextMenu.path,contextMenu.occurrenceId)} close={() => setContextMenu(null)} change={(value: any) => contextMenu && updateRule(contextMenu.path,contextMenu.occurrenceId,value?.$rule ? {...value,operator:value.$rule} : {source:value,operator:undefined})} remove={() => contextMenu && setMappings(mappings.filter((item: any) => !(item.target === contextMenu.path && item.occurrenceId === contextMenu.occurrenceId)))}/></div>{dialogOpen && <ExpandedInputMappingDialog title="Mapper · Expanded Input Editor" mappingCount={draftMappings.length} onClose={() => setDialogOpen(false)} onApply={() => { setMappings(draftMappings); setDialogOpen(false); }}><TransformInputEditor config={{ ...config, mappings: draftMappings }} properties={properties} sources={sources} runtimeVariables={runtimeVariables} setMappings={setDraftMappings} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} expanded/></ExpandedInputMappingDialog>}</>;
+  })}{!fields.length && <div className="contract-empty">Select a project XSD or enter a valid inline target schema on Configuration.</div>}</div></section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextValue} canDuplicate={!!contextField?.repeating && !!contextValue?.operator} duplicate={() => contextMenu && duplicateOccurrence(contextMenu.path,contextMenu.occurrenceId)} close={() => setContextMenu(null)} change={(value: any) => contextMenu && updateRule(contextMenu.path,contextMenu.occurrenceId,value?.$rule ? {...value,operator:value.$rule} : {source:value,operator:undefined})} remove={() => {if (!contextMenu) return; if (contextMenu.occurrenceId && contextField?.repeating) removeOccurrence(contextMenu.occurrenceId); else setMappings(mappings.filter((item:any) => !(item.target === contextMenu.path && item.occurrenceId === contextMenu.occurrenceId)));}}/></div>{dialogOpen && <ExpandedInputMappingDialog title={editorTitle} mappingCount={draftMappings.length} onClose={() => setDialogOpen(false)} onApply={() => { setMappings(draftMappings); setDialogOpen(false); }}><TransformInputEditor config={{ ...config, mappings: draftMappings }} editorTitle={editorTitle} properties={properties} sources={sources} runtimeVariables={runtimeVariables} setMappings={setDraftMappings} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} expanded/></ExpandedInputMappingDialog>}</>;
 }
 function TransformOutputEditor({ config }: any) {
   const fields = transformSchemaFields(config);

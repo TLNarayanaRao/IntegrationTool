@@ -30,8 +30,21 @@ test('duplicate occurrences contain independent, editable child trees', () => {
     {target:'Orders.Order.Price',source:'${input.second.price}',occurrenceId:'second'},
   ]);
   const duplicate = rows.filter(row=>row.occurrenceId==='second');
-  assert.deepEqual(duplicate.map(row=>row.kind),['loop','field','field','field']);
-  assert.equal(duplicate[3].rule.source,'${input.second.price}');
+  assert.deepEqual(duplicate.map(row=>row.kind),['field','field','field']);
+  assert.equal(duplicate[2].rule.source,'${input.second.price}');
+  assert.equal(duplicate[0].duplicateRoot,true);
+  assert.equal(duplicate[0].depth,rows.find(row=>row.kind==='field' && row.field.path==='Orders.Order' && !row.occurrenceId).depth);
+  assert.equal(duplicate[0].loopKey,undefined);
   assert.equal(new Set(rows.map(row=>row.key)).size,rows.length);
-  assert.ok(!duplicate[3].ancestors.includes('primary:Orders.Order:loop'));
+  assert.ok(!duplicate[2].ancestors.includes('primary:Orders.Order:loop'));
+});
+
+test('large schemas use indexed lookups rather than scanning every field for each row', () => {
+  let pathReads = 0;
+  const largeFields = [{path:'root',name:'root',depth:0}, ...Array.from({length:3000}, (_,i) => ({
+    get path() { pathReads++; return `root.field${i}`; }, name:`field${i}`, depth:1,
+  }))];
+  const rows = mappingTreeRows(largeFields, []);
+  assert.equal(rows.length,3001);
+  assert.ok(pathReads < 3000 * 12, `Expected linear field access; observed ${pathReads} reads`);
 });

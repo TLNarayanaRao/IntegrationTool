@@ -1705,35 +1705,6 @@ def mapper_test(payload: dict):
         return {'output': output, 'valid': not errors, 'validationErrors': errors, 'mappingCount': len(active), 'mappedTargets': mapped_targets, 'diagnostics': {'mappedTargetCount': len(mapped_targets), 'loopCount': len([rule for rule in active if rule.get('operator') in ('for-each', 'for-each-group')]), 'conditionalCount': len([rule for rule in active if rule.get('operator') in ('if', 'when-otherwise', 'choose')])}}
     except Exception as exc: raise HTTPException(400, f'Mapping failed: {exc}')
 
-@app.post('/api/mediation/test')
-def mediation_test(payload: dict):
-    from .mediation import execute_details, MediationError
-    try:
-        config = payload.get('config') or {}
-        if config.get('inputMappings'):
-            from .runtime import WorkflowRuntime
-            from .models import Activity
-            sample = payload.get('context') or {}
-            if not isinstance(sample, dict): raise MediationError('Preview context must be an object')
-            ctx = {'input': payload.get('input'), 'last': payload.get('input'), 'properties': {}, 'vars': {}, 'activities': {}, 'context': {}, **{k:v for k,v in sample.items() if k in {'input','last','properties','vars','activities'}}, 'resources': {}}
-            config = WorkflowRuntime().resolve_activity_config(Activity(id='preview', name='Mediation preview', type='mediation', config=config),ctx)
-            return execute_details(config.get('payload',ctx['last']),config)
-        return execute_details(payload.get('input'), config)
-    except MediationError as exc:
-        raise HTTPException(400, str(exc)) from exc
-
-
-@app.post('/api/mediation/schema')
-def mediation_schema(payload: dict):
-    from .mediation import target_contract, schema_fields, MediationError
-    try:
-        contract = target_contract(payload.get('schema', ''))
-        if not contract: raise MediationError('Supply a target schema')
-        return {'fields': schema_fields(contract), 'type': contract['type']}
-    except MediationError as exc:
-        raise HTTPException(400, str(exc)) from exc
-
-
 @app.post('/api/dataweave/test')
 def dataweave_test(payload: dict):
     try:

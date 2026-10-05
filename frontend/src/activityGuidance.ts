@@ -78,10 +78,6 @@ export const activityGuidance: Record<string, string[]> = {
   "ExpandedInputMappingDialog": [
     "Map execution data, functions, properties, and typed constants to the desired target fields."
   ],
-  "MediationInputEditor": [
-    "Drag fields from earlier activities, use functions, or type expressions into the target fields below. Mapped values override recipe sources for this invocation; an unmapped field retains its recipe. Configuration only selects the schema and optional conversions.",
-    "Load a target schema in Configuration first."
-  ],
   "InputEditor": [
     "Map simple schema elements and attributes. Complex structures are controlled exclusively through their child fields.",
     "Open expanded editor",
@@ -120,14 +116,5 @@ export const activityGuidance: Record<string, string[]> = {
     "Operation-declared faults plus runtime handling",
     "Outbound retry is configured consistently for all connectors on the Advanced tab."
   ],
-  "MediationStudio": [
-    "MEDIATION · Make messages speak the same business language",
-    "Load the target schema here. Open the Input tab to drag fields from previously executed activities into target fields.",
-    "Supply synthetic earlier outputs, for example {\"activities\":{\"ReadOrder\":{\"output\":{\"id\":\"A-100\"}}}}. This resolves ${ReadOrder.id} without executing ReadOrder.",
-    "Select a project schema, upload a JSON Schema/XSD, or paste one. Click a target field to create its mapping; existing rules are preserved. Object schemas describe each output record; array schemas describe the whole output collection.",
-    "Structural JSON Schema: types, properties, required, items, additionalProperties. XSD: elements, sequences, inline/named complex types and primitive types. Unsupported constructs are reported, not ignored.",
-    "Read paths relative to each record. Use customer.name for nested fields, items.0.id for an array index, or $ for the whole record. Target paths create nested business fields.",
-    "Enter JSON values: \"Unknown\", 0, true. Lookup dictionary example: {\"N\":\"New\",\"C\":\"Complete\"}. Blank removes the setting. A constant overrides the source; a default handles missing/null input.",
-    "Use synthetic samples: preview input is saved with your project. Limits: 2 MB text, 10,000 records, 200 rules. XML DTDs/entities are rejected. CSV targets must be flat."
-  ]
+
 };

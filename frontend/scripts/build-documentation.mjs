@@ -14,7 +14,6 @@ const read = name => fs.readFile(path.join(root, name), 'utf8');
 const slug = text => String(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const sha = text => createHash('sha256').update(text).digest('hex');
 const guides = [
- ['Transformation', 'MEDIATION.md'],
  ['Getting started', 'DOCUMENTATION.md'],
  ['Studio', 'DEBUG_TESTING.md'], ['Studio', 'DEBUGGING.md'], ['Studio', 'FILE_UTILITIES.md'],
  ['Operations', 'RUNTIME_LOGGING.md'], ['Operations', 'ADMINISTRATOR_GUIDE.md'],

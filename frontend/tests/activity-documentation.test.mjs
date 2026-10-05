@@ -13,18 +13,9 @@ const context = vm.createContext({ activityGuidance, React: { createElement: (ty
 vm.runInContext(ts.transpileModule(functionSource, { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } }).outputText, context);
 const documentation = type => JSON.stringify(context.ActivityEditorGuidance({ type }));
 
-test('Mediation documentation retains relocated schema and preview explanations', async () => {
-  const docs = documentation('mediation');
-  assert.match(docs, /Make messages speak the same business language/);
-  assert.match(docs, /Object schemas describe each output record/);
-  assert.match(docs, /Supply synthetic earlier outputs/);
-  const editor = await readFile(new URL('../src/MediationStudio.tsx', import.meta.url), 'utf8');
-  assert.doesNotMatch(editor, /Make messages speak|Object schemas describe|Supply synthetic earlier outputs/);
-  assert.match(editor, /role="alert"/);
-  assert.match(editor, /role="status"/);
-});
+
 test('all activity types receive common mapping and advanced guidance', () => {
-  for (const type of ['kafka', 'http', 'jdbc', 'sap', 'timer', 'log', 'mediation']) {
+  for (const type of ['kafka', 'http', 'jdbc', 'sap', 'timer', 'log']) {
     assert.match(documentation(type), /Logs activity input and output/);
     assert.match(documentation(type), /Map simple schema elements/);
   }

@@ -893,12 +893,6 @@ class WorkflowRuntime:
                     } for branch in normalized['whens']]
                 rules.append(normalized)
             return execute_mapping(source, rules, cfg)
-        if activity.type == 'mediation':
-            from .mediation import execute, MediationError
-            try:
-                return execute(cfg.get('payload', ctx.get('last')), cfg)
-            except MediationError as exc:
-                raise MinaFault(str(exc), fault_type='MEDIATION', cause=exc.__class__.__name__) from exc
         if activity.type == 'dataweave':
             try:
                 transformed = execute_dataweave(

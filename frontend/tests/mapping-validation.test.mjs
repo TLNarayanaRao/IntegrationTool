@@ -8,6 +8,8 @@ const { validateMapping } = await import(`data:text/javascript;base64,${Buffer.f
 const paths = ['input', 'last', 'Read-JSON', 'Read-JSON.customer.name', 'Read-JSON.records.value'];
 
 test('checks numeric and boolean constants without accepting quoted numbers', () => {
+  assert.equal(validateMapping('123','xs:decimal'),'');
+  assert.ok(validateMapping('"123"','xs:decimal'));
   for (const value of ['123', '-4']) assert.equal(validateMapping(value, 'integer'), '');
   for (const value of ['abc', '1.5', '"123"']) assert.ok(validateMapping(value, 'integer'));
   assert.equal(validateMapping('1.25e2', 'decimal'), '');
@@ -15,6 +17,10 @@ test('checks numeric and boolean constants without accepting quoted numbers', ()
   assert.ok(validateMapping('yes', 'boolean'));
 });
 test('requires matching quotes for string constants, including numeric-looking strings', () => {
+  for(const type of ['xs:string','xsd:token','normalizedString','dateTime','anyURI']) {
+    assert.match(validateMapping('test',type),/quotes/);
+    assert.equal(validateMapping('"test"',type),'');
+  }
   for (const value of ["'hello'", '"hello"', '"hello \\"world\\""', "'123'", '"123"']) assert.equal(validateMapping(value, 'string'), '');
   for (const value of ['hello', '123', 'true']) assert.match(validateMapping(value, 'string'), /quotes/);
   assert.match(validateMapping('hello', 'any'), /quotes/);

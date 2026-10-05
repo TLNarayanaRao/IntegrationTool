@@ -24,7 +24,7 @@ SUPPORTED = {
     ('http_listener', 'listen'), ('http', 'request'), ('rest', 'receiver'), ('rest', 'invoke'),
     ('soap', 'service'), ('soap', 'request_reply'), ('http_response', 'response'),
     ('xml', 'parse'), ('xml', 'render'), ('json', 'parse'), ('json', 'render'),
-    ('flat', 'parse'), ('flat', 'render'), ('excel', 'read'), ('dataweave', 'transform'), ('mediation', 'mediate'),
+    ('flat', 'parse'), ('flat', 'render'), ('excel', 'read'), ('dataweave', 'transform'),
     ('python', 'invoke'), ('java', 'invoke'),
     *((('snowflake', operation) for operation in ('insert', 'query', 'update', 'delete', 'bulk_load'))),
     *((('amqp', operation) for operation in ('send', 'get', 'receive', 'dead_letter'))),
@@ -46,7 +46,7 @@ SUPPORTED_GROUP_TYPES = {'if', 'for_each', 'iterate', 'while', 'repeat', 'repeat
                          'critical_section', 'transaction_jdbc'}
 ACTIVITY_CAPABILITY_BY_KIND = {
     'timer': 'timer', 'confirm': 'confirm', 'throw': 'faults', 'rethrow': 'faults',
-    'log': 'log', 'basic': 'basic', 'mapper': 'mapper', 'mediation': 'mediation', 'call_task': 'call_task',
+    'log': 'log', 'basic': 'basic', 'mapper': 'mapper', 'call_task': 'call_task',
     'file': 'file', 'excel': 'excel', 'ftp': 'transfer', 'sftp': 'transfer',
     'http_response': 'http_response', 'dataweave': 'dataweave', 'python': 'python',
     'java': 'java', 'kafka': 'kafka', 'pubsub': 'pubsub', 'sap': 'sap',
@@ -690,7 +690,6 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     if 'jdbc' in capabilities: native_modules.update({'jdbc.py', 'java_bridge.py'})
     if 'snowflake' in capabilities: native_modules.add('snowflake.py')
     if 'amqp' in capabilities: native_modules.add('amqp.py')
-    if 'mediation' in capabilities: native_modules.add('mediation.py')
     if 'dataweave' in capabilities: native_modules.add('dataweave.py')
     if 'mapper' in capabilities: native_modules.add('mapper.py')
     if native_modules:
@@ -1054,7 +1053,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
 
 
 ENGINE_CAPABILITY_MODULES = {
-    'mediation': 'mediation', 'dataweave': 'dataweave', 'sap': 'sap', 'snowflake': 'snowflake',
+    'dataweave': 'dataweave', 'sap': 'sap', 'snowflake': 'snowflake',
     'jdbc': 'jdbc', 'amqp': 'amqp', 'ems': 'java_bridge',
     'jms': 'java_bridge', 'pubsub': 'google_pubsub',
 }

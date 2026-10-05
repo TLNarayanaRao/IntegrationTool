@@ -23,7 +23,13 @@ export function validateMapping(value: unknown, fieldType: string, paths: string
     const path = match[1].trim();
     if (!/^[\w@-]+(?:\.[\w@-]+|\[\d+\])*$/.test(path)) return "Enter a valid source field path inside ${…}.";
     const root = path.split(/[.[]/)[0];
-    if (["properties", "vars", "context", "activities", "tasks"].includes(root)) continue;
+    if (["properties", "vars", "context", "tasks"].includes(root)) continue;
+    if (root === "activities") {
+      const activityRoot = path.split('.').slice(0, 3).join('.');
+      const fields = paths.filter(candidate => candidate.startsWith(`${activityRoot}.`));
+      if (fields.length && !fields.some(candidate => candidate === path || candidate.startsWith(`${path}.`))) return `Source field not found: ${path}.`;
+      continue;
+    }
     const normalized = path.replace(/\[\d+\]/g, "").replace(/\.\d+(?=\.|$)/g, "");
     const candidates = paths.filter(candidate => candidate === root || candidate.startsWith(`${root}.`));
     if (!candidates.length) return `Unknown mapping source: ${root}.`;
@@ -32,11 +38,11 @@ export function validateMapping(value: unknown, fieldType: string, paths: string
   if (unquoted.includes("${") || /[\w:-]+\s*\(/.test(unquoted)) return "";
   if (/^\$/.test(text)) return "Use ${source.field} for a field mapping.";
   const types = fieldType.toLowerCase().replace(/\bxs[d]?:/g, "").split("|");
-  const quoted = /^("[\s\S]*"|'[\s\S]*')$/.test(text);
+  const quoted = /^(?:"(?:[^"\\]|\\[\s\S])*"|'(?:[^'\\]|\\[\s\S])*')$/.test(text);
   let literal: unknown = quoted ? text.slice(1, -1) : text;
   if (!quoted) { try { literal = JSON.parse(text); } catch { /* Plain text is a string constant. */ } }
   const valid = types.some(type => {
-    if (type === "string" || type === "binary") return quoted;
+    if (["string", "binary", "normalizedstring", "token", "date", "datetime", "time", "anyuri", "language", "name", "ncname", "id", "idref", "hexbinary", "base64binary"].includes(type)) return quoted;
     if (type === "any" || type === "anytype") return quoted || typeof literal !== "string";
     if (type.includes("array") || type.endsWith("[]")) return Array.isArray(literal);
     if (["object", "json", "complex"].includes(type)) return literal !== null && typeof literal === "object" && !Array.isArray(literal);
@@ -46,6 +52,6 @@ export function validateMapping(value: unknown, fieldType: string, paths: string
     return true;
   });
   if (valid) return "";
-  if (types.includes("string") || types.includes("binary") || ((types.includes("any") || types.includes("anytype")) && typeof literal === "string")) return "String constants must be enclosed in matching single or double quotes.";
+  if (types.some(type => ["string", "binary", "normalizedstring", "token", "date", "datetime", "time", "anyuri", "language", "name", "ncname", "id", "idref", "hexbinary", "base64binary"].includes(type)) || ((types.includes("any") || types.includes("anytype")) && typeof literal === "string")) return "String constants must be enclosed in matching single or double quotes.";
   return `Enter a valid ${fieldType} value or map a source field.`;
 }

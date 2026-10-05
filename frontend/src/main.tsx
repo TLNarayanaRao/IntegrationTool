@@ -122,7 +122,6 @@ type Kind =
   | "flat"
   | "mapper"
   | "dataweave"
-  | "mediation"
   | "transform"
   | "ai_transform"
   | "log"
@@ -593,7 +592,6 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
     icon: Activity,
     items: [
       { type: "mapper", operation: "map", label: "Mapper", asset: "mapper.svg" },
-      { type: "mediation", operation: "mediate", label: "Mediation", asset: "mediation.svg" },
       { type: "dataweave", operation: "transform", label: "Transform", asset: "dataweave-transform.svg" },
       { type: "log", operation: "write", label: "Log", asset: "log" },
       { type: "catch", operation: "catch", label: "Catch Exception", asset: "catch-exception.svg" },
@@ -1157,7 +1155,6 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
       if (!Object.keys(item.config.targetSchema || {}).length && !item.config.targetSchemaId) add("mapping", "Mapper", `${item.name} has no target schema.`, "Select an XSD from Project Schemas or define an inline target schema.", item.id);
       if (!(item.config.mappings || []).length) add("mapping", "Mapper", `${item.name} has no field mappings.`, "Map execution-path fields to the target schema.", item.id);
     }
-    if (item.type === "mediation" && !(item.config.rules || []).length && !Object.keys(item.config.inputMappings||{}).some(key=>key.startsWith('targetValues.'))) add("error", "Mediation", `${item.name} needs target field mappings.`, "Load a target schema in Configuration and map previous activity outputs in Input.", item.id);
     if (item.type === "dataweave") {
       const script = String(item.config.script || "");
       if (!script.trim()) add("error", "Transform", `${item.name} has no DataWeave script.`, "Enter or AI-generate an executable transform script.", item.id);
@@ -3315,7 +3312,7 @@ function App() {
             <b>
               <Settings2 /> {edge ? "Transition" : resource ? "Connection" : "Activity"}
             </b>
-            {node ? (["configuration", "input", "map_test", "output", "advanced", "errors", "documentation"] as const).filter((tab) => tab !== "map_test" || ["mapper", "transform", "ai_transform", "dataweave", "mediation"].includes(node.type)).map(
+            {node ? (["configuration", "input", "map_test", "output", "advanced", "errors", "documentation"] as const).filter((tab) => tab !== "map_test" || ["mapper", "transform", "ai_transform", "dataweave"].includes(node.type)).map(
               (tab) => (
                 <button
                   key={tab}

@@ -1,6 +1,6 @@
 export type MapperFunctionDefinition = {
   name: string;
-  category: "String" | "Date & Time" | "Number" | "Collection" | "Conversion" | "General" | "Encoding";
+  category: "String" | "Date & Time" | "Number" | "Comparison" | "Collection" | "Conversion" | "General" | "Encoding";
   signature: string;
   description: string;
   template: string;
@@ -46,6 +46,18 @@ export const mapperFunctionCatalog: MapperFunctionDefinition[] = [
   ...["year", "month", "day", "hour", "minute", "second"].map((name) => fn("Date & Time", name, `${name}(value)`, `Extract the ${name} component.`, `${name}($value)`)),
   fn("Date & Time", "timezoneFromDateTime", "timezoneFromDateTime(value)", "Return the timestamp timezone offset.", "timezoneFromDateTime($value)"),
 
+  fn("Comparison", "equal", "equal(value, other)", "Compare values using =.", "equal($value, 0)", "equal(0)"),
+  fn("Comparison", "notEqual", "notEqual(value, other)", "Compare values using !=.", "notEqual($value, 0)", "notEqual(0)"),
+  fn("Comparison", "greaterThan", "greaterThan(value, other)", "Compare values using >.", "greaterThan($value, 0)", "greaterThan(0)"),
+  fn("Comparison", "lessThan", "lessThan(value, other)", "Compare values using <.", "lessThan($value, 0)", "lessThan(0)"),
+  fn("Comparison", "greaterOrEqual", "greaterOrEqual(value, other)", "Compare values using >=.", "greaterOrEqual($value, 0)", "greaterOrEqual(0)"),
+  fn("Comparison", "lessOrEqual", "lessOrEqual(value, other)", "Compare values using <=.", "lessOrEqual($value, 0)", "lessOrEqual(0)"),
+  fn("Number", "add", "add(value, other)", "Add numeric values.", "add($value, 2)", "add(2)"),
+  fn("Number", "subtract", "subtract(value, other)", "Subtract numeric values.", "subtract($value, 2)", "subtract(2)"),
+  fn("Number", "multiply", "multiply(value, other)", "Multiply numeric values.", "multiply($value, 2)", "multiply(2)"),
+  fn("Number", "divide", "divide(value, other)", "Divide numeric values.", "divide($value, 2)", "divide(2)"),
+  fn("Number", "mod", "mod(value, other)", "Mod numeric values.", "mod($value, 2)", "mod(2)"),
+
   fn("Number", "number", "number(value)", "Convert a value to a number.", "number($value)"),
   fn("Number", "integer", "integer(value)", "Convert a value to an integer.", "integer($value)"),
   fn("Number", "round", "round(value, precision?)", "Round to an optional decimal precision.", "round($value, 2)", "round(2)"),
@@ -59,6 +71,8 @@ export const mapperFunctionCatalog: MapperFunctionDefinition[] = [
   fn("Number", "clamp", "clamp(value, minimum, maximum)", "Constrain a number to a range.", "clamp($value, 0, 100)", "clamp(0,100)"),
   ...["min", "max", "sum", "average", "count"].map((name) => fn("Number", name, `${name}(values)`, `${name[0].toUpperCase()}${name.slice(1)} collection values.`, `${name}($value)`)),
 
+  fn("Collection", "group", "group(values, path?)", "Group records by a field path, or group equal values. Returns an array of groups.", 'group($value, "product")', 'group("product")'),
+  fn("Collection", "top", "top(values, count?)", "Return the highest values in descending order (default: one).", "top($value, 10)", "top(10)"),
   fn("Collection", "distinctValues", "distinctValues(values)", "Remove duplicate values while preserving order.", "distinctValues($value)"),
   fn("Collection", "sort", "sort(values, descending?)", "Sort collection values.", "sort($value)"),
   fn("Collection", "reverse", "reverse(values)", "Reverse a collection or string.", "reverse($value)"),
