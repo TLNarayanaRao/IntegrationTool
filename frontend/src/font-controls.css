@@ -1,0 +1,4 @@
+.font-control { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; padding: 3px 7px; color: var(--muted); white-space: nowrap; font-size: 11px; }
+.font-control select { width: auto; min-width: 70px; padding: 2px 4px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--text); font-size: 11px; }
+.config > .tabs { overflow-x: auto; }
+.config > .tabs .font-control { margin-left: auto; }

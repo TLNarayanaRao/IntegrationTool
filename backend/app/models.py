@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, model_validator
 ActivityKind = Literal[
     'start', 'http', 'http_listener', 'http_response', 'rest', 'soap',
     'file', 'ftp', 'sftp', 'jdbc', 'snowflake', 'amqp', 'excel', 'xml', 'json', 'flat',
-    'mapper', 'dataweave', 'transform', 'ai_transform', 'log', 'confirm', 'catch', 'throw', 'rethrow', 'timer', 'call_task', 'ems', 'jms', 'kafka', 'pubsub', 'sap', 'java', 'python', 'basic', 'end'
+    'mapper', 'mediation', 'dataweave', 'transform', 'ai_transform', 'log', 'confirm', 'catch', 'throw', 'rethrow', 'timer', 'call_task', 'ems', 'jms', 'kafka', 'pubsub', 'sap', 'java', 'python', 'basic', 'end'
 ]
 
 class SharedResource(BaseModel):

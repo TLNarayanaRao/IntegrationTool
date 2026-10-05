@@ -20,8 +20,12 @@ import {
 } from "lucide-react";
 import MapperStudio from "./MapperStudio";
 import MappingExpressionInput from "./MappingExpressionInput";
+import { activityGuidance } from "./activityGuidance";
+import { mappingTreeRows, MappingTreeRow } from "./mappingTree";
+import { validateMapping } from "./mappingValidation";
 import DataNodeIcon from "./DataNodeIcon";
 import { functionExpression, mapperFunctionCatalog, mapperFunctionCategories } from "./mapper-functions";
+import MediationStudio from './MediationStudio';
 const Braces = DataNodeIcon;
 
 // The normalized display name is the graph ID and mapping reference.
@@ -57,6 +61,7 @@ type Field = {
   when?: (config: any) => boolean;
 };
 type DataField = {
+  validationType?: string;
   key: string;
   label: string;
   type: string;
@@ -104,6 +109,8 @@ type StructuredMapping = { $rule: "for-each" | "for-each-group" | "if" | "when-o
 const mappingSource = (value: any) => value && typeof value === "object" && ("$rule" in value || "operator" in value) ? (value.select || value.source) : value;
 
 function MappingContextMenu({ menu, value, close, change, remove, duplicate, canDuplicate = false, required = false }: any) {
+  const [whenCount, setWhenCount] = useState<string | null>(null);
+  useEffect(() => { setWhenCount(null); }, [menu]);
   const panel = useRef<HTMLDivElement>(null), source = String(mappingSource(value) || ""), [mode, setMode] = useState<StructuredMapping["$rule"] | "">(""), [select, setSelect] = useState(source), [condition, setCondition] = useState(source ? `exists(${source})` : ""), [groupBy, setGroupBy] = useState(""), [otherwise, setOtherwise] = useState(""), [whens, setWhens] = useState<MappingWhen[]>([{ condition: source ? `exists(${source})` : "true()", source }]);
   useEffect(() => {
     if (!menu) return;
@@ -111,7 +118,7 @@ function MappingContextMenu({ menu, value, close, change, remove, duplicate, can
     window.addEventListener("pointerdown", dismiss);
     return () => window.removeEventListener("pointerdown", dismiss);
   }, [menu, close]);
-  useEffect(() => { if (menu) { const next = String(mappingSource(value) || ""); let storedWhens = value?.whens; if (!storedWhens?.length && (value?.operator || value?.$rule) === "choose") { try { storedWhens = JSON.parse(String(value?.source || "[]")); } catch { storedWhens = []; } } setMode((value?.operator || value?.$rule || "") as StructuredMapping["$rule"] | ""); setSelect(next); setCondition(value?.condition || (next ? `exists(${next})` : "")); setGroupBy(value?.groupBy || ""); setOtherwise(value?.otherwise || ""); setWhens(storedWhens?.length ? storedWhens : [{ condition: next ? `exists(${next})` : "true()", source: next }]); } }, [menu, value]);
+useEffect(() => { if (menu) { const next = String(mappingSource(value) || ""); let storedWhens = value?.whens; if (!storedWhens?.length && (value?.operator || value?.$rule) === "choose") { try { storedWhens = JSON.parse(String(value?.source || "[]")); } catch { storedWhens = []; } } setMode(""); setSelect(next); setCondition(value?.condition || (next ? `exists(${next})` : "")); setGroupBy(value?.groupBy || ""); setOtherwise(value?.otherwise || ""); setWhens(storedWhens?.length ? storedWhens : [{ condition: next ? `exists(${next})` : "true()", source: next }]); } }, [menu, value]);
   if (!menu) return null;
   const apply = (next: StructuredMapping) => { change(next); close(); };
   const commit = () => {
@@ -124,15 +131,23 @@ function MappingContextMenu({ menu, value, close, change, remove, duplicate, can
     if (select.trim()) apply({ $rule: mode, source: select.trim(), select: select.trim(), condition, groupBy, otherwise });
   };
   const content = <div ref={panel} className="mapping-context-menu" style={{ left: Math.max(8, Math.min(menu.x, window.innerWidth - 350)), top: Math.max(8, Math.min(menu.y, window.innerHeight - 455)) }} onPointerDown={(event) => event.stopPropagation()}>
-    <header><DataNodeIcon/><span><b>{menu.label}</b><small>Mapping statement</small></span></header>
-    <button className={mode === "for-each" ? "selected" : ""} onClick={() => setMode("for-each")}>For Each…<small>Iterate a repeating source value</small></button>
-    <button className={mode === "for-each-group" ? "selected" : ""} onClick={() => setMode("for-each-group")}>For Each Group…<small>Group repeated values before mapping</small></button>
-    <button disabled={required} className={mode === "if" ? "selected" : ""} onClick={() => setMode("if")}>If…<small>{required ? "Required schema fields cannot be conditional" : "Emit this target only when true"}</small></button>
-    <button className={mode === "when-otherwise" ? "selected" : ""} onClick={() => setMode("when-otherwise")}>When / Otherwise…<small>Choose between two mapping values</small></button>
-    <button className={mode === "choose" ? "selected" : ""} onClick={() => setMode("choose")}>Choose…<small>Evaluate multiple When branches, then Otherwise</small></button>
-    {mode && <section className="mapping-rule-editor">{mode !== "choose" && <label>Source expression<input value={select} placeholder="Drag a source first, or enter its expression" onChange={(event) => setSelect(event.target.value)}/></label>}{mode === "for-each-group" && <label>Group-by child path<input value={groupBy} placeholder="customerId" onChange={(event) => setGroupBy(event.target.value)}/></label>}{(mode === "if" || mode === "when-otherwise") && <label>Condition<input value={condition} onChange={(event) => setCondition(event.target.value)}/></label>}{mode === "when-otherwise" && <label>Otherwise value/expression<input value={otherwise} onChange={(event) => setOtherwise(event.target.value)}/></label>}{mode === "choose" && <div className="mapping-choose-editor">{whens.map((branch, index) => <div key={index}><b>WHEN {index + 1}</b><input aria-label={`When ${index + 1} condition`} value={branch.condition} placeholder="${input.status} = 'ACTIVE'" onChange={(event) => setWhens((items) => items.map((item, current) => current === index ? { ...item, condition: event.target.value } : item))}/><input aria-label={`When ${index + 1} value`} value={String(branch.source ?? "")} placeholder="Value or source expression" onChange={(event) => setWhens((items) => items.map((item, current) => current === index ? { ...item, source: event.target.value } : item))}/><button disabled={whens.length === 1} onClick={() => setWhens((items) => items.filter((_, current) => current !== index))}>Remove</button></div>)}<button onClick={() => setWhens((items) => [...items, { condition: "", source: "" }])}><Plus/> Add When</button><label>Otherwise value/expression<input value={otherwise} onChange={(event) => setOtherwise(event.target.value)}/></label></div>}<div><button onClick={() => setMode("")}>Cancel</button><button className="apply" disabled={mode === "choose" ? !whens.some((branch) => branch.condition.trim() && String(branch.source ?? "").trim()) : !select.trim()} onClick={commit}>Apply mapping</button></div>{mode !== "choose" && !select.trim() && <small>Select or drag an actual source sequence; the mapper no longer substitutes the ambiguous $&#123;last&#125; expression.</small>}</section>}
-    <button disabled={!canDuplicate && !value} onClick={() => { if (duplicate) duplicate(); else change(typeof value === "object" ? { ...value, duplicateOf: `${menu.path}-${Date.now()}` } : { $rule: "if", source: value, condition: "true()", duplicateOf: `${menu.path}-${Date.now()}` }); close(); }}>Duplicate {canDuplicate ? "repeating occurrence" : "mapping"}<small>{canDuplicate ? "Create another target occurrence with its complete child mapping tree" : "Create an independently editable statement"}</small></button>
-    <button disabled={!value} className="danger" onClick={() => { remove(); close(); }}>Delete mapping<small>Remove the target expression</small></button>
+    <header><DataNodeIcon/><span><b>{menu.label}</b></span></header>
+    <button className={mode === "for-each" ? "selected" : ""} onClick={() => setMode("for-each")}>For Each…</button>
+    <button className={mode === "for-each-group" ? "selected" : ""} onClick={() => setMode("for-each-group")}>For Each Group…</button>
+    <button disabled={required} className={mode === "if" ? "selected" : ""} onClick={() => setMode("if")}>If…</button>
+    <button onClick={() => { setMode(""); setWhenCount(String(value?.whens?.length || 1)); }}>When / Otherwise…</button>
+    {whenCount !== null && <section className="mapping-rule-editor">
+      <label>How many When conditions?<input autoFocus type="number" min="1" max="100" step="1" value={whenCount} onChange={event => setWhenCount(event.target.value)}/></label>
+
+      <div><button onClick={() => setWhenCount(null)}>Cancel</button><button className="apply" disabled={!Number.isInteger(Number(whenCount)) || Number(whenCount) < 1 || Number(whenCount) > 100} onClick={() => {
+        const previous = value?.whens || ((value?.$rule || value?.operator) === 'when-otherwise' ? [{condition: value.condition, source: value.source}] : []);
+        const branches = Array.from({length: Number(whenCount)}, (_, index) => previous[index] || {condition: '', source: index === 0 && !previous.length ? source : ''});
+        apply({$rule: 'choose', source: JSON.stringify(branches), whens: branches, otherwise: value?.otherwise ?? ''});
+      }}>Create branches</button></div>
+    </section>}
+    {mode && <section className="mapping-rule-editor">{mode !== "choose" && <label>Source expression<input value={select} placeholder="Drag a source first, or enter its expression" onChange={(event) => setSelect(event.target.value)}/></label>}{mode === "for-each-group" && <label>Group-by child path<input value={groupBy} placeholder="customerId" onChange={(event) => setGroupBy(event.target.value)}/></label>}{(mode === "if" || mode === "when-otherwise") && <label>Condition<input value={condition} onChange={(event) => setCondition(event.target.value)}/></label>}{mode === "when-otherwise" && <label>Otherwise value/expression<input value={otherwise} onChange={(event) => setOtherwise(event.target.value)}/></label>}{mode === "choose" && <div className="mapping-choose-editor">{whens.map((branch, index) => <div key={index}><b>WHEN {index + 1}</b><input aria-label={`When ${index + 1} condition`} value={branch.condition} placeholder="${input.status} = 'ACTIVE'" onChange={(event) => setWhens((items) => items.map((item, current) => current === index ? { ...item, condition: event.target.value } : item))}/><input aria-label={`When ${index + 1} value`} value={String(branch.source ?? "")} placeholder="Value or source expression" onChange={(event) => setWhens((items) => items.map((item, current) => current === index ? { ...item, source: event.target.value } : item))}/><button disabled={whens.length === 1} onClick={() => setWhens((items) => items.filter((_, current) => current !== index))}>Remove</button></div>)}<button onClick={() => setWhens((items) => [...items, { condition: "", source: "" }])}><Plus/> Add When</button><label>Otherwise value/expression<input value={otherwise} onChange={(event) => setOtherwise(event.target.value)}/></label></div>}<div><button onClick={() => setMode("")}>Cancel</button><button className="apply" disabled={mode === "choose" ? !whens.some((branch) => branch.condition.trim() && String(branch.source ?? "").trim()) : !select.trim()} onClick={commit}>Apply mapping</button></div></section>}
+    <button disabled={!canDuplicate && !value} onClick={() => { if (duplicate) duplicate(); else change(typeof value === "object" ? { ...value, duplicateOf: `${menu.path}-${Date.now()}` } : { $rule: "if", source: value, condition: "true()", duplicateOf: `${menu.path}-${Date.now()}` }); close(); }}>Duplicate {canDuplicate ? "repeating occurrence" : "mapping"}</button>
+    <button disabled={!value} className="danger" onClick={() => { remove(); close(); }}>Delete mapping</button>
   </div>;
   return createPortal(content, document.body);
 }
@@ -156,6 +171,7 @@ function dataTreeRows(fields: DataField[]): DataTreeRow[] {
       key: node.path, path: node.path, name: node.name,
       label: field?.label || node.name.replace(/([a-z])([A-Z])/g, "$1 $2"),
       type: field?.type || "object", required: field?.required, help: field?.help,
+      validationType: field?.validationType,
       depth, group, explicit: !!field,
     });
     node.children.forEach((child) => walk(child, depth + 1));
@@ -1081,6 +1097,7 @@ export function activityContract(n: any): Contract {
         },
       ],
     };
+  if (n.type === "mediation") return {configuration: [], input: [d("payload", "Source message", "any")], output: [d("result", "Mediated document (direct activity output)", "any")], errors: [{type: "MEDIATION", description: "Missing required fields, invalid rules, conversion errors or unsupported document shape. Preview identifies the record and rule."}]};
   if (n.type === "dataweave")
     return {
       configuration: [],
@@ -1307,6 +1324,7 @@ const activityDocumentation: Record<string, { summary: string; behavior: string 
   kafka: { summary: "Produces, receives, or commits Apache Kafka records.", behavior: "Broker security comes from the shared Kafka connection. Topic, key, headers, value, partitions, offsets, and acknowledgement handles are available for hierarchical mapping." },
   pubsub: { summary: "Publishes, receives, or acknowledges Google Cloud Pub/Sub messages.", behavior: "Project and credential defaults come from the shared connection. Message data, attributes, ordering keys, and acknowledgement handles remain available on the execution path." },
   sap: { summary: "Executes the selected SAP ECC operation.", behavior: "The shared SAP connection supplies system and authentication settings. IDoc metadata selected from SAP defines listener, parser, renderer, and sender structures." },
+  mediation: { summary: "Converts partner messages into a consistent business structure using readable mediation recipes.", behavior: "Configuration provides JSON/XML/CSV formats, source collection, field rules, required fields, defaults, constants, conversions and value lookup. Input payload defaults to the previous activity output; map payload to override it. Output is the transformed document directly, not a result wrapper. Preview uses the same engine as Run, Debug and Python export and explains each rule without contacting connectors. Advanced retry/logging policies are inherited. MEDIATION errors identify failed records/rules without exposing field values. Load Normalize orders, CSV customer onboarding or XML to business JSON for working examples. Limits: 2 MB text, 10,000 records, 200 rules; CSV output is flat. XML attributes become fields, repeated children become lists, mixed text uses _text; DTDs/entities and namespace-prefixed output names are not supported. This is deterministic rule-based mediation, not AI inference or full XSD validation." },
   mapper: { summary: "Maps execution-path data into a selected target schema.", behavior: "The consolidated Mapper includes schema trees, XPath-style functions, repeating For-Each/For-Each-Group rules, AI-assisted recommendations, validation, and an executable test surface." },
   transform: { summary: "Legacy Mapper activity retained for project compatibility.", behavior: "Existing Transform nodes continue to execute with Mapper behavior. New projects should use Mapper for visual/XPath mappings or Transform for DataWeave scripts." },
   ai_transform: { summary: "Legacy AI Mapper activity retained for project compatibility.", behavior: "Existing AI Transform nodes continue to use the consolidated Mapper and its AI recommendation/review workflow." },
@@ -1339,8 +1357,25 @@ function ActivityDocumentation({ node, contract }: { node: any; contract: Contra
     <DocumentationStructure title="Input contract" fields={runtimeMappableInputs(node, contract)}/>
     <DocumentationStructure title="Output contract" fields={contract.output}/>
     <section><h3>Errors and runtime policy</h3><div className="documentation-errors">{contract.errors.map((error) => <article key={error.type}><code>{error.type}</code><span>{error.description}</span></article>)}</div><p>Use the Errors tab to choose propagate, continue, or transition handling. The Advanced tab controls automatic payload logging and retry behavior for outbound calls.</p></section>
-    <section><h3>Mapping rules</h3><p>Every mappable field accepts a typed constant, an environment property such as <code>{'${properties.connections.http.host}'}</code>, a function expression, or a field selected from the hierarchical execution-path data tree.</p></section>
+    <section><h3>Mapping rules</h3><p>Every mappable field accepts a typed constant, an environment property such as <code>{'${properties.connections.http.host}'}</code>, a function expression, or a field selected from the hierarchical execution-path data tree. String constants require matching single or double quotes. Press Enter to validate; invalid mappings appear in dark red.</p></section>
+    <ActivityEditorGuidance type={node.type}/>
+    <section><h3>Mapping function reference</h3><div className="documentation-fields">{mapperFunctionCatalog.map(definition => <article key={definition.name}><b>{definition.signature}</b><code>{definition.category}</code><p>{definition.description}</p></article>)}</div></section>
   </div>;
+}
+
+function ActivityEditorGuidance({ type }: { type: string }) {
+  const groups = ["ActivityEditor", "InputEditor", "MappingContextMenu", "ExpandedInputMappingDialog", "OutputEditor", "AdvancedEditor", "ErrorEditor"];
+  if (type === "mediation") groups.push("MediationStudio", "MediationInputEditor");
+  if (["mapper", "transform", "ai_transform", "dataweave"].includes(type)) groups.push("TransformSchemaEditor", "TransformPoliciesEditor", "TransformInputEditor", "TransformOutputEditor", "TransformMapTestEditor");
+  if (type === "dataweave") groups.push("DataWeaveScriptEditor", "DataWeaveTestEditor");
+  if (type === "timer") groups.push("SchedulerEditor");
+  if (type === "jdbc") groups.push("JdbcDesigner");
+  if (type === "call_task") groups.push("CallTaskRoutingEditor");
+  if (type === "catch") groups.push("CatchAIEditor");
+  if (["start", "end"].includes(type)) groups.push("TaskBoundarySchemaEditor");
+  if (["xml", "json", "flat"].includes(type)) groups.push("DataContractSchemaEditor");
+  const wording = [...new Set(groups.flatMap(group => activityGuidance[group] || []))];
+  return <section className="activity-editor-guidance"><h3>Editor guidance</h3>{wording.map(text => <p key={text}>{text}</p>)}</section>;
 }
 
 export default function ActivityEditor({
@@ -1405,7 +1440,7 @@ export default function ActivityEditor({
         <div className="contract-heading">
           <SettingsTitle
             title="Activity configuration"
-            text="Operation settings and shared resources"
+
           />
         </div>
         <div className="contract-grid">
@@ -1451,6 +1486,7 @@ export default function ActivityEditor({
             </button>
           </>
         )}
+        {node.type === "mediation" && <MediationStudio config={cfg} schemas={schemas || []} setConfig={(next: any) => update({config: {...cfg, ...next}})}/>}
         {node.type === "dataweave" && <DataWeaveScriptEditor config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>}
         {(node.type === "start" || node.type === "end") && (
           <TaskBoundarySchemaEditor node={node} config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>
@@ -1468,8 +1504,9 @@ export default function ActivityEditor({
         )}
       </div>
     );
+  if (tab === "map_test" && node.type === "mediation") return <MediationStudio config={cfg} schemas={schemas || []} setConfig={(next:any)=>update({config:{...cfg,...next}})}/>;
   if (tab === "input")
-    return isMapperActivity(node.type) ? (
+    return node.type === "mediation" ? <MediationInputEditor node={node} config={cfg} set={(v: any) => set("inputMappings", v)} properties={properties} sources={upstreamSources} runtimeVariables={groupVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions}/> : isMapperActivity(node.type) ? (
       <TransformInputEditor config={cfg} schemas={schemas || []} properties={properties} sources={upstreamSources} runtimeVariables={groupVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} setMappings={(value: any) => set("mappings", value)}/>
     ) : (
       <InputEditor
@@ -1512,8 +1549,8 @@ export default function ActivityEditor({
 function CallTaskRoutingEditor({ config, tasks, properties, set }: any) {
   const subtasks = (tasks || []).filter((task: any) => task.kind === "subtask"), expression = String(config.dynamicTaskId || ""), literal = expression && !expression.startsWith("${"), resolvedDesignTime = literal ? subtasks.find((task: any) => task.id === expression || task.name === expression) : subtasks.find((task: any) => task.id === config.taskId);
   return <section className="call-task-routing">
-    <header><Workflow/><span><b>DYNAMIC SUB TASK ROUTING</b><small>Resolved at runtime for every call; the selected Sub Task supplies the fallback contract.</small></span><i>{expression ? "OVERRIDE ACTIVE" : "STATIC FALLBACK"}</i></header>
-    <div><label>Dynamic ID/name expression<input value={expression} onChange={(event) => set("dynamicTaskId", event.target.value)} placeholder="${properties.routing.targetTask}"/><small>Accepts a literal Sub Task ID/name, an environment property, task input, process variable, or previous activity output.</small></label><label>Insert project property<select value="" onChange={(event) => event.target.value && set("dynamicTaskId", `\${properties.${event.target.value}}`)}><option value="">Browse properties…</option>{(properties || []).map((property: any) => <option key={property.key} value={property.key}>{property.key}</option>)}</select><small>The expression is resolved using the active design-time or runtime environment.</small></label></div>
+    <header><Workflow/><span><b>DYNAMIC SUB TASK ROUTING</b></span><i>{expression ? "OVERRIDE ACTIVE" : "STATIC FALLBACK"}</i></header>
+    <div><label>Dynamic ID/name expression<input value={expression} onChange={(event) => set("dynamicTaskId", event.target.value)} placeholder="${properties.routing.targetTask}"/></label><label>Insert project property<select value="" onChange={(event) => event.target.value && set("dynamicTaskId", `\${properties.${event.target.value}}`)}><option value="">Browse properties…</option>{(properties || []).map((property: any) => <option key={property.key} value={property.key}>{property.key}</option>)}</select></label></div>
     <footer><span><b>Design-time interface</b>{resolvedDesignTime ? `${resolvedDesignTime.name} (${resolvedDesignTime.id})` : "No valid fallback Sub Task selected"}</span><span><b>Runtime precedence</b>dynamic override → selected fallback → TASK_NOT_FOUND</span></footer>
   </section>;
 }
@@ -1523,9 +1560,9 @@ function CatchAIEditor({ nodeId, exceptionTypes, handleExceptions }: any) {
   useEffect(() => setSelected([]), [nodeId]);
   const toggle = (type: string) => setSelected((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type]);
   return <section className="catch-ai-editor">
-    <header><WandSparkles/><span><b>Catch AI · Task exception analyzer</b><small>Declared exceptions from every activity in the current Task are available below.</small></span><i>{exceptionTypes.length} FOUND</i></header>
+    <header><WandSparkles/><span><b>Catch AI · Task exception analyzer</b></span><i>{exceptionTypes.length} FOUND</i></header>
     <div className="catch-ai-actions"><button type="button" onClick={() => setSelected(exceptionTypes)}>Select all</button><button type="button" onClick={() => setSelected([])}>Clear</button></div>
-    <div className="catch-ai-types">{exceptionTypes.map((type: string) => <label key={type} className={selected.includes(type) ? "selected" : ""}><input type="checkbox" checked={selected.includes(type)} onChange={() => toggle(type)}/><ShieldAlert/><span><b>{type}</b><small>Generate Catch → Throw handler block</small></span></label>)}</div>
+    <div className="catch-ai-types">{exceptionTypes.map((type: string) => <label key={type} className={selected.includes(type) ? "selected" : ""}><input type="checkbox" checked={selected.includes(type)} onChange={() => toggle(type)}/><ShieldAlert/><span><b>{type}</b></span></label>)}</div>
     <footer><span>Generated Throw activities map the caught error type, code, message, details, and stack trace automatically.</span><button type="button" disabled={!selected.length} onClick={() => handleExceptions?.(selected)}><WandSparkles/> Handle {selected.length || "selected"} exception{selected.length === 1 ? "" : "s"}</button></footer>
   </section>;
 }
@@ -1533,21 +1570,21 @@ function CatchAIEditor({ nodeId, exceptionTypes, handleExceptions }: any) {
 function SchedulerEditor({ config, set }: any) {
   const mode = config.scheduleMode || "dateTime";
   return <section className="scheduler-editor">
-    <header><CalendarClock/><span><b>Scheduler trigger</b><small>Choose one deterministic schedule mode for this Starter Task.</small></span></header>
+    <header><CalendarClock/><span><b>Scheduler trigger</b></span></header>
     <div className="scheduler-mode-tabs" role="tablist">
       <button type="button" className={mode === "dateTime" ? "active" : ""} onClick={() => set("scheduleMode", "dateTime")}>Date &amp; time</button>
       <button type="button" className={mode === "cron" ? "active" : ""} onClick={() => set("scheduleMode", "cron")}>Cron</button>
     </div>
     {mode === "dateTime" ? <div className="scheduler-fields">
-      <label>First execution date and time<input type="datetime-local" value={config.scheduledDateTime || ""} onChange={(event) => set("scheduledDateTime", event.target.value)}/><small>Uses the selected time zone.</small></label>
+      <label>First execution date and time<input type="datetime-local" value={config.scheduledDateTime || ""} onChange={(event) => set("scheduledDateTime", event.target.value)}/></label>
       <label>Time zone<select value={config.timezone || "local"} onChange={(event) => set("timezone", event.target.value)}><option value="local">Machine local time</option><option value="UTC">UTC</option></select></label>
       <label className="scheduler-check"><input type="checkbox" checked={!!config.repeatEnabled} onChange={(event) => set("repeatEnabled", event.target.checked)}/> Repeat after the first execution</label>
       {config.repeatEnabled && <><label>Every<input type="number" min="1" value={config.interval || 1} onChange={(event) => set("interval", Number(event.target.value))}/></label><label>Interval unit<select value={config.unit || "minutes"} onChange={(event) => set("unit", event.target.value)}><option>seconds</option><option>minutes</option><option>hours</option><option>days</option></select></label></>}
     </div> : <div className="scheduler-fields cron-fields">
-      <label>Cron expression<input value={config.cronExpression || "0 * * * *"} onChange={(event) => set("cronExpression", event.target.value)} placeholder="minute hour day month weekday"/><small>Five fields: minute, hour, day-of-month, month, day-of-week. Supports *, values, ranges, lists, and */step.</small></label>
+      <label>Cron expression<input value={config.cronExpression || "0 * * * *"} onChange={(event) => set("cronExpression", event.target.value)} placeholder="minute hour day month weekday"/></label>
       <label>Time zone<select value={config.timezone || "local"} onChange={(event) => set("timezone", event.target.value)}><option value="local">Machine local time</option><option value="UTC">UTC</option></select></label>
     </div>}
-    <label className="scheduler-run-once"><input type="checkbox" checked={config.runOnceOnLocalStart !== false} onChange={(event) => set("runOnceOnLocalStart", event.target.checked)}/><span><b>Run once now for local Run/Debug</b><small>Executes immediately during local testing without waiting for the scheduled instant. Production packaging still honors the configured schedule.</small></span></label>
+    <label className="scheduler-run-once"><input type="checkbox" checked={config.runOnceOnLocalStart !== false} onChange={(event) => set("runOnceOnLocalStart", event.target.checked)}/><span><b>Run once now for local Run/Debug</b></span></label>
   </section>;
 }
 
@@ -1574,7 +1611,7 @@ function DataWeaveScriptEditor({ config, schemas, setConfig }: any) {
     } catch (error: any) { setStatus(error.message || "AI generation failed"); }
   };
   return <section className="dataweave-editor">
-    <header><Braces/><span><b>DATAWEAVE TRANSFORM</b><small>Executable DataWeave 2.0-compatible integration language</small></span><button type="button" onClick={generate}><Sparkles/> AI generate</button></header>
+    <header><Braces/><span><b>DATAWEAVE TRANSFORM</b></span><button type="button" onClick={generate}><Sparkles/> AI generate</button></header>
     <div className="dataweave-contracts">
       <label>Source schema<select value={config.sourceSchemaId || ""} onChange={(event) => chooseSchema("sourceSchemaId", event.target.value)}><option value="">Runtime payload / no schema</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></label>
       <label>Target schema<select value={config.targetSchemaId || ""} onChange={(event) => chooseSchema("targetSchemaId", event.target.value)}><option value="">Dynamic output / no schema</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></label>
@@ -1588,7 +1625,7 @@ function DataWeaveScriptEditor({ config, schemas, setConfig }: any) {
     </div>
     <div className="dataweave-templates"><b>STARTING POINTS</b>{templates.map((template) => <button type="button" key={template.name} onClick={() => { setConfig({ script: template.script, outputMimeType: "application/json", inputMimeType: template.name === "CSV to JSON" ? "text/csv" : config.inputMimeType || "application/json", aiReviewRequired: false }); setStatus(`${template.name} template loaded. Use Map & Test with representative data before Run.`); }}>{template.name}</button>)}</div>
     <label className="dataweave-script"><span>Transform script <i>runtime executable</i></span><textarea value={config.script || "%dw 2.0\noutput application/json\n---\npayload"} onChange={(event) => setConfig({ script: event.target.value, aiReviewRequired: false })} spellCheck={false}/></label>
-    <div className="dataweave-capabilities"><b>Embedded engine</b><span>Nested &amp; wildcard selectors</span><span>Objects &amp; arrays</span><span>default / if-else</span><span>Custom functions</span><span>as type coercion</span><span>map / flatMap / filter</span><span>mapObject / pluck</span><span>groupBy / orderBy / distinctBy</span><span>read / write</span><span>JSON / XML / CSV / text</span><small>Common integration transformations execute locally in Run, Debug, and Test. Namespaces, type declarations, pattern matching, annotations, and Mule runtime-only modules are rejected explicitly.</small></div>
+
     {status && <p className="dataweave-status">{status}</p>}
   </section>;
 }
@@ -1610,7 +1647,7 @@ function DataWeaveTestEditor({ config, setConfig }: any) {
     } catch (error: any) { setState("error"); setMessage(error.message || "Transform test failed"); setOutput(""); }
   };
   return <div className="activity-tab dataweave-test">
-    <header><FlaskConical/><span><b>Transform · Test</b><small>Execute representative payload data before running the Task.</small></span></header>
+    <header><FlaskConical/><span><b>Transform · Test</b></span></header>
     <main><section className="dataweave-test-inputs"><label><span>INPUT PAYLOAD · {config.inputMimeType || "application/json"}</span><textarea value={input} onChange={(event) => { setInput(event.target.value); setState("idle"); }} spellCheck={false}/></label><details><summary>Message attributes</summary><textarea aria-label="Sample message attributes" value={attributes} onChange={(event) => { setAttributes(event.target.value); setState("idle"); }} spellCheck={false}/></details><details><summary>Flow variables</summary><textarea aria-label="Sample flow variables" value={variables} onChange={(event) => { setVariables(event.target.value); setState("idle"); }} spellCheck={false}/></details></section><label><span>GENERATED OUTPUT · {config.outputTarget || "payload"}</span><pre>{output || "Run the transform to generate output."}</pre></label></main>
     <footer className={state}><span>{state === "valid" ? <CheckCircle2/> : state === "error" ? <AlertTriangle/> : <FlaskConical/>}{message}</span><button type="button" disabled={state === "running" || !String(config.script || "").trim()} onClick={run}>{state === "running" ? "Running…" : "Run transform"}</button></footer>
   </div>;
@@ -1626,26 +1663,26 @@ function TransformSchemaEditor({ config, schemas, setConfig }: any) {
     if (schema) setConfig({ targetSchemaId: schema.id, targetSchemaText: schema.content });
   };
   const id = config.targetSchemaId || "inline", text = config.targetSchemaText || JSON.stringify(config.targetSchema || {}, null, 2);
-  return <div className="transform-schema-editor"><div className="transform-schema-heading"><Braces/><span><b>TARGET TRANSFORMATION CONTRACT</b><small>Select an XSD from Project Schemas or define the target structure inline.</small></span></div><div className="transform-schema-columns single"><section><header><span><b>Target schema</b><small>{id === "inline" ? "Inline JSON Schema, sample JSON, or XSD" : "Project XSD with an editable working copy"}</small></span><select aria-label="Target schema" value={id} onChange={(event) => choose(event.target.value)}><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header><textarea aria-label="Target inline schema" value={text} onChange={(event) => setConfig({ targetSchemaId: "", targetSchemaText: event.target.value })} placeholder="Paste target JSON Schema or XSD here…" spellCheck={false}/><SchemaHierarchyPreview text={text}/></section></div></div>;
+  return <div className="transform-schema-editor"><div className="transform-schema-heading"><Braces/><span><b>TARGET TRANSFORMATION CONTRACT</b></span></div><div className="transform-schema-columns single"><section><header><span><b>Target schema</b></span><select aria-label="Target schema" value={id} onChange={(event) => choose(event.target.value)}><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header><textarea aria-label="Target inline schema" value={text} onChange={(event) => setConfig({ targetSchemaId: "", targetSchemaText: event.target.value })} placeholder="Paste target JSON Schema or XSD here…" spellCheck={false}/><SchemaHierarchyPreview text={text}/></section></div></div>;
 }
 
 function TransformPoliciesEditor({ ai, config, setConfig }: any) {
   const change = (key: string, value: any) => setConfig({ [key]: value });
   return <section className="transform-policies">
-    <header><WandSparkles/><span><b>INTEGRATION MAPPING POLICIES</b><small>Executable output, compatibility, validation, and failure behavior</small></span></header>
+    <header><WandSparkles/><span><b>INTEGRATION MAPPING POLICIES</b></span></header>
     <div className="transform-policy-grid">
       <label>Mapping dialect<select value={config.language || "XPath 2.0 / functions"} onChange={(event) => change("language", event.target.value)}><option>XPath 2.0 / functions</option><option>XPath 1.0 compatibility</option><option>JSONPath / functions</option><option>XSLT 2.0 compatibility</option></select></label>
       <label>Null and missing values<select value={config.nullPolicy || "omit"} onChange={(event) => change("nullPolicy", event.target.value)}><option value="omit">Omit target field</option><option value="preserve">Preserve null / xsi:nil</option><option value="empty-string">Emit empty string</option><option value="default">Use configured default</option></select></label>
       <label>Type coercion<select value={config.typeCoercion || "safe"} onChange={(event) => change("typeCoercion", event.target.value)}><option value="strict">Strict schema types</option><option value="safe">Safe automatic coercion</option><option value="off">No coercion</option></select></label>
       <label>Mapping error behavior<select value={config.onMappingError || "fail"} onChange={(event) => change("onMappingError", event.target.value)}><option value="fail">Fail activity</option><option value="skip-field">Skip failed field</option><option value="use-null">Map null and continue</option></select></label>
-      <label>Maximum output size (KB)<input type="number" min="0" step="1" value={config.maxOutputSizeKb || 0} onChange={(event) => change("maxOutputSizeKb", Math.max(0, Number(event.target.value) || 0))}/><small>0 means unlimited; execution fails before publishing an oversized result.</small></label>
+      <label>Maximum output size (KB)<input type="number" min="0" step="1" value={config.maxOutputSizeKb || 0} onChange={(event) => change("maxOutputSizeKb", Math.max(0, Number(event.target.value) || 0))}/></label>
       {config.nullPolicy === "default" && <label>Default null value<input value={config.defaultValue ?? ""} onChange={(event) => change("defaultValue", event.target.value)} placeholder="Schema-compatible fallback"/></label>}
-      <label className="policy-switch"><input type="checkbox" checked={config.validateOutput !== false} onChange={(event) => change("validateOutput", event.target.checked)}/><span><b>Validate target output</b><small>Reject output that violates the configured JSON schema.</small></span></label>
-      <label className="policy-switch"><input type="checkbox" checked={config.trimStrings === true} onChange={(event) => change("trimStrings", event.target.checked)}/><span><b>Trim mapped strings</b><small>Remove surrounding whitespace after functions are applied.</small></span></label>
-      <label className="policy-switch"><input type="checkbox" checked={config.removeEmptyStructures === true} onChange={(event) => change("removeEmptyStructures", event.target.checked)}/><span><b>Remove empty structures</b><small>Prune null, empty objects, arrays, and strings from the final result.</small></span></label>
-      <label className="policy-switch"><input type="checkbox" checked={config.copyNil !== false} onChange={(event) => change("copyNil", event.target.checked)}/><span><b>Copy nil semantics</b><small>Preserve explicit source null values when the null policy allows them.</small></span></label>
+      <label className="policy-switch"><input type="checkbox" checked={config.validateOutput !== false} onChange={(event) => change("validateOutput", event.target.checked)}/><span><b>Validate target output</b></span></label>
+      <label className="policy-switch"><input type="checkbox" checked={config.trimStrings === true} onChange={(event) => change("trimStrings", event.target.checked)}/><span><b>Trim mapped strings</b></span></label>
+      <label className="policy-switch"><input type="checkbox" checked={config.removeEmptyStructures === true} onChange={(event) => change("removeEmptyStructures", event.target.checked)}/><span><b>Remove empty structures</b></span></label>
+      <label className="policy-switch"><input type="checkbox" checked={config.copyNil !== false} onChange={(event) => change("copyNil", event.target.checked)}/><span><b>Copy nil semantics</b></span></label>
     </div>
-    {ai && <div className="ai-policy-panel"><header><Sparkles/><span><b>AI MAPPING ASSISTANCE</b><small>Suggestions never overwrite manually approved rules.</small></span></header><div><label>Minimum confidence<input type="range" min="40" max="100" value={config.threshold || 70} onChange={(event) => change("threshold", Number(event.target.value))}/><b>{config.threshold || 70}%</b></label><label>Matching strategy<select value={config.aiStrategy || "balanced"} onChange={(event) => change("aiStrategy", event.target.value)}><option value="balanced">Balanced name, type, and hierarchy</option><option value="strict">Strict schema and type match</option><option value="semantic">Semantic business-name match</option></select></label><label className="policy-switch"><input type="checkbox" checked={config.requireAiReview !== false} onChange={(event) => change("requireAiReview", event.target.checked)}/><span><b>Require approval</b><small>Keep recommended mappings pending until reviewed.</small></span></label><label className="policy-switch"><input type="checkbox" checked={config.autoMapRepeating !== false} onChange={(event) => change("autoMapRepeating", event.target.checked)}/><span><b>Infer repeating structures</b><small>Recommend For-Each for compatible source and target cardinality.</small></span></label></div></div>}
+    {ai && <div className="ai-policy-panel"><header><Sparkles/><span><b>AI MAPPING ASSISTANCE</b></span></header><div><label>Minimum confidence<input type="range" min="40" max="100" value={config.threshold || 70} onChange={(event) => change("threshold", Number(event.target.value))}/><b>{config.threshold || 70}%</b></label><label>Matching strategy<select value={config.aiStrategy || "balanced"} onChange={(event) => change("aiStrategy", event.target.value)}><option value="balanced">Balanced name, type, and hierarchy</option><option value="strict">Strict schema and type match</option><option value="semantic">Semantic business-name match</option></select></label><label className="policy-switch"><input type="checkbox" checked={config.requireAiReview !== false} onChange={(event) => change("requireAiReview", event.target.checked)}/><span><b>Require approval</b></span></label><label className="policy-switch"><input type="checkbox" checked={config.autoMapRepeating !== false} onChange={(event) => change("autoMapRepeating", event.target.checked)}/><span><b>Infer repeating structures</b></span></label></div></div>}
   </section>;
 }
 
@@ -1660,7 +1697,7 @@ function TaskBoundarySchemaEditor({ node, config, schemas, setConfig }: any) {
     if (schema) setConfig({ interfaceSchemaId: schema.id, interfaceSchemaText: schema.content });
   };
   const selected = config.interfaceSchemaId || (config.interfaceSchemaText ? "inline" : ""), start = node.type === "start";
-  return <div className="transform-schema-editor task-interface-editor"><div className="transform-schema-heading"><Braces/><span><b>{start ? "TASK INPUT INTERFACE" : "TASK RETURN INTERFACE"}</b><small>{start ? "Defines the data accepted by this task and published by Start." : "Defines the response mapped into End and returned to Call Sub Task."}</small></span></div><div className="transform-schema-columns single"><section><header><span><b>{start ? "Input schema" : "Output schema"}</b><small>Select a project schema or define an inline JSON Schema/XSD contract.</small></span><select aria-label={start ? "Task input schema" : "Task output schema"} value={selected} onChange={(event) => choose(event.target.value)}><option value="">Generic object</option><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header>{selected && <><textarea aria-label={start ? "Task input inline schema" : "Task output inline schema"} value={config.interfaceSchemaText || ""} onChange={(event) => setConfig({ interfaceSchemaId: "", interfaceSchemaText: event.target.value })} placeholder="Paste JSON Schema or XSD here…" spellCheck={false}/><SchemaHierarchyPreview text={config.interfaceSchemaText || ""}/></>}</section></div></div>;
+  return <div className="transform-schema-editor task-interface-editor"><div className="transform-schema-heading"><Braces/><span><b>{start ? "TASK INPUT INTERFACE" : "TASK RETURN INTERFACE"}</b></span></div><div className="transform-schema-columns single"><section><header><span><b>{start ? "Input schema" : "Output schema"}</b></span><select aria-label={start ? "Task input schema" : "Task output schema"} value={selected} onChange={(event) => choose(event.target.value)}><option value="">Generic object</option><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header>{selected && <><textarea aria-label={start ? "Task input inline schema" : "Task output inline schema"} value={config.interfaceSchemaText || ""} onChange={(event) => setConfig({ interfaceSchemaId: "", interfaceSchemaText: event.target.value })} placeholder="Paste JSON Schema or XSD here…" spellCheck={false}/><SchemaHierarchyPreview text={config.interfaceSchemaText || ""}/></>}</section></div></div>;
 }
 
 function DataContractSchemaEditor({ node, config, schemas, direction, setConfig }: any) {
@@ -1676,7 +1713,7 @@ function DataContractSchemaEditor({ node, config, schemas, direction, setConfig 
     }
     setConfig({ schemaId: id, schemaText: "" });
   };
-  return <div className="transform-schema-editor data-contract-editor"><div className="transform-schema-heading"><Braces/><span><b>{direction === "input" ? "INPUT EDITOR" : "OUTPUT EDITOR"} · {format} CONTRACT</b><small>{direction === "input" ? "Define the tree to map before serialization." : "Define the tree published after parsing."}</small></span></div><div className="transform-schema-columns single"><section><header><span><b>Structure schema</b><small>Choose a project XSD/JSON schema or provide an inline definition.</small></span><select aria-label={`${direction} structure schema`} value={selected} onChange={(event) => choose(event.target.value)}><option value="">Select schema…</option><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header>{selected === "inline" && <textarea aria-label={`Inline ${direction} schema`} value={config.schemaText || ""} onChange={(event) => setConfig({ schemaId: "", schemaText: event.target.value })} placeholder="Paste an inline XSD or JSON Schema here…" spellCheck={false}/>}<SchemaHierarchyPreview text={text}/></section></div></div>;
+  return <div className="transform-schema-editor data-contract-editor"><div className="transform-schema-heading"><Braces/><span><b>{direction === "input" ? "INPUT EDITOR" : "OUTPUT EDITOR"} · {format} CONTRACT</b></span></div><div className="transform-schema-columns single"><section><header><span><b>Structure schema</b></span><select aria-label={`${direction} structure schema`} value={selected} onChange={(event) => choose(event.target.value)}><option value="">Select schema…</option><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header>{selected === "inline" && <textarea aria-label={`Inline ${direction} schema`} value={config.schemaText || ""} onChange={(event) => setConfig({ schemaId: "", schemaText: event.target.value })} placeholder="Paste an inline XSD or JSON Schema here…" spellCheck={false}/>}<SchemaHierarchyPreview text={text}/></section></div></div>;
 }
 
 function SchemaHierarchyPreview({ text }: { text: string }) {
@@ -1715,7 +1752,7 @@ function JdbcDesigner({ config, resource, properties, setConfig }: any) {
   };
   const fetchMetadata = async () => { const output = await request("/api/jdbc/metadata", { resource: runtimeResource }); if (output) { setMetadata(output); setStatus(`${output.tables?.length || 0} tables and views fetched.`); } };
   const run = async () => { const output = await request("/api/jdbc/test-query", { resource: runtimeResource, operation: config.operation, config: { ...config, parameters: Object.fromEntries((config.preparedParameterNames || []).map((name: string) => [name, null])) } }); if (output) { setPreview(output); const columns = output.columns || Object.keys(output.rows?.[0] || {}).map((name) => ({ name, dataType: typeof output.rows[0][name] })); setConfig({ outputColumns: columns }); setStatus(`${output.rowCount ?? output.noOfUpdates ?? 0} rows returned/affected. Output schema refreshed.`); } };
-  return <section className="jdbc-designer"><header><span><Database/><b>JDBC SQL DESIGNER</b><small>Prepared SQL editor · parameters become typed Input fields automatically.</small></span><span><button type="button" onClick={fetchMetadata} disabled={busy || !resource}><RefreshCw/> Fetch metadata</button><button type="button" onClick={run} disabled={busy || !resource || (!String(config.sql || "").trim() && config.operation !== "call")}><FlaskConical/> Run &amp; fetch</button></span></header>{config.operation !== "call" && <><div className="jdbc-editor-toolbar"><span><b>SQL statement</b><small>Use <code>:parameterName</code> for safe dynamic values.</small></span><button type="button" onClick={() => updateSql(samples[config.operation] || samples.query)}>Insert sample {config.operation || "query"}</button></div><div className="jdbc-code-editor"><span aria-hidden="true">SQL</span><textarea aria-label="JDBC SQL statement" value={config.sql || ""} onChange={(event) => updateSql(event.target.value)} placeholder={samples[config.operation] || samples.query} spellCheck={false}/></div></>} {!!configuredParameters.length && <div className="jdbc-parameters"><header><b>Derived input parameters</b><small>Map values in Input → parameters; choose the database datatype here.</small></header>{configuredParameters.map((parameter: any, index: number) => <label key={`${parameter.name}-${index}`}><code>{index + 1}</code><span><b>:{parameter.name}</b><small>parameters.{parameter.name}</small></span><select aria-label={`Datatype for ${parameter.name}`} value={parameter.type || "string"} onChange={(event) => setParameterType(parameter.name, event.target.value)}>{parameterTypes.map((type) => <option key={type}>{type}</option>)}</select></label>)}</div>} {metadata && <div className="jdbc-schema-browser">{metadata.tables?.map((table: any) => <button type="button" key={`${table.schema}.${table.name}`} onClick={() => updateSql(`SELECT * FROM ${table.schema ? `${table.schema}.` : ""}${table.name}`)}><span><b>{table.name}</b><small>{table.schema} · {table.type}</small></span><code>{table.columns?.length || 0} columns</code></button>)}</div>} {preview && <pre>{JSON.stringify(preview, null, 2)}</pre>} {status && <p>{status}</p>}</section>;
+  return <section className="jdbc-designer"><header><span><Database/><b>JDBC SQL DESIGNER</b></span><span><button type="button" onClick={fetchMetadata} disabled={busy || !resource}><RefreshCw/> Fetch metadata</button><button type="button" onClick={run} disabled={busy || !resource || (!String(config.sql || "").trim() && config.operation !== "call")}><FlaskConical/> Run &amp; fetch</button></span></header>{config.operation !== "call" && <><div className="jdbc-editor-toolbar"><span><b>SQL statement</b></span><button type="button" onClick={() => updateSql(samples[config.operation] || samples.query)}>Insert sample {config.operation || "query"}</button></div><div className="jdbc-code-editor"><span aria-hidden="true">SQL</span><textarea aria-label="JDBC SQL statement" value={config.sql || ""} onChange={(event) => updateSql(event.target.value)} placeholder={samples[config.operation] || samples.query} spellCheck={false}/></div></>} {!!configuredParameters.length && <div className="jdbc-parameters"><header><b>Derived input parameters</b></header>{configuredParameters.map((parameter: any, index: number) => <label key={`${parameter.name}-${index}`}><code>{index + 1}</code><span><b>:{parameter.name}</b><small>parameters.{parameter.name}</small></span><select aria-label={`Datatype for ${parameter.name}`} value={parameter.type || "string"} onChange={(event) => setParameterType(parameter.name, event.target.value)}>{parameterTypes.map((type) => <option key={type}>{type}</option>)}</select></label>)}</div>} {metadata && <div className="jdbc-schema-browser">{metadata.tables?.map((table: any) => <button type="button" key={`${table.schema}.${table.name}`} onClick={() => updateSql(`SELECT * FROM ${table.schema ? `${table.schema}.` : ""}${table.name}`)}><span><b>{table.name}</b><small>{table.schema} · {table.type}</small></span><code>{table.columns?.length || 0} columns</code></button>)}</div>} {preview && <pre>{JSON.stringify(preview, null, 2)}</pre>} {status && <p>{status}</p>}</section>;
 }
 
 function FieldEditor({ field, value, set, resources, tasks, properties = [], selectedResourceId, navigateTask }: any) {
@@ -1731,7 +1768,6 @@ function FieldEditor({ field, value, set, resources, tasks, properties = [], sel
   return (
     <label
       className={field.type === "textarea" ? "wide" : ""}
-      title={field.help || ""}
     >
       {field.label}
       {field.required && <b>*</b>}
@@ -1852,7 +1888,7 @@ function FieldEditor({ field, value, set, resources, tasks, properties = [], sel
         onChange={(e) => change(field.type === "number" ? Number(e.target.value) : e.target.value)}
         />
       )}{" "}
-      {field.help && <small>{field.help}</small>}
+
     </label>
   );
 }
@@ -1927,7 +1963,7 @@ export function DataSourcePane({ properties, sources = [], customFunctions = [],
   const functionItems = mapperFunctionCatalog.filter((definition) => !search || `${definition.name} ${definition.signature} ${definition.description} ${definition.category}`.toLowerCase().includes(search.toLowerCase()));
   const functionItem = (definition: (typeof mapperFunctionCatalog)[number]) => {
     const expression = functionExpression(definition, selectedSource || "${last}");
-    return <button className="source-tree-node mapper-function-source" key={definition.name} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("expression", expression); event.dataTransfer.setData("sourceType", "function"); }} onClick={() => setSelectedSource(expression)} title={`${definition.signature} — ${definition.description}`}><DataNodeIcon/><span><b>{definition.name}</b><small>{definition.signature}</small><em>{definition.description}</em></span><code>fx</code></button>;
+    return <button className="source-tree-node mapper-function-source" key={definition.name} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("expression", expression); event.dataTransfer.setData("sourceType", "function"); }} onClick={() => setSelectedSource(expression)} title={definition.signature}><DataNodeIcon/><span><b>{definition.name}</b><small>{definition.signature}</small></span><code>fx</code></button>;
   };
   const constantItem = (label: string, value: any, type: string) => <button className="source-tree-node constant-source" key={label} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("expression", `__mina_constant__:${JSON.stringify(value)}`); event.dataTransfer.setData("sourceType", type); }} title={`Drag ${label} onto a simple target field`}><Braces/><span><b>{label}</b><small>{JSON.stringify(value)}</small></span><code>{type}</code></button>;
   const createFunction = () => {
@@ -1992,7 +2028,7 @@ function isComplexSchemaType(fieldType: any): boolean {
   // complex schema branches with child fields remain structural nodes.
   return type === "complex" || type === "json" || type.includes("array") || type.endsWith("[]") || type.includes("complex[]") || type.includes("object[]");
 }
-function MappingBinding({ expression, sources, onChange, onConstantChange, fieldType = "string", structural = false }: any) {
+function MappingBinding({ expression, sources, onChange, onConstantChange, fieldType = "string", validationType = fieldType, structural = false }: any) {
   const completionPaths = ["input", "last", ...(sources || []).flatMap((source: ActivitySource) => {
     const root = activityReferenceName(source.activity.name);
     const fields = dataTreeRows(source.fields);
@@ -2001,76 +2037,57 @@ function MappingBinding({ expression, sources, onChange, onConstantChange, field
       ...(source.distance === 1 ? fields.map(field => `last.${field.path}`) : [])];
   })];
   const hasValue = expression !== undefined && expression !== null && expression !== "";
-  const editableExpression = mappingSource(expression);
-  const type = String(fieldType).toLowerCase();
-  const booleanType = type.includes("boolean");
-  const integerType = ["integer", "long", "short", "byte"].some((name) => type.includes(name));
-  const numericType = integerType || ["number", "decimal", "double", "float"].some((name) => type.includes(name));
-  const sourceExpression = typeof editableExpression === "string" && (editableExpression.startsWith("${") || editableExpression.startsWith("$") || editableExpression.includes("("));
-  const literalValue = sourceExpression || editableExpression === "" || editableExpression == null
-    ? ""
-    : (!booleanType && !numericType && typeof editableExpression === "string"
-      ? (/^(['"]).*\1$/.test(editableExpression) ? editableExpression : JSON.stringify(editableExpression))
-      : String(editableExpression));
-  const constantPanel = useRef<HTMLDetailsElement>(null);
-  const validationFailure = useRef(false);
-  const [literalDraft, setLiteralDraft] = useState(() => literalValue);
-  const [literalError, setLiteralError] = useState("");
+  const sourceValue = mappingSource(expression);
+  const editableExpression = sourceValue && typeof sourceValue === "object" ? JSON.stringify(sourceValue) : sourceValue;
+  const [validationRequested, setValidationRequested] = useState(false);
+  const mappingError = validationRequested ? validateMapping(editableExpression, validationType, completionPaths) : "";
+  const commitMapping = (raw: string) => {
+    setValidationRequested(true);
+    if (validateMapping(raw, validationType, completionPaths)) return;
+    const type = String(fieldType).toLowerCase();
+    if (/^[\[{]/.test(raw.trim()) && /array|\[\]|object|json/.test(String(validationType).toLowerCase())) {
+      try { (onConstantChange || onChange)(JSON.parse(raw)); } catch { /* Preserve expressions; they resolve at runtime. */ }
+    }
+    else if (/^(true|false)$/.test(raw.trim()) && type === "boolean") (onConstantChange || onChange)(raw.trim() === "true");
+    else if (/^(number|integer|int|long|short|byte|decimal|double|float)$/.test(type) && Number.isFinite(Number(raw)) && raw.trim()) (onConstantChange || onChange)(Number(raw));
+    else if (onConstantChange && /^(['"])[\s\S]*\1$/.test(raw)) onConstantChange(raw.slice(1, -1));
+  };
+  const mappingInput = <MappingExpressionInput value={editableExpression} paths={completionPaths} onChange={onChange} onCommit={commitMapping} error={mappingError}/>;
 
-  useEffect(() => { setLiteralDraft(literalValue); setLiteralError(""); }, [literalValue]);
-
-  if (structural || isComplexSchemaType(fieldType)) {
-    return <div className={`mapping-binding structural-binding ${hasValue ? "mapped" : ""}`}><Braces/><MappingExpressionInput label="Object mapping expression" value={editableExpression} paths={completionPaths} onChange={onChange}/>{hasValue && <button type="button" title="Clear structural statement" onClick={(event) => { event.stopPropagation(); onChange(""); }}>×</button>}</div>;
+  const statement = expression?.$rule || expression?.operator;
+  if (['choose', 'when-otherwise', 'if'].includes(statement)) {
+    let branches = expression.whens;
+    if (statement === 'choose' && !branches?.length) {
+      try { branches = JSON.parse(expression.source || '[]'); } catch { branches = []; }
+    }
+    if (statement !== 'choose') branches = [{ condition: expression.condition || '', source: expression.select ?? expression.source ?? '' }];
+    const updateBranch = (index: number, patch: any) => {
+      if (statement !== 'choose') { onChange({...expression, ...patch, ...('source' in patch ? {select: undefined} : {})}); return; }
+      const whens = branches.map((branch: any, current: number) => current === index ? {...branch, ...patch} : branch);
+      onChange({...expression, whens, source: JSON.stringify(whens)});
+    };
+    const drop = (event: React.DragEvent, change: (value: string) => void) => {
+      event.preventDefault(); event.stopPropagation();
+      const value = event.dataTransfer.getData('expression');
+      if (value) change(value);
+    };
+    return <div className="field-condition-tree" onContextMenu={event => event.stopPropagation()} onDragOver={event => {event.preventDefault(); event.stopPropagation();}} onDrop={event => {event.preventDefault(); event.stopPropagation();}}>
+      <div className="field-condition-heading"><b>{statement === 'if' ? '[If]' : '[Choose]'}</b><button type="button" onClick={() => onChange('')} aria-label="Remove field conditions">Remove conditions</button></div>
+      {(branches || []).map((branch: any, index: number) => <details open className="field-condition-branch" key={index}>
+        <summary>{statement === 'if' ? '[If]' : `[When ${index + 1}]`}</summary>
+        <label onDrop={event => drop(event, condition => updateBranch(index, {condition}))}>Condition<MappingExpressionInput label={`When ${index + 1} condition`} value={branch.condition} paths={completionPaths} onChange={(condition: string) => updateBranch(index, {condition})}/></label>
+        <div onDrop={event => drop(event, source => updateBranch(index, {source}))}><MappingBinding expression={branch.source ?? ''} fieldType={fieldType} validationType={validationType} sources={sources} onChange={(source: any) => updateBranch(index, {source})}/></div>
+      </details>)}
+      {statement !== 'if' && <details open className="field-condition-branch" onDrop={event => drop(event, otherwise => onChange({...expression, otherwise}))}><summary>[Otherwise]</summary><MappingBinding expression={expression.otherwise ?? ''} fieldType={fieldType} validationType={validationType} sources={sources} onChange={(otherwise: any) => onChange({...expression, otherwise})}/></details>}
+    </div>;
   }
 
-  const commitConstant = (raw: string): boolean => {
-    const commit = onConstantChange || onChange;
-    if (booleanType) {
-      validationFailure.current = false; setLiteralError(""); commit(raw === "true"); return true;
-    }
-    if (numericType) {
-      const valid = integerType ? /^-?\d+$/.test(raw) : /^-?(?:\d+\.?\d*|\.\d+)$/.test(raw);
-      if (!valid) {
-        validationFailure.current = true;
-        setLiteralError(integerType ? "Enter an integer without quotes or special characters." : "Enter a numeric value without quotes or special characters.");
-        return false;
-      }
-      validationFailure.current = false; setLiteralError(""); commit(Number(raw)); return true;
-    }
-    const quoted = raw.match(/^(['"])([\s\S]*)\1$/);
-    if (!quoted) { validationFailure.current = true; setLiteralError("String constants must be enclosed in matching single or double quotes."); return false; }
-    if (/[\u0000-\u001f]/.test(quoted[2])) { validationFailure.current = true; setLiteralError("Control characters are not allowed in string constants."); return false; }
-    validationFailure.current = false; setLiteralError(""); commit(onConstantChange ? quoted[2] : raw); return true;
-  };
-  const finishConstant = (raw: string) => {
-    if (raw !== "" && commitConstant(raw) && constantPanel.current) constantPanel.current.open = false;
-  };
-
-  return <div className={`mapping-binding ${hasValue ? "mapped" : ""} ${literalError ? "literal-invalid" : ""}`}>
-    <MappingExpressionInput value={editableExpression} paths={completionPaths} onChange={onChange}/>
-    {hasValue && <button type="button" title="Clear value" onClick={(event) => { event.stopPropagation(); onChange(""); }}>×</button>}
-    <details
-      ref={constantPanel}
-      className="mapping-constant-editor"
-      onClick={(event) => event.stopPropagation()}
-      onToggle={(event) => { const panel = event.currentTarget; if (panel.open) window.setTimeout(() => panel.querySelector<HTMLElement>("input,select")?.focus(), 0); }}
-      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as globalThis.Node) && !validationFailure.current && constantPanel.current) constantPanel.current.open = false; }}
-    >
-      <summary role="button" tabIndex={0} aria-label={`Enter ${fieldType} constant value`} title="Enter a schema-typed constant value" onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.parentElement?.toggleAttribute("open"); } }}>123</summary>
-      <div className="mapping-constant-box">
-        <b>{fieldType} constant</b>
-        {booleanType ? (
-          <select aria-label="Constant boolean value" value={editableExpression === true ? "true" : editableExpression === false ? "false" : ""} onChange={(event) => { if (commitConstant(event.target.value) && constantPanel.current) constantPanel.current.open = false; }}><option value="">Select…</option><option value="true">true</option><option value="false">false</option></select>
-        ) : (
-          <input type="text" inputMode={numericType ? "decimal" : "text"} aria-label={`${fieldType} constant value`} value={literalDraft} placeholder={numericType ? (integerType ? "123" : "123.45") : "\"text value\" or 'text value'"} onChange={(event) => { const raw = event.target.value; if (numericType && !/^-?(?:\d*\.?\d*)?$/.test(raw)) return; validationFailure.current = false; setLiteralDraft(raw); setLiteralError(""); }} onBlur={() => finishConstant(literalDraft)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); finishConstant(literalDraft); } if (event.key === "Escape" && constantPanel.current) constantPanel.current.open = false; }}/>
-        )}
-        <small>{numericType ? "Numbers are unquoted and accept digits, an optional leading minus, and a decimal point when supported." : booleanType ? "Select the schema-valid boolean value." : "Strings require matching single or double quotes."}</small>
-        {literalError && <em role="alert">{literalError}</em>}
-      </div>
-    </details>
-    <details className="mapping-function-editor" onClick={(event) => event.stopPropagation()}><summary role="button" tabIndex={0} aria-label={`Enter advanced expression for ${fieldType} field`} title="Open function and expression editor" onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.currentTarget.parentElement?.toggleAttribute("open"); } }}>fx</summary><div className="mapping-function-box"><b>Function or expression</b><MappingExpressionInput label="Advanced mapping expression" value={editableExpression} paths={completionPaths} onChange={onChange}/><small>Type a dot inside a data expression for fields, or Ctrl+Space for suggestions. Enter/Tab accepts a suggestion.</small></div></details>
+  return <div className={`mapping-binding compact-mapping-binding ${structural || isComplexSchemaType(fieldType) ? "structural-binding" : ""} ${hasValue ? "mapped" : ""} ${mappingError ? "mapping-invalid" : ""}`}>
+    {mappingInput}
+    {hasValue && <button type="button" title="Clear value" aria-label="Clear mapping value" onClick={(event) => { event.stopPropagation(); setValidationRequested(false); onChange(""); }}>×</button>}
   </div>;
 }
+
 function MappingConnections({ root, mappings }: any) {
   const [paths, setPaths] = useState<Array<{ key: string; d: string }>>([]);
   useEffect(() => {
@@ -2105,21 +2122,77 @@ function ExpandedInputMappingDialog({ title, mappingCount, onClose, onApply, chi
   }, [onClose]);
   return createPortal(<div className="modal-backdrop input-mapper-backdrop" role="presentation">
     <div className="input-mapper-dialog" role="dialog" aria-modal="true" aria-label={`${title} input mapper`}>
-      <header><div><Pencil/><span><b>{title}</b><small>Map execution data, functions, properties, and typed constants to the desired target fields.</small></span></div><i>{mappingCount} MAPPED</i><button type="button" aria-label="Close input mapper" title="Close" onClick={onClose}><X/></button></header>
+      <header><div><Pencil/><span><b>{title}</b></span></div><i>{mappingCount} MAPPED</i><button type="button" aria-label="Close input mapper" title="Close" onClick={onClose}><X/></button></header>
       <div className="input-mapper-content">{children}</div>
       <footer><span>Changes remain local until you apply the mappings.</span><button type="button" onClick={onClose}>Cancel</button><button type="button" className="primary" onClick={onApply}><CheckCircle2/> Apply mappings</button></footer>
     </div>
   </div>, document.body);
 }
 
+function MediationInputEditor({node,config,...props}:any) {
+  const [schemaFields,setFields]=useState<any[]>([]), [error,setError]=useState('');
+  useEffect(()=>{const controller=new AbortController();setFields([]);setError('');if(!config.targetSchemaText?.trim())return;
+    fetch('/api/mediation/schema',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({schema:config.targetSchemaText}),signal:controller.signal}).then(async r=>{const value=await r.json();if(!r.ok)throw Error(value.detail||'Invalid target schema');if(!controller.signal.aborted)setFields(value.fields);}).catch(e=>{if(!controller.signal.aborted)setError(e.message);});return ()=>controller.abort();
+  },[config.targetSchemaText]);
+  const targets=new Map<string,any>(schemaFields.map((f:any)=>[f.path,f]));
+  for(const rule of config.rules||[])if(rule.target&&!targets.has(rule.target))targets.set(rule.target,{path:rule.target,type:'any',required:rule.required});
+  const fields: DataField[] = [
+    d('payload', 'Source message / collection (optional)', 'any'),
+    ...Array.from(targets.values()).filter(f => f.path).map(f =>
+      ({ ...d(`targetValues.${f.path}`, f.path, f.type === 'array' ? 'any' : f.type, false,
+        `${f.type}${f.required ? ' · required in target output' : ''}`), validationType: f.type })),
+  ];
+  return <InputEditor {...props} node={node} fields={fields} mappings={config.inputMappings||{}} before={<div className="contract-heading">{error&&<p role="alert">{error}</p>}</div>}/>;
+}
+
+function LoopMappingRow({ row, collapsed, toggle, patch, remove, duplicate, sources }: { row: MappingTreeRow; collapsed: boolean; toggle: (key: string) => void; patch: (value: any) => void; remove: () => void; duplicate?: () => void; sources: any[] }) {
+  const grouped = (row.rule.operator || row.rule.$rule) === "for-each-group";
+  const paths = ["input", "last", "current-group()", ...(sources || []).flatMap((source: ActivitySource) => [activityReferenceName(source.activity.name), ...source.fields.map(field => `${activityReferenceName(source.activity.name)}.${field.key}`)])];
+  return <div className={`mapping-loop-row ${row.kind === "grouping" ? "mapping-grouping-row" : ""}`} data-target={row.kind === "loop" ? `${row.key}:source` : undefined} style={{ paddingLeft: 10 + row.depth * 16 }} onContextMenu={event => event.stopPropagation()} onDragOver={event => {event.preventDefault();event.stopPropagation();}} onDrop={event => {
+    event.preventDefault();event.stopPropagation();const value=event.dataTransfer.getData("expression");if(!value)return;
+    if(row.kind === "grouping") {
+      const source = String(mappingSource(row.rule) || "").replace(/^\$\{|\}$/g, "");
+      const path = value.replace(/^\$\{|\}$/g, "");
+      patch({groupBy:path.startsWith(`${source}.`) ? path.slice(source.length+1) : path});
+    } else patch({source:value,select:value});
+  }}>
+    {row.kind === "loop" ? <TreeToggle path={row.key} label={`${row.field.name} loop`} collapsed={collapsed} toggle={toggle}/> : <i className="tree-elbow"/>}
+    <span className="mapping-loop-label"><Braces/><b>{row.kind === "grouping" ? "Grouping" : `${row.field.name} · [${grouped ? "For-Each-Group" : "For-Each"}]`}</b></span>
+    <MappingExpressionInput label={row.kind === "grouping" ? `${row.field.name} grouping key` : `${row.field.name} loop source`} paths={paths} value={row.kind === "grouping" ? row.rule.groupBy || "" : mappingSource(row.rule)} onChange={(value: string) => patch(row.kind === "grouping" ? { groupBy: value } : { source: value, select: value })}/>
+    {row.kind === "loop" && <span className="mapping-loop-actions">{duplicate && <button type="button" aria-label={`Duplicate ${row.field.name} loop`} onClick={duplicate}><Plus/></button>}<button type="button" aria-label={`Remove ${row.field.name} loop`} onClick={remove}><X/></button></span>}
+  </div>;
+}
+
 function InputEditor({ node, fields, mappings, set, properties, sources, runtimeVariables = [], customFunctions, updateCustomFunctions, before, expanded = false }: any) {
   properties = Object.assign([...(properties || [])], { customFunctions, updateCustomFunctions });
   const rows = dataTreeRows(fields), firstTarget = rows.find((row) => row.explicit)?.path || "";
   const resize = useSourcePaneWidth(expanded ? 350 : undefined), tree = useTreeCollapse(), root = useRef<HTMLDivElement>(null), [selected, setSelected] = useState(firstTarget), [contextMenu, setContextMenu] = useState<any>(null), [dialogOpen, setDialogOpen] = useState(false), [draftMappings, setDraftMappings] = useState<any>({});
-  useEffect(() => { if (!rows.some((row) => row.explicit && row.path === selected)) setSelected(firstTarget); }, [firstTarget, selected, rows]);
-  const connectionMappings = Object.fromEntries(Object.entries(mappings).map(([path, value]) => [path, mappingSource(value)]));
+  const displayRows = mappingTreeRows(rows, mappings);
+  const connectionMappings = Object.fromEntries(Object.entries(mappings).map(([path, value]) => [displayRows.find(row => row.field.path === path && row.kind === "loop")?.key ? `${displayRows.find(row => row.field.path === path && row.kind === "loop")!.key}:source` : path, mappingSource(value)]));
   const openDialog = () => { setDraftMappings(structuredClone(mappings)); setDialogOpen(true); };
-  return <><div ref={root} className={`activity-tab mapping-editor resizable-mapper visual-field-mapper ${expanded ? "expanded-input-workspace" : ""}`} style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}><DataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}><span/></div><section><div className="contract-heading mapping-editor-heading"><SettingsTitle title="Activity input" text="Map simple schema elements and attributes. Complex structures are controlled exclusively through their child fields."/>{!expanded && <button type="button" className="edit-input-mapping" onClick={openDialog}><Pencil/> Edit mappings <small>Open expanded editor</small></button>}</div>{before}{fields.length ? <div className="input-contract-tree"><header><Braces/><span><b>{node.name}</b><small>Schema-typed hierarchical input · constants are validated against each simple field type</small></span></header>{rows.map((field) => { if (!tree.visible(field.path)) return null; const group = field.group || hasTreeChildren(rows, field), structural = group || isComplexSchemaType(field.type), branch = group ? <TreeToggle path={field.path} label={field.label} collapsed={tree.collapsed.has(field.path)} toggle={tree.toggle}/> : <i className="tree-elbow"/>; return field.explicit ? <div data-target={structural ? undefined : field.path} className={`input-tree-row ${structural ? "tree-parent-target structural-row" : ""} ${selected === field.path ? "selected" : ""}`} key={field.path} style={{ "--target-depth": field.depth + 1 } as React.CSSProperties} onClick={() => setSelected(field.path)} onContextMenu={(event) => { event.preventDefault(); if (structural) return; setSelected(field.path); setContextMenu({ x: event.clientX, y: event.clientY, path: field.path, label: field.label }); }} onDragOver={(event) => { if (structural) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDrop={(event) => { event.preventDefault(); if (structural) return; const expression = event.dataTransfer.getData("expression"); if (!expression) return; setSelected(field.path); set({ ...mappings, [field.path]: expression }); }}>{branch}<span className="target-tree-field"><b>{field.label}</b>{field.required && <em>required</em>}<small>{field.type}{structural ? " · structural node" : " · schema-typed value"}{field.help && ` · ${field.help}`}</small></span><MappingBinding structural={structural} expression={mappings[field.path] ?? ""} fieldType={field.type} sources={sources} onChange={(value: any) => set({ ...mappings, [field.path]: value })}/></div> : <div className="input-tree-group" key={field.path} style={{ "--target-depth": field.depth + 1 } as React.CSSProperties}>{branch}<Braces/><span><b>{field.label}</b><small>object · {rows.filter((candidate) => candidate.path.startsWith(`${field.path}.`) && candidate.explicit).length} fields · child mappings only</small></span></div>; })}</div> : <div className="contract-empty"><CheckCircle2/>This starter/activity has no configurable input.</div>}</section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextMenu ? mappings[contextMenu.path] : null} close={() => setContextMenu(null)} change={(value: any) => contextMenu && set({ ...mappings, [contextMenu.path]: value })} remove={() => { if (!contextMenu) return; const next = { ...mappings }; delete next[contextMenu.path]; set(next); }}/></div>{dialogOpen && <ExpandedInputMappingDialog title={`${node.name} · Input Mapper`} mappingCount={Object.keys(draftMappings).length} onClose={() => setDialogOpen(false)} onApply={() => { set(draftMappings); setDialogOpen(false); }}><InputEditor node={node} fields={fields} mappings={draftMappings} set={setDraftMappings} properties={properties} sources={sources} runtimeVariables={runtimeVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} before={before} expanded/></ExpandedInputMappingDialog>}</>;
+  const setValue = (path: string, value: any) => set({ ...mappings, [path]: value });
+  return <><div ref={root} className={`activity-tab mapping-editor resizable-mapper visual-field-mapper ${expanded ? "expanded-input-workspace" : ""}`} style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}>
+    <DataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}/>
+    <section><div className="contract-heading mapping-editor-heading"><SettingsTitle title="Activity input"/>{!expanded && <button type="button" className="edit-input-mapping" onClick={openDialog}><Pencil/> Edit mappings</button>}</div>{before}
+      <div className="input-contract-tree"><header><Braces/><b>{node.name}</b></header>{displayRows.map(row => {
+        if (row.ancestors.some(key => tree.collapsed.has(key))) return null;
+        const field = row.field;
+        if (row.kind !== "field") return <LoopMappingRow key={row.key} row={row} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle} sources={sources} patch={patch => setValue(field.path, {...mappings[field.path], ...patch})} remove={() => setValue(field.path, mappingSource(mappings[field.path]))}/>;
+        const structural = row.hasChildren || isComplexSchemaType(field.validationType || field.type), canMapStructure = structural && (row.hasChildren || /array|\[\]/.test(field.validationType || field.type));
+        const showMenu = (event: React.MouseEvent) => { event.preventDefault(); setSelected(field.path); setContextMenu({x:event.clientX, y:event.clientY, path:field.path, label:field.label || field.name}); };
+        return <div key={row.key} data-target={row.loopKey || (structural && !canMapStructure) ? undefined : field.path} className={`input-tree-row ${structural ? "structural-row" : ""} ${selected === field.path ? "selected" : ""}`} style={{"--target-depth":row.depth + 1} as React.CSSProperties} onClick={() => setSelected(field.path)} onContextMenu={showMenu} onDragOver={event => {event.preventDefault();event.dataTransfer.dropEffect="copy";}} onDrop={event => {
+          event.preventDefault();const value=event.dataTransfer.getData("expression");if(!value)return;
+          if(row.loopKey) setValue(field.path,{...mappings[field.path],source:value,select:value});
+          else if(canMapStructure && event.dataTransfer.getData("sourceRepeating")==="true") setValue(field.path,{$rule:"for-each",source:value,select:value});
+          else setValue(field.path,value);
+        }}>
+          {row.hasChildren ? <TreeToggle path={row.key} label={field.name} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle}/> : <i className="tree-elbow"/>}
+          <span className="target-tree-field"><b>{row.loopKey ? field.name : field.label || field.name}</b>{field.required && <em>required</em>}<small>{field.type}</small></span>
+          {row.loopKey || (row.hasChildren && !mappings[field.path]) ? <span/> : <MappingBinding structural={structural} expression={mappings[field.path] ?? ""} fieldType={field.type} validationType={field.validationType || field.type} sources={sources} onChange={(value: any) => setValue(field.path,value)}/>}
+        </div>;
+      })}</div>{!fields.length && <div className="contract-empty">No configurable input.</div>}
+    </section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextMenu ? mappings[contextMenu.path] : null} close={() => setContextMenu(null)} change={(value: any) => contextMenu && setValue(contextMenu.path,value)} remove={() => {if(!contextMenu)return;const next={...mappings};delete next[contextMenu.path];set(next);}}/>
+  </div>{dialogOpen && <ExpandedInputMappingDialog title={`${node.name} · Input Mapper`} mappingCount={Object.keys(draftMappings).length} onClose={() => setDialogOpen(false)} onApply={() => {set(draftMappings);setDialogOpen(false);}}><InputEditor node={node} fields={fields} mappings={draftMappings} set={setDraftMappings} properties={properties} sources={sources} runtimeVariables={runtimeVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} before={before} expanded/></ExpandedInputMappingDialog>}</>;
 }
 
 type SchemaTreeField = { path: string; name: string; type: string; depth: number; repeating: boolean; minOccurs?: string; maxOccurs?: string };
@@ -2179,28 +2252,44 @@ function TransformInputEditor({ config, properties, sources, runtimeVariables = 
     setMappings(next);
   };
   const mapConstant = (target: string, constant: any) => setMappings([...mappings.filter((rule: any) => !(rule.target === target && !rule.occurrenceId)), { target, constant, targetType: fields.find((field) => field.path === target)?.type || "any", functions: [], enabled: true }]);
-  const duplicateOccurrence = (target: string) => {
-    const sourceLoop = mappings.find((rule: any) => rule.target === target && ["for-each", "for-each-group"].includes(rule.operator) && !rule.occurrenceId) || mappings.find((rule: any) => rule.target === target && ["for-each", "for-each-group"].includes(rule.operator));
+  const duplicateOccurrence = (target: string, selectedOccurrence?: string) => {
+    const sourceLoop = mappings.find((rule: any) => rule.target === target && ["for-each", "for-each-group"].includes(rule.operator) && rule.occurrenceId === selectedOccurrence);
     if (!sourceLoop) return;
     const occurrenceId = `occurrence-${Date.now()}`, sourceOccurrence = sourceLoop.occurrenceId;
     const family = mappings.filter((rule: any) => (rule.target === target || rule.target.startsWith(`${target}.`)) && rule.occurrenceId === sourceOccurrence);
     setMappings([...mappings, ...family.map((rule: any) => ({ ...rule, occurrenceId, duplicateOf: sourceOccurrence || "primary", autoGenerated: rule.autoGenerated || true }))]);
   };
   const removeOccurrence = (occurrenceId: string) => setMappings(mappings.filter((rule: any) => rule.occurrenceId !== occurrenceId));
-  const connectionMappings = Object.fromEntries(mappings.filter((rule: any) => rule.enabled !== false && typeof rule.source === "string" && rule.source.startsWith("${")).map((rule: any) => [rule.target, rule.source]));
-  const contextValue = contextMenu ? mappings.find((item: any) => item.target === contextMenu.path && !item.occurrenceId) : null;
+  const displayRows = mappingTreeRows(fields, mappings);
+  const updateRule = (target: string, occurrenceId: string | undefined, patch: any) => {
+    const previous = mappings.find((item: any) => item.target === target && item.occurrenceId === occurrenceId);
+    const next = {...previous, target, occurrenceId, targetType: fields.find(field => field.path === target)?.type || "any", functions: previous?.functions || [], enabled: true, ...patch};
+    setMappings([...mappings.filter((item: any) => item !== previous), next]);
+  };
+  const connectionMappings = Object.fromEntries(mappings.filter((rule: any) => rule.enabled !== false && typeof rule.source === "string" && rule.source.startsWith("${")).map((rule: any) => [displayRows.find(row => row.kind === "loop" && row.field.path === rule.target && row.occurrenceId === rule.occurrenceId)?.key ? `${displayRows.find(row => row.kind === "loop" && row.field.path === rule.target && row.occurrenceId === rule.occurrenceId)!.key}:source` : `${rule.occurrenceId || "primary"}:${rule.target}`, rule.select || rule.source]));
+  const contextValue = contextMenu ? mappings.find((item: any) => item.target === contextMenu.path && item.occurrenceId === contextMenu.occurrenceId) : null;
   const contextField = contextMenu ? fields.find((field) => field.path === contextMenu.path) : null;
   const openDialog = () => { setDraftMappings(structuredClone(mappings)); setDialogOpen(true); };
-  return <><div ref={root} className={`activity-tab mapping-editor transform-input-editor resizable-mapper visual-field-mapper ${expanded ? "expanded-input-workspace" : ""}`} style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}><DataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}><span/></div><section><div className="contract-heading mapping-editor-heading"><SettingsTitle title="Target schema mapping" text="Drop a repeating complex source to create its For-Each statement and matching child mappings. Use Duplicate occurrence for additional target copies."/>{!expanded && <button type="button" className="edit-input-mapping" onClick={openDialog}><Pencil/> Edit mappings <small>Open expanded editor</small></button>}</div><div className="target-schema-tree">{fields.map((field) => {
-    if (!tree.visible(field.path)) return null;
-    const rule = mappings.find((item: any) => item.target === field.path && !item.occurrenceId), group = hasTreeChildren(fields, field), structural = group || isComplexSchemaType(field.type), canMapStructure = structural && field.repeating, duplicateLoops = mappings.filter((item: any) => item.target === field.path && item.occurrenceId && ["for-each", "for-each-group"].includes(item.operator));
-    return <React.Fragment key={field.path}><div data-target={!structural || canMapStructure ? field.path : undefined} className={`schema-tree-row ${structural ? "tree-parent-target structural-row" : ""} ${rule?.operator ? "mapping-statement-row" : ""} ${selected === field.path ? "selected" : ""}`} style={{ paddingLeft: 12 + field.depth * 18 }} onClick={() => setSelected(field.path)} onContextMenu={(event) => { event.preventDefault(); if (structural && !canMapStructure) return; setSelected(field.path); setContextMenu({ x: event.clientX, y: event.clientY, path: field.path, label: field.name }); }} onDragOver={(event) => { if (structural && !canMapStructure) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDrop={(event) => { event.preventDefault(); if (structural && !canMapStructure) return; const expression = event.dataTransfer.getData("expression"); if (expression) mapTo(field.path, expression, event.dataTransfer.getData("sourceRepeating") === "true"); }}>{group ? <TreeToggle path={field.path} label={field.name} collapsed={tree.collapsed.has(field.path)} toggle={tree.toggle}/> : <span className="tree-node-dot"/>}<span className="tree-field"><b>{field.name}{field.repeating && <em> repeating</em>}</b><small>{field.type} · {field.minOccurs || "1"}..{field.maxOccurs || "1"}{structural && !field.repeating ? " · child mappings only" : ""}{rule?.operator && ` · ${String(rule.operator).replaceAll("-", " ").toUpperCase()} #1`}</small>{field.repeating && rule?.operator && <button type="button" className="duplicate-occurrence" onClick={(event) => { event.stopPropagation(); duplicateOccurrence(field.path); }}><Plus/> Duplicate occurrence</button>}</span><span className={`mapping-connection ${rule ? "connected" : ""}`}><i/><ArrowRight/></span><MappingBinding structural={structural} expression={rule && "constant" in rule ? rule.constant : rule?.source ?? ""} fieldType={field.type} sources={sources} onChange={(value: any) => mapTo(field.path, value)} onConstantChange={(value: any) => mapConstant(field.path, value)}/></div>{duplicateLoops.map((duplicate: any, index: number) => <div className="mapper-duplicate-card" key={duplicate.occurrenceId} style={{ marginLeft: 30 + field.depth * 18 }}><Braces/><span><b>{field.name} · FOR EACH #{index + 2}</b><small>{describeMapping(duplicate.source, sources)} · complete child mapping copy</small></span><button type="button" onClick={() => removeOccurrence(duplicate.occurrenceId)}>Remove</button></div>)}</React.Fragment>;
-  })}{!fields.length && <div className="contract-empty">Select a project XSD or enter a valid inline target schema on Configuration.</div>}</div></section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextValue} canDuplicate={!!contextField?.repeating && !!contextValue?.operator} duplicate={() => contextMenu && duplicateOccurrence(contextMenu.path)} close={() => setContextMenu(null)} change={(value: any) => contextMenu && setMappings([...mappings.filter((item: any) => !(item.target === contextMenu.path && !item.occurrenceId)), { target: contextMenu.path, targetType: contextField?.type || "any", ...(value && typeof value === "object" && value.$rule ? { source: value.source, operator: value.$rule, select: value.select, groupBy: value.groupBy, condition: value.condition, otherwise: value.otherwise, whens: value.whens, duplicateOf: value.duplicateOf } : { source: value }), functions: [], enabled: true }])} remove={() => contextMenu && setMappings(mappings.filter((item: any) => item.target !== contextMenu.path))}/></div>{dialogOpen && <ExpandedInputMappingDialog title="Mapper · Expanded Input Editor" mappingCount={draftMappings.length} onClose={() => setDialogOpen(false)} onApply={() => { setMappings(draftMappings); setDialogOpen(false); }}><TransformInputEditor config={{ ...config, mappings: draftMappings }} properties={properties} sources={sources} runtimeVariables={runtimeVariables} setMappings={setDraftMappings} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} expanded/></ExpandedInputMappingDialog>}</>;
+  return <><div ref={root} className={`activity-tab mapping-editor transform-input-editor resizable-mapper visual-field-mapper ${expanded ? "expanded-input-workspace" : ""}`} style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}><DataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}><span/></div><section><div className="contract-heading mapping-editor-heading"><SettingsTitle title="Target schema mapping" />{!expanded && <button type="button" className="edit-input-mapping" onClick={openDialog}><Pencil/> Edit mappings </button>}</div><div className="target-schema-tree">{displayRows.map(row => {
+    if (row.ancestors.some(key => tree.collapsed.has(key))) return null;
+    const field = row.field, rule = row.rule, structural = row.hasChildren || isComplexSchemaType(field.type), canMapStructure = structural && field.repeating;
+    if(row.kind !== "field") return <LoopMappingRow key={row.key} row={row} sources={sources} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle} patch={patch => updateRule(field.path,row.occurrenceId,patch)} duplicate={() => duplicateOccurrence(field.path,row.occurrenceId)} remove={() => row.occurrenceId ? removeOccurrence(row.occurrenceId) : updateRule(field.path,undefined,{operator:undefined,select:undefined})}/>;
+    const change = (value: any) => {
+      if (!row.occurrenceId) {mapTo(field.path,value);return;}
+      updateRule(field.path,row.occurrenceId,{source:value,constant:undefined});
+    };
+    return <div key={row.key} data-target={row.loopKey || (structural && !canMapStructure) ? undefined : row.key} className={`schema-tree-row ${structural ? "structural-row" : ""} ${selected === field.path ? "selected" : ""}`} style={{paddingLeft:12+row.depth*18}} onClick={() => setSelected(field.path)} onContextMenu={event => {event.preventDefault();if(structural&&!canMapStructure)return;setSelected(field.path);setContextMenu({x:event.clientX,y:event.clientY,path:field.path,label:field.name,occurrenceId:row.occurrenceId});}} onDragOver={event => {if(structural&&!canMapStructure)return;event.preventDefault();event.dataTransfer.dropEffect="copy";}} onDrop={event => {event.preventDefault();const value=event.dataTransfer.getData("expression");if(!value)return;if(row.loopKey)updateRule(field.path,row.occurrenceId,{source:value,select:value});else if(row.occurrenceId)change(value);else mapTo(field.path,value,event.dataTransfer.getData("sourceRepeating")==="true");}}>
+      {row.hasChildren ? <TreeToggle path={row.key} label={field.name} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle}/> : <span className="tree-node-dot"/>}
+      <span className="tree-field"><b>{field.name}</b><small>{field.type} · {field.minOccurs || "1"}..{field.maxOccurs || "1"}</small></span>
+      <span className={`mapping-connection ${rule ? "connected" : ""}`}><i/><ArrowRight/></span>
+      {row.loopKey || (structural&&!canMapStructure) ? <span/> : <MappingBinding structural={structural} expression={rule?.operator ? {...rule,$rule:rule.operator} : rule && rule.constant !== undefined ? (typeof rule.constant === "string" ? JSON.stringify(rule.constant) : rule.constant) : rule?.source ?? ""} fieldType={field.type} sources={sources} onChange={(value: any) => value?.$rule ? updateRule(field.path,row.occurrenceId,{...value,operator:value.$rule}) : change(value)} onConstantChange={(value: any) => row.occurrenceId ? updateRule(field.path,row.occurrenceId,{constant:value,source:undefined}) : mapConstant(field.path,value)}/>}
+    </div>;
+  })}{!fields.length && <div className="contract-empty">Select a project XSD or enter a valid inline target schema on Configuration.</div>}</div></section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextValue} canDuplicate={!!contextField?.repeating && !!contextValue?.operator} duplicate={() => contextMenu && duplicateOccurrence(contextMenu.path,contextMenu.occurrenceId)} close={() => setContextMenu(null)} change={(value: any) => contextMenu && updateRule(contextMenu.path,contextMenu.occurrenceId,value?.$rule ? {...value,operator:value.$rule} : {source:value,operator:undefined})} remove={() => contextMenu && setMappings(mappings.filter((item: any) => !(item.target === contextMenu.path && item.occurrenceId === contextMenu.occurrenceId)))}/></div>{dialogOpen && <ExpandedInputMappingDialog title="Mapper · Expanded Input Editor" mappingCount={draftMappings.length} onClose={() => setDialogOpen(false)} onApply={() => { setMappings(draftMappings); setDialogOpen(false); }}><TransformInputEditor config={{ ...config, mappings: draftMappings }} properties={properties} sources={sources} runtimeVariables={runtimeVariables} setMappings={setDraftMappings} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} expanded/></ExpandedInputMappingDialog>}</>;
 }
 function TransformOutputEditor({ config }: any) {
   const fields = transformSchemaFields(config);
   const tree = useTreeCollapse();
-  return <div className="activity-tab output-editor"><div className="contract-heading"><SettingsTitle title="Transformer output structure" text="Published target schema available to downstream activities"/></div><div className="output-schema-tree">{fields.map((field) => { if (!tree.visible(field.path)) return null; const group = hasTreeChildren(fields, field); return <div className={group ? "tree-parent-target" : ""} key={field.path} style={{ paddingLeft: 14 + field.depth * 18 }}>{group ? <TreeToggle path={field.path} label={field.name} collapsed={tree.collapsed.has(field.path)} toggle={tree.toggle}/> : <span className="tree-node-dot"/>}<code>{field.name}</code><small>{field.type}</small><span>{field.depth ? "Nested field" : "Root field"}</span></div>; })}{!fields.length && <div className="contract-empty">No target schema is configured.</div>}</div></div>;
+  return <div className="activity-tab output-editor"><div className="contract-heading"><SettingsTitle title="Transformer output structure" /></div><div className="output-schema-tree">{fields.map((field) => { if (!tree.visible(field.path)) return null; const group = hasTreeChildren(fields, field); return <div className={group ? "tree-parent-target" : ""} key={field.path} style={{ paddingLeft: 14 + field.depth * 18 }}>{group ? <TreeToggle path={field.path} label={field.name} collapsed={tree.collapsed.has(field.path)} toggle={tree.toggle}/> : <span className="tree-node-dot"/>}<code>{field.name}</code><small>{field.type}</small></div>; })}{!fields.length && <div className="contract-empty">No target schema is configured.</div>}</div></div>;
 }
 
 function TransformMapTestEditor({ node: _node, config, setConfig }: any) {
@@ -2226,11 +2315,11 @@ function TransformMapTestEditor({ node: _node, config, setConfig }: any) {
     }
   };
   return <div className="activity-tab transform-map-test">
-    <header><FlaskConical/><span><b>Mapper · Map &amp; Test</b><small>Execute the exact mappings, constants, conditions, grouping rules, and formulas configured in the Input tab.</small></span><i>{mappings.length} RULE{mappings.length === 1 ? "" : "S"}</i></header>
+    <header><FlaskConical/><span><b>Mapper · Map &amp; Test</b></span><i>{mappings.length} RULE{mappings.length === 1 ? "" : "S"}</i></header>
     <main>
-      <section className="map-test-input"><header><span><b>TEST INPUT</b><small>JSON matching the upstream/source structure</small></span><button type="button" onClick={() => { setInputText(JSON.stringify(initialInput, null, 2)); setStatus("idle"); }}>Reset</button></header><textarea aria-label="Transform test input" value={inputText} onChange={(event) => { setInputText(event.target.value); setStatus("idle"); }} spellCheck={false}/></section>
-      <section className="map-test-rules"><header><span><b>APPLIED MAPPINGS &amp; FORMULAS</b><small>Saved design-time rules executed in order</small></span></header><div>{mappings.map((rule: any, index: number) => <article key={`${rule.target}-${index}`} className={rule.enabled === false ? "disabled" : ""}><em>{index + 1}</em><span><code>{rule.source ?? ("constant" in rule ? JSON.stringify(rule.constant) : "No source")}</code><ArrowRight/><b>{rule.target || "result"}</b><small>{[rule.operator, ...(rule.functions || []).map((fn: any) => typeof fn === "string" ? fn : fn.name)].filter(Boolean).join(" → ") || "Direct mapping"}</small></span></article>)}{!mappings.length && <p>No mappings are saved. Configure target mappings in the Input tab first.</p>}</div></section>
-      <section className="map-test-output"><header><span><b>GENERATED OUTPUT</b><small>Target structure produced by the mapper</small></span>{outputText && <button type="button" onClick={() => navigator.clipboard?.writeText(outputText)}>Copy output</button>}</header><pre>{outputText || "Run the mapping test to generate output."}</pre></section>
+      <section className="map-test-input"><header><span><b>TEST INPUT</b></span><button type="button" onClick={() => { setInputText(JSON.stringify(initialInput, null, 2)); setStatus("idle"); }}>Reset</button></header><textarea aria-label="Transform test input" value={inputText} onChange={(event) => { setInputText(event.target.value); setStatus("idle"); }} spellCheck={false}/></section>
+      <section className="map-test-rules"><header><span><b>APPLIED MAPPINGS &amp; FORMULAS</b></span></header><div>{mappings.map((rule: any, index: number) => <article key={`${rule.target}-${index}`} className={rule.enabled === false ? "disabled" : ""}><em>{index + 1}</em><span><code>{rule.source ?? ("constant" in rule ? JSON.stringify(rule.constant) : "No source")}</code><ArrowRight/><b>{rule.target || "result"}</b><small>{[rule.operator, ...(rule.functions || []).map((fn: any) => typeof fn === "string" ? fn : fn.name)].filter(Boolean).join(" → ") || "Direct mapping"}</small></span></article>)}{!mappings.length && <p>No mappings are saved. Configure target mappings in the Input tab first.</p>}</div></section>
+      <section className="map-test-output"><header><span><b>GENERATED OUTPUT</b></span>{outputText && <button type="button" onClick={() => navigator.clipboard?.writeText(outputText)}>Copy output</button>}</header><pre>{outputText || "Run the mapping test to generate output."}</pre></section>
     </main>
     <footer className={status}><span>{status === "valid" ? <CheckCircle2/> : status === "error" ? <AlertTriangle/> : <FlaskConical/>}<b>{message}</b></span><button type="button" className="run-map-test" disabled={status === "running" || !mappings.length} onClick={run}><FlaskConical/>{status === "running" ? "Running…" : "Run mapping test"}</button></footer>
   </div>;
@@ -2243,7 +2332,7 @@ function OutputEditor({ fields, config, set, before }: any) {
       <div className="contract-heading">
         <SettingsTitle
           title="Activity output schema"
-          text="Published values available to downstream activity mappings"
+
         />
       </div>
       {before}
@@ -2270,16 +2359,14 @@ function OutputEditor({ fields, config, set, before }: any) {
           <b>Field</b>
           <b>Data type</b>
           <b>Cardinality</b>
-          <b>Description</b>
         </header>
         {rows.map((field) => { if (!tree.visible(field.path)) return null; const group = field.group || hasTreeChildren(rows, field); return field.explicit ? (
           <div className={field.group ? "tree-parent-target" : ""} key={field.path} style={{ "--output-depth": field.depth } as React.CSSProperties}>
             <code>{group ? <TreeToggle path={field.path} label={field.label} collapsed={tree.collapsed.has(field.path)} toggle={tree.toggle}/> : <i className="tree-elbow"/>}{field.label}</code>
             <span>{field.type}</span>
             <span>{field.required ? "1" : "0..1"}</span>
-            <span>{field.help || (field.group ? "Structured element" : "Published field")}</span>
           </div>
-        ) : <div className="schema-tree-group" key={field.path} style={{ "--output-depth": field.depth } as React.CSSProperties}><code><TreeToggle path={field.path} label={field.label} collapsed={tree.collapsed.has(field.path)} toggle={tree.toggle}/><Braces/>{field.label}</code><span>object</span><span>group</span><span>Parent structure</span></div>; })}
+        ) : <div className="schema-tree-group" key={field.path} style={{ "--output-depth": field.depth } as React.CSSProperties}><code><TreeToggle path={field.path} label={field.label} collapsed={tree.collapsed.has(field.path)} toggle={tree.toggle}/><Braces/>{field.label}</code><span>object</span><span>group</span></div>; })}
       </div>
       {!fields.length && (
         <div className="contract-empty">No output schema is published.</div>
@@ -2344,7 +2431,7 @@ function AdvancedEditor({ node, value, properties, set }: any) {
       <div className="contract-heading">
         <SettingsTitle
           title="Advanced activity settings"
-          text="Inherited automatically by every activity type"
+
         />
       </div>
       <datalist id="advanced-property-values">
@@ -2353,16 +2440,13 @@ function AdvancedEditor({ node, value, properties, set }: any) {
         ))}
       </datalist>
       <section className="advanced-settings-tree">
-        <div className="advanced-tree-root"><Braces/><span><b>Advanced</b><small>Activity policy tree</small></span></div>
+        <div className="advanced-tree-root"><Braces/><span><b>Advanced</b></span></div>
         <article className="advanced-tree-branch">
           <header>
             <Braces />
             <span>
               <b>Automatic payload logging</b>
-              <small>
-                Logs activity input and output without placing a Log activity on
-                the canvas.
-              </small>
+
             </span>
           </header>
           <label className="advanced-tree-field">
@@ -2376,14 +2460,14 @@ function AdvancedEditor({ node, value, properties, set }: any) {
               <details ref={logPropertyPanel} className="configuration-property-picker" onToggle={(event) => { const panel = event.currentTarget; if (panel.open) { setLogPropertySearch(""); window.setTimeout(() => panel.querySelector<HTMLInputElement>("input")?.focus(), 0); } }}>
                 <summary aria-label="Browse environment properties for Log Payload" title="Browse environment properties for Log Payload"><DataNodeIcon/></summary>
                 <div>
-                  <header><DataNodeIcon/><span><b>ENVIRONMENT PROPERTY</b><small>Configure Log Payload from the active environment</small></span></header>
+                  <header><DataNodeIcon/><span><b>ENVIRONMENT PROPERTY</b></span></header>
                   <input aria-label="Search properties for Log Payload" value={logPropertySearch} onChange={(event) => setLogPropertySearch(event.target.value)} placeholder="Search active environment…"/>
                   <section>{visibleLogProperties.map((property: any) => <button type="button" key={property.key} onClick={() => { change("logPayload", `\${properties.${property.key}}`); if (logPropertyPanel.current) logPropertyPanel.current.open = false; }}><DataNodeIcon/><span><b>{property.key}</b><small>{property.data_type} · {String(property.value ?? "") || "empty"}</small></span></button>)}{!visibleLogProperties.length && <p>No matching environment properties.</p>}</section>
                 </div>
               </details>
               {mappedLogProperty && <small className="configuration-property-resolution">{mappedLogProperty.key} = {String(mappedLogProperty.value ?? "") || "empty"}</small>}
             </span>
-            <small>Defaults to advanced.logPayload; browse to select another environment property.</small>
+
           </label>
         </article>
         {outbound && <article className="advanced-tree-branch">
@@ -2391,9 +2475,7 @@ function AdvancedEditor({ node, value, properties, set }: any) {
             <RefreshCw />
             <span>
               <b>Outbound retry policy</b>
-              <small>
-                Applied when this activity calls its target system.
-              </small>
+
             </span>
             <i>OUTBOUND</i>
           </header>
@@ -2405,7 +2487,7 @@ function AdvancedEditor({ node, value, properties, set }: any) {
                 value={advanced.retryEnabled}
                 onChange={(e) => change("retryEnabled", e.target.value)}
               />
-              <small>Boolean or global property expression</small>
+
             </label>
             <label className="advanced-tree-field">
               Retry count{" "}
@@ -2414,7 +2496,7 @@ function AdvancedEditor({ node, value, properties, set }: any) {
                 value={advanced.retryCount}
                 onChange={(e) => change("retryCount", e.target.value)}
               />
-              <small>Default: 3 retry attempts</small>
+
             </label>
             <label className="advanced-tree-field">
               Retry interval (seconds){" "}
@@ -2423,21 +2505,18 @@ function AdvancedEditor({ node, value, properties, set }: any) {
                 value={advanced.retryIntervalSeconds}
                 onChange={(e) => change("retryIntervalSeconds", e.target.value)}
               />
-              <small>Default: 60 seconds</small>
+
             </label>
           </div>
         </article>}
       </section>
       <aside>
         <b>PROJECT-GLOBAL PROPERTY MAPPINGS</b>
-        <p>
-          The active environment is resolved once for the complete project,
-          including every Task, Sub Task, activity, and shared connection.
-        </p>
+
         <div>
           {propertyRows.map((row) => { if (!propertyTree.visible(row.path)) return null; return row.explicit ? (
             <button key={row.path} className="advanced-property-leaf" style={{ "--tree-depth": row.depth } as React.CSSProperties} onClick={() => navigator.clipboard?.writeText("${properties." + row.path + "}")}><i className="tree-elbow"/><Braces/><span>{row.label}<small>{row.type} · {String(properties.find((property: any) => property.key === row.path)?.value)}</small></span></button>
-          ) : <div key={row.path} className="advanced-property-group" style={{ "--tree-depth": row.depth } as React.CSSProperties}><TreeToggle path={row.path} label={row.label} collapsed={propertyTree.collapsed.has(row.path)} toggle={propertyTree.toggle}/><Braces/><span><b>{row.label}</b><small>property group</small></span></div>; })}
+          ) : <div key={row.path} className="advanced-property-group" style={{ "--tree-depth": row.depth } as React.CSSProperties}><TreeToggle path={row.path} label={row.label} collapsed={propertyTree.collapsed.has(row.path)} toggle={propertyTree.toggle}/><Braces/><span><b>{row.label}</b></span></div>; })}
         </div>
       </aside>
     </div>
@@ -2450,7 +2529,7 @@ function ErrorEditor({ errors, policy, set }: any) {
       <div className="contract-heading">
         <SettingsTitle
           title="Errors and fault policy"
-          text="Operation-declared faults plus runtime handling"
+
         />
       </div>
       <div className="error-layout">
@@ -2462,7 +2541,6 @@ function ErrorEditor({ errors, policy, set }: any) {
                 <ShieldAlert />
                 <span>
                   <b>{error.type}</b>
-                  <small>{error.description}</small>
                 </span>
               </article>
             ))
@@ -2485,10 +2563,7 @@ function ErrorEditor({ errors, policy, set }: any) {
               <option value="ignore">Ignore and continue</option>
             </select>
           </label>
-          <p>
-            Outbound retry is configured consistently for all connectors on the
-            Advanced tab.
-          </p>
+
           <label>
             Error output variable
             <input
@@ -2510,14 +2585,13 @@ function ErrorEditor({ errors, policy, set }: any) {
     </div>
   );
 }
-function SettingsTitle({ title, text }: any) {
+function SettingsTitle({ title }: any) {
   return (
     <>
       <div>
         <Database />
         <span>
           <b>{title}</b>
-          <small>{text}</small>
         </span>
       </div>
     </>

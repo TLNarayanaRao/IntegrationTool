@@ -94,6 +94,8 @@ def resolve(value: Any, ctx: Context) -> Any:
     if isinstance(value, Reference): return lookup(value.path, ctx)
     if isinstance(value, Template): return ''.join(str(resolve(part, ctx)) for part in value.parts)
     if isinstance(value, str):
+        if value.startswith('__mina_constant__:'):
+            return json.loads(value.split(':', 1)[1])
         match = REFERENCE.fullmatch(value)
         if match: return lookup(match.group(1), ctx)
         return re.sub(r'\$\{([^}]+)\}', lambda item: str(lookup(item.group(1), ctx)), value)
@@ -358,6 +360,11 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
         return {'statusCode': int(cfg.get('statusCode') or 200), 'headers': cfg.get('headers') or {},
                 'body': cfg.get('body', ctx.last), 'sent': True}
     # CAPABILITY http_response END
+    # CAPABILITY mediation START
+    if kind == 'mediation':
+        from .native.mediation import execute as mediate
+        return mediate(cfg.get('payload', ctx.last), cfg)
+    # CAPABILITY mediation END
     # CAPABILITY dataweave START
     if kind == 'dataweave':
         from .native.dataweave import execute as transform

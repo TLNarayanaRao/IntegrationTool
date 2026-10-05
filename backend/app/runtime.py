@@ -673,11 +673,12 @@ class WorkflowRuntime:
         mapped_input = {}
         execution_scope = str(ctx.get('context', {}).get('executionId') or ctx.get('context', {}).get('debugSessionId') or '')
         if execution_scope: cfg['_executionScope'] = execution_scope
-        for key, expression in activity.config.get('inputMappings', {}).items():
-            include, value = self.evaluate_mapping(expression, ctx)
-            if include:
-                self.assign_path(cfg, key, value)
-                self.assign_path(mapped_input, key, copy.deepcopy(value))
+        mapped_input = self.map_input_values(activity.config.get('inputMappings', {}), ctx)
+        def merge_input(target, values):
+            for key, value in values.items():
+                if isinstance(value, dict) and isinstance(target.get(key), dict): merge_input(target[key], value)
+                else: target[key] = copy.deepcopy(value)
+        merge_input(cfg, mapped_input)
         for key, value in ctx.get('_debugInputOverrides', {}).get(activity.id, {}).items():
             self.assign_path(cfg, key, value)
             self.assign_path(mapped_input, key, copy.deepcopy(value))
@@ -892,6 +893,12 @@ class WorkflowRuntime:
                     } for branch in normalized['whens']]
                 rules.append(normalized)
             return execute_mapping(source, rules, cfg)
+        if activity.type == 'mediation':
+            from .mediation import execute, MediationError
+            try:
+                return execute(cfg.get('payload', ctx.get('last')), cfg)
+            except MediationError as exc:
+                raise MinaFault(str(exc), fault_type='MEDIATION', cause=exc.__class__.__name__) from exc
         if activity.type == 'dataweave':
             try:
                 transformed = execute_dataweave(
@@ -1466,11 +1473,52 @@ class WorkflowRuntime:
         current[parts[-1]] = value
 
     def map_input_values(self, mappings: dict, ctx: dict) -> dict:
-        result = {}
-        for path, expression in (mappings or {}).items():
-            include, value = self.evaluate_mapping(expression, ctx)
-            if include: self.assign_path(result, path, value)
-        return result
+        mappings = mappings or {}
+        def loop(expression):
+            return isinstance(expression, dict) and expression.get('$rule') in ('for-each', 'for-each-group')
+
+        def scope_context(context, source, item, group):
+            scoped = {**context, 'vars': {**context.get('vars', {}), 'current': item, 'currentGroup': group}}
+            match = re.fullmatch(r'\$\{([^}]+)\}', str(source or ''))
+            if not match: return scoped
+            parts = match[1].split('.')
+            if parts[0] not in ('input', 'last', 'vars', 'properties', 'activities', 'context', 'tasks'):
+                parts = ['activities', parts[0], 'output', *parts[1:]]
+            # Copy only dictionaries on the source path; never mutate process data.
+            original, current = context, scoped
+            for part in parts[:-1]:
+                child = original.get(part, {}) if isinstance(original, dict) else {}
+                current[part] = dict(child) if isinstance(child, dict) else {}
+                current, original = current[part], child
+            current[parts[-1]] = item
+            return scoped
+
+        def evaluate(entries, context):
+            result = {}
+            parents = [path for path, expression in entries.items() if loop(expression)]
+            roots = [path for path in parents if not any(path.startswith(parent + '.') for parent in parents if parent != path)]
+            for path, expression in entries.items():
+                if any(path.startswith(parent + '.') for parent in roots): continue
+                children = {key[len(path) + 1:]: value for key, value in entries.items() if key.startswith(path + '.')}
+                if loop(expression) and children:
+                    source = expression.get('select') or expression.get('source')
+                    values = self.resolve(source, context)
+                    values = values if isinstance(values, list) else ([] if values in (None, '') else [values])
+                    groups = [[item] for item in values]
+                    if expression['$rule'] == 'for-each-group':
+                        grouped = {}
+                        for item in values:
+                            key = item
+                            for part in str(expression.get('groupBy') or '').split('.'):
+                                if part: key = key.get(part) if isinstance(key, dict) else None
+                            grouped.setdefault(json.dumps(key, sort_keys=True, default=str), []).append(item)
+                        groups = list(grouped.values())
+                    self.assign_path(result, path, [evaluate(children, scope_context(context, source, group[0], group)) for group in groups])
+                else:
+                    include, value = self.evaluate_mapping(expression, context)
+                    if include: self.assign_path(result, path, value)
+            return result
+        return evaluate(mappings, ctx)
 
     def evaluate_mapping(self, expression, ctx) -> tuple[bool, Any]:
         """Evaluate the structured mapping statements used by every activity Input tab."""
@@ -1478,11 +1526,11 @@ class WorkflowRuntime:
             return True, self.resolve(expression, ctx)
         rule = str(expression.get('$rule', '')).lower()
         source_expression = expression.get('select') or expression.get('source')
-        source = self.resolve(source_expression, ctx)
         if rule == 'if':
-            return self.condition(expression.get('condition', ''), ctx), source
+            if not self.condition(expression.get('condition', ''), ctx): return False, None
+            return True, self.resolve(source_expression, ctx)
         if rule == 'when-otherwise':
-            if self.condition(expression.get('condition', ''), ctx): return True, source
+            if self.condition(expression.get('condition', ''), ctx): return True, self.resolve(source_expression, ctx)
             return True, self.resolve(expression.get('otherwise'), ctx)
         if rule == 'choose':
             branches = expression.get('whens') or []
@@ -1492,6 +1540,7 @@ class WorkflowRuntime:
             for branch in branches:
                 if self.condition(branch.get('condition', ''), ctx): return True, self.resolve(branch.get('source'), ctx)
             return True, self.resolve(expression.get('otherwise'), ctx)
+        source = self.resolve(source_expression, ctx)
         if rule == 'for-each':
             values = source if isinstance(source, list) else ([] if source in (None, '') else [source])
             return True, values

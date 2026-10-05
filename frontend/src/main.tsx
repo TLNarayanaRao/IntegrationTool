@@ -1,5 +1,6 @@
 import React, { Component, ErrorInfo, useEffect, useMemo, useRef, useState } from "react";
 import AboutMina from "./AboutMina";
+import { FontControl, useFontPreferences } from "./FontControls";
 import { createRoot } from "react-dom/client";
 import {
   Activity,
@@ -84,6 +85,7 @@ import "./packaging-target.css";
 import "./home-screen.css";
 import "./groups.css";
 import "./plain-themes.css";
+import "./configuration-layout.css";
 const Braces = DataNodeIcon;
 const EDITABLE_CONTROL_SELECTOR =
   'input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [contenteditable="true"], [role="textbox"], [data-keyboard-input="true"]';
@@ -120,6 +122,7 @@ type Kind =
   | "flat"
   | "mapper"
   | "dataweave"
+  | "mediation"
   | "transform"
   | "ai_transform"
   | "log"
@@ -590,6 +593,7 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
     icon: Activity,
     items: [
       { type: "mapper", operation: "map", label: "Mapper", asset: "mapper.svg" },
+      { type: "mediation", operation: "mediate", label: "Mediation", asset: "mediation.svg" },
       { type: "dataweave", operation: "transform", label: "Transform", asset: "dataweave-transform.svg" },
       { type: "log", operation: "write", label: "Log", asset: "log" },
       { type: "catch", operation: "catch", label: "Catch Exception", asset: "catch-exception.svg" },
@@ -1153,6 +1157,7 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
       if (!Object.keys(item.config.targetSchema || {}).length && !item.config.targetSchemaId) add("mapping", "Mapper", `${item.name} has no target schema.`, "Select an XSD from Project Schemas or define an inline target schema.", item.id);
       if (!(item.config.mappings || []).length) add("mapping", "Mapper", `${item.name} has no field mappings.`, "Map execution-path fields to the target schema.", item.id);
     }
+    if (item.type === "mediation" && !(item.config.rules || []).length && !Object.keys(item.config.inputMappings||{}).some(key=>key.startsWith('targetValues.'))) add("error", "Mediation", `${item.name} needs target field mappings.`, "Load a target schema in Configuration and map previous activity outputs in Input.", item.id);
     if (item.type === "dataweave") {
       const script = String(item.config.script || "");
       if (!script.trim()) add("error", "Transform", `${item.name} has no DataWeave script.`, "Enter or AI-generate an executable transform script.", item.id);
@@ -1362,6 +1367,7 @@ function App() {
       localStorage.getItem("mina-theme") || "midnight",
     );
   const [unsavedPrompt, setUnsavedPrompt] = useState(false);
+  const { screenFont, setScreenFont, configFont, setConfigFont } = useFontPreferences();
   const [plainMode, setPlainMode] = useState<"light" | "dark">(() =>
     localStorage.getItem("mina-plain-theme-mode") === "dark" ? "dark" : "light");
   useEffect(() => {
@@ -2723,6 +2729,7 @@ function App() {
           { label: "About MINA", detail: "Product and project information", icon: Workflow, action: () => setHelpDialog("about") },
         ]}/>
         <span className="menu-spacer" />
+        <FontControl scope="Screen" value={screenFont} onChange={setScreenFont} />
         <ThemePicker theme={theme} setTheme={setTheme} plainMode={plainMode} setPlainMode={setPlainMode} />
       </nav>
       <div className="studio-ribbon-stack">
@@ -3308,7 +3315,7 @@ function App() {
             <b>
               <Settings2 /> {edge ? "Transition" : resource ? "Connection" : "Activity"}
             </b>
-            {node ? (["configuration", "input", "map_test", "output", "advanced", "errors", "documentation"] as const).filter((tab) => tab !== "map_test" || ["mapper", "transform", "ai_transform", "dataweave"].includes(node.type)).map(
+            {node ? (["configuration", "input", "map_test", "output", "advanced", "errors", "documentation"] as const).filter((tab) => tab !== "map_test" || ["mapper", "transform", "ai_transform", "dataweave", "mediation"].includes(node.type)).map(
               (tab) => (
                 <button
                   key={tab}
@@ -3319,6 +3326,7 @@ function App() {
                 </button>
               ),
             ) : <button className="active">Configuration</button>}
+            <FontControl scope="Configuration" value={configFont} onChange={setConfigFont} />
             {node && <button className="delete-selected-activity" title="Delete selected activity (Delete or Backspace)" onClick={deleteSelectedActivity}><Trash2/> Delete Activity</button>}
           </div>
           {node ? (

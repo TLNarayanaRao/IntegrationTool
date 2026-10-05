@@ -1,0 +1,124 @@
+/* Keep every editor inside the workspace, including short windows and Debug. */
+.app > main {
+  grid-template-rows: 34px 38px minmax(0, 1fr) 8px minmax(0, min(var(--config-height, 285px), 65%));
+}
+.app > main:has(.debug-bar) {
+  grid-template-rows: 34px 38px 37px minmax(0, 1fr) 8px minmax(0, min(var(--config-height, 285px), 65%)) !important;
+}
+
+.config {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
+.config > .tabs {
+  flex: 0 0 auto;
+  min-height: 36px;
+  height: auto;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.config > .tabs > * { flex-shrink: 0; }
+.config > :is(.activity-tab, .resizable-mapper, .config-body, .mediation-studio) {
+  flex: 1 1 0;
+  height: 0;
+  max-height: none;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.config > .resizable-mapper {
+  overflow: hidden;
+  grid-template-rows: minmax(0, 1fr);
+}
+.resizable-mapper > section {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+  scrollbar-gutter: stable;
+  padding-bottom: 12px;
+  scroll-padding-block: 12px;
+}
+/* The target pane owns scrolling; rows must grow for expressions/conditions. */
+.resizable-mapper :is(.input-contract-tree, .target-schema-tree) {
+  overflow: visible;
+}
+.resizable-mapper :is(.input-tree-row, .schema-tree-row) {
+  position: relative;
+  overflow: visible;
+}
+.resizable-mapper :is(.input-tree-row, .schema-tree-row):focus-within {
+  z-index: 5;
+}
+.resizable-mapper .target-tree-field b {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.configuration-property-picker[open] {
+  z-index: 10;
+}
+.mapping-binding.compact-mapping-binding {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+}
+.mapping-binding.mapping-invalid {
+  border-color: #9c2937 !important;
+  background: #3b1018 !important;
+  box-shadow: inset 3px 0 #a53243 !important;
+}
+.mapping-binding.mapping-invalid input {
+  background: #3b1018 !important;
+  border-color: #a53243 !important;
+  color: #ffd7dc !important;
+}
+.mapping-validation-error {
+  display: block;
+  margin-top: 5px;
+  color: #ffb2bd !important;
+  white-space: normal;
+}
+.output-editor .schema-table > :is(header, div) {
+  grid-template-columns: minmax(160px, 1fr) 110px 80px;
+}
+.output-editor .output-schema-tree > div {
+  grid-template-columns: 20px minmax(100px, 1fr) 90px !important;
+}
+.contract-heading:empty { display: none; }
+.mapping-loop-row {
+  display: grid;
+  grid-template-columns: 18px minmax(130px, .72fr) minmax(0, 1.28fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--line);
+  border-left: 3px solid #4bce9c;
+  background: color-mix(in srgb, var(--panel) 80%, #26785c);
+  min-width: 0;
+}
+.mapping-loop-label { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.mapping-loop-label b { overflow-wrap: anywhere; }
+.mapping-loop-label svg { width: 14px; flex: 0 0 auto; }
+.mapping-loop-actions { display: flex; gap: 3px; }
+.mapping-loop-actions button { display: grid; place-items: center; width: 22px; height: 22px; padding: 2px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+.mapping-loop-actions svg { width: 12px; height: 12px; }
+.mapping-grouping-row { border-left-color: #d6b04d; background: color-mix(in srgb, var(--panel) 88%, #b3943d); }
+@container (max-width: 700px) {
+  .mapping-loop-row { grid-template-columns: 18px minmax(0, 1fr) auto; }
+  .mapping-loop-row > div { grid-column: 2 / 4; grid-row: 2; }
+  .mapping-loop-actions { grid-column: 3; grid-row: 1; }
+}
+/* Inline property choices remain reachable even at the bottom of a panel. */
+.config .configuration-property-picker[open] > div {
+  position: relative;
+  top: auto;
+  right: auto;
+  width: 100%;
+  min-width: 0;
+  margin-top: 6px;
+}
+.config .configuration-property-field:has(.configuration-property-picker[open]) {
+  grid-template-columns: minmax(0, 1fr);
+}

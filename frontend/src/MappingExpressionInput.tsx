@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { mapperFunctionCatalog } from "./mapper-functions";
 import { completeMapping, mappingPathSuggestions } from "./mappingCompletion";
 
-export default function MappingExpressionInput({ value, onChange, paths = [], label = "Mapping expression" }: any) {
+export default function MappingExpressionInput({ value, onChange, onCommit, error = "", paths = [], label = "Mapping expression" }: any) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const [rect, setRect] = useState<DOMRect | null>(null);
@@ -29,16 +29,19 @@ export default function MappingExpressionInput({ value, onChange, paths = [], la
     <input ref={input} aria-label={label} role="combobox" aria-autocomplete="list" aria-expanded={open && !!options.length}
       aria-activedescendant={open && options.length ? `${id}-${Math.min(index, options.length - 1)}` : undefined}
       aria-controls={id} value={text} placeholder="Type a data path or function…" style={{ width: "100%", boxSizing: "border-box" }}
+      aria-invalid={!!error} aria-describedby={error ? `${id}-error` : undefined} title={error || undefined}
       onFocus={event => { setCaret(event.currentTarget.selectionStart); setRect(input.current?.getBoundingClientRect() || null); setOpen(true); }} onBlur={() => setOpen(false)}
       onSelect={event => setCaret(event.currentTarget.selectionStart)}
       onChange={event => { setRect(input.current?.getBoundingClientRect() || null); setCaret(event.target.selectionStart); onChange(event.target.value); setIndex(0); setOpen(true); }}
       onKeyDown={event => {
         if (event.ctrlKey && event.code === "Space") { event.preventDefault(); event.stopPropagation(); setRect(input.current?.getBoundingClientRect() || null); setCaret(event.currentTarget.selectionStart); setOpen(true); setIndex(0); return; }
         if (event.key === "Escape") { setOpen(false); event.stopPropagation(); }
+        if (event.key === "Enter" && (!open || !options.length)) { event.preventDefault(); event.stopPropagation(); onCommit?.(text); return; }
         if (!open || !options.length) return;
         if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); event.stopPropagation(); setIndex((index + (event.key === "ArrowDown" ? 1 : options.length - 1)) % options.length); }
-        if (event.key === "Enter" || event.key === "Tab") { event.preventDefault(); event.stopPropagation(); choose(options[Math.min(index, options.length - 1)]); }
+        if (event.key === "Enter" || event.key === "Tab") { event.preventDefault(); event.stopPropagation(); const option = options[Math.min(index, options.length - 1)]; choose(option); if (event.key === "Enter") onCommit?.(completeMapping(prefix, suffix, option.insert)); }
       }}/>
+    {error && <small id={`${id}-error`} className="mapping-validation-error" role="alert">{error}</small>}
     {open && !!options.length && rect && createPortal(<div id={id} role="listbox" style={{ position: "fixed", top: rect.bottom + 200 > window.innerHeight ? Math.max(0, rect.top - 200) : rect.bottom, left: rect.left, width: rect.width, zIndex: 100000, maxHeight: 200, overflow: "auto", background: "var(--panel, #102c3b)", color: "var(--text, #e0edf5)", border: "1px solid #528ba3" }}>
       {options.map((option, i) => <div id={`${id}-${i}`} role="option" aria-selected={i === index} key={option.label} onMouseDown={event => { event.preventDefault(); choose(option); }} style={{ padding: "6px 8px", cursor: "pointer", background: i === index ? "#246282" : undefined, color: i === index ? "#ffffff" : undefined }}>{option.label}</div>)}
     </div>, document.body)}

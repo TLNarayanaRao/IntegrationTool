@@ -526,6 +526,15 @@ details:not([open])>summary>.tree-disclosure:after {
 .mapping-context-menu > button.selected { background: color-mix(in srgb, var(--accent, #28c8ef) 24%, transparent); color: var(--accent, #28c8ef); }
 .mapping-context-menu button.danger { color: #ff7d8c; }
 .mapping-context-menu button:disabled { opacity: .38; }
+.field-condition-tree { width:100%; min-width:0; padding:10px; box-sizing:border-box; border:1px solid var(--line,#476174); border-radius:8px; background:var(--panel,#112635); color:var(--text,#e4f4fa); }
+.field-condition-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; }
+.field-condition-heading button { width:auto; padding:4px 8px; color:inherit; background:transparent; border:1px solid var(--line,#476174); border-radius:4px; }
+.field-condition-branch { min-width:0; margin:10px 0 0 8px; padding:8px 0 8px 12px; border-left:2px solid var(--accent,#42d7e8); }
+.field-condition-branch > summary { cursor:pointer; font-weight:600; padding:4px 0; color:inherit; }
+.field-condition-branch > label,.field-condition-branch > div { margin-top:8px; }
+.field-condition-branch label { display:grid; gap:5px; min-width:0; }
+.field-condition-branch > b { font-size:11px; color:var(--text,#e4f4fa); }
+.field-condition-branch .mapping-binding { width:100%; box-sizing:border-box; }
 .mapping-rule-editor { display: grid; gap: 8px; margin: 5px 3px 8px; padding: 10px; border: 1px solid color-mix(in srgb, var(--accent, #28c8ef) 38%, transparent); border-radius: 8px; background: #0003; }
 .mapping-rule-editor label { display: grid; gap: 4px; color: var(--muted, #91a9ba); font-size: 10px; }
 .mapping-rule-editor input { width: 100%; min-width: 0; padding: 7px 8px; color: var(--text, #e8f6ff); background: #07131f; border: 1px solid #36536b; border-radius: 5px; }

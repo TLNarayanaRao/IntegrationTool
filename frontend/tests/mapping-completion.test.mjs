@@ -30,8 +30,8 @@ test('suggestions support plain paths and paths inside functions without SAP ass
   assert.ok(mappingPathSuggestions(paths, 'concat(${Read-JSON.customer.address.').includes('Read-JSON.customer.address.city'));
 });
 
-test('advanced expression editor is connected to the same autocomplete control', async () => {
+test('the compact mapping field retains autocomplete and Enter validation', async () => {
   const editor = await readFile(new URL('../src/ActivityEditor.tsx', import.meta.url), 'utf8');
-  assert.match(editor, /<MappingExpressionInput label="Advanced mapping expression"[^>]*paths=\{completionPaths\}/);
-  assert.doesNotMatch(editor, /<input aria-label="Advanced mapping expression"/);
+  assert.match(editor, /<MappingExpressionInput value=\{editableExpression\}[^>]*paths=\{completionPaths\}[^>]*onCommit=\{commitMapping\}/);
+  assert.doesNotMatch(editor, /className="mapping-(?:constant|function)-editor"/);
 });
