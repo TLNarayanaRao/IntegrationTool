@@ -159,36 +159,21 @@ async def _receive_forever(project, task, event, environment: str) -> None:
 
 
 async def _serve_http(project, listeners, environment: str) -> None:
-    from fastapi import FastAPI, Request
-    from fastapi.responses import JSONResponse, Response
-    import uvicorn
-    app = FastAPI()
-    resources = {item.id: item for item in project.resources}
-    properties = _properties(project, environment)
-    for task, event in listeners:
-        path = str(RUNTIME.resolve(event.config.get('path', '/'), {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}))
-        methods = event.config.get('methods') or event.config.get('method') or 'POST'
-        methods = [part.strip().upper() for part in (methods if isinstance(methods, list) else str(methods).split(','))]
-        async def endpoint(request: Request, _task=task, _event=event):
-            raw = await request.body()
-            try: body = json.loads(raw) if raw else None
-            except (ValueError, UnicodeDecodeError): body = raw.decode(errors='replace')
-            payload = {'body': body, 'method': request.method, 'path': request.url.path,
-                       'query': dict(request.query_params), 'headers': dict(request.headers),
-                       'pathParameters': dict(request.path_params)}
-            result = await RUNTIME.run(_task, payload, resources, properties, _event.id, project)
-            _record(result)
-            if result.status != 'completed': return JSONResponse({'status': 'failed'}, status_code=500)
-            output = result.output
-            if output.get('__httpResponse'):
-                value = output.get('body')
-                return JSONResponse(value, status_code=int(output.get('statusCode') or 200), headers=output.get('headers') or {}) if isinstance(value, (dict, list)) else Response(str(value or ''), status_code=int(output.get('statusCode') or 200), headers=output.get('headers') or {})
-            return JSONResponse(output)
-        app.add_api_route(path, endpoint, methods=methods)
-        LOG.info('HTTP listener ready: %s %s', ','.join(methods), path)
-    port = int(os.environ.get('MINA_HTTP_PORT') or 8787)
-    server = uvicorn.Server(uvicorn.Config(app, host=os.environ.get('MINA_HTTP_HOST', '0.0.0.0'), port=port, log_level='info'))
-    await server.serve()
+    from .http_server import serve
+    resources = {item.id: item for item in project.resources}; properties = _properties(project, environment)
+    context = {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}
+    routes=[]
+    for task,event in listeners:
+        resource=resources.get(str(event.config.get('resourceId') or ''))
+        connection=RUNTIME.resolve(resource.config,context) if resource else {}
+        if os.environ.get('MINA_HTTP_HOST'):connection['host']=os.environ['MINA_HTTP_HOST']
+        if os.environ.get('MINA_HTTP_PORT'):connection['port']=int(os.environ['MINA_HTTP_PORT'])
+        routes.append(((task,event),connection,RUNTIME.resolve(event.config,context)))
+    async def handle(metadata,payload):
+        task,event=metadata;result=await RUNTIME.run(task,payload,resources,properties,event.id,project);_record(result)
+        if result.status!='completed':raise RuntimeError('HTTP integration failed')
+        return result.output
+    await serve(routes,handle)
 
 
 async def run_application(environment_name: str = 'local') -> None:

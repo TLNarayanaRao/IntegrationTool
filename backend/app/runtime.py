@@ -15,6 +15,7 @@ from .amqp import amqp_adapter
 from .java_bridge import JavaBridgeError, execute_jms, close_jms_senders
 from .sftp import open_connection as open_sftp_connection
 from .mapping_literals import parse_literal
+from .http_transport import request as http_request, merged as merge_http_config
 from .message_state import operate as mediation_operation
 from .google_pubsub import client_configuration as pubsub_client_configuration, create_client as create_pubsub_client
 from .time_utils import log_timestamp
@@ -44,6 +45,8 @@ class WorkflowRuntime:
         return f'mina-run:{self._jms_scope_id}:{project_id}'
 
     def close_application_senders(self, project_id: str):
+        from .http_transport import close_clients
+        close_clients(project_id)
         if self._jms_executor is not None:
             close_jms_senders(self.jms_application_scope(project_id), force=True)
 
@@ -697,9 +700,7 @@ class WorkflowRuntime:
         if activity.type in ('ftp','sftp','http','http_listener','http_response','rest','soap','sap') and cfg.get('resourceId'):
             shared = ctx['resources'].get(cfg['resourceId'])
             if not shared: raise RuntimeError(f'{activity.name} requires a valid shared connection')
-            cfg = {**self.resolve(shared.config, ctx), **cfg}
-            if activity.type in ('http','rest','soap') and cfg.get('baseUrl') and cfg.get('url','').startswith('/'):
-                cfg['url'] = cfg['baseUrl'].rstrip('/') + cfg['url']
+            cfg = merge_http_config(self.resolve(shared.config, ctx), cfg) if activity.type in ('http','rest','soap','http_listener') else {**self.resolve(shared.config, ctx), **cfg}
         return cfg
 
     async def execute(self, activity: Activity, ctx: dict):
@@ -980,28 +981,17 @@ class WorkflowRuntime:
                 delivery['completed'] = True
                 return {'replied': True, 'functionName': delivery.get('functionName'), 'response': response}
             return await asyncio.to_thread(sap_adapter.execute, operation, sap_cfg, payload)
-        if activity.type == 'http':
-            method, url = cfg.get('method','GET'), self.resolve(cfg.get('url',''), ctx)
-            async with httpx.AsyncClient(timeout=float(cfg.get('timeout', 30))) as client:
-                response = await client.request(method, url, headers=self.resolve(cfg.get('headers', {}), ctx), json=self.resolve(cfg.get('body'), ctx) or None)
-                response.raise_for_status()
-                try: return response.json()
-                except ValueError: return {'statusCode': response.status_code, 'body': response.text}
-        if activity.type == 'rest' and cfg.get('operation') == 'invoke':
-            async with httpx.AsyncClient(timeout=float(cfg.get('timeout', 30))) as client:
-                response = await client.request(cfg.get('method', 'GET'), cfg.get('url', ''), headers=cfg.get('headers', {}), params=cfg.get('query', {}), json=cfg.get('body') if cfg.get('bodyType', 'json') == 'json' else None, content=cfg.get('body') if cfg.get('bodyType') != 'json' else None)
-                response.raise_for_status()
-                try: payload = response.json()
-                except ValueError: payload = response.text
-                return {'statusCode': response.status_code, 'headers': dict(response.headers), 'body': payload}
+        if activity.type == 'http' or activity.type == 'rest' and cfg.get('operation') == 'invoke':
+            cfg['_httpScope'] = getattr(ctx.get('project'), 'id', None) or str(id(self))
+            response = await asyncio.to_thread(http_request, cfg)
+            return response['body'] if activity.type == 'http' and cfg.get('responseMode', 'payload') == 'payload' and not (cfg.get('RestInputRequest') is not None or cfg.get('requestModel') == 'tree') else response
         if activity.type == 'soap' and cfg.get('operation') == 'request_reply':
             envelope = cfg.get('envelope') or ctx['last']
             if not isinstance(envelope, (str, bytes)): envelope = self.render_xml(envelope, cfg.get('rootElement', 'Request'))
-            headers = {'Content-Type': cfg.get('contentType', 'text/xml; charset=utf-8'), **cfg.get('headers', {})}
-            if cfg.get('soapAction'): headers['SOAPAction'] = cfg['soapAction']
-            async with httpx.AsyncClient(timeout=float(cfg.get('timeout', 30))) as client:
-                response = await client.post(cfg.get('url', ''), content=envelope, headers=headers)
-                response.raise_for_status(); return {'statusCode': response.status_code, 'headers': dict(response.headers), 'body': response.text}
+            request_cfg = {**cfg, 'method': 'POST', 'body': envelope, 'bodyType': 'text', 'headers': {'Content-Type': cfg.get('contentType', 'text/xml; charset=utf-8'), **cfg.get('headers', {})}}
+            if cfg.get('soapAction'): request_cfg['headers']['SOAPAction'] = cfg['soapAction']
+            request_cfg['_httpScope'] = getattr(ctx.get('project'), 'id', None) or str(id(self))
+            return await asyncio.to_thread(http_request, request_cfg)
         if activity.type == 'file':
             path = Path(self.resolve(cfg.get('path',''), ctx)).expanduser()
             operation = cfg.get('operation','read')

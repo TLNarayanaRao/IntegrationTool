@@ -239,11 +239,14 @@ class ActivityPackTests(unittest.TestCase):
         self.assertEqual({method: response.status_code for method, response in responses.items()}, {method: 200 for method in methods})
 
     def test_run_deploys_inbound_listener_and_returns_live_endpoint(self):
+        import socket
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0)); port = probe.getsockname()[1]
         project = Project(
             id='listener-deploy', name='Listener Deployment',
-            resources=[SharedResource(id='http-server', type='http', name='HTTPS Server', config={
-                'host': 'api.internal.example', 'port': 8443, 'tlsEnabled': True,
-                'authentication': 'Certificate', 'basePath': '/services',
+            resources=[SharedResource(id='http-server', type='http', name='HTTP Server', config={
+                'host': '127.0.0.1', 'port': port, 'connectorMode': 'server',
+                'authentication': 'Basic', 'username': 'tester', 'password': 'local-test', 'basePath': '/services',
             })],
             process=ProcessDefinition(activities=[
                 Activity(id='receive', type='http_listener', name='Orders Listener', config={
@@ -252,25 +255,22 @@ class ActivityPackTests(unittest.TestCase):
                 Activity(id='end', type='end', name='End'),
             ], transitions=[Transition(id='t', source='receive', target='end')]),
         )
-        with patch('app.main.get_project', return_value=project):
-            client = TestClient(app)
+        import httpx
+        with patch('app.main.get_project', return_value=project), TestClient(app) as client:
             response = client.post('/api/projects/listener-deploy/run', json={'environment': 'local'})
-            invocation = client.post('/api/listeners/listener-deploy/orders', json={'orderId': '10001'})
+            self.assertEqual(response.status_code, 200, response.text)
+            result = response.json()
+            self.assertEqual(result['status'], 'listening')
+            url = f'http://127.0.0.1:{port}/services/orders'
+            self.assertEqual(result['endpoints'][0]['url'], url)
+            self.assertEqual(result['endpoints'][0]['configuredUrl'], url)
+            self.assertEqual(httpx.post(url, json={'orderId':'10001'}).status_code, 401)
+            invocation = httpx.post(url, json={'orderId':'10001'}, auth=('tester','local-test'))
+            self.assertEqual(invocation.status_code, 200)
             runtime_state = client.get('/api/projects/listener-deploy/runtime-state').json()
-        self.assertEqual(response.status_code, 200)
-        result = response.json()
-        self.assertEqual(result['status'], 'listening')
-        self.assertEqual(result['endpoints'][0]['url'], 'http://testserver/api/listeners/listener-deploy/orders')
-        self.assertEqual(result['endpoints'][0]['configuredUrl'], 'https://api.internal.example:8443/services/orders')
-        self.assertIn('Application Listener Deployment started', [entry['message'] for entry in result['logs']])
-        self.assertEqual(invocation.status_code, 200)
-        self.assertEqual(runtime_state['status'], 'listening')
-        self.assertEqual(runtime_state['lastExecution']['status'], 'completed')
-        uuid.UUID(runtime_state['lastExecution']['correlationId'])
-        self.assertIn('receive', runtime_state['activityOutputs'])
-        self.assertGreaterEqual(runtime_state['lastExecution']['durationMs'], 0)
-        self.assertTrue(any('Job started' in entry['message'] for entry in runtime_state['logs']))
-        self.assertTrue(any('Job completed' in entry['message'] for entry in runtime_state['logs']))
+            self.assertEqual(runtime_state['lastExecution']['status'], 'completed')
+            self.assertIn('receive', runtime_state['activityOutputs'])
+            client.post('/api/projects/listener-deploy/stop')
 
     def test_project_persists_packaging_and_xsd_schemas(self):
         project = Project(

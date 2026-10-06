@@ -15,6 +15,7 @@ from .models import AIBuildRequest, DebugAction, DebugRequest, Project, RunReque
 from .store import delete_project, get_project, list_projects, project_dir, save_project, safe_component
 from .project_import import MAX_IMPORT_BYTES, project_payload
 from .runtime import WorkflowRuntime
+from .http_transport import HTTPFault
 from .debugger import DebugManager
 from .mapper import execute as execute_mapping, recommend, rewrite_references, validate_output
 from .dataweave import DataWeaveError, execute_details as execute_dataweave
@@ -30,6 +31,10 @@ from .observability import telemetry_status, span
 from .time_utils import log_timestamp
 
 app = FastAPI(title='MINA Runtime', version='0.1.0')
+
+@app.exception_handler(HTTPFault)
+async def http_configuration_fault(request: Request,error: HTTPFault):
+    return JSONResponse({'detail':str(error),'faultType':error.fault_type},status_code=error.status)
 runtime = WorkflowRuntime()
 debugger = DebugManager(runtime)
 runtime_states: dict[str, dict] = {}
@@ -106,6 +111,8 @@ async def shutdown_native_connectors():
     debug_stop_locks.clear()
     sap_adapter.close_all()
     await asyncio.to_thread(runtime.close_publishers)
+    from .http_transport import close_clients
+    await asyncio.to_thread(close_clients)
 
 INBOUND_OPERATIONS = {None, 'listen', 'receiver', 'service'}
 CONTINUOUS_EVENT_OPERATIONS = {
@@ -131,6 +138,30 @@ def _resolved_resource_config(item: Project, activity, properties: dict) -> dict
     context = {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}
     return {key: runtime.resolve(value, context) for key, value in resource.config.items()}
 
+async def _start_http_listener(item,task,event,environment):
+    from .http_server import serve
+    resources={value.id:value for value in item.resources};properties=_environment_values(item,environment)
+    context={'properties':properties,'input':{},'last':{},'vars':{},'context':{}}
+    connection={**_resolved_resource_config(item,event,properties),'_httpScope':item.id}
+    previous=active_runs.pop(item.id,None)
+    if previous:await _cancel_and_wait(previous)
+    async def handle(metadata,payload):
+        result=await runtime.run(task,payload,resources,properties,event.id,item)
+        append_project_logs(item.id,item.name,result.logs,_project_log_directory(item,environment))
+        _publish_runtime_state(item.id,status='listening',logs=(runtime_states.get(item.id,{}).get('logs',[])+result.logs)[-500:],result=result,environment=environment)
+        if result.status!='completed':raise RuntimeError('HTTP integration failed')
+        return result.output
+    ready=asyncio.Event();job=asyncio.create_task(serve([(None,connection,runtime.resolve(event.config,context))],handle,ready));active_runs[item.id]=job
+    waiter=asyncio.create_task(ready.wait())
+    try:
+        done,_=await asyncio.wait([job,waiter],timeout=15,return_when=asyncio.FIRST_COMPLETED)
+        if job in done:await job
+        if not ready.is_set():raise RuntimeError('HTTP listener did not start within 15 seconds')
+    except Exception:
+        active_runs.pop(item.id,None);await _cancel_and_wait(job);raise
+    finally:waiter.cancel()
+
+
 def _listener_endpoints(item: Project, task, environment: str, base_url: str = '') -> list[dict]:
     properties = {prop.key: prop.value for prop in item.properties.get(environment, [])}
     endpoints = []
@@ -139,18 +170,21 @@ def _listener_endpoints(item: Project, task, environment: str, base_url: str = '
         cfg = _resolved_resource_config(item, activity, properties)
         path = str(runtime.resolve(activity.config.get('path', '/'), {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}) or '/')
         if not path.startswith('/'): path = '/' + path
-        base_path = str(cfg.get('basePath') or '').strip('/')
-        deployment_path = ('/' + base_path if base_path else '') + path
-        tls = str(cfg.get('tlsEnabled', cfg.get('scheme') == 'https')).lower() in ('true', '1', 'yes', 'on')
+        from .http_server import listener_config
+        effective=listener_config(cfg,runtime.resolve(activity.config,{'properties':properties,'input':{},'last':{},'vars':{},'context':{}}))
+        deployment_path=effective['path']
+        path=deployment_path
+        from .http_server import server_tls
+        tls = server_tls(cfg)
         scheme = 'https' if tls else str(cfg.get('scheme') or 'http')
         host = str(cfg.get('host') or 'localhost')
-        port = int(cfg.get('port') or (443 if scheme == 'https' else 80))
+        port = int(cfg.get('port') or 8080)
         default_port = (scheme == 'https' and port == 443) or (scheme == 'http' and port == 80)
         configured_url = f'{scheme}://{host}{"" if default_port else f":{port}"}{deployment_path}'
         relative_url = f'/api/listeners/{item.id}{path}'
-        methods = str(activity.config.get('methods', activity.config.get('method', 'POST'))).replace(' ', '').split(',')
+        methods = str(effective.get('methods') or effective.get('method') or 'POST').replace(' ', '').split(',')
         endpoints.append({'taskId': task.id, 'activityId': activity.id, 'name': activity.name, 'type': activity.type,
-                          'methods': methods, 'path': path, 'url': base_url.rstrip('/') + relative_url if base_url else relative_url,
+                          'methods': methods, 'path': path, 'url': configured_url, 'previewUrl': base_url.rstrip('/') + relative_url if base_url else relative_url,
                           'relativeUrl': relative_url, 'configuredUrl': configured_url, 'tlsEnabled': tls,
                           'authentication': cfg.get('authentication', 'None')})
     return endpoints
@@ -634,6 +668,8 @@ async def run(project_id: str, http_request: Request, request: RunRequest):
     diagnostics = _startup_diagnostics(item, task, resources, properties, request.environment, 'RUN')
     endpoints = _listener_endpoints(item, task, request.environment, str(http_request.base_url).rstrip('/'))
     if endpoints:
+        try:await _start_http_listener(item,task,event,request.environment)
+        except Exception as error:raise HTTPException(400,f'HTTP listener startup failed: {error}')
         lifecycle = diagnostics + _lifecycle_logs(item, endpoints)
         append_project_logs(project_id, item.name, lifecycle, _project_log_directory(item, request.environment))
         _publish_runtime_state(project_id, status='listening', logs=lifecycle, endpoints=endpoints, environment=request.environment)
@@ -958,7 +994,8 @@ def deployment_package_files(item: Project, target: str, environment: str, artif
             output = {}
             for key, child in value.items():
                 child_path = f'{path}.{key}'.strip('.')
-                if sensitive.search(str(key)) and isinstance(child, (str, bytes)) and not str(child).startswith('${properties.'):
+                location = str(key).lower().endswith(('url','file','path'))
+                if sensitive.search(str(key)) and not location and isinstance(child, (str, bytes)) and not str(child).startswith('${properties.'):
                     output[key] = ''
                     if child: secret_keys.append(child_path)
                 else: output[key] = scrub(child, child_path)
@@ -1508,15 +1545,16 @@ async def test_connection(resource: SharedResource):
         import sqlite3
         conn = sqlite3.connect(cfg.get('url','sap-tid.db')); conn.execute('CREATE TABLE IF NOT EXISTS sap_tid (tid TEXT PRIMARY KEY, state TEXT, updated_at TEXT)'); conn.close(); return {'ok':True,'message':'SAP TID Manager database is ready'}
     if resource.type == 'http':
-        if cfg.get('connectorMode', 'both') in ('server', 'both'):
-            host, port = cfg.get('host', 'localhost'), int(cfg.get('port', 80))
-            if not 1 <= port <= 65535: return {'ok': False, 'message': 'Listener port must be between 1 and 65535'}
-            if str(cfg.get('tlsEnabled', 'false')).lower() in ('true','1','yes','on') and (not cfg.get('certificateFile') or not cfg.get('privateKeyFile')):
-                return {'ok': False, 'message': 'HTTPS listener requires a certificate file and private key file'}
-            return {'ok': True, 'message': f'HTTP listener configuration is valid for {host}:{port}'}
-        import httpx
-        async with httpx.AsyncClient(timeout=float(cfg.get('timeoutSeconds',5)), verify=str(cfg.get('verifyTls', 'true')).lower() in ('true','1','yes','on')) as client: response = await client.get(cfg.get('baseUrl') or cfg.get('url'))
-        return {'ok': response.status_code < 500, 'message': f'HTTP endpoint returned {response.status_code}'}
+        from .http_transport import request as send_http, tls_context, boolean
+        from .http_server import listener_config, server_tls
+        try:
+            if cfg.get('connectorMode', 'both') in ('server','both'):
+                settings=listener_config(cfg,{})
+                if server_tls(settings):tls_context(settings,server=True)
+                return {'ok':True,'message':f'HTTP server configuration validated for {settings.get("host", "localhost")}:{settings.get("port",8080)}; authentication is enforced per request'}
+            output=await asyncio.to_thread(send_http,{'method':'GET','url':cfg.get('baseUrl') or cfg.get('url') or '/','raiseForStatus':False},cfg)
+            return {'ok':output['statusCode']<500,'message':f'HTTP endpoint returned {output["statusCode"]}'}
+        except Exception as error:return {'ok':False,'message':str(error)}
     if resource.type == 'sap':
         try: return await __import__('asyncio').to_thread(sap_adapter.test, cfg)
         except Exception as exc: return {'ok':False,'message':str(exc)}
@@ -1693,7 +1731,31 @@ def mapper_test(payload: dict):
         errors = validate_output(output, schema) if schema and (payload.get('options') or {}).get('validateOutput', True) else []
         active = [rule for rule in normalized if rule.get('enabled', True)]
         mapped_targets = sorted({str(rule.get('target')) for rule in active if rule.get('target')})
-        return {'output': output, 'valid': not errors, 'validationErrors': errors, 'mappingCount': len(active), 'mappedTargets': mapped_targets, 'diagnostics': {'mappedTargetCount': len(mapped_targets), 'loopCount': len([rule for rule in active if rule.get('operator') in ('for-each', 'for-each-group')]), 'conditionalCount': len([rule for rule in active if rule.get('operator') in ('if', 'when-otherwise', 'choose')])}}
+        # Preserve the runtime value and return a separate readable preview.
+        output_format = 'json'
+        output_text = json.dumps(output, indent=2, ensure_ascii=False)
+        if isinstance(output, str):
+            output_text = output
+            output_format = 'xml' if output.lstrip().startswith('<') else 'text'
+        elif isinstance(schema, str) and '<' in schema and 'schema' in schema:
+            from .mapper import _render_xml
+            from xml.etree import ElementTree as ET
+            contract = ET.fromstring(schema)
+            declarations = [element for element in contract if element.tag.rsplit('}', 1)[-1] == 'element']
+            root_name = declarations[0].get('name', 'root') if declarations else 'root'
+            value = output.get(root_name, output) if isinstance(output, dict) else output
+            rendered = ET.fromstring(_render_xml(value, root_name))
+            namespace = contract.get('targetNamespace')
+            if namespace:
+                rendered.tag = '{' + namespace + '}' + rendered.tag
+                if contract.get('elementFormDefault') == 'qualified':
+                    for element in list(rendered.iter())[1:]:
+                        element.tag = '{' + namespace + '}' + element.tag
+                ET.register_namespace('', namespace)
+            ET.indent(rendered, space='  ')
+            output_text = ET.tostring(rendered, encoding='unicode')
+            output_format = 'xml'
+        return {'output': output, 'outputText': output_text, 'outputFormat': output_format, 'valid': not errors, 'validationErrors': errors, 'mappingCount': len(active), 'mappedTargets': mapped_targets, 'diagnostics': {'mappedTargetCount': len(mapped_targets), 'loopCount': len([rule for rule in active if rule.get('operator') in ('for-each', 'for-each-group')]), 'conditionalCount': len([rule for rule in active if rule.get('operator') in ('if', 'when-otherwise', 'choose')])}}
     except Exception as exc: raise HTTPException(400, f'Mapping failed: {exc}')
 
 @app.post('/api/mapper/suite')
@@ -1877,40 +1939,64 @@ async def invoke_listener(project_id: str, listener_path: str, request: Request,
     request_path = '/' + listener_path
     starter_tasks = [task for task in item.tasks if task.kind == 'starter']
     candidates = [(task, activity) for task in starter_tasks for activity in task.activities if activity.type in ('http_listener', 'rest', 'soap') and activity.config.get('operation') in (None, 'listen', 'receiver', 'service')]
+    properties=_environment_values(item,environment)
+    def configured_path(activity):
+        from .http_server import listener_config
+        connection=_resolved_resource_config(item,activity,properties)
+        configured=runtime.resolve(activity.config,{'properties':properties,'input':{},'last':{},'vars':{},'context':{}})
+        return listener_config(connection,configured)['path']
     def match_path(template: str):
-        names = re.findall(r'\{([^}]+)\}', template)
-        pattern = '^' + re.sub(r'\{[^}]+\}', r'([^/]+)', template.rstrip('/')) + '/?$'
-        match = re.match(pattern, request_path)
-        return dict(zip(names, match.groups())) if match else None
-    matched = next(((task, activity, match_path(activity.config.get('path', '/'))) for task, activity in candidates if match_path(activity.config.get('path', '/')) is not None and (request.method.upper() in _configured_http_methods(activity) or (activity.type == 'soap' and request.method == 'GET' and 'wsdl' in request.query_params))), None)
+        from .http_server import route_pattern
+        pattern,names=route_pattern(str(template))
+        match=pattern.match(request_path)
+        return dict(zip(names,match.groups())) if match else None
+    matched = next(((task, activity, match_path(configured_path(activity))) for task, activity in candidates if match_path(configured_path(activity)) is not None and (request.method.upper() in _configured_http_methods(activity) or (activity.type == 'soap' and request.method == 'GET' and 'wsdl' in request.query_params))), None)
     task, listener, path_parameters = matched if matched else (None, None, {})
     if not listener: raise HTTPException(404, f'No listener configured for {request.method} {request_path}')
     properties = {prop.key: prop.value for prop in item.properties.get(environment, [])}
     listener_cfg = _resolved_resource_config(item, listener, properties)
-    authentication = str(listener_cfg.get('authentication', 'None')).lower()
-    authorization = request.headers.get('authorization', '')
-    if authentication == 'basic':
-        import base64, hmac
-        try: supplied = base64.b64decode(authorization.removeprefix('Basic ').strip()).decode()
-        except Exception: supplied = ''
-        expected = f'{listener_cfg.get("username", "")}:{listener_cfg.get("password", "")}'
-        if not authorization.startswith('Basic ') or not hmac.compare_digest(supplied, expected):
-            return JSONResponse({'detail': 'HTTP Basic authentication failed'}, status_code=401, headers={'WWW-Authenticate': 'Basic'})
-    elif authentication == 'bearer':
-        import hmac
-        expected = f'Bearer {listener_cfg.get("bearerToken", "")}'
-        if not hmac.compare_digest(authorization, expected):
-            return JSONResponse({'detail': 'Bearer authentication failed'}, status_code=401, headers={'WWW-Authenticate': 'Bearer'})
+    from .http_transport import HTTPFault, authorize, number, boolean
+    listener_cfg = {**listener_cfg, '_httpScope':item.id, **runtime.resolve(listener.config, {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}})}
+    if listener.type != 'soap':
+        from .http_server import ListenerApp, listener_config
+        try:cfg=listener_config(listener_cfg,runtime.resolve(listener.config,{'properties':properties,'input':{},'last':{},'vars':{},'context':{}}))
+        except HTTPFault as error:return JSONResponse({'detail':str(error)},status_code=error.status)
+        async def handle_preview(metadata,payload):
+            resources={resource.id:resource for resource in item.resources}
+            result=await runtime.run(task,payload,resources,properties,listener.id,item)
+            append_project_logs(project_id,item.name,result.logs,_project_log_directory(item,environment))
+            combined_logs=list(runtime_states.get(project_id,{}).get('logs',[]))+result.logs
+            _publish_runtime_state(project_id,status='listening' if result.status=='completed' else 'failed',logs=combined_logs[-500:],result=result,environment=environment)
+            if result.status!='completed':raise RuntimeError('Integration execution failed')
+            return result.output
+        preview=ListenerApp([(None,cfg)],handle_preview,cfg,warm_workers=False)
+        scope={**request.scope,'path':request_path,'raw_path':request_path.encode()}
+        messages=[]
+        async def collect(message):messages.append(message)
+        try:await preview(scope,request.receive,collect)
+        finally:preview.executor.shutdown(wait=False,cancel_futures=True)
+        start=next(message for message in messages if message['type']=='http.response.start')
+        body=b''.join(message.get('body',b'') for message in messages if message['type']=='http.response.body')
+        return Response(body,status_code=start['status'],headers={key.decode('latin1'):value.decode('latin1') for key,value in start['headers']})
+    raw_chunks=[];raw_size=0
+    async for chunk in request.stream():
+        raw_size+=len(chunk)
+        if raw_size>number(listener_cfg,'maxRequestBodyBytes',64*1024**2,1):return JSONResponse({'detail':'HTTP request body limit exceeded'},status_code=413)
+        raw_chunks.append(chunk)
+    raw=b''.join(raw_chunks)
+    try:
+        claims=await asyncio.to_thread(authorize,listener_cfg,request.method,request_path+('?' + request.url.query if request.url.query else ''),dict(request.headers),raw,False)
+    except HTTPFault as error:
+        return JSONResponse({'detail':str(error)},status_code=error.status,headers={'WWW-Authenticate':'Basic realm="MINA"' if str(listener_cfg.get('authentication')).lower() in ('basic','ldap') else 'Bearer'})
     if listener.type == 'soap' and request.method == 'GET' and 'wsdl' in request.query_params:
         wsdl = listener.config.get('wsdlContent', '')
         wsdl_path = listener.config.get('wsdl', '')
         if not wsdl and wsdl_path and Path(wsdl_path).is_file(): wsdl = Path(wsdl_path).read_text()
         if not wsdl: raise HTTPException(404, 'WSDL is not configured for this SOAP service')
         return Response(wsdl, media_type='text/xml')
-    raw = await request.body()
     try: body = json.loads(raw) if raw else None
     except (ValueError, UnicodeDecodeError): body = raw.decode(errors='replace')
-    payload = {'body': body, 'method': request.method, 'path': request_path, 'query': dict(request.query_params), 'headers': dict(request.headers), 'pathParameters': path_parameters}
+    payload = {'body': body, 'method': request.method, 'path': request_path, 'query': dict(request.query_params), 'headers': dict(request.headers), 'pathParameters': path_parameters, 'auth': claims}
     resources = {resource.id: resource for resource in item.resources}
     result = await runtime.run(task, payload, resources, properties, listener.id, item)
     deployment = runtime_states.get(project_id, {})

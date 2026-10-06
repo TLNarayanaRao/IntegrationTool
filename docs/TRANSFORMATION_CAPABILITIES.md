@@ -111,3 +111,9 @@ These primitives support reliable processing but cannot guarantee exactly-once
 external side effects. A crash between an external write and its receipt may
 require replay; make the downstream write idempotent using the stable key.
 Live broker/provider qualification remains necessary for production deployment.
+
+## Visual mapper and generated previews
+
+Open Visual AI Mapper from Mapper Configuration. The left pane contains editable source test data and available source paths, the middle pane contains saved mappings and the complete selected target schema field list, and the right pane displays generated output after Run mapping test. Named XSD types and local JSON Schema references use the same field parser as the Input tab. Source expressions remain editable, including upstream activity references and functions. Schema text is available under the collapsed schema sections.
+
+Map & Test also displays generated output directly after running. JSON targets show formatted JSON; XSD targets show an XML preview with repeating elements and the target namespace. The preview does not change the Mapper runtime object or exported archive behavior; use Render XML or render-xml when the downstream activity requires a serialized XML value. Test data and the latest output are retained when saving the visual mapper.

@@ -330,7 +330,7 @@ const isEventActivity = (item: { type: Kind; operation?: string; config?: Record
 const ai = (asset: string) => (
   <img src={`/activity-icons/${asset.includes(".") ? asset : `${asset}.png`}`} alt="" />
 );
-const resourceIconSources: Record<string, string> = { http: "/activity-icons/http.png", ftp: "/activity-icons/ftp.png", sftp: "/activity-icons/sftp.png", ems: "/activity-icons/ems.png", jms: "/activity-icons/jms-connection.svg", kafka: "/vendor-logos/apache-kafka.svg", pubsub: "/vendor-logos/gcp-pubsub.png", jdbc: "/activity-icons/JDBC-Query.png", snowflake: "/activity-icons/snowflake.svg", amqp: "/vendor-logos/rabbitmq.svg", sap: "/vendor-logos/sap.svg", sap_tid: "/vendor-logos/sap.svg" };
+const resourceIconSources: Record<string, string> = { http_client:"/activity-icons/http.png", http_server:"/activity-icons/http.png", http: "/activity-icons/http.png", ftp: "/activity-icons/ftp.png", sftp: "/activity-icons/sftp.png", ems: "/activity-icons/ems.png", jms: "/activity-icons/jms-connection.svg", kafka: "/vendor-logos/apache-kafka.svg", pubsub: "/vendor-logos/gcp-pubsub.png", jdbc: "/activity-icons/JDBC-Query.png", snowflake: "/activity-icons/snowflake.svg", amqp: "/vendor-logos/rabbitmq.svg", sap: "/vendor-logos/sap.svg", sap_tid: "/vendor-logos/sap.svg" };
 const ResourceVendorIcon = ({ type }: { type: string }) => resourceIconSources[type] ? <img className={`resource-vendor-icon resource-${type}`} src={resourceIconSources[type]} alt=""/> : <Database/>;
 const packs: { name: string; icon: any; items: Def[] }[] = [
   {
@@ -639,6 +639,7 @@ const defaultProperties: Property[] = [
   { key: "connections.http.certificateFile", value: "", data_type: "string" },
   { key: "connections.http.privateKeyFile", value: "", data_type: "string" },
   { key: "connections.http.privateKeyPassword", value: "", data_type: "password" },
+  { key: "connections.http.trustedCertificateFolder", value: "", data_type: "string" },
   { key: "connections.http.certificateAuthorityFile", value: "", data_type: "string" },
   { key: "connections.http.clientAuthentication", value: "none", data_type: "string" },
   { key: "connections.http.tlsVersion", value: "TLSv1.2", data_type: "string" },
@@ -1257,7 +1258,7 @@ function App() {
     }),
     [menu, setMenu] = useState<any>(null),
     [taskDialog, setTaskDialog] = useState<"starter" | "subtask" | null>(null),
-    [connectionDialog, setConnectionDialog] = useState<Resource["type"] | null>(
+    [connectionDialog, setConnectionDialog] = useState<Resource["type"] | "http_client" | "http_server" | null>(
       null,
     ),
     [editingConnection, setEditingConnection] = useState<Resource | null>(null),
@@ -1900,10 +1901,8 @@ function App() {
       Object.assign(config, { path: "/events", methods: "GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS,TRACE,CONNECT" });
     if (d.type === "http" || (d.type === "rest" && d.operation === "invoke"))
       Object.assign(config, {
-        method: "GET",
-        url: "https://",
-        headers: {},
-        body: "${last}",
+        requestModel: "tree", responseMode: "envelope",
+        inputMappings: { "RestInputRequest.Config.Method": '"GET"', "RestInputRequest.Config.bodyFormat": '"json"' },
       });
     const n: Node = {
       id,
@@ -3545,7 +3544,8 @@ function App() {
       )}
       {connectionDialog && (
         <SharedConnectionDialog
-          type={connectionDialog}
+          type={connectionDialog === "http_client" || connectionDialog === "http_server" ? "http" : connectionDialog}
+          initialRole={connectionDialog === "http_client" ? "client" : connectionDialog === "http_server" ? "server" : undefined}
           properties={project.properties[project.active_environment] || []}
           onSapSchemaFetched={(idoc: any) => upsertSapIdocSchema(idoc)}
           onClose={() => setConnectionDialog(null)}
@@ -4517,7 +4517,9 @@ function Context({
   close,
 }: any) {
   const connectionChoices: Record<string, { label: string; description: string }> = {
-    http: { label: "HTTP Connection", description: "Listener, outbound HTTP and TLS" },
+    http: { label: "HTTP Connection", description: "Legacy combined listener / client" },
+    http_client: {label:"HTTP Client Connection",description:"Outbound REST / HTTP, pooling, TLS and authentication"},
+    http_server: {label:"HTTP Server Connection",description:"HTTP / REST services, workers, TLS and authentication"},
     ftp: { label: "FTP Connection", description: "File transfer over FTP" },
     sftp: { label: "SFTP Connection", description: "Secure SSH file transfer" },
     ems: { label: "EMS Connection", description: "EMS queues and topics" },
@@ -4616,6 +4618,8 @@ function Context({
           <div className="connection-menu-heading"><Cable/><span><b>Create shared connection</b><small>Choose a reusable connector</small></span></div>
           {(
             [
+              "http_client",
+              "http_server",
               "http",
               "ftp",
               "sftp",
@@ -4779,18 +4783,106 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "clientKeyPassword", label: "Private key password", password: true, when: (config: any) => String(config.sslEnabled) === "true" },
   ],
   http: [
-    { key: "connectorMode", label: "Connector mode", options: ["server", "client", "both"] },
-    { key: "scheme", label: "Protocol", options: ["http", "https"] }, { key: "host", label: "Listener host" }, { key: "port", label: "Listener port" },
-    { key: "basePath", label: "Listener base path" }, { key: "baseUrl", label: "Outbound base URL" },
-    { key: "authentication", label: "Authentication", options: ["None", "Basic", "Bearer", "Certificate"] },
-    { key: "username", label: "Basic-auth username" }, { key: "password", label: "Basic-auth password", password: true },
-    { key: "bearerToken", label: "Bearer token", password: true }, { key: "tlsEnabled", label: "Enable HTTPS / SSL", options: ["false", "true"] },
-    { key: "certificateFile", label: "Server certificate file" }, { key: "privateKeyFile", label: "Server private key file" },
-    { key: "privateKeyPassword", label: "Private key password", password: true }, { key: "certificateAuthorityFile", label: "Trusted CA file" },
-    { key: "clientAuthentication", label: "Client certificate authentication", options: ["none", "optional", "required"] },
+    { key: "connectorMode", label: "Connection role", options: ["client", "server", "both"] },
+    { key: "scheme", label: "Protocol", options: ["http", "https"] },
+    { key: "host", label: "Default host" },
+    { key: "port", label: "Default port" },
+    { key: "basePath", label: "Base path" },
+    { key: "baseUrl", label: "Outbound base URL", when: (config: any) => config.connectorMode !== "server" },
+    { key: "httpVersion", label: "HTTP protocol version", options: ["1.1", "2"], when: (config: any) => config.connectorMode !== "server" },
+    { key: "authentication", label: "Authentication", options: ["None", "Basic", "Digest", "NTLM", "Bearer", "OAuth2", "JWT", "HMAC", "LDAP", "Certificate"] },
+    { key: "username", label: "Username", when: (config: any) => ["Basic", "Digest", "NTLM"].includes(config.authentication) },
+    { key: "password", label: "Password", password: true, when: (config: any) => ["Basic", "Digest", "NTLM"].includes(config.authentication) },
+    { key: "nonPreemptiveAuthentication", label:"Non-preemptive Basic authentication", options:["false","true"], when:(config:any)=>config.authentication === "Basic" && config.connectorMode !== "server" },
+    { key: "bearerToken", label: "Bearer access token", password: true, when: (config: any) => ["Bearer"].includes(config.authentication) },
+    { key: "defaultConfidentiality", label: "Default confidentiality / system trust", options: ["false", "true"], when: (config: any) => config.connectorMode !== "server" },
+    { key: "confidentiality", label: "Custom confidentiality", options: ["false", "true"] },
+    { key: "tlsEnabled", label: "Enable TLS", options: ["false", "true"] },
+    { key: "verifyTls", label: "Verify server certificate and hostname", options: ["true", "false"], when: (config: any) => config.connectorMode !== "server" },
     { key: "tlsVersion", label: "Minimum TLS version", options: ["TLSv1.2", "TLSv1.3"] },
-    { key: "connectTimeoutSeconds", label: "Connect timeout (seconds)" }, { key: "timeoutSeconds", label: "Read timeout (seconds)" },
-    { key: "proxyHost", label: "Proxy host" }, { key: "proxyPort", label: "Proxy port" }, { key: "verifyTls", label: "Verify outbound TLS", options: ["true", "false"] },
+    { key: "maximumTlsVersion", label: "Maximum TLS version", options: ["", "TLSv1.2", "TLSv1.3"] },
+    { key: "cipherSuites", label: "TLS 1.2 cipher list" },
+    { key: "trustedCertificateFolder", label: "Trusted root / chain certificate folder", placeholder: "Folder path or ${properties.connections.http.trustedCertificateFolder}" },
+    { key: "trustStoreType", label: "Trust store format", options: ["PEM", "PKCS12", "JKS"] },
+    { key: "trustStoreFile", label: "Trust store / CA certificate path" },
+    { key: "trustStorePassword", label: "Trust store password", password: true },
+    { key: "identityStoreType", label: "Identity store format", options: ["PKCS12", "JKS"] },
+    { key: "identityStoreFile", label: "Identity store path" },
+    { key: "identityStorePassword", label: "Identity store password", password: true },
+    { key: "keyAlias", label: "Identity key alias (JKS)" },
+    { key: "certificateFile", label: "PEM certificate chain path" },
+    { key: "privateKeyFile", label: "PEM private key path" },
+    { key: "privateKeyPassword", label: "PEM private key password", password: true },
+    { key: "clientAuthentication", label: "Inbound client certificates", options: ["none", "optional", "required"], when: (config: any) => config.connectorMode !== "client" },
+    { key: "crlFile", label: "PEM certificate revocation list" },
+    { key: "connectionTimeoutMs", label: "Connection timeout (ms; 0 unlimited)", when: (config: any) => config.connectorMode !== "server" },
+    { key: "socketTimeoutMs", label: "Socket / read timeout (ms; 0 unlimited)", when: (config: any) => config.connectorMode !== "server" },
+    { key: "writeTimeoutMs", label: "Write timeout (ms; 0 unlimited)", when: (config: any) => config.connectorMode !== "server" },
+    { key: "poolTimeoutMs", label: "Connection pool wait timeout (ms; 0 unlimited)", when: (config: any) => config.connectorMode !== "server" },
+    { key: "maximumTotalConnections", label: "Maximum total client connections", when: (config: any) => config.connectorMode !== "server" },
+    { key: "maximumConnectionsPerHost", label: "Maximum client connections per host", when: (config: any) => config.connectorMode !== "server" },
+    { key: "disableConnectionPooling", label: "Disable client pooling", options: ["false", "true"], when: (config: any) => config.connectorMode !== "server" },
+    { key: "usePersistentConnections", label: "Persistent connections", options: ["true", "false"] },
+    { key: "idleConnectionTimeoutMs", label: "Idle connection timeout (ms)" },
+    { key: "followRedirects", label: "Follow redirects", options: ["false", "true"], when: (config: any) => config.connectorMode !== "server" },
+    { key: "retryCount", label: "Connection retry count", when: (config: any) => config.connectorMode !== "server" },
+    { key: "retryDelayMs", label: "Connection retry delay (ms)", when: (config: any) => config.connectorMode !== "server" },
+    { key: "enableCookies", label: "Accept and resend cookies", options: ["false", "true"], when: (config: any) => config.connectorMode !== "server" },
+    { key: "headers", label: "Default headers JSON", multiline: true, when: (config: any) => config.connectorMode !== "server" },
+    { key: "query", label: "Default query parameters JSON", multiline: true, when: (config: any) => config.connectorMode !== "server" },
+    { key: "proxyUrl", label: "Proxy URL", when: (config: any) => config.connectorMode !== "server" },
+    { key: "proxyHost", label: "Proxy host", when: (config: any) => config.connectorMode !== "server" },
+    { key: "proxyPort", label: "Proxy port", when: (config: any) => config.connectorMode !== "server" },
+    { key: "proxyUsername", label: "Proxy username", when: (config: any) => config.connectorMode !== "server" },
+    { key: "proxyPassword", label: "Proxy password", password: true, when: (config: any) => config.connectorMode !== "server" },
+    { key: "minimumQtpThreads", label: "Minimum QTP-equivalent authentication workers", when: (config: any) => config.connectorMode !== "client" },
+    { key: "maximumQtpThreads", label: "Maximum HTTP workers / concurrent executions", when: (config: any) => config.connectorMode !== "client" },
+    { key: "maxQueueSize", label: "Maximum queued HTTP connections", when: (config: any) => config.connectorMode !== "client" },
+    { key: "queueTimeoutMs", label: "Execution queue timeout (ms)", when: (config: any) => config.connectorMode !== "client" },
+    { key: "acceptQueueSize", label: "Socket accept backlog", when: (config: any) => config.connectorMode !== "client" },
+    { key: "readTimeoutMs", label: "Inbound read timeout (ms)", when: (config: any) => config.connectorMode !== "client" },
+    { key: "maxHeaderBytes", label: "Maximum request header bytes", when: (config: any) => config.connectorMode !== "client" },
+    { key: "maxRequestBodyBytes", label: "Maximum request body bytes" },
+    { key: "maxResponseBodyBytes", label: "Maximum response body bytes" },
+    { key: "allowedIps", label: "Allowed client IPs / CIDRs", when: (config: any) => config.connectorMode !== "client" },
+    { key: "activityTimeoutSeconds", label: "Total activity / listener timeout (seconds)" },
+    { key: "oauthGrantType", label: "OAuth2 grant", options: ["client_credentials", "authorization_code", "refresh_token"], when: (config: any) => ["OAuth2"].includes(config.authentication) },
+    { key: "oauthTokenUrl", label: "OAuth2 token URL", when: (config: any) => ["OAuth2"].includes(config.authentication) },
+    { key: "oauthClientId", label: "OAuth2 client ID", when: (config: any) => ["OAuth2"].includes(config.authentication) },
+    { key: "oauthClientSecret", label: "OAuth2 client secret", password: true, when: (config: any) => ["OAuth2"].includes(config.authentication) },
+    { key: "oauthClientAuthentication", label: "OAuth2 client credentials location", options: ["basic", "body"], when: (config: any) => ["OAuth2"].includes(config.authentication) },
+    { key: "oauthScope", label: "OAuth2 scopes", when: (config: any) => ["OAuth2"].includes(config.authentication) },
+    { key: "oauthAuthorizationCode", label: "OAuth2 authorization code", password: true, when: (config: any) => ["OAuth2"].includes(config.authentication) },
+    { key: "oauthRedirectUri", label: "OAuth2 redirect URI", when: (config: any) => ["OAuth2"].includes(config.authentication) },
+    { key: "oauthCodeVerifier", label: "OAuth2 PKCE verifier", password: true, when: (config: any) => ["OAuth2"].includes(config.authentication) },
+    { key: "oauthRefreshToken", label: "OAuth2 refresh token", password: true, when: (config: any) => ["OAuth2"].includes(config.authentication) },
+    { key: "oauthTimeoutSeconds", label: "OAuth2 endpoint timeout (seconds)", when: (config: any) => ["OAuth2"].includes(config.authentication) },
+    { key: "oauthIntrospectionUrl", label: "OAuth2 inbound token introspection URL", when: (config: any) => ["OAuth2"].includes(config.authentication) },
+    { key: "oauthRequiredScopes", label: "Required inbound OAuth2 scopes", when: (config: any) => ["OAuth2"].includes(config.authentication) },
+    { key: "jwtToken", label: "Outbound preissued JWT", password: true, when: (config: any) => ["JWT"].includes(config.authentication) },
+    { key: "jwtAlgorithm", label: "JWT signature algorithm", options: ["HS256", "HS384", "HS512", "RS256", "RS384", "RS512", "ES256", "ES384"], when: (config: any) => ["JWT"].includes(config.authentication) },
+    { key: "jwtSecret", label: "JWT HMAC secret", password: true, when: (config: any) => ["JWT"].includes(config.authentication) },
+    { key: "jwtPrivateKeyFile", label: "JWT signing private key path", when: (config: any) => ["JWT"].includes(config.authentication) },
+    { key: "jwtPublicKeyFile", label: "JWT verification public key path", when: (config: any) => ["JWT"].includes(config.authentication) },
+    { key: "jwtIssuer", label: "JWT issuer", when: (config: any) => ["JWT"].includes(config.authentication) },
+    { key: "jwtAudience", label: "JWT audience", when: (config: any) => ["JWT"].includes(config.authentication) },
+    { key: "jwtClaims", label: "Outbound JWT claims JSON", multiline: true, when: (config: any) => ["JWT"].includes(config.authentication) },
+    { key: "jwtLifetimeSeconds", label: "JWT lifetime (seconds)", when: (config: any) => ["JWT"].includes(config.authentication) },
+    { key: "jwtClockSkewSeconds", label: "JWT clock skew (seconds)", when: (config: any) => ["JWT"].includes(config.authentication) },
+    { key: "hmacAlgorithm", label: "Request HMAC algorithm", options: ["SHA256", "SHA384", "SHA512"], when: (config: any) => ["HMAC"].includes(config.authentication) },
+    { key: "hmacKeyId", label: "Request HMAC key ID", when: (config: any) => ["HMAC"].includes(config.authentication) },
+    { key: "hmacSecret", label: "Request HMAC secret", password: true, when: (config: any) => ["HMAC"].includes(config.authentication) },
+    { key: "hmacClockSkewSeconds", label: "Request HMAC clock skew (seconds)", when: (config: any) => ["HMAC"].includes(config.authentication) },
+    { key: "ldapUrl", label: "LDAP / LDAPS URL", when: (config: any) => ["LDAP"].includes(config.authentication) },
+    { key: "ldapStartTls", label: "Require LDAP StartTLS", options: ["true", "false"], when: (config: any) => ["LDAP"].includes(config.authentication) },
+    { key: "ldapCaFile", label: "LDAP trusted CA PEM path", when: (config: any) => ["LDAP"].includes(config.authentication) },
+    { key: "ldapTimeoutSeconds", label: "LDAP operation timeout (seconds)", when: (config: any) => ["LDAP"].includes(config.authentication) },
+    { key: "ldapUserDnTemplate", label: "LDAP user DN template ({username})", when: (config: any) => ["LDAP"].includes(config.authentication) },
+    { key: "ldapBindDn", label: "LDAP search bind DN", when: (config: any) => ["LDAP"].includes(config.authentication) },
+    { key: "ldapBindPassword", label: "LDAP search bind password", password: true, when: (config: any) => ["LDAP"].includes(config.authentication) },
+    { key: "ldapBaseDn", label: "LDAP user search base DN", when: (config: any) => ["LDAP"].includes(config.authentication) },
+    { key: "ldapSearchFilter", label: "LDAP user filter ({username})", when: (config: any) => ["LDAP"].includes(config.authentication) },
+    { key: "ldapRequiredGroup", label: "Required LDAP memberOf group DN", when: (config: any) => ["LDAP"].includes(config.authentication) },
   ],
   ftp: [
     { key: "host", label: "Host" }, { key: "port", label: "Port" }, { key: "username", label: "Username" },
@@ -4905,7 +4997,7 @@ function connectionDefaults(type: string) {
   for (const field of connectionFieldSets[type] || []) {
     values[field.key] = propertyExpression(`${prefix}.${field.key}`);
   }
-  if (type === "http") Object.assign(values, { connectorMode: "both", scheme: "http", authentication: "None", tlsEnabled: "false", clientAuthentication: "none", tlsVersion: "TLSv1.2", verifyTls: "true" });
+  if (type === "http") Object.assign(values, { connectorMode: "both", scheme: "http", host: "localhost", port: 8080, authentication: "None", tlsEnabled: "false", clientAuthentication: "none", tlsVersion: "TLSv1.2", verifyTls: "true", httpVersion: "1.1", connectionTimeoutMs: 30000, socketTimeoutMs: 60000, writeTimeoutMs: 60000, poolTimeoutMs: 30000, maximumTotalConnections: 200, maximumConnectionsPerHost: 20, idleConnectionTimeoutMs: 40000, minimumQtpThreads: 10, maximumQtpThreads: 75, maxQueueSize: 100, acceptQueueSize: 128, readTimeoutMs: 30000, maxHeaderBytes: 65536, maxRequestBodyBytes: 67108864, maxResponseBodyBytes: 67108864, activityTimeoutSeconds: 180, oauthTimeoutSeconds: 30, jwtLifetimeSeconds: 300, jwtClockSkewSeconds: 30, hmacClockSkewSeconds: 300, hmacKeyId: "default", ldapTimeoutSeconds: 10, ldapSearchFilter: "(uid={username})" });
   if (type === "sap") Object.assign(values, { mode: "external", release: "current", connectionType: "dedicated", maximumConnections: 8, outboundWorkerCount: 2, poolCapacity: 1, peakLimit: 1, connectionExpirationMilliseconds: 600000, outboundPoolIdleSeconds: 1800, maximumOutboundPools: 16, maxPendingEvents: 16, jvmInitialHeapMb: 64, jvmMaximumHeapMb: 512, ackTimeoutSeconds: 300 });
   if (type === "sap_tid") Object.assign(values, { mode: "active", storageFile: "data/sap-tids.properties" });
   if (type === "jdbc") Object.assign(values, { driver: "postgresql", connectionMode: "python", authentication: "SQL Server Authentication", encrypt: "true", trustServerCertificate: "false" });
@@ -4916,13 +5008,14 @@ function connectionDefaults(type: string) {
   if (type === "pubsub") Object.assign(values, { authenticationType: "Service Account JSON", projectId: "", serviceAccountJson: "", batchMaxMessages: 100, batchMaxBytes: 1048576, batchDelayThresholdMilliseconds: 10, flowControlMaxMessages: 1000, flowControlMaxBytes: 10485760 });
   return values;
 }
-function SharedConnectionDialog({ type, initial, properties, onClose, onCreate, onSapSchemaFetched }: any) {
+function SharedConnectionDialog({ type, initial, initialRole, properties, onClose, onCreate, onSapSchemaFetched }: any) {
   const fields = connectionFieldSets[type] || [];
   const testOutputRef = useRef<HTMLDivElement>(null);
   const idocBrowserRef = useRef<HTMLElement>(null);
   const snowflakeBrowserRef = useRef<HTMLElement>(null);
   const [draft, setDraft] = useState<any>(() => {
     const value = initial ? structuredClone(initial) : { id: `${type}-${Date.now()}`, type, name: `${type === "sap" ? "SAP ECC" : type.toUpperCase()} Connection`, config: connectionDefaults(type) };
+    if (!initial && initialRole) { value.config.connectorMode = initialRole; value.name = `HTTP ${initialRole === "client" ? "Client" : "Server"} Connection`; }
     // The old design-time memory/external selector is no longer part of real
     // shared connections. Editing an older resource upgrades it automatically.
     if (["ems", "jms", "kafka", "pubsub", "amqp"].includes(type)) delete value.config.mode;
@@ -4936,6 +5029,10 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate, 
   const set = (key: string, value: any) => setDraft((current: any) => ({ ...current, config: { ...current.config, [key]: value } }));
   const setConnectionField = (key: string, value: any) => setDraft((current: any) => {
     const config = { ...current.config, [key]: value };
+    if (type === "http" && key === "connectorMode") {
+      if ((value === "client" && config.authentication === "LDAP") || (value === "server" && ["Digest", "NTLM"].includes(config.authentication))) config.authentication = "None";
+      if (value === "server") config.httpVersion = "1.1";
+    }
     if (type === "kafka" && key === "authenticationType") {
       config.saslMechanism = value === "API Key / Secret" ? "PLAIN" : ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512", "GSSAPI", "OAUTHBEARER"].includes(value) ? value : "";
       if (value !== "None" && !String(config.securityProtocol || "").includes("SASL")) config.securityProtocol = "SASL_SSL";
@@ -5100,7 +5197,7 @@ function SharedConnectionDialog({ type, initial, properties, onClose, onCreate, 
         const title = <span className="connection-field-label"><span>{field.label}{required && <i>*</i>}</span><small>{required ? "Required" : "Optional"}</small></span>;
         const mapped = binding && <small className="resolved-property-value">Value resolved from <code>{binding}</code></small>;
         const textValue = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-        return <label className={required ? "connection-field-required" : "connection-field-optional"} key={`${field.key}-${field.label}`}>{title}{field.options ? <><select required={required} value={String(value)} onChange={(event) => setConnectionField(field.key, event.target.value)}>{field.options.map((option: string) => <option key={option} value={option}>{option}</option>)}</select>{mapped}</> : <span className={`property-field-wrap ${field.multiline ? "multiline" : ""}`}>{field.multiline ? <textarea required={required} rows={9} spellCheck={false} placeholder={field.placeholder || "Paste the complete service-account JSON object"} value={textValue} onChange={(event) => setConnectionField(field.key, event.target.value)}/> : <input required={required} placeholder={field.placeholder || (required ? "Required value" : "Optional")} type={field.password ? "password" : "text"} value={textValue} onChange={(event) => setConnectionField(field.key, event.target.value)}/>}<button type="button" title={`Browse properties for ${field.label}`} aria-label={`Browse properties for ${field.label}`} onClick={() => { setTarget(field.key); setPropertySearch(""); }}><Braces/></button>{field.jsonFile && <input className="service-account-file" aria-label="Upload service account JSON" type="file" accept="application/json,.json" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; const content = await file.text(); setDraft((current: any) => { const config = { ...current.config, [field.key]: content }; try { const parsed = JSON.parse(content); if (parsed.project_id) config.projectId = parsed.project_id; } catch {} return { ...current, config }; }); event.currentTarget.value = ""; }}/>} {mapped}</span>}</label>;
+        return <label className={required ? "connection-field-required" : "connection-field-optional"} key={`${field.key}-${field.label}`}>{title}{field.options ? <><select required={required} value={String(value)} onChange={(event) => setConnectionField(field.key, event.target.value)}>{field.options.filter((option: string) => type !== "http" || field.key !== "authentication" || resolvedConfig.connectorMode === "both" || (resolvedConfig.connectorMode === "server" ? ["None","Basic","Bearer","OAuth2","JWT","HMAC","LDAP","Certificate"] : ["None","Basic","Digest","NTLM","Bearer","OAuth2","JWT","HMAC","Certificate"]).includes(option)).map((option: string) => <option key={option} value={option}>{option}</option>)}</select>{mapped}</> : <span className={`property-field-wrap ${field.multiline ? "multiline" : ""}`}>{field.multiline ? <textarea required={required} rows={9} spellCheck={false} placeholder={field.placeholder || "Paste the complete service-account JSON object"} value={textValue} onChange={(event) => setConnectionField(field.key, event.target.value)}/> : <input required={required} placeholder={field.placeholder || (required ? "Required value" : "Optional")} type={field.password ? "password" : "text"} value={textValue} onChange={(event) => setConnectionField(field.key, event.target.value)}/>}<button type="button" title={`Browse properties for ${field.label}`} aria-label={`Browse properties for ${field.label}`} onClick={() => { setTarget(field.key); setPropertySearch(""); }}><Braces/></button>{field.jsonFile && <input className="service-account-file" aria-label="Upload service account JSON" type="file" accept="application/json,.json" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; const content = await file.text(); setDraft((current: any) => { const config = { ...current.config, [field.key]: content }; try { const parsed = JSON.parse(content); if (parsed.project_id) config.projectId = parsed.project_id; } catch {} return { ...current, config }; }); event.currentTarget.value = ""; }}/>} {mapped}</span>}</label>;
       })}
       {type === "sap" && <section ref={idocBrowserRef} className="sap-idoc-browser"><header><span><b>SAP IDOC METADATA</b><small>Target release: {draft.config.release === "720" ? "SAP 7.20" : draft.config.release === "730" ? "SAP 7.30" : "Current / auto-detect"}. Retrieve and store the matching schema in this shared connection.</small></span><button type="button" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button></header><div className="sap-idoc-search"><Search/><input value={idocSearch} onChange={(event) => setIdocSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && fetchIdocs()} placeholder="Filter IDoc types, for example ORDERS…"/></div>{idocError && <p className="sap-idoc-error">{idocError}</p>}<div className="sap-idoc-list">{idocs.map((item) => { const selected = draft.config.selectedIdoc?.idocType === item.idocType; return <button type="button" className={selected ? "selected" : ""} key={`${item.idocType}-${item.release}`} onClick={() => selectIdoc(item)}><span><b>{item.idocType}</b><small>{item.description || "SAP IDoc"}</small></span><code>{item.extensionType || "basic"} · {item.release || "current"}</code>{selected && <i>Schema fetched</i>}</button>; })}{!idocs.length && <p>Test the SAP connection, then retrieve the available IDoc types.</p>}</div>{draft.config.selectedIdoc && <footer><CheckCircle2/><span><b>{draft.config.selectedIdoc.idocType}</b><small>{draft.config.selectedIdoc.segments?.length || 0} metadata rows · SAP release {draft.config.selectedIdoc.release || draft.config.release} · schema stored with shared connection</small></span></footer>}</section>}
       {type === "snowflake" && <section ref={snowflakeBrowserRef} className="sap-idoc-browser snowflake-entity-browser"><header><span><b>SNOWFLAKE SCHEMA METADATA</b><small>Retrieve TABLE and VIEW entities from the configured database and schema, then select each entity whose column metadata should be stored.</small></span><button type="button" onClick={fetchSnowflakeEntities} disabled={snowflakeLoading}><Download/> {snowflakeLoading ? "Retrieving…" : "Retrieve entities"}</button></header><div className="sap-idoc-search"><Search/><input value={snowflakeSearch} onChange={(event) => setSnowflakeSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && fetchSnowflakeEntities()} placeholder="Entity name pattern, for example ORDER_%…"/></div>{snowflakeError && <p className="sap-idoc-error">{snowflakeError}</p>}<div className="sap-idoc-list">{snowflakeEntities.map((item) => { const stored = (draft.config.entityCatalog || []).some((entry: any) => entry.database === item.database && entry.schema === item.schema && entry.name === item.name); return <button type="button" className={stored ? "selected" : ""} key={`${item.database}.${item.schema}.${item.name}`} onClick={() => selectSnowflakeEntity(item)}><span><b>{item.name}</b><small>{item.database}.{item.schema}</small></span><code>{item.entityType || "TABLE"}</code>{stored && <i>Metadata fetched</i>}</button>; })}{!snowflakeEntities.length && <p>Test the Snowflake connection, then retrieve tables and views.</p>}</div>{!!draft.config.entityCatalog?.length && <footer><CheckCircle2/><span><b>{draft.config.entityCatalog.length} entities stored</b><small>{draft.config.entityCatalog.reduce((count: number, item: any) => count + (item.columns?.length || 0), 0)} columns available to Snowflake activity input/output editors</small></span><button type="button" onClick={clearSnowflakeMetadata}>Remove metadata</button></footer>}</section>}

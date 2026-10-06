@@ -20,7 +20,7 @@ const guides = [
  ['Operations', 'control-plane-operator-workspace.md'], ['Deployment', 'PYTHON_EXPORT.md'],
  ['Deployment', 'VENDOR_DRIVERS.md'], ['Deployment', 'ENVIRONMENT_VARIABLES.md'],
  ['Connectors', 'SAP_INTEGRATION.md'], ['Connectors', 'EMS_RUN_CONNECTION_REUSE.md'],
- ['Connectors', 'KAFKA_PUBLISHING.md'], ['Security', 'SECURITY_REVIEW_2026-09-22.md'],
+ ['Connectors', 'KAFKA_PUBLISHING.md'], ['Connectors', 'HTTP_REST_CAPABILITIES.md'], ['Security', 'SECURITY_REVIEW_2026-09-22.md'],
  ['Security', 'WEB_DEPENDENCY_SECURITY.md'],
 ];
 const sourceFiles = [...new Set(['frontend/src/main.tsx', 'frontend/src/ActivityEditor.tsx', 'frontend/src/ActivityPicker.tsx', 'frontend/src/mapper-functions.ts', 'frontend/package.json', 'backend/app/runtime.py', 'backend/app/sap.py', 'backend/app/java_bridge.py', 'java-bridge/src/com/mina/bridge/MinaJavaBridge.java', 'frontend/scripts/connector-documentation.mjs', 'frontend/scripts/build-documentation.mjs', 'scripts/build-documentation-pdf.py', 'frontend/public/help/documentation.js', 'frontend/public/help/documentation.css', 'frontend/public/help/index.html', ...developerSources, ...guides.map(([, f]) => `docs/${f}`)])];
@@ -58,7 +58,7 @@ function declarations(file, names, stripIcons = false) {
  for (const name of names) if (!found.has(name)) throw new Error(`Documentation extractor cannot find ${name} in ${file}`);
  return names.map(name => found.get(name)).join('\n');
 }
-const contractNames = ['f', 'd', 'commonErrors', 'HTTP_METHODS', 'isMapperActivity', 'activityContract', 'runtimeMappableInputs', 'activityDocumentation'];
+const contractNames = ['f', 'd', 'commonErrors', 'httpRequestFields', 'httpRequestOccurrences', 'HTTP_METHODS', 'isMapperActivity', 'activityContract', 'runtimeMappableInputs', 'activityDocumentation'];
 const mainNames = ['packs', 'supportsOutboundRetry', 'advancedDefaults', 'defaultProperties', 'connectionFieldSets', 'propertyExpression', 'connectionDefaults', 'groupConfigDefaults'];
 const extracted = declarations('frontend/src/ActivityEditor.tsx', contractNames) + '\n' + declarations('frontend/src/main.tsx', mainNames, true) + '\nexport {' + [...contractNames, ...mainNames].join(',') + '};';
 const compile = code => ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;

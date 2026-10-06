@@ -416,10 +416,11 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
         connection = resolve(resource.config, ctx) if resource else {}
         request_cfg = dict(cfg)
         if kind == 'soap':
-            request_cfg['method'] = 'POST'; request_cfg['body'] = cfg.get('envelope', ctx.last)
+            request_cfg['method'] = 'POST'; request_cfg['body'] = cfg.get('envelope', ctx.last); request_cfg['bodyType'] = 'text'
             request_cfg['headers'] = {'Content-Type': cfg.get('contentType') or 'text/xml; charset=utf-8', **(cfg.get('headers') or {})}
             if cfg.get('soapAction'): request_cfg['headers']['SOAPAction'] = cfg['soapAction']
-        return await asyncio.to_thread(activities.http_request, request_cfg, connection)
+        response = await asyncio.to_thread(activities.http_request, request_cfg, connection)
+        return response['body'] if kind == 'http' and cfg.get('responseMode', 'payload') == 'payload' and not (cfg.get('RestInputRequest') is not None or cfg.get('requestModel') == 'tree') else response
     # CAPABILITY http_client END
     # CAPABILITY http_response START
     if kind == 'http_response':

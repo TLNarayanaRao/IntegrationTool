@@ -13,6 +13,7 @@ export const developerSources=[ui,ed,rt,raw,core,connectors,acts,
  'frontend/src/copyTask.ts','frontend/src/repairCopiedTask.ts','frontend/src/DebugJobData.tsx',
  'frontend/src/DebugActivityTree.tsx','frontend/src/debugTaskTree.ts','frontend/src/DebugPayloadEditor.tsx',
  'frontend/src/groups.css','frontend/src/activity-editor.css','frontend/src/canvas-selection.css',
+ 'backend/app/http_messages.py','backend/app/http_transport.py','backend/app/http_server.py','backend/app/rest_contract.py','backend/tests/test_http_capabilities.py',
  'backend/app/main.py','backend/app/models.py','backend/app/store.py','backend/app/debugger.py',
  'backend/app/mapper.py','backend/app/mapping_literals.py','backend/app/project_import.py','backend/app/sftp.py','backend/app/jdbc.py','backend/app/snowflake.py','backend/app/amqp.py',
  'backend/app/sap.py','backend/app/java_bridge.py','backend/app/google_pubsub.py','backend/app/dataweave.py',
@@ -65,11 +66,11 @@ export function developerPages(activities,groups,functions,sources){
   dataweave:['backend/app/dataweave.py','def execute_details(','Transformation script parser and evaluator',core,'async def execute('],
   java:[rt,'async def java_worker(','Java invocation worker',acts,'async def java_invoke('],
   python:[rt,'async def python_worker(','Python invocation worker',acts,'async def python_invoke('],
-  http:[rt,"if activity.type == 'http':",'HTTP client request',acts,'def http_request('],
-  rest:[rt,"if activity.type == 'rest' and",'REST outbound request; inbound path enters invoke_listener',acts,'def http_request('],
+  http:[rt,"if activity.type == 'http' or",'HTTP client request',acts,'def http_request('],
+  rest:[rt,"if activity.type == 'http' or",'REST outbound request; inbound path enters invoke_listener',acts,'def http_request('],
   soap:[rt,"if activity.type == 'soap' and",'SOAP outbound request; service path enters invoke_listener',acts,'def http_request('],
  };
- const testFamily={file:'activity_packs',ftp:'activity_packs',sftp:'activity_packs',jdbc:'amqp_jdbc_excel_command',snowflake:'snowflake',amqp:'amqp_jdbc_excel_command',sap:'sap_mapper',ems:'jms_publish_performance',jms:'jms_publish_performance',kafka:'publisher_reuse',pubsub:'google_pubsub',xml:'activity_packs',json:'activity_packs',flat:'activity_packs',excel:'amqp_jdbc_excel_command',mapper:'mapper_code_general',dataweave:'mapper_code_general',java:'mapper_code_general',python:'mapper_code_general',basic:'mapper_code_general'};
+ const testFamily={http:'http_capabilities',rest:'http_capabilities',http_listener:'http_capabilities',file:'activity_packs',ftp:'activity_packs',sftp:'activity_packs',jdbc:'amqp_jdbc_excel_command',snowflake:'snowflake',amqp:'amqp_jdbc_excel_command',sap:'sap_mapper',ems:'jms_publish_performance',jms:'jms_publish_performance',kafka:'publisher_reuse',pubsub:'google_pubsub',xml:'activity_packs',json:'activity_packs',flat:'activity_packs',excel:'amqp_jdbc_excel_command',mapper:'mapper_code_general',dataweave:'mapper_code_general',java:'mapper_code_general',python:'mapper_code_general',basic:'mapper_code_general'};
  for(const a of activities){
   const {type,operation}=a;
   const relevant=[...common,...execution];

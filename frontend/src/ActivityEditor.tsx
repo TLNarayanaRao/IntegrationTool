@@ -106,6 +106,62 @@ const commonErrors = [
     description: "Required input or mapped data is invalid.",
   },
 ];
+
+function httpRequestFields(output = false): DataField[] {
+  const root = output ? "RestOutputResponse" : "RestInputRequest";
+  const field = (path: string, type = "string", repeating = false) => ({...d(`${root}.${path}`, path.split(".").slice(-1)[0], type), minOccurs:"0", maxOccurs:repeating ? "unbounded" : "1", repeating});
+  const mime = [field("mimeEnvelopeElement", "object"),field("mimeEnvelopeElement.mimePart", "object[]", true),
+    field("mimeEnvelopeElement.mimePart.mimeHeaders", "object"),
+    ...["content-type","content-transfer-encoding","content-id","content-disposition"].map(name => field(`mimeEnvelopeElement.mimePart.mimeHeaders.${name}`)),
+    field("mimeEnvelopeElement.mimePart.binaryContent"),field("mimeEnvelopeElement.mimePart.textContent"),field("mimeEnvelopeElement.mimePart.fileName")];
+  const headers = [field("Headers", "object"),...(output ? ["Allow","Content-Type","Content-Length","Content-Encoding","Date","Location","Set-Cookie","Pragma"] : ["accept","content-type","Accept-Charset","Accept-Encoding","Cookie","pragma"]).map(name => field(`Headers.${name}`, output && ["Allow","Set-Cookie"].includes(name) ? "string[]" : "string", output && ["Allow","Set-Cookie"].includes(name))),
+    field("Headers.DynamicHeaders", "object[]", true),field("Headers.DynamicHeaders.name"),field("Headers.DynamicHeaders.value")];
+  return [{...d(root,root,"object",true),minOccurs:"1",maxOccurs:"1"},...(output ? [field("statusLine","object"),field("statusLine.httpVersion"),field("statusLine.statusCode","integer"),field("statusLine.reasonPhrase"),field("body","any"),field("asciiContent"),field("binaryContent")] : [field("Config","object"),
+    field("Config.host"),field("Config.port","integer"),field("Config.scheme"),field("Config.requestURI"),field("Config.Method"),field("Config.RequestBody","any"),field("Config.bodyFormat"),
+    field("Config.QueryParameters","object"),field("Config.URIParameters","object"),field("Config.QueryString"),field("Config.FilePath"),
+    field("Config.timeout","integer"),field("Config.activityTimeoutSeconds","number"),field("Config.followRedirects","boolean"),field("Config.raiseForStatus","boolean"),
+    ...["requestEntityProcessing","sendBodyMode","successStatusCodes"].map(name => field(`Config.${name}`))]),...headers,...mime];
+}
+
+function httpInputMappings(config: any): any {
+  const aliases: Record<string,string> = {host:"host",port:"port",scheme:"scheme",url:"requestURI",method:"Method",body:"RequestBody",bodyType:"bodyFormat",query:"QueryParameters",pathParameters:"URIParameters",activityTimeoutSeconds:"activityTimeoutSeconds",followRedirects:"followRedirects",requestEntityProcessing:"requestEntityProcessing",sendBodyMode:"sendBodyMode",successStatusCodes:"successStatusCodes",raiseForStatus:"raiseForStatus",socketTimeoutMs:"timeout"};
+  const convert = (key:string) => key === "headers" || key.startsWith("headers.") ? `RestInputRequest.Headers${key.slice(7)}` : key === "accept" ? "RestInputRequest.Headers.accept" : key === "contentType" ? "RestInputRequest.Headers.content-type" : aliases[key] ? `RestInputRequest.Config.${aliases[key]}` : key;
+  const literal = (value:any) => typeof value === "string" && value.startsWith("${") ? value : JSON.stringify(value);
+  const result:any = {};
+  const standard:Record<string,string>={accept:"accept","content-type":"content-type","accept-charset":"Accept-Charset","accept-encoding":"Accept-Encoding",cookie:"Cookie",pragma:"pragma"};
+  const custom = new Map<string,number>();
+  let nextIndex=Math.max(-1,...Object.keys(config.inputMappings || {}).map(key=>Number(key.match(/^RestInputRequest\.Headers\.DynamicHeaders\.(\d+)/)?.[1] ?? -1)))+1;
+  const header=(name:string,value:any,mapped=false) => {
+    const known=standard[name.toLowerCase()];
+    if(known) {result[`RestInputRequest.Headers.${known}`]=mapped ? value : literal(value);return;}
+    const index=custom.get(name.toLowerCase()) ?? nextIndex++;
+    custom.set(name.toLowerCase(),index);
+    const prefix=`RestInputRequest.Headers.DynamicHeaders.${index}`;
+    result[prefix]='{}';result[`${prefix}.name`]=JSON.stringify(name);result[`${prefix}.value`]=mapped ? value : literal(value);
+  };
+  for (const key of [...Object.keys(aliases),"accept","contentType"]) if (config[key] !== undefined) result[convert(key)] = literal(config[key]);
+  if(config.headers && typeof config.headers==='object') for(const [name,value] of Object.entries(config.headers)) header(name,value);
+  else if(config.headers) result['RestInputRequest.Headers']=literal(config.headers);
+  if (config.timeout !== undefined) result["RestInputRequest.Config.timeout"] = typeof config.timeout === 'number' ? String(config.timeout*1000) : `multiply(${literal(config.timeout)}, 1000)`;
+  for (const [key,value] of Object.entries(config.inputMappings || {})) {
+    if(key.startsWith('headers.')) header(key.slice(8),value,true);
+    else result[convert(key)] = value;
+  }
+  return result;
+}
+
+function httpRequestOccurrences(fields: DataField[], mappings: any): DataField[] {
+  let result=fields;
+  for (const root of ["RestInputRequest.Headers.DynamicHeaders","RestInputRequest.mimeEnvelopeElement.mimePart"]) {
+    const indices=[...new Set(Object.keys(mappings || {}).filter(key => key.startsWith(`${root}.`)).map(key => key.slice(root.length+1).split('.')[0]).filter(key => /^\d+$/.test(key)))].sort((a,b)=>Number(a)-Number(b));
+    if (!indices.length) continue;
+    const children=httpRequestFields().filter(field => field.key.startsWith(`${root}.`));
+    result=result.filter(field => !field.key.startsWith(`${root}.`));
+    const index=result.findIndex(field => field.key===root)+1;
+    result=[...result.slice(0,index),...indices.flatMap(number => [{...d(`${root}.${number}`,`${root.split('.').slice(-1)[0]} [${Number(number)+1}]`,"object"),minOccurs:"1",maxOccurs:"1"},...children.map(field => ({...field,key:`${root}.${number}${field.key.slice(root.length)}`}))]),...result.slice(index)];
+  }
+  return result;
+}
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE", "CONNECT"];
 const isMapperActivity = (type: string) => ["mapper", "transform", "ai_transform"].includes(type);
 type MappingWhen = { condition: string; source: any };
@@ -447,7 +503,11 @@ export function activityContract(n: any): Contract {
         f("path", "Listener path"),
         f("methods", "Allowed HTTP methods", "methods", "Select every HTTP method accepted by this listener."),
         f("contentType", "Expected content type"),
-        f("authentication", "Authentication policy"),
+        f("validateRequest", "Validate request schema", "boolean"),
+        f("requestSchema", "Request JSON Schema / XSD", "textarea"),
+        f("validateResponse", "Validate response schema", "boolean"),
+        f("responseSchema", "Response JSON Schema / XSD", "textarea"),
+        f("activityTimeoutSeconds", "Request execution timeout (seconds)", "number"),
       ],
       input: [],
       output: [
@@ -475,28 +535,21 @@ export function activityContract(n: any): Contract {
   if (n.type === "http" || (n.type === "rest" && op === "invoke"))
     return {
       configuration: [
+        f("openApiDocument", "OpenAPI 3 / Swagger 2 JSON contract", "textarea"),
+        f("operationId", "Contract operation ID"),
+        f("validateRequest", "Validate request schema", "boolean"),
+        f("requestSchema", "Request JSON Schema / XSD", "textarea"),
+        f("validateResponse", "Validate response schema", "boolean"),
+        f("responseSchema", "Response JSON Schema / XSD", "textarea"),
+
+
         {
           ...f("resourceId", "HTTP shared connection", "resource"),
           resourceType: "http",
         },
-        {
-          ...f("method", "Method", "select"),
-          options: ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"],
-        },
-        f("url", "Endpoint URL"),
-        f("timeout", "Timeout seconds", "number"),
-        f("followRedirects", "Follow redirects", "boolean"),
       ],
-      input: [
-        d("headers", "Headers", "object"),
-        d("query", "Query parameters", "object"),
-        d("body", "Request body", "object|string"),
-      ],
-      output: [
-        d("statusCode", "Status code", "integer"),
-        d("headers", "Response headers", "object"),
-        d("body", "Response body", "object|string"),
-      ],
+      input: httpRequestFields(),
+      output: httpRequestFields(true),
       errors: [
         {
           type: "HTTP_CONNECTIVITY",
@@ -540,6 +593,9 @@ export function activityContract(n: any): Contract {
   if (n.type === "rest" && op === "receiver")
     return {
       configuration: [
+        f("openApiDocument", "OpenAPI 3 / Swagger 2 JSON contract", "textarea"),
+        f("operationId", "Contract operation ID"),
+
         {
           ...f("resourceId", "HTTP shared connection", "resource"),
           resourceType: "http",
@@ -548,6 +604,11 @@ export function activityContract(n: any): Contract {
         f("methods", "Allowed HTTP methods", "methods", "Select every HTTP method exposed by this REST resource."),
         f("contentType", "Request content type"),
         f("responseType", "Response content type"),
+        f("activityTimeoutSeconds", "Request execution timeout (seconds)", "number"),
+        f("validateRequest", "Validate request schema", "boolean"),
+        f("requestSchema", "Request JSON Schema / XSD", "textarea"),
+        f("validateResponse", "Validate response schema", "boolean"),
+        f("responseSchema", "Response JSON Schema / XSD", "textarea"),
       ],
       input: [],
       output: [
@@ -1304,6 +1365,7 @@ function possibleTaskExceptions(task: any, tasks: any[], schemas: any[]): string
 }
 
 function runtimeMappableInputs(node: any, contract: Contract): DataField[] {
+  if (node.type === "http" || (node.type === "rest" && node.config?.operation === "invoke")) return httpRequestOccurrences(contract.input,node.config?.inputMappings);
   if (["xml", "json", "flat"].includes(node.type)) return contract.input;
   if (["start", "timer", "http_listener"].includes(node.type) || (node.type === "file" && node.config?.operation === "poll")) return contract.input;
   const existing = new Set(contract.input.map((field) => field.key));
@@ -1518,7 +1580,7 @@ export default function ActivityEditor({
             <FieldEditor
               key={field.key}
               field={node.type === "catch" && field.key === "errorType" ? { ...field, type: "select", options: ["", ...exceptionTypes] } : field}
-              value={derivedConfiguration[field.key]}
+              value={derivedConfiguration[field.key] ?? (["validateRequest", "validateResponse"].includes(field.key) && derivedConfiguration.openApiDocument ? true : undefined)}
               set={set}
               resources={resources}
               tasks={tasks}
@@ -1549,6 +1611,7 @@ export default function ActivityEditor({
         {mapperOpen && (
           <MapperStudio
             config={cfg}
+            sources={upstreamSources}
             customFunctions={customFunctions}
             schemas={schemas || []}
             onClose={() => setMapperOpen(false)}
@@ -1567,8 +1630,15 @@ export default function ActivityEditor({
       <InputEditor
         node={node}
         fields={runtimeMappableInputs(node, contract)}
-        mappings={cfg.inputMappings || {}}
-        set={(v: any) => update({config:{...cfg,inputMappings:v,inputMappingTypes:activityInputMappingTypes(node,task,tasks,schemas || [],resources || [])}})}
+        mappings={node.type === "http" || (node.type === "rest" && cfg.operation === "invoke") ? httpInputMappings(cfg) : cfg.inputMappings || {}}
+        set={(v: any) => {
+          const config = {...cfg,inputMappings:v,inputMappingTypes:activityInputMappingTypes({...node,config:{...cfg,inputMappings:v}},task,tasks,schemas || [],resources || [])};
+          if (node.type === "http" || (node.type === "rest" && cfg.operation === "invoke")) {
+            for (const key of ["host","port","scheme","url","method","body","bodyType","query","pathParameters","headers","accept","contentType","timeout","socketTimeoutMs","activityTimeoutSeconds","followRedirects","requestEntityProcessing","sendBodyMode","successStatusCodes","raiseForStatus"]) delete config[key];
+            config.requestModel="tree";config.responseMode="envelope";
+          }
+          update({config});
+        }}
         properties={properties}
         sources={upstreamSources}
         runtimeVariables={groupVariables}
@@ -1578,7 +1648,7 @@ export default function ActivityEditor({
       />
     );
   if (tab === "map_test" && isMapperActivity(node.type))
-    return <TransformMapTestEditor node={node} config={cfg} customFunctions={customFunctions} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>;
+    return <TransformMapTestEditor node={node} config={cfg} schemas={schemas || []} customFunctions={customFunctions} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>;
   if (tab === "map_test" && node.type === "dataweave")
     return <DataWeaveTestEditor config={cfg} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>;
   if (tab === "output")
@@ -2238,12 +2308,22 @@ function LoopMappingRow({ row, collapsed, toggle, patch, remove, duplicate, sour
 
 function InputEditor({ node, fields, mappings, set, properties, sources, runtimeVariables = [], customFunctions, updateCustomFunctions, before, expanded = false }: any) {
   properties = useMemo(() => Object.assign([...(properties || [])], { customFunctions, updateCustomFunctions }), [properties, customFunctions, updateCustomFunctions]);
-  const rows = dataTreeRows(fields), firstTarget = rows.find((row) => row.explicit)?.path || "";
+  const requestTree = node.type === "http" || (node.type === "rest" && node.config?.operation === "invoke");
+  const rows = dataTreeRows(requestTree ? httpRequestOccurrences(fields,mappings) : fields), firstTarget = rows.find((row) => row.explicit)?.path || "";
   const resize = useSourcePaneWidth(expanded ? 350 : undefined), tree = useTreeCollapse(), root = useRef<HTMLDivElement>(null), [selected, setSelected] = useState(firstTarget), [contextMenu, setContextMenu] = useState<any>(null), [dialogOpen, setDialogOpen] = useState(false), [draftMappings, setDraftMappings] = useState<any>({});
   const displayRows = mappingTreeRows(rows, mappings);
   const connectionMappings = Object.fromEntries(Object.entries(mappings).map(([path, value]) => [displayRows.find(row => row.field.path === path && row.kind === "loop")?.key ? `${displayRows.find(row => row.field.path === path && row.kind === "loop")!.key}:source` : path, mappingSource(value)]));
   const openDialog = () => { setDraftMappings(structuredClone(mappings)); setDialogOpen(true); };
   const setValue = (path: string, value: any) => set({ ...mappings, [path]: value });
+  const addOccurrence = (path:string) => {
+    const next={...mappings};
+    const indices=Object.keys(next).filter(key=>key.startsWith(`${path}.`)).map(key=>key.slice(path.length+1).split('.')[0]).filter(key=>/^\d+$/.test(key)).map(Number);
+    if(!indices.length) for(const key of Object.keys(next)) if(key.startsWith(`${path}.`)) {next[`${path}.0${key.slice(path.length)}`]=next[key];delete next[key];}
+    const index=indices.length ? Math.max(...indices)+1 : Object.keys(next).some(key=>key.startsWith(`${path}.0`)) ? 1 : 0;
+    next[`${path}.${index}`]='{}';set(next);
+  };
+  const removeOccurrence = (path:string) => set(Object.fromEntries(Object.entries(mappings).filter(([key])=>key!==path && !key.startsWith(`${path}.`))));
+
   return <><div ref={root} className={`activity-tab mapping-editor resizable-mapper visual-field-mapper ${expanded ? "expanded-input-workspace" : ""}`} style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}>
     <MemoizedDataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}/>
     <section><div className="contract-heading mapping-editor-heading"><SettingsTitle title="Activity input"/>{!expanded && <button type="button" className="edit-input-mapping" onClick={openDialog}><Pencil/> Edit mappings</button>}</div>{before}
@@ -2260,13 +2340,18 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
           else setValue(field.path,value);
         }}>
           {row.hasChildren ? <TreeToggle path={row.key} label={field.name} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle}/> : <i className="tree-elbow"/>}
-          <span className="target-tree-field"><b>{row.loopKey ? field.name : field.label || field.name}<sup className="cardinality-symbol">{cardinalitySymbol(field)}</sup></b><small>{field.type}</small></span>
-          {row.loopKey || (row.hasChildren && !mappings[field.path]) ? <span/> : <MappingBinding structural={structural} expression={mappings[field.path] ?? ""} fieldType={field.type} fieldLabel={`${field.label || field.name}${cardinalitySymbol(field)}`} validationType={field.validationType || field.type} sources={sources} onChange={(value: any) => setValue(field.path,value)}/>}
+          <span className="target-tree-field"><b>{row.loopKey ? field.name : field.label || field.name}<sup className="cardinality-symbol">{cardinalitySymbol(field)}</sup></b><small>{field.type}</small>
+          {requestTree && /(?:DynamicHeaders|mimePart)$/.test(field.path) && !mappings[field.path] && <button type="button" aria-label={`Add ${field.name}`} title={`Add ${field.name}`} onClick={event=>{event.stopPropagation();addOccurrence(field.path);}}><Plus/></button>}
+          {requestTree && /(?:DynamicHeaders|mimePart)\.\d+$/.test(field.path) && <button type="button" aria-label={`Remove ${field.label}`} title={`Remove ${field.label}`} onClick={event=>{event.stopPropagation();removeOccurrence(field.path);}}><X/></button>}
+          </span>
+          {row.loopKey || (requestTree && /(?:DynamicHeaders|mimePart)\.\d+$/.test(field.path)) || (row.hasChildren && !mappings[field.path]) ? <span/> : <MappingBinding structural={structural} expression={mappings[field.path] ?? ""} fieldType={field.type} fieldLabel={`${field.label || field.name}${cardinalitySymbol(field)}`} validationType={field.validationType || field.type} sources={sources} onChange={(value: any) => setValue(field.path,value)}/>}
         </div>;
       })}</div>{!fields.length && <div className="contract-empty">No configurable input.</div>}
     </section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextMenu ? mappings[contextMenu.path] : null} close={() => setContextMenu(null)} change={(value: any) => contextMenu && setValue(contextMenu.path,value)} remove={() => {if(!contextMenu)return;const next={...mappings};delete next[contextMenu.path];set(next);}}/>
   </div>{dialogOpen && <ExpandedInputMappingDialog title={`${node.name} · Input Mapper`} mappingCount={Object.keys(draftMappings).length} onClose={() => setDialogOpen(false)} onApply={() => {set(draftMappings);setDialogOpen(false);}}><InputEditor node={node} fields={fields} mappings={draftMappings} set={setDraftMappings} properties={properties} sources={sources} runtimeVariables={runtimeVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} before={before} expanded/></ExpandedInputMappingDialog>}</>;
 }
+
+export { transformSchemaFields };
 
 type SchemaTreeField = { path: string; name: string; type: string; depth: number; repeating: boolean; minOccurs?: string; maxOccurs?: string };
 function transformSchemaFields(config: any): SchemaTreeField[] {
@@ -2399,13 +2484,15 @@ function TransformInputEditor({ config, properties, sources, runtimeVariables = 
 function TransformOutputEditor({ config }: any) {
   const fields = transformSchemaFields(config);
   const tree = useTreeCollapse();
-  return <div className="activity-tab output-editor"><div className="contract-heading"><SettingsTitle title="Transformer output structure" /></div><div className="output-schema-tree">{fields.map((field) => { if (!tree.visible(field.path)) return null; const group = hasTreeChildren(fields, field); return <div className={group ? "tree-parent-target" : ""} key={field.path} style={{ paddingLeft: 14 + field.depth * 18 }}>{group ? <TreeToggle path={field.path} label={field.name} collapsed={tree.collapsed.has(field.path)} toggle={tree.toggle}/> : <span className="tree-node-dot"/>}<code>{field.name}</code><small>{field.type}</small></div>; })}{!fields.length && <div className="contract-empty">No target schema is configured.</div>}</div></div>;
+  return <div className="activity-tab output-editor"><div className="contract-heading"><SettingsTitle title="Transformer output structure" /></div><div className="output-schema-tree transform-output-schema">{fields.map((field) => { if (!tree.visible(field.path)) return null; const group = hasTreeChildren(fields, field); return <div className={group ? "tree-parent-target" : ""} key={field.path} style={{ paddingLeft: 14 + field.depth * 18 }}>{group ? <TreeToggle path={field.path} label={field.name} collapsed={tree.collapsed.has(field.path)} toggle={tree.toggle}/> : <span className="tree-node-dot"/>}<code>{field.name}<sup className="cardinality-symbol">{cardinalitySymbol(field)}</sup></code><small>{field.type}</small></div>; })}{!fields.length && <div className="contract-empty">No target schema is configured.</div>}</div></div>;
 }
 
-function TransformMapTestEditor({ node: _node, config, customFunctions = [], setConfig }: any) {
-  const initialInput = config.sampleInput && typeof config.sampleInput === "object" ? config.sampleInput : { customer: { id: "C-100", name: "Sample customer" }, amount: 100 };
+function TransformMapTestEditor({ node: _node, config, schemas = [], customFunctions = [], setConfig }: any) {
+  const selectedTarget = schemas.find((schema: any) => schema.id === config.targetSchemaId);
+  const targetSchemaText = selectedTarget?.content || config.targetSchemaText || "";
+  const initialInput = config.sampleInput && typeof config.sampleInput === "object" ? config.sampleInput : {};
   const [inputText, setInputText] = useState(() => JSON.stringify(initialInput, null, 2));
-  const [outputText, setOutputText] = useState(() => config.lastTestOutput ? JSON.stringify(config.lastTestOutput, null, 2) : "");
+  const [outputText, setOutputText] = useState(() => config.lastTestOutputText ?? (config.lastTestOutput !== undefined ? JSON.stringify(config.lastTestOutput, null, 2) : ""));
   const [status, setStatus] = useState<"idle" | "running" | "valid" | "error">("idle");
   const [message, setMessage] = useState("Enter representative input data, then execute the mappings saved in the Input tab.");
   const mappings = Array.isArray(config.mappings) ? config.mappings : [];
@@ -2413,13 +2500,13 @@ function TransformMapTestEditor({ node: _node, config, customFunctions = [], set
     setStatus("running"); setMessage("Executing mapping rules and formulas…");
     try {
       const input = JSON.parse(inputText);
-      const response = await fetch("/api/mapper/test", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ input, mappings, targetSchema: config.targetSchema || {}, targetSchemaText: config.targetSchemaText || "", options: { ...config, customFunctions } }) });
+      const response = await fetch("/api/mapper/test", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ input, mappings, targetSchema: targetSchemaText || config.targetSchema || {}, targetSchemaText, options: { ...config, customFunctions } }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || result.message || "Mapping test failed");
-      setOutputText(JSON.stringify(result.output ?? {}, null, 2));
+      setOutputText(result.outputText ?? (typeof result.output === "string" ? result.output : JSON.stringify(result.output ?? {}, null, 2)));
       setStatus(result.valid === false ? "error" : "valid");
       setMessage(result.valid === false ? (result.validationErrors || []).join(" · ") || "Output validation failed." : `${result.mappingCount ?? mappings.length} mapping rule${(result.mappingCount ?? mappings.length) === 1 ? "" : "s"} executed successfully.`);
-      setConfig({ sampleInput: input, lastTestOutput: result.output ?? {} });
+      setConfig({ sampleInput: input, lastTestOutput: result.output ?? {}, lastTestOutputText: result.outputText });
     } catch (error: any) {
       setStatus("error"); setMessage(error.message || "Mapping test failed"); setOutputText("");
     }
@@ -2429,7 +2516,7 @@ function TransformMapTestEditor({ node: _node, config, customFunctions = [], set
     <main>
       <section className="map-test-input"><header><span><b>TEST INPUT</b></span><button type="button" onClick={() => { setInputText(JSON.stringify(initialInput, null, 2)); setStatus("idle"); }}>Reset</button></header><textarea aria-label="Transform test input" value={inputText} onChange={(event) => { setInputText(event.target.value); setStatus("idle"); }} spellCheck={false}/></section>
       <section className="map-test-rules"><header><span><b>APPLIED MAPPINGS &amp; FORMULAS</b></span></header><div>{mappings.map((rule: any, index: number) => <article key={`${rule.target}-${index}`} className={rule.enabled === false ? "disabled" : ""}><em>{index + 1}</em><span><code>{rule.source ?? ("constant" in rule ? JSON.stringify(rule.constant) : "No source")}</code><ArrowRight/><b>{rule.target || "result"}</b><small>{[rule.operator, ...(rule.functions || []).map((fn: any) => typeof fn === "string" ? fn : fn.name)].filter(Boolean).join(" → ") || "Direct mapping"}</small></span></article>)}{!mappings.length && <p>No mappings are saved. Configure target mappings in the Input tab first.</p>}</div></section>
-      <section className="map-test-output"><header><span><b>GENERATED OUTPUT</b></span>{outputText && <button type="button" onClick={() => navigator.clipboard?.writeText(outputText)}>Copy output</button>}</header><pre>{outputText || "Run the mapping test to generate output."}</pre></section>
+      <section className="map-test-output"><header><span><b>GENERATED OUTPUT</b></span></header><pre aria-label="Generated mapping output" role="status" aria-live="polite">{outputText || "Run the mapping test to generate output."}</pre></section>
     </main>
     <TransformationTools config={config} setConfig={setConfig} customFunctions={customFunctions}/>
     <footer className={status}><span>{status === "valid" ? <CheckCircle2/> : status === "error" ? <AlertTriangle/> : <FlaskConical/>}<b>{message}</b></span><button type="button" className="run-map-test" disabled={status === "running" || !mappings.length} onClick={run}><FlaskConical/>{status === "running" ? "Running…" : "Run mapping test"}</button></footer>

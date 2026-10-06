@@ -219,3 +219,13 @@ textarea.mapping-expression-multiline {
 .config .configuration-property-field:has(.configuration-property-picker[open]) {
   grid-template-columns: minmax(0, 1fr);
 }
+
+/* Keep Mapper output types beside their field names at every tree depth. */
+.output-editor .transform-output-schema > div {
+  grid-template-columns: 20px minmax(0, max-content) max-content !important;
+  justify-content: start;
+}
+.output-editor .transform-output-schema > div > code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

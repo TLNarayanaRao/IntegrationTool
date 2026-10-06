@@ -269,31 +269,8 @@ def transfer(kind: str, operation: str, connection: dict, cfg: dict) -> dict:
 
 
 def http_request(cfg: dict, connection: dict | None = None) -> dict:
-    connection = connection or {}
-    url = str(cfg.get('url') or '')
-    if not urllib.parse.urlsplit(url).scheme:
-        base = str(connection.get('baseUrl') or '')
-        url = base.rstrip('/') + '/' + url.lstrip('/')
-    query = cfg.get('query') or {}
-    if query: url += ('&' if '?' in url else '?') + urllib.parse.urlencode(query, doseq=True)
-    headers = {str(key): str(value) for key, value in {**(connection.get('headers') or {}), **(cfg.get('headers') or {})}.items()}
-    body = cfg.get('body')
-    if body is not None and not isinstance(body, (str, bytes, bytearray)):
-        body = json.dumps(body, default=str); headers.setdefault('Content-Type', 'application/json')
-    data = body.encode() if isinstance(body, str) else body
-    request = urllib.request.Request(url, data=data, headers=headers, method=str(cfg.get('method') or 'GET').upper())
-    context = ssl.create_default_context()
-    if not _bool(connection.get('verifyTls'), True): context.check_hostname = False; context.verify_mode = ssl.CERT_NONE
-    try:
-        with urllib.request.urlopen(request, timeout=float(cfg.get('timeout') or connection.get('timeout') or 30), context=context) as response:
-            raw = response.read(); content_type = response.headers.get_content_type()
-            text = raw.decode(response.headers.get_content_charset() or 'utf-8', errors='replace')
-            try: value = json.loads(text) if content_type == 'application/json' else text
-            except ValueError: value = text
-            return {'statusCode': response.status, 'headers': dict(response.headers), 'body': value}
-    except urllib.error.HTTPError as error:
-        raw = error.read().decode(errors='replace')
-        raise RuntimeError(f'HTTP {error.code}: {raw}') from error
+    from .native.http_transport import request
+    return request(cfg, connection)
 
 
 async def external_command(cfg: dict) -> dict:

@@ -537,6 +537,17 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
     def add(name: str, modules: list[str], install: str, *, any_module: bool = False, java: bool = False):
         if not any(item['name'] == name for item in checks):
             checks.append({'name': name, 'modules': modules, 'install': install, 'any': any_module, 'java': java})
+    http_configs = [*(resources.get('http') or []), *(a.get('config') or {} for t in project.get('tasks',[]) for a in t.get('activities',[]) if a.get('type') in {'http','http_listener','rest','soap'})]
+    if any(kind in {'http','http_listener','rest','soap'} for kind,_ in activity_pairs):
+        add('HTTP transport', ['httpx'], 'python -m pip install httpx')
+    if any(kind == 'http_listener' or kind == 'rest' and op == 'receiver' or kind == 'soap' and op == 'service' for kind,op in activity_pairs):
+        add('HTTP server', ['uvicorn'], 'python -m pip install uvicorn')
+    if any(str(c.get('authentication','')).lower()=='jwt' for c in http_configs):add('JWT authentication',['jwt'],'python -m pip install PyJWT cryptography')
+    if any(str(c.get('authentication','')).lower()=='ldap' for c in http_configs):add('LDAP authentication',['ldap3'],'python -m pip install ldap3')
+    if any(str(c.get('authentication','')).lower()=='ntlm' for c in http_configs):add('NTLM authentication',['httpx_ntlm'],'python -m pip install httpx-ntlm')
+    if any(str(c.get('httpVersion',''))=='2' for c in http_configs):add('HTTP/2',['h2'],'python -m pip install h2')
+    if any(str(c.get(key,'' )).upper()=='JKS' for c in http_configs for key in ('trustStoreType','identityStoreType')):add('JKS stores',[],'Provision Java keytool or convert JKS stores to PKCS12.',java=True)
+    if any(str(c.get(key,'' )).upper() in {'PKCS12','P12','PFX'} for c in http_configs for key in ('trustStoreType','identityStoreType')):add('PKCS12 stores',['cryptography'],'python -m pip install cryptography')
     if any(token in repr(project.get('schemas', [])) + repr([a.get('config', {}) for t in project.get('tasks', []) for a in t.get('activities', [])]) for token in ('pattern', 'patternProperties')):
         add('Schema patterns', ['regex'], 'python -m pip install regex')
     if any(kind == 'kafka' for kind, _ in activity_pairs) and needs_external('kafka'): add('Kafka client', ['aiokafka'], 'python -m pip install aiokafka')
@@ -564,6 +575,11 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
             cfg = activity.get('config') or {}
             if activity.get('type') in {'java', 'python'} and cfg.get('artifactPath'):
                 external.append(str(cfg['artifactPath']))
+    certificate_keys = ('trustedCertificateFolder','trustStoreFile','certificateAuthorityFile','identityStoreFile','certificateFile','privateKeyFile','clientCertificateFile','clientKeyFile','crlFile','jwtPrivateKeyFile','jwtPublicKeyFile','ldapCaFile')
+    configurations = [resource.get('config') or {} for resource in project.get('resources', [])]
+    configurations += [activity.get('config') or {} for task in project.get('tasks', []) for activity in task.get('activities', [])]
+    for cfg in configurations:
+        external.extend(str(cfg[key]) for key in certificate_keys if cfg.get(key))
     return checks, sorted(set(external))
 
 
@@ -704,6 +720,8 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     files['run.py'] = launcher
     files['__main__.py'] = launcher
     native_modules = set()
+    if capabilities & {'http_client','inbound_http'}: native_modules.update({'http_transport.py','http_messages.py','rest_contract.py','mapper.py'})
+    if 'inbound_http' in capabilities: native_modules.update({'http_server.py','mapper.py'})
     if any(activity.get('config', {}).get('operation') in {'deduplicate', 'message_receipt', 'replay_messages', 'aggregate_messages', 'split_records'} for task in project.get('tasks', []) for activity in task.get('activities', [])):
         native_modules.add('message_state.py')
     if any(activity.get('type') == 'sftp' for task in project.get('tasks', []) for activity in task.get('activities', [])):
@@ -1097,6 +1115,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
 ENGINE_CAPABILITY_MODULES = {
     'dataweave': 'dataweave', 'sap': 'sap', 'snowflake': 'snowflake',
     'jdbc': 'jdbc', 'amqp': 'amqp', 'ems': 'java_bridge',
+    'http': 'http_transport', 'rest': 'http_transport', 'soap': 'http_transport', 'http_listener': 'http_server',
     'jms': 'java_bridge', 'pubsub': 'google_pubsub', 'sftp': 'sftp', 'basic': 'message_state',
 }
 
@@ -1146,6 +1165,7 @@ def _engine_module_files(project: dict, source_root: Path) -> dict[str, bytes]:
     optional = set(ENGINE_CAPABILITY_MODULES.values())
     pending = {'runtime', 'models', 'mapper', 'time_utils'}
     pending.update(module for kind, module in ENGINE_CAPABILITY_MODULES.items() if kind in kinds)
+    if any(a['type']=='http_listener' or a['type']=='rest' and a.get('config',{}).get('operation')=='receiver' or a['type']=='soap' and a.get('config',{}).get('operation')=='service' for t in project.get('tasks',[]) for a in t.get('activities',[])):pending.add('http_server')
     files = {}
     while pending:
         module = pending.pop()
