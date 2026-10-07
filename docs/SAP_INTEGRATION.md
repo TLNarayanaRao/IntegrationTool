@@ -85,6 +85,13 @@ Java 8, 11, 17, 21, and 25; re-check SAP's support page when qualifying a build.
 
 ## Flat IDoc and messaging modes
 
+In JSON mode, the IDoc Parser and Converter expose one schema-shaped document
+under `SAPIDoc`, for example `SAPIDoc.ARTMAS05.IDOC`. Map `SAPIDoc` to a Kafka
+JSON payload to send that document once. Older direct runtime mapping paths
+such as `SAPIDoc.IDOC` and `ARTMAS05.IDOC` remain available as lookup aliases;
+they are not additional serialized JSON branches. Actual repeating IDocs and
+segments remain in the payload.
+
 The built-in parser reads canonical EDI_DD40 byte fields (`SEGNAM`, `MANDT`,
 `DOCNUM`, `SEGNUM`, `PSGNUM`, `HLEVEL`, and `SDATA`) and EDI_DC40 control fields.
 Set `idocEncoding` to the actual sender code page. Keep

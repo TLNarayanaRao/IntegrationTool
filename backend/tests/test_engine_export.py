@@ -79,6 +79,23 @@ class EngineExportTests(unittest.TestCase):
                 capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_exported_idoc_parser_serializes_one_document(self):
+        files = compiler.engine_python_files(self.project('sap'), {'local': []})
+        with tempfile.TemporaryDirectory() as directory:
+            for name, body in files.items():
+                path = Path(directory) / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(body)
+            result = subprocess.run([sys.executable, '-c',
+                'import copy, json; from application.engine.sap import SapAdapter; '
+                'value = SapAdapter().execute("idoc_parser", '
+                '{"idocType":"ARTMAS05", "idocOutputMode":"JSON"}, '
+                '"<ARTMAS05><IDOC><EDI_DC40><DOCNUM>123456789</DOCNUM></EDI_DC40></IDOC></ARTMAS05>"); '
+                'assert json.dumps(copy.deepcopy(value)).count("123456789") == 1; '
+                'assert value["SAPIDoc"]["IDOC"] == value["SAPIDoc"]["ARTMAS05"]["IDOC"]'],
+                cwd=directory, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()

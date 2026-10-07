@@ -5,6 +5,21 @@ from typing import Any
 from xml.sax.saxutils import escape
 from .java_bridge import JavaBridgeError, invoke as invoke_java, start_sap_listener, start_sap_worker, SapJcoListener, SapJcoWorker
 
+class _IdocMapping(dict):
+    """Serialize one schema branch; retain historic paths as lookup-only aliases."""
+    def __init__(self, value, aliases):
+        super().__init__(value)
+        self._aliases = aliases
+
+    def __missing__(self, key):
+        return self._aliases[key]
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
 class SapAdapter:
     """SAP ECC adapter. External mode uses SAP's separately licensed Java Connector (JCo)."""
     def __init__(self):
@@ -1209,13 +1224,12 @@ class SapAdapter:
                 try: idoc_type = self._xml_name(ET.fromstring(xml_text).tag)
                 except ET.ParseError: pass
             json_value = self._normalize_idoc_arrays(json_value, {**cfg, 'idocType': idoc_type})
-            # The activity output tree presents the selected basic type below
-            # SAPIDoc (for example SAPIDoc.ARTMAS05.IDOC).  Keep the historic
-            # direct shape too (SAPIDoc.IDOC), but also publish that visible
-            # branch so expressions copied from the tree resolve at runtime.
+            # Match the output schema without serializing the same IDoc twice.
+            # Historic direct paths remain available to runtime mappings, but
+            # are not extra JSON keys in a publisher's wire payload.
             sap_idoc_value = json_value
             if idoc_type and isinstance(json_value, dict) and idoc_type not in json_value:
-                sap_idoc_value = {**json_value, idoc_type: json_value}
+                sap_idoc_value = _IdocMapping({idoc_type: json_value}, json_value)
             if mode == 'XML':
                 output = xml_text if xml_text.lstrip().startswith('<') else self._json_to_xml(json_value)
                 # `payload` is the canonical downstream value for listener,
@@ -1241,7 +1255,8 @@ class SapAdapter:
             # The Input tree displays the selected basic type (for example
             # ARTMAS05) as its root. Publish that same key at runtime so a
             # mapping to the visible root does not resolve to an empty value.
-            if idoc_type and idoc_type not in result: result[idoc_type] = json_value
+            if idoc_type and idoc_type not in result:
+                result = _IdocMapping(result, {idoc_type: json_value})
             return result
         if operation == 'idoc_renderer':
             selected_idoc = cfg.get('selectedIdoc') or {}

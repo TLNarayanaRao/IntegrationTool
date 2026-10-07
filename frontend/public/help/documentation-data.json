@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "0eb33682859b5fa7ba70ead9da9b45bd52f442d846eda37ce6972e56de1caedf",
+  "fingerprint": "43249ecc9a174649e03e4f0fc791361efa53b63c2d8c0a64a15a1390e86cbb0d",
   "counts": {
     "activities": 101,
     "groups": 11,
@@ -39267,6 +39267,10 @@
             },
             {
               "kind": "p",
+              "text": "In JSON mode, the IDoc Parser and Converter expose one schema-shaped document under `SAPIDoc`, for example `SAPIDoc.ARTMAS05.IDOC`. Map `SAPIDoc` to a Kafka JSON payload to send that document once. Older direct runtime mapping paths such as `SAPIDoc.IDOC` and `ARTMAS05.IDOC` remain available as lookup aliases; they are not additional serialized JSON branches. Actual repeating IDocs and segments remain in the payload."
+            },
+            {
+              "kind": "p",
               "text": "The built-in parser reads canonical EDI_DD40 byte fields (`SEGNAM`, `MANDT`, `DOCNUM`, `SEGNUM`, `PSGNUM`, `HLEVEL`, and `SDATA`) and EDI_DC40 control fields. Set `idocEncoding` to the actual sender code page. Keep `invalidCharacterPolicy=strict` for production unless replacement characters are an accepted business rule. When SDATA may contain CR/LF, configure a unique `idocRecordDelimiter`; that delimiter is authoritative and embedded line breaks remain data. With no delimiter, canonical 1063-byte records are split by width."
             },
             {
@@ -55580,7 +55584,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1081\ndef execute("
+                  "backend/app/sap.py:1096\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation dynamic_connection",
@@ -55771,7 +55775,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1081,
+          "line": 1096,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -55935,7 +55939,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1081\ndef execute("
+                  "backend/app/sap.py:1096\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_acknowledgment",
@@ -56126,7 +56130,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1081,
+          "line": 1096,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -56290,7 +56294,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1081\ndef execute("
+                  "backend/app/sap.py:1096\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_confirmation",
@@ -56481,7 +56485,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1081,
+          "line": 1096,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -56645,7 +56649,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1081\ndef execute("
+                  "backend/app/sap.py:1096\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_converter",
@@ -56836,7 +56840,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1081,
+          "line": 1096,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -57000,7 +57004,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1081\ndef execute("
+                  "backend/app/sap.py:1096\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_listener",
@@ -57008,7 +57012,7 @@
                 ],
                 [
                   "Inbound SAP adapter",
-                  "backend/app/sap.py:793\nasync def receive_idoc("
+                  "backend/app/sap.py:808\nasync def receive_idoc("
                 ],
                 [
                   "Continuous SAP jobs",
@@ -57199,7 +57203,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1081,
+          "line": 1096,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -57211,7 +57215,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 793,
+          "line": 808,
           "symbol": "async def receive_idoc(",
           "role": "Inbound SAP adapter"
         },
@@ -57375,7 +57379,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1081\ndef execute("
+                  "backend/app/sap.py:1096\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_parser",
@@ -57566,7 +57570,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1081,
+          "line": 1096,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -57730,7 +57734,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1081\ndef execute("
+                  "backend/app/sap.py:1096\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_reader",
@@ -57921,7 +57925,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1081,
+          "line": 1096,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -58085,7 +58089,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1081\ndef execute("
+                  "backend/app/sap.py:1096\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation post_idoc",
@@ -58276,7 +58280,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1081,
+          "line": 1096,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -58440,7 +58444,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1081\ndef execute("
+                  "backend/app/sap.py:1096\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_renderer",
@@ -58631,7 +58635,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1081,
+          "line": 1096,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -58795,7 +58799,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1081\ndef execute("
+                  "backend/app/sap.py:1096\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation rfc_bapi_listener",
@@ -58803,7 +58807,7 @@
                 ],
                 [
                   "Inbound SAP adapter",
-                  "backend/app/sap.py:793\nasync def receive_idoc("
+                  "backend/app/sap.py:808\nasync def receive_idoc("
                 ],
                 [
                   "Continuous SAP jobs",
@@ -58994,7 +58998,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1081,
+          "line": 1096,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -59006,7 +59010,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 793,
+          "line": 808,
           "symbol": "async def receive_idoc(",
           "role": "Inbound SAP adapter"
         },
@@ -59170,7 +59174,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1081\ndef execute("
+                  "backend/app/sap.py:1096\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation invoke_rfc_bapi",
@@ -59361,7 +59365,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1081,
+          "line": 1096,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -59525,7 +59529,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1081\ndef execute("
+                  "backend/app/sap.py:1096\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation reply_rfc_bapi",
@@ -59716,7 +59720,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1081,
+          "line": 1096,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -59880,7 +59884,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1081\ndef execute("
+                  "backend/app/sap.py:1096\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation read_table",
@@ -60071,7 +60075,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1081,
+          "line": 1096,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
