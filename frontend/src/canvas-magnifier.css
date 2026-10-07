@@ -1,0 +1,12 @@
+.canvas-magnifier-toggle{display:grid;place-items:center;width:27px;height:27px;padding:4px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--muted);cursor:pointer}
+.canvas-magnifier-toggle svg{width:16px;height:16px}
+.canvas-magnifier-toggle[aria-pressed="true"]{color:var(--accent);border-color:var(--accent);box-shadow:0 0 8px var(--glow)}
+.canvas-magnifier-lens{position:fixed;z-index:9000;visibility:hidden;pointer-events:none;width:min(300px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:hidden;border:1px solid var(--accent);border-radius:12px;background:var(--surface);color:var(--text);box-shadow:0 8px 28px #0008,0 0 12px var(--glow);font:12px/1.4 Arial,sans-serif}
+.canvas-magnifier-heading{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--line);color:var(--accent)}
+.canvas-magnifier-heading svg{width:14px;height:14px}
+.canvas-magnifier-view{position:relative;height:min(160px,35vh);overflow:hidden;background:var(--surface)}
+.canvas-magnifier-snapshot{position:absolute;left:0;top:0;transform-origin:0 0;pointer-events:none}
+.canvas-magnifier-lens *{pointer-events:none!important}
+.canvas-magnifier-snapshot .canvas-content{transform:none!important;pointer-events:none!important}
+.canvas-magnifier-snapshot :is(.connect-handle,.quick-add-handle,.canvas-selection-box){display:none!important}
+.canvas-magnifier-name{padding:8px 10px;border-top:1px solid var(--line);overflow-wrap:anywhere;font-weight:600}

@@ -1,3 +1,4 @@
+import ModalLayer from "./ModalLayer";
 import TransformationTools from "./TransformationTools";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -1356,12 +1357,25 @@ function resolvedActivityContract(node: any, task: any, tasks: any[], schemas: a
   return contract;
 }
 
-function possibleTaskExceptions(task: any, tasks: any[], schemas: any[]): string[] {
-  const values = new Set<string>(["RUNTIME", "VALIDATION", "UserDefinedException", "RethrowException"]);
-  (task?.activities || []).filter((activity: any) => activity.type !== "catch").forEach((activity: any) => {
-    resolvedActivityContract(activity, task, tasks, schemas).errors.forEach((error) => values.add(error.type));
-  });
-  return [...values].sort((left, right) => left.localeCompare(right));
+export function possibleTaskExceptions(task: any, tasks: any[] = [], schemas: any[] = []): string[] {
+  const values = new Set<string>(["RUNTIME"]), visited = new Set<any>();
+  const visit = (current: any) => {
+    if (!current || visited.has(current)) return;
+    visited.add(current);
+    for (const activity of current.activities || []) {
+      if (activity.type === "catch" || activity.config?.generatedByCatchAI) continue;
+      if (activity.type === "throw") values.add(String(activity.config?.errorType || "UserDefinedException"));
+      else resolvedActivityContract(activity, current, tasks, schemas).errors.forEach((error) => values.add(error.type));
+      if (activity.type === "call_task") {
+        const dynamic = String(activity.config?.dynamicTaskId || "").trim();
+        const target = dynamic && !dynamic.includes("${") ? dynamic : activity.config?.taskId;
+        const called = target ? tasks.find(candidate => [candidate.id,candidate.name].some(value => String(value).toLowerCase() === String(target).toLowerCase())) : null;
+        visit(called);
+      }
+    }
+  };
+  visit(task);
+  return [...values].filter(Boolean).sort((left,right) => left.localeCompare(right));
 }
 
 function runtimeMappableInputs(node: any, contract: Contract): DataField[] {
@@ -1402,7 +1416,7 @@ const activityDocumentation: Record<string, { summary: string; behavior: string 
   kafka: { summary: "Produces, receives, or commits Apache Kafka records.", behavior: "Broker security comes from the shared Kafka connection. Topic, key, headers, value, partitions, offsets, and acknowledgement handles are available for hierarchical mapping." },
   pubsub: { summary: "Publishes, receives, or acknowledges Google Cloud Pub/Sub messages.", behavior: "Project and credential defaults come from the shared connection. Message data, attributes, ordering keys, and acknowledgement handles remain available on the execution path." },
   sap: { summary: "Executes the selected SAP ECC operation.", behavior: "The shared SAP connection supplies system and authentication settings. IDoc metadata selected from SAP defines listener, parser, renderer, and sender structures." },
-  mapper: { summary: "Maps execution-path data into a selected target schema.", behavior: "The consolidated Mapper includes schema trees, XPath-style functions, repeating For-Each/For-Each-Group rules, AI-assisted recommendations, validation, and an executable test surface." },
+  mapper: { summary: "Maps execution-path data into a selected target schema.", behavior: "The consolidated Mapper includes schema trees, XPath-style functions, repeating For-Each/For-Each-Group rules, AI-assisted recommendations, validation, and an executable test surface. Input has a compact AI Mapper button beside Edit mappings; AI assistance settings are inside its popup; Configuration holds the schema and transformation policies." },
   transform: { summary: "Legacy Mapper activity retained for project compatibility.", behavior: "Existing Transform nodes continue to execute with Mapper behavior. New projects should use Mapper for visual/XPath mappings or Transform for DataWeave scripts." },
   ai_transform: { summary: "Legacy AI Mapper activity retained for project compatibility.", behavior: "Existing AI Transform nodes continue to use the consolidated Mapper and its AI recommendation/review workflow." },
   dataweave: { summary: "Transforms payloads with MINA's executable DataWeave-compatible language subset.", behavior: "Scripts support payload/attributes/vars selectors, objects, arrays, defaults, conditionals, concatenation, common coercion/string/collection functions, map/filter/groupBy/orderBy/distinctBy, JSON, XML, and text output. The editor validates and runs the same engine used at runtime." },
@@ -1442,7 +1456,7 @@ function ActivityDocumentation({ node, contract }: { node: any; contract: Contra
 
 function ActivityEditorGuidance({ type }: { type: string }) {
   const groups = ["ActivityEditor", "InputEditor", "MappingContextMenu", "ExpandedInputMappingDialog", "OutputEditor", "AdvancedEditor", "ErrorEditor"];
-  if (["mapper", "transform", "ai_transform", "dataweave"].includes(type)) groups.push("TransformSchemaEditor", "TransformPoliciesEditor", "TransformInputEditor", "TransformOutputEditor", "TransformMapTestEditor");
+  if (["mapper", "transform", "ai_transform", "dataweave"].includes(type)) groups.push("TransformSchemaEditor", "TransformPoliciesEditor", "AIMappingAssistance", "TransformInputEditor", "TransformOutputEditor", "TransformMapTestEditor");
   if (type === "dataweave") groups.push("DataWeaveScriptEditor", "DataWeaveTestEditor");
   if (type === "timer") groups.push("SchedulerEditor");
   if (type === "jdbc") groups.push("JdbcDesigner");
@@ -1593,21 +1607,27 @@ export default function ActivityEditor({
         {node.type === "jdbc" && <JdbcDesigner config={cfg} resource={resources.find((resource: any) => resource.id === cfg.resourceId)} properties={properties} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>}
         {node.type === "timer" && <SchedulerEditor config={cfg} set={set}/>}
         {node.type === "call_task" && <CallTaskRoutingEditor config={cfg} tasks={tasks} properties={properties} set={set}/>}
-        {node.type === "catch" && <CatchAIEditor nodeId={node.id} exceptionTypes={exceptionTypes} handleExceptions={handleExceptions}/>}
+        {node.type === "catch" && <CatchAIEditor nodeId={`${task?.id}:${node.id}`} exceptionTypes={exceptionTypes} handleExceptions={handleExceptions}/>}
         {isMapperActivity(node.type) && (
           <>
             <TransformSchemaEditor config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>
-            <TransformPoliciesEditor ai config={cfg} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>
-            <button className="open-mapper" onClick={() => setMapperOpen(true)}>
-              <WandSparkles /> Open visual AI Mapper{" "}
-              <small>{Array.isArray(cfg.mappings) ? cfg.mappings.length : 0} mappings configured</small>
-            </button>
+            <TransformPoliciesEditor config={cfg} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>
+
           </>
         )}
         {node.type === "dataweave" && <DataWeaveScriptEditor config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>}
         {(node.type === "start" || node.type === "end") && (
           <TaskBoundarySchemaEditor node={node} config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>
         )}
+
+      </div>
+    );
+  if (tab === "input")
+    return isMapperActivity(node.type) ? (
+      <TransformInputEditor actions={<>
+        <button type="button" className="edit-input-mapping ai-mapper-launcher" aria-label="Open visual AI Mapper" onClick={() => setMapperOpen(true)}>
+              <WandSparkles /> AI Mapper
+            </button>
         {mapperOpen && (
           <MapperStudio
             config={cfg}
@@ -1620,12 +1640,7 @@ export default function ActivityEditor({
               setMapperOpen(false);
             }}
           />
-        )}
-      </div>
-    );
-  if (tab === "input")
-    return isMapperActivity(node.type) ? (
-      <TransformInputEditor config={cfg} schemas={schemas || []} properties={properties} sources={upstreamSources} runtimeVariables={groupVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} setMappings={(value: any) => set("mappings", value)}/>
+        )}</>} config={cfg} schemas={schemas || []} properties={properties} sources={upstreamSources} runtimeVariables={groupVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} setMappings={(value: any) => set("mappings", value)}/>
     ) : (
       <InputEditor
         node={node}
@@ -1682,7 +1697,8 @@ function CallTaskRoutingEditor({ config, tasks, properties, set }: any) {
 
 function CatchAIEditor({ nodeId, exceptionTypes, handleExceptions }: any) {
   const [selected, setSelected] = useState<string[]>([]);
-  useEffect(() => setSelected([]), [nodeId]);
+  const exceptionKey = exceptionTypes.join("|");
+  useEffect(() => setSelected([]), [nodeId, exceptionKey]);
   const toggle = (type: string) => setSelected((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type]);
   return <section className="catch-ai-editor">
     <header><WandSparkles/><span><b>Catch AI · Task exception analyzer</b></span><i>{exceptionTypes.length} FOUND</i></header>
@@ -1791,7 +1807,7 @@ function TransformSchemaEditor({ config, schemas, setConfig }: any) {
   return <div className="transform-schema-editor"><div className="transform-schema-heading"><Braces/><span><b>TARGET TRANSFORMATION CONTRACT</b></span></div><div className="transform-schema-columns single"><section><header><span><b>Target schema</b></span><select aria-label="Target schema" value={id} onChange={(event) => choose(event.target.value)}><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header>{id === "inline" && <><textarea aria-label="Target inline schema" value={text} onChange={(event) => setConfig({ targetSchemaId: "", targetSchemaText: event.target.value })} placeholder="Paste target JSON Schema or XSD here…" spellCheck={false}/><SchemaHierarchyPreview text={text}/></>}</section></div></div>;
 }
 
-function TransformPoliciesEditor({ ai, config, setConfig }: any) {
+function TransformPoliciesEditor({ config, setConfig }: any) {
   const change = (key: string, value: any) => setConfig({ [key]: value });
   return <section className="transform-policies">
     <header><WandSparkles/><span><b>INTEGRATION MAPPING POLICIES</b></span></header>
@@ -1807,8 +1823,13 @@ function TransformPoliciesEditor({ ai, config, setConfig }: any) {
       <label className="policy-switch"><input type="checkbox" checked={config.removeEmptyStructures === true} onChange={(event) => change("removeEmptyStructures", event.target.checked)}/><span><b>Remove empty structures</b></span></label>
       <label className="policy-switch"><input type="checkbox" checked={config.copyNil !== false} onChange={(event) => change("copyNil", event.target.checked)}/><span><b>Copy nil semantics</b></span></label>
     </div>
-    {ai && <div className="ai-policy-panel"><header><Sparkles/><span><b>AI MAPPING ASSISTANCE</b></span></header><div><label>Minimum confidence<input type="range" min="40" max="100" value={config.threshold || 70} onChange={(event) => change("threshold", Number(event.target.value))}/><b>{config.threshold || 70}%</b></label><label>Matching strategy<select value={config.aiStrategy || "balanced"} onChange={(event) => change("aiStrategy", event.target.value)}><option value="balanced">Balanced name, type, and hierarchy</option><option value="strict">Strict schema and type match</option><option value="semantic">Semantic business-name match</option></select></label><label className="policy-switch"><input type="checkbox" checked={config.requireAiReview !== false} onChange={(event) => change("requireAiReview", event.target.checked)}/><span><b>Require approval</b></span></label><label className="policy-switch"><input type="checkbox" checked={config.autoMapRepeating !== false} onChange={(event) => change("autoMapRepeating", event.target.checked)}/><span><b>Infer repeating structures</b></span></label></div></div>}
+
   </section>;
+}
+
+export function AIMappingAssistance({ config, setConfig }: any) {
+  const change = (key: string, value: any) => setConfig({ [key]: value });
+  return <div className="ai-policy-panel"><header><Sparkles/><span><b>AI MAPPING ASSISTANCE</b></span></header><div><label>Minimum confidence<input aria-label="Minimum confidence" type="range" min="40" max="100" value={config.threshold || 70} onChange={(event) => change("threshold", Number(event.target.value))}/><b>{config.threshold || 70}%</b></label><label>Matching strategy<select aria-label="Matching strategy" value={config.aiStrategy || "balanced"} onChange={(event) => change("aiStrategy", event.target.value)}><option value="balanced">Balanced name, type, and hierarchy</option><option value="strict">Strict schema and type match</option><option value="semantic">Semantic business-name match</option></select></label><label className="policy-switch"><input type="checkbox" checked={config.requireAiReview !== false} onChange={(event) => change("requireAiReview", event.target.checked)}/><span><b>Require approval</b></span></label><label className="policy-switch"><input type="checkbox" checked={config.autoMapRepeating !== false} onChange={(event) => change("autoMapRepeating", event.target.checked)}/><span><b>Infer repeating structures</b></span></label></div></div>;
 }
 
 function TaskBoundarySchemaEditor({ node, config, schemas, setConfig }: any) {
@@ -2279,13 +2300,13 @@ function ExpandedInputMappingDialog({ title, mappingCount, onClose, onApply, chi
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [onClose]);
-  return createPortal(<div className="modal-backdrop input-mapper-backdrop" role="presentation">
+  return createPortal(<ModalLayer className="modal-backdrop input-mapper-backdrop" role="presentation">
     <div className="input-mapper-dialog" role="dialog" aria-modal="true" aria-label={`${title} input mapper`}>
       <header><div><Pencil/><span><b>{title}</b></span></div><i>{mappingCount} MAPPED</i><button type="button" aria-label="Close input mapper" title="Close" onClick={onClose}><X/></button></header>
       <div className="input-mapper-content">{children}</div>
       <footer><span>Changes remain local until you apply the mappings.</span><button type="button" onClick={onClose}>Cancel</button><button type="button" className="primary" onClick={onApply}><CheckCircle2/> Apply mappings</button></footer>
     </div>
-  </div>, document.body);
+  </ModalLayer>, document.body);
 }
 
 function LoopMappingRow({ row, collapsed, toggle, patch, remove, duplicate, sources }: { row: MappingTreeRow; collapsed: boolean; toggle: (key: string) => void; patch: (value: any) => void; remove: () => void; duplicate?: () => void; sources: any[] }) {
@@ -2408,7 +2429,7 @@ function transformSchemaFields(config: any): SchemaTreeField[] {
     } catch { return []; }
   }
 }
-function TransformInputEditor({ config, properties, sources, runtimeVariables = [], setMappings, customFunctions, updateCustomFunctions, expanded = false, editorTitle = "Mapper · Expanded Input Editor" }: any) {
+function TransformInputEditor({ config, properties, sources, runtimeVariables = [], setMappings, customFunctions, updateCustomFunctions, expanded = false, actions, editorTitle = "Mapper · Expanded Input Editor" }: any) {
   properties = useMemo(() => Object.assign([...(properties || [])], { customFunctions, updateCustomFunctions }), [properties, customFunctions, updateCustomFunctions]);
   const fields = useMemo<SchemaTreeField[]>(() => transformSchemaFields(config), [config.targetSchemaText, config.targetSchema]), resize = useSourcePaneWidth(expanded ? 360 : 280), tree = useTreeCollapse(), root = useRef<HTMLDivElement>(null), [selected, setSelected] = useState(fields[0]?.path || ""), [contextMenu, setContextMenu] = useState<any>(null), [dialogOpen, setDialogOpen] = useState(false), [draftMappings, setDraftMappings] = useState<any[]>([]), mappings = Array.isArray(config.mappings) ? config.mappings : [];
   const [targetSearch, setTargetSearch] = useState("");
@@ -2465,7 +2486,7 @@ function TransformInputEditor({ config, properties, sources, runtimeVariables = 
   const contextValue = contextMenu ? mappings.find((item: any) => item.target === contextMenu.path && item.occurrenceId === contextMenu.occurrenceId) : null;
   const contextField = contextMenu ? fields.find((field) => field.path === contextMenu.path) : null;
   const openDialog = () => { setDraftMappings(structuredClone(mappings)); setDialogOpen(true); };
-  return <><div ref={root} className={`activity-tab mapping-editor transform-input-editor resizable-mapper visual-field-mapper ${expanded ? "expanded-input-workspace" : ""}`} style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}><MemoizedDataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}><span/></div><section><div className="contract-heading mapping-editor-heading"><SettingsTitle title="Target schema mapping" />{!expanded && <button type="button" className="edit-input-mapping" onClick={openDialog}><Pencil/> Edit mappings </button>}</div><div className="mapper-target-search"><input aria-label="Find target field" placeholder="Find target field…" value={targetSearch} onChange={event=>setTargetSearch(event.target.value)}/><button type="button" onClick={()=>tree.collapseAll(displayRows.filter(row=>row.hasChildren).map(row=>row.key))}>Collapse all</button><button type="button" onClick={tree.expandAll}>Expand all</button></div><div className="target-schema-tree">{filteredRows.map(row => {
+  return <><div ref={root} className={`activity-tab mapping-editor transform-input-editor resizable-mapper visual-field-mapper ${expanded ? "expanded-input-workspace" : ""}`} style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}><MemoizedDataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}><span/></div><section><div className="contract-heading mapping-editor-heading"><SettingsTitle title="Target schema mapping" />{!expanded && <button type="button" className="edit-input-mapping" onClick={openDialog}><Pencil/> Edit mappings </button>}{actions}</div><div className="mapper-target-search"><input aria-label="Find target field" placeholder="Find target field…" value={targetSearch} onChange={event=>setTargetSearch(event.target.value)}/><button type="button" onClick={()=>tree.collapseAll(displayRows.filter(row=>row.hasChildren).map(row=>row.key))}>Collapse all</button><button type="button" onClick={tree.expandAll}>Expand all</button></div><div className="target-schema-tree">{filteredRows.map(row => {
     if (!targetSearch.trim() && row.ancestors.some(key => tree.collapsed.has(key))) return null;
     const field = row.field, rule = row.rule, structural = row.hasChildren || isComplexSchemaType(field.type), canMapStructure = structural && field.repeating;
     if(row.kind !== "field") return <LoopMappingRow key={row.key} row={row} sources={sources} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle} patch={patch => updateRule(field.path,row.occurrenceId,patch)} duplicate={() => duplicateOccurrence(field.path,row.occurrenceId)} remove={() => row.occurrenceId ? removeOccurrence(row.occurrenceId) : updateRule(field.path,undefined,{operator:undefined,select:undefined})}/>;

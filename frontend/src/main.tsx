@@ -1,3 +1,4 @@
+import ModalLayer from "./ModalLayer";
 import React, { Component, ErrorInfo, useEffect, useMemo, useRef, useState } from "react";
 import AboutMina from "./AboutMina";
 import { FontControl, useFontPreferences } from "./FontControls";
@@ -53,8 +54,10 @@ import {
   WandSparkles,
 } from "lucide-react";
 import SchemaStudio, { SchemaDoc } from "./SchemaStudio";
-import ActivityEditor, { activityContract, activityReferenceName, activityMappingIssues, activityInputMappingTypes, DataSourcePane, upstreamActivitySources } from "./ActivityEditor";
+import ActivityEditor, { activityContract, activityReferenceName, activityMappingIssues, activityInputMappingTypes, possibleTaskExceptions, DataSourcePane, upstreamActivitySources } from "./ActivityEditor";
 import ActivityPicker from "./ActivityPicker";
+import CanvasMagnifier from "./CanvasMagnifier";
+import { activityIconUrl } from "./activityIconUrl";
 import DataNodeIcon from "./DataNodeIcon";
 import DebugActivityTree from "./DebugActivityTree";
 import DebugJobData from "./DebugJobData";
@@ -152,6 +155,7 @@ type Edge = {
   label?: string;
   type?: "success" | "success_condition" | "success_no_match" | "error";
   condition?: string;
+  color?: string;
 };
 type Task = {
   id: string;
@@ -328,7 +332,7 @@ const isEventActivity = (item: { type: Kind; operation?: string; config?: Record
     (item.type === "sap" && ["idoc_listener", "rfc_bapi_listener"].includes(operation));
 };
 const ai = (asset: string) => (
-  <img src={`/activity-icons/${asset.includes(".") ? asset : `${asset}.png`}`} alt="" />
+  <img src={activityIconUrl(asset)} alt="" />
 );
 const resourceIconSources: Record<string, string> = { http_client:"/activity-icons/http.png", http_server:"/activity-icons/http.png", http: "/activity-icons/http.png", ftp: "/activity-icons/ftp.png", sftp: "/activity-icons/sftp.png", ems: "/activity-icons/ems.png", jms: "/activity-icons/jms-connection.svg", kafka: "/vendor-logos/apache-kafka.svg", pubsub: "/vendor-logos/gcp-pubsub.png", jdbc: "/activity-icons/JDBC-Query.png", snowflake: "/activity-icons/snowflake.svg", amqp: "/vendor-logos/rabbitmq.svg", sap: "/vendor-logos/sap.svg", sap_tid: "/vendor-logos/sap.svg" };
 const ResourceVendorIcon = ({ type }: { type: string }) => resourceIconSources[type] ? <img className={`resource-vendor-icon resource-${type}`} src={resourceIconSources[type]} alt=""/> : <Database/>;
@@ -415,43 +419,43 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
         type: "http_listener",
         operation: "listen",
         label: "HTTP Listener",
-        asset: "http-listener",
+        asset: "http-listener.svg",
       },
       {
         type: "http",
         operation: "request",
         label: "HTTP Request",
-        asset: "http-request",
+        asset: "http-request.svg",
       },
       {
         type: "http_response",
         operation: "response",
         label: "HTTP Response",
-        asset: "http-response",
+        asset: "http-response.svg",
       },
       {
         type: "rest",
         operation: "receiver",
         label: "REST API Receiver",
-        asset: "rest-receiver",
+        asset: "rest-receiver.svg",
       },
       {
         type: "rest",
         operation: "invoke",
         label: "REST API Invoke",
-        asset: "rest-invoke",
+        asset: "rest-invoke.svg",
       },
       {
         type: "soap",
         operation: "service",
         label: "SOAP Service",
-        asset: "soap-service",
+        asset: "soap-service.svg",
       },
       {
         type: "soap",
         operation: "request_reply",
         label: "SOAP Request Reply",
-        asset: "soap-request-reply",
+        asset: "soap-request-reply.svg",
       },
     ],
   },
@@ -459,15 +463,15 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
     name: "EMS",
     icon: MessageSquare,
     items: [
-      ["queue_receiver", "EMS Queue Receiver"],
-      ["topic_subscriber", "EMS Topic Subscriber"],
-      ["send", "EMS Queue Sender"],
-      ["publish", "EMS Topic Publisher"],
-      ["request_reply", "EMS Request Reply"],
-      ["reply", "EMS Reply"],
+      ["queue_receiver", "EMS Queue Receiver", "ems-queue-receiver.svg"],
+      ["topic_subscriber", "EMS Topic Subscriber", "ems-topic-subscriber.svg"],
+      ["send", "EMS Queue Sender", "ems-queue-sender.svg"],
+      ["publish", "EMS Topic Publisher", "ems-topic-publisher.svg"],
+      ["request_reply", "EMS Request Reply", "ems-request-reply.svg"],
+      ["reply", "EMS Reply", "ems-reply.svg"],
     ].map(
-      ([operation, label]) =>
-        ({ type: "ems", operation, label, asset: "ems" }) as Def,
+      ([operation, label, asset]) =>
+        ({ type: "ems", operation, label, asset }) as Def,
     ),
   },
   {
@@ -486,23 +490,23 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
     name: "Kafka",
     icon: Radio,
     items: [
-      ["receive", "Kafka Receive Message"],
-      ["send", "Kafka Send Message"],
-      ["get", "Kafka Get Messages"],
+      ["receive", "Kafka Receive Message", "kafka-receive.svg"],
+      ["send", "Kafka Send Message", "kafka-send.svg"],
+      ["get", "Kafka Get Messages", "kafka-get.svg"],
     ].map(
-      ([operation, label]) =>
-        ({ type: "kafka", operation, label, asset: "kafka" }) as Def,
+      ([operation, label, asset]) =>
+        ({ type: "kafka", operation, label, asset }) as Def,
     ),
   },
   {
     name: "GCP Pub/Sub",
     icon: Cloud,
     items: [
-      ["subscribe", "Pub/Sub Subscriber"],
-      ["publish", "Pub/Sub Publisher"],
+      ["subscribe", "Pub/Sub Subscriber", "pubsub-subscriber.svg"],
+      ["publish", "Pub/Sub Publisher", "pubsub-publisher.svg"],
     ].map(
-      ([operation, label]) =>
-        ({ type: "pubsub", operation, label, asset: "pubsub" }) as Def,
+      ([operation, label, asset]) =>
+        ({ type: "pubsub", operation, label, asset }) as Def,
     ),
   },
   {
@@ -547,11 +551,11 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
     name: "Snowflake",
     icon: Database,
     items: [
-      ["insert", "Snowflake Insert", "snowflake.svg"],
-      ["query", "Snowflake Query", "snowflake.svg"],
-      ["update", "Snowflake Update", "snowflake.svg"],
-      ["delete", "Snowflake Delete", "snowflake.svg"],
-      ["bulk_load", "Snowflake Bulk Load", "snowflake.svg"],
+      ["insert", "Snowflake Insert", "snowflake-insert.svg"],
+      ["query", "Snowflake Query", "snowflake-query.svg"],
+      ["update", "Snowflake Update", "snowflake-update.svg"],
+      ["delete", "Snowflake Delete", "snowflake-delete.svg"],
+      ["bulk_load", "Snowflake Bulk Load", "snowflake-bulk-load.svg"],
     ].map(([operation, label, asset]) => ({ type: "snowflake", operation, label, asset }) as Def),
   },
   {
@@ -568,21 +572,21 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
     name: "Data",
     icon: CodeXml,
     items: [
-      { type: "xml", operation: "parse", label: "Parse XML", asset: "xml" },
-      { type: "xml", operation: "render", label: "Render XML", asset: "xml" },
-      { type: "json", operation: "parse", label: "Parse JSON", asset: "json" },
+      { type: "xml", operation: "parse", label: "Parse XML", asset: "xml-parse.svg" },
+      { type: "xml", operation: "render", label: "Render XML", asset: "xml-render.svg" },
+      { type: "json", operation: "parse", label: "Parse JSON", asset: "json-parse.svg" },
       {
         type: "json",
         operation: "render",
         label: "Render JSON",
-        asset: "json",
+        asset: "json-render.svg",
       },
-      { type: "flat", operation: "parse", label: "Parse Data", asset: "flat" },
+      { type: "flat", operation: "parse", label: "Parse Data", asset: "data-parse.svg" },
       {
         type: "flat",
         operation: "render",
         label: "Render Data",
-        asset: "flat",
+        asset: "data-render.svg",
       },
       { type: "excel", operation: "read", label: "Read Excel Workbook", asset: "excel-read.svg" },
     ],
@@ -591,7 +595,7 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
     name: "General",
     icon: Activity,
     items: [
-      { type: "mapper", operation: "map", label: "Mapper", asset: "mapper.svg" },
+      { type: "mapper", operation: "map", label: "Mapper", asset: "mapper-symbol.svg" },
       { type: "dataweave", operation: "transform", label: "Transform", asset: "dataweave-transform.svg" },
       { type: "log", operation: "write", label: "Log", asset: "log" },
       { type: "catch", operation: "catch", label: "Catch Exception", asset: "catch-exception.svg" },
@@ -602,9 +606,9 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
         type: "java",
         operation: "invoke",
         label: "Java Activity",
-        asset: "runtime",
+        asset: "java-invoke.svg",
       },
-      { type: "python", operation: "invoke", label: "Python Invoke", asset: "runtime" },
+      { type: "python", operation: "invoke", label: "Python Invoke", asset: "python-invoke.svg" },
       { type: "basic", operation: "external_command", label: "External Command", asset: "external-command.svg" },
       { type: "basic", operation: "assign", label: "Assign", asset: "general-assign.svg" },
       { type: "basic", operation: "checkpoint", label: "Checkpoint", asset: "general-checkpoint.svg" },
@@ -1961,7 +1965,8 @@ function App() {
     setLogs([{ level: "INFO", message: `${group.name} created${memberIds.length ? ` around ${memberIds.length} selected activit${memberIds.length === 1 ? "y" : "ies"}` : "; select activities and edit membership in its configuration"}.` }]);
   };
   const createExceptionHandlers = (catchActivityId: string, exceptionTypes: string[]) => {
-    const selectedTypes = [...new Set(exceptionTypes.filter(Boolean))];
+    const relevant = new Set(possibleTaskExceptions(task, project.tasks, project.schemas || []));
+    const selectedTypes = [...new Set(exceptionTypes.filter(type => relevant.has(type)))];
     if (!selectedTypes.length) return;
     const stamp = Date.now();
     mutateTask((current) => {
@@ -2009,6 +2014,7 @@ function App() {
     setSelected(firstCatch); setSelectedIds([firstCatch]); setSelectedEdge(null);
     setLogs([{ level: "INFO", message: `Catch AI generated ${selectedTypes.length} exception handler block${selectedTypes.length === 1 ? "" : "s"} with code, message, details, and stack-trace mappings.` }]);
   };
+  useEffect(() => { setCatchAIOpen(null); }, [project.id, task.id]);
   const openCatchAI = () => {
     const existing = node?.type === "catch" ? node : nodes.find((activity) => activity.type === "catch" && !activity.config?.generatedByCatchAI);
     const catchId = existing?.id || uniqueActivityName(activityReferenceName("Catch Exception"), new Set(nodes.map((activity) => activity.id.toLowerCase())));
@@ -3075,6 +3081,7 @@ function App() {
           </span>
           <button className="group-selected-button" disabled={!selectedIds.length} onClick={createGroup} title="Create an executable group from the selected activities"><Workflow/> Group selected</button>
           <span className="zoom">
+            <CanvasMagnifier canvas={canvas} zoom={zoom} taskId={task.id} />
             <button onClick={() => setZoom((z) => Math.max(0.6, z - 0.1))}>
               −
             </button>
@@ -3179,10 +3186,14 @@ function App() {
                 const wire = activityWireGeometry(a, b, lane), d = wire.d;
                 const visualLabel = e.label?.trim();
                 const traversed = executedTransitionIds.has(String(e.id)), current = currentTransitionIds.has(String(e.id));
+                const customColor = /^#[0-9a-f]{6}$/i.test(e.color || "") ? e.color : undefined;
+                const wireColor = current ? "#ffe27a" : traversed ? "#35e6b0" : customColor || (selectedEdge === e.id ? "#e7f7ff" : e.type === "error" ? "#ef6070" : e.type === "success_condition" ? "#e5ac45" : e.type === "success_no_match" ? "#9a77d7" : "#5b7590");
+                const markerId = `transition-color-arrow-${edges.indexOf(e)}`;
                 return (
                   <g
                     key={e.id}
-                    className={`${e.type || "success"} ${selectedEdge === e.id ? "selected" : ""} ${traversed ? "runtime-traversed" : ""} ${current ? "runtime-current" : ""}`}
+                    className={`transition-edge ${e.type || "success"} ${selectedEdge === e.id ? "selected" : ""} ${traversed ? "runtime-traversed" : ""} ${current ? "runtime-current" : ""}`}
+                    style={{ "--transition-color": wireColor } as React.CSSProperties}
                     onClick={() => {
                       setSelectedEdge(e.id);
                       setSelected("");
@@ -3192,7 +3203,8 @@ function App() {
                     }}
                   >
                     <path className="edge-hit" d={d} />
-                    <path id={`edge-path-${e.id}`} className="edge-line" d={d} markerEnd={`url(#transition-arrow${current ? "-current" : traversed ? "-active" : ""})`} />
+                    <defs><marker id={markerId} viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" style={{ fill: wireColor }} /></marker></defs>
+                    <path id={`edge-path-${e.id}`} className="edge-line" d={d} style={{ markerEnd: `url(#${markerId})` }} />
                     {visualLabel && <g className="edge-label" pointerEvents="none"><rect x={wire.label.x - Math.max(25, visualLabel.length * 3.5)} y={wire.label.y - 9} width={Math.max(50, visualLabel.length * 7)} height="14" rx="5" fill="#0d1724" opacity=".9"/><text x={wire.label.x} y={wire.label.y + 1} textAnchor="middle">{visualLabel}</text></g>}
                     {selectedEdge === e.id && <><circle className="edge-rewire-handle source" cx={wire.start.x} cy={wire.start.y} r="7" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setEdgeRewire({ edgeId: e.id, endpoint: "source", fixedId: e.target, x: wire.start.x, y: wire.start.y }); }}/><circle className="edge-rewire-handle target" cx={wire.end.x} cy={wire.end.y} r="7" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); setEdgeRewire({ edgeId: e.id, endpoint: "target", fixedId: e.source, x: wire.end.x, y: wire.end.y }); }}/></>}
                   </g>
@@ -3265,7 +3277,7 @@ function App() {
                         : n.type === "end"
                           ? "end-stop.svg"
                           : ["mapper", "transform", "ai_transform"].includes(n.type)
-                            ? "mapper.svg"
+                            ? "mapper-symbol.svg"
                             : n.type === "dataweave"
                               ? "dataweave-transform.svg"
                               : def?.asset || "start-end",
@@ -3622,7 +3634,7 @@ function App() {
         if (issue.activityId) { setSelected(issue.activityId); setSelectedIds([issue.activityId]); setSelectedEdge(null); setSelectedResource(null); setActiveTab("configuration"); }
         setValidation(null);
       }}/>}
-      {catchAIOpen && <CatchAIDialog onClose={() => setCatchAIOpen(null)} onApply={(types: string[]) => { createExceptionHandlers(catchAIOpen, types); setCatchAIOpen(null); }}/>} 
+      {catchAIOpen && <CatchAIDialog key={`${project.id}:${task.id}:${catchAIOpen}:${possibleTaskExceptions(task,project.tasks,project.schemas || []).join("|")}`} options={possibleTaskExceptions(task,project.tasks,project.schemas || [])} onClose={() => setCatchAIOpen(null)} onApply={(types: string[]) => { createExceptionHandlers(catchAIOpen, types); setCatchAIOpen(null); }}/>}
       {openSourceOpen && <OpenProjectSourceDialog onClose={() => setOpenSourceOpen(false)} onFile={(type: any) => { setOpenSourceOpen(false); void importFromFileSystem(type); }} onFolder={() => { setOpenSourceOpen(false); void importProjectFolder(); }}/>} 
       {exportSourceOpen && <OpenProjectSourceDialog title="Export MINA project" actionLabel="Export" onClose={() => setExportSourceOpen(false)} onFile={(type: any) => { setExportSourceOpen(false); exportGenericProject(type); }} onFolder={() => { setExportSourceOpen(false); exportGenericProject("folder"); }} exportMode/>}
       {renameOpen && (
@@ -3657,7 +3669,7 @@ function App() {
           }}
         />
       )}
-      {unsavedPrompt && <div className="modal-backdrop"><div className="runtime-modal"><header><b>Unsaved changes</b><button onClick={() => resolveUnsavedPrompt("cancel")} aria-label="Cancel">×</button></header><main><p>{project.name} has changes that have not been saved. What would you like to do?</p></main><footer><button onClick={() => resolveUnsavedPrompt("cancel")}>Cancel</button><button onClick={() => resolveUnsavedPrompt("discard")}>Discard changes</button><button className="primary" onClick={() => void resolveUnsavedPrompt("save")}>Save and continue</button></footer></div></div>}
+      {unsavedPrompt && <ModalLayer className="modal-backdrop"><div className="runtime-modal"><header><b>Unsaved changes</b><button onClick={() => resolveUnsavedPrompt("cancel")} aria-label="Cancel">×</button></header><main><p>{project.name} has changes that have not been saved. What would you like to do?</p></main><footer><button onClick={() => resolveUnsavedPrompt("cancel")}>Cancel</button><button onClick={() => resolveUnsavedPrompt("discard")}>Discard changes</button><button className="primary" onClick={() => void resolveUnsavedPrompt("save")}>Save and continue</button></footer></div></ModalLayer>}
     </div>
   );
 }
@@ -3697,7 +3709,7 @@ function GroupEditor({ group, groups, resources, activities, task, tasks, schema
   const memberSources = ["while", "repeat", "repeat_on_error", "iterate", "for_each"].includes(draft.type) ? activities.filter((item: Node) => memberIds.has(item.id)).map((activity: Node) => ({ activity, distance: 0, fields: activityContract(activity).output, scope: "Current group / prior iteration output" })) : [];
   const sourceIds = new Set(upstream.map((source: any) => source.activity.id));
   const dataSources = [...upstream, ...memberSources.filter((source: any) => !sourceIds.has(source.activity.id))];
-  return <div className="modal-backdrop"><div className="runtime-modal group-editor-dialog"><header><span><Workflow/><span><b>Executable Group</b><small>Nested canvas and runtime execution boundary</small></span></span><button onClick={onClose}>×</button></header><main>
+  return <ModalLayer className="modal-backdrop"><div className="runtime-modal group-editor-dialog"><header><span><Workflow/><span><b>Executable Group</b><small>Nested canvas and runtime execution boundary</small></span></span><button onClick={onClose}>×</button></header><main>
     <label>Group name<input autoFocus value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>
     <label>Execution semantics<select value={draft.type} onChange={(event) => { const type = event.target.value as GroupDefinition["type"]; setDraft({ ...draft, type, config: groupConfigDefaults(type) }); }}><option value="scope">None / Scope (once)</option><option value="if">If</option><option value="while">While True</option><option value="iterate">Iterate collection</option><option value="for_each">For each</option><option value="repeat">Repeat Until True</option><option value="repeat_on_error">Repeat on Error Until True</option><option value="critical_section">Critical Section</option><option value="transaction_jdbc">JDBC transaction</option><option value="pick_first">Pick First (first eligible branch)</option></select></label>
     <label>Parent group<select value={draft.parent_group_id || ""} onChange={(event) => setDraft({ ...draft, parent_group_id: event.target.value || null })}><option value="">Top level</option>{groups.filter((item: GroupDefinition) => item.id !== draft.id && item.parent_group_id !== draft.id).map((item: GroupDefinition) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
@@ -3717,14 +3729,13 @@ function GroupEditor({ group, groups, resources, activities, task, tasks, schema
     {draft.type === "transaction_jdbc" && <label className="wide">JDBC shared connection<select value={draft.config.resourceId || ""} onChange={(event) => patchConfig("resourceId", event.target.value)}><option value="">Select connection…</option>{resources.filter((item: Resource) => item.type === "jdbc").map((item: Resource) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
     <section className="group-members"><b>DIRECT ACTIVITY MEMBERS</b><small>Use Parent group for nesting. An activity has one direct owner. Start/event, End, and Catch are Task boundaries.</small>{activities.map((item: Node) => { const owner = owners.get(item.id), boundary = isEventActivity(item) || ["end", "catch"].includes(item.type), disabled = boundary || (!!owner && owner !== draft.id); return <label key={item.id} className={disabled ? "disabled" : ""}><input type="checkbox" disabled={disabled} checked={draft.member_activity_ids.includes(item.id)} onChange={() => toggleMember(item.id)}/><span>{item.name}<small>{boundary ? "Task boundary" : disabled ? `Owned by ${groups.find((candidate: GroupDefinition) => candidate.id === owner)?.name}` : item.type}</small></span></label>; })}</section>
     <aside className="group-runtime-status"><CheckCircle2/><span><b>Runtime-backed semantics</b><small>Conditions, loops, Pick First branch selection, whole-group retry, exception propagation, native and Java-driver JDBC commit/rollback, validation, archive persistence, and debugger iteration state are active.</small></span></aside>
-  </main><footer>{group && <button className="danger" onClick={() => onDelete(draft.id)}><Trash2/> Delete group</button>}<span/><button onClick={onClose}>Cancel</button><button className="primary" disabled={!draft.name.trim() || (!draft.member_activity_ids.length && !groups.some((item: GroupDefinition) => item.parent_group_id === draft.id))} onClick={() => onSave(draft)}><Save/> Save group</button></footer></div></div>;
+  </main><footer>{group && <button className="danger" onClick={() => onDelete(draft.id)}><Trash2/> Delete group</button>}<span/><button onClick={onClose}>Cancel</button><button className="primary" disabled={!draft.name.trim() || (!draft.member_activity_ids.length && !groups.some((item: GroupDefinition) => item.parent_group_id === draft.id))} onClick={() => onSave(draft)}><Save/> Save group</button></footer></div></ModalLayer>;
 }
 
-function CatchAIDialog({ onClose, onApply }: any) {
-  const options = ["RUNTIME", "VALIDATION", "CONNECTION", "TIMEOUT", "SAPConnectionException", "KafkaException", "JMSException", "UserDefinedException", "RethrowException"];
+function CatchAIDialog({ options, onClose, onApply }: any) {
   const [selected, setSelected] = useState<string[]>([]);
   const toggle = (value: string) => setSelected((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
-  return <div className="modal-backdrop"><div className="runtime-modal catch-ai-dialog"><header><span><WandSparkles/><b>AI Catch · Select exceptions</b></span><button aria-label="Close AI Catch" onClick={onClose}>×</button></header><main><p>Select the exception types to handle. The Studio will create Catch → Throw mappings automatically.</p><div className="catch-ai-modal-list">{options.map((value) => <label key={value} className={selected.includes(value) ? "selected" : ""}><input type="checkbox" checked={selected.includes(value)} onChange={() => toggle(value)}/><ShieldAlert/><span><b>{value}</b><small>Map type, code, message, details, and stack trace</small></span></label>)}</div></main><footer><button onClick={() => setSelected(options)}>Select all</button><button onClick={onClose}>Cancel</button><button className="primary" disabled={!selected.length} onClick={() => onApply(selected)}><WandSparkles/> Handle selected</button></footer></div></div>;
+  return <ModalLayer className="modal-backdrop"><div className="runtime-modal catch-ai-dialog"><header><span><WandSparkles/><b>AI Catch · Select exceptions</b></span><button aria-label="Close AI Catch" onClick={onClose}>×</button></header><main><p>Select exceptions from the current process and its called tasks. The Studio will create Catch → Throw mappings automatically.</p><div className="catch-ai-modal-list">{options.map((value: string) => <label key={value} className={selected.includes(value) ? "selected" : ""}><input type="checkbox" checked={selected.includes(value)} onChange={() => toggle(value)}/><ShieldAlert/><span><b>{value}</b><small>Map type, code, message, details, and stack trace</small></span></label>)}</div></main><footer><button onClick={() => setSelected(options)}>Select all</button><button onClick={onClose}>Cancel</button><button className="primary" disabled={!selected.length} onClick={() => onApply(selected)}><WandSparkles/> Handle selected</button></footer></div></ModalLayer>;
 }
 function AIBuilderDialog({ currentTask, onClose, onApply }: any) {
   const [requirement, setRequirement] = useState(""), [scope, setScope] = useState<"task" | "project">("task"), [proposal, setProposal] = useState<any>(null), [status, setStatus] = useState<any>(null), [busy, setBusy] = useState(false), [error, setError] = useState("");
@@ -3736,7 +3747,7 @@ function AIBuilderDialog({ currentTask, onClose, onApply }: any) {
     finally { setBusy(false); }
   };
   const taskCount = proposal?.project?.tasks?.length || 0, activityCount = proposal?.project?.tasks?.reduce((total: number, task: any) => total + task.activities.length, 0) || 0;
-  return <div className="modal-backdrop"><div className="runtime-modal ai-builder-dialog"><header><span><WandSparkles/><span><b>AI Integration Builder</b><small>Natural language to editable middleware design</small></span></span><button aria-label="Close AI builder" onClick={onClose}>×</button></header><main><section className="ai-requirement"><div className="ai-scope"><button className={scope === "task" ? "active" : ""} onClick={() => setScope("task")}><Activity/> Current Task</button><button className={scope === "project" ? "active" : ""} onClick={() => setScope("project")}><Package/> Complete Project</button><small>{status?.provider === "openai" ? `OpenAI · ${status.model}` : "Local blueprint mode · set OPENAI_API_KEY for model-assisted generation"}</small></div><label>Describe the integration requirement<textarea autoFocus value={requirement} onChange={(event) => setRequirement(event.target.value)} placeholder="Receive a REST order, validate and transform JSON, insert it with JDBC, catch errors, log them, and return an HTTP response…"/></label><button className="generate-ai-design" disabled={busy || requirement.trim().length < 10} onClick={generate}><WandSparkles/> {busy ? "Designing…" : "Generate design preview"}</button>{error && <p className="ai-builder-error">{error}</p>}</section><section className="ai-preview">{proposal ? <><header><span><b>DESIGN PREVIEW</b><small>{proposal.summary}</small></span><span>{taskCount} tasks · {activityCount} activities · {proposal.project.resources?.length || 0} connections</span></header>{proposal.project.tasks.map((task: any) => <article key={task.id}><b>{task.name}</b><small>{task.kind}</small><div>{task.activities.map((activity: any) => <span key={activity.id}>{activity.name}</span>)}</div></article>)}<details><summary>Review generated JSON</summary><pre>{JSON.stringify(proposal.project, null, 2)}</pre></details></> : <div className="ai-preview-empty"><WandSparkles/><b>Your design preview appears here</b><p>Nothing is changed until you inspect the proposal and click Apply.</p></div>}</section></main><footer><span>Credentials are never stored in the generated project.</span><button onClick={onClose}>Cancel</button><button className="primary" disabled={!proposal} onClick={() => onApply(proposal)}>Apply generated {scope}</button></footer></div></div>;
+  return <ModalLayer className="modal-backdrop"><div className="runtime-modal ai-builder-dialog"><header><span><WandSparkles/><span><b>AI Integration Builder</b><small>Natural language to editable middleware design</small></span></span><button aria-label="Close AI builder" onClick={onClose}>×</button></header><main><section className="ai-requirement"><div className="ai-scope"><button className={scope === "task" ? "active" : ""} onClick={() => setScope("task")}><Activity/> Current Task</button><button className={scope === "project" ? "active" : ""} onClick={() => setScope("project")}><Package/> Complete Project</button><small>{status?.provider === "openai" ? `OpenAI · ${status.model}` : "Local blueprint mode · set OPENAI_API_KEY for model-assisted generation"}</small></div><label>Describe the integration requirement<textarea autoFocus value={requirement} onChange={(event) => setRequirement(event.target.value)} placeholder="Receive a REST order, validate and transform JSON, insert it with JDBC, catch errors, log them, and return an HTTP response…"/></label><button className="generate-ai-design" disabled={busy || requirement.trim().length < 10} onClick={generate}><WandSparkles/> {busy ? "Designing…" : "Generate design preview"}</button>{error && <p className="ai-builder-error">{error}</p>}</section><section className="ai-preview">{proposal ? <><header><span><b>DESIGN PREVIEW</b><small>{proposal.summary}</small></span><span>{taskCount} tasks · {activityCount} activities · {proposal.project.resources?.length || 0} connections</span></header>{proposal.project.tasks.map((task: any) => <article key={task.id}><b>{task.name}</b><small>{task.kind}</small><div>{task.activities.map((activity: any) => <span key={activity.id}>{activity.name}</span>)}</div></article>)}<details><summary>Review generated JSON</summary><pre>{JSON.stringify(proposal.project, null, 2)}</pre></details></> : <div className="ai-preview-empty"><WandSparkles/><b>Your design preview appears here</b><p>Nothing is changed until you inspect the proposal and click Apply.</p></div>}</section></main><footer><span>Credentials are never stored in the generated project.</span><button onClick={onClose}>Cancel</button><button className="primary" disabled={!proposal} onClick={() => onApply(proposal)}>Apply generated {scope}</button></footer></div></ModalLayer>;
 }
 const deploymentArtifactChoices: Record<string, { key: string; label: string; detail: string }[]> = {
   cloud: [
@@ -3881,7 +3892,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
     catch (failure: any) { setError(failure?.message || "Package generation failed."); }
     finally { setBusy(false); }
   };
-  return <div className="modal-backdrop"><div className="package-modal">
+  return <ModalLayer className="modal-backdrop"><div className="package-modal">
     <header><div><Package/><b>Build deployment package</b><small>Choose how this integration will run</small></div><button onClick={onClose}>×</button></header>
     <main>
       <label>Artifact name<input value={draft.artifact_name} onChange={(event) => update("artifact_name", event.target.value)}/></label>
@@ -3934,7 +3945,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
       {error && <p className="package-error"><AlertTriangle/>{error}</p>}
     </main>
     <footer><button disabled={busy} onClick={onClose}>Cancel</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false)}>{busy ? "Working…" : "Export archive"}</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(false, true)}>{busy ? "Working…" : "Export direct Python"}</button><button disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(true, true)}>{busy ? "Working…" : "Deploy direct Python"}</button><button className="primary" disabled={busy || discovering || !draft.artifact_name.trim() || !draft.version.trim()} onClick={() => build(true)}>{busy ? "Working…" : "Deploy archive"}</button></footer>
-  </div></div>;
+  </div></ModalLayer>;
 }
 function StudioRibbon(props: any) {
   const command = (label: string, Icon: any, action: () => void, disabled = false, emphasis = false) =>
@@ -3957,23 +3968,23 @@ function OpenProjectSourceDialog({ onClose, onFile, onFolder, title = "Open MINA
     ["folder", "Structured project folder", "Folder containing project.json and project content"],
   ];
   if (!exportMode) choices.splice(2, 0, ["legacy", "Legacy MINA packages", ".ifproject, .ifpackage, and .ifpkg remain importable"]);
-  return <div className="modal-backdrop"><div className="runtime-modal" role="dialog" aria-modal="true" aria-labelledby="open-project-title">
+  return <ModalLayer className="modal-backdrop"><div className="runtime-modal" role="dialog" aria-modal="true" aria-labelledby="open-project-title">
     <header><b id="open-project-title">{title}</b><button onClick={onClose} aria-label="Close">×</button></header>
     <main><p>Select the project format, then browse for the matching file or folder.</p><div className="open-project-source-options">{choices.map(([value, label, detail]) => <label key={value}><input type="radio" name={exportMode ? "export-source" : "project-source"} checked={source === value} onChange={() => setSource(value)}/><span><b>{label}</b><small>{detail}</small></span></label>)}</div></main>
     <footer><button onClick={onClose}>Cancel</button><button className="primary" onClick={() => source === "folder" ? onFolder() : onFile(source)}>{source === "folder" ? "Browse folder" : `${actionLabel} file`}</button></footer>
-  </div></div>;
+  </div></ModalLayer>;
 }
 function ValidationDialog({ result, onClose, onOpen }: any) {
   const counts = result.issues.reduce((value: any, issue: ValidationIssue) => ({ ...value, [issue.severity]: (value[issue.severity] || 0) + 1 }), {});
   const [filter, setFilter] = useState<"all" | ValidationIssue["severity"]>("all");
   const filtered = filter === "all" ? result.issues : result.issues.filter((issue: ValidationIssue) => issue.severity === filter);
-  return <div className="modal-backdrop"><div className="runtime-modal validation-dialog"><header><span><ShieldCheck/><b>{result.title}</b></span><button aria-label="Close validation" onClick={onClose}>×</button></header><div className="validation-summary"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>{result.issues.length} all</button><button className={filter === "error" ? "active error" : "error"} onClick={() => setFilter("error")}>{counts.error || 0} errors</button><button className={filter === "warning" ? "active warning" : "warning"} onClick={() => setFilter("warning")}>{counts.warning || 0} warnings</button><button className={filter === "mapping" ? "active mapping" : "mapping"} onClick={() => setFilter("mapping")}>{counts.mapping || 0} mappings</button></div><main>{!result.issues.length ? <div className="validation-clean"><CheckCircle2/><h2>Validation successful</h2><p>No errors or missing mappings were found.</p></div> : !filtered.length ? <div className="validation-clean"><CheckCircle2/><h2>No findings in this category</h2><p>Select another validation filter.</p></div> : filtered.map((issue: ValidationIssue) => <button key={issue.id} className={`validation-issue ${issue.severity}`} onClick={() => onOpen(issue)}><span>{issue.severity === "error" ? "ERROR" : issue.severity === "mapping" ? "MAPPING" : "WARNING"}</span><div><b>{issue.category}</b><p>{issue.message}</p><small>{issue.remedy}</small></div>{(issue.taskId || issue.activityId) && <ChevronRight/>}</button>)}</main><footer><span>Click a finding to open its task and activity configuration.</span><button className="primary" onClick={onClose}>Close</button></footer></div></div>;
+  return <ModalLayer className="modal-backdrop"><div className="runtime-modal validation-dialog"><header><span><ShieldCheck/><b>{result.title}</b></span><button aria-label="Close validation" onClick={onClose}>×</button></header><div className="validation-summary"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>{result.issues.length} all</button><button className={filter === "error" ? "active error" : "error"} onClick={() => setFilter("error")}>{counts.error || 0} errors</button><button className={filter === "warning" ? "active warning" : "warning"} onClick={() => setFilter("warning")}>{counts.warning || 0} warnings</button><button className={filter === "mapping" ? "active mapping" : "mapping"} onClick={() => setFilter("mapping")}>{counts.mapping || 0} mappings</button></div><main>{!result.issues.length ? <div className="validation-clean"><CheckCircle2/><h2>Validation successful</h2><p>No errors or missing mappings were found.</p></div> : !filtered.length ? <div className="validation-clean"><CheckCircle2/><h2>No findings in this category</h2><p>Select another validation filter.</p></div> : filtered.map((issue: ValidationIssue) => <button key={issue.id} className={`validation-issue ${issue.severity}`} onClick={() => onOpen(issue)}><span>{issue.severity === "error" ? "ERROR" : issue.severity === "mapping" ? "MAPPING" : "WARNING"}</span><div><b>{issue.category}</b><p>{issue.message}</p><small>{issue.remedy}</small></div>{(issue.taskId || issue.activityId) && <ChevronRight/>}</button>)}</main><footer><span>Click a finding to open its task and activity configuration.</span><button className="primary" onClick={onClose}>Close</button></footer></div></ModalLayer>;
 }
 function RenameApplication({ name, onClose, onSave, entity = "application" }: any) {
   const [value, setValue] = useState(name);
   const label = entity === "task" ? "Task name" : "Application name";
   return (
-    <div className="modal-backdrop">
+    <ModalLayer className="modal-backdrop">
       <div className="runtime-modal rename-modal">
         <header>
           <b>Rename {entity}</b>
@@ -4008,7 +4019,7 @@ function RenameApplication({ name, onClose, onSave, entity = "application" }: an
           </button>
         </footer>
       </div>
-    </div>
+    </ModalLayer>
   );
 }
 function PropertyEditor({ environment, properties, onClose, onSave }: any) {
@@ -4096,7 +4107,7 @@ function PropertyEditor({ environment, properties, onClose, onSave }: any) {
       }
     };
   return (
-    <div className="modal-backdrop">
+    <ModalLayer className="modal-backdrop">
       <div className="runtime-modal property-editor-modal">
         <header>
           <div>
@@ -4229,7 +4240,7 @@ function PropertyEditor({ environment, properties, onClose, onSave }: any) {
           </button>
         </footer>
       </div>
-    </div>
+    </ModalLayer>
   );
 }
 function focusStudioPanel(selector: string) {
@@ -4245,7 +4256,7 @@ function TopMenu({ label, open, toggle, commands }: any) {
   return <div className="menu-root"><button className={open ? "active" : ""} onClick={toggle}>{label}</button>{open && <div className="menu-dropdown command-menu glossy-menu" onClick={(event) => event.stopPropagation()}>{commands.map((command: any) => { const Icon = command.icon; return <button key={command.label} disabled={command.disabled} onClick={() => { command.action(); toggle({ stopPropagation() {} }); }}><Icon/><span><b>{command.label}</b><small>{command.detail}</small></span>{command.shortcut && <kbd>{command.shortcut}</kbd>}</button>; })}</div>}</div>;
 }
 function HelpDialog({ mode, onClose }: any) {
-  return <div className="modal-backdrop"><div className="runtime-modal help-dialog"><header><b>{mode === "shortcuts" ? "Keyboard Shortcuts" : "About MINA"}</b><button onClick={onClose}>×</button></header><main>{mode === "shortcuts" ? <div className="shortcut-grid"><kbd>Ctrl+Z</kbd><span>Undo Studio change (100 levels)</span><kbd>Ctrl+Y</kbd><span>Redo Studio change</span><kbd>Ctrl+Shift+Z</kbd><span>Redo Studio change</span><kbd>Delete</kbd><span>Delete selected activity or transition</span><kbd>Ctrl+S</kbd><span>Save project</span><kbd>F5</kbd><span>Run active task</span><kbd>F6</kbd><span>Start debugging</span><kbd>Right-click</kbd><span>Open context commands or activity search</span><kbd>Drag</kbd><span>Move activities on the canvas</span></div> : <AboutMina/>}</main><footer><button className="primary" onClick={onClose}>Close</button></footer></div></div>;
+  return <ModalLayer className="modal-backdrop"><div className="runtime-modal help-dialog"><header><b>{mode === "shortcuts" ? "Keyboard Shortcuts" : "About MINA"}</b><button onClick={onClose}>×</button></header><main>{mode === "shortcuts" ? <div className="shortcut-grid"><kbd>Ctrl+Z</kbd><span>Undo Studio change (100 levels)</span><kbd>Ctrl+Y</kbd><span>Redo Studio change</span><kbd>Ctrl+Shift+Z</kbd><span>Redo Studio change</span><kbd>Delete</kbd><span>Delete selected activity or transition</span><kbd>Ctrl+S</kbd><span>Save project</span><kbd>F5</kbd><span>Run active task</span><kbd>F6</kbd><span>Start debugging</span><kbd>Right-click</kbd><span>Open context commands or activity search</span><kbd>Drag</kbd><span>Move activities on the canvas</span></div> : <AboutMina/>}</main><footer><button className="primary" onClick={onClose}>Close</button></footer></div></ModalLayer>;
 }
 function FileMenu({
   stop,
@@ -4380,12 +4391,12 @@ function SampleGallery({ onClose, onImport }: { onClose: () => void; onImport: (
     } catch (reason: any) { setError(reason?.message || "Unable to open sample project."); }
     finally { setOpening(""); }
   };
-  return <div className="modal-backdrop sample-gallery-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="sample-gallery">
+  return <ModalLayer className="modal-backdrop sample-gallery-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="sample-gallery">
     <div className="sample-gallery-header"><span><BookOpen/><span><b>Installed sample projects</b><small>Learn with editable projects bundled with MINA Studio</small></span></span><button aria-label="Close samples" onClick={onClose}>×</button></div>
     <div className="sample-gallery-search"><Search/><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search samples, activities, or technologies…"/></div>
     <div className="sample-gallery-content">{loading ? <div className="sample-gallery-empty"><LoaderCircle/> Loading installed samples…</div> : visible.map((sample) => <article key={sample.id}><div className="sample-card-heading"><span><Package/></span><div><em>{sample.category}</em><h3>{sample.name}</h3></div><i className={sample.ready ? "ready" : "setup"}>{sample.ready ? "READY TO RUN" : "CONNECTION SETUP"}</i></div><p>{sample.description}</p><div className="sample-activities">{sample.activities.map((activity) => <code key={activity}>{activity}</code>)}</div><button disabled={!!opening} onClick={() => void open(sample)}>{opening === sample.id ? <><LoaderCircle/> Opening…</> : <><FolderOpen/> Open editable sample</>}</button></article>)}{!loading && !visible.length && <div className="sample-gallery-empty">No installed samples match your search.</div>}</div>
     <div className="sample-gallery-footer"><span>Samples are copied into project storage when opened. Connection samples contain placeholders and never include credentials.</span><button onClick={onClose}>Close</button></div>{error && <p className="sample-gallery-error"><AlertTriangle/>{error}</p>}
-  </div></div>;
+  </div></ModalLayer>;
 }
 function IntegrationBrandArtwork({ className = "" }: { className?: string }) {
   return <div className={`integration-brand-art ${className}`.trim()} aria-label="MINA Studio">
@@ -4504,7 +4515,7 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, im
       onClose={() => setSamplesOpen(false)}
       onImport={importProject}
     />}
-    {createOpen && <div className="modal-backdrop home-create-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setCreateOpen(false)}><form className="home-create-dialog" onSubmit={submitCreate}><header><span><FilePlus2/><b>Create MINA project</b></span><button type="button" aria-label="Close create project" onClick={() => setCreateOpen(false)}>×</button></header><main><div className="create-project-mark"><Workflow/><span><b>New application</b><small>A clean integration workspace with enterprise defaults</small></span></div><label>Application name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Customer Order Integration" required/></label><section><b>Project Explorer will include</b><div><span><Workflow/>Tasks</span><span><Cable/>Resources</span><span><Package/>Packaging</span><span><CodeXml/>Schemas</span><span><Braces/>Properties</span></div></section></main><footer><button type="button" onClick={() => setCreateOpen(false)}>Cancel</button><button className="primary" type="submit" disabled={!name.trim()}><FilePlus2/> Create project</button></footer></form></div>}
+    {createOpen && <ModalLayer className="modal-backdrop home-create-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setCreateOpen(false)}><form className="home-create-dialog" onSubmit={submitCreate}><header><span><FilePlus2/><b>Create MINA project</b></span><button type="button" aria-label="Close create project" onClick={() => setCreateOpen(false)}>×</button></header><main><div className="create-project-mark"><Workflow/><span><b>New application</b><small>A clean integration workspace with enterprise defaults</small></span></div><label>Application name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Customer Order Integration" required/></label><section><b>Project Explorer will include</b><div><span><Workflow/>Tasks</span><span><Cable/>Resources</span><span><Package/>Packaging</span><span><CodeXml/>Schemas</span><span><Braces/>Properties</span></div></section></main><footer><button type="button" onClick={() => setCreateOpen(false)}>Cancel</button><button className="primary" type="submit" disabled={!name.trim()}><FilePlus2/> Create project</button></footer></form></ModalLayer>}
   </div>;
 }
 function Context({
@@ -4656,7 +4667,7 @@ function TaskDialog({ kind, onClose, onCreate }: any) {
     ),
     [event, setEvent] = useState("http_listener");
   return (
-    <div className="modal-backdrop">
+    <ModalLayer className="modal-backdrop">
       <div className="runtime-modal">
         <header>
           <b>Create {kind === "starter" ? "Starter Task" : "Sub Task"}</b>
@@ -4700,7 +4711,7 @@ function TaskDialog({ kind, onClose, onCreate }: any) {
           </button>
         </footer>
       </div>
-    </div>
+    </ModalLayer>
   );
 }
 const propertyExpression = (key: string) => `\${properties.${key}}`;
@@ -5183,7 +5194,7 @@ function SharedConnectionDialog({ type, initial, initialRole, properties, onClos
     return () => cancelAnimationFrame(frame);
   }, [status, statusOk]);
   const resolvedConfig = runtimeResource().config;
-  return <div className="modal-backdrop"><div className="runtime-modal connection-dialog">
+  return <ModalLayer className="modal-backdrop"><div className="runtime-modal connection-dialog">
     <header><span className="connection-dialog-title"><Cable/><span><b>{initial ? "Edit" : "Create"} {type === "sap" ? "SAP ECC" : type === "snowflake" ? "Snowflake JDBC" : type.toUpperCase()} shared connection</b><small>{initial ? "Update the reusable project connection" : "Reusable across every task in this project"}</small></span></span><span className="connection-header-actions">{type === "sap" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button>}{type === "snowflake" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchSnowflakeEntities} disabled={snowflakeLoading}><Download/> {snowflakeLoading ? "Retrieving…" : "Retrieve entities"}</button>}<button aria-label="Close" onClick={onClose}>×</button></span></header>
     <main>
       <label>Name<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>
@@ -5202,10 +5213,10 @@ function SharedConnectionDialog({ type, initial, initialRole, properties, onClos
       {type === "sap" && <section ref={idocBrowserRef} className="sap-idoc-browser"><header><span><b>SAP IDOC METADATA</b><small>Target release: {draft.config.release === "720" ? "SAP 7.20" : draft.config.release === "730" ? "SAP 7.30" : "Current / auto-detect"}. Retrieve and store the matching schema in this shared connection.</small></span><button type="button" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button></header><div className="sap-idoc-search"><Search/><input value={idocSearch} onChange={(event) => setIdocSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && fetchIdocs()} placeholder="Filter IDoc types, for example ORDERS…"/></div>{idocError && <p className="sap-idoc-error">{idocError}</p>}<div className="sap-idoc-list">{idocs.map((item) => { const selected = draft.config.selectedIdoc?.idocType === item.idocType; return <button type="button" className={selected ? "selected" : ""} key={`${item.idocType}-${item.release}`} onClick={() => selectIdoc(item)}><span><b>{item.idocType}</b><small>{item.description || "SAP IDoc"}</small></span><code>{item.extensionType || "basic"} · {item.release || "current"}</code>{selected && <i>Schema fetched</i>}</button>; })}{!idocs.length && <p>Test the SAP connection, then retrieve the available IDoc types.</p>}</div>{draft.config.selectedIdoc && <footer><CheckCircle2/><span><b>{draft.config.selectedIdoc.idocType}</b><small>{draft.config.selectedIdoc.segments?.length || 0} metadata rows · SAP release {draft.config.selectedIdoc.release || draft.config.release} · schema stored with shared connection</small></span></footer>}</section>}
       {type === "snowflake" && <section ref={snowflakeBrowserRef} className="sap-idoc-browser snowflake-entity-browser"><header><span><b>SNOWFLAKE SCHEMA METADATA</b><small>Retrieve TABLE and VIEW entities from the configured database and schema, then select each entity whose column metadata should be stored.</small></span><button type="button" onClick={fetchSnowflakeEntities} disabled={snowflakeLoading}><Download/> {snowflakeLoading ? "Retrieving…" : "Retrieve entities"}</button></header><div className="sap-idoc-search"><Search/><input value={snowflakeSearch} onChange={(event) => setSnowflakeSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && fetchSnowflakeEntities()} placeholder="Entity name pattern, for example ORDER_%…"/></div>{snowflakeError && <p className="sap-idoc-error">{snowflakeError}</p>}<div className="sap-idoc-list">{snowflakeEntities.map((item) => { const stored = (draft.config.entityCatalog || []).some((entry: any) => entry.database === item.database && entry.schema === item.schema && entry.name === item.name); return <button type="button" className={stored ? "selected" : ""} key={`${item.database}.${item.schema}.${item.name}`} onClick={() => selectSnowflakeEntity(item)}><span><b>{item.name}</b><small>{item.database}.{item.schema}</small></span><code>{item.entityType || "TABLE"}</code>{stored && <i>Metadata fetched</i>}</button>; })}{!snowflakeEntities.length && <p>Test the Snowflake connection, then retrieve tables and views.</p>}</div>{!!draft.config.entityCatalog?.length && <footer><CheckCircle2/><span><b>{draft.config.entityCatalog.length} entities stored</b><small>{draft.config.entityCatalog.reduce((count: number, item: any) => count + (item.columns?.length || 0), 0)} columns available to Snowflake activity input/output editors</small></span><button type="button" onClick={clearSnowflakeMetadata}>Remove metadata</button></footer>}</section>}
       {status && <div ref={testOutputRef} role="status" aria-live="polite" className={`connection-test-output ${statusOk === true ? "success" : statusOk === false ? "failure" : "pending"}`}><header><span><b>{statusOk === true ? "CONNECTION SUCCEEDED" : statusOk === false ? "CONNECTION FAILED" : "CONNECTION TEST"}</b><small>Selectable test response</small></span><button onClick={copyStatus}><ClipboardCopy/> {copied ? "Copied" : "Copy output"}</button></header><textarea aria-label="Connection test output" readOnly value={status} onFocus={(event) => event.currentTarget.select()}/></div>}
-      {type === "sap" && idocPickerOpen && <div className="sap-idoc-picker" role="dialog" aria-modal="true" aria-label="Select SAP IDoc type" onMouseDown={(event) => { if (event.target === event.currentTarget) setIdocPickerOpen(false); }}><div className="sap-idoc-picker-card"><header><span><b>SELECT SAP IDOC TYPE</b><small>Search SAP and select one type to retrieve its structure and schema.</small></span><button type="button" aria-label="Close IDoc picker" onClick={() => setIdocPickerOpen(false)}>×</button></header><div className="sap-idoc-picker-search"><Search/><input autoFocus value={idocSearch} onChange={(event) => setIdocSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && fetchIdocs()} placeholder="Search IDoc types, for example ORDERS…"/><button type="button" onClick={fetchIdocs} disabled={idocLoading}>{idocLoading ? "Searching…" : "Search"}</button></div>{idocError && <p className="sap-idoc-error">{idocError}</p>}<div className="sap-idoc-picker-list">{idocs.map((item) => { const selected = draft.config.selectedIdoc?.idocType === item.idocType; return <button type="button" className={selected ? "selected" : ""} key={`${item.idocType}-${item.release}`} onClick={() => selectIdoc(item)} disabled={idocLoading}><span><b>{item.idocType}</b><small>{item.description || "SAP IDoc"}</small></span><code>{item.extensionType || "basic"} · {item.release || "current"}</code>{selected && <i>Schema fetched</i>}</button>; })}{!idocs.length && !idocLoading && <p>No IDoc types found. Adjust the search and try again.</p>}</div><footer><small>{idocs.length} IDoc type(s) found · Select one to retrieve metadata</small></footer></div></div>}
+      {type === "sap" && idocPickerOpen && <ModalLayer className="sap-idoc-picker" role="dialog" aria-modal="true" aria-label="Select SAP IDoc type" onMouseDown={(event) => { if (event.target === event.currentTarget) setIdocPickerOpen(false); }}><div className="sap-idoc-picker-card"><header><span><b>SELECT SAP IDOC TYPE</b><small>Search SAP and select one type to retrieve its structure and schema.</small></span><button type="button" aria-label="Close IDoc picker" onClick={() => setIdocPickerOpen(false)}>×</button></header><div className="sap-idoc-picker-search"><Search/><input autoFocus value={idocSearch} onChange={(event) => setIdocSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && fetchIdocs()} placeholder="Search IDoc types, for example ORDERS…"/><button type="button" onClick={fetchIdocs} disabled={idocLoading}>{idocLoading ? "Searching…" : "Search"}</button></div>{idocError && <p className="sap-idoc-error">{idocError}</p>}<div className="sap-idoc-picker-list">{idocs.map((item) => { const selected = draft.config.selectedIdoc?.idocType === item.idocType; return <button type="button" className={selected ? "selected" : ""} key={`${item.idocType}-${item.release}`} onClick={() => selectIdoc(item)} disabled={idocLoading}><span><b>{item.idocType}</b><small>{item.description || "SAP IDoc"}</small></span><code>{item.extensionType || "basic"} · {item.release || "current"}</code>{selected && <i>Schema fetched</i>}</button>; })}{!idocs.length && !idocLoading && <p>No IDoc types found. Adjust the search and try again.</p>}</div><footer><small>{idocs.length} IDoc type(s) found · Select one to retrieve metadata</small></footer></div></ModalLayer>}
     </main>
     <footer><button onClick={test} disabled={testing}>{testing ? "Testing…" : "Test Connection"}</button><button onClick={onClose}>Cancel</button><button className="primary" onClick={save}>{initial ? "Save changes" : "Create connection"}</button></footer>
-  </div></div>;
+  </div></ModalLayer>;
 }
 function ConnectionDialog({ type, onClose, onCreate }: any) {
   const [draft, setDraft] = useState<any>({
@@ -5299,7 +5310,7 @@ function ConnectionDialog({ type, onClose, onCreate }: any) {
       }
     };
   return (
-    <div className="modal-backdrop">
+    <ModalLayer className="modal-backdrop">
       <div className="runtime-modal connection-dialog">
         <header>
           <b>
@@ -5669,7 +5680,7 @@ function ConnectionDialog({ type, onClose, onCreate }: any) {
           </button>
         </footer>
       </div>
-    </div>
+    </ModalLayer>
   );
 }
 function ActivityConfig({ node, resources, tasks, update }: any) {
@@ -5870,7 +5881,7 @@ function EdgeConfig({ edge, properties, update, onDelete }: any) {
     setTesting(false);
   };
   return <div className="transition-editor">
-    <header><label>Transition type<select value={edge.type || "success"} onChange={(event) => update({ type: event.target.value })}><option value="success">Success</option><option value="success_condition">Success with condition</option><option value="success_no_match">Success with no matching condition</option><option value="error">Error</option></select></label><label className="transition-label">Canvas label <small>optional</small><input value={edge.label || ""} onChange={(event) => update({ label: event.target.value })} placeholder="Plain transition" maxLength={80}/></label><button className="delete-transition" title="Delete selected transition (Delete or Backspace)" onClick={onDelete}><Trash2/> Delete Transition</button></header>
+    <header><label>Transition type<select value={edge.type || "success"} onChange={(event) => update({ type: event.target.value })}><option value="success">Success</option><option value="success_condition">Success with condition</option><option value="success_no_match">Success with no matching condition</option><option value="error">Error</option></select></label><label className="transition-label">Canvas label <small>optional</small><input value={edge.label || ""} onChange={(event) => update({ label: event.target.value })} placeholder="Plain transition" maxLength={80}/></label><label className="transition-color">Line color<input type="color" aria-label="Transition color" value={/^#[0-9a-f]{6}$/i.test(edge.color || "") ? edge.color : "#5b7590"} onChange={(event) => update({ color: event.target.value })}/></label><button type="button" className="transition-color-reset" onClick={() => update({ color: "" })} disabled={!edge.color}>Reset color</button><button className="delete-transition" title="Delete selected transition (Delete or Backspace)" onClick={onDelete}><Trash2/> Delete Transition</button></header>
     {edge.type === "success_condition" && <div className="condition-workbench"><section><h4>CONDITION EXPRESSION</h4><textarea aria-label="Transition condition expression" value={edge.condition || ""} onChange={(event) => update({ condition: event.target.value })} placeholder='contains(${last.status}, "READY") and ${last.amount} > 0'/><div className="condition-functions"><b>Functions</b>{functions.map((name) => <button key={name} onClick={() => update({ condition: `${edge.condition || ""}${edge.condition ? " " : ""}${name}` })}>{name}</button>)}</div><div className="condition-paths"><b>Paths</b>{paths.map((path) => <button key={path} onClick={() => update({ condition: `${edge.condition || ""}${edge.condition ? " " : ""}${path}` })}>{path}</button>)}</div></section><section><h4>EVALUATE PATH / FUNCTION</h4><textarea aria-label="Condition sample context" value={sample} onChange={(event) => setSample(event.target.value)} spellCheck={false}/><button className="evaluate-condition" onClick={evaluate} disabled={testing}><CirclePlay/> {testing ? "Evaluating…" : "Evaluate condition"}</button>{result !== null && <output className={result === true ? "true" : result === false ? "false" : "error"}>{typeof result === "boolean" ? `Result: ${result}` : String(result)}</output>}</section></div>}
     {edge.type !== "success_condition" && <p className="transition-help">{edge.type === "success_no_match" ? "Runs when no conditional Success transition from the activity matches." : edge.type === "error" ? "Runs when the source activity raises an unhandled error." : "Runs whenever the source activity completes successfully."}</p>}
   </div>;
@@ -5969,7 +5980,7 @@ function DebugToolsDialog({ state, tasks, activities, breakpoints, conditions, w
     } catch (error: any) { setToolError(`Invalid test JSON: ${error.message}`); }
   };
   const formatted = (value: any) => value === undefined ? "(not available)" : JSON.stringify(value, null, 2);
-  return <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div ref={dialogRef} className="runtime-modal debug-tools-dialog">
+  return <ModalLayer className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div ref={dialogRef} className="runtime-modal debug-tools-dialog">
     <header><span><Bug/><span><b>Debug & Activity Testing</b><small>Preview mapped inputs, test one activity, or supply a mock result</small></span></span><button aria-label="Close debug tools" onClick={onClose}>×</button></header>
     <main>
       <section className="debug-tool-section"><h3>BREAKPOINTS</h3><label className="debug-check"><input type="checkbox" checked={pauseDraft} onChange={(event) => setPauseDraft(event.target.checked)}/> Pause when an activity throws an error</label>{breakpoints.length ? breakpoints.map((id: string) => { const activity = activities.find((item: any) => item.id === id); return <label key={id}><span>{activity?.name || id}<small>{id}</small></span><input value={conditionDraft[id] || ""} placeholder="Optional condition, e.g. ${last.amount} > 100" onChange={(event) => setConditionDraft((current) => ({ ...current, [id]: event.target.value }))}/></label>; }) : <p>Add a breakpoint from an activity’s context menu. Empty conditions always pause.</p>}</section>
@@ -5995,7 +6006,7 @@ function DebugToolsDialog({ state, tasks, activities, breakpoints, conditions, w
       {toolError && <p role="alert" className="editor-error">{toolError}</p>}{toolMessage && <p role="status">{toolMessage}</p>}
       {state.lastException && <section className="debug-tool-section debug-exception"><h3>LAST EXCEPTION</h3><pre>{formatted(state.lastException)}</pre></section>}
     </main><footer><span>Pause reason: <b>{state.pauseReason || "none"}</b></span><button onClick={onClose}>Close</button><button className="primary" onClick={apply}>Apply debugger settings</button></footer>
-  </div></div>;
+  </div></ModalLayer>;
 }
 
 function DebugRibbon({ state, act, stop, openJobData, openTools, runToSelected, canRunTo }: any) {

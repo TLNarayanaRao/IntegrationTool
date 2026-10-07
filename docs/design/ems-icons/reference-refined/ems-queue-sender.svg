@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title"><title id="title">EMS Queue Sender</title><defs><linearGradient id="queue" x2=".2" y2="1"><stop stop-color="#328ec2"/><stop offset="1" stop-color="#1a4c7c"/></linearGradient></defs>
+ <rect x="6" y="9" width="84" height="55" rx="3" fill="url(#queue)"/>
+ <path d="M6 60h84v4H6Z" fill="#6ac8ec"/><path d="M9 11h78" stroke="#80d5f6" stroke-width="1.5" opacity=".7"/>
+ <g fill="#09243b"><rect x="29" y="16" width="9" height="39" rx="1"/><rect x="43" y="16" width="9" height="39" rx="1"/><rect x="57" y="16" width="9" height="39" rx="1"/>
+ <path d="M16 27l8 8-8 8ZM71 27l8 8-8 8Z"/></g><g fill="none" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 80h62m-9-9 9 9-9 9" stroke="#40ddb1"/></g></svg>

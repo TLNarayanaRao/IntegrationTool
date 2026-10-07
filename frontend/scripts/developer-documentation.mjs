@@ -9,6 +9,7 @@ const raw='backend/app/raw_python.py', core='backend/app/raw_python_support/core
 const connectors='backend/app/raw_python_support/connectors.py', acts='backend/app/raw_python_support/activities.py';
 export const developerSources=[ui,ed,rt,raw,core,connectors,acts,
  'frontend/scripts/developer-documentation.mjs','frontend/src/ActivityPicker.tsx','frontend/src/MapperStudio.tsx',
+ 'frontend/src/ModalLayer.tsx','frontend/src/modal-layer.css','frontend/src/FontControls.tsx',
  'frontend/src/TransformationTools.tsx','frontend/src/transformation-tools.css','backend/app/transformation.py','backend/app/message_state.py','backend/tests/test_transformation_capabilities.py','frontend/src/MappingExpressionInput.tsx','frontend/src/mappingCompletion.ts','frontend/src/mapper-functions.ts',
  'frontend/src/copyTask.ts','frontend/src/repairCopiedTask.ts','frontend/src/DebugJobData.tsx',
  'frontend/src/DebugActivityTree.tsx','frontend/src/debugTaskTree.ts','frontend/src/DebugPayloadEditor.tsx',

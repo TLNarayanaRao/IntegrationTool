@@ -1,0 +1,50 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import test from 'node:test';
+import vm from 'node:vm';
+import ts from 'typescript';
+const source=await readFile(new URL('../src/ActivityEditor.tsx',import.meta.url),'utf8');
+const main=await readFile(new URL('../src/main.tsx',import.meta.url),'utf8');
+const ast=ts.createSourceFile('editor.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+const names=['f','d','commonErrors','HTTP_METHODS','isMapperActivity','activityContract','httpRequestFields','possibleTaskExceptions'];
+const statements=ast.statements.filter(statement=>names.includes(statement.name?.text)||statement.declarationList?.declarations.some(item=>names.includes(item.name.text)));
+const context=vm.createContext({});
+vm.runInContext(ts.transpileModule(statements.map(statement=>statement.getText(ast).replace('export ','')).join('\n'),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
+context.resolvedActivityContract=activity=>context.activityContract(activity);
+const task=(id,activities)=>({id,name:id,activities});
+const activity=(type,config={})=>({id:type,type,config});
+test('Catch AI suggests exceptions only from the active process and called tasks',()=>{
+ const plain=task('plain',[activity('mapper')]),kafka=task('kafka',[activity('kafka',{operation:'send'})]);
+ const types=context.possibleTaskExceptions(plain,[plain,kafka]);
+ assert(!types.some(type=>/Kafka|SAP|JMS|UserDefined|Rethrow/.test(type)));
+ assert(context.possibleTaskExceptions(kafka,[plain,kafka]).some(type=>/Kafka/.test(type)));
+ assert(!context.possibleTaskExceptions(plain,[plain,kafka]).some(type=>/Kafka/.test(type)));
+ const caller=task('caller',[activity('call_task',{taskId:'KAFKA'})]);
+ assert(context.possibleTaskExceptions(caller,[caller,kafka]).some(type=>/Kafka/.test(type)));
+ kafka.activities.push(activity('call_task',{taskId:'caller'}));
+ assert(context.possibleTaskExceptions(caller,[caller,kafka]).some(type=>/Kafka/.test(type)));
+});
+test('generated exception handlers do not contaminate later process suggestions',()=>{
+ const current=task('current',[activity('mapper'),activity('catch',{errorType:'KafkaException'}),activity('throw',{errorType:'KafkaException',generatedByCatchAI:'catch:KafkaException'})]);
+ assert(!context.possibleTaskExceptions(current).some(type=>/Kafka/.test(type)));
+ current.activities.push(activity('throw',{errorType:'OrderRejected'}));
+ assert(context.possibleTaskExceptions(current).includes('OrderRejected'));
+ assert(!context.possibleTaskExceptions(current).includes('UserDefinedException'));
+});
+test('AI dialog options and selection lifecycle are scoped to process analysis',()=>{
+ assert(!main.includes('const options = ["RUNTIME", "VALIDATION", "CONNECTION"'));
+ assert(main.includes('options={possibleTaskExceptions(task,project.tasks,project.schemas || [])}'));
+ assert(main.includes('setCatchAIOpen(null); }, [project.id, task.id]'));
+ assert(source.includes('[nodeId, exceptionKey]'));
+ assert(main.includes('exceptionTypes.filter(type => relevant.has(type))'));
+});
+test('Mapper assistance and visual mapper entry point belong to Input',()=>{
+ const editor=ast.statements.find(statement=>statement.name?.text==='ActivityEditor').getText(ast);
+ const input=editor.slice(editor.indexOf('if (tab === "input")'));
+ const configuration=editor.slice(0,editor.indexOf('if (tab === "input")'));
+ assert(!input.includes('<AIMappingAssistance'));
+ assert(input.includes('ai-mapper-launcher'));
+ assert(input.includes('Open visual AI Mapper'));
+ assert(!configuration.includes('Open visual AI Mapper'));
+ assert(!configuration.includes('<AIMappingAssistance'));
+});

@@ -1,3 +1,4 @@
+import ModalLayer from "./ModalLayer";
 import React, { useState } from "react";
 import { Database } from "lucide-react";
 import DebugActivityTree from "./DebugActivityTree";
@@ -13,7 +14,7 @@ export default function DebugJobData({ state, tasks, onClose }: any) {
   const activity = task?.activities.find((item: any) => item.id === selection.activityId);
   const start = task?.activities.find((item: any) => item.type === "start");
   const input = selection.activityId ? selected?.input : selected?.input ?? (start ? taskRecord?.activities?.[start.id]?.input : undefined);
-  return <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && onClose()}>
+  return <ModalLayer className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && onClose()}>
     <div className="runtime-modal debug-job-data-dialog">
       <header><span><Database/><span><b>Debug Job Data</b><small>Expand task calls to inspect nested activity inputs and outputs</small></span></span><button aria-label="Close job data" onClick={onClose}>×</button></header>
       <main>
@@ -25,5 +26,5 @@ export default function DebugJobData({ state, tasks, onClose }: any) {
       </main>
       <footer><span>Latest captured values per task/activity. Repeated calls show the latest invocation, not a full invocation history.</span><button className="primary" onClick={onClose}>Close</button></footer>
     </div>
-  </div>;
+  </ModalLayer>;
 }

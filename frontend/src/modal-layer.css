@@ -1,0 +1,26 @@
+.viewport-modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 10000 !important;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.viewport-modal-layer > * {
+  box-sizing: border-box;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: calc(100vw - 24px) !important;
+  max-height: calc(100dvh - 24px) !important;
+}
+/* Extremely short windows scroll the whole dialog as a final fallback. */
+@media (max-height: 480px) {
+  .viewport-modal-layer > * { overflow-y: auto !important; }
+  .viewport-modal-layer .mapper-studio > main {
+    flex: 0 0 auto;
+    min-height: 260px;
+  }
+}

@@ -31,8 +31,8 @@ export function useFontPreferences() {
     style.textContent = Array.from(document.styleSheets).map((sheet) => {
       try { return scaledRules(sheet.cssRules); } catch { return ""; }
     }).join("\n") + `
-      .config, .input-mapper-backdrop { --configuration-font-override: var(--configuration-font-size, 11px); font-size:var(--configuration-font-size, 11px) !important; }
-      :is(.config, .input-mapper-backdrop) :is(div, span, label, input, select, textarea, button, p, code, pre, b, strong, em, summary, td, th, li, a, h1, h2, h3, h4, small) {
+      .config, .input-mapper-backdrop, .mapper-backdrop { --configuration-font-override: var(--configuration-font-size, 11px); font-size:var(--configuration-font-size, 11px) !important; }
+      :is(.config, .input-mapper-backdrop, .mapper-backdrop) :is(div, span, label, input, select, textarea, button, p, code, pre, b, strong, em, summary, td, th, li, a, h1, h2, h3, h4, small) {
         font-size:var(--configuration-font-size, 11px) !important;
       }
     `;

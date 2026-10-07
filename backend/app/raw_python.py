@@ -1286,7 +1286,7 @@ def engine_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[
             _python_call('Activity', activity, ('id', 'type', 'name', 'config'))
             for activity in task['activities'])
         transitions = ',\n        '.join(
-            _python_call('Transition', edge, ('id', 'source', 'target', 'label', 'type', 'condition'))
+            _python_call('Transition', edge, ('id', 'source', 'target', 'label', 'type', 'condition', 'color'))
             for edge in task['transitions'])
         groups = ',\n        '.join(
             _python_call('GroupDefinition', group, ('id', 'type', 'name', 'member_activity_ids', 'config', 'parent_group_id'))

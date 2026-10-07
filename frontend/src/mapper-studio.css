@@ -25,3 +25,13 @@
 .mapper-studio h3 { font-size:12px; }
 
 .mapper-unmapped-targets .target-field-expression { flex:1; min-width:0; overflow-wrap:anywhere; color:#aee9ff; }
+
+.mapper-studio > header { flex-wrap:wrap; min-width:0; }
+.mapper-studio > header > div { min-width:0; }
+.mapper-studio > header span { overflow-wrap:anywhere; }
+.mapper-studio > .mapper-toolbar { flex-wrap:wrap; }
+.mapper-studio > footer { flex-wrap:wrap; }
+.ai-mapper-launcher { margin-left:0; }
+.mapper-ai-options { flex:0 0 auto; max-height:30dvh; overflow:auto; border-bottom:1px solid #254760; }
+.mapper-ai-options > summary { padding:9px 18px; color:#bcdcff; cursor:pointer; }
+.mapper-ai-options .ai-policy-panel { margin:0 12px 10px; }

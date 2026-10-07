@@ -229,3 +229,18 @@ textarea.mapping-expression-multiline {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* A short panel must scroll the test workspace instead of shrinking its cards. */
+.transform-map-test > :is(header, main, .transformation-tools, footer) {
+  flex: 0 0 auto;
+}
+.transform-map-test > main > section {
+  min-height: 260px;
+}
+.transform-map-test > main > section > header {
+  flex-shrink: 0;
+}
+.transform-map-test .map-test-rules > div {
+  max-height: 360px;
+  overflow-wrap: anywhere;
+}

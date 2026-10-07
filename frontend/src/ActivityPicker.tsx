@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { activityIconUrl } from "./activityIconUrl";
 
 type Entry = { label: string; asset?: string; type?: string; operation?: string; groupType?: string; children?: Entry[] };
-const icon = (asset?: string) => asset ? <img src={`/activity-icons/${asset.includes(".") ? asset : `${asset}.png`}`} alt="" /> : null;
+const icon = (asset?: string) => asset ? <img src={activityIconUrl(asset)} alt="" /> : null;
 const searchableText = (entry: Entry & { path?: string }) =>
   [entry.label, entry.path, entry.type, entry.operation]
     .filter(Boolean)
