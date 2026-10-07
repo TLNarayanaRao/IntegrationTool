@@ -136,47 +136,9 @@ $env:MINA_ADMIN_DATA_DIR = "D:\MINAAdmin\data"
 
 Open `http://localhost:9080`. To listen on a different address or port, set `MINA_ADMIN_HOST` and `MINA_ADMIN_PORT`.
 
-## Build Control Plane on Linux
+## Build and install Control Plane on Linux
 
-PyInstaller produces native binaries, so the Linux artifact must be built on Linux or in a Linux CI runner. It cannot be produced directly by a Windows Python installation.
-
-Prerequisites on a Debian/Ubuntu build host:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y python3 python3-venv
-```
-
-Build:
-
-```bash
-cd /path/to/MINA
-chmod +x scripts/build-administrator.sh administrator/bin/minaadmin
-./scripts/build-administrator.sh 2.4.0
-```
-
-Output:
-
-```text
-administrator/release/MinaAdministrator-2.4.0-Linux-x64.tar.gz
-```
-
-Install and start:
-
-```bash
-sudo mkdir -p /opt/mina/control-plane
-sudo tar -xzf administrator/release/MinaAdministrator-2.4.0-Linux-x64.tar.gz \
-  -C /opt/mina/control-plane --strip-components=1
-sudo chmod +x /opt/mina/control-plane/MinaAdministrator
-sudo chmod +x /opt/mina/control-plane/bin/minaadmin
-export MINA_ADMIN_HOME=/opt/mina/control-plane
-/opt/mina/control-plane/bin/minaadmin start
-/opt/mina/control-plane/bin/minaadmin status
-```
-
-The default Administrator URL is `http://linux-host:9080`. A Windows Administrator build cannot run on Linux. Build the Linux tarball on Linux (or a Linux CI runner), or use the container image. In either operating system, deploy the entire generated bundle rather than copying only the executable.
-
-For production configuration, API authentication, encrypted secrets, package validation rules, machine registration, runtime command adapters, lifecycle transitions, monitoring, audit, backup, and troubleshooting, see [ADMINISTRATOR_GUIDE.md](ADMINISTRATOR_GUIDE.md).
+Use the [Control Plane and Data Plane one-stop guide](LINUX_SETUP.md) for transfer packaging, INI configuration, installation and lifecycle commands.
 
 ## Run Control Plane as a container
 

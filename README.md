@@ -1,5 +1,7 @@
 # MINA
 
+For Linux installation and operations, use the [Control Plane and Data Plane one-stop guide](docs/LINUX_SETUP.md). It includes Windows transfer packaging and separate INI-driven setup commands for each role.
+
 MINA is a BusinessWorks-inspired integration studio. It combines a React visual designer, a FastAPI/Python execution runtime, and a Java extension worker contract.
 
 ## What is included

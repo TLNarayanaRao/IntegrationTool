@@ -9,6 +9,7 @@ VERSION="${1:-${MINA_VERSION:-2.4.0}}"
 PYTHON="${MINA_PYTHON:-python3}"
 PIP_INDEX_ARGS=()
 if [[ -n "${MINA_PYPI_INDEX_URL:-}" ]]; then PIP_INDEX_ARGS=(--index-url "$MINA_PYPI_INDEX_URL"); fi
+if [[ -n "${MINA_WHEELHOUSE:-}" ]]; then PIP_INDEX_ARGS+=(--no-index --find-links "$MINA_WHEELHOUSE"); fi
 
 [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]] || { echo "Invalid semantic version: $VERSION" >&2; exit 2; }
 command -v "$PYTHON" >/dev/null 2>&1 || { echo "Python executable not found: $PYTHON" >&2; exit 2; }
@@ -17,7 +18,7 @@ command -v "$PYTHON" >/dev/null 2>&1 || { echo "Python executable not found: $PY
 [[ -d "$ADMIN/web" ]] || { echo "Required folder is missing: $ADMIN/web" >&2; exit 2; }
 
 cd "$ADMIN"
-"$PYTHON" -m venv --clear .venv
+[[ -x .venv/bin/python ]] || "$PYTHON" -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip "${PIP_INDEX_ARGS[@]}"
 python -m pip install -r requirements.txt "pyinstaller>=6.15,<7" "${PIP_INDEX_ARGS[@]}"

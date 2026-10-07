@@ -252,6 +252,7 @@ def _connector_endpoint(connector_type: str, config: dict) -> dict:
     return {'protocol': kind}
 
 def _publish_runtime_state(project_id: str, *, status: str, logs: list[dict], endpoints=None, result=None, environment: str | None = None):
+    from .execution_analytics import activity_timings
     previous = runtime_states.get(project_id, {})
     executions = list(previous.get('executions', []))
     if result is not None:
@@ -259,6 +260,7 @@ def _publish_runtime_state(project_id: str, *, status: str, logs: list[dict], en
             'runId': result.run_id, 'correlationId': result.correlation_id, 'status': result.status,
             'startedAt': result.started_at, 'endedAt': result.ended_at, 'durationMs': result.duration_ms,
             'activityOutputs': result.activity_outputs, 'taskOutputs': result.task_outputs,
+            'activityTimings': activity_timings(result.logs),
         }
         executions = ([execution] + executions)[:100]
     state = {

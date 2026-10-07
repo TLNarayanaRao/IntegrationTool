@@ -4,7 +4,7 @@
 Polls the Control Plane, downloads assigned packages, reconciles desired
 instances, starts/stops local runtime workers, and reports health/log tails.
 """
-import configparser, json, os, shlex, shutil, signal, subprocess, sys, time, urllib.error, urllib.request, zipfile
+import configparser, json, os, shlex, shutil, signal, ssl, subprocess, sys, time, urllib.error, urllib.request, zipfile
 from pathlib import Path
 
 try:
@@ -14,12 +14,13 @@ except ImportError:  # The remote agent runs on Linux; keep source importable el
 
 HERE = Path(__file__).resolve().parent
 CONFIG = Path(os.environ.get("MINA_CONFIG_FILE", HERE / "mina-control-plane.ini"))
-cfg = configparser.ConfigParser(); cfg.read(CONFIG)
+cfg = configparser.ConfigParser(interpolation=None); cfg.read(CONFIG, encoding='utf-8-sig')
 TEAM_MAPPING = dict(cfg["data-teams"]) if "data-teams" in cfg else {}
 cp = cfg["control-plane"]; dp = cfg["data-plane"]; runtime_cfg = cfg["runtime"] if "runtime" in cfg else {}
 setup_cfg = cfg["setup"] if "setup" in cfg else {}
 BASE = os.environ.get("CONTROL_PLANE_URL", cp.get("control_plane_url", f"http://{cp.get('host','127.0.0.1')}:{cp.get('port','19080')}" )).rstrip("/")
 KEY = os.environ.get("ADMIN_KEY", cp.get("admin_key", ""))
+SSL_CONTEXT = ssl.create_default_context(cafile=cp.get('ca_bundle') or None)
 PLANE = os.environ.get("DATA_PLANE_ID", dp.get("id", "")); NAMESPACE = os.environ.get("DATA_PLANE_NAMESPACE", dp.get("namespace", "default"))
 INTERVAL = int(os.environ.get("HEARTBEAT_SECONDS", dp.get("heartbeat_seconds", "30")))
 CAPACITY = int(os.environ.get("AVAILABLE_CAPACITY", dp.get("available_capacity", "20")))
@@ -75,7 +76,7 @@ def acquire_agent_lock():
 def call(method, path, body=None):
     data = None if body is None else json.dumps(body).encode()
     request = urllib.request.Request(BASE + path, data=data, method=method, headers={"X-Admin-Key": KEY, "Content-Type": "application/json"})
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with urllib.request.urlopen(request, timeout=30, context=SSL_CONTEXT) as response:
         return response.read()
 
 def json_call(method, path, body=None): return json.loads(call(method, path, body).decode())

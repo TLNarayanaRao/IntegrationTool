@@ -1,4 +1,6 @@
 import ModalLayer from "./ModalLayer";
+import ExecutionAnalytics from "./ExecutionAnalytics";
+import { transitionLanes } from "./transitionIndex";
 import React, { Component, ErrorInfo, useEffect, useMemo, useRef, useState } from "react";
 import AboutMina from "./AboutMina";
 import { FontControl, useFontPreferences } from "./FontControls";
@@ -1297,6 +1299,7 @@ function App() {
     [taskTabMenu, setTaskTabMenu] = useState<{ taskId: string; x: number; y: number } | null>(null);
   const [utilityMode, setUtilityMode] = useState<UtilityMode | null>(null);
   const [executionPanelOpen, setExecutionPanelOpen] = useState(false);
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [monitorMode, setMonitorMode] = useState<"normal" | "expanded" | "fullscreen">("normal");
   const [historyVersion, setHistoryVersion] = useState(0);
   const history = useRef<{
@@ -1384,7 +1387,9 @@ function App() {
     document.body.dataset.plainMode = plainMode;
     localStorage.setItem("mina-plain-theme-mode", plainMode);
   }, [plainMode]);
-  const projectDirty = JSON.stringify(project) !== savedProjectSnapshot.current;
+  const projectSnapshot = useMemo(() => JSON.stringify(project), [project]);
+  const projectDirty = projectSnapshot !== savedProjectSnapshot.current;
+  const wireLanes = useMemo(() => transitionLanes(edges), [edges]);
   const [activeTab, setActiveTab] = useState<
       "configuration" | "input" | "map_test" | "output" | "advanced" | "errors" | "documentation"
     >("configuration"),
@@ -1400,18 +1405,19 @@ function App() {
   useEffect(() => {
     if (closed) return;
     if (autosaveTimer.current !== null) window.clearTimeout(autosaveTimer.current);
-    const snapshot = structuredClone(project);
+    // Project updates replace state; retain this immutable version until the debounce fires.
+    const snapshot = project;
     autosaveTimer.current = window.setTimeout(() => {
       autosaveTimer.current = null;
       void fetch(`/api/projects/${snapshot.id}`, {
         method: "PUT",
         headers: { "content-type": "application/json", "x-mina-autosave": "true" },
-        body: JSON.stringify(snapshot),
+        body: projectSnapshot,
         keepalive: true,
       }).catch((error) => console.warn("MINA autosave failed", error));
     }, 700);
     return () => { if (autosaveTimer.current !== null) { window.clearTimeout(autosaveTimer.current); autosaveTimer.current = null; } };
-  }, [project, closed]);
+  }, [project, projectSnapshot, closed]);
   const split = useRef<{ y: number; height: number } | null>(null),
     configSplit = useRef<{ y: number; height: number } | null>(null),
     explorerSplit = useRef<{ x: number; width: number } | null>(null),
@@ -1566,9 +1572,13 @@ function App() {
   useEffect(() => {
     if (!endpoints.length && !debugState?.sessionId) return;
     let cancelled = false;
+    let refreshing = false;
     const refreshRuntime = async () => {
+      if (cancelled || refreshing) return;
+      refreshing = true;
       try {
         const response = await fetch(debugState?.sessionId ? `/api/debug/${debugState.sessionId}` : `/api/projects/${project.id}/runtime-state`);
+        if (cancelled) return;
         if (!response.ok) {
           // Uvicorn restarts clear in-memory debugger sessions. The browser
           // may still have the old session id and must not poll it forever.
@@ -1589,6 +1599,7 @@ function App() {
         setLogs(state.logs || []);
         if (state.endpoints?.length) setEndpoints(state.endpoints);
       } catch { /* The sidecar can briefly restart during development. */ }
+      finally { refreshing = false; }
     };
     void refreshRuntime();
     const timer = window.setInterval(refreshRuntime, 750);
@@ -2718,6 +2729,7 @@ function App() {
         <TopMenu label="Run" open={menu === "run"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "run" ? null : "run"); }} commands={[
           { label: "Run Active Task", detail: `${task.name} · ${project.active_environment}`, icon: CirclePlay, shortcut: "F5", action: run },
           { label: "Start Debugging", detail: "Honor configured breakpoints", icon: Bug, shortcut: "F6", action: debug },
+          { label: "Execution Analytics", detail: "Timings, bottlenecks and graph reports", icon: Activity, action: () => setAnalyticsOpen(true) },
           { label: "Start Activity Testing", detail: "Start paused; provide test data without automatically starting listeners", icon: Bug, action: () => debug(undefined, true), disabled: executionActive },
           { label: "Validate Current Task", detail: "Check flow, mappings, connections, and configuration", icon: ShieldCheck, action: () => runValidation("task") },
           { label: "Validate Project", detail: "Check every task, environment, mapping, and package", icon: ShieldCheck, action: () => runValidation("project") },
@@ -2729,6 +2741,7 @@ function App() {
           { label: "Task Designer", detail: "Move focus to the orchestration canvas", icon: Workflow, action: () => focusStudioPanel(".canvas") },
           { label: "Configuration", detail: "Move focus to activity configuration", icon: Settings2, action: () => focusStudioPanel(".config") },
           { label: "Execution & Debug", detail: "Open runtime output", icon: Bug, action: () => { setExecutionPanelOpen(true); window.setTimeout(() => focusStudioPanel(".monitor"), 0); } },
+          { label: "Execution Analytics", detail: "Timings, bottlenecks and graph reports", icon: Activity, action: () => setAnalyticsOpen(true) },
           { label: "XML Viewer", detail: "Windowed large-file XML viewer and pretty printer", icon: CodeXml, action: () => setUtilityMode("xml") },
           { label: "JSON Viewer", detail: "Windowed large-file JSON viewer and pretty printer", icon: Braces, action: () => setUtilityMode("json") },
           { label: "Compare Files", detail: "Side-by-side text or binary file comparison", icon: Scissors, action: () => setUtilityMode("compare") },
@@ -3177,18 +3190,17 @@ function App() {
                 <marker id="transition-arrow-active" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path fill="#35e6b0" d="M 0 0 L 10 5 L 0 10 z" /></marker>
                 <marker id="transition-arrow-current" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path fill="#ffe27a" d="M 0 0 L 10 5 L 0 10 z" /></marker>
               </defs>
-              {edges.map((e) => {
+              {edges.map((e, edgeIndex) => {
                 const a = byId[e.source],
                   b = byId[e.target];
                 if (!a || !b) return null;
-                const siblings = edges.filter((candidate) => candidate.source === e.source);
-                const lane = siblings.findIndex((candidate) => candidate.id === e.id) - (siblings.length - 1) / 2;
+                const lane = wireLanes[edgeIndex];
                 const wire = activityWireGeometry(a, b, lane), d = wire.d;
                 const visualLabel = e.label?.trim();
                 const traversed = executedTransitionIds.has(String(e.id)), current = currentTransitionIds.has(String(e.id));
                 const customColor = /^#[0-9a-f]{6}$/i.test(e.color || "") ? e.color : undefined;
                 const wireColor = current ? "#ffe27a" : traversed ? "#35e6b0" : customColor || (selectedEdge === e.id ? "#e7f7ff" : e.type === "error" ? "#ef6070" : e.type === "success_condition" ? "#e5ac45" : e.type === "success_no_match" ? "#9a77d7" : "#5b7590");
-                const markerId = `transition-color-arrow-${edges.indexOf(e)}`;
+                const markerId = `transition-color-arrow-${edgeIndex}`;
                 return (
                   <g
                     key={e.id}
@@ -3411,6 +3423,7 @@ function App() {
       </main>
       {executionPanelOpen && <aside className={`monitor monitor-${monitorMode}`}>
         <div className="pane-title"><span>EXECUTION / DEBUG</span><span className="monitor-actions">
+          <button title="Execution analytics" aria-label="Execution analytics" onClick={() => setAnalyticsOpen(true)}><Activity/></button>
           <button title="Close execution panel" onClick={() => { setExecutionPanelOpen(false); setMonitorMode("normal"); }}>×</button>
           <button title="Load saved project logs" onClick={loadSystemLogs}><HardDrive/></button>
           <button title="Download saved project logs" onClick={downloadSystemLogs}><Download/></button>
@@ -3455,6 +3468,7 @@ function App() {
           </div>
         ))}
       </aside>}
+      {analyticsOpen && <ExecutionAnalytics key={project.id} projectId={project.id} projectName={project.name} tasks={project.tasks} logs={logs} runtimeState={runtimeState} debugState={debugState} onClose={() => setAnalyticsOpen(false)} onInspect={(taskId: string, activityId: string) => { const target = project.tasks.find(item => item.id === taskId && item.activities.some(activity => activity.id === activityId)) || project.tasks.find(item => item.activities.some(activity => activity.id === activityId)); if (target) { setProject(current => ({...current, active_task_id: target.id})); setSelected(activityId); setActiveTab("configuration"); setAnalyticsOpen(false); } }}/>}
       {utilityMode && <FileUtilities initialMode={utilityMode} onClose={() => setUtilityMode(null)}/>}
       <footer className="studio-status-bar">
         <span className="status-product"><Workflow/> MINA Studio</span>
@@ -3627,15 +3641,15 @@ function App() {
           setProject((current) => ({ ...current, name: generated.name || current.name, description: generated.description || current.description, tasks, active_task_id: tasks[0]?.id || current.active_task_id, resources: generated.resources || [], schemas: generated.schemas || [], packaging: { ...current.packaging, ...(generated.packaging || {}) } }));
         }
         setSelected(""); setSelectedIds([]); setSelectedEdge(null); setAiBuilderOpen(false); setLogs([{ level: "INFO", message: `Applied ${proposal.provider} AI design proposal. Validate the ${scope} before running.` }]);
-      }}/>} 
-      {helpDialog && <HelpDialog mode={helpDialog} onClose={() => setHelpDialog(null)}/>} 
+      }}/>}
+      {helpDialog && <HelpDialog mode={helpDialog} onClose={() => setHelpDialog(null)}/>}
       {validation && <ValidationDialog result={validation} onClose={() => setValidation(null)} onOpen={(issue: ValidationIssue) => {
         if (issue.taskId) selectTask(issue.taskId);
         if (issue.activityId) { setSelected(issue.activityId); setSelectedIds([issue.activityId]); setSelectedEdge(null); setSelectedResource(null); setActiveTab("configuration"); }
         setValidation(null);
       }}/>}
       {catchAIOpen && <CatchAIDialog key={`${project.id}:${task.id}:${catchAIOpen}:${possibleTaskExceptions(task,project.tasks,project.schemas || []).join("|")}`} options={possibleTaskExceptions(task,project.tasks,project.schemas || [])} onClose={() => setCatchAIOpen(null)} onApply={(types: string[]) => { createExceptionHandlers(catchAIOpen, types); setCatchAIOpen(null); }}/>}
-      {openSourceOpen && <OpenProjectSourceDialog onClose={() => setOpenSourceOpen(false)} onFile={(type: any) => { setOpenSourceOpen(false); void importFromFileSystem(type); }} onFolder={() => { setOpenSourceOpen(false); void importProjectFolder(); }}/>} 
+      {openSourceOpen && <OpenProjectSourceDialog onClose={() => setOpenSourceOpen(false)} onFile={(type: any) => { setOpenSourceOpen(false); void importFromFileSystem(type); }} onFolder={() => { setOpenSourceOpen(false); void importProjectFolder(); }}/>}
       {exportSourceOpen && <OpenProjectSourceDialog title="Export MINA project" actionLabel="Export" onClose={() => setExportSourceOpen(false)} onFile={(type: any) => { setExportSourceOpen(false); exportGenericProject(type); }} onFolder={() => { setExportSourceOpen(false); exportGenericProject("folder"); }} exportMode/>}
       {renameOpen && (
         <RenameApplication
@@ -4506,7 +4520,7 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, im
           <button className="sample-projects" onClick={() => setSamplesOpen(true)}><span><BookOpen/></span><b>Explore sample projects<small>Editable, installed examples for mapping, APIs, data, JDBC, and messaging</small></b><ChevronRight/></button>
           <button className="installed-guide" onClick={() => window.open("/help/index.html", "_blank", "noopener")}><span><BookOpen/></span><b>Open MINA documentation<small>Searchable tree, activity reference, guides and PDF manual</small></b><ChevronRight/></button>
         </div>
-        {sourceOpen && <OpenProjectSourceDialog onClose={() => setSourceOpen(false)} onFile={(type: any) => { setSourceOpen(false); setImporting(true); void importFromFileSystem(type).finally(() => setImporting(false)); }} onFolder={() => { setSourceOpen(false); setImporting(true); void importProjectFolder().finally(() => setImporting(false)); }}/>} 
+        {sourceOpen && <OpenProjectSourceDialog onClose={() => setSourceOpen(false)} onFile={(type: any) => { setSourceOpen(false); setImporting(true); void importFromFileSystem(type).finally(() => setImporting(false)); }} onFolder={() => { setSourceOpen(false); setImporting(true); void importProjectFolder().finally(() => setImporting(false)); }}/>}
       </section>
     </main>
     <footer><span><ShieldCheck/> Enterprise integration development</span><span>DESIGN TIME <i/> RUNTIME <i/> DEPLOYMENT</span></footer>

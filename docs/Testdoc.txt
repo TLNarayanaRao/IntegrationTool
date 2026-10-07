@@ -49,74 +49,13 @@ frontend\release\win-unpacked\MINA Studio.exe
 
 For production distribution, configure a company `.pfx` code-signing certificate in the CI/CD secret store and sign the installer and executables. Do not put certificate passwords in the repository.
 
-## Build Enterprise Administrator on Windows
+## Control Plane instructions moved
 
-```powershell
-cd D:\Integration-tool\MINA
-.\scripts\build-administrator.ps1
-```
+See docs/LINUX_SETUP.md for the maintained INI-driven setup and operations guide.
 
-Or from the `frontend` directory:
+## Control Plane instructions moved
 
-```powershell
-npm run administrator:windows
-```
-
-Outputs:
-
-```text
-administrator\dist\MinaAdministrator\MinaAdministrator.exe
-administrator\release\MinaAdministrator-Windows-x64.zip
-```
-
-Run it:
-
-```powershell
-$env:MINA_ADMIN_DATA_DIR = "D:\MINAAdmin\data"
-& .\administrator\dist\MinaAdministrator\MinaAdministrator.exe
-```
-
-Open `http://localhost:9080`. To listen on a different address or port, set `MINA_ADMIN_HOST` and `MINA_ADMIN_PORT`.
-
-## Build Enterprise Administrator on Linux
-
-PyInstaller produces native binaries, so the Linux artifact must be built on Linux or in a Linux CI runner. It cannot be produced directly by a Windows Python installation.
-
-Prerequisites on a Debian/Ubuntu build host:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y python3 python3-venv
-```
-
-Build:
-
-```bash
-cd /path/to/MINA
-chmod +x scripts/build-administrator.sh administrator/bin/minaadmin
-./scripts/build-administrator.sh
-```
-
-Output:
-
-```text
-administrator/release/MinaAdministrator-Linux-x64.tar.gz
-```
-
-Install and start:
-
-```bash
-sudo mkdir -p /opt/mina/administrator
-sudo tar -xzf administrator/release/MinaAdministrator-Linux-x64.tar.gz \
-  -C /opt/mina/administrator --strip-components=1
-sudo chmod +x /opt/mina/administrator/MinaAdministrator
-sudo chmod +x /opt/mina/administrator/bin/minaadmin
-export MINA_ADMIN_HOME=/opt/mina/administrator
-./administrator/bin/minaadmin start
-./administrator/bin/minaadmin status
-```
-
-The default Administrator URL is `http://linux-host:9080`.
+See docs/LINUX_SETUP.md for the maintained INI-driven setup and operations guide.
 
 ## Run Administrator as a container
 
@@ -190,74 +129,13 @@ frontend\release\win-unpacked\MINA Studio.exe
 
 For production distribution, configure a company `.pfx` code-signing certificate in the CI/CD secret store and sign the installer and executables. Do not put certificate passwords in the repository.
 
-## Build Enterprise Administrator on Windows
+## Control Plane instructions moved
 
-```powershell
-cd D:\Integration-tool\MINA
-.\scripts\build-administrator.ps1
-```
+See docs/LINUX_SETUP.md for the maintained INI-driven setup and operations guide.
 
-Or from the `frontend` directory:
+## Control Plane instructions moved
 
-```powershell
-npm run administrator:windows
-```
-
-Outputs:
-
-```text
-administrator\dist\MinaAdministrator\MinaAdministrator.exe
-administrator\release\MinaAdministrator-Windows-x64.zip
-```
-
-Run it:
-
-```powershell
-$env:MINA_ADMIN_DATA_DIR = "D:\MINAAdmin\data"
-& .\administrator\dist\MinaAdministrator\MinaAdministrator.exe
-```
-
-Open `http://localhost:9080`. To listen on a different address or port, set `MINA_ADMIN_HOST` and `MINA_ADMIN_PORT`.
-
-## Build Enterprise Administrator on Linux
-
-PyInstaller produces native binaries, so the Linux artifact must be built on Linux or in a Linux CI runner. It cannot be produced directly by a Windows Python installation.
-
-Prerequisites on a Debian/Ubuntu build host:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y python3 python3-venv
-```
-
-Build:
-
-```bash
-cd /path/to/MINA
-chmod +x scripts/build-administrator.sh administrator/bin/minaadmin
-./scripts/build-administrator.sh
-```
-
-Output:
-
-```text
-administrator/release/MinaAdministrator-Linux-x64.tar.gz
-```
-
-Install and start:
-
-```bash
-sudo mkdir -p /opt/mina/administrator
-sudo tar -xzf administrator/release/MinaAdministrator-Linux-x64.tar.gz \
-  -C /opt/mina/administrator --strip-components=1
-sudo chmod +x /opt/mina/administrator/MinaAdministrator
-sudo chmod +x /opt/mina/administrator/bin/minaadmin
-export MINA_ADMIN_HOME=/opt/mina/administrator
-./administrator/bin/minaadmin start
-./administrator/bin/minaadmin status
-```
-
-The default Administrator URL is `http://linux-host:9080`.
+See docs/LINUX_SETUP.md for the maintained INI-driven setup and operations guide.
 
 ## Run Administrator as a container
 

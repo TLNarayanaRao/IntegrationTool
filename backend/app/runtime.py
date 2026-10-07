@@ -383,6 +383,9 @@ class WorkflowRuntime:
                 entry.setdefault('correlationId', correlation_id); entry.setdefault('runId', run_id)
             return RunResult(run_id=run_id, correlation_id=correlation_id, started_at=log_timestamp(started), ended_at=log_timestamp(ended), duration_ms=duration, status=status, output=output, logs=logs, activity_outputs=activity_outputs, task_outputs=task_outputs)
         activity_by_id = {a.id: a for a in process.activities}
+        outgoing_by_source = {}
+        for transition in process.transitions:
+            outgoing_by_source.setdefault(transition.source, []).append(transition)
         try: group_plans = self.compile_groups(process)
         except Exception as exc:
             self.log(logs, 'ERROR', str(exc)); return finish('failed', {})
@@ -424,7 +427,7 @@ class WorkflowRuntime:
                     self.log(logs, 'ERROR', f'Activity failed: {process.name} / {current.name} in {activity_duration:.3f} ms: {error}', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation, durationMs=activity_duration)
                 else:
                     self.log(logs, 'INFO', f'Activity completed: {process.name} / {current.name} in {activity_duration:.3f} ms', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation, durationMs=activity_duration)
-                outgoing = [t for t in process.transitions if t.source == current.id]
+                outgoing = outgoing_by_source.get(current.id, [])
                 if current.type in ('end', 'http_response'): break
                 if error:
                     chosen = next((t for t in outgoing if t.type == 'error'), None)

@@ -18,7 +18,6 @@ ini_value() {
     key="${key##+([[:space:]])}"; key="${key%%+([[:space:]])}"
     value="${value#${value%%[![:space:]]*}}"; value="${value%%+([[:space:]])}"
     [[ "$key" == "$wanted_key" ]] || continue
-    if [[ "$value" == \"*\" && "$value" == *\" ]]; then value="${value:1:${#value}-2}"; fi
     printf '%s' "$value"; return 0
   done < "$INI_FILE"
 }
@@ -57,7 +56,13 @@ fi
 PID_FILE="$MINA_ADMIN_PID_DIR/control-plane.pid"
 PROCESS_LOG="$MINA_ADMIN_LOG_DIR/administrator.log"
 mkdir -p "$MINA_ADMIN_DATA_DIR" "$MINA_ADMIN_LOG_DIR" "$MINA_ADMIN_PID_DIR"
-running() { [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; }
+running() {
+  local pid
+  [[ -f "$PID_FILE" ]] || return 1
+  pid="$(cat "$PID_FILE")"
+  [[ "$pid" =~ ^[1-9][0-9]*$ && -r "/proc/$pid/cmdline" ]] || return 1
+  grep -Fzx -- "$EXECUTABLE" "/proc/$pid/cmdline" >/dev/null && kill -0 "$pid" 2>/dev/null
+}
 start() { if running; then echo "Already running (PID $(cat "$PID_FILE"))"; return; fi; [[ -x "$EXECUTABLE" ]] || { echo "Executable not found: $EXECUTABLE" >&2; return 1; }; nohup "$EXECUTABLE" >> "$PROCESS_LOG" 2>&1 & echo $! > "$PID_FILE"; echo "Started (PID $(cat "$PID_FILE"))"; }
 stop() { if ! running; then echo "Already stopped"; rm -f "$PID_FILE"; return; fi; kill "$(cat "$PID_FILE")"; for _ in {1..30}; do running || break; sleep 1; done; running && { echo "Did not stop gracefully" >&2; return 1; }; rm -f "$PID_FILE"; echo "Stopped"; }
 status() { if running; then echo "RUNNING PID $(cat "$PID_FILE")"; else echo "STOPPED"; fi; }

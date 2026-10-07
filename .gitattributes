@@ -1,2 +1,6 @@
 # PDF cross-reference offsets must not undergo platform newline conversion.
 *.pdf binary
+*.sh text eol=lf
+*.py text eol=lf
+*.ini text eol=lf
+administrator/bin/minaadmin text eol=lf

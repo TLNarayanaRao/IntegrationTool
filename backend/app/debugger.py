@@ -317,7 +317,7 @@ class DebugManager:
                 ctx['last'] = await self.runtime.execute_with_policy(activity, ctx)
         except Exception as exc:
             duration = round((perf_counter() - activity_started) * 1000, 3)
-            state['logs'].append({'time': log_timestamp(), 'level': 'ERROR', 'kind': 'activity', 'message': f'Activity failed: {task.name} / {activity.name} in {duration:.3f} ms: {exc}', 'activityId': activity.id, 'taskId': task.id, 'durationMs': duration})
+            state['logs'].append({'time': log_timestamp(), 'level': 'ERROR', 'kind': 'activity', 'message': f'Activity failed: {task.name} / {activity.name} in {duration:.3f} ms: {exc}', 'activityId': activity.id, 'activityName': activity.name, 'activityType': activity.type, 'taskId': task.id, 'durationMs': duration})
             outgoing = [edge for edge in task.transitions if edge.source == activity.id]
             error_edge = next((edge for edge in outgoing if edge.type == 'error'), None)
             fault = self.runtime.fault_payload(exc, activity.id)
@@ -342,7 +342,7 @@ class DebugManager:
                 group_state = ctx['groupStack'].pop(); await self.runtime._finish_group(group_state, plans[group_state['id']], ctx, False)
             raise
         duration = round((perf_counter() - activity_started) * 1000, 3)
-        state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'activity', 'message': f'Activity completed: {task.name} / {activity.name} in {duration:.3f} ms', 'activityId': activity.id, 'taskId': task.id, 'durationMs': duration})
+        state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'activity', 'message': f'Activity completed: {task.name} / {activity.name} in {duration:.3f} ms', 'activityId': activity.id, 'activityName': activity.name, 'activityType': activity.type, 'taskId': task.id, 'durationMs': duration})
         if isinstance(ctx['last'], dict) and isinstance(ctx['last'].get('publishTiming'), dict):
             timing = ctx['last']['publishTiming']
             state['logs'][-1]['publishTiming'] = timing

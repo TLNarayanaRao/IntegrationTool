@@ -1,17 +1,17 @@
 {
-  "fingerprint": "9582884e736a50dcf89070108e08cf4c5075ff92930f2bb44f78691efa3eac31",
+  "fingerprint": "0eb33682859b5fa7ba70ead9da9b45bd52f442d846eda37ce6972e56de1caedf",
   "files": {
-    "documentation-data.json": "c122727a72cef60bf31e1662c7fc09bd6f95a7056486e9fa0090e2733d88e718",
-    "documentation-data.js": "0b524519d5629db2a24ca55d1d884a736f8b44b762d88eafe6c272e80fd94a04",
-    "MINA-Documentation.pdf": "ad6fbecbca78c3d182f956029ff1a01b21fa25ffae2c74dc03e9b2dc78f1ec8c",
-    "developer-data.json": "185a429174fe861da4c3cd75f7fbb104d3c11547fda27b2fbbfb62a73ffea9f8",
-    "MINA-Developer-Guide.pdf": "164f059eb55e6ef5bcda04b2d7f820a85f3203c6925ad389a43f5304dc0fb63a"
+    "documentation-data.json": "ef3ef9c46defca17be6ac1b24c1b6a5e5b81274de6dbc33a117f816c4401b7ab",
+    "documentation-data.js": "9678133690e6778bdfbf68cfda064db6bbed0eb6189c57c8927afc711ddb43f0",
+    "MINA-Documentation.pdf": "ca14fc0776d099b6b505146225d1ce80fcadbfc068bd807ed146f293ea9f3077",
+    "developer-data.json": "ac6e2b274dfc5713d9c35782461b3fbd63f872fd54db9530a65e5fe7c8d42e1e",
+    "MINA-Developer-Guide.pdf": "ef231d06892e2a24365a191731311f148bdd7a83ae6c89436c0f94d2b50b236f"
   },
   "counts": {
     "activities": 101,
     "groups": 11,
     "functions": 103,
     "connections": 12,
-    "pages": 376
+    "pages": 375
   }
 }
