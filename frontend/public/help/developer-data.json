@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "43249ecc9a174649e03e4f0fc791361efa53b63c2d8c0a64a15a1390e86cbb0d",
+  "fingerprint": "e51e073277c51cf88803c7d9f96784df9b88da2d2e9c5f2512763dffccb4f394",
   "counts": {
     "activities": 101,
     "groups": 11,
@@ -160,7 +160,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -272,7 +272,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -288,7 +288,7 @@
                 ],
                 [
                   "Engine start dispatch; operation start",
-                  "backend/app/runtime.py:711\nif activity.type == 'start':"
+                  "backend/app/runtime.py:717\nif activity.type == 'start':"
                 ],
                 [
                   "Direct helper dispatch for start; task graph may also be generated inline",
@@ -451,7 +451,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -475,7 +475,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 711,
+          "line": 717,
           "symbol": "if activity.type == 'start':",
           "role": "Engine start dispatch; operation start"
         },
@@ -617,7 +617,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -633,7 +633,7 @@
                 ],
                 [
                   "Engine timer dispatch; operation schedule",
-                  "backend/app/runtime.py:717\nif activity.type == 'timer':"
+                  "backend/app/runtime.py:723\nif activity.type == 'timer':"
                 ],
                 [
                   "Direct helper dispatch for timer; task graph may also be generated inline",
@@ -792,7 +792,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -816,7 +816,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 717,
+          "line": 723,
           "symbol": "if activity.type == 'timer':",
           "role": "Engine timer dispatch; operation schedule"
         },
@@ -952,7 +952,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -968,7 +968,7 @@
                 ],
                 [
                   "Engine call_task dispatch; operation call",
-                  "backend/app/runtime.py:1122\nif activity.type == 'call_task':"
+                  "backend/app/runtime.py:1128\nif activity.type == 'call_task':"
                 ],
                 [
                   "Direct helper dispatch for call_task; task graph may also be generated inline",
@@ -1131,7 +1131,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -1155,7 +1155,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1122,
+          "line": 1128,
           "symbol": "if activity.type == 'call_task':",
           "role": "Engine call_task dispatch; operation call"
         },
@@ -1297,7 +1297,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -1313,7 +1313,7 @@
                 ],
                 [
                   "Engine end dispatch; operation end",
-                  "backend/app/runtime.py:714\nif activity.type == 'end':"
+                  "backend/app/runtime.py:720\nif activity.type == 'end':"
                 ],
                 [
                   "Direct helper dispatch for end; task graph may also be generated inline",
@@ -1476,7 +1476,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -1500,7 +1500,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 714,
+          "line": 720,
           "symbol": "if activity.type == 'end':",
           "role": "Engine end dispatch; operation end"
         },
@@ -1642,7 +1642,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -1658,7 +1658,7 @@
                 ],
                 [
                   "Local file execution; read is the fall-through after write/list/delete/rename/copy/poll branches",
-                  "backend/app/runtime.py:998\nif activity.type == 'file':"
+                  "backend/app/runtime.py:1004\nif activity.type == 'file':"
                 ],
                 [
                   "Direct Python implementation; inspect operation read",
@@ -1666,11 +1666,11 @@
                 ],
                 [
                   "Text read implementation",
-                  "backend/app/runtime.py:1051\ncontent = path.read_text("
+                  "backend/app/runtime.py:1057\ncontent = path.read_text("
                 ],
                 [
                   "Binary read implementation",
-                  "backend/app/runtime.py:1050\npath.read_bytes()"
+                  "backend/app/runtime.py:1056\npath.read_bytes()"
                 ],
                 [
                   "Direct graph/code generation",
@@ -1825,7 +1825,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -1849,7 +1849,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 998,
+          "line": 1004,
           "symbol": "if activity.type == 'file':",
           "role": "Local file execution; read is the fall-through after write/list/delete/rename/copy/poll branches"
         },
@@ -1861,13 +1861,13 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1051,
+          "line": 1057,
           "symbol": "content = path.read_text(",
           "role": "Text read implementation"
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1050,
+          "line": 1056,
           "symbol": "path.read_bytes()",
           "role": "Binary read implementation"
         },
@@ -1997,7 +1997,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -2013,7 +2013,7 @@
                 ],
                 [
                   "Local file execution; read is the fall-through after write/list/delete/rename/copy/poll branches",
-                  "backend/app/runtime.py:998\nif activity.type == 'file':"
+                  "backend/app/runtime.py:1004\nif activity.type == 'file':"
                 ],
                 [
                   "Direct Python implementation; inspect operation write",
@@ -2172,7 +2172,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -2196,7 +2196,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 998,
+          "line": 1004,
           "symbol": "if activity.type == 'file':",
           "role": "Local file execution; read is the fall-through after write/list/delete/rename/copy/poll branches"
         },
@@ -2332,7 +2332,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -2348,7 +2348,7 @@
                 ],
                 [
                   "Local file execution; read is the fall-through after write/list/delete/rename/copy/poll branches",
-                  "backend/app/runtime.py:998\nif activity.type == 'file':"
+                  "backend/app/runtime.py:1004\nif activity.type == 'file':"
                 ],
                 [
                   "Direct Python implementation; inspect operation list",
@@ -2507,7 +2507,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -2531,7 +2531,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 998,
+          "line": 1004,
           "symbol": "if activity.type == 'file':",
           "role": "Local file execution; read is the fall-through after write/list/delete/rename/copy/poll branches"
         },
@@ -2667,7 +2667,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -2683,7 +2683,7 @@
                 ],
                 [
                   "Local file execution; read is the fall-through after write/list/delete/rename/copy/poll branches",
-                  "backend/app/runtime.py:998\nif activity.type == 'file':"
+                  "backend/app/runtime.py:1004\nif activity.type == 'file':"
                 ],
                 [
                   "Direct Python implementation; inspect operation delete",
@@ -2842,7 +2842,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -2866,7 +2866,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 998,
+          "line": 1004,
           "symbol": "if activity.type == 'file':",
           "role": "Local file execution; read is the fall-through after write/list/delete/rename/copy/poll branches"
         },
@@ -3002,7 +3002,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -3018,7 +3018,7 @@
                 ],
                 [
                   "Local file execution; read is the fall-through after write/list/delete/rename/copy/poll branches",
-                  "backend/app/runtime.py:998\nif activity.type == 'file':"
+                  "backend/app/runtime.py:1004\nif activity.type == 'file':"
                 ],
                 [
                   "Direct Python implementation; inspect operation rename",
@@ -3177,7 +3177,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -3201,7 +3201,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 998,
+          "line": 1004,
           "symbol": "if activity.type == 'file':",
           "role": "Local file execution; read is the fall-through after write/list/delete/rename/copy/poll branches"
         },
@@ -3337,7 +3337,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -3353,7 +3353,7 @@
                 ],
                 [
                   "Local file execution; read is the fall-through after write/list/delete/rename/copy/poll branches",
-                  "backend/app/runtime.py:998\nif activity.type == 'file':"
+                  "backend/app/runtime.py:1004\nif activity.type == 'file':"
                 ],
                 [
                   "Direct Python implementation; inspect operation copy",
@@ -3512,7 +3512,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -3536,7 +3536,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 998,
+          "line": 1004,
           "symbol": "if activity.type == 'file':",
           "role": "Local file execution; read is the fall-through after write/list/delete/rename/copy/poll branches"
         },
@@ -3672,7 +3672,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -3688,7 +3688,7 @@
                 ],
                 [
                   "Local file execution; read is the fall-through after write/list/delete/rename/copy/poll branches",
-                  "backend/app/runtime.py:998\nif activity.type == 'file':"
+                  "backend/app/runtime.py:1004\nif activity.type == 'file':"
                 ],
                 [
                   "Direct Python implementation; inspect operation poll",
@@ -3847,7 +3847,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -3871,7 +3871,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 998,
+          "line": 1004,
           "symbol": "if activity.type == 'file':",
           "role": "Local file execution; read is the fall-through after write/list/delete/rename/copy/poll branches"
         },
@@ -4007,7 +4007,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -4019,7 +4019,7 @@
                 ],
                 [
                   "FTP operations using the selected operation",
-                  "backend/app/runtime.py:1733\ndef ftp("
+                  "backend/app/runtime.py:1740\ndef ftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation get",
@@ -4178,7 +4178,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -4196,7 +4196,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1733,
+          "line": 1740,
           "symbol": "def ftp(",
           "role": "FTP operations using the selected operation"
         },
@@ -4332,7 +4332,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -4344,7 +4344,7 @@
                 ],
                 [
                   "FTP operations using the selected operation",
-                  "backend/app/runtime.py:1733\ndef ftp("
+                  "backend/app/runtime.py:1740\ndef ftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation put",
@@ -4503,7 +4503,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -4521,7 +4521,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1733,
+          "line": 1740,
           "symbol": "def ftp(",
           "role": "FTP operations using the selected operation"
         },
@@ -4657,7 +4657,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -4669,7 +4669,7 @@
                 ],
                 [
                   "FTP operations using the selected operation",
-                  "backend/app/runtime.py:1733\ndef ftp("
+                  "backend/app/runtime.py:1740\ndef ftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation delete",
@@ -4828,7 +4828,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -4846,7 +4846,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1733,
+          "line": 1740,
           "symbol": "def ftp(",
           "role": "FTP operations using the selected operation"
         },
@@ -4982,7 +4982,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -4994,7 +4994,7 @@
                 ],
                 [
                   "FTP operations using the selected operation",
-                  "backend/app/runtime.py:1733\ndef ftp("
+                  "backend/app/runtime.py:1740\ndef ftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation dir",
@@ -5153,7 +5153,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -5171,7 +5171,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1733,
+          "line": 1740,
           "symbol": "def ftp(",
           "role": "FTP operations using the selected operation"
         },
@@ -5307,7 +5307,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -5319,7 +5319,7 @@
                 ],
                 [
                   "FTP operations using the selected operation",
-                  "backend/app/runtime.py:1733\ndef ftp("
+                  "backend/app/runtime.py:1740\ndef ftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation change_dir",
@@ -5478,7 +5478,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -5496,7 +5496,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1733,
+          "line": 1740,
           "symbol": "def ftp(",
           "role": "FTP operations using the selected operation"
         },
@@ -5632,7 +5632,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -5644,7 +5644,7 @@
                 ],
                 [
                   "SFTP operations using the selected operation",
-                  "backend/app/runtime.py:1752\ndef sftp("
+                  "backend/app/runtime.py:1759\ndef sftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation get",
@@ -5803,7 +5803,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -5821,7 +5821,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1752,
+          "line": 1759,
           "symbol": "def sftp(",
           "role": "SFTP operations using the selected operation"
         },
@@ -5957,7 +5957,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -5969,7 +5969,7 @@
                 ],
                 [
                   "SFTP operations using the selected operation",
-                  "backend/app/runtime.py:1752\ndef sftp("
+                  "backend/app/runtime.py:1759\ndef sftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation put",
@@ -6128,7 +6128,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -6146,7 +6146,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1752,
+          "line": 1759,
           "symbol": "def sftp(",
           "role": "SFTP operations using the selected operation"
         },
@@ -6282,7 +6282,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -6294,7 +6294,7 @@
                 ],
                 [
                   "SFTP operations using the selected operation",
-                  "backend/app/runtime.py:1752\ndef sftp("
+                  "backend/app/runtime.py:1759\ndef sftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation delete",
@@ -6453,7 +6453,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -6471,7 +6471,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1752,
+          "line": 1759,
           "symbol": "def sftp(",
           "role": "SFTP operations using the selected operation"
         },
@@ -6607,7 +6607,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -6619,7 +6619,7 @@
                 ],
                 [
                   "SFTP operations using the selected operation",
-                  "backend/app/runtime.py:1752\ndef sftp("
+                  "backend/app/runtime.py:1759\ndef sftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation dir",
@@ -6778,7 +6778,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -6796,7 +6796,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1752,
+          "line": 1759,
           "symbol": "def sftp(",
           "role": "SFTP operations using the selected operation"
         },
@@ -6932,7 +6932,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -6944,7 +6944,7 @@
                 ],
                 [
                   "SFTP operations using the selected operation",
-                  "backend/app/runtime.py:1752\ndef sftp("
+                  "backend/app/runtime.py:1759\ndef sftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation change_dir",
@@ -7103,7 +7103,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -7121,7 +7121,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1752,
+          "line": 1759,
           "symbol": "def sftp(",
           "role": "SFTP operations using the selected operation"
         },
@@ -7257,7 +7257,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -7273,7 +7273,7 @@
                 ],
                 [
                   "Engine http_listener dispatch; operation listen",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Direct helper dispatch for http_listener; task graph may also be generated inline",
@@ -7440,7 +7440,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -7464,7 +7464,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Engine http_listener dispatch; operation listen"
         },
@@ -7612,7 +7612,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -7624,7 +7624,7 @@
                 ],
                 [
                   "HTTP client request",
-                  "backend/app/runtime.py:987\nif activity.type == 'http' or"
+                  "backend/app/runtime.py:993\nif activity.type == 'http' or"
                 ],
                 [
                   "Direct Python implementation; inspect operation request",
@@ -7783,7 +7783,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -7801,7 +7801,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 987,
+          "line": 993,
           "symbol": "if activity.type == 'http' or",
           "role": "HTTP client request"
         },
@@ -7937,7 +7937,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -7953,7 +7953,7 @@
                 ],
                 [
                   "Engine http_response dispatch; operation response",
-                  "backend/app/runtime.py:830\nif activity.type == 'http_response':"
+                  "backend/app/runtime.py:836\nif activity.type == 'http_response':"
                 ],
                 [
                   "Direct helper dispatch for http_response; task graph may also be generated inline",
@@ -8120,7 +8120,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -8144,7 +8144,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 830,
+          "line": 836,
           "symbol": "if activity.type == 'http_response':",
           "role": "Engine http_response dispatch; operation response"
         },
@@ -8292,7 +8292,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -8304,7 +8304,7 @@
                 ],
                 [
                   "REST outbound request; inbound path enters invoke_listener",
-                  "backend/app/runtime.py:987\nif activity.type == 'http' or"
+                  "backend/app/runtime.py:993\nif activity.type == 'http' or"
                 ],
                 [
                   "Direct Python implementation; inspect operation receiver",
@@ -8471,7 +8471,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -8489,7 +8489,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 987,
+          "line": 993,
           "symbol": "if activity.type == 'http' or",
           "role": "REST outbound request; inbound path enters invoke_listener"
         },
@@ -8637,7 +8637,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -8649,7 +8649,7 @@
                 ],
                 [
                   "REST outbound request; inbound path enters invoke_listener",
-                  "backend/app/runtime.py:987\nif activity.type == 'http' or"
+                  "backend/app/runtime.py:993\nif activity.type == 'http' or"
                 ],
                 [
                   "Direct Python implementation; inspect operation invoke",
@@ -8816,7 +8816,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -8834,7 +8834,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 987,
+          "line": 993,
           "symbol": "if activity.type == 'http' or",
           "role": "REST outbound request; inbound path enters invoke_listener"
         },
@@ -8982,7 +8982,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -8998,7 +8998,7 @@
                 ],
                 [
                   "SOAP outbound request; service path enters invoke_listener",
-                  "backend/app/runtime.py:991\nif activity.type == 'soap' and"
+                  "backend/app/runtime.py:997\nif activity.type == 'soap' and"
                 ],
                 [
                   "Direct Python implementation; inspect operation service",
@@ -9165,7 +9165,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -9189,7 +9189,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 991,
+          "line": 997,
           "symbol": "if activity.type == 'soap' and",
           "role": "SOAP outbound request; service path enters invoke_listener"
         },
@@ -9337,7 +9337,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -9353,7 +9353,7 @@
                 ],
                 [
                   "SOAP outbound request; service path enters invoke_listener",
-                  "backend/app/runtime.py:991\nif activity.type == 'soap' and"
+                  "backend/app/runtime.py:997\nif activity.type == 'soap' and"
                 ],
                 [
                   "Direct Python implementation; inspect operation request_reply",
@@ -9520,7 +9520,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -9544,7 +9544,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 991,
+          "line": 997,
           "symbol": "if activity.type == 'soap' and",
           "role": "SOAP outbound request; service path enters invoke_listener"
         },
@@ -9692,7 +9692,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -9704,7 +9704,7 @@
                 ],
                 [
                   "EMS operation routing and body/ack handling",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation queue_receiver",
@@ -9871,7 +9871,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -9889,7 +9889,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "EMS operation routing and body/ack handling"
         },
@@ -10037,7 +10037,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -10049,7 +10049,7 @@
                 ],
                 [
                   "EMS operation routing and body/ack handling",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation topic_subscriber",
@@ -10216,7 +10216,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -10234,7 +10234,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "EMS operation routing and body/ack handling"
         },
@@ -10382,7 +10382,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -10394,7 +10394,7 @@
                 ],
                 [
                   "EMS operation routing and body/ack handling",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation send",
@@ -10561,7 +10561,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -10579,7 +10579,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "EMS operation routing and body/ack handling"
         },
@@ -10727,7 +10727,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -10739,7 +10739,7 @@
                 ],
                 [
                   "EMS operation routing and body/ack handling",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation publish",
@@ -10906,7 +10906,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -10924,7 +10924,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "EMS operation routing and body/ack handling"
         },
@@ -11072,7 +11072,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -11084,7 +11084,7 @@
                 ],
                 [
                   "EMS operation routing and body/ack handling",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation request_reply",
@@ -11251,7 +11251,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -11269,7 +11269,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "EMS operation routing and body/ack handling"
         },
@@ -11417,7 +11417,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -11429,7 +11429,7 @@
                 ],
                 [
                   "EMS operation routing and body/ack handling",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation reply",
@@ -11596,7 +11596,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -11614,7 +11614,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "EMS operation routing and body/ack handling"
         },
@@ -11762,7 +11762,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -11774,7 +11774,7 @@
                 ],
                 [
                   "JMS operation routing and body/ack handling",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation get_queue_message",
@@ -11941,7 +11941,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -11959,7 +11959,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "JMS operation routing and body/ack handling"
         },
@@ -12107,7 +12107,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -12119,7 +12119,7 @@
                 ],
                 [
                   "JMS operation routing and body/ack handling",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation receive_message",
@@ -12286,7 +12286,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -12304,7 +12304,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "JMS operation routing and body/ack handling"
         },
@@ -12452,7 +12452,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -12464,7 +12464,7 @@
                 ],
                 [
                   "JMS operation routing and body/ack handling",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation request_reply",
@@ -12631,7 +12631,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -12649,7 +12649,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "JMS operation routing and body/ack handling"
         },
@@ -12797,7 +12797,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -12809,7 +12809,7 @@
                 ],
                 [
                   "JMS operation routing and body/ack handling",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation send_message",
@@ -12976,7 +12976,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -12994,7 +12994,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "JMS operation routing and body/ack handling"
         },
@@ -13142,7 +13142,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -13154,7 +13154,7 @@
                 ],
                 [
                   "JMS operation routing and body/ack handling",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation reply_message",
@@ -13321,7 +13321,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -13339,7 +13339,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "JMS operation routing and body/ack handling"
         },
@@ -13487,7 +13487,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -13499,7 +13499,7 @@
                 ],
                 [
                   "JMS operation routing and body/ack handling",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation wait_request",
@@ -13666,7 +13666,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -13684,7 +13684,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "JMS operation routing and body/ack handling"
         },
@@ -13832,7 +13832,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -13848,7 +13848,7 @@
                 ],
                 [
                   "Kafka producer/consumer operation dispatch",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation receive",
@@ -14007,7 +14007,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -14031,7 +14031,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "Kafka producer/consumer operation dispatch"
         },
@@ -14167,7 +14167,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -14183,7 +14183,7 @@
                 ],
                 [
                   "Kafka producer/consumer operation dispatch",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation send",
@@ -14342,7 +14342,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -14366,7 +14366,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "Kafka producer/consumer operation dispatch"
         },
@@ -14502,7 +14502,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -14518,7 +14518,7 @@
                 ],
                 [
                   "Kafka producer/consumer operation dispatch",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation get",
@@ -14677,7 +14677,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -14701,7 +14701,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "Kafka producer/consumer operation dispatch"
         },
@@ -14837,7 +14837,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -14853,7 +14853,7 @@
                 ],
                 [
                   "Pub/Sub publish/receive dispatch",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation subscribe",
@@ -15016,7 +15016,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -15040,7 +15040,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "Pub/Sub publish/receive dispatch"
         },
@@ -15182,7 +15182,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -15198,7 +15198,7 @@
                 ],
                 [
                   "Pub/Sub publish/receive dispatch",
-                  "backend/app/runtime.py:1149\nasync def messaging("
+                  "backend/app/runtime.py:1155\nasync def messaging("
                 ],
                 [
                   "Direct Python implementation; inspect operation publish",
@@ -15361,7 +15361,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -15385,7 +15385,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1149,
+          "line": 1155,
           "symbol": "async def messaging(",
           "role": "Pub/Sub publish/receive dispatch"
         },
@@ -15527,7 +15527,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -15710,7 +15710,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -15882,7 +15882,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -16065,7 +16065,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -16237,7 +16237,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -16420,7 +16420,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -16592,7 +16592,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -16775,7 +16775,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -16947,7 +16947,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -17138,7 +17138,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -17322,7 +17322,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -17505,7 +17505,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -17677,7 +17677,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -17860,7 +17860,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -18032,7 +18032,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -18215,7 +18215,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -18387,7 +18387,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -18570,7 +18570,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -18742,7 +18742,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -18933,7 +18933,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -19117,7 +19117,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -19300,7 +19300,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -19472,7 +19472,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -19655,7 +19655,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -19827,7 +19827,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -20010,7 +20010,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -20182,7 +20182,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -20357,7 +20357,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -20517,7 +20517,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -20692,7 +20692,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -20852,7 +20852,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -21027,7 +21027,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -21187,7 +21187,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -21362,7 +21362,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -21522,7 +21522,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -21697,7 +21697,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -21857,7 +21857,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -22032,7 +22032,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -22192,7 +22192,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -22367,7 +22367,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -22527,7 +22527,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -22702,7 +22702,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -22862,7 +22862,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -23037,7 +23037,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -23197,7 +23197,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -23372,7 +23372,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -23532,7 +23532,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -23707,7 +23707,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -23867,7 +23867,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -24042,7 +24042,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -24202,7 +24202,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -24381,7 +24381,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -24547,7 +24547,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -24726,7 +24726,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -24892,7 +24892,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -25067,7 +25067,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -25227,7 +25227,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -25406,7 +25406,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -25572,7 +25572,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -25584,7 +25584,7 @@
                 ],
                 [
                   "XML parse; render_xml_activity handles render",
-                  "backend/app/runtime.py:1827\ndef parse_xml_activity("
+                  "backend/app/runtime.py:1834\ndef parse_xml_activity("
                 ],
                 [
                   "Direct Python implementation; inspect operation parse",
@@ -25743,7 +25743,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -25761,7 +25761,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1827,
+          "line": 1834,
           "symbol": "def parse_xml_activity(",
           "role": "XML parse; render_xml_activity handles render"
         },
@@ -25897,7 +25897,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -25909,7 +25909,7 @@
                 ],
                 [
                   "XML parse; render_xml_activity handles render",
-                  "backend/app/runtime.py:1827\ndef parse_xml_activity("
+                  "backend/app/runtime.py:1834\ndef parse_xml_activity("
                 ],
                 [
                   "Direct Python implementation; inspect operation render",
@@ -25917,7 +25917,7 @@
                 ],
                 [
                   "XML render implementation",
-                  "backend/app/runtime.py:1843\ndef render_xml_activity("
+                  "backend/app/runtime.py:1850\ndef render_xml_activity("
                 ],
                 [
                   "Direct graph/code generation",
@@ -26072,7 +26072,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -26090,7 +26090,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1827,
+          "line": 1834,
           "symbol": "def parse_xml_activity(",
           "role": "XML parse; render_xml_activity handles render"
         },
@@ -26102,7 +26102,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1843,
+          "line": 1850,
           "symbol": "def render_xml_activity(",
           "role": "XML render implementation"
         },
@@ -26232,7 +26232,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -26244,7 +26244,7 @@
                 ],
                 [
                   "JSON parse/render and validation",
-                  "backend/app/runtime.py:1915\ndef json_activity("
+                  "backend/app/runtime.py:1922\ndef json_activity("
                 ],
                 [
                   "Direct Python implementation; inspect operation parse",
@@ -26403,7 +26403,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -26421,7 +26421,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1915,
+          "line": 1922,
           "symbol": "def json_activity(",
           "role": "JSON parse/render and validation"
         },
@@ -26557,7 +26557,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -26569,7 +26569,7 @@
                 ],
                 [
                   "JSON parse/render and validation",
-                  "backend/app/runtime.py:1915\ndef json_activity("
+                  "backend/app/runtime.py:1922\ndef json_activity("
                 ],
                 [
                   "Direct Python implementation; inspect operation render",
@@ -26728,7 +26728,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -26746,7 +26746,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1915,
+          "line": 1922,
           "symbol": "def json_activity(",
           "role": "JSON parse/render and validation"
         },
@@ -26882,7 +26882,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -26894,7 +26894,7 @@
                 ],
                 [
                   "Flat record parse/render",
-                  "backend/app/runtime.py:1958\ndef flat_data("
+                  "backend/app/runtime.py:1965\ndef flat_data("
                 ],
                 [
                   "Direct Python implementation; inspect operation parse",
@@ -27053,7 +27053,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -27071,7 +27071,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1958,
+          "line": 1965,
           "symbol": "def flat_data(",
           "role": "Flat record parse/render"
         },
@@ -27207,7 +27207,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -27219,7 +27219,7 @@
                 ],
                 [
                   "Flat record parse/render",
-                  "backend/app/runtime.py:1958\ndef flat_data("
+                  "backend/app/runtime.py:1965\ndef flat_data("
                 ],
                 [
                   "Direct Python implementation; inspect operation render",
@@ -27378,7 +27378,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -27396,7 +27396,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1958,
+          "line": 1965,
           "symbol": "def flat_data(",
           "role": "Flat record parse/render"
         },
@@ -27532,7 +27532,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -27548,7 +27548,7 @@
                 ],
                 [
                   "Workbook reading",
-                  "backend/app/runtime.py:1680\ndef read_excel("
+                  "backend/app/runtime.py:1687\ndef read_excel("
                 ],
                 [
                   "Direct Python implementation; inspect operation read",
@@ -27707,7 +27707,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -27731,7 +27731,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1680,
+          "line": 1687,
           "symbol": "def read_excel(",
           "role": "Workbook reading"
         },
@@ -27867,7 +27867,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -28038,7 +28038,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -28192,7 +28192,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -28367,7 +28367,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -28527,7 +28527,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -28543,7 +28543,7 @@
                 ],
                 [
                   "Engine log dispatch; operation write",
-                  "backend/app/runtime.py:833\nif activity.type == 'log':"
+                  "backend/app/runtime.py:839\nif activity.type == 'log':"
                 ],
                 [
                   "Direct helper dispatch for log; task graph may also be generated inline",
@@ -28702,7 +28702,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -28726,7 +28726,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 833,
+          "line": 839,
           "symbol": "if activity.type == 'log':",
           "role": "Engine log dispatch; operation write"
         },
@@ -28862,7 +28862,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -28878,7 +28878,7 @@
                 ],
                 [
                   "Engine catch dispatch; operation catch",
-                  "backend/app/runtime.py:815\nif activity.type == 'catch':"
+                  "backend/app/runtime.py:821\nif activity.type == 'catch':"
                 ],
                 [
                   "Direct helper dispatch for catch; task graph may also be generated inline",
@@ -29037,7 +29037,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -29061,7 +29061,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 815,
+          "line": 821,
           "symbol": "if activity.type == 'catch':",
           "role": "Engine catch dispatch; operation catch"
         },
@@ -29197,7 +29197,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -29213,7 +29213,7 @@
                 ],
                 [
                   "Engine throw dispatch; operation throw",
-                  "backend/app/runtime.py:816\nif activity.type == 'throw':"
+                  "backend/app/runtime.py:822\nif activity.type == 'throw':"
                 ],
                 [
                   "Direct helper dispatch for throw; task graph may also be generated inline",
@@ -29372,7 +29372,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -29396,7 +29396,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 816,
+          "line": 822,
           "symbol": "if activity.type == 'throw':",
           "role": "Engine throw dispatch; operation throw"
         },
@@ -29532,7 +29532,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -29548,7 +29548,7 @@
                 ],
                 [
                   "Engine rethrow dispatch; operation rethrow",
-                  "backend/app/runtime.py:824\nif activity.type == 'rethrow':"
+                  "backend/app/runtime.py:830\nif activity.type == 'rethrow':"
                 ],
                 [
                   "Direct helper dispatch for rethrow; task graph may also be generated inline",
@@ -29707,7 +29707,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -29731,7 +29731,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 824,
+          "line": 830,
           "symbol": "if activity.type == 'rethrow':",
           "role": "Engine rethrow dispatch; operation rethrow"
         },
@@ -29867,7 +29867,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -29883,7 +29883,7 @@
                 ],
                 [
                   "Engine confirm dispatch; operation acknowledge",
-                  "backend/app/runtime.py:866\nif activity.type == 'confirm':"
+                  "backend/app/runtime.py:872\nif activity.type == 'confirm':"
                 ],
                 [
                   "Direct helper dispatch for confirm; task graph may also be generated inline",
@@ -30042,7 +30042,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -30066,7 +30066,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 866,
+          "line": 872,
           "symbol": "if activity.type == 'confirm':",
           "role": "Engine confirm dispatch; operation acknowledge"
         },
@@ -30202,7 +30202,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -30218,7 +30218,7 @@
                 ],
                 [
                   "Java invocation worker",
-                  "backend/app/runtime.py:2063\nasync def java_worker("
+                  "backend/app/runtime.py:2070\nasync def java_worker("
                 ],
                 [
                   "Direct Python implementation; inspect operation invoke",
@@ -30385,7 +30385,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -30409,7 +30409,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 2063,
+          "line": 2070,
           "symbol": "async def java_worker(",
           "role": "Java invocation worker"
         },
@@ -30557,7 +30557,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -30573,7 +30573,7 @@
                 ],
                 [
                   "Python invocation worker",
-                  "backend/app/runtime.py:2118\nasync def python_worker("
+                  "backend/app/runtime.py:2125\nasync def python_worker("
                 ],
                 [
                   "Direct Python implementation; inspect operation invoke",
@@ -30732,7 +30732,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -30756,7 +30756,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 2118,
+          "line": 2125,
           "symbol": "async def python_worker(",
           "role": "Python invocation worker"
         },
@@ -30892,7 +30892,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -30908,7 +30908,7 @@
                 ],
                 [
                   "Engine basic dispatch; operation external_command",
-                  "backend/app/runtime.py:747\nif activity.type == 'basic':"
+                  "backend/app/runtime.py:753\nif activity.type == 'basic':"
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
@@ -31067,7 +31067,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -31091,7 +31091,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 747,
+          "line": 753,
           "symbol": "if activity.type == 'basic':",
           "role": "Engine basic dispatch; operation external_command"
         },
@@ -31227,7 +31227,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -31243,7 +31243,7 @@
                 ],
                 [
                   "Engine basic dispatch; operation assign",
-                  "backend/app/runtime.py:747\nif activity.type == 'basic':"
+                  "backend/app/runtime.py:753\nif activity.type == 'basic':"
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
@@ -31402,7 +31402,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -31426,7 +31426,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 747,
+          "line": 753,
           "symbol": "if activity.type == 'basic':",
           "role": "Engine basic dispatch; operation assign"
         },
@@ -31562,7 +31562,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -31578,7 +31578,7 @@
                 ],
                 [
                   "Engine basic dispatch; operation checkpoint",
-                  "backend/app/runtime.py:747\nif activity.type == 'basic':"
+                  "backend/app/runtime.py:753\nif activity.type == 'basic':"
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
@@ -31737,7 +31737,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -31761,7 +31761,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 747,
+          "line": 753,
           "symbol": "if activity.type == 'basic':",
           "role": "Engine basic dispatch; operation checkpoint"
         },
@@ -31897,7 +31897,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -31913,7 +31913,7 @@
                 ],
                 [
                   "Engine basic dispatch; operation deduplicate",
-                  "backend/app/runtime.py:747\nif activity.type == 'basic':"
+                  "backend/app/runtime.py:753\nif activity.type == 'basic':"
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
@@ -32072,7 +32072,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -32096,7 +32096,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 747,
+          "line": 753,
           "symbol": "if activity.type == 'basic':",
           "role": "Engine basic dispatch; operation deduplicate"
         },
@@ -32232,7 +32232,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -32248,7 +32248,7 @@
                 ],
                 [
                   "Engine basic dispatch; operation message_receipt",
-                  "backend/app/runtime.py:747\nif activity.type == 'basic':"
+                  "backend/app/runtime.py:753\nif activity.type == 'basic':"
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
@@ -32407,7 +32407,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -32431,7 +32431,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 747,
+          "line": 753,
           "symbol": "if activity.type == 'basic':",
           "role": "Engine basic dispatch; operation message_receipt"
         },
@@ -32567,7 +32567,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -32583,7 +32583,7 @@
                 ],
                 [
                   "Engine basic dispatch; operation replay_messages",
-                  "backend/app/runtime.py:747\nif activity.type == 'basic':"
+                  "backend/app/runtime.py:753\nif activity.type == 'basic':"
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
@@ -32742,7 +32742,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -32766,7 +32766,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 747,
+          "line": 753,
           "symbol": "if activity.type == 'basic':",
           "role": "Engine basic dispatch; operation replay_messages"
         },
@@ -32902,7 +32902,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -32918,7 +32918,7 @@
                 ],
                 [
                   "Engine basic dispatch; operation aggregate_messages",
-                  "backend/app/runtime.py:747\nif activity.type == 'basic':"
+                  "backend/app/runtime.py:753\nif activity.type == 'basic':"
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
@@ -33077,7 +33077,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -33101,7 +33101,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 747,
+          "line": 753,
           "symbol": "if activity.type == 'basic':",
           "role": "Engine basic dispatch; operation aggregate_messages"
         },
@@ -33237,7 +33237,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -33253,7 +33253,7 @@
                 ],
                 [
                   "Engine basic dispatch; operation split_records",
-                  "backend/app/runtime.py:747\nif activity.type == 'basic':"
+                  "backend/app/runtime.py:753\nif activity.type == 'basic':"
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
@@ -33412,7 +33412,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -33436,7 +33436,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 747,
+          "line": 753,
           "symbol": "if activity.type == 'basic':",
           "role": "Engine basic dispatch; operation split_records"
         },
@@ -33572,7 +33572,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -33588,7 +33588,7 @@
                 ],
                 [
                   "Engine basic dispatch; operation sleep",
-                  "backend/app/runtime.py:747\nif activity.type == 'basic':"
+                  "backend/app/runtime.py:753\nif activity.type == 'basic':"
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
@@ -33747,7 +33747,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -33771,7 +33771,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 747,
+          "line": 753,
           "symbol": "if activity.type == 'basic':",
           "role": "Engine basic dispatch; operation sleep"
         },
@@ -33907,7 +33907,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -33923,7 +33923,7 @@
                 ],
                 [
                   "Engine basic dispatch; operation get_shared_variable",
-                  "backend/app/runtime.py:747\nif activity.type == 'basic':"
+                  "backend/app/runtime.py:753\nif activity.type == 'basic':"
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
@@ -34082,7 +34082,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -34106,7 +34106,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 747,
+          "line": 753,
           "symbol": "if activity.type == 'basic':",
           "role": "Engine basic dispatch; operation get_shared_variable"
         },
@@ -34242,7 +34242,7 @@
                 ],
                 [
                   "Activity dispatch",
-                  "backend/app/runtime.py:709\nasync def execute(self,"
+                  "backend/app/runtime.py:715\nasync def execute(self,"
                 ],
                 [
                   "Publish outputs and captured inputs",
@@ -34258,7 +34258,7 @@
                 ],
                 [
                   "Engine basic dispatch; operation set_shared_variable",
-                  "backend/app/runtime.py:747\nif activity.type == 'basic':"
+                  "backend/app/runtime.py:753\nif activity.type == 'basic':"
                 ],
                 [
                   "Direct helper dispatch for basic; task graph may also be generated inline",
@@ -34417,7 +34417,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 709,
+          "line": 715,
           "symbol": "async def execute(self,",
           "role": "Activity dispatch"
         },
@@ -34441,7 +34441,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 747,
+          "line": 753,
           "symbol": "if activity.type == 'basic':",
           "role": "Engine basic dispatch; operation set_shared_variable"
         },
@@ -34537,7 +34537,7 @@
                 ],
                 [
                   "Nested execution",
-                  "backend/app/runtime.py:1122\nif activity.type == 'call_task':"
+                  "backend/app/runtime.py:1128\nif activity.type == 'call_task':"
                 ],
                 [
                   "Regression suite: tasks_runtime",
@@ -34601,7 +34601,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1122,
+          "line": 1128,
           "symbol": "if activity.type == 'call_task':",
           "role": "Nested execution"
         },
@@ -35021,15 +35021,15 @@
                 ],
                 [
                   "Input mapping evaluation",
-                  "backend/app/runtime.py:1474\ndef map_input_values("
+                  "backend/app/runtime.py:1481\ndef map_input_values("
                 ],
                 [
                   "Structured rule evaluation",
-                  "backend/app/runtime.py:1526\ndef evaluate_mapping("
+                  "backend/app/runtime.py:1533\ndef evaluate_mapping("
                 ],
                 [
                   "Reference/expression resolution",
-                  "backend/app/runtime.py:1598\ndef resolve(self,"
+                  "backend/app/runtime.py:1605\ndef resolve(self,"
                 ],
                 [
                   "Transformation mapping",
@@ -35111,19 +35111,19 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1474,
+          "line": 1481,
           "symbol": "def map_input_values(",
           "role": "Input mapping evaluation"
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1526,
+          "line": 1533,
           "symbol": "def evaluate_mapping(",
           "role": "Structured rule evaluation"
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1598,
+          "line": 1605,
           "symbol": "def resolve(self,",
           "role": "Reference/expression resolution"
         },
@@ -35195,7 +35195,7 @@
                 ],
                 [
                   "Function expression evaluation",
-                  "backend/app/runtime.py:1573\ndef evaluate_function_expression("
+                  "backend/app/runtime.py:1580\ndef evaluate_function_expression("
                 ],
                 [
                   "Persisted custom functions",
@@ -35253,7 +35253,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1573,
+          "line": 1580,
           "symbol": "def evaluate_function_expression(",
           "role": "Function expression evaluation"
         },
@@ -37467,7 +37467,7 @@
                 ],
                 [
                   "Log activity body",
-                  "backend/app/runtime.py:833\nif activity.type == 'log':"
+                  "backend/app/runtime.py:839\nif activity.type == 'log':"
                 ],
                 [
                   "Fault envelope",
@@ -37517,7 +37517,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 833,
+          "line": 839,
           "symbol": "if activity.type == 'log':",
           "role": "Log activity body"
         },
@@ -37578,7 +37578,7 @@
                 ],
                 [
                   "Expression call parsing",
-                  "backend/app/runtime.py:1573\ndef evaluate_function_expression("
+                  "backend/app/runtime.py:1580\ndef evaluate_function_expression("
                 ],
                 [
                   "Signatures/templates",

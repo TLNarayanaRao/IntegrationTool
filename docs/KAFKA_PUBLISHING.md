@@ -1,5 +1,12 @@
 # Kafka publishing performance
 
+An explicit Input mapping replaces the selected message field, including an
+object-valued `${last}` default. It does not merge earlier EMS, Pub/Sub, or Kafka
+publish receipts into that message. Map a parser's document branch (for example
+`${IDoc-Parser.SAPIDoc.ARTMAS05}`) to send only the IDOC. Kafka's String serializer
+encodes mapped objects and arrays as JSON text; existing strings and bytes retain
+their content. The JSON serializer also encodes objects as JSON.
+
 Studio and engine-backed exports reuse Kafka producers and run publishing on a dedicated four-thread executor. Long-running receivers, SAP/JCo calls, and other default-executor work therefore do not hold up Kafka enqueue operations. Producer cleanup closes this executor with the runtime. Direct Python exports reuse an asynchronous producer per connection/configuration and event loop.
 
 Publish output includes `publishLatencyMs` plus:

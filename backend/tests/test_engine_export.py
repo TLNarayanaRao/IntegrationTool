@@ -92,7 +92,16 @@ class EngineExportTests(unittest.TestCase):
                 '{"idocType":"ARTMAS05", "idocOutputMode":"JSON"}, '
                 '"<ARTMAS05><IDOC><EDI_DC40><DOCNUM>123456789</DOCNUM></EDI_DC40></IDOC></ARTMAS05>"); '
                 'assert json.dumps(copy.deepcopy(value)).count("123456789") == 1; '
-                'assert value["SAPIDoc"]["IDOC"] == value["SAPIDoc"]["ARTMAS05"]["IDOC"]'],
+                'assert value["SAPIDoc"]["IDOC"] == value["SAPIDoc"]["ARTMAS05"]["IDOC"]; '
+                'from application.engine.runtime import WorkflowRuntime; '
+                'from application.engine.models import Activity; '
+                'runtime = WorkflowRuntime(); '
+                'ctx = {"last":{"destination":"EMS_QUEUE", "published":True}, "input":{}, '
+                '"properties":{}, "vars":{}, "context":{}}; '
+                'runtime.record_activity_output(Activity(id="Parser", name="Parser", type="sap"), value, ctx); '
+                'activity = Activity(id="send", name="Kafka", type="kafka", config={"message":"${last}", '
+                '"inputMappings":{"message":"${Parser.SAPIDoc.ARTMAS05}"}}); '
+                'assert runtime.resolve_activity_config(activity, ctx)["message"] == value["SAPIDoc"]["ARTMAS05"]'],
                 cwd=directory, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 

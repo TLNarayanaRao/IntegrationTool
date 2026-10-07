@@ -1,11 +1,11 @@
 {
-  "fingerprint": "43249ecc9a174649e03e4f0fc791361efa53b63c2d8c0a64a15a1390e86cbb0d",
+  "fingerprint": "e51e073277c51cf88803c7d9f96784df9b88da2d2e9c5f2512763dffccb4f394",
   "files": {
-    "documentation-data.json": "7dafb511220cf98b2948db6015c790105ae96796f5d497f88f3d79931ffc46b5",
-    "documentation-data.js": "36d805838059c176d810cc45bd5f9abf549fa67128a9a18fd86ec40b68a2eef1",
-    "MINA-Documentation.pdf": "2d54490303edabee8f3afe3a672a0d3e9a2bd31110c3095a28b0125d340be3a6",
-    "developer-data.json": "e248a9cc278c075b6930eb5f37168611a64e92e33527e4dfe8bb5716b4b47f68",
-    "MINA-Developer-Guide.pdf": "de92576882329d539b9b9efff771a02ae620fd297bf94b6a78f24a6d868a54b8"
+    "documentation-data.json": "4d524d21859d41c402e24abd0efe8a9b589f74deb5bae3f296493148557cf707",
+    "documentation-data.js": "62aa1c5d317a1d99a54fcef520615a3ee324e6dd5c8bf79bdae16d78b72f4871",
+    "MINA-Documentation.pdf": "8b2c26df28bf6445fa5011699a8e3eecdf756589276a11353149d57c282d2578",
+    "developer-data.json": "a3751160d13d551a2484ec45daf54bc5c98d4d0974f571cfbdcc4011eb7a7039",
+    "MINA-Developer-Guide.pdf": "f8cdc7d53d2a07f0f189914dd2a3c0e7b2c3784c6172d1a8c4f4ca27b0f2cf16"
   },
   "counts": {
     "activities": 101,

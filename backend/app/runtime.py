@@ -689,9 +689,15 @@ class WorkflowRuntime:
         execution_scope = str(ctx.get('context', {}).get('executionId') or ctx.get('context', {}).get('debugSessionId') or '')
         if execution_scope: cfg['_executionScope'] = execution_scope
         mapped_input = self.map_input_values(activity.config.get('inputMappings', {}), ctx)
-        def merge_input(target, values):
+        mapped_paths = set(activity.config.get('inputMappings', {}))
+        def merge_input(target, values, parent=''):
             for key, value in values.items():
-                if isinstance(value, dict) and isinstance(target.get(key), dict): merge_input(target[key], value)
+                path = f'{parent}.{key}' if parent else key
+                # A mapped object replaces that field, including a ${last}
+                # default. Only intermediate tree nodes preserve unmapped defaults.
+                if path not in mapped_paths and isinstance(value, dict) and isinstance(target.get(key), dict):
+                    target[key] = dict(target[key])
+                    merge_input(target[key], value, path)
                 else: target[key] = copy.deepcopy(value)
         merge_input(cfg, mapped_input)
         if activity.type in ('start', 'end', 'json'): cfg['_mappedInput'] = mapped_input
@@ -1175,6 +1181,7 @@ class WorkflowRuntime:
                 except (ValueError, TypeError): return str(value).encode()
             if kind == 'avro schema':
                 raise MinaFault('Avro Schema serialization requires the configured Schema Registry runtime', fault_type='KafkaSchemaRegistryException')
+            if isinstance(value, (dict, list)): return json.dumps(value, separators=(',', ':')).encode()
             return value if isinstance(value, bytes) else str(value).encode()
         def kafka_value(raw, deserializer: str):
             if raw is None: return None
@@ -1515,7 +1522,7 @@ class WorkflowRuntime:
                     self.assign_path(result, path, [evaluate(children, scope_context(context, source, group[0], group)) for group in groups])
                 else:
                     include, value = self.evaluate_mapping(expression, context)
-                    if include: self.assign_path(result, path, value)
+                    if include: self.assign_path(result, path, copy.deepcopy(value))
             return result
         return evaluate(mappings, ctx)
 
