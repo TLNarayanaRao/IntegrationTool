@@ -7,7 +7,7 @@ from xml.sax.saxutils import escape
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_LEFT
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, LongTable, TableStyle, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, LongTable, TableStyle, PageBreak, Image, Table
 from reportlab.platypus.tableofcontents import TableOfContents
 
 
@@ -33,10 +33,11 @@ def build(source, destination):
     styles['Heading3'].leading = 14
     class Manual(SimpleDocTemplate):
         def afterFlowable(self, flowable):
-            if isinstance(flowable, Paragraph) and hasattr(flowable, 'topic_key'):
+            if hasattr(flowable, 'topic_key'):
+                title = flowable.topic_title if hasattr(flowable, 'topic_title') else flowable.getPlainText()
                 self.canv.bookmarkPage(flowable.topic_key)
-                self.canv.addOutlineEntry(flowable.getPlainText(), flowable.topic_key, level=0, closed=False)
-                self.notify('TOCEntry', (0, flowable.getPlainText(), self.page, flowable.topic_key))
+                self.canv.addOutlineEntry(title, flowable.topic_key, level=0, closed=False)
+                self.notify('TOCEntry', (0, title, self.page, flowable.topic_key))
     def footer(canvas, doc):
         canvas.saveState()
         canvas.setFont('Helvetica', 8)
@@ -54,6 +55,14 @@ def build(source, destination):
     story.extend([toc,PageBreak()])
     for page in model['pages']:
         heading=Paragraph(text(page['title']),styles['Heading1']);heading.topic_key=page['id']
+        if page.get('iconPdf'):
+            icon_path = (Path(source).parent / page['iconPdf']).resolve()
+            if not icon_path.is_relative_to(Path(source).parent.resolve()) or not icon_path.is_file():
+                raise RuntimeError(f"Invalid activity icon: {page['id']}")
+            icon = Image(str(icon_path), width=48, height=48, kind='proportional')
+            heading = Table([[icon, heading]], colWidths=[64,447], hAlign='LEFT')
+            heading.setStyle(TableStyle([('BACKGROUND',(0,0),(0,0),colors.HexColor('#102030')),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(0,0),8),('RIGHTPADDING',(0,0),(0,0),8),('TOPPADDING',(0,0),(0,0),8),('BOTTOMPADDING',(0,0),(0,0),8)]))
+            heading.topic_key=page['id']; heading.topic_title=page['title']
         story.extend([heading,Paragraph(text(page['category']),styles['Body'])])
         for section in page['sections']:
             story.append(Paragraph(text(section['title']),styles['Heading2']))

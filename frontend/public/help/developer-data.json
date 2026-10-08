@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "52f16722987a1d88b37a4782050646b0abf337368c47f35f09006aa72007a386",
+  "fingerprint": "13ef5b73935ce8c62ee66c23a00bc926f175068634229890487ecf2009fabaed",
   "counts": {
     "activities": 101,
     "groups": 11,
@@ -521,7 +521,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/f3a93a6e7102-start-play.png",
+      "iconPdf": "activity-icons/f3a93a6e7102-start-play.png"
     },
     {
       "id": "developer-activity-timer-schedule",
@@ -856,7 +858,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/8ef29f8110cc-scheduler.svg",
+      "iconPdf": "activity-icons/8ef29f8110cc-scheduler.svg.png"
     },
     {
       "id": "developer-activity-call-task-call",
@@ -1201,7 +1205,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/0f9062e9afe0-call-task.png",
+      "iconPdf": "activity-icons/0f9062e9afe0-call-task.png"
     },
     {
       "id": "developer-activity-end-end",
@@ -1546,7 +1552,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/c2cedd668577-end-stop.svg",
+      "iconPdf": "activity-icons/c2cedd668577-end-stop.svg.png"
     },
     {
       "id": "developer-activity-file-read",
@@ -1901,7 +1909,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/2ee850c74902-FileRead.png",
+      "iconPdf": "activity-icons/2ee850c74902-FileRead.png"
     },
     {
       "id": "developer-activity-file-write",
@@ -2236,7 +2246,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/886fedba409f-FileWrite.png",
+      "iconPdf": "activity-icons/886fedba409f-FileWrite.png"
     },
     {
       "id": "developer-activity-file-list",
@@ -2571,7 +2583,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/4adcb4fde710-file-list.png",
+      "iconPdf": "activity-icons/4adcb4fde710-file-list.png"
     },
     {
       "id": "developer-activity-file-delete",
@@ -2906,7 +2920,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/99237c6077b3-file-delete.png",
+      "iconPdf": "activity-icons/99237c6077b3-file-delete.png"
     },
     {
       "id": "developer-activity-file-rename",
@@ -3241,7 +3257,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/ecae57d2708e-file-rename.png",
+      "iconPdf": "activity-icons/ecae57d2708e-file-rename.png"
     },
     {
       "id": "developer-activity-file-copy",
@@ -3576,7 +3594,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/ea1c45757022-file-copy.png",
+      "iconPdf": "activity-icons/ea1c45757022-file-copy.png"
     },
     {
       "id": "developer-activity-file-poll",
@@ -3911,7 +3931,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/a7ca825425f2-file-poller.png",
+      "iconPdf": "activity-icons/a7ca825425f2-file-poller.png"
     },
     {
       "id": "developer-activity-ftp-get",
@@ -4236,7 +4258,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/a9ea314ee5b5-ftp-get.png",
+      "iconPdf": "activity-icons/a9ea314ee5b5-ftp-get.png"
     },
     {
       "id": "developer-activity-ftp-put",
@@ -4561,7 +4585,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/a48196a899e4-ftp-put.png",
+      "iconPdf": "activity-icons/a48196a899e4-ftp-put.png"
     },
     {
       "id": "developer-activity-ftp-delete",
@@ -4886,7 +4912,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/a2e76b7077c2-ftp-delete.png",
+      "iconPdf": "activity-icons/a2e76b7077c2-ftp-delete.png"
     },
     {
       "id": "developer-activity-ftp-dir",
@@ -5211,7 +5239,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/2b86613d4da3-ftp-dir.png",
+      "iconPdf": "activity-icons/2b86613d4da3-ftp-dir.png"
     },
     {
       "id": "developer-activity-ftp-change-dir",
@@ -5536,7 +5566,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/ea5fcaca2917-ftp-change-dir.png",
+      "iconPdf": "activity-icons/ea5fcaca2917-ftp-change-dir.png"
     },
     {
       "id": "developer-activity-sftp-get",
@@ -5861,7 +5893,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/bcfdb689e16e-sftp-get.png",
+      "iconPdf": "activity-icons/bcfdb689e16e-sftp-get.png"
     },
     {
       "id": "developer-activity-sftp-put",
@@ -6186,7 +6220,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/9545b8e0ac29-sftp-put.png",
+      "iconPdf": "activity-icons/9545b8e0ac29-sftp-put.png"
     },
     {
       "id": "developer-activity-sftp-delete",
@@ -6511,7 +6547,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/5c5f6546221b-sftp-delete.png",
+      "iconPdf": "activity-icons/5c5f6546221b-sftp-delete.png"
     },
     {
       "id": "developer-activity-sftp-dir",
@@ -6836,7 +6874,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/169e9d77cc94-sftp-dir.png",
+      "iconPdf": "activity-icons/169e9d77cc94-sftp-dir.png"
     },
     {
       "id": "developer-activity-sftp-change-dir",
@@ -7161,7 +7201,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/060499d5cb4d-sftp-change-dir.png",
+      "iconPdf": "activity-icons/060499d5cb4d-sftp-change-dir.png"
     },
     {
       "id": "developer-activity-http-listener-listen",
@@ -7516,7 +7558,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/583d4db0ebe9-http-listener.svg",
+      "iconPdf": "activity-icons/583d4db0ebe9-http-listener.svg.png"
     },
     {
       "id": "developer-activity-http-request",
@@ -7841,7 +7885,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/4d31f0a7211e-http-request.svg",
+      "iconPdf": "activity-icons/4d31f0a7211e-http-request.svg.png"
     },
     {
       "id": "developer-activity-http-response-response",
@@ -8196,7 +8242,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/a9b8b66939dd-http-response.svg",
+      "iconPdf": "activity-icons/a9b8b66939dd-http-response.svg.png"
     },
     {
       "id": "developer-activity-rest-receiver",
@@ -8541,7 +8589,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/820577d23ac8-rest-receiver.svg",
+      "iconPdf": "activity-icons/820577d23ac8-rest-receiver.svg.png"
     },
     {
       "id": "developer-activity-rest-invoke",
@@ -8886,7 +8936,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/b127dc80bae3-rest-invoke.svg",
+      "iconPdf": "activity-icons/b127dc80bae3-rest-invoke.svg.png"
     },
     {
       "id": "developer-activity-soap-service",
@@ -9241,7 +9293,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/5ec21b20bb50-soap-service.svg",
+      "iconPdf": "activity-icons/5ec21b20bb50-soap-service.svg.png"
     },
     {
       "id": "developer-activity-soap-request-reply",
@@ -9596,7 +9650,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/d9cefb40a364-soap-request-reply.svg",
+      "iconPdf": "activity-icons/d9cefb40a364-soap-request-reply.svg.png"
     },
     {
       "id": "developer-activity-ems-queue-receiver",
@@ -9941,7 +9997,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/7ee45f72caaf-ems-queue-receiver.svg",
+      "iconPdf": "activity-icons/7ee45f72caaf-ems-queue-receiver.svg.png"
     },
     {
       "id": "developer-activity-ems-topic-subscriber",
@@ -10286,7 +10344,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/a5e733fd5117-ems-topic-subscriber.svg",
+      "iconPdf": "activity-icons/a5e733fd5117-ems-topic-subscriber.svg.png"
     },
     {
       "id": "developer-activity-ems-send",
@@ -10631,7 +10691,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/e29c64636fe0-ems-queue-sender.svg",
+      "iconPdf": "activity-icons/e29c64636fe0-ems-queue-sender.svg.png"
     },
     {
       "id": "developer-activity-ems-publish",
@@ -10976,7 +11038,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/5ffec8f6c369-ems-topic-publisher.svg",
+      "iconPdf": "activity-icons/5ffec8f6c369-ems-topic-publisher.svg.png"
     },
     {
       "id": "developer-activity-ems-request-reply",
@@ -11321,7 +11385,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/ddd727f2c40c-ems-request-reply.svg",
+      "iconPdf": "activity-icons/ddd727f2c40c-ems-request-reply.svg.png"
     },
     {
       "id": "developer-activity-ems-reply",
@@ -11666,7 +11732,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/3f1f3081f1e2-ems-reply.svg",
+      "iconPdf": "activity-icons/3f1f3081f1e2-ems-reply.svg.png"
     },
     {
       "id": "developer-activity-jms-get-queue-message",
@@ -12011,7 +12079,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/5368c2e821c1-jms-get.svg",
+      "iconPdf": "activity-icons/5368c2e821c1-jms-get.svg.png"
     },
     {
       "id": "developer-activity-jms-receive-message",
@@ -12356,7 +12426,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/4530032e0e0f-jms-receive.svg",
+      "iconPdf": "activity-icons/4530032e0e0f-jms-receive.svg.png"
     },
     {
       "id": "developer-activity-jms-request-reply",
@@ -12701,7 +12773,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/70fc28152269-jms-request-reply.svg",
+      "iconPdf": "activity-icons/70fc28152269-jms-request-reply.svg.png"
     },
     {
       "id": "developer-activity-jms-send-message",
@@ -13046,7 +13120,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/ba0986117d49-jms-send.svg",
+      "iconPdf": "activity-icons/ba0986117d49-jms-send.svg.png"
     },
     {
       "id": "developer-activity-jms-reply-message",
@@ -13391,7 +13467,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/d9019cd3019d-jms-reply.svg",
+      "iconPdf": "activity-icons/d9019cd3019d-jms-reply.svg.png"
     },
     {
       "id": "developer-activity-jms-wait-request",
@@ -13736,7 +13814,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/b2b87251b71a-jms-wait.svg",
+      "iconPdf": "activity-icons/b2b87251b71a-jms-wait.svg.png"
     },
     {
       "id": "developer-activity-kafka-receive",
@@ -14071,7 +14151,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/ba9a724af405-kafka-receive.svg",
+      "iconPdf": "activity-icons/ba9a724af405-kafka-receive.svg.png"
     },
     {
       "id": "developer-activity-kafka-send",
@@ -14406,7 +14488,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/726431159768-kafka-send.svg",
+      "iconPdf": "activity-icons/726431159768-kafka-send.svg.png"
     },
     {
       "id": "developer-activity-kafka-get",
@@ -14741,7 +14825,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/e7c90eb5081e-kafka-get.svg",
+      "iconPdf": "activity-icons/e7c90eb5081e-kafka-get.svg.png"
     },
     {
       "id": "developer-activity-pubsub-subscribe",
@@ -15086,7 +15172,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/92cbfaa98285-pubsub-subscriber.svg",
+      "iconPdf": "activity-icons/92cbfaa98285-pubsub-subscriber.svg.png"
     },
     {
       "id": "developer-activity-pubsub-publish",
@@ -15431,7 +15519,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/7dce8c8a68eb-pubsub-publisher.svg",
+      "iconPdf": "activity-icons/7dce8c8a68eb-pubsub-publisher.svg.png"
     },
     {
       "id": "developer-activity-sap-dynamic-connection",
@@ -15786,7 +15876,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/a94c0e73168c-sap-dynamic-connection.png",
+      "iconPdf": "activity-icons/a94c0e73168c-sap-dynamic-connection.png"
     },
     {
       "id": "developer-activity-sap-idoc-acknowledgment",
@@ -16141,7 +16233,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/49ee74d77c7d-sap-idoc-ack.png",
+      "iconPdf": "activity-icons/49ee74d77c7d-sap-idoc-ack.png"
     },
     {
       "id": "developer-activity-sap-idoc-confirmation",
@@ -16496,7 +16590,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/47a4e1be1c38-sap-idoc-confirm.png",
+      "iconPdf": "activity-icons/47a4e1be1c38-sap-idoc-confirm.png"
     },
     {
       "id": "developer-activity-sap-idoc-converter",
@@ -16851,7 +16947,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/1f8f64fe0452-sap-idoc-converter.png",
+      "iconPdf": "activity-icons/1f8f64fe0452-sap-idoc-converter.png"
     },
     {
       "id": "developer-activity-sap-idoc-listener",
@@ -17226,7 +17324,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/7447b392b7a0-sap-idoc-listener.png",
+      "iconPdf": "activity-icons/7447b392b7a0-sap-idoc-listener.png"
     },
     {
       "id": "developer-activity-sap-idoc-parser",
@@ -17581,7 +17681,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/e6af727d722f-sap-idoc-parser.png",
+      "iconPdf": "activity-icons/e6af727d722f-sap-idoc-parser.png"
     },
     {
       "id": "developer-activity-sap-idoc-reader",
@@ -17936,7 +18038,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/5209f77a8c0a-sap-idoc-reader.png",
+      "iconPdf": "activity-icons/5209f77a8c0a-sap-idoc-reader.png"
     },
     {
       "id": "developer-activity-sap-post-idoc",
@@ -18291,7 +18395,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/3167c2b5dbfa-sap-post-idoc.png",
+      "iconPdf": "activity-icons/3167c2b5dbfa-sap-post-idoc.png"
     },
     {
       "id": "developer-activity-sap-idoc-renderer",
@@ -18646,7 +18752,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/b7aced8a1c57-sap-idoc-renderer.png",
+      "iconPdf": "activity-icons/b7aced8a1c57-sap-idoc-renderer.png"
     },
     {
       "id": "developer-activity-sap-rfc-bapi-listener",
@@ -19021,7 +19129,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/6c25254ea9db-sap-rfc-listener.png",
+      "iconPdf": "activity-icons/6c25254ea9db-sap-rfc-listener.png"
     },
     {
       "id": "developer-activity-sap-invoke-rfc-bapi",
@@ -19376,7 +19486,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/b201cb111b22-sap-rfc-invoke.png",
+      "iconPdf": "activity-icons/b201cb111b22-sap-rfc-invoke.png"
     },
     {
       "id": "developer-activity-sap-reply-rfc-bapi",
@@ -19731,7 +19843,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/e7bcc5f02dcb-sap-rfc-reply.png",
+      "iconPdf": "activity-icons/e7bcc5f02dcb-sap-rfc-reply.png"
     },
     {
       "id": "developer-activity-sap-read-table",
@@ -20086,7 +20200,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/e93aec94b4ef-sap-read-table.png",
+      "iconPdf": "activity-icons/e93aec94b4ef-sap-read-table.png"
     },
     {
       "id": "developer-activity-jdbc-insert",
@@ -20421,7 +20537,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/827733132b5e-JDBC-Create.png",
+      "iconPdf": "activity-icons/827733132b5e-JDBC-Create.png"
     },
     {
       "id": "developer-activity-jdbc-update",
@@ -20756,7 +20874,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/afc38473f8c7-JDBC-Update.png",
+      "iconPdf": "activity-icons/afc38473f8c7-JDBC-Update.png"
     },
     {
       "id": "developer-activity-jdbc-query",
@@ -21091,7 +21211,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/5594cbe5cc3d-JDBC-Query.png",
+      "iconPdf": "activity-icons/5594cbe5cc3d-JDBC-Query.png"
     },
     {
       "id": "developer-activity-jdbc-truncate",
@@ -21426,7 +21548,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/547aa047b934-JDBC-Delete.png",
+      "iconPdf": "activity-icons/547aa047b934-JDBC-Delete.png"
     },
     {
       "id": "developer-activity-jdbc-delete",
@@ -21761,7 +21885,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/547aa047b934-JDBC-Delete.png",
+      "iconPdf": "activity-icons/547aa047b934-JDBC-Delete.png"
     },
     {
       "id": "developer-activity-jdbc-call",
@@ -22096,7 +22222,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/28a4c7b356b1-JDBC-StoredProc.png",
+      "iconPdf": "activity-icons/28a4c7b356b1-JDBC-StoredProc.png"
     },
     {
       "id": "developer-activity-jdbc-dynamic",
@@ -22431,7 +22559,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/5594cbe5cc3d-JDBC-Query.png",
+      "iconPdf": "activity-icons/5594cbe5cc3d-JDBC-Query.png"
     },
     {
       "id": "developer-activity-snowflake-insert",
@@ -22766,7 +22896,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/01f7cab0c38c-snowflake-insert.svg",
+      "iconPdf": "activity-icons/01f7cab0c38c-snowflake-insert.svg.png"
     },
     {
       "id": "developer-activity-snowflake-query",
@@ -23101,7 +23233,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/829502372f88-snowflake-query.svg",
+      "iconPdf": "activity-icons/829502372f88-snowflake-query.svg.png"
     },
     {
       "id": "developer-activity-snowflake-update",
@@ -23436,7 +23570,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/7c2747af3e95-snowflake-update.svg",
+      "iconPdf": "activity-icons/7c2747af3e95-snowflake-update.svg.png"
     },
     {
       "id": "developer-activity-snowflake-delete",
@@ -23771,7 +23907,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/195ef5082305-snowflake-delete.svg",
+      "iconPdf": "activity-icons/195ef5082305-snowflake-delete.svg.png"
     },
     {
       "id": "developer-activity-snowflake-bulk-load",
@@ -24106,7 +24244,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/ba85c430e3bd-snowflake-bulk-load.svg",
+      "iconPdf": "activity-icons/ba85c430e3bd-snowflake-bulk-load.svg.png"
     },
     {
       "id": "developer-activity-amqp-receive",
@@ -24451,7 +24591,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/873c2f51b436-amqp-receive.svg",
+      "iconPdf": "activity-icons/873c2f51b436-amqp-receive.svg.png"
     },
     {
       "id": "developer-activity-amqp-get",
@@ -24796,7 +24938,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/1e88e5d6c84a-amqp-get.svg",
+      "iconPdf": "activity-icons/1e88e5d6c84a-amqp-get.svg.png"
     },
     {
       "id": "developer-activity-amqp-send",
@@ -25131,7 +25275,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/9dc406274f4c-amqp-send.svg",
+      "iconPdf": "activity-icons/9dc406274f4c-amqp-send.svg.png"
     },
     {
       "id": "developer-activity-amqp-dead-letter",
@@ -25476,7 +25622,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/7e4c14be78bb-amqp-dead-letter.svg",
+      "iconPdf": "activity-icons/7e4c14be78bb-amqp-dead-letter.svg.png"
     },
     {
       "id": "developer-activity-xml-parse",
@@ -25801,7 +25949,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/c24520ffd2e9-xml-parse.svg",
+      "iconPdf": "activity-icons/c24520ffd2e9-xml-parse.svg.png"
     },
     {
       "id": "developer-activity-xml-render",
@@ -26136,7 +26286,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/373ecd44b666-xml-render.svg",
+      "iconPdf": "activity-icons/373ecd44b666-xml-render.svg.png"
     },
     {
       "id": "developer-activity-json-parse",
@@ -26461,7 +26613,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/7f21b30d3102-json-parse.svg",
+      "iconPdf": "activity-icons/7f21b30d3102-json-parse.svg.png"
     },
     {
       "id": "developer-activity-json-render",
@@ -26786,7 +26940,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/c051ab9eb6ca-json-render.svg",
+      "iconPdf": "activity-icons/c051ab9eb6ca-json-render.svg.png"
     },
     {
       "id": "developer-activity-flat-parse",
@@ -27111,7 +27267,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/e58f066893bf-data-parse.svg",
+      "iconPdf": "activity-icons/e58f066893bf-data-parse.svg.png"
     },
     {
       "id": "developer-activity-flat-render",
@@ -27436,7 +27594,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/f3b137f03b0c-data-render.svg",
+      "iconPdf": "activity-icons/f3b137f03b0c-data-render.svg.png"
     },
     {
       "id": "developer-activity-excel-read",
@@ -27771,7 +27931,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/0e25539a930f-excel-read.svg",
+      "iconPdf": "activity-icons/0e25539a930f-excel-read.svg.png"
     },
     {
       "id": "developer-activity-mapper-map",
@@ -28096,7 +28258,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/c3cb690c6368-mapper-symbol.svg",
+      "iconPdf": "activity-icons/c3cb690c6368-mapper-symbol.svg.png"
     },
     {
       "id": "developer-activity-dataweave-transform",
@@ -28431,7 +28595,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/df63bee0b8bd-dataweave-transform.svg",
+      "iconPdf": "activity-icons/df63bee0b8bd-dataweave-transform.svg.png"
     },
     {
       "id": "developer-activity-log-write",
@@ -28766,7 +28932,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/343ab9c735c0-log.png",
+      "iconPdf": "activity-icons/343ab9c735c0-log.png"
     },
     {
       "id": "developer-activity-catch-catch",
@@ -29101,7 +29269,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/3d27db451507-catch-exception.svg",
+      "iconPdf": "activity-icons/3d27db451507-catch-exception.svg.png"
     },
     {
       "id": "developer-activity-throw-throw",
@@ -29436,7 +29606,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/b2827d6b9436-throw-exception.svg",
+      "iconPdf": "activity-icons/b2827d6b9436-throw-exception.svg.png"
     },
     {
       "id": "developer-activity-rethrow-rethrow",
@@ -29771,7 +29943,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/aba33f281269-rethrow-exception.svg",
+      "iconPdf": "activity-icons/aba33f281269-rethrow-exception.svg.png"
     },
     {
       "id": "developer-activity-confirm-acknowledge",
@@ -30106,7 +30280,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/79d47c71eab0-general-confirm.svg",
+      "iconPdf": "activity-icons/79d47c71eab0-general-confirm.svg.png"
     },
     {
       "id": "developer-activity-java-invoke",
@@ -30461,7 +30637,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/7582e518a9c0-java-invoke.svg",
+      "iconPdf": "activity-icons/7582e518a9c0-java-invoke.svg.png"
     },
     {
       "id": "developer-activity-python-invoke",
@@ -30796,7 +30974,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/0a041c2ec42a-python-invoke.svg",
+      "iconPdf": "activity-icons/0a041c2ec42a-python-invoke.svg.png"
     },
     {
       "id": "developer-activity-basic-external-command",
@@ -31131,7 +31311,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/b1ba72a7dc03-external-command.svg",
+      "iconPdf": "activity-icons/b1ba72a7dc03-external-command.svg.png"
     },
     {
       "id": "developer-activity-basic-assign",
@@ -31466,7 +31648,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/0f383d490d1b-general-assign.svg",
+      "iconPdf": "activity-icons/0f383d490d1b-general-assign.svg.png"
     },
     {
       "id": "developer-activity-basic-checkpoint",
@@ -31801,7 +31985,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/2cf12da2cd62-general-checkpoint.svg",
+      "iconPdf": "activity-icons/2cf12da2cd62-general-checkpoint.svg.png"
     },
     {
       "id": "developer-activity-basic-deduplicate",
@@ -32136,7 +32322,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/2cf12da2cd62-general-checkpoint.svg",
+      "iconPdf": "activity-icons/2cf12da2cd62-general-checkpoint.svg.png"
     },
     {
       "id": "developer-activity-basic-message-receipt",
@@ -32471,7 +32659,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/2cf12da2cd62-general-checkpoint.svg",
+      "iconPdf": "activity-icons/2cf12da2cd62-general-checkpoint.svg.png"
     },
     {
       "id": "developer-activity-basic-replay-messages",
@@ -32806,7 +32996,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/2cf12da2cd62-general-checkpoint.svg",
+      "iconPdf": "activity-icons/2cf12da2cd62-general-checkpoint.svg.png"
     },
     {
       "id": "developer-activity-basic-aggregate-messages",
@@ -33141,7 +33333,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/2cf12da2cd62-general-checkpoint.svg",
+      "iconPdf": "activity-icons/2cf12da2cd62-general-checkpoint.svg.png"
     },
     {
       "id": "developer-activity-basic-split-records",
@@ -33476,7 +33670,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/2cf12da2cd62-general-checkpoint.svg",
+      "iconPdf": "activity-icons/2cf12da2cd62-general-checkpoint.svg.png"
     },
     {
       "id": "developer-activity-basic-sleep",
@@ -33811,7 +34007,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/4b021d73e2d4-general-sleep.svg",
+      "iconPdf": "activity-icons/4b021d73e2d4-general-sleep.svg.png"
     },
     {
       "id": "developer-activity-basic-get-shared-variable",
@@ -34146,7 +34344,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/7ffe1c9b143f-general-shared-get.svg",
+      "iconPdf": "activity-icons/7ffe1c9b143f-general-shared-get.svg.png"
     },
     {
       "id": "developer-activity-basic-set-shared-variable",
@@ -34481,7 +34681,9 @@
           "symbol": "(module)",
           "role": "Regression suite: engine_export"
         }
-      ]
+      ],
+      "icon": "activity-icons/4d59802e85cf-general-shared-set.svg",
+      "iconPdf": "activity-icons/4d59802e85cf-general-shared-set.svg.png"
     },
     {
       "id": "developer-tasks",

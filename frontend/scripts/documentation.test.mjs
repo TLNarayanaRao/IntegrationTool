@@ -19,6 +19,35 @@ test('every activity has all six reference tabs', () => {
  assert.equal(activities.length, model.counts.activities);
  for (const p of activities) assert.deepEqual(p.sections.map(s=>s.title), ['Overview','Configuration','Input','Output','Advanced','Errors']);
 });
+
+test('every activity bundles its Studio icon for web and PDF documentation', () => {
+ for (const page of model.pages.filter(p=>p.id.startsWith('activity-'))) {
+  assert.match(page.icon, /^activity-icons\/[a-zA-Z0-9_.-]+$/);
+  assert.match(page.iconPdf, /^activity-icons\/[a-zA-Z0-9_.-]+$/);
+  assert.ok(fs.statSync(new URL(page.icon,base)).size>0,page.id);
+  assert.ok(fs.statSync(new URL(page.iconPdf,base)).size>0,page.id);
+ }
+});
+
+test('field reference tables contain authored guidance rather than missing-help notices', () => {
+ assert.doesNotMatch(JSON.stringify(model), /No additional field description is supplied|Requiredness can also depend/i);
+ for (const page of model.pages.filter(p=>p.id.startsWith('activity-')||p.id.startsWith('connection-'))) {
+  for (const section of page.sections) for (const block of section.blocks.filter(b=>b.kind==='table'&&b.columns.at(-1)==='Details')) {
+   for (const row of block.rows) {
+    assert.ok(row[2].trim(),`${page.id}: ${row[0]}`);
+    assert.doesNotMatch(row[2], /^See the .*procedure/,`${page.id}: ${row[0]}`);
+   }
+  }
+ }
+});
+
+test('Mapper configuration documents its custom schema and policy controls', () => {
+ const mapper=model.pages.find(p=>p.type==='mapper');
+ const rows=mapper.sections.find(s=>s.title==='Configuration').blocks.find(b=>b.kind==='table').rows;
+ for (const key of ['targetSchemaId','targetSchemaText','nullPolicy','typeCoercion','onMappingError','maxOutputSizeKb','validateOutput','trimStrings','removeEmptyStructures','copyNil']) {
+  assert.ok(rows.some(row=>row[0].endsWith(`\n${key}`)),key);
+ }
+});
 test('function, connection and group coverage matches generated counts', () => {
  for (const [prefix,key] of [['group-','groups'],['function-','functions'],['connection-','connections']]) {
   assert.equal(model.pages.filter(p=>p.id.startsWith(prefix)).length,model.counts[key]);

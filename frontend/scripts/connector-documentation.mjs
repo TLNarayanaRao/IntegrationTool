@@ -26,7 +26,7 @@ const commonFields = {
  idocType:'Select and save the basic IDoc type fetched from the chosen SAP connection. The saved catalog/schema drives segment layout, field offsets and mapping suggestions.',
  extensionType:'Optional IDoc extension/CIM type. It must match the sender/receiver contract; changing it requires refreshing metadata.',
  release:'SAP release used to resolve IDoc metadata. Use the release supported by the connected system, not an arbitrary version string.',
- SAPIDoc:'For parser input, control metadata or a structured IDoc. For parser output, the parsed document; selected basic-type and legacy direct branches may both be present.',
+ SAPIDoc:'For parser input, control metadata or a structured IDoc. Parser output contains one canonical basic-type branch, for example SAPIDoc.ARTMAS05.IDOC. Legacy direct paths remain available for mapping compatibility but are not duplicated in serialized JSON.',
  IDoc:'Raw IDoc input: XML text, supported structured control/data records or flat IDoc bytes/text. Do not map only one segment when the operation needs the complete document.',
  IDocXML:'Serialized XML result. Use this field for wire-format publishing; use SAPIDoc for child-field mappings.',
  timeout:'Unit depends on the activity: Kafka Get uses seconds; SAP editor fields use milliseconds. Consult the runtime notes because SAP worker calls use timeoutSeconds separately.',

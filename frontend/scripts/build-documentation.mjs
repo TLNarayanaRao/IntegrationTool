@@ -8,6 +8,8 @@ import { spawnSync } from 'node:child_process';
 import ts from 'typescript';
 import { connectorDetails, connectorFieldHelp } from './connector-documentation.mjs';
 import { developerPages, developerSources } from './developer-documentation.mjs';
+import { fieldDescription, missingFieldDescriptions } from './field-documentation.mjs';
+import { Resvg } from '@resvg/resvg-js';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const out = path.join(root, 'frontend/public/help');
 const read = name => fs.readFile(path.join(root, name), 'utf8');
@@ -25,7 +27,14 @@ const guides = [
 ];
 const sourceFiles = [...new Set(['frontend/src/main.tsx', 'frontend/src/ActivityEditor.tsx', 'frontend/src/ActivityPicker.tsx', 'frontend/src/mapper-functions.ts', 'frontend/package.json', 'backend/app/runtime.py', 'backend/app/sap.py', 'backend/app/java_bridge.py', 'java-bridge/src/com/mina/bridge/MinaJavaBridge.java', 'frontend/scripts/connector-documentation.mjs', 'frontend/scripts/build-documentation.mjs', 'scripts/build-documentation-pdf.py', 'frontend/public/help/documentation.js', 'frontend/public/help/documentation.css', 'frontend/public/help/index.html', ...developerSources, ...guides.map(([, f]) => `docs/${f}`)])];
 const sources = new Map(await Promise.all(sourceFiles.map(async name => [name, await read(name)])));
-const fingerprint = sha(sourceFiles.map(name => `${name}\n${sources.get(name)}`).join('\n'));
+sources.set('frontend/scripts/field-documentation.mjs', await read('frontend/scripts/field-documentation.mjs'));
+const artwork = new Map();
+for (const directory of ['frontend/public/activity-icons','frontend/src/assets/activity-icons']) {
+ for (const name of (await fs.readdir(path.join(root,directory))).sort()) {
+  if (/\.(svg|png)$/.test(name)) artwork.set(name, await fs.readFile(path.join(root,directory,name)));
+ }
+}
+const fingerprint = sha([...sources].map(([name,body]) => `${name}\n${body}`).join('\n') + [...artwork].map(([name,body]) => `${name}:${sha(body)}`).join('\n'));
 if (process.argv.includes('--check')) {
  const receipt = JSON.parse(await read('frontend/public/help/documentation-build.json'));
  if (receipt.fingerprint !== fingerprint) throw new Error('Documentation is stale. Run npm run docs:build (requires Python and reportlab).');
@@ -74,10 +83,10 @@ const table = (columns, rows) => ({ kind: 'table', columns, rows });
 const documentedDefault = field => ['connectionFactoryClass', 'jndiContextFactory'].includes(field.key.split('.').at(-1)) && field.defaultValue
  ? '[Provider-specific class supplied by the runtime; use the exact class from your driver documentation when overriding.]'
  : JSON.stringify(field.defaultValue);
-const fields = values => table(['Field / key', 'Type / required', 'Details'], values.map(f => [
+const fields = (values, context={}) => table(['Field / key', 'Type / required', 'Details'], values.map(f => [
  `${f.label || f.key}\n${f.key}`,
- `${f.type || (f.password ? 'password' : f.options ? 'select' : 'text')}\n${f.required ? 'Required' : 'Not marked required by editor'}`,
- [f.help, f.options?.length ? `Choices: ${f.options.join(', ')}` : '', f.defaultValue !== undefined ? `Default: ${documentedDefault(f)}` : '', f.when ? `Conditional field: ${String(f.when)}` : '', f.resourceType ? `Connection type: ${f.resourceType}` : '', f.resourceTypes ? `Connection types: ${f.resourceTypes.join(', ')}` : '', f.placeholder ? `Editor hint: ${f.placeholder}` : '', f.readOnly ? 'Read-only' : ''].filter(Boolean).join('\n') || 'No additional field description is supplied by the editor. Requiredness can also depend on operation, selected schema, provider and runtime validation.',
+ `${f.type || (f.password ? 'password' : f.options ? 'select' : 'text')}\n${f.required === true ? 'Required' : f.required === false ? 'Optional' : 'Configuration setting'}`,
+ [fieldDescription(f, context), f.options?.length ? `Choices: ${f.options.join(', ')}` : '', f.defaultValue !== undefined ? `Default: ${documentedDefault(f)}` : '', f.when ? `Shown when: ${String(f.when)}` : '', f.resourceType ? `Connection type: ${f.resourceType}` : '', f.resourceTypes ? `Connection types: ${f.resourceTypes.join(', ')}` : '', f.placeholder ? `Example / hint: ${f.placeholder}` : '', f.readOnly ? 'Read-only' : ''].filter(Boolean).join('\n'),
  ]));
 const errorPolicy = [p('On error: propagate (default), continue with an error document, or ignore and continue. Error output variable selects where the fault is exposed; Include activity input in fault is enabled by default. Including payloads in faults or logs may expose sensitive data. An empty declared-fault list does not guarantee that execution cannot fail.')];
 const pages = [];
@@ -107,14 +116,29 @@ for (const pack of defs.packs) for (const entry of pack.items) {
  if (['kafka','sap','ems'].includes(entry.type) && !detail) throw new Error(`Missing detailed activity guide: ${entry.type}/${entry.operation}`);
  if (detail) contract={...contract,configuration:detail.configuration,input:detail.input,output:detail.output};
  const mappedInputs=defs.runtimeMappableInputs(node,contract).map(f=>detail?{...f,help:connectorFieldHelp(f)}:f);
+ const configuration = [...contract.configuration];
+ if (['mapper','transform','ai_transform'].includes(entry.type)) configuration.push(
+  {key:'targetSchemaId',label:'Target schema',type:'schema selection',help:'Select a schema from project Resources. Studio shows its name and derives the Input/Output trees, datatypes and cardinalities from its content. Select Inline schema to author a contract locally.'},
+  {key:'targetSchemaText',label:'Inline target schema',type:'JSON Schema / XSD',help:'Paste the target JSON Schema or XSD when Inline schema is selected. Update affected mapping paths after changing fields or repeating structures.'},
+  {key:'language',label:'Mapping dialect',type:'select',defaultValue:'XPath 2.0 / functions',options:['XPath 2.0 / functions','XPath 1.0 compatibility','JSONPath / functions','XSLT 2.0 compatibility'],help:'Select the expression dialect presented by the editor. Use MINA-supported mapping expressions and functions; a compatibility selection does not supply a complete external XPath/XSLT processor.'},
+  {key:'nullPolicy',label:'Null and missing values',type:'select',defaultValue:'omit',options:['omit','preserve','empty-string','default'],help:'Choose whether an unresolved/null mapped value omits its target, preserves null, emits an empty string or uses Default null value. Individual mapping rules can override the policy.'},
+  {key:'defaultValue',label:'Default null value',type:'value',when:'nullPolicy = default',help:'Fallback used for null/missing mapped values under the default policy. Supply a value compatible with the target datatype.'},
+  {key:'typeCoercion',label:'Type coercion',type:'select',defaultValue:'safe',options:['strict','safe','off'],help:'Strict enforces target types; safe allows supported conversions; off leaves mapped values uncoerced. Target-output validation can still reject values that do not match the schema.'},
+  {key:'onMappingError',label:'Mapping error behavior',type:'select',defaultValue:'fail',options:['fail','skip-field','use-null'],help:'Choose whether a field expression/conversion error fails the activity, omits that field or emits null. Continuing can produce incomplete output, so retain target validation where required.'},
+  {key:'maxOutputSizeKb',label:'Maximum output size (KB)',type:'integer',defaultValue:0,help:'Bound the generated output size in kilobytes. Zero disables this bound; use a positive limit to reject oversized mapped documents.'},
+  {key:'validateOutput',label:'Validate target output',type:'boolean',defaultValue:true,help:'Check the completed mapped result against the selected target contract. A schema mismatch fails validation even when individual expression evaluation succeeded.'},
+  {key:'trimStrings',label:'Trim mapped strings',type:'boolean',defaultValue:false,help:'Remove leading/trailing whitespace from mapped strings before output. Leave disabled when whitespace carries business meaning.'},
+  {key:'removeEmptyStructures',label:'Remove empty structures',type:'boolean',defaultValue:false,help:'Clean empty containers from the completed mapped result. Check required schema structures after enabling this policy.'},
+  {key:'copyNil',label:'Copy nil semantics',type:'boolean',defaultValue:true,help:'Retain explicit nil/null semantics from mapped sources. Disable to omit nil values; combine with the null policy and target schema requirements.'}
+ );
  add(`activity-${slug(entry.type)}-${slug(entry.operation || 'default')}`, entry.label, `Activities / ${pack.name}`, [
   section('Overview', [p(doc?.summary || `Runs ${entry.label} on the task execution path.`), ...(doc ? [p(doc.behavior)] : []), p(`Activity type: ${entry.type}; operation: ${entry.operation || 'default'}.`)]),
-  section('Configuration', [p('Display name identifies this activity and its data references. Configuration supplies operation settings and shared-resource selection. The table lists the editor contract; additional connection requirements are documented under Shared connections.'), fields(contract.configuration)]),
-  section('Input', [p('Map fields using the Data tree, functions, constants or environment properties. The table includes configuration values exposed as runtime mapping targets by Studio.'), p(dynamicNote(entry.type)), fields(mappedInputs)]),
-  section('Output', [p(dynamicNote(entry.type)), fields(contract.output)]),
+  section('Configuration', [p('Display name identifies this activity and its data references. Configuration supplies operation settings and shared-resource selection. The table lists the editor controls; additional connection requirements are documented under Shared connections.'), fields(configuration,{type:entry.type,section:'Configuration'})]),
+  section('Input', [p('Map fields using the Data tree, functions, constants or environment properties. The table includes configuration values exposed as runtime mapping targets by Studio.'), p(dynamicNote(entry.type)), fields(mappedInputs,{type:entry.type,section:'Input'})]),
+  section('Output', [p(dynamicNote(entry.type)), fields(contract.output,{type:entry.type,section:'Output'})]),
   section('Advanced', [fields(Object.entries(advanced).map(([key, defaultValue]) => ({key, label:key, type:key==='logPayload'||key==='retryEnabled'?'boolean expression':'number expression', defaultValue, help:key==='logPayload'?'Controls automatic payload logging; browse to choose another environment property. Avoid logging sensitive data.':'Outbound retry policy resolved from the active environment. Retries may repeat external side effects; design for idempotency.'}))), p(defs.supportsOutboundRetry(entry.type,entry.operation) ? 'Outbound retry is available for this operation. Coordinate it with any Repeat-on-Error group to avoid multiplying attempts.' : 'This operation does not expose outbound retry in the common Advanced settings.')]),
   section('Errors', [table(['Fault', 'Description'], contract.errors.map(e=>[e.type,e.description])), ...errorPolicy]),
- ], {type:entry.type,operation:entry.operation || 'default',source:'frontend/src/ActivityEditor.tsx'});
+ ], {type:entry.type,operation:entry.operation || 'default',source:'frontend/src/ActivityEditor.tsx',iconAsset:entry.asset});
  if(detail){
   const page=pages.at(-1);
   page.detailLevel='operational';
@@ -146,7 +170,7 @@ for (const [type,title,behavior,keys] of groupDefs) add(`group-${slug(type)}`,ti
 for(const fn of mapperFunctionCatalog) add(`function-${slug(fn.name)}`,fn.name,`Functions / ${fn.category}`,[section('Overview',[p(fn.description)]),section('Signature',[code(fn.signature)]),section('Input / example',[p('Insertion template: replace $value and other placeholders with data expressions or typed constants for your mapping context.'),code(fn.template)]),section('Output',[p(fn.description)]),section('Errors and usage',[p('Use Map & Test with representative values. Invalid types, missing arguments or malformed patterns can fail evaluation. Optional arguments use the function implementation defaults; the signature is the authoritative editor insertion guide.')])],{source:'frontend/src/mapper-functions.ts'});
 for(const [type, values] of Object.entries(defs.connectionFieldSets)) {
  const defaults = defs.connectionDefaults(type);
- add(`connection-${slug(type)}`,`${type.toUpperCase()} shared connection`,'Shared connections',[section('Configuration',[p('Create a shared resource in the project Resources tree, select it on activities, and use Test connection after resolving the active environment properties. Generated IDs are managed by Studio. Conditional fields below are shown only when their mode applies.'), fields(values.map(f=>({...f,defaultValue:defaults[f.key]})))]),section('Properties and credentials',[p('Browse an environment property to bind a field; inspect the resolved value in Studio. Provide real credentials locally or through deployment secrets; never put secrets in documentation, source control or AI prompts. A password-style field is a UI indication, not a guarantee that all exports are redacted.')]),section('Testing and prerequisites',[p('A connection test checks connectivity, not full application behavior, permissions for every operation, throughput or failover. Java-based connectors require their licensed driver JARs and bridge; SAP also requires a matching platform-native library. See Vendor Drivers and the connector guides.'),p(type==='ems'||type==='jms'?'Direct connections use JMS URL, username and password. JNDI settings become required only when JNDI is enabled. Optional connection IDs are generated by the implementation.':type==='pubsub'?'Service Account JSON supplies Google authentication. Verify project/topic/subscription access and IAM permissions on the target environment.':'Authentication and mandatory fields depend on the selected provider/mode; validate in Studio and on the target runtime.')])],{source:'frontend/src/main.tsx'});
+ add(`connection-${slug(type)}`,`${type.toUpperCase()} shared connection`,'Shared connections',[section('Configuration',[p('Create a shared resource in the project Resources tree, select it on activities, and use Test connection after resolving the active environment properties. Generated IDs are managed by Studio. Conditional fields below are shown only when their mode applies.'), fields(values.map(f=>({...f,defaultValue:defaults[f.key]})),{type,section:'Configuration'})]),section('Properties and credentials',[p('Browse an environment property to bind a field; inspect the resolved value in Studio. Provide real credentials locally or through deployment secrets; never put secrets in documentation, source control or AI prompts. A password-style field is a UI indication, not a guarantee that all exports are redacted.')]),section('Testing and prerequisites',[p('A connection test checks connectivity, not full application behavior, permissions for every operation, throughput or failover. Java-based connectors require their licensed driver JARs and bridge; SAP also requires a matching platform-native library. See Vendor Drivers and the connector guides.'),p(type==='ems'||type==='jms'?'Direct connections use JMS URL, username and password. JNDI settings become required only when JNDI is enabled. Optional connection IDs are generated by the implementation.':type==='pubsub'?'Service Account JSON supplies Google authentication. Verify project/topic/subscription access and IAM permissions on the target environment.':'Authentication and mandatory fields depend on the selected provider/mode; validate in Studio and on the target runtime.')])],{source:'frontend/src/main.tsx'});
 }
 add('environment-properties','Environment property defaults','Shared connections',[section('Defaults',[p('These are checked-in Studio defaults, not values read from any user project. Override per environment. Password properties need secure deployment handling.'),fields(defs.defaultProperties.map(x=>({key:x.key,label:x.key,type:x.data_type,defaultValue:x.data_type==='password'?'[supply securely]':x.value,help:x.description||''})))])]);
 // Restricted Markdown-to-block parser; raw HTML stays plain text (no scripts).
@@ -165,11 +189,34 @@ function markdown(text) {
 }
 for(const [category,file] of guides){const text=sources.get(`docs/${file}`);add(`guide-${slug(file.replace(/\.md$/,''))}`,text.match(/^# (.+)$/m)?.[1]||file,category,[section('Guide',markdown(text))],{source:`docs/${file}`});}
 const development=developerPages(pages.filter(p=>p.type),pages.filter(p=>p.id.startsWith('group-')),pages.filter(p=>p.id.startsWith('function-')),sources);
+for (const activity of pages.filter(page=>page.iconAsset)) {
+ const developer = development.pages.find(page=>page.id===`developer-${activity.id}`);
+ if (developer) developer.iconAsset = activity.iconAsset;
+}
 pages.push(...development.pages);
 const unique=new Set();for(const page of pages){if(unique.has(page.id))throw new Error(`Duplicate documentation ID: ${page.id}`);unique.add(page.id);}
 const version=JSON.parse(sources.get('frontend/package.json')).version;
 const model={version,fingerprint,counts:{activities:activityCount,groups:groupDefs.length,functions:mapperFunctionCatalog.length,connections:Object.keys(defs.connectionFieldSets).length,pages:pages.length},pages};
+if (missingFieldDescriptions.size) throw new Error(`Missing authored field documentation:\n${[...missingFieldDescriptions].sort().join('\n')}`);
 await fs.mkdir(out,{recursive:true});
+const iconFiles = {};
+await fs.mkdir(path.join(out,'activity-icons'),{recursive:true});
+for (const page of pages.filter(page=>page.iconAsset)) {
+ const name = page.iconAsset.includes('.') ? page.iconAsset : `${page.iconAsset}.png`;
+ const bytes = artwork.get(name);
+ if (!bytes) throw new Error(`Missing documentation icon: ${page.id} ${name}`);
+ const prefix = `activity-icons/${sha(bytes).slice(0,12)}-${name}`;
+ page.icon = prefix;
+ page.iconPdf = name.endsWith('.svg') ? `${prefix}.png` : prefix;
+ // Documentation displays small icons: retain SVGs and downsample legacy PNGs
+ // instead of shipping multi-megabyte canvas artwork for each topic heading.
+ const rasterSource = name.endsWith('.svg') ? bytes : Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${bytes.readUInt32BE(16)}" height="${bytes.readUInt32BE(20)}"><image width="100%" height="100%" href="data:image/png;base64,${bytes.toString('base64')}"/></svg>`);
+ const raster = new Resvg(rasterSource,{fitTo:{mode:'width',value:144}}).render().asPng();
+ iconFiles[page.icon] = name.endsWith('.svg') ? bytes : raster;
+ iconFiles[page.iconPdf] = raster;
+ delete page.iconAsset;
+}
+for (const [name,bytes] of Object.entries(iconFiles)) await fs.writeFile(path.join(out,name),bytes);
 await fs.writeFile(path.join(out,'documentation-data.json'),JSON.stringify(model,null,2)+'\n');
 await fs.writeFile(path.join(out,'documentation-data.js'),`window.MINA_DOCUMENTATION=${JSON.stringify(model).replace(/</g,'\\u003c')};\n`);
 const python=process.env.MINA_DOCS_PYTHON || 'python';
@@ -179,6 +226,6 @@ const developerModel={...model,counts:{...model.counts,pages:development.pages.l
 await fs.writeFile(path.join(out,'developer-data.json'),JSON.stringify(developerModel,null,2)+'\n');
 const developerResult=spawnSync(python,[path.join(root,'scripts/build-documentation-pdf.py'),path.join(out,'developer-data.json'),path.join(out,'MINA-Developer-Guide.pdf')],{stdio:'inherit'});
 if(developerResult.error||developerResult.status!==0)throw new Error('Developer PDF generation failed.');
-const files={};for(const file of ['documentation-data.json','documentation-data.js','MINA-Documentation.pdf','developer-data.json','MINA-Developer-Guide.pdf']) files[file]=sha(await fs.readFile(path.join(out,file)));
+const files={};for(const file of ['documentation-data.json','documentation-data.js','MINA-Documentation.pdf','developer-data.json','MINA-Developer-Guide.pdf',...Object.keys(iconFiles)]) files[file]=sha(await fs.readFile(path.join(out,file)));
 await fs.writeFile(path.join(out,'documentation-build.json'),JSON.stringify({fingerprint,files,counts:model.counts},null,2)+'\n');
 console.log(JSON.stringify(model.counts));

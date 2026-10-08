@@ -52,6 +52,11 @@
   download.href=page.developer?'MINA-Developer-Guide.pdf':'MINA-Documentation.pdf';
   download.textContent=page.developer?'Developer PDF':'Download PDF';
   const article=node('article');article.append(node('p',page.category,'breadcrumb'),node('h1',page.title));
+  if(page.icon && /^activity-icons\/[a-zA-Z0-9_.-]+$/.test(page.icon)) {
+   const heading=article.querySelector('h1');
+   const image=node('img',undefined,'activity-topic-icon');image.src=page.icon;image.alt=`${page.title} activity icon`;image.width=64;image.height=64;
+   const title=node('div',undefined,'activity-topic-title');heading.replaceWith(title);title.append(image,heading);
+  }
   if(page.id==='overview')article.append(node('p',`${model.counts.activities} activities · ${model.counts.groups} groups · ${model.counts.functions} functions · ${model.counts.connections} connection types`,'counts'));
   const tabs=node('div',undefined,'tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label',`${page.title} sections`);
   let tabName='';try{tabName=decodeURIComponent(location.hash.slice(1)).split('/')[1]||'';}catch{}
