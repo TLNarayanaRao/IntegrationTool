@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 from copy import deepcopy
+from .flow_graph import parallel_plan
 from datetime import datetime, timezone
 from time import perf_counter
 from uuid import uuid4
@@ -12,6 +13,48 @@ class DebugManager:
     def __init__(self, runtime: WorkflowRuntime):
         self.runtime = runtime
         self.sessions: dict[str, dict] = {}
+
+    @staticmethod
+    def _branch_context(ctx):
+        return {**ctx, 'input': deepcopy(ctx['input']), 'last': deepcopy(ctx['last']),
+                'vars': deepcopy(ctx['vars']), 'context': dict(ctx['context'])}
+
+    def _schedule_branches(self, frame, task, edges):
+        targets = [edge.target for edge in edges]
+        if len(targets) > 1:
+            stack = frame.setdefault('parallelStack', [])
+            plan = parallel_plan([(edge.source, edge.target, edge.type) for edge in task.transitions], targets,
+                                 [node.id for node in task.activities if node.type in ('end', 'http_response')],
+                                 boundary=stack[-1]['join'] if stack else None, fork=frame['activityId'])
+            self._push_parallel(frame, plan)
+        else: frame['activityId'] = targets[0]
+
+    def _push_parallel(self, frame, plan):
+        base = self._branch_context(frame['context'])
+        frame.setdefault('parallelStack', []).append({'join': plan['join'], 'pending': plan['branches'][1:], 'base': base})
+        self._start_parallel_part(frame, plan['branches'][0], base)
+
+    def _start_parallel_part(self, frame, part, base):
+        frame['context'] = self._branch_context(base)
+        if isinstance(part, dict): self._push_parallel(frame, part)
+        else: frame['activityId'] = part
+
+    def _advance_parallel(self, frame, terminal=False):
+        stack = frame.get('parallelStack') or []
+        if not stack or not (terminal or frame['activityId'] == stack[-1]['join']): return False
+        block = stack[-1]
+        output = frame['context']['last']
+        if block['pending']:
+            self._start_parallel_part(frame, block['pending'].pop(0), block['base'])
+            return True
+        stack.pop()
+        frame['context'] = block['base']
+        frame['context']['last'] = output
+        if block['join'] is not None:
+            frame['activityId'] = block['join']
+            return True
+        # A terminal nested fork may also finish an enclosing branch.
+        return self._advance_parallel(frame, terminal=True) if stack else False
 
     def start(self, project: Project, task_id: str, initial: dict, resources: dict, properties: dict, breakpoints: list[str], environment: str = 'local', breakpoint_conditions: dict[str, str] | None = None, watches: list[str] | None = None, pause_on_error: bool = True):
         task = next((item for item in project.tasks if item.id == task_id), None)
@@ -99,8 +142,7 @@ class DebugManager:
             state['logs'].append({'time': now, 'level': 'ERROR', 'kind': 'event', 'message': f'{activity.name} has no matching outgoing transition', 'activityId': activity.id, 'taskId': task.id})
             self.rearm_listener(state)
             return self.view(state)
-        frame['parallelQueue'] = [edge.target for edge in chosen_edges[1:]]
-        frame['activityId'] = chosen_edges[0].target
+        self._schedule_branches(frame, task, chosen_edges)
         state['status'] = 'running'
         while state['status'] == 'running' and not state.get('stopRequested'):
             current = self.current_activity(state)
@@ -277,6 +319,8 @@ class DebugManager:
             return
         if not state['frames']: state['status'] = 'completed'; return
         frame = state['frames'][-1]; project = state['project']; task = next(item for item in project.tasks if item.id == frame['taskId'])
+        while frame.get('parallelStack') and frame['activityId'] == frame['parallelStack'][-1]['join']:
+            self._advance_parallel(frame)
         plans = state.setdefault('groupPlans', {}).setdefault(task.id, self.runtime.compile_groups(task))
         ctx = frame['context']; ctx.setdefault('_process', task); ctx.setdefault('groupStack', []); ctx.setdefault('jdbcTransactions', {})
         entered = await self.runtime.enter_group_boundaries(frame['activityId'], ctx, plans)
@@ -355,11 +399,7 @@ class DebugManager:
             if target:
                 frame['activityId'] = target
                 return
-            pending = frame.get('parallelQueue') or []
-            if activity.type == 'end' and pending:
-                frame['activityId'] = pending.pop(0)
-                frame['parallelQueue'] = pending
-                return
+            if self._advance_parallel(frame, terminal=True): return
             completed = state['frames'].pop()
             completed['context']['tasks'].setdefault(completed['taskId'], {'activities': {}})['output'] = completed['context']['last']
             if not state['frames']:
@@ -370,19 +410,20 @@ class DebugManager:
             parent_task = next(item for item in project.tasks if item.id == parent['taskId']); call = next(item for item in parent_task.activities if item.id == parent['activityId'])
             parent['context']['_activityMetadata'] = {'calledTaskId': completed['taskId']}
             self.runtime.record_activity_output(call, completed['context']['last'], parent['context'], completed.get('callInput'))
-            edge = next((item for item in parent_task.transitions if item.source == call.id and item.type == 'success'), None)
-            if edge: parent['activityId'] = edge.target
+            edges = self.runtime.eligible_success_transitions([item for item in parent_task.transitions if item.source == call.id], parent['context'])
+            if edges: self._schedule_branches(parent, parent_task, edges)
             return
-        pending = frame.get('parallelQueue') or []
-        frame['parallelQueue'] = pending + [edge.target for edge in chosen_edges[1:]]
         target = await self.runtime.leave_group_boundaries(activity.id, chosen_edges[0].target, ctx, plans)
         if target is None:
             state['status'] = 'completed'; return
-        frame['activityId'] = target
+        self._schedule_branches(frame, task, chosen_edges)
+        if len(chosen_edges) == 1: frame['activityId'] = target
 
     def current_activity(self, state):
         if not state['frames']: return None
         frame = state['frames'][-1]; task = next(item for item in state['project'].tasks if item.id == frame['taskId'])
+        while frame.get('parallelStack') and frame['activityId'] == frame['parallelStack'][-1]['join']:
+            self._advance_parallel(frame)
         return next((item for item in task.activities if item.id == frame['activityId']), None)
 
     def view(self, state):
@@ -393,6 +434,12 @@ class DebugManager:
         for frame in state.get('frames', []):
             if frame.get('activityId'): active_ids.append(frame['activityId'])
             active_ids.extend(frame.get('parallelQueue') or [])
+            for block in frame.get('parallelStack') or []:
+                pending = list(block['pending'])
+                while pending:
+                    part = pending.pop()
+                    if isinstance(part, dict): pending.extend(part['branches'])
+                    else: active_ids.append(part)
         frame = state['frames'][-1] if state.get('frames') else None
         ctx = frame.get('context', {}) if frame else {}
         watch_values = []

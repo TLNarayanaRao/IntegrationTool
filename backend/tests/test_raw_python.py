@@ -359,7 +359,7 @@ class RawPythonTests(unittest.TestCase):
             'transitions': [{'source': 's', 'target': 'a'}, {'source': 's', 'target': 'b'},
                             {'source': 'a', 'target': 'end'}, {'source': 'b', 'target': 'end'}]}]
         files = compiler.raw_python_files(project, {'dev': []})
-        self.assertIn(b'await asyncio.gather(run(ctx.fork(), start_at=\'a\'), run(ctx.fork(), start_at=\'b\'))',
+        self.assertIn(b'await execute_parallel(plan, run_branch, ctx.last, stop_at)',
                       files['application/tasks/task_0_main.py'])
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

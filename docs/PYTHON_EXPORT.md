@@ -7,6 +7,29 @@ Studio exposes two distinct Python exports. Both contain Python application file
 
 The standard `.mpkg` and `.ear` exports remain available. Python archives require separately licensed vendor drivers where the underlying connection needs them (for example SAP JCo or JMS/EMS). A Python source package does not replace those vendor libraries. Legacy `.ifpkg` packages remain importable.
 
+## Parallel branches and joins
+
+Multiple eligible success transitions start parallel branches. When all branches
+converge on a shared activity, Run, Debug, and Python exports wait for the branches
+and execute that shared activity once. Nested forks join at their own convergence
+before reaching an enclosing join. Partial joins also wait for their participating
+branches: if two of three branches merge first, that intermediate activity runs
+once before its result joins the third branch. An unhandled branch failure prevents the shared
+continuation; Run and Python exports let sibling branches settle before reporting
+the failure. Debug steps branches individually and applies the same join barrier.
+
+Each branch retains the task input and receives its own flow value and variables.
+Activity outputs remain available for explicit downstream mappings. The default
+value at a join comes from the last branch in transition order, independent of
+completion timing; business objects are not implicitly merged.
+
+For example, connect Kafka and Pub/Sub branches to the same EMS activity to send
+to EMS after both complete. If EMS is instead a third outgoing branch, it runs in
+parallel and the common continuation waits for all three. Completion follows each
+connector's settings: Kafka `waitForDelivery=true` waits for broker acknowledgement;
+`false` completes after local enqueue. Regenerate deployed Python archives after
+upgrading Studio's execution behavior.
+
 Engine-backed Python archives select connector modules from the packaged activities and groups instead of copying every engine file. All included Sub Tasks participate in selection, and JDBC transaction groups include the JDBC adapter. The exporter follows adapter imports transitively (including Java bridge dependencies and the JDBC adapter's Snowflake support). Shared scheduling, model, mapping/expression, and timestamp modules remain in every engine-backed archive. Optional connectors load only when executed; unused shared connection definitions do not cause their connector modules to be bundled. Standard JSON-based EAR archives do not contain this Python engine.
 
 Direct archives are capability-linked from the persisted project model and selected task closure. The linker never checks project names, sample identifiers, known canvas layouts, or a catalog of previously exported applications. It records the exact activity operations and group types in `application/capabilities.py`, removes unreachable execution branches, specializes connector functions to the operations used by the project, and omits unreferenced activity modules, connector modules, native adapters, inbound servers, shared resources, schemas, and properties. Referenced shared resources are followed transitively, as are XSD `schemaLocation` and JSON Schema `$ref` dependencies, so dependency pruning does not produce an incomplete package. Its registry is required to cover every activity operation advertised by the direct exporter; adding a future supported Studio activity without linker metadata fails the exporter and its coverage test instead of silently generating an incomplete application. A property-driven resource, schema, or SAP messaging-provider selection conservatively retains compatible candidates because the selected object can change between packaged environments. Packaging never removes something required by a selected environment merely to make the archive smaller.

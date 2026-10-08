@@ -619,6 +619,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
             operations_by_kind.setdefault(str(activity.get('type') or ''), set()).add(str(activity.get('config', {}).get('operation') or ''))
     files = {f'application/{name}': (root / name).read_bytes()
              for name in ('__init__.py', 'diagnostics.py', 'qualification.py')}
+    files['application/flow_graph.py'] = Path(__file__).with_name('flow_graph.py').read_bytes()
     core_source = _filter_capability_blocks((root / 'core.py').read_text(encoding='utf-8'), capabilities)
     core_source = core_source.replace('from .native.mapping_literals import parse_literal', Path(__file__).with_name('mapping_literals.py').read_text(encoding='utf-8'))
     retry_expressions = []
@@ -823,18 +824,20 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         lines = [
             '"""Direct async implementation of this MINA task."""',
             'import asyncio',
+            'from application.flow_graph import parallel_plan, execute_parallel',
             f'from application.core import {", ".join(core_imports)}',
             *(['from application.native.jdbc import jdbc_adapter'] if any(plan['type'] == 'transaction_jdbc' for plan in group_plans) else []),
             '',
             f'TASK_ID = {task["id"]!r}',
             f'TASK_NAME = {task["name"]!r}',
             '',
-            'async def run(ctx: Context, *, start_after: str | None = None, event_output=None, start_at: str | None = None):',
+            'async def run(ctx: Context, *, start_after: str | None = None, event_output=None, start_at: str | None = None, stop_at: str | None = None):',
             '    injected_event_activity = start_after if start_at is None else None',
             f'    current = start_at if start_at is not None else ({starts[0]!r} if start_after is None else start_after)',
             '    steps = 0',
             '    handled_catches = set()',
             '    while current is not None:',
+            '        if current == stop_at: return ctx.last',
             '        steps += 1',
             '        if steps > 100000:',
             '            raise RuntimeError(f"Task {TASK_NAME} exceeded its execution step limit")',
@@ -1041,10 +1044,19 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
                     lines.append(f'                {"if" if condition_index == 0 else "elif"} {expression}: current = {edge["target"]!r}')
                 lines.append(f'                else: current = {no_match!r}')
             elif len(ordinary_targets) > 1:
-                calls = ', '.join(f'run(ctx.fork(), start_at={target!r})' for target in ordinary_targets)
+                graph_edges = [(edge['source'], edge['target'], _edge_type(edge)) for edge in task['transitions']]
+                terminals = [node['id'] for node in task['activities'] if node['type'] in ('end', 'http_response')]
                 lines.extend([
-                    f'                branch_results = await asyncio.gather({calls})',
-                    '                return branch_results[-1] if branch_results else ctx.last',
+                    f'                plan = parallel_plan({graph_edges!r}, {ordinary_targets!r}, {terminals!r}, boundary=stop_at, fork=current)',
+                    '                async def run_branch(target, stop, value):',
+                    '                    child = ctx.fork()',
+                    '                    child.last = value',
+                    '                    return await run(child, start_at=target, stop_at=stop)',
+                    '                branch_results = await execute_parallel(plan, run_branch, ctx.last, stop_at)',
+                    '                join = plan["join"]',
+                    '                ctx.last = branch_results[-1] if branch_results else ctx.last',
+                    '                if join is None: return ctx.last',
+                    '                current = join',
                 ])
             else:
                 exits = [plan for plan in group_plans if plan['exit_source'] == activity['id']]

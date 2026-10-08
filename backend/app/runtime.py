@@ -19,6 +19,7 @@ from .http_transport import request as http_request, merged as merge_http_config
 from .message_state import operate as mediation_operation
 from .google_pubsub import client_configuration as pubsub_client_configuration, create_client as create_pubsub_client
 from .time_utils import log_timestamp
+from .flow_graph import parallel_plan, execute_parallel
 
 class RuntimeErrorWithLogs(Exception): pass
 _NO_EVENT_OUTPUT = object()
@@ -358,10 +359,11 @@ class WorkflowRuntime:
         if delay: await asyncio.sleep(delay)
         return plans[state['id']]['entry']
 
-    async def run(self, process: ProcessDefinition, initial: dict, resources=None, properties=None, entry_activity_id=None, project: Project | None=None, execution_state: dict | None=None, event_output: Any = _NO_EVENT_OUTPUT, transport: dict | None = None, jms_sender_scope: str | None = None) -> RunResult:
+    async def run(self, process: ProcessDefinition, initial: dict, resources=None, properties=None, entry_activity_id=None, project: Project | None=None, execution_state: dict | None=None, event_output: Any = _NO_EVENT_OUTPUT, transport: dict | None = None, jms_sender_scope: str | None = None, stop_activity_id=None, branch_context=None, branch_output=None) -> RunResult:
         run_id, logs = str(uuid.uuid4()), []
         started = datetime.now(timezone.utc)
         correlation_id = str(initial.get('correlationId') or initial.get('correlation_id') or run_id) if isinstance(initial, dict) else run_id
+        if branch_context is not None: correlation_id = branch_context['context']['correlationId']
         execution_state = execution_state or {'activities': {}, 'tasks': {}}
         activity_outputs = execution_state.setdefault('activities', {})
         task_outputs = execution_state.setdefault('tasks', {})
@@ -375,8 +377,13 @@ class WorkflowRuntime:
             'transport': transport or {},
             '_process': process, 'groupStack': [], 'jdbcTransactions': {},
         }
+        if branch_context is not None:
+            context['input'] = copy.deepcopy(branch_context['input'])
+            context['vars'] = copy.deepcopy(branch_context['vars'])
+            context['context'].update(branch_context['context'])
         self.log(logs, 'INFO', f'Job started: {process.name}', kind='lifecycle', correlationId=correlation_id, runId=run_id, startedAt=log_timestamp(started))
         def finish(status: str, output: dict) -> RunResult:
+            if branch_output is not None: branch_output['last'] = context['last']
             ended = datetime.now(timezone.utc); duration = round((ended - started).total_seconds() * 1000, 3)
             self.log(logs, 'INFO' if status == 'completed' else 'ERROR', f'Job {status}: {process.name} in {duration:.3f} ms', kind='lifecycle', correlationId=correlation_id, runId=run_id, endedAt=log_timestamp(ended), durationMs=duration)
             for entry in logs:
@@ -399,6 +406,7 @@ class WorkflowRuntime:
         try:
             step_count = 0
             while True:
+                if current.id == stop_activity_id: break
                 step_count += 1
                 if step_count > max(100000, len(process.activities) * 10000):
                     raise MinaFault('Execution step limit exceeded; check group loop conditions', fault_type='GROUP_ITERATION_LIMIT')
@@ -470,25 +478,30 @@ class WorkflowRuntime:
                     # a fan-out, not an ordered if/else chain. Run every branch
                     # and share execution state so all outputs remain mappable.
                     branch_initial = context['last']
-                    if not isinstance(branch_initial, dict): branch_initial = {'payload': branch_initial}
-                    branch_initial = {**branch_initial, 'correlationId': correlation_id}
-                    results = await asyncio.gather(*(
-                        self.run(process, branch_initial, resources=resources, properties=properties,
-                                 entry_activity_id=edge.target, project=project,
+                    plan = parallel_plan(
+                        [(edge.source, edge.target, edge.type) for edge in process.transitions],
+                        [edge.target for edge in chosen_edges],
+                        [node.id for node in process.activities if node.type in ('end', 'http_response')],
+                        boundary=stop_activity_id, fork=current.id)
+                    async def run_branch(target, stop, value):
+                        branch_value = {}
+                        result = await self.run(process, value, resources=resources, properties=properties,
+                                 entry_activity_id=target, project=project,
                                  execution_state=execution_state, transport=transport,
-                                 jms_sender_scope=context['context']['jmsSenderScope'])
-                        for edge in chosen_edges
-                    ), return_exceptions=True)
-                    failed = None
-                    for index, result in enumerate(results):
-                        if isinstance(result, Exception):
-                            failed = result
-                            self.log(logs, 'ERROR', f'Parallel branch {index + 1} failed from {current.name}: {result}', kind='parallel', runtimeActivityId=current.id, branch=index + 1)
-                            continue
+                                 jms_sender_scope=context['context']['jmsSenderScope'],
+                                 stop_activity_id=stop, branch_context=context,
+                                 branch_output=branch_value)
                         logs.extend(result.logs)
-                        if result.status != 'completed' and failed is None: failed = RuntimeErrorWithLogs(f'Parallel branch {index + 1} failed from {current.name}')
-                    if failed: raise RuntimeErrorWithLogs(f'Parallel execution failed from {current.name}: {failed}')
-                    final_output = results[-1].output if results else context['last']
+                        if result.status != 'completed': raise RuntimeErrorWithLogs(f'Parallel branch {target} failed from {current.name}')
+                        return branch_value['last']
+                    values = await execute_parallel(plan, run_branch, branch_initial, stop_activity_id)
+                    join = plan['join']
+                    context['last'] = values[-1] if values else context['last']
+                    final_output = context['last'] if isinstance(context['last'], dict) else {'result': context['last']}
+                    if join is not None:
+                        self.log(logs, 'DEBUG', f'Parallel branches joined before {activity_by_id[join].name}', kind='parallel', runtimeActivityId=join)
+                        current = activity_by_id[join]
+                        continue
                     task_state['output'] = final_output
                     return finish('completed', final_output)
             final_output = context['last'] if isinstance(context['last'], dict) else {'result': context['last']}

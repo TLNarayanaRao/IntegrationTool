@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import re
+import copy
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 from typing import Any
@@ -52,8 +53,9 @@ class Context:
 
     def fork(self) -> 'Context':
         """Give a parallel branch its own flow values and shared output index."""
-        child = Context(self.last, self.properties, self.resources)
-        child.variables = dict(self.variables)
+        child = Context(copy.deepcopy(self.input), self.properties, self.resources)
+        child.last = copy.deepcopy(self.last)
+        child.variables = copy.deepcopy(self.variables)
         child.outputs = self.outputs
         child.transactions = self.transactions
         child.transport = self.transport
