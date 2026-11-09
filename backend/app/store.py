@@ -4,6 +4,7 @@ from functools import wraps
 from pathlib import Path
 from uuid import uuid4
 from .models import Project
+from .retry_policy import outbound_activity
 
 DATA_DIR = Path(os.environ.get('MINA_DATA_DIR', Path(__file__).parents[1] / 'data')).expanduser().resolve()
 PROJECTS_DIR = DATA_DIR / 'projects'
@@ -39,15 +40,7 @@ def write_json(path: Path, value):
         temporary.unlink(missing_ok=True)
 
 def supports_outbound_retry(activity) -> bool:
-    operation = str(activity.config.get('operation') or '')
-    if activity.type in ('http', 'jdbc', 'snowflake', 'amqp', 'ftp', 'sftp'): return True
-    if activity.type in ('ems', 'jms'): return operation in ('send', 'publish', 'request_reply', 'reply', 'send_message', 'reply_message')
-    if activity.type == 'kafka': return operation in ('send', 'publish', 'get')
-    if activity.type == 'pubsub': return operation == 'publish'
-    if activity.type == 'rest': return operation == 'invoke'
-    if activity.type == 'soap': return operation == 'request_reply'
-    if activity.type == 'sap': return operation in ('idoc_acknowledgment', 'idoc_confirmation', 'post_idoc', 'invoke_rfc_bapi', 'reply_rfc_bapi', 'read_table')
-    return False
+    return outbound_activity(activity.type, str(activity.config.get('operation') or ''))
 
 def clean_activity_policies(project: Project) -> None:
     for task in project.tasks:
@@ -55,7 +48,8 @@ def clean_activity_policies(project: Project) -> None:
             if supports_outbound_retry(activity): continue
             advanced = activity.config.get('advanced')
             if not isinstance(advanced, dict): continue
-            for key in ('retryEnabled', 'retryCount', 'retryIntervalSeconds'): advanced.pop(key, None)
+            for key in list(advanced):
+                if key.startswith('retry'): advanced.pop(key)
 
 @synchronized
 def save_project(project: Project) -> Project:

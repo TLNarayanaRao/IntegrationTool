@@ -2,7 +2,7 @@ import asyncio, unittest
 from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 from app.main import app
-from app.models import Activity, ProcessDefinition, Project, SharedResource
+from app.models import Activity, EnvironmentProperty, ProcessDefinition, Project, SharedResource
 from app.runtime import WorkflowRuntime
 from app.sap import SapAdapter
 from app.java_bridge import SapJcoWorker
@@ -433,22 +433,32 @@ class SapMapperTests(unittest.TestCase):
         fetched_730 = self.client.post('/api/sap/idocs', json={'resource':resource, 'idocType':'ORDERS05'})
         self.assertEqual(fetched_730.json()['idoc']['release'], '730')
 
-    def test_project_seeds_global_advanced_and_connector_properties(self):
+    def test_project_seeds_global_advanced_properties_without_connectors(self):
         project = Project(id='defaults', name='Defaults')
+        self.assertEqual(set(project.properties), {'local', 'dev', 'qa', 'pre', 'production'})
         for environment in ('local','dev','qa','pre','production'):
             values = {item.key:item.value for item in project.properties[environment]}
             self.assertEqual(values['advanced.retryCount'], 3)
             self.assertEqual(values['advanced.retryIntervalSeconds'], 60)
-            self.assertIn('connections.sap.applicationServerHost', values)
-            for required in (
-                'connections.jdbc.driver', 'connections.jdbc.url', 'connections.jdbc.host',
-                'connections.jdbc.username', 'connections.jdbc.password', 'connections.ftp.username',
-                'connections.sftp.privateKeyFile', 'connections.http.proxyHost', 'connections.ems.clientId',
-                'connections.kafka.securityProtocol', 'connections.pubsub.credentialsFile',
-                'connections.pubsub.authenticationType', 'connections.pubsub.serviceAccountJson',
-                'connections.sap.client', 'connections.sap.username', 'connections.sap.password',
-            ):
-                self.assertIn(required, values)
+            self.assertFalse(any(key.startswith('connections.') for key in values))
+
+        project.properties['local'].append(EnvironmentProperty(key='connections.kafka.bootstrapServers', value='broker:9092'))
+        project.resources.append(SharedResource(id='kafka', type='kafka', name='Kafka', config={
+            'bootstrapServers': '${properties.connections.kafka.bootstrapServers}',
+        }))
+        reloaded = Project.model_validate(project.model_dump())
+        self.assertEqual({item.key: item.value for item in reloaded.properties['local']
+                          if item.key.startswith('connections.')}, {'connections.kafka.bootstrapServers': 'broker:9092'})
+        self.assertFalse(any(item.key.startswith('connections.') for item in reloaded.properties['dev']))
+
+    def test_new_project_has_one_start_to_end_subtask(self):
+        project = Project(id='new', name='New')
+        self.assertEqual(len(project.tasks), 1)
+        task = project.tasks[0]
+        self.assertEqual(task.kind, 'subtask')
+        self.assertEqual(project.active_task_id, task.id)
+        self.assertEqual([activity.type for activity in task.activities], ['start', 'end'])
+        self.assertEqual([(edge.source, edge.target) for edge in task.transitions], [('Start', 'End')])
 
     def test_advanced_logging_and_property_driven_outbound_retry(self):
         class FlakyRuntime(WorkflowRuntime):

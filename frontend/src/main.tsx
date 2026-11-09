@@ -1,4 +1,9 @@
 import ModalLayer from "./ModalLayer";
+import ApiBlueprint from "./ApiBlueprint";
+import { closeTaskEditors, type CloseEditorsMode } from "./taskEditors";
+import { isEventActivity, taskEntryLabels, taskEntryMode } from "./taskEntry";
+import TaskEntryIcon from "./TaskEntryIcon";
+import { studioObjectName } from "./studioObjectName";
 import ExecutionAnalytics from "./ExecutionAnalytics";
 import { transitionLanes } from "./transitionIndex";
 import React, { Component, ErrorInfo, useEffect, useMemo, useRef, useState } from "react";
@@ -13,6 +18,7 @@ import {
   ArrowDown,
   ArrowUp,
   BookOpen,
+  Boxes,
   Bug,
   Cable,
   CheckCircle2,
@@ -25,7 +31,6 @@ import {
   CodeXml,
   Database,
   Download,
-  FilePlus2,
   Folder,
   FolderOpen,
   Globe,
@@ -35,6 +40,7 @@ import {
   Maximize2,
   Minimize2,
   Monitor,
+  Network,
   Package,
   Pause,
   Plus,
@@ -54,9 +60,12 @@ import {
   Redo2,
   Workflow,
   WandSparkles,
+  Zap,
 } from "lucide-react";
 import SchemaStudio, { SchemaDoc } from "./SchemaStudio";
 import ActivityEditor, { activityContract, activityReferenceName, activityMappingIssues, activityInputMappingTypes, possibleTaskExceptions, DataSourcePane, upstreamActivitySources } from "./ActivityEditor";
+import HttpEndpointSetup, { HttpEndpointFields, endpointConfig, isHttpEndpoint, newEndpointDraft, type EndpointConfig } from "./HttpEndpointSetup";
+import type { ConnectionKind, CreateConnection, SharedConnection } from "./SharedConnectionSelect";
 import ActivityPicker from "./ActivityPicker";
 import CanvasMagnifier from "./CanvasMagnifier";
 import { activityIconUrl } from "./activityIconUrl";
@@ -212,24 +221,7 @@ function activityWireGeometry(source: Node, target: Node, lane = 0) {
   };
   return { start, end, label: at(0.5), d: `M${start.x},${start.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${end.x},${end.y}` };
 }
-type Resource = {
-  id: string;
-  type:
-    | "jdbc"
-    | "snowflake"
-    | "amqp"
-    | "ftp"
-    | "sftp"
-    | "http"
-    | "ems"
-    | "jms"
-    | "kafka"
-    | "pubsub"
-    | "sap"
-    | "sap_tid";
-  name: string;
-  config: Record<string, any>;
-};
+type Resource = SharedConnection;
 type Property = {
   key: string;
   value: any;
@@ -284,6 +276,7 @@ class StudioErrorBoundary extends Component<React.PropsWithChildren, { error: Er
   }
 }
 type Def = { type: Kind; operation?: string; label: string; asset: string };
+type ActivityPlacement = { x: number; y: number; connectFrom?: string };
 type ValidationIssue = {
   id: string;
   severity: "error" | "warning" | "mapping";
@@ -321,21 +314,31 @@ const themeOptions = [
   { value: "robots", label: "Robotics Lab", detail: "Steel, hazard yellow, and machine blue" },
   { value: "datastream", label: "Live Data Stream", detail: "Animated green and blue movement across the canvas" },
 ];
-const isEventActivity = (item: { type: Kind; operation?: string; config?: Record<string, any> }) => {
-  const operation = item.operation || item.config?.operation || "";
-  return item.type === "start" || item.type === "timer" || item.type === "http_listener" ||
-    (item.type === "rest" && operation === "receiver") || (item.type === "soap" && operation === "service") ||
-    (item.type === "file" && operation === "poll") ||
-    (item.type === "ems" && ["queue_receiver", "topic_subscriber"].includes(operation)) ||
-    (item.type === "jms" && operation === "receive_message") ||
-    (item.type === "kafka" && ["receive", "get"].includes(operation)) ||
-    (item.type === "pubsub" && operation === "subscribe") ||
-    (item.type === "amqp" && operation === "receive") ||
-    (item.type === "sap" && ["idoc_listener", "rfc_bapi_listener"].includes(operation));
+const taskEntryDescriptions = {
+  starter: "Starts when its configured event fires",
+  subtask: "Invoked by Call Sub Task",
+  unconfigured: "Add a Start or event activity as the task entry point",
+};
+const normalizeTaskKinds = (tasks: Task[]): Task[] => {
+  if (!tasks.some(task => task.kind === "starter" && taskEntryMode(task) === "subtask")) return tasks;
+  return tasks.map(task => task.kind === "starter" && taskEntryMode(task) === "subtask"
+    ? { ...task, kind: "subtask" } : task);
 };
 const ai = (asset: string) => (
   <img src={activityIconUrl(asset)} alt="" />
 );
+function IntegrationApplicationIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...props} aria-hidden="true" viewBox="0 0 24 24" width="24" height="24"
+      fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3.5 20h17a1.5 1.5 0 0 0 1.5-1.5v-11A1.5 1.5 0 0 0 20.5 6H11L8.5 3.5h-5A1.5 1.5 0 0 0 2 5v13.5A1.5 1.5 0 0 0 3.5 20Z"/>
+      <path d="M9.5 13h3m0 0v-3h2m-2 3v3h2"/>
+      <circle cx="8" cy="13" r="1.5"/>
+      <circle cx="16" cy="10" r="1.5"/>
+      <circle cx="16" cy="16" r="1.5"/>
+    </svg>
+  );
+}
 const resourceIconSources: Record<string, string> = { http_client:"/activity-icons/http.png", http_server:"/activity-icons/http.png", http: "/activity-icons/http.png", ftp: "/activity-icons/ftp.png", sftp: "/activity-icons/sftp.png", ems: "/activity-icons/ems.png", jms: "/activity-icons/jms-connection.svg", kafka: "/vendor-logos/apache-kafka.svg", pubsub: "/vendor-logos/gcp-pubsub.png", jdbc: "/activity-icons/JDBC-Query.png", snowflake: "/activity-icons/snowflake.svg", amqp: "/vendor-logos/rabbitmq.svg", sap: "/vendor-logos/sap.svg", sap_tid: "/vendor-logos/sap.svg" };
 const ResourceVendorIcon = ({ type }: { type: string }) => resourceIconSources[type] ? <img className={`resource-vendor-icon resource-${type}`} src={resourceIconSources[type]} alt=""/> : <Database/>;
 const packs: { name: string; icon: any; items: Def[] }[] = [
@@ -359,7 +362,7 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
         type: "call_task",
         operation: "call",
         label: "Call Sub Task",
-        asset: "call-task",
+        asset: "call-sub-task.svg",
       },
       {
         type: "end",
@@ -627,7 +630,6 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
 ];
 const defaultProperties: Property[] = [
   { key: "runtime.logDirectory", value: "", data_type: "string" },
-  { key: "messaging.artmasQueue", value: "ARTMAS05.IN", data_type: "string" },
   { key: "advanced.logPayload", value: false, data_type: "boolean" },
   { key: "advanced.retryEnabled", value: false, data_type: "boolean" },
   { key: "advanced.retryCount", value: 3, data_type: "integer" },
@@ -642,6 +644,7 @@ const defaultProperties: Property[] = [
   { key: "connections.http.authentication", value: "None", data_type: "string" },
   { key: "connections.http.bearerToken", value: "", data_type: "password" },
   { key: "connections.http.tlsEnabled", value: false, data_type: "boolean" },
+  { key: "connections.http.defaultConfidentiality", value: false, data_type: "boolean" },
   { key: "connections.http.certificateFile", value: "", data_type: "string" },
   { key: "connections.http.privateKeyFile", value: "", data_type: "string" },
   { key: "connections.http.privateKeyPassword", value: "", data_type: "password" },
@@ -796,6 +799,7 @@ const defaultProperties: Property[] = [
   { key: "connections.jms.reconnectAttempts", value: 3, data_type: "integer" },
   { key: "connections.jms.reconnectDelayMs", value: 5000, data_type: "integer" },
   { key: "connections.kafka.bootstrapServers", value: "localhost:9092", data_type: "string" },
+  { key: "connections.kafka.topic", value: "", data_type: "string" },
   { key: "connections.kafka.clientId", value: "", data_type: "string" },
   { key: "connections.kafka.groupId", value: "mina", data_type: "string" },
   { key: "connections.kafka.securityProtocol", value: "PLAINTEXT", data_type: "string" },
@@ -864,14 +868,136 @@ const defaultProperties: Property[] = [
   { key: "connections.sap.ackTimeoutSeconds", value: 300, data_type: "integer" },
   { key: "connections.sap.maximumDynamicSessions", value: 1024, data_type: "integer" },
   { key: "connections.sapTid.storageFile", value: "data/sap-tids.json", data_type: "string" },
+  { key: "connections.file.path", value: "", data_type: "string" },
+  { key: "connections.file.destination", value: "", data_type: "string" },
+  { key: "connections.file.encoding", value: "utf-8", data_type: "string" },
+  { key: "connections.file.pattern", value: "*", data_type: "string" },
+  { key: "connections.file.pollInterval", value: 5, data_type: "integer" },
+  { key: "connections.file.recursive", value: false, data_type: "boolean" },
+  { key: "connections.file.includeTimestamp", value: false, data_type: "boolean" },
+  { key: "connections.file.readAs", value: "Text", data_type: "string" },
+  { key: "connections.file.excludeFileContent", value: false, data_type: "boolean" },
+  { key: "connections.file.writeAs", value: "Text", data_type: "string" },
+  { key: "connections.file.append", value: false, data_type: "boolean" },
+  { key: "connections.file.overwrite", value: true, data_type: "boolean" },
+  { key: "connections.file.createDirectories", value: false, data_type: "boolean" },
+  { key: "connections.file.addLineSeparator", value: false, data_type: "boolean" },
+  { key: "connections.file.compression", value: "None", data_type: "string" },
+  { key: "connections.file.listType", value: "Files and Directories", data_type: "string" },
+  { key: "connections.file.sortBy", value: "Name", data_type: "string" },
+  { key: "connections.file.sortOrder", value: "Ascending", data_type: "string" },
+  { key: "connections.file.ignoreMissing", value: false, data_type: "boolean" },
+  { key: "connections.file.preserveAttributes", value: false, data_type: "boolean" },
+  { key: "connections.file.eventType", value: "Created", data_type: "string" },
+  { key: "connections.file.includeExisting", value: false, data_type: "boolean" },
+  { key: "connections.file.postAction", value: "None", data_type: "string" },
+  { key: "connections.file.moveTo", value: "", data_type: "string" },
 ];
-const newEnvironmentProperties = () => defaultProperties.map((item) => ({ ...item }));
+const newEnvironmentProperties = (protocols: string[] = []) => {
+  const core = defaultProperties.filter(item => !item.key.startsWith("connections."));
+  const connector = protocols.length ? protocolPropertyTemplates(protocols) : [];
+  return [...core, ...connector].map(item => ({ ...item }));
+};
+const connectorType = (type: string) => ["http_client", "http_server", "http_listener", "http_response", "rest", "soap"].includes(type)
+  ? "http" : type;
+const connectorPropertyPrefix = (type: string) => `connections.${type === "sap_tid" ? "sapTid" : connectorType(type)}.`;
+const protocolPropertyTemplates = (types: string[]) => {
+  return [...new Set(types.map(connectorType))].flatMap(type => {
+    const prefix = connectorPropertyPrefix(type);
+    const templates = new Map(defaultProperties.filter(item => item.key.startsWith(prefix)).map(item => [item.key, item]));
+    if (!Object.prototype.hasOwnProperty.call(connectionFieldSets, type)) return [...templates.values()];
+    const defaults = connectionDefaults(type);
+    for (const field of connectionFieldSets[type]) {
+      const key = prefix + field.key;
+      const secret = field.password || field.jsonFile;
+      if (templates.has(key) && !secret) continue;
+      const value = defaults[field.key] ?? "";
+      const data_type = secret ? "password" : typeof value === "number" ? "integer"
+        : typeof value === "boolean" ? "boolean" : "string";
+      templates.set(key, { key, value: secret ? "" : value, data_type });
+    }
+    return [...templates.values()];
+  });
+};
+const propertyBindingKey = (value: unknown) => typeof value === "string"
+  ? value.match(/^\$\{properties\.([^}]+)\}$/)?.[1] : undefined;
+const connectionPropertyValue = (item: Property, resource: Resource): Property => {
+  const value = resource.config[item.key.slice(connectorPropertyPrefix(resource.type).length)];
+  if (item.data_type === "password" || value == null || propertyBindingKey(value)) return item;
+  if (item.data_type === "integer" || item.data_type === "long" || item.data_type === "number") {
+    const numeric = value === "" ? NaN : Number(value);
+    if (typeof value === "boolean" || !Number.isFinite(numeric) ||
+        (item.data_type !== "number" && !Number.isSafeInteger(numeric))) return item;
+    return { ...item, value: numeric };
+  }
+  if (item.data_type === "boolean") {
+    if (typeof value === "boolean") return { ...item, value };
+    if (value === "true" || value === "false") return { ...item, value: value === "true" };
+    return item;
+  }
+  if (item.data_type === "json") {
+    if (typeof value !== "string") return { ...item, value };
+    try { return { ...item, value: JSON.parse(value) }; }
+    catch { return item; }
+  }
+  return ["string", "number", "boolean"].includes(typeof value) ? { ...item, value: String(value) } : item;
+};
+const addMissingProperties = (existing: Property[], templates: Property[]) => {
+  const keys = new Set(existing.map(item => item.key));
+  const missing = templates.filter(item => !keys.has(item.key));
+  return missing.length ? [...existing, ...missing.map(item => ({ ...item }))] : existing;
+};
+const addProtocolProperties = (project: Project, templates: Property[], resource?: Resource): Project => {
+  if (!templates.length) return project;
+  return {
+    ...project,
+    properties: Object.fromEntries(Object.entries(project.properties).map(([environment, items]) => [
+      environment,
+      addMissingProperties(items, resource && environment === project.active_environment
+        ? templates.map(item => connectionPropertyValue(item, resource))
+        : templates),
+    ])),
+  };
+};
+const seedAddedProtocols = (previous: Project | undefined, next: Project): Project => {
+  const current = previous?.id === next.id ? previous : undefined;
+  const addedResources = new Map<string, Resource>();
+  if (current?.resources !== next.resources) {
+    const oldResources = new Map(current?.resources.map(resource => [resource.id, resource.type]));
+    for (const resource of next.resources) {
+      const type = connectorType(resource.type);
+      if (oldResources.get(resource.id) !== resource.type && !addedResources.has(type)) {
+        addedResources.set(type, resource);
+      }
+    }
+  }
+  const addedActivityTypes = new Set<string>();
+  if (current?.tasks !== next.tasks) {
+    const oldTasks = new Map(current?.tasks.map(task => [task.id, task]));
+    for (const task of next.tasks) {
+      const oldTask = oldTasks.get(task.id);
+      if (oldTask?.activities === task.activities) continue;
+      const oldActivities = new Map(oldTask?.activities.map(activity => [activity.id, activity.type]));
+      for (const activity of task.activities) {
+        const type = connectorType(activity.type);
+        if (oldActivities.get(activity.id) !== activity.type && !addedResources.has(type)) addedActivityTypes.add(type);
+      }
+    }
+  }
+  let project = addProtocolProperties(next, protocolPropertyTemplates([...addedActivityTypes]));
+  for (const [type, resource] of addedResources) {
+    project = addProtocolProperties(project, protocolPropertyTemplates([type]), resource);
+  }
+  return project;
+};
 const envs = Object.fromEntries(
   ["local", "dev", "qa", "pre", "production"].map((name) => [name, newEnvironmentProperties()]),
 ) as Record<string, Property[]>;
 const supportsOutboundRetry = (type = "", operation = "") =>
-  ["http", "jdbc", "snowflake", "amqp", "ftp", "sftp"].includes(type) ||
-  (["ems", "jms"].includes(type) && ["send", "publish", "request_reply", "reply", "send_message", "reply_message"].includes(operation)) ||
+  ["http", "jdbc", "snowflake", "ftp", "sftp"].includes(type) ||
+  (type === "amqp" && ["send", "get", "dead_letter"].includes(operation)) ||
+  (type === "ems" && ["send", "publish", "request_reply", "reply"].includes(operation)) ||
+  (type === "jms" && ["send_message", "get_queue_message", "request_reply", "reply_message"].includes(operation)) ||
   (type === "kafka" && ["send", "publish", "get"].includes(operation)) ||
   (type === "pubsub" && operation === "publish") ||
   (type === "rest" && operation === "invoke") ||
@@ -883,12 +1009,17 @@ const advancedDefaults = (type = "", operation = "") => ({
     retryEnabled: "${properties.advanced.retryEnabled}",
     retryCount: "${properties.advanced.retryCount}",
     retryIntervalSeconds: "${properties.advanced.retryIntervalSeconds}",
+    retryBackoff: "fixed",
+    retryMaxIntervalSeconds: "",
+    retryMaxElapsedSeconds: 0,
+    retryJitter: false,
+    retryFaultTypes: "",
   } : {}),
 });
-const starter = (id = "main", name = "Main Task"): Task => ({
+const newSubtask = (id = "main", name = "Main-Subtask"): Task => ({
   id,
   name,
-  kind: "starter",
+  kind: "subtask",
   activities: [
     {
       id: "Start",
@@ -914,8 +1045,26 @@ const starter = (id = "main", name = "Main Task"): Task => ({
     },
   ],
 });
+const isTaskTerminal = (activity: Node) => activity.type === "end" || activity.type === "http_response";
+const withHttpResponse = (task: Task): Task => {
+  if (task.activities.some(activity => activity.type === "http_response")) return task;
+  const end = task.activities.find(activity => activity.type === "end"
+    && Object.keys(activity.config || {}).every(key => key === "operation" || key === "advanced")
+    && !task.transitions.some(edge => edge.source === activity.id));
+  if (!end) return task;
+  const id = uniqueActivityName("HTTP-Send-Response", new Set(task.activities.flatMap(activity => [activity.id.toLowerCase(), activity.name.toLowerCase()])));
+  const response: Node = {
+    ...end, id, name: id, type: "http_response",
+    config: { operation: "response", statusCode: 200, advanced: end.config?.advanced || advancedDefaults() },
+  };
+  return {
+    ...task,
+    activities: task.activities.map(activity => activity.id === end.id ? response : activity),
+    transitions: task.transitions.map(edge => edge.target === end.id ? { ...edge, target: id } : edge),
+  };
+};
 const ensureTaskEnd = (task: Task): Task => {
-  if (task.activities.some((activity) => activity.type === "end")) return task;
+  if (task.activities.some(isTaskTerminal)) return task;
   const rightmost = task.activities.reduce<Node | undefined>(
     (current, activity) => !current || activity.position.x > current.position.x ? activity : current,
     undefined,
@@ -977,14 +1126,14 @@ const formatRuntimeOutput = (record: any) => {
 };
 const initial: Project = {
   id: "order-integration",
-  name: "Order Integration",
+  name: "Order-Integration",
   description: "",
   resources: [
     {
       id: "local-db",
       type: "jdbc",
-      name: "Local Database",
-      config: { driver: "sqlite", url: "${properties.connections.jdbc.url}" },
+      name: "Local-Database",
+      config: { driver: "sqlite", url: "integration.db" },
     },
   ],
   packaging: {
@@ -998,7 +1147,7 @@ const initial: Project = {
   custom_functions: [],
   properties: envs,
   active_environment: "local",
-  tasks: [starter()],
+  tasks: [newSubtask()],
   active_task_id: "main",
 };
 // Projects can be loaded from older versions or interrupted autosaves. Keep
@@ -1018,6 +1167,59 @@ const rewriteActivityReference = (value: any, from: string, to: string): any => 
   if (Array.isArray(value)) return value.map((item) => rewriteActivityReference(item, from, to));
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, rewriteActivityReference(item, from, to)]));
   return value;
+};
+const normalizeObjectNames = (project: Project, previous?: Project): Project => {
+  const named = <T extends { name: string }>(item: T): T => {
+    if (typeof item.name !== "string") return item;
+    const name = studioObjectName(item.name);
+    return name === item.name ? item : { ...item, name };
+  };
+  const namedList = <T extends { name: string }>(items: T[]): T[] => {
+    const updated = items.map(named);
+    return updated.every((item, index) => item === items[index]) ? items : updated;
+  };
+  const taskIds = new Set(project.tasks.map(task => task.id));
+  const taskNames = new Map<string, string>();
+  const remember = (tasks: Task[]) => {
+    for (const task of tasks) {
+      if (task.kind !== "subtask" || !taskIds.has(task.id)) continue;
+      const name = task.name.trim().toLowerCase();
+      if (!taskNames.has(name)) taskNames.set(name, task.id);
+    }
+  };
+  remember(project.tasks);
+  if (previous?.id === project.id) remember(previous.tasks);
+
+  const tasks = project.tasks.map(task => {
+    const updated = named(task);
+    const groups = task.groups?.map(named);
+    const activities = task.activities.map(activity => {
+      const node = named(activity);
+      if (node.type !== "call_task") return node;
+      const config = { ...node.config };
+      let changed = false;
+      for (const key of ["taskId", "dynamicTaskId"]) {
+        const value = config[key];
+        if (typeof value !== "string" || taskIds.has(value) || value.includes("${")) continue;
+        const id = taskNames.get(value.trim().toLowerCase());
+        if (id && value !== id) {
+          config[key] = id;
+          changed = true;
+        }
+      }
+      return changed ? { ...node, config } : node;
+    });
+    if (activities.every((activity, index) => activity === task.activities[index]) &&
+      groups?.every((group, index) => group === task.groups?.[index]) !== false) return updated;
+    return { ...updated, activities, groups };
+  });
+  return {
+    ...named(project),
+    tasks,
+    resources: namedList(project.resources),
+    schemas: namedList(project.schemas),
+    custom_functions: namedList(project.custom_functions),
+  };
 };
 const normalizeProject = (value: any): Project => {
   const source = value && typeof value === "object" ? value : {};
@@ -1077,13 +1279,13 @@ const normalizeProject = (value: any): Project => {
     };
   });
   const fallback = structuredClone(initial);
-  const next = { ...fallback, ...source, tasks: migratedTasks.length ? migratedTasks : fallback.tasks } as Project;
+  const next = { ...fallback, ...source, tasks: migratedTasks.length ? normalizeTaskKinds(migratedTasks) : fallback.tasks } as Project;
   next.active_task_id = next.tasks.some((task) => task.id === source.active_task_id) ? source.active_task_id : next.tasks[0].id;
   next.resources = Array.isArray(source.resources) ? source.resources : [];
   next.schemas = Array.isArray(source.schemas) ? source.schemas : [];
   next.custom_functions = Array.isArray(source.custom_functions) ? source.custom_functions : [];
   next.properties = source.properties && typeof source.properties === "object" ? source.properties : structuredClone(envs);
-  return next;
+  return normalizeObjectNames(next);
 };
 const propertyReferences = (value: any) => [...JSON.stringify(value ?? {}).matchAll(/\$\{properties\.([^}]+)\}/g)].map((match) => match[1]);
 const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[] => {
@@ -1100,7 +1302,7 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
     if (activityIds.length > 1) add("error", "Activity", `${task.name} contains duplicate activity names.`, "Give each activity a unique display name within this Task.", activityIds[1]);
   });
   if (events.length !== 1) add("error", "Flow", `${task.name} has ${events.length} event activities.`, "Each task must contain exactly one starter/event activity.");
-  if (!task.activities.some((item) => item.type === "end")) add("error", "Flow", `${task.name} has no End activity.`, "Add an End activity and connect every successful execution path.");
+  if (!task.activities.some(isTaskTerminal)) add("error", "Flow", `${task.name} has no terminal activity.`, "Connect successful paths to End or HTTP Send Response.");
   task.transitions.forEach((transition) => {
     if (!ids.has(transition.source) || !ids.has(transition.target)) add("error", "Transition", "A transition references a missing activity.", "Reconnect or delete the invalid transition.");
     if (transition.source === transition.target) add("warning", "Transition", "A transition connects an activity to itself.", "Connect it to the intended downstream activity.", transition.source);
@@ -1247,7 +1449,7 @@ const validateProjectDefinition = (project: Project) => {
   return issues;
 };
 function App() {
-  const [project, setProject] = useState<Project>(initial),
+  const [project, setProjectState] = useState<Project>(initial),
     [selected, setSelected] = useState("Start"),
     [selectedIds, setSelectedIds] = useState<string[]>(["Start"]),
     [selectedEdge, setSelectedEdge] = useState<string | null>(null),
@@ -1264,12 +1466,12 @@ function App() {
     }),
     [menu, setMenu] = useState<any>(null),
     [taskDialog, setTaskDialog] = useState<"starter" | "subtask" | null>(null),
-    [connectionDialog, setConnectionDialog] = useState<Resource["type"] | "http_client" | "http_server" | null>(
-      null,
-    ),
+    [connectionDialog, setConnectionDialog] = useState<{ kind: ConnectionKind; select?: (resource: Resource) => void } | null>(null),
+    [pendingEndpoint, setPendingEndpoint] = useState<{ definition: Def; position?: ActivityPlacement } | null>(null),
     [editingConnection, setEditingConnection] = useState<Resource | null>(null),
     [schemaEditor, setSchemaEditor] = useState<SchemaDoc | "new" | null>(null),
     [aiBuilderOpen, setAiBuilderOpen] = useState(false),
+    [apiBlueprintOpen, setApiBlueprintOpen] = useState(false),
     [catchAIOpen, setCatchAIOpen] = useState<string | null>(null),
     [packageOpen, setPackageOpen] = useState(false),
     [openSourceOpen, setOpenSourceOpen] = useState(false),
@@ -1324,6 +1526,7 @@ function App() {
   const task =
       project.tasks.find((t) => t.id === project.active_task_id) ||
       project.tasks[0],
+    editorOpen = openTaskIds.includes(project.active_task_id),
     nodes = task.activities,
     edges = task.transitions,
     node = nodes.find((n) => n.id === selected),
@@ -1333,6 +1536,7 @@ function App() {
       () => Object.fromEntries(nodes.map((n) => [n.id, n])),
       [nodes],
     );
+  const entryMode = taskEntryMode(task);
   const groupBounds = useMemo(() => Object.fromEntries((task.groups || []).map((group) => {
     const nested = new Set([group.id]); let changed = true; while (changed) { changed = false; (task.groups || []).forEach((child) => { if (child.parent_group_id && nested.has(child.parent_group_id) && !nested.has(child.id)) { nested.add(child.id); changed = true; } }); }
     const activityIds = new Set((task.groups || []).filter((item) => nested.has(item.id)).flatMap((item) => item.member_activity_ids));
@@ -1341,8 +1545,19 @@ function App() {
     const left = Math.min(...members.map((item) => item.position.x)) - 42, top = Math.min(...members.map((item) => item.position.y)) - 54;
     return [group.id, { x: left, y: top, width: Math.max(230, Math.max(...members.map((item) => item.position.x + 104)) - left + 42), height: Math.max(165, Math.max(...members.map((item) => item.position.y + 94)) - top + 35) }];
   })), [task.groups, nodes]);
+  const setProject = React.useCallback((update: React.SetStateAction<Project>) => {
+    setProjectState(previous => {
+      const next = typeof update === "function" ? update(previous) : update;
+      const tasks = next.tasks === previous.tasks ? next.tasks : normalizeTaskKinds(next.tasks);
+      const updated = tasks === next.tasks ? next : { ...next, tasks };
+      const namesChanged = updated.name !== previous.name || updated.tasks !== previous.tasks ||
+        updated.resources !== previous.resources || updated.schemas !== previous.schemas ||
+        updated.custom_functions !== previous.custom_functions;
+      return seedAddedProtocols(previous, namesChanged ? normalizeObjectNames(updated, previous) : updated);
+    });
+  }, []);
   const mutateTask = (fn: (t: Task) => Task) =>
-    setProject((p) => ({
+    editorOpen && setProject((p) => ({
       ...p,
       tasks: p.tasks.map((t) => (t.id === p.active_task_id ? fn(t) : t)),
       process: undefined,
@@ -1499,7 +1714,7 @@ function App() {
     if (!previous) { setLogs([{ level: "INFO", message: "Nothing left to undo." }]); return; }
     state.future.push(structuredClone(state.current));
     state.current = structuredClone(previous); state.restoring = true;
-    setProject(structuredClone(previous)); restoreHistorySelection(previous);
+    setProjectState(structuredClone(previous)); restoreHistorySelection(previous);
     setLogs([{ level: "INFO", message: `Undo complete · ${state.past.length} earlier change${state.past.length === 1 ? "" : "s"} available.` }]);
     setHistoryVersion((value) => value + 1);
   };
@@ -1510,7 +1725,7 @@ function App() {
     state.past.push(structuredClone(state.current));
     if (state.past.length > 100) state.past.splice(0, state.past.length - 100);
     state.current = structuredClone(next); state.restoring = true;
-    setProject(structuredClone(next)); restoreHistorySelection(next);
+    setProjectState(structuredClone(next)); restoreHistorySelection(next);
     setLogs([{ level: "INFO", message: `Redo complete · ${state.future.length} later change${state.future.length === 1 ? "" : "s"} available.` }]);
     setHistoryVersion((value) => value + 1);
   };
@@ -1541,15 +1756,16 @@ function App() {
   useEffect(() => localStorage.setItem("mina-explorer-width", String(explorerWidth)), [explorerWidth]);
   useEffect(() => setSystemLogInfo(null), [project.id]);
   useEffect(() => {
-    const missingEnd = project.tasks.some((item) => !item.activities.some((activity) => activity.type === "end"));
+    const missingEnd = project.tasks.some((item) => !item.activities.some(isTaskTerminal));
     if (missingEnd) setProject((current) => ({ ...current, tasks: current.tasks.map(ensureTaskEnd), process: undefined }));
-  }, [project.id, project.tasks.map((item) => `${item.id}:${item.activities.some((activity) => activity.type === "end")}`).join("|")]);
+  }, [project.id, project.tasks.map((item) => `${item.id}:${item.activities.some(isTaskTerminal)}`).join("|")]);
+  const editorProjectId = useRef(initial.id);
   useEffect(() => {
     const available = new Set(project.tasks.map((item) => item.id));
+    const changedProject = editorProjectId.current !== project.id;
+    editorProjectId.current = project.id;
     setOpenTaskIds((current) => {
-      const next = current.filter((id) => available.has(id));
-      if (project.active_task_id && available.has(project.active_task_id) && !next.includes(project.active_task_id)) next.push(project.active_task_id);
-      return next.length ? next : project.tasks[0] ? [project.tasks[0].id] : [];
+      return changedProject && available.has(project.active_task_id) ? [project.active_task_id] : current.filter((id) => available.has(id));
     });
   }, [project.id, project.active_task_id, project.tasks.map((item) => item.id).join("|")]);
   useEffect(() => {
@@ -1772,6 +1988,7 @@ function App() {
   }, []);
   const selectTask = (id: string) => {
     const t = project.tasks.find((t) => t.id === id);
+    if (!t) return;
     setOpenTaskIds((current) => current.includes(id) ? current : [...current, id]);
     setProject((p) => ({ ...p, active_task_id: id }));
     const first = t?.activities[0]?.id || "";
@@ -1780,22 +1997,23 @@ function App() {
     setSelectedEdge(null);
     setSelectedResource(null);
   };
-  const closeTaskTabs = (taskId: string, mode: "one" | "left" | "right" | "others") => {
-    const index = openTaskIds.indexOf(taskId);
-    if (index < 0) return;
-    let keep = mode === "others" ? [taskId]
-      : mode === "left" ? openTaskIds.slice(index)
-        : mode === "right" ? openTaskIds.slice(0, index + 1)
-          : openTaskIds.filter((id) => id !== taskId);
-    if (!keep.length) {
-      const fallback = project.tasks.find((item) => item.id !== taskId) || project.tasks.find((item) => item.id === taskId);
-      if (fallback) keep = [fallback.id];
+  const closeTaskTabs = (taskId: string, mode: CloseEditorsMode) => {
+    const {openIds, activeTaskId} = closeTaskEditors(openTaskIds, project.active_task_id, taskId, mode);
+    setOpenTaskIds(openIds);
+    if (activeTaskId && activeTaskId !== project.active_task_id) selectTask(activeTaskId);
+    if (!activeTaskId) {
+      setSelected(""); setSelectedIds([]); setSelectedEdge(null); setSelectedResource(null);
+      setConnectionDraft(null); setSelectionBox(null); setQuickAddDrag(null); setEdgeRewire(null);
     }
-    setOpenTaskIds(keep);
-    if (!keep.includes(project.active_task_id) && keep[0]) selectTask(keep[Math.min(index, keep.length - 1)] || keep[0]);
     setTaskTabMenu(null);
   };
-  const addActivity = (d: Def, pos?: { x: number; y: number; connectFrom?: string }) => {
+  const createConnectionForField: CreateConnection = (kind, select) => setConnectionDialog({ kind, select });
+  const addActivity = (d: Def, pos?: ActivityPlacement, endpoint?: EndpointConfig) => {
+    if (isHttpEndpoint(d.type, d.operation) && !endpoint) {
+      setPendingEndpoint({ definition: d, position: pos });
+      setMenu(null);
+      return;
+    }
     const usedActivityNames = new Set(nodes.map((activity) => String(activity.name || "").trim().toLowerCase()).filter(Boolean)),
       activityName = uniqueActivityName(activityReferenceName(d.label), usedActivityNames),
       id = activityName,
@@ -1909,15 +2127,11 @@ function App() {
       delimiter: ",", lineSeparator: "Auto", header: true, rootElement: "records",
       recordElement: "record", trimValues: true, skipBlankLines: true,
     });
-    if (
-      d.type === "http_listener" ||
-      (d.type === "rest" && d.operation === "receiver")
-    )
-      Object.assign(config, { path: "/events", methods: "GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS,TRACE,CONNECT" });
+    if (endpoint) Object.assign(config, endpoint);
     if (d.type === "http" || (d.type === "rest" && d.operation === "invoke"))
       Object.assign(config, {
         requestModel: "tree", responseMode: "envelope",
-        inputMappings: { "RestInputRequest.Config.Method": '"GET"', "RestInputRequest.Config.bodyFormat": '"json"' },
+        inputMappings: { "RestInputRequest.Config.Method": '"GET"' },
       });
     const n: Node = {
       id,
@@ -1947,21 +2161,33 @@ function App() {
     if (isEventActivity(n)) {
       const existingEvent = nodes.find(isEventActivity);
       if (existingEvent) {
+        if (n.type !== "start" && task.kind === "subtask" && project.tasks.some(caller => caller.activities.some(activity =>
+          activity.type === "call_task" && [task.id, task.name].includes(activity.config.taskId)))) {
+          setLogs([{ level: "WARN", message: "This Subtask is called by another task. Create a separate Starter Task for the event." }]);
+          return;
+        }
         if (existingEvent.type !== "start" && !confirm(`Replace the existing event activity “${existingEvent.name}” with “${n.name}”? A Task can have only one event activity.`)) return;
         const replacement = { ...n, id: existingEvent.id, position: existingEvent.position };
-        mutateTask((current) => ({ ...current, activities: current.activities.map((activity) => activity.id === existingEvent.id ? replacement : activity) }));
+        mutateTask((current) => {
+          const kind = n.type === "start" ? "subtask" : "starter";
+          const updated: Task = { ...current, kind, activities: current.activities.map(activity => activity.id === existingEvent.id ? replacement : activity) };
+          return endpoint ? withHttpResponse(updated) : updated;
+        });
         setSelected(existingEvent.id); setSelectedIds([existingEvent.id]); setSelectedEdge(null); setSelectedResource(null); setMenu(null);
         setLogs([{ level: "INFO", message: `Replaced event activity ${existingEvent.name} with ${n.name}.` }]);
         return;
       }
     }
-    mutateTask((t) => ({
-      ...t,
-      activities: [...t.activities, n],
-      transitions: pos?.connectFrom && t.activities.some((activity) => activity.id === pos.connectFrom) && !t.transitions.some((edge) => edge.source === pos.connectFrom && edge.target === id)
-        ? [...t.transitions, { id: `transition-${Date.now()}`, source: pos.connectFrom, target: id, type: "success" }]
-        : t.transitions,
-    }));
+    mutateTask((t) => {
+      const updated: Task = {
+        ...t,
+        activities: [...t.activities, n],
+        transitions: pos?.connectFrom && t.activities.some((activity) => activity.id === pos.connectFrom) && !t.transitions.some((edge) => edge.source === pos.connectFrom && edge.target === id)
+          ? [...t.transitions, { id: `transition-${Date.now()}`, source: pos.connectFrom, target: id, type: "success" }]
+          : t.transitions,
+      };
+      return endpoint ? withHttpResponse(updated) : updated;
+    });
     setSelected(id);
     setSelectedIds([id]);
     setSelectedEdge(null);
@@ -2051,8 +2277,8 @@ function App() {
       setLogs([{ level: "WARN", message: "A Task must retain one event activity. Add a replacement event to replace this starter." }]);
       return;
     }
-    if (targets.some((item) => item.type === "end") && nodes.filter((item) => item.type === "end").every((item) => targets.some((target) => target.id === item.id))) {
-      setLogs([{ level: "WARN", message: "A Task must retain one End activity. Drag End to reposition it instead of deleting it." }]);
+    if (targets.some(isTaskTerminal) && nodes.filter(isTaskTerminal).every(item => targets.some(target => target.id === item.id))) {
+      setLogs([{ level: "WARN", message: "A Task must retain a terminal activity. Drag it to reposition it instead of deleting it." }]);
       return;
     }
     if (!confirm(targets.length === 1 ? `Delete activity “${targets[0].name}” and its connected transitions?` : `Delete ${targets.length} selected activities and their connected transitions?`)) return;
@@ -2112,11 +2338,11 @@ function App() {
   };
   const newProject = (requestedName?: string) => {
     const suppliedName = typeof requestedName === "string" ? requestedName : undefined;
-    const name = (suppliedName ?? prompt("New application name", "New Integration Application"))?.trim();
+    const name = studioObjectName(suppliedName ?? prompt("New application name", "New-Integration-Application") ?? "");
     if (!name) return;
     const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `project-${Date.now()}`;
     const next = structuredClone(initial);
-    next.id = id; next.name = name; next.description = ""; next.resources = []; next.schemas = []; next.custom_functions = []; next.properties = structuredClone(envs); next.packaging = { ...next.packaging, artifact_name: id }; next.tasks = [starter("main", "Main Task")]; next.active_task_id = "main";
+    next.id = id; next.name = name; next.description = ""; next.resources = []; next.schemas = []; next.custom_functions = []; next.properties = structuredClone(envs); next.packaging = { ...next.packaging, artifact_name: id }; next.tasks = [newSubtask()]; next.active_task_id = "main";
     const replace = () => {
       projectFileHandle.current = null;
       savedProjectSnapshot.current = "";
@@ -2154,6 +2380,21 @@ function App() {
     return () => window.removeEventListener("keydown", shortcuts);
   }, [project, selectedIds]);
   const projectFilename = (extension: string) => `${project.name.replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-|-$/g, "") || project.id}.${extension}`;
+  const applyApiBlueprint = async (plan: any) => {
+    const next=seedAddedProtocols(project, normalizeProject({...project,resources:[...project.resources,plan.resource],tasks:[...project.tasks,...plan.tasks],active_task_id:plan.tasks[0].id}));
+    const response=await fetch(`/api/projects/${project.id}`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify(next)});
+    const output=await response.json();
+    if(!response.ok)throw new Error(typeof output.detail==="string"?output.detail:JSON.stringify(output.detail||"Unable to save API tasks"));
+    const saved=normalizeProject(output);savedProjectSnapshot.current=JSON.stringify(saved);setProject(saved);
+    const first=saved.tasks.find(item=>item.id===plan.tasks[0].id)?.activities[0]?.id||"";
+    setOpenTaskIds(current=>[...new Set([...current,plan.tasks[0].id])]);setSelected(first);setSelectedIds(first?[first]:[]);setSelectedEdge(null);setSelectedResource(null);
+  };
+  const hostApiBlueprint = async (taskId:string) => {
+    const response=await fetch(`/api/projects/${project.id}/run`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({task_id:taskId,environment:project.active_environment,input:{}})});
+    const output=await response.json();
+    if(!response.ok)throw new Error(typeof output.detail==="string"?output.detail:JSON.stringify(output.detail||"API hosting failed"));
+    setLogs(output.logs||[]);setEndpoints(output.endpoints||[]);setExecutionOutputs(output.activity_outputs||{});setRuntimeState(output);setExecutionPanelOpen(true);return output;
+  };
   const persistProject = async () => {
     const response = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(normalizeProject(project)) });
     const contentType = response.headers.get("content-type") || "";
@@ -2327,6 +2568,13 @@ function App() {
     } finally { setWorkStatus(""); }
   };
   const run = async (requestedTaskId?: unknown) => {
+      if (!editorOpen && typeof requestedTaskId !== "string") { setLogs([{level: "INFO", message: "Open a task from Project Explorer before running it."}]); return; }
+      const taskId = typeof requestedTaskId === "string" ? requestedTaskId : task.id;
+      const target = project.tasks.find(item => item.id === taskId);
+      if (target?.kind === "subtask") {
+        setLogs([{ level: "INFO", message: "Run a Starter Task to invoke this Subtask, or use Debug to test it directly." }]);
+        return;
+      }
       setBusy(true);
       try {
         await persistProject();
@@ -2336,7 +2584,7 @@ function App() {
           body: JSON.stringify({
             input: { orderId: "10001" },
             environment: project.active_environment,
-            task_id: typeof requestedTaskId === "string" ? requestedTaskId : task.id,
+            task_id: taskId,
           }),
         }),
           out = await r.json();
@@ -2349,6 +2597,7 @@ function App() {
       } finally { setBusy(false); }
     },
     debug = async (requestedTaskId?: unknown, testMode = false) => {
+      if (!editorOpen && typeof requestedTaskId !== "string") { setLogs([{level: "INFO", message: "Open a task from Project Explorer before debugging it."}]); return; }
       setBusy(true);
       setWorkStatus("Starting debugger…");
       try {
@@ -2420,7 +2669,7 @@ function App() {
       setExecutionOutputs(out.activityOutputs || {});
       setLogs(out.logs || []);
       setEndpoints(out.endpoints || endpoints);
-      if (out.currentTaskId && out.currentTaskId !== project.active_task_id)
+      if (openTaskIds.length && out.currentTaskId && out.currentTaskId !== project.active_task_id)
         selectTask(out.currentTaskId);
       return out;
     };
@@ -2499,9 +2748,10 @@ function App() {
       if (r.ok) {
         const normalized = normalizeProject(out);
         savedProjectSnapshot.current = JSON.stringify(normalized);
-        setProject(normalized);
+        setProject(seedAddedProtocols(undefined, normalized));
+        setOpenTaskIds([normalized.active_task_id]);
         setClosed(false);
-        const first = out.tasks?.[0]?.activities?.[0]?.id || "";
+        const first = normalized.tasks.find(task => task.id === normalized.active_task_id)?.activities[0]?.id || "";
         setSelected(first); setSelectedIds(first ? [first] : []);
         projectFileHandle.current = null;
         setLogs([
@@ -2527,7 +2777,7 @@ function App() {
         const imported = await response.json();
         if (!response.ok) { setLogs([{ level: "ERROR", message: imported.detail || "Unable to open project folder" }]); return; }
         const normalized = normalizeProject(imported);
-        savedProjectSnapshot.current = JSON.stringify(normalized); setProject(normalized); setClosed(false);
+        savedProjectSnapshot.current = JSON.stringify(normalized); setProject(seedAddedProtocols(undefined, normalized)); setClosed(false);
         const first = normalized.tasks?.[0]?.activities?.[0]?.id || "";
         setSelected(first); setSelectedIds(first ? [first] : []);
         projectFileHandle.current = selectedFile.path;
@@ -2567,7 +2817,7 @@ function App() {
       const imported = await response.json();
       if (!response.ok) throw new Error(imported.detail || "Unable to open project folder");
       const normalized = normalizeProject(imported);
-      savedProjectSnapshot.current = JSON.stringify(normalized); setProject(normalized); setClosed(false);
+      savedProjectSnapshot.current = JSON.stringify(normalized); setProject(seedAddedProtocols(undefined, normalized)); setClosed(false);
       const first = normalized.tasks?.[0]?.activities?.[0]?.id || "";
       setSelected(first); setSelectedIds(first ? [first] : []);
       projectFileHandle.current = selected.path;
@@ -2665,11 +2915,16 @@ function App() {
     // appear to do nothing even though it worked in browser mode.
     if (type === "task") { setRenameTaskId(id || null); return; }
     const currentName = type === "task" ? project.tasks.find((item) => item.id === id)?.name : type === "resource" ? project.resources.find((item) => item.id === id)?.name : type === "schema" ? project.schemas.find((item) => item.id === id)?.name : id;
-    const name = prompt(`Rename ${type}`, currentName || "")?.trim(); if (!name || name === currentName) return;
+    const name = studioObjectName(prompt(`Rename ${type}`, currentName || "") ?? ""); if (!name || name === currentName) return;
     if (type === "task") setProject((current) => ({ ...current, tasks: current.tasks.map((item) => item.id === id ? { ...item, name } : item) }));
     if (type === "resource") setProject((current) => ({ ...current, resources: current.resources.map((item) => item.id === id ? { ...item, name } : item) }));
     if (type === "schema") setProject((current) => ({ ...current, schemas: current.schemas.map((item) => item.id === id ? { ...item, name: name.toLowerCase().endsWith(".xsd") ? name : `${name}.xsd` } : item) }));
-    if (type === "property" && id) setProject((current) => { const properties = { ...current.properties, [name]: current.properties[id] }; delete properties[id]; return { ...current, properties, active_environment: current.active_environment === id ? name : current.active_environment }; });
+    if (type === "property" && id) setProject((current) => {
+      if (Object.prototype.hasOwnProperty.call(current.properties, name)) return current;
+      const properties = { ...current.properties, [name]: current.properties[id] };
+      delete properties[id];
+      return { ...current, properties, active_environment: current.active_environment === id ? name : current.active_environment };
+    });
   };
   const explorerRemove = (type: string, id?: string) => {
     if (type === "application") { void deleteCurrent(); return; }
@@ -2727,7 +2982,7 @@ function App() {
           ...themeOptions.map((option) => ({ label: `Theme · ${option.label}`, detail: option.detail, icon: option.value === theme ? CheckCircle2 : Workflow, action: () => setTheme(option.value) })),
         ]}/>
         <TopMenu label="Run" open={menu === "run"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "run" ? null : "run"); }} commands={[
-          { label: "Run Active Task", detail: `${task.name} · ${project.active_environment}`, icon: CirclePlay, shortcut: "F5", action: run },
+          { label: "Run Active Task", detail: `${task.name} · ${project.active_environment}`, icon: Zap, shortcut: "F5", action: run },
           { label: "Start Debugging", detail: "Honor configured breakpoints", icon: Bug, shortcut: "F6", action: debug },
           { label: "Execution Analytics", detail: "Timings, bottlenecks and graph reports", icon: Activity, action: () => setAnalyticsOpen(true) },
           { label: "Start Activity Testing", detail: "Start paused; provide test data without automatically starting listeners", icon: Bug, action: () => debug(undefined, true), disabled: executionActive },
@@ -2773,6 +3028,7 @@ function App() {
         stop={stopExecution}
         executionActive={executionActive}
         aiBuild={() => setAiBuilderOpen(true)}
+        apiBlueprint={() => setApiBlueprintOpen(true)}
         catchAI={openCatchAI}
         validateTask={() => runValidation("task")}
         validateProject={() => runValidation("project")}
@@ -2793,8 +3049,7 @@ function App() {
           Projects <ChevronRight />
           {project.name}
           <ChevronRight />
-          <b>{task.name}</b>
-          <span className={`task-kind ${task.kind}`}>{task.kind}</span>
+          <b>{editorOpen ? task.name : "No task editor open"}</b>
         </div>
         <div className="environment">
           <small>ENVIRONMENT</small>
@@ -2820,7 +3075,7 @@ function App() {
             onDoubleClick={() => setRenameOpen(true)}
             onContextMenu={(e) => { e.preventDefault(); setMenu({ type: "application", x: e.clientX, y: e.clientY }); }}
           >
-            <FolderOpen className="folder" />
+            <IntegrationApplicationIcon className="folder" />
             <b>{project.name}</b>
             <i
               onClick={(e) => {
@@ -2833,6 +3088,8 @@ function App() {
           </button>
           <button
             className="tree-row indent"
+            aria-expanded={!!open.Tasks}
+            title="Right-click to create a task"
             onClick={() => setOpen((o) => ({ ...o, Tasks: !o.Tasks }))}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -2840,46 +3097,42 @@ function App() {
             }}
           >
             {open.Tasks ? <ChevronDown /> : <ChevronRight />}
-            <Folder className="folder" /> Tasks{" "}
-            <span className="count">{project.tasks.length}</span>
-            <i
-              onClick={(e) => {
-                e.stopPropagation();
-                setTaskDialog("starter");
-              }}
-            >
-              <Plus />
-            </i>
+            <Network aria-hidden="true" /> Tasks
           </button>
           {open.Tasks &&
-            project.tasks.map((t) => (
-              <button
-                key={t.id}
-                className={`tree-row indent2 ${t.id === task.id ? "active" : ""}`}
-                onClick={() => selectTask(t.id)}
-                onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setRenameTaskId(t.id); }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setMenu({ type: "task", id: t.id, x: e.clientX, y: e.clientY });
-                }}
-              >
-                <Workflow />
-                {t.name}
-                <small>{t.kind}</small>
-              </button>
-            ))}
+            project.tasks.map((t) => {
+              const mode = taskEntryMode(t);
+              return (
+                <button
+                  key={t.id}
+                  className={`tree-row indent2 explorer-task-row ${mode} ${editorOpen && t.id === task.id ? "active" : ""}`}
+                  onClick={() => selectTask(t.id)}
+                  onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setRenameTaskId(t.id); }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setMenu({ type: "task", id: t.id, x: e.clientX, y: e.clientY });
+                  }}
+                >
+                  <TaskEntryIcon mode={mode} />
+                  <span className="explorer-task-name" title={t.name}>{t.name}</span>
+                </button>
+              );
+            })}
           <button
             className="tree-row indent"
+            aria-expanded={!!open.Resources}
             onClick={() => setOpen((o) => ({ ...o, Resources: !o.Resources }))}
             onContextMenu={(e) => { e.preventDefault(); setMenu({ type: "resources-root", x: e.clientX, y: e.clientY }); }}
           >
             {open.Resources ? <ChevronDown /> : <ChevronRight />}
-            <Folder className="folder" /> Resources
+            <Boxes /> Resources
           </button>
           {open.Resources && (
             <>
               <button
                 className="tree-row indent2"
+                aria-expanded={!!open.Connections}
+                title="Right-click to create a shared connection"
                 onClick={() =>
                   setOpen((o) => ({ ...o, Connections: !o.Connections }))
                 }
@@ -2889,17 +3142,7 @@ function App() {
                 }}
               >
                 {open.Connections ? <ChevronDown /> : <ChevronRight />}
-                <Cable /> Connections{" "}
-                <span className="count">{project.resources.length}</span>
-                <i
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setMenu({ type: "resources", x: e.clientX, y: e.clientY });
-                  }}
-                >
-                  <Plus />
-                </i>
+                <Cable /> Connections
               </button>
               {open.Connections &&
                 project.resources.map((r) => (
@@ -2925,6 +3168,7 @@ function App() {
           )}
           <button
             className="tree-row indent"
+            aria-expanded={!!open.Packaging}
             onClick={() => setOpen((o) => ({ ...o, Packaging: !o.Packaging }))}
             onContextMenu={(e) => { e.preventDefault(); setMenu({ type: "packaging", x: e.clientX, y: e.clientY }); }}
           >
@@ -2940,20 +3184,13 @@ function App() {
           )}
           <button
             className="tree-row indent"
+            aria-expanded={!!open.Schemas}
+            title="Right-click to create a schema"
             onClick={() => setOpen((o) => ({ ...o, Schemas: !o.Schemas }))}
             onContextMenu={(e) => { e.preventDefault(); setMenu({ type: "schemas", x: e.clientX, y: e.clientY }); }}
           >
             {open.Schemas ? <ChevronDown /> : <ChevronRight />}
-            <CodeXml /> Schemas{" "}
-            <span className="count">{project.schemas.length}</span>
-            <i
-              onClick={(e) => {
-                e.stopPropagation();
-                setSchemaEditor("new");
-              }}
-            >
-              <Plus />
-            </i>
+            <CodeXml /> Schemas
           </button>
           {open.Schemas &&
             project.schemas.map((s) => (
@@ -2969,31 +3206,15 @@ function App() {
             ))}
           <button
             className="tree-row indent"
+            aria-expanded={!!open.Properties}
+            title="Right-click to create an environment"
             onClick={() =>
               setOpen((o) => ({ ...o, Properties: !o.Properties }))
             }
             onContextMenu={(e) => { e.preventDefault(); setMenu({ type: "properties", x: e.clientX, y: e.clientY }); }}
           >
             {open.Properties ? <ChevronDown /> : <ChevronRight />}
-            <Braces /> Properties{" "}
-            <span className="count">
-              {Object.keys(project.properties).length}
-            </span>
-            <i
-              onClick={(e) => {
-                e.stopPropagation();
-                const name = prompt("New environment name")
-                  ?.trim()
-                  .toLowerCase();
-                if (name && !project.properties[name])
-                  setProject((p) => ({
-                    ...p,
-                    properties: { ...p.properties, [name]: newEnvironmentProperties() },
-                  }));
-              }}
-            >
-              <Plus />
-            </i>
+            <Braces /> Properties
           </button>
           {open.Properties &&
             Object.keys(project.properties).map((name) => (
@@ -3070,26 +3291,30 @@ function App() {
             const openTask = project.tasks.find((item) => item.id === taskId);
             if (!openTask) return null;
             const active = taskId === project.active_task_id;
+            const mode = taskEntryMode(openTask);
             return <div key={taskId} className={`task-editor-tab ${active ? "active" : ""}`} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setTaskTabMenu({ taskId, x: event.clientX, y: event.clientY }); }}>
-              <button className="task-tab-title" title={openTask.name} onClick={() => selectTask(taskId)}><Workflow/><span>{openTask.name}</span><small>{openTask.kind === "starter" ? "Starter" : "Sub Task"}</small></button>
+              <button className="task-tab-title" title={openTask.name} onClick={() => selectTask(taskId)}>
+                <TaskEntryIcon mode={mode} />
+                <span>{openTask.name}</span>
+              </button>
               <button className="task-tab-more" aria-label={`Task tab options for ${openTask.name}`} onClick={(event) => { event.stopPropagation(); const bounds = event.currentTarget.getBoundingClientRect(); setTaskTabMenu({ taskId, x: bounds.right - 8, y: bounds.bottom + 4 }); }}>•••</button>
               <button className="task-tab-close" aria-label={`Close ${openTask.name} tab`} onClick={(event) => { event.stopPropagation(); closeTaskTabs(taskId, "one"); }}>×</button>
             </div>;
           })}
+          {!!openTaskIds.length && <button className="task-tabs-close-all" onClick={() => closeTaskTabs(project.active_task_id, "all")}>Close All</button>}
         </nav>
         {taskTabMenu && <div className="task-tab-context" style={{ left: taskTabMenu.x, top: taskTabMenu.y }} onPointerDown={(event) => event.stopPropagation()}>
           <button onClick={() => closeTaskTabs(taskTabMenu.taskId, "one")}>Close Tab</button>
           <button onClick={() => closeTaskTabs(taskTabMenu.taskId, "others")}>Close Other Tabs</button>
+          <button onClick={() => closeTaskTabs(taskTabMenu.taskId, "all")}>Close All Tabs</button>
           <button disabled={openTaskIds.indexOf(taskTabMenu.taskId) === 0} onClick={() => closeTaskTabs(taskTabMenu.taskId, "left")}>Close Tabs to the Left</button>
           <button disabled={openTaskIds.indexOf(taskTabMenu.taskId) === openTaskIds.length - 1} onClick={() => closeTaskTabs(taskTabMenu.taskId, "right")}>Close Tabs to the Right</button>
         </div>}
-        <div className="canvas-toolbar">
+        {editorOpen ? <><div className="canvas-toolbar">
           <span>
             <Activity /> Task Designer{" "}
             <small>
-              {task.kind === "starter"
-                ? "External event starts this flow"
-                : "Invoked by Call Sub Task"}
+              {taskEntryDescriptions[entryMode]}
             </small>
           </span>
           <button className="group-selected-button" disabled={!selectedIds.length} onClick={createGroup} title="Create an executable group from the selected activities"><Workflow/> Group selected</button>
@@ -3387,6 +3612,7 @@ function App() {
               }}
               handleExceptions={(types: string[]) => createExceptionHandlers(node.id, types)}
               navigateTask={selectTask}
+              createConnection={createConnectionForField}
             />
           ) : edge ? (
             <EdgeConfig
@@ -3419,7 +3645,7 @@ function App() {
               Select an activity, transition, or shared connection.
             </div>
           )}
-        </section>
+        </section></> : <div className="orchestrator-empty" role="status"><Workflow/><b>No task editors open</b><span>Select a task in Project Explorer to open it.</span></div>}
       </main>
       {executionPanelOpen && <aside className={`monitor monitor-${monitorMode}`}>
         <div className="pane-title"><span>EXECUTION / DEBUG</span><span className="monitor-actions">
@@ -3443,10 +3669,17 @@ function App() {
         </section>}
         {!!endpoints.length && <section className="runtime-endpoints">
           <strong>{endpoints.some((endpoint: any) => endpoint.kind === "subscription") ? "LIVE EVENT RECEIVERS" : "LIVE ENDPOINTS"}</strong>
-          {endpoints.map((endpoint: any) => <article key={endpoint.activityId}>
+          {endpoints.map((endpoint: any) => <article key={`${endpoint.taskId}:${endpoint.activityId}`}>
             <span>{endpoint.kind === "subscription" ? `${String(endpoint.status || "ready").toUpperCase()} · ${endpoint.name}` : `${endpoint.methods?.join(", ")} · ${endpoint.name}`}</span>
             <code>{endpoint.url}</code>
             {endpoint.kind !== "subscription" && <button title="Copy endpoint URL" onClick={() => navigator.clipboard.writeText(endpoint.url)}><ClipboardCopy/> Copy</button>}
+            {endpoint.docsUrl && <><a href={endpoint.docsUrl} target="_blank" rel="noopener noreferrer">Open Swagger · {endpoint.docsUrl}</a><button onClick={async () => {
+              try {
+                const response = await fetch(endpoint.collectionDownloadUrl);
+                if (!response.ok) throw new Error(await response.text());
+                browserDownload(await response.blob(), "MINA-API.postman_collection.json");
+              } catch (error) { alert(`Unable to download Postman collection: ${String(error)}`); }
+            }}>Download Postman collection</button></>}
             {endpoint.kind === "subscription" && <small>Waiting continuously for events on {endpoint.destination}</small>}
             {endpoint.configuredUrl && endpoint.configuredUrl !== endpoint.url && <small>Packaged deployment: {endpoint.configuredUrl}</small>}
           </article>)}
@@ -3468,11 +3701,11 @@ function App() {
           </div>
         ))}
       </aside>}
-      {analyticsOpen && <ExecutionAnalytics key={project.id} projectId={project.id} projectName={project.name} tasks={project.tasks} logs={logs} runtimeState={runtimeState} debugState={debugState} onClose={() => setAnalyticsOpen(false)} onInspect={(taskId: string, activityId: string) => { const target = project.tasks.find(item => item.id === taskId && item.activities.some(activity => activity.id === activityId)) || project.tasks.find(item => item.activities.some(activity => activity.id === activityId)); if (target) { setProject(current => ({...current, active_task_id: target.id})); setSelected(activityId); setActiveTab("configuration"); setAnalyticsOpen(false); } }}/>}
+      {analyticsOpen && <ExecutionAnalytics key={project.id} projectId={project.id} projectName={project.name} tasks={project.tasks} logs={logs} runtimeState={runtimeState} debugState={debugState} onClose={() => setAnalyticsOpen(false)} onInspect={(taskId: string, activityId: string) => { const target = project.tasks.find(item => item.id === taskId && item.activities.some(activity => activity.id === activityId)) || project.tasks.find(item => item.activities.some(activity => activity.id === activityId)); if (target) { selectTask(target.id); setSelected(activityId); setActiveTab("configuration"); setAnalyticsOpen(false); } }}/>}
       {utilityMode && <FileUtilities initialMode={utilityMode} onClose={() => setUtilityMode(null)}/>}
       <footer className="studio-status-bar">
         <span className="status-product"><Workflow/> MINA Studio</span>
-        <span className="status-context">{project.name} · {task.name}</span>
+        <span className="status-context">{project.name}{editorOpen ? ` · ${task.name}` : ""}</span>
         <span className="status-spacer"/>
         <span className="status-environment">{project.active_environment.toUpperCase()}</span>
         <span className={visibleWorkStatus ? "status-progress working" : "status-progress ready"}>{visibleWorkStatus ? <LoaderCircle/> : <CheckCircle2/>}<b>{visibleWorkStatus || "Ready"}</b></span>
@@ -3493,7 +3726,7 @@ function App() {
           projectActivity={(id: string) => nodes.find((item) => item.id === id)}
           addActivity={addActivity}
           createTask={setTaskDialog}
-          createConnection={setConnectionDialog}
+          createConnection={(kind: ConnectionKind) => setConnectionDialog({ kind })}
           actions={{
             newProject, importProject: importFromFileSystem, exportProject, save, refresh: explorerRefresh,
             rename: explorerRename, copy: explorerCopy, paste: explorerPaste, remove: explorerRemove,
@@ -3503,7 +3736,19 @@ function App() {
             deleteActivity: deleteSelectedActivity,
             toggleBreakpoint: (id: string) => setBreakpoints((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]),
             groupActivity: createGroup,
-            newSchema: () => setSchemaEditor("new"), newEnvironment: () => { const name = prompt("New environment name")?.trim().toLowerCase(); if (name && !project.properties[name]) setProject((current) => ({ ...current, properties: { ...current.properties, [name]: newEnvironmentProperties() } })); }, package: () => setPackageOpen(true),
+            newSchema: () => setSchemaEditor("new"), newEnvironment: () => {
+              const name = studioObjectName(prompt("New environment name") ?? "").toLowerCase();
+              if (name) setProject(current => Object.prototype.hasOwnProperty.call(current.properties, name) ? current : {
+                ...current,
+                properties: {
+                  ...current.properties,
+                  [name]: newEnvironmentProperties([
+                    ...current.resources.map(resource => resource.type),
+                    ...current.tasks.flatMap(task => task.activities.map(activity => activity.type)),
+                  ]),
+                },
+              });
+            }, package: () => setPackageOpen(true),
           }}
           close={() => setMenu(null)}
         />
@@ -3511,15 +3756,20 @@ function App() {
       {taskDialog && (
         <TaskDialog
           kind={taskDialog}
+          resources={project.resources}
+          schemas={project.schemas}
+          createConnection={createConnectionForField}
+          connectionOpen={!!connectionDialog}
           onClose={() => setTaskDialog(null)}
           onCreate={(
             name: string,
             kind: "starter" | "subtask",
             event: string,
+            endpoint?: EndpointConfig,
           ) => {
             const id = `task-${Date.now()}`,
-              t = { ...starter(id, name), kind };
-            if (kind === "starter" && event !== "start")
+              t = { ...newSubtask(id, name), kind };
+            if (kind === "starter")
               t.activities[0] = {
                 ...t.activities[0],
                 type: event as Kind,
@@ -3555,30 +3805,48 @@ function App() {
                       : undefined,
                   path: "/events",
                   ...(event === "timer" ? { scheduleMode: "dateTime", scheduledDateTime: "", cronExpression: "0 * * * *", timezone: "local", runOnceOnLocalStart: true } : {}),
+                  ...endpoint,
                 },
               };
             setProject((p) => ({
               ...p,
-              tasks: [...p.tasks, t],
+              tasks: [...p.tasks, endpoint ? withHttpResponse(t) : t],
               active_task_id: id,
             }));
+            setOpenTaskIds(current => [...current, id]);
             setSelected(t.activities[0]?.id || "");
             setSelectedIds(t.activities[0] ? [t.activities[0].id] : []);
             setTaskDialog(null);
           }}
         />
       )}
+      {pendingEndpoint && (
+        <HttpEndpointSetup
+          label={pendingEndpoint.definition.label}
+          resources={project.resources}
+          schemas={project.schemas}
+          createConnection={createConnectionForField}
+          connectionOpen={!!connectionDialog}
+          onClose={() => setPendingEndpoint(null)}
+          onCreate={config => {
+            addActivity(pendingEndpoint.definition, pendingEndpoint.position, config);
+            setPendingEndpoint(null);
+          }}
+        />
+      )}
       {connectionDialog && (
         <SharedConnectionDialog
-          type={connectionDialog === "http_client" || connectionDialog === "http_server" ? "http" : connectionDialog}
-          initialRole={connectionDialog === "http_client" ? "client" : connectionDialog === "http_server" ? "server" : undefined}
+          type={["http_client", "http_server"].includes(connectionDialog.kind) ? "http" : connectionDialog.kind}
+          initialRole={connectionDialog.kind === "http_client" ? "client" : connectionDialog.kind === "http_server" ? "server" : undefined}
+          requireInitialRole={!!connectionDialog.select}
           properties={project.properties[project.active_environment] || []}
           onSapSchemaFetched={(idoc: any) => upsertSapIdocSchema(idoc)}
           onClose={() => setConnectionDialog(null)}
           onCreate={(r: Resource) => {
             setProject((p) => ({ ...p, resources: [...p.resources, r] }));
             setConnectionDialog(null);
-            setSelectedResource(r.id);
+            if (connectionDialog.select) connectionDialog.select(r);
+            else setSelectedResource(r.id);
           }}
         />
       )}
@@ -3629,10 +3897,12 @@ function App() {
       }
       {sampleGalleryOpen && <SampleGallery
         onClose={() => setSampleGalleryOpen(false)}
-        onImport={async (file) => { const imported = await importProject(file); if (imported) setSampleGalleryOpen(false); }}
+        onImport={async (file) => { const imported = await importProject(file); if (imported) setSampleGalleryOpen(false); return imported; }}
       />}
+      {apiBlueprintOpen && <ApiBlueprint resources={project.resources} onClose={() => setApiBlueprintOpen(false)} onApply={applyApiBlueprint} onHost={hostApiBlueprint}/>}
       {aiBuilderOpen && <AIBuilderDialog currentTask={task} onClose={() => setAiBuilderOpen(false)} onApply={(proposal: any) => {
         const generated = proposal.project, scope = proposal.scope;
+        setOpenTaskIds(scope === "task" ? [...new Set([...openTaskIds, project.active_task_id])] : generated.tasks?.[0] ? [generated.tasks[0].id] : []);
         if (scope === "task") {
           const generatedTask = generated.tasks[0];
           setProject((current) => ({ ...current, tasks: current.tasks.map((item) => item.id === current.active_task_id ? { ...generatedTask, id: item.id, name: generatedTask.name || item.name, kind: item.kind } : item), resources: [...current.resources, ...(generated.resources || []).filter((resource: Resource) => !current.resources.some((existing) => existing.type === resource.type))] }));
@@ -3886,7 +4156,8 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
   };
   const build = async (deploy = false, pythonArchive = false) => {
     setError("");
-    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(draft.artifact_name.trim())) { setError("Artifact name may contain letters, numbers, dots, dashes, and underscores."); return; }
+    const artifactName = studioObjectName(draft.artifact_name);
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(artifactName)) { setError("Artifact name may contain letters, numbers, dots, dashes, and underscores."); return; }
     if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(draft.version.trim())) { setError("Use a semantic version such as 1.0.0 or 1.0.0-beta.1."); return; }
     if (!pythonArchive && draft.format !== "python-engine" && !draft.artifacts.length) { setError("Select at least one deployment artifact."); return; }
     if (!draft.environments.length) { setError("Select at least one environment profile."); return; }
@@ -3898,7 +4169,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
     if (deploy && !draft.dataPlaneId.trim()) { setError("Enter the target data-plane ID."); return; }
     if (deploy && !draft.environments.includes(draft.deploymentEnvironment)) { setError("Choose one of the packaged environment profiles for deployment."); return; }
     setBusy(true);
-    const request = { ...draft, format: pythonArchive ? "python-direct" : draft.format };
+    const request = { ...draft, artifact_name: artifactName, format: pythonArchive ? "python-direct" : draft.format };
     // A workstation output path is relevant only to a standard local export.
     // Never send it to Control Plane deployment or reuse it for direct Python.
     if (deploy || pythonArchive) delete request.outputPath;
@@ -3915,7 +4186,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
         <button className={draft.target === "on-prem" ? "selected" : ""} onClick={() => chooseTarget("on-prem")}><HardDrive/><span><b>On-premises Windows / Linux</b><small>Administrator, PowerShell, systemd, and runtime deployment assets</small></span></button>
         <button className={draft.target === "cloud" ? "selected" : ""} onClick={() => chooseTarget("cloud")}><Cloud/><span><b>Cloud / Kubernetes</b><small>OCI image inputs and Kubernetes deployment descriptors</small></span></button>
       </div>
-      <section className="package-starters"><header><span><b>TASK STARTERS</b><small>Select the deployable entry points. Called Sub Tasks are discovered recursively and included automatically; unrelated Sub Tasks are excluded.</small></span><button type="button" onClick={() => update("starterTaskIds", starterTasks.map((task: Task) => task.id))}>Select all</button></header><div>{starterTasks.map((task: Task) => <label key={task.id} className={draft.starterTaskIds.includes(task.id) ? "selected" : ""}><input type="checkbox" checked={draft.starterTaskIds.includes(task.id)} onChange={() => toggleStarter(task.id)}/><span><b>{task.name}</b><small>{task.description || "Starter Task"}</small></span></label>)}</div>{!starterTasks.length && <p>No Starter Tasks are available. Create a Starter Task before packaging.</p>}</section>
+      <section className="package-starters"><header><span><b>TASK ENTRY POINTS</b><small>Select the deployable entry points. Called Sub Tasks are discovered recursively and included automatically; unrelated Sub Tasks are excluded.</small></span><button type="button" onClick={() => update("starterTaskIds", starterTasks.map((task: Task) => task.id))}>Select all</button></header><div>{starterTasks.map((task: Task) => <label key={task.id} className={draft.starterTaskIds.includes(task.id) ? "selected" : ""}><input type="checkbox" checked={draft.starterTaskIds.includes(task.id)} onChange={() => toggleStarter(task.id)}/><span><b>{task.name}</b><small>{task.description || taskEntryLabels[taskEntryMode(task)]}</small></span></label>)}</div>{!starterTasks.length && <p>No task entry points are available. Create a Starter Task before packaging.</p>}</section>
       <section className="package-environments"><header><span><b>ENVIRONMENT PROFILES</b><small>The application is common; configuration and secret files are generated separately for every selected profile.</small></span><button type="button" onClick={() => update("environments", environments)}>Select all</button></header><div>{environments.map((name: string) => <label key={name} className={draft.environments.includes(name) ? "selected" : ""}><input type="checkbox" checked={draft.environments.includes(name)} onChange={() => toggleEnvironment(name)}/><span><b>{name}</b><small>{draft.environments.includes(name) ? "Included" : "Not packaged"}</small></span></label>)}</div></section>
       <label>Archive format<select value={draft.format} onChange={(event) => setDraft((current: any) => ({ ...current, format: event.target.value, outputPath: "" }))}><option value="mpkg">MINA deployment package (.mpkg)</option><option value="ifpkg">Legacy deployment package (.ifpkg)</option><option value="zip">ZIP archive (.zip)</option><option value="tar.gz">Compressed TAR (.tar.gz)</option><option value="ear">EAR-compatible ZIP (.ear)</option><option value="python-engine">Python compatibility archive (.pympkg)</option></select></label>
       <label className="package-output-path">Archive output file <small>Used only by Export archive; deployment ignores this workstation path.</small><span><input value={draft.outputPath} onChange={(event) => update("outputPath", event.target.value)} placeholder={window.minaDesktop ? `C:\\Exports\\${archiveFilename}` : "Your browser will save this archive in its configured Downloads folder."} disabled={!window.minaDesktop}/>{window.minaDesktop && <button type="button" onClick={browseArchiveOutput}><FolderOpen/>Browse</button>}</span></label>
@@ -3965,8 +4236,8 @@ function StudioRibbon(props: any) {
   const command = (label: string, Icon: any, action: () => void, disabled = false, emphasis = false) =>
     <button type="button" className={emphasis ? "emphasis" : ""} disabled={disabled} onClick={(event) => { event.stopPropagation(); action(); }} title={label}><Icon/><span>{label}</span></button>;
   return <section className="studio-ribbon" aria-label="Studio ribbon">
-    <div className="ribbon-group"><b>PROJECT</b><div>{command("New", FilePlus2, props.newProject)}{command("Open", FolderOpen, props.openProjectSource || props.importProject)}{command("Import", Download, props.importProject)}{command("Samples", BookOpen, props.sampleProjects)}{command("Save", Save, props.save)}{command("Export", Upload, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</div></div>
-    <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("AI Build", WandSparkles, props.aiBuild)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Run", CirclePlay, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}</div></div>
+    <div className="ribbon-group"><b>PROJECT</b><div>{command("New", IntegrationApplicationIcon, props.newProject)}{command("Open", FolderOpen, props.openProjectSource || props.importProject)}{command("Import", Download, props.importProject)}{command("Samples", BookOpen, props.sampleProjects)}{command("Save", Save, props.save)}{command("Export", Upload, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</div></div>
+    <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("API Blueprint", Globe, props.apiBlueprint, props.executionActive)}{command("AI Build", WandSparkles, props.aiBuild)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Run", Zap, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}</div></div>
     <div className="ribbon-group"><b>EDIT</b><div>{command("Undo", Undo2, props.undo)}{command("Cut", Scissors, props.cut, !props.selectedCount)}{command("Copy", ClipboardCopy, props.copy, !props.selectedCount)}{command("Paste", ClipboardPaste, props.paste)}</div></div>
     <div className="ribbon-group layout-group"><b>ARRANGE · {props.selectedCount} SELECTED</b><div>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</div></div>
   </section>;
@@ -4115,7 +4386,15 @@ function PropertyEditor({ environment, properties, onClose, onSave }: any) {
               const key = match[1].trim();
               return { key, value, data_type };
             });
-        onSave(result);
+        const existingKeys = new Set((properties as Property[]).map(item => item.key));
+        const keys = new Set<string>();
+        onSave(result.map(item => {
+          const key = existingKeys.has(item.key) ? item.key : studioObjectName(item.key);
+          if (!key) throw new Error("Enter a property name.");
+          if (keys.has(key)) throw new Error(`Property ${key} already exists.`);
+          keys.add(key);
+          return { ...item, key };
+        }));
       } catch (e: any) {
         setError(e.message);
       }
@@ -4293,7 +4572,7 @@ function FileMenu({
   return (
     <div className="menu-dropdown project-menu glossy-menu" onClick={stop}>
       <b>PROJECT</b>
-      <button onClick={go(newProject)}><FilePlus2 /><span>New Project<small>Create a new integration project</small></span></button>
+      <button onClick={go(newProject)}><IntegrationApplicationIcon /><span>New Project<small>Create a new integration project</small></span></button>
       <button onClick={go(importProject)}><Download /><span>Open Project<small>Open a project file or package</small></span></button>
       <button onClick={go(save)}>
         <Save />
@@ -4384,7 +4663,7 @@ function ThemePicker({ theme, setTheme, plainMode, setPlainMode }: any) {
     </div>
   );
 }
-type SampleProject = { id: string; name: string; category: string; description: string; activities: string[]; file: string; ready: boolean };
+type SampleProject = { id: string; name: string; category: string; description: string; activities: string[]; file: string; ready: boolean; family?: string };
 function SampleGallery({ onClose, onImport }: { onClose: () => void; onImport: (file: File) => Promise<any> }) {
   const [samples, setSamples] = useState<SampleProject[]>([]), [search, setSearch] = useState(""), [loading, setLoading] = useState(true), [opening, setOpening] = useState(""), [error, setError] = useState("");
   useEffect(() => {
@@ -4401,15 +4680,19 @@ function SampleGallery({ onClose, onImport }: { onClose: () => void; onImport: (
     try {
       const response = await fetch(sample.file, { cache: "no-store" });
       if (!response.ok) throw new Error(`Unable to load installed sample ${sample.name}.`);
-      await onImport(new File([await response.blob()], `${sample.id}.json`, { type: "application/json" }));
+      const project = await response.json();
+      // Opening a sample creates a new project; keep an earlier edited copy intact.
+      project.id = `${sample.id}-${crypto.randomUUID()}`;
+      const imported = await onImport(new File([JSON.stringify(project)], `${sample.id}.json`, { type: "application/json" }));
+      if (!imported) throw new Error("Unable to create the sample project. Check the Studio log for details.");
     } catch (reason: any) { setError(reason?.message || "Unable to open sample project."); }
     finally { setOpening(""); }
   };
   return <ModalLayer className="modal-backdrop sample-gallery-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div className="sample-gallery">
     <div className="sample-gallery-header"><span><BookOpen/><span><b>Installed sample projects</b><small>Learn with editable projects bundled with MINA Studio</small></span></span><button aria-label="Close samples" onClick={onClose}>×</button></div>
-    <div className="sample-gallery-search"><Search/><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search samples, activities, or technologies…"/></div>
+    <div className="sample-gallery-search"><Search/><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search samples, activities, or technologies…"/><button onClick={() => setSearch("HTTP & REST")}>HTTP &amp; REST examples</button></div>
     <div className="sample-gallery-content">{loading ? <div className="sample-gallery-empty"><LoaderCircle/> Loading installed samples…</div> : visible.map((sample) => <article key={sample.id}><div className="sample-card-heading"><span><Package/></span><div><em>{sample.category}</em><h3>{sample.name}</h3></div><i className={sample.ready ? "ready" : "setup"}>{sample.ready ? "READY TO RUN" : "CONNECTION SETUP"}</i></div><p>{sample.description}</p><div className="sample-activities">{sample.activities.map((activity) => <code key={activity}>{activity}</code>)}</div><button disabled={!!opening} onClick={() => void open(sample)}>{opening === sample.id ? <><LoaderCircle/> Opening…</> : <><FolderOpen/> Open editable sample</>}</button></article>)}{!loading && !visible.length && <div className="sample-gallery-empty">No installed samples match your search.</div>}</div>
-    <div className="sample-gallery-footer"><span>Samples are copied into project storage when opened. Connection samples contain placeholders and never include credentials.</span><button onClick={onClose}>Close</button></div>{error && <p className="sample-gallery-error"><AlertTriangle/>{error}</p>}
+    <div className="sample-gallery-footer"><span>Each opening creates a separate editable project. API examples use public local-only demo credentials; secure examples need certificate setup.</span><a href="/samples/http-rest/README.md" download="MINA-API-Samples-Guide.md">API setup guide</a><a href="/samples/http-rest/MINA-HTTP-REST-Examples.zip" download>Download API helper kit</a><button onClick={onClose}>Close</button></div>{error && <p className="sample-gallery-error"><AlertTriangle/>{error}</p>}
   </div></ModalLayer>;
 }
 function IntegrationBrandArtwork({ className = "" }: { className?: string }) {
@@ -4515,7 +4798,7 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, im
         <span className="launch-eyebrow">BUILD THE CONNECTED ENTERPRISE</span>
         <h1 className="mina-home-title"><span className="mina-name">MINA —</span><span>Mediation,</span><span>Integration &amp;</span><span>Automation</span></h1>
         <div className="launch-buttons">
-          <button className="create-project" onClick={() => setCreateOpen(true)}><span><FilePlus2/></span><b>Create new project<small>Start with the standard project structure</small></b><ChevronRight/></button>
+          <button className="create-project" onClick={() => setCreateOpen(true)}><span><IntegrationApplicationIcon/></span><b>Create new project<small>Start with the standard project structure</small></b><ChevronRight/></button>
           <button className="import-project" onClick={beginImport} disabled={importing}><span><Download/></span><b>{importing ? "Opening project…" : "Import existing project"}<small>Choose .mpackage, .mpkg, ZIP, JSON, or a legacy MINA package</small></b><ChevronRight/></button>
           <button className="sample-projects" onClick={() => setSamplesOpen(true)}><span><BookOpen/></span><b>Explore sample projects<small>Editable, installed examples for mapping, APIs, data, JDBC, and messaging</small></b><ChevronRight/></button>
           <button className="installed-guide" onClick={() => window.open("/help/index.html", "_blank", "noopener")}><span><BookOpen/></span><b>Open MINA documentation<small>Searchable tree, activity reference, guides and PDF manual</small></b><ChevronRight/></button>
@@ -4529,7 +4812,7 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, im
       onClose={() => setSamplesOpen(false)}
       onImport={importProject}
     />}
-    {createOpen && <ModalLayer className="modal-backdrop home-create-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setCreateOpen(false)}><form className="home-create-dialog" onSubmit={submitCreate}><header><span><FilePlus2/><b>Create MINA project</b></span><button type="button" aria-label="Close create project" onClick={() => setCreateOpen(false)}>×</button></header><main><div className="create-project-mark"><Workflow/><span><b>New application</b><small>A clean integration workspace with enterprise defaults</small></span></div><label>Application name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Customer Order Integration" required/></label><section><b>Project Explorer will include</b><div><span><Workflow/>Tasks</span><span><Cable/>Resources</span><span><Package/>Packaging</span><span><CodeXml/>Schemas</span><span><Braces/>Properties</span></div></section></main><footer><button type="button" onClick={() => setCreateOpen(false)}>Cancel</button><button className="primary" type="submit" disabled={!name.trim()}><FilePlus2/> Create project</button></footer></form></ModalLayer>}
+    {createOpen && <ModalLayer className="modal-backdrop home-create-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setCreateOpen(false)}><form className="home-create-dialog" onSubmit={submitCreate}><header><span><IntegrationApplicationIcon/><b>Create MINA project</b></span><button type="button" aria-label="Close create project" onClick={() => setCreateOpen(false)}>×</button></header><main><div className="create-project-mark"><IntegrationApplicationIcon/><span><b>New application</b><small>A clean integration workspace with enterprise defaults</small></span></div><label>Application name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Customer Order Integration" required/></label><section><b>Project Explorer will include</b><div><span><Network aria-hidden="true"/>Tasks</span><span><Boxes/>Resources</span><span><Package/>Packaging</span><span><CodeXml/>Schemas</span><span><Braces/>Properties</span></div></section></main><footer><button type="button" onClick={() => setCreateOpen(false)}>Cancel</button><button className="primary" type="submit" disabled={!name.trim()}><IntegrationApplicationIcon/> Create project</button></footer></form></ModalLayer>}
   </div>;
 }
 function Context({
@@ -4621,7 +4904,7 @@ function Context({
               close();
             }}
           >
-            <CirclePlay /> Starter Task
+            <TaskEntryIcon mode="starter" /> Starter Task
           </button>
           <button
             onClick={() => {
@@ -4629,12 +4912,12 @@ function Context({
               close();
             }}
           >
-            <Workflow /> Sub Task
+            <TaskEntryIcon mode="subtask" /> Sub Task
           </button>
         </>
       )}
-      {menu.type === "application" && <>{item("New Project", "Create another integration application", FilePlus2, actions.newProject)}{item("Run Active Task", "Execute the current task", CirclePlay, () => actions.run())}{item("Debug Active Task", "Start a debug session", Bug, () => actions.debug())}</>}
-      {menu.type === "task" && <>{item("Run Task", "Execute this task", CirclePlay, () => actions.run(menu.id))}{item("Debug Task", "Debug this task", Bug, () => actions.debug(menu.id))}{item("Validate Task", "Validate configuration and mappings", ShieldCheck, () => actions.validate(menu.id))}</>}
+      {menu.type === "application" && <>{item("New Project", "Create another integration application", IntegrationApplicationIcon, actions.newProject)}{item("Run Active Task", "Execute the current task", Zap, () => actions.run())}{item("Debug Active Task", "Start a debug session", Bug, () => actions.debug())}</>}
+      {menu.type === "task" && <>{item("Run Task", "Execute this task", Zap, () => actions.run(menu.id))}{item("Debug Task", "Debug this task", Bug, () => actions.debug(menu.id))}{item("Validate Task", "Validate configuration and mappings", ShieldCheck, () => actions.validate(menu.id))}</>}
       {menu.type === "schemas" && item("New XSD Schema", "Open the schema designer", CodeXml, actions.newSchema)}
       {menu.type === "properties" && item("New Environment", "Create another properties environment", Plus, actions.newEnvironment)}
       {menu.type === "packaging" && item("Configure Package", "Open deployment packaging", Package, actions.package)}
@@ -4675,17 +4958,34 @@ function Context({
     </div>
   );
 }
-function TaskDialog({ kind, onClose, onCreate }: any) {
+function TaskDialog({ kind, resources, schemas, createConnection, connectionOpen, onClose, onCreate }: {
+  kind: "starter" | "subtask";
+  resources: Resource[];
+  schemas: SchemaDoc[];
+  createConnection: CreateConnection;
+  connectionOpen: boolean;
+  onClose: () => void;
+  onCreate: (name: string, kind: "starter" | "subtask", event: string, endpoint?: EndpointConfig) => void;
+}) {
   const [name, setName] = useState(
       kind === "starter" ? "New Starter Task" : "New Sub Task",
     ),
     [event, setEvent] = useState("http_listener");
+  const [endpoint, setEndpoint] = useState(newEndpointDraft);
+  const [error, setError] = useState("");
+  const needsEndpoint = kind === "starter" && isHttpEndpoint(event, event === "rest" ? "receiver" : undefined);
+  const create = () => {
+    let config;
+    try { if (needsEndpoint) config = endpointConfig(endpoint, { resources, schemas }); }
+    catch (error) { setError((error as Error).message); return; }
+    onCreate(name, kind, event, config);
+  };
   return (
     <ModalLayer className="modal-backdrop">
-      <div className="runtime-modal">
+      <div className={`runtime-modal ${needsEndpoint ? "endpoint-setup-dialog" : ""}`} role="dialog" aria-modal="true" aria-labelledby="create-task-title" inert={connectionOpen}>
         <header>
-          <b>Create {kind === "starter" ? "Starter Task" : "Sub Task"}</b>
-          <button onClick={onClose}>×</button>
+          <b id="create-task-title">Create {kind === "starter" ? "Starter Task" : "Sub Task"}</b>
+          <button aria-label="Close task setup" onClick={onClose}>×</button>
         </header>
         <main>
           <label>
@@ -4694,8 +4994,8 @@ function TaskDialog({ kind, onClose, onCreate }: any) {
           </label>
           {kind === "starter" && (
             <label>
-              Starting event
-              <select value={event} onChange={(e) => setEvent(e.target.value)}>
+              How the task starts
+              <select value={event} onChange={(e) => { setEvent(e.target.value); setError(""); }}>
                 <option value="http_listener">HTTP Listener</option>
                 <option value="rest">REST API Receiver</option>
                 <option value="file">File Poller</option>
@@ -4705,21 +5005,23 @@ function TaskDialog({ kind, onClose, onCreate }: any) {
                 <option value="pubsub">GCP Pub/Sub Subscriber</option>
                 <option value="amqp">AMQP Receive Message</option>
                 <option value="sap">SAP IDoc Listener</option>
-                <option value="start">Manual Start</option>
               </select>
             </label>
           )}
+          {needsEndpoint && <HttpEndpointFields resources={resources} schemas={schemas} createConnection={createConnection}
+            draft={endpoint} onChange={value => { setEndpoint(value); setError(""); }}/>}
+          {error && <p className="endpoint-setup-error" role="alert">{error}</p>}
           <p>
             {kind === "subtask"
               ? "Reusable task invoked directly by Call Sub Task. Input and output return to the parent unless Spawn is enabled."
-              : "A runnable entry task triggered by an external event."}
+              : "A starter task begins when its configured event fires."}
           </p>
         </main>
         <footer>
           <button onClick={onClose}>Cancel</button>
           <button
             className="primary"
-            onClick={() => onCreate(name, kind, event)}
+            onClick={create}
           >
             Create
           </button>
@@ -4809,25 +5111,29 @@ const connectionFieldSets: Record<string, any[]> = {
   ],
   http: [
     { key: "connectorMode", label: "Connection role", options: ["client", "server", "both"] },
+    { key: "openApiDocument", label: "MINA API Blueprint contract (JSON / YAML)", multiline: true, help: "API Blueprint stores one validated contract on this dedicated server connection. Operation tasks select their operation IDs. Re-import when adding operations; editing a contract does not replace existing business mappings.", when: (config: any) => !!config.apiBlueprintId },
     { key: "scheme", label: "Protocol", options: ["http", "https"] },
     { key: "host", label: "Default host" },
     { key: "port", label: "Default port" },
     { key: "basePath", label: "Base path" },
+    { key: "apiDocsEnabled", label: "Host Swagger documentation", options: ["true", "false"], help: "Serve browser API documentation at /_mina/docs, the OpenAPI document at /_mina/openapi.json, and a downloadable Postman collection at /_mina/postman.json. Enabled by default for HTTP and REST listeners; /_mina is reserved while enabled.", when: (config: any) => config.connectorMode !== "client" },
+    { key: "apiDocsAccess", label: "API documentation access", options: ["authenticated", "public"], help: "Authenticated documentation uses the listener's configured authentication for its OpenAPI document and Postman download. Public exposes those documents without credentials. API operations always retain their own authentication.", when: (config: any) => config.connectorMode !== "client" },
+    { key: "apiPublicBaseUrl", label: "Public API base URL", help: "Optional externally reachable HTTP or HTTPS URL, including a gateway prefix. Used for endpoint links and generated Postman requests; omit to use the listener host and port. Do not include credentials, query strings, or fragments.", when: (config: any) => config.connectorMode !== "client" },
     { key: "baseUrl", label: "Outbound base URL", when: (config: any) => config.connectorMode !== "server" },
-    { key: "httpVersion", label: "HTTP protocol version", options: ["1.1", "2"], when: (config: any) => config.connectorMode !== "server" },
+    { key: "httpVersion", label: "HTTP protocol version (HTTP/2 listeners require HTTPS)", options: ["1.1", "2"] },
     { key: "authentication", label: "Authentication", options: ["None", "Basic", "Digest", "NTLM", "Bearer", "OAuth2", "JWT", "HMAC", "LDAP", "Certificate"] },
     { key: "username", label: "Username", when: (config: any) => ["Basic", "Digest", "NTLM"].includes(config.authentication) },
     { key: "password", label: "Password", password: true, when: (config: any) => ["Basic", "Digest", "NTLM"].includes(config.authentication) },
     { key: "nonPreemptiveAuthentication", label:"Non-preemptive Basic authentication", options:["false","true"], when:(config:any)=>config.authentication === "Basic" && config.connectorMode !== "server" },
     { key: "bearerToken", label: "Bearer access token", password: true, when: (config: any) => ["Bearer"].includes(config.authentication) },
-    { key: "defaultConfidentiality", label: "Default confidentiality / system trust", options: ["false", "true"], when: (config: any) => config.connectorMode !== "server" },
+    { key: "defaultConfidentiality", label: "Default confidentiality / system trust", options: ["false", "true"], help: "Require HTTPS, verify the provider certificate and hostname, and use system trust plus any configured trusted roots. A separate client certificate is needed only when the provider requires mutual TLS.", when: (config: any) => config.connectorMode !== "server" },
     { key: "confidentiality", label: "Custom confidentiality", options: ["false", "true"] },
     { key: "tlsEnabled", label: "Enable TLS", options: ["false", "true"] },
     { key: "verifyTls", label: "Verify server certificate and hostname", options: ["true", "false"], when: (config: any) => config.connectorMode !== "server" },
     { key: "tlsVersion", label: "Minimum TLS version", options: ["TLSv1.2", "TLSv1.3"] },
     { key: "maximumTlsVersion", label: "Maximum TLS version", options: ["", "TLSv1.2", "TLSv1.3"] },
     { key: "cipherSuites", label: "TLS 1.2 cipher list" },
-    { key: "trustedCertificateFolder", label: "Trusted root / chain certificate folder", placeholder: "Folder path or ${properties.connections.http.trustedCertificateFolder}" },
+    { key: "trustedCertificateFolder", label: "Trusted root certificate folder (chain certificates optional)", placeholder: "Folder path or ${properties.connections.http.trustedCertificateFolder}", help: "Place trusted root CA certificates in this folder. Intermediates are optional: the provider normally sends them during TLS negotiation. Do not copy the provider leaf certificate or private keys into the folder. A provider that omits an intermediate must correct its chain or supply the optional intermediate." },
     { key: "trustStoreType", label: "Trust store format", options: ["PEM", "PKCS12", "JKS"] },
     { key: "trustStoreFile", label: "Trust store / CA certificate path" },
     { key: "trustStorePassword", label: "Trust store password", password: true },
@@ -4852,6 +5158,25 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "followRedirects", label: "Follow redirects", options: ["false", "true"], when: (config: any) => config.connectorMode !== "server" },
     { key: "retryCount", label: "Connection retry count", when: (config: any) => config.connectorMode !== "server" },
     { key: "retryDelayMs", label: "Connection retry delay (ms)", when: (config: any) => config.connectorMode !== "server" },
+    { key: "retryStatusCodes", label: "Retry response status codes", placeholder: "429,502,503,504", help: "Comma-separated HTTP statuses eligible for bounded retries. Disabled when empty. Non-idempotent methods require an Idempotency-Key or the explicit retry override.", when: (config: any) => config.connectorMode !== "server" },
+    { key: "maxRetryDelayMs", label: "Maximum retry delay (ms)", help: "Caps exponential backoff and Retry-After waits. All attempts share the activity timeout budget.", when: (config: any) => config.connectorMode !== "server" },
+    { key: "retryJitter", label: "Randomize retry backoff", options: ["true", "false"], help: "Spread simultaneous retries using bounded random backoff to reduce load spikes.", when: (config: any) => config.connectorMode !== "server" },
+    { key: "respectRetryAfter", label: "Respect Retry-After", options: ["true", "false"], help: "Honor a server retry delay or HTTP date, bounded by Maximum retry delay and the remaining activity budget.", when: (config: any) => config.connectorMode !== "server" },
+    { key: "retryNonIdempotent", label: "Allow retries of non-idempotent methods", options: ["false", "true"], help: "Enable only when the downstream operation safely deduplicates repeated POST/PATCH calls. Prefer a mapped Idempotency-Key.", when: (config: any) => config.connectorMode !== "server" },
+    { key: "circuitFailureThreshold", label: "Circuit breaker failures (0 disabled)", help: "Consecutive connectivity/server failures before opening this runtime's outbound circuit. A half-open probe tests recovery.", when: (config: any) => config.connectorMode !== "server" },
+    { key: "circuitResetSeconds", label: "Circuit recovery delay (seconds)", help: "Wait before permitting one half-open probe. Success closes the circuit; failure reopens it.", when: (config: any) => config.connectorMode !== "server" },
+    { key: "corsAllowedOrigins", label: "Allowed browser origins", help: "Space/comma-separated exact origins. Empty disables CORS. Wildcard cannot be combined with credentialed requests.", when: (config: any) => config.connectorMode !== "client" },
+    { key: "corsAllowCredentials", label: "Allow credentialed CORS", options: ["false", "true"], help: "Permit browser credentials only for explicitly listed origins; never combine with a wildcard origin.", when: (config: any) => config.connectorMode !== "client" },
+    { key: "corsAllowedHeaders", label: "Allowed CORS request headers", help: "Comma-separated header names permitted by preflight. Defaults to content-type and authorization.", when: (config: any) => config.connectorMode !== "client" },
+    { key: "corsExposeHeaders", label: "Response headers exposed to browsers", help: "Comma-separated response header names that browser code may read.", when: (config: any) => config.connectorMode !== "client" },
+    { key: "corsMaxAgeSeconds", label: "CORS preflight cache (seconds)", help: "Browser preflight cache duration, bounded to 86400 seconds. Default 600.", when: (config: any) => config.connectorMode !== "client" },
+    { key: "rateLimitRequests", label: "Requests per client/window (0 disabled)", help: "Fixed-window limit keyed by the actual remote IP and listener route. Excess requests return 429 with Retry-After.", when: (config: any) => config.connectorMode !== "client" },
+    { key: "rateLimitWindowSeconds", label: "Rate limit window (seconds)", help: "Window duration for per-client throttling. Use Redis policy storage when limits must span replicas.", when: (config: any) => config.connectorMode !== "client" },
+    { key: "policyStore", label: "Replay protection / rate limit storage", options: ["memory", "redis"], help: "Memory applies within one runtime. Redis uses atomic counters and nonce claims across replicas and fails closed if unavailable.", when: (config: any) => config.connectorMode !== "client" },
+    { key: "policyRedisUrl", label: "Redis policy connection URL", password: true, help: "Property-bound redis:// or rediss:// connection URL. Use rediss:// for encrypted connections and protect credentials.", when: (config: any) => config.policyStore === "redis" },
+    { key: "policyTimeoutSeconds", label: "Redis policy timeout (seconds)", help: "Bound Redis connection and socket waits. Default 3 seconds; failures reject protected requests with 503.", when: (config: any) => config.policyStore === "redis" },
+    { key: "requestBodyMode", label: "Inbound body storage", options: ["memory", "file"], help: "File mode streams uploads to a temporary file; mappings receive fileName/size. The file is removed after the request flow finishes. Schema body validation requires memory mode.", when: (config: any) => config.connectorMode !== "client" },
+    { key: "uploadDirectory", label: "Temporary upload directory", help: "Existing writable runtime directory for file-backed request bodies. Uploaded files are automatically cleaned on completion, failure and disconnect.", when: (config: any) => config.requestBodyMode === "file" },
     { key: "enableCookies", label: "Accept and resend cookies", options: ["false", "true"], when: (config: any) => config.connectorMode !== "server" },
     { key: "headers", label: "Default headers JSON", multiline: true, when: (config: any) => config.connectorMode !== "server" },
     { key: "query", label: "Default query parameters JSON", multiline: true, when: (config: any) => config.connectorMode !== "server" },
@@ -4889,6 +5214,10 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "jwtSecret", label: "JWT HMAC secret", password: true, when: (config: any) => ["JWT"].includes(config.authentication) },
     { key: "jwtPrivateKeyFile", label: "JWT signing private key path", when: (config: any) => ["JWT"].includes(config.authentication) },
     { key: "jwtPublicKeyFile", label: "JWT verification public key path", when: (config: any) => ["JWT"].includes(config.authentication) },
+    { key: "jwtJwksUrl", label: "JWT verification JWKS URL (HTTPS)", help: "Trusted issuer's explicit HTTPS JWKS endpoint for RSA/EC verification. Tokens never select the URL. Configure the expected issuer, audience and asymmetric algorithm.", when: (config: any) => config.authentication === "JWT" && config.connectorMode !== "client" },
+    { key: "jwtJwksCacheSeconds", label: "JWKS cache lifetime (seconds)", help: "Lifetime of verified discovery keys before refresh. Default 300 seconds. Expired cache does not bypass verification on discovery failure.", when: (config: any) => config.authentication === "JWT" && !!config.jwtJwksUrl },
+    { key: "jwtJwksRefreshSeconds", label: "JWKS refresh cooldown (seconds)", help: "Minimum interval between unknown-key refreshes; limits discovery traffic from attacker-controlled key IDs. Default 10 seconds.", when: (config: any) => config.authentication === "JWT" && !!config.jwtJwksUrl },
+    { key: "jwtJwksTimeoutSeconds", label: "JWKS fetch timeout (seconds)", help: "Maximum wait for key discovery. Default 5 seconds. Responses are bounded to 1 MiB and 128 keys.", when: (config: any) => config.authentication === "JWT" && !!config.jwtJwksUrl },
     { key: "jwtIssuer", label: "JWT issuer", when: (config: any) => ["JWT"].includes(config.authentication) },
     { key: "jwtAudience", label: "JWT audience", when: (config: any) => ["JWT"].includes(config.authentication) },
     { key: "jwtClaims", label: "Outbound JWT claims JSON", multiline: true, when: (config: any) => ["JWT"].includes(config.authentication) },
@@ -5018,11 +5347,12 @@ const connectionFieldSets: Record<string, any[]> = {
 };
 function connectionDefaults(type: string) {
   const prefix = type === "sap_tid" ? "connections.sapTid" : `connections.${type}`;
+  const defaults = new Map(defaultProperties.map(item => [item.key, item.value]));
   const values: Record<string, any> = {};
   for (const field of connectionFieldSets[type] || []) {
-    values[field.key] = propertyExpression(`${prefix}.${field.key}`);
+    values[field.key] = defaults.get(`${prefix}.${field.key}`) ?? "";
   }
-  if (type === "http") Object.assign(values, { connectorMode: "both", scheme: "http", host: "localhost", port: 8080, authentication: "None", tlsEnabled: "false", clientAuthentication: "none", tlsVersion: "TLSv1.2", verifyTls: "true", httpVersion: "1.1", connectionTimeoutMs: 30000, socketTimeoutMs: 60000, writeTimeoutMs: 60000, poolTimeoutMs: 30000, maximumTotalConnections: 200, maximumConnectionsPerHost: 20, idleConnectionTimeoutMs: 40000, minimumQtpThreads: 10, maximumQtpThreads: 75, maxQueueSize: 100, acceptQueueSize: 128, readTimeoutMs: 30000, maxHeaderBytes: 65536, maxRequestBodyBytes: 67108864, maxResponseBodyBytes: 67108864, activityTimeoutSeconds: 180, oauthTimeoutSeconds: 30, jwtLifetimeSeconds: 300, jwtClockSkewSeconds: 30, hmacClockSkewSeconds: 300, hmacKeyId: "default", ldapTimeoutSeconds: 10, ldapSearchFilter: "(uid={username})" });
+  if (type === "http") Object.assign(values, { connectorMode: "both", scheme: "http", host: "localhost", port: 8080, authentication: "None", defaultConfidentiality: "false", tlsEnabled: "false", clientAuthentication: "none", tlsVersion: "TLSv1.2", verifyTls: "true", httpVersion: "1.1", connectionTimeoutMs: 30000, socketTimeoutMs: 60000, writeTimeoutMs: 60000, poolTimeoutMs: 30000, maximumTotalConnections: 200, maximumConnectionsPerHost: 20, idleConnectionTimeoutMs: 40000, minimumQtpThreads: 10, maximumQtpThreads: 75, maxQueueSize: 100, acceptQueueSize: 128, readTimeoutMs: 30000, maxHeaderBytes: 65536, maxRequestBodyBytes: 67108864, maxResponseBodyBytes: 67108864, activityTimeoutSeconds: 180, oauthTimeoutSeconds: 30, jwtLifetimeSeconds: 300, jwtClockSkewSeconds: 30, hmacClockSkewSeconds: 300, hmacKeyId: "default", ldapTimeoutSeconds: 10, ldapSearchFilter: "(uid={username})" });
   if (type === "sap") Object.assign(values, { mode: "external", release: "current", connectionType: "dedicated", maximumConnections: 8, outboundWorkerCount: 2, poolCapacity: 1, peakLimit: 1, connectionExpirationMilliseconds: 600000, outboundPoolIdleSeconds: 1800, maximumOutboundPools: 16, maxPendingEvents: 16, jvmInitialHeapMb: 64, jvmMaximumHeapMb: 512, ackTimeoutSeconds: 300 });
   if (type === "sap_tid") Object.assign(values, { mode: "active", storageFile: "data/sap-tids.properties" });
   if (type === "jdbc") Object.assign(values, { driver: "postgresql", connectionMode: "python", authentication: "SQL Server Authentication", encrypt: "true", trustServerCertificate: "false" });
@@ -5033,7 +5363,7 @@ function connectionDefaults(type: string) {
   if (type === "pubsub") Object.assign(values, { authenticationType: "Service Account JSON", projectId: "", serviceAccountJson: "", batchMaxMessages: 100, batchMaxBytes: 1048576, batchDelayThresholdMilliseconds: 10, flowControlMaxMessages: 1000, flowControlMaxBytes: 10485760 });
   return values;
 }
-function SharedConnectionDialog({ type, initial, initialRole, properties, onClose, onCreate, onSapSchemaFetched }: any) {
+function SharedConnectionDialog({ type, initial, initialRole, requireInitialRole, properties, onClose, onCreate, onSapSchemaFetched }: any) {
   const fields = connectionFieldSets[type] || [];
   const testOutputRef = useRef<HTMLDivElement>(null);
   const idocBrowserRef = useRef<HTMLElement>(null);
@@ -5056,7 +5386,6 @@ function SharedConnectionDialog({ type, initial, initialRole, properties, onClos
     const config = { ...current.config, [key]: value };
     if (type === "http" && key === "connectorMode") {
       if ((value === "client" && config.authentication === "LDAP") || (value === "server" && ["Digest", "NTLM"].includes(config.authentication))) config.authentication = "None";
-      if (value === "server") config.httpVersion = "1.1";
     }
     if (type === "kafka" && key === "authenticationType") {
       config.saslMechanism = value === "API Key / Secret" ? "PLAIN" : ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512", "GSSAPI", "OAUTHBEARER"].includes(value) ? value : "";
@@ -5080,22 +5409,22 @@ function SharedConnectionDialog({ type, initial, initialRole, properties, onClos
     }
     return { ...current, config };
   });
-  const connectorPrefix = type === "sap_tid" ? "connections.sapTid." : `connections.${type}.`;
-  const visibleProperties = [...(properties as Property[])]
+  const connectorPrefix = connectorPropertyPrefix(type);
+  const availableProperties = addMissingProperties(properties, initial ? [] : protocolPropertyTemplates([type]));
+  const visibleProperties = [...availableProperties]
     .filter((item) => item.key.toLowerCase().includes(propertySearch.toLowerCase()))
     .sort((left, right) => Number(right.key.startsWith(connectorPrefix)) - Number(left.key.startsWith(connectorPrefix)) || left.key.localeCompare(right.key));
   const runtimeResource = () => {
-    const values = Object.fromEntries((properties as Property[]).map((item) => [item.key, item.value]));
+    const values = Object.fromEntries(availableProperties.map((item) => [item.key, item.value]));
     const resolved = Object.fromEntries(Object.entries(draft.config).map(([key, value]) => {
-      const match = typeof value === "string" ? value.match(/^\$\{properties\.([^}]+)\}$/) : null;
-      return [key, match ? values[match[1]] : value];
+      const binding = propertyBindingKey(value);
+      return [key, binding ? values[binding] : value];
     }));
     return { ...draft, config: resolved };
   };
-  const propertyBinding = (value: any) => typeof value === "string" ? value.match(/^\$\{properties\.([^}]+)\}$/)?.[1] : undefined;
   const displayedValue = (value: any) => {
-    const key = propertyBinding(value);
-    return key ? (properties as Property[]).find((item) => item.key === key)?.value ?? "" : value ?? "";
+    const key = propertyBindingKey(value);
+    return key ? availableProperties.find((item) => item.key === key)?.value ?? "" : value ?? "";
   };
   const fieldIsRequired = (field: any, config = draft.config) => typeof field.required === "function" ? !!field.required(config) : !!field.required;
   const missingRequiredFields = (resource: any) => fields.filter((field: any) => (!field.when || field.when(resource.config)) && fieldIsRequired(field, resource.config) && String(resource.config[field.key] ?? "").trim() === "").map((field: any) => field.label);
@@ -5191,6 +5520,11 @@ function SharedConnectionDialog({ type, initial, initialRole, properties, onClos
   };
   const save = () => {
     const resource = runtimeResource(), missing = missingRequiredFields(resource);
+    if (requireInitialRole && initialRole && ![initialRole, "both"].includes(resource.config.connectorMode)) {
+      setStatus(`Choose an HTTP connection that supports the ${initialRole} role.`);
+      setStatusOk(false);
+      return;
+    }
     if (missing.length) { setStatus(`Required connection values are missing: ${missing.join(", ")}`); setStatusOk(false); return; }
     const invalid = configurationError(resource);
     if (invalid) { setStatus(invalid); setStatusOk(false); return; }
@@ -5208,7 +5542,7 @@ function SharedConnectionDialog({ type, initial, initialRole, properties, onClos
     return () => cancelAnimationFrame(frame);
   }, [status, statusOk]);
   const resolvedConfig = runtimeResource().config;
-  return <ModalLayer className="modal-backdrop"><div className="runtime-modal connection-dialog">
+  return <ModalLayer className="modal-backdrop"><div className="runtime-modal connection-dialog" role="dialog" aria-modal="true">
     <header><span className="connection-dialog-title"><Cable/><span><b>{initial ? "Edit" : "Create"} {type === "sap" ? "SAP ECC" : type === "snowflake" ? "Snowflake JDBC" : type.toUpperCase()} shared connection</b><small>{initial ? "Update the reusable project connection" : "Reusable across every task in this project"}</small></span></span><span className="connection-header-actions">{type === "sap" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button>}{type === "snowflake" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchSnowflakeEntities} disabled={snowflakeLoading}><Download/> {snowflakeLoading ? "Retrieving…" : "Retrieve entities"}</button>}<button aria-label="Close" onClick={onClose}>×</button></span></header>
     <main>
       <label>Name<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>
@@ -5218,7 +5552,7 @@ function SharedConnectionDialog({ type, initial, initialRole, properties, onClos
         <div className="property-browser-list">{visibleProperties.map((item) => <button key={item.key} onClick={() => { set(target, propertyExpression(item.key)); setTarget(null); setPropertySearch(""); }}><span><b>{item.key}</b><small>{item.data_type}</small></span><code>{item.data_type === "password" ? "••••••" : String(item.value)}</code></button>)}{!visibleProperties.length && <p>No matching connector properties.</p>}</div>
       </section>}
       {fields.filter((field: any) => !field.when || field.when(resolvedConfig)).map((field: any) => {
-        const required = fieldIsRequired(field, resolvedConfig), binding = propertyBinding(draft.config[field.key]), value = displayedValue(draft.config[field.key]);
+        const required = fieldIsRequired(field, resolvedConfig), binding = propertyBindingKey(draft.config[field.key]), value = displayedValue(draft.config[field.key]);
         const title = <span className="connection-field-label"><span>{field.label}{required && <i>*</i>}</span><small>{required ? "Required" : "Optional"}</small></span>;
         const mapped = binding && <small className="resolved-property-value">Value resolved from <code>{binding}</code></small>;
         const textValue = typeof value === "string" ? value : JSON.stringify(value, null, 2);

@@ -10,6 +10,8 @@ from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 from typing import Any
 from .native.mapping_literals import parse_literal
+from .retry_policy import RetryPlan, outbound_activity, retry_boolean
+from time import perf_counter
 
 
 REFERENCE = re.compile(r'^\$\{([^}]+)\}$')
@@ -102,7 +104,7 @@ def resolve(value: Any, ctx: Context) -> Any:
         match = REFERENCE.fullmatch(value)
         if match: return lookup(match.group(1), ctx)
         return re.sub(r'\$\{([^}]+)\}', lambda item: str(lookup(item.group(1), ctx)), value)
-    if isinstance(value, dict): return {key: resolve(child, ctx) for key, child in value.items()}
+    if isinstance(value, dict): return {key: copy.deepcopy(child) if key in ('openApiDocument','openApiReferenceDocuments') and not isinstance(child,Reference) and not (isinstance(child,str) and REFERENCE.fullmatch(child)) else resolve(child, ctx) for key, child in value.items()}
     if isinstance(value, list): return [resolve(child, ctx) for child in value]
     return value
 
@@ -219,26 +221,27 @@ def choose_transition(edges: list[dict], source: str, ctx: Context, error: Excep
 
 
 async def execute_with_policy(kind: str, raw: dict, ctx: Context, activity_id: str, name: str) -> Any:
-    advanced = resolve(raw.get('advanced') or {}, ctx)
+    advanced = {key.removeprefix('advanced.'): value for key, value in ctx.properties.items() if key.startswith('advanced.retry')}
+    advanced.update(resolve(raw.get('advanced') or {}, ctx))
     policy = resolve(raw.get('errorPolicy') or {}, ctx)
-    outbound = False  # OUTBOUND_RETRY_EXPRESSION
-    retry_enabled = advanced.get('retryEnabled', ctx.properties.get('advanced.retryEnabled', False))
-    attempts = 1 + max(0, int(advanced.get('retryCount', ctx.properties.get('advanced.retryCount', 3)) or 0)) if outbound and retry_enabled else 1
-    if policy.get('action') == 'retry':
-        attempts = 1 + max(0, int(policy.get('retryCount') or 0))
-    delay = float(advanced.get('retryIntervalSeconds', ctx.properties.get('advanced.retryIntervalSeconds', 60)) or 0) if outbound and retry_enabled else float(policy.get('retryDelay') or 0) / 1000
-    for attempt in range(attempts):
+    retry = RetryPlan(outbound_activity(kind, raw.get('operation', '')), advanced, policy)
+    started = perf_counter()
+    for attempt in range(retry.count + 1):
         try:
             result = await execute(kind, raw, ctx, activity_id, name)
             if raw.get('outputName'): ctx.variables[str(raw['outputName'])] = result
             return result
-        except Exception:
-            if attempt + 1 < attempts:
-                logging.warning('%s failed; retry %s of %s in %s seconds', name, attempt + 1, attempts - 1, delay)
+        except Exception as error:
+            delay = retry.delay(attempt, error, perf_counter() - started)
+            if delay is not None:
+                logging.warning('%s failed; retry %s of %s in %s seconds', name, attempt + 1, retry.count, delay)
                 if delay: await asyncio.sleep(delay)
                 continue
+            fault = {'type': getattr(error, 'fault_type', type(error).__name__), 'description': str(error), 'activityId': activity_id}
+            if retry_boolean(policy.get('includeInput', True)): fault['input'] = ctx.last
+            if policy.get('outputVariable'): ctx.variables[policy['outputVariable']] = fault
             if policy.get('action') == 'ignore': return ctx.last
-            if policy.get('action') == 'continue': return {'type': 'ActivityError', 'activityId': activity_id}
+            if policy.get('action') == 'continue': return fault
             raise
 
 
@@ -426,8 +429,10 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
     # CAPABILITY http_client END
     # CAPABILITY http_response START
     if kind == 'http_response':
-        return {'statusCode': int(cfg.get('statusCode') or 200), 'headers': cfg.get('headers') or {},
-                'body': cfg.get('body', ctx.last), 'sent': True}
+        headers=cfg.get('headers') or {}
+        if cfg.get('contentType'):headers={**headers,'content-type':cfg['contentType']}
+        return {'statusCode': int(cfg.get('statusCode') or 200), 'headers': headers,
+                'body': cfg.get('body', ctx.last), 'sent': True, **{key:cfg[key] for key in ('fileName','binaryContent') if cfg.get(key) is not None}}
     # CAPABILITY http_response END
     # CAPABILITY dataweave START
     if kind == 'dataweave':

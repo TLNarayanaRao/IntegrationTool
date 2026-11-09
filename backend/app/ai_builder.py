@@ -3,7 +3,7 @@ from __future__ import annotations
 import json, os, re, uuid
 from typing import Any
 import httpx
-from .models import Activity, ProcessDefinition, SharedResource, TaskDefinition, Transition
+from .models import Activity, ProcessDefinition, SharedResource, TaskDefinition, Transition, is_event_activity
 
 CATALOG = {
     'http listener': ('http_listener', 'listen', 'HTTP Listener'), 'rest receiver': ('rest', 'receiver', 'REST API Receiver'),
@@ -21,7 +21,6 @@ CATALOG = {
     'send response': ('http_response', 'response', 'HTTP Send Response'), 'catch': ('catch', 'catch', 'Catch Exception'),
     'throw': ('throw', 'throw', 'Throw Exception'), 'rethrow': ('rethrow', 'rethrow', 'Rethrow Exception'),
 }
-EVENT_TYPES = {'http_listener','rest','timer','file','ems','kafka','pubsub','sap','start'}
 
 def _slug(value: str, fallback='activity') -> str:
     return re.sub(r'[^a-z0-9]+', '-', value.lower()).strip('-') or fallback
@@ -41,10 +40,13 @@ def local_proposal(requirement: str, scope: str, current_task: dict | None = Non
         for phrase, definition in CATALOG.items():
             if phrase in lower and definition not in selected: selected.append(definition)
     if ('response' in lower or 'reply' in lower) and any(item[0] in ('rest','http_listener') for item in selected) and CATALOG['send response'] not in selected: selected.append(CATALOG['send response'])
-    events = [item for item in selected if item[0] in EVENT_TYPES and (item[0] != 'file' or item[1] == 'poll') and (item[0] != 'sap' or item[1] in ('idoc_listener', 'rfc_bapi_listener'))]
-    if not events: selected.insert(0, ('start', 'start', 'Manual Start'))
-    elif len(events) > 1:
-        keep = events[0]; selected = [item for item in selected if item not in events or item == keep]
+    events = [item for item in selected if is_event_activity(Activity(
+        id='entry', type=item[0], name=item[2], config={'operation': item[1]},
+    ))]
+    if events:
+        selected = [events[0], *[item for item in selected if item not in events]]
+    else:
+        selected.insert(0, ('start', 'start', 'Start'))
     if not any(item[0] == 'end' for item in selected): selected.append(('end', 'end', 'End'))
     if selected[-1][0] != 'end': selected.append(('end', 'end', 'End'))
     activities, transitions = [], []
@@ -53,7 +55,7 @@ def local_proposal(requirement: str, scope: str, current_task: dict | None = Non
         if any(activity['id'].lower() == activity_id.lower() for activity in activities):
             activity_id = f'{activity_id}-{index + 1}'
         config: dict[str, Any] = {'operation': operation}
-        if kind == 'kafka' and operation == 'receive': config.update({'topic': '${properties.connections.kafka.topic}', 'groupId': 'mina', 'maxMessages': 1, 'valueDeserializer': 'String'})
+        if kind == 'kafka' and operation == 'receive': config.update({'topic': '', 'groupId': 'mina', 'maxMessages': 1, 'valueDeserializer': 'String'})
         if kind == 'log': config.update({'level': 'INFO', 'message': '${last}', 'includePayload': True})
         if kind == 'sap' and operation == 'idoc_parser': config.update({'idocType': 'ARTMAS05', 'idocOutputMode': 'JSON', 'parserEngine': 'Built-in', 'validateIdocType': True, 'inputMappings': {'IDoc': '${last}'}})
         if kind == 'sap' and operation == 'post_idoc': config.update({'idocType': 'ARTMAS05', 'inputFormat': 'XML', 'idocInputMode': 'tRFC', 'inputMappings': {'payload': '${Parse-ARTMAS05-IDoc.SAPIDoc}'}})
@@ -65,7 +67,8 @@ def local_proposal(requirement: str, scope: str, current_task: dict | None = Non
     for index in range(len(main_track)-1):
         transitions.append({'id':f'ai-edge-{index + 1}','source':main_track[index]['id'],'target':main_track[index+1]['id'],'type':'success','label':'success','condition':''})
     task_name = (current_task or {}).get('name') if scope == 'task' else 'AI Generated Task'
-    task = {'id':(current_task or {}).get('id','ai-main-task'),'name':task_name or 'AI Generated Task','kind':(current_task or {}).get('kind','starter'),'description':requirement,'activities':activities,'transitions':transitions,'input_schema':{},'output_schema':{}}
+    task_kind = 'starter' if events else 'subtask'
+    task = {'id':(current_task or {}).get('id','ai-main-task'),'name':task_name or 'AI Generated Task','kind':task_kind,'description':requirement,'activities':activities,'transitions':transitions,'input_schema':{},'output_schema':{}}
     resource_types = []
     for activity in activities:
         candidate = {'jdbc':'jdbc','http':'http','http_listener':'http','rest':'http','ems':'ems','kafka':'kafka','pubsub':'pubsub','sap':'sap'}.get(activity['type'])

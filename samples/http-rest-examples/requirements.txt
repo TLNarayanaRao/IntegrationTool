@@ -1,0 +1,2 @@
+# Only needed for standalone preparation; Studio provides its own runtime dependencies.
+cryptography>=43

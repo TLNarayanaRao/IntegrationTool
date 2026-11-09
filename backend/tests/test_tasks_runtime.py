@@ -193,7 +193,8 @@ class TaskRuntimeTests(unittest.TestCase):
 
     def test_dynamic_subtask_override_is_resolved_from_environment_properties(self):
         payload = self.project()
-        payload['properties']['local'] = [{'key':'routing.targetTask','value':'Child','data_type':'string'}]
+        payload['tasks'][1]['name'] = 'Child-Flow'
+        payload['properties']['local'] = [{'key':'routing.targetTask','value':'Child Flow','data_type':'string'}]
         call = next(item for item in payload['tasks'][0]['activities'] if item['type'] == 'call_task')
         call['config']['taskId'] = 'missing-static-fallback'
         call['config']['dynamicTaskId'] = '${properties.routing.targetTask}'

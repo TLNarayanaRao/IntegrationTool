@@ -1,0 +1,179 @@
+{
+  "id": "mina-example-05-host-basic",
+  "name": "Host HTTPS with Basic authentication",
+  "description": "Local learning sample. Demo credentials only; see the accompanying README.",
+  "resources": [
+    {
+      "id": "api-05-host-basic-http",
+      "type": "http",
+      "name": "Host HTTPS with Basic authentication \u00b7 API server",
+      "config": {
+        "connectorMode": "server",
+        "host": "127.0.0.1",
+        "port": 9445,
+        "minimumQtpThreads": 1,
+        "maximumQtpThreads": 8,
+        "authentication": "Basic",
+        "apiDocsEnabled": true,
+        "apiDocsAccess": "authenticated",
+        "scheme": "https",
+        "tlsEnabled": true,
+        "certificateFile": "${properties.demo.directory}/server-chain.pem",
+        "privateKeyFile": "${properties.demo.directory}/server-key.pem",
+        "trustedCertificateFolder": "${properties.demo.directory}/trusted-roots",
+        "verifyTls": true,
+        "username": "${properties.demo.username}",
+        "password": "${properties.demo.password}",
+        "openApiDocument": {
+          "openapi": "3.0.3",
+          "info": {
+            "title": "MINA sample API",
+            "version": "1.0.0"
+          },
+          "paths": {
+            "/hello": {
+              "get": {
+                "operationId": "hello",
+                "summary": "Read a sample greeting",
+                "responses": {
+                  "200": {
+                    "description": "Greeting",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "required": [
+                            "message"
+                          ],
+                          "properties": {
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "example": {
+                          "message": "Hello from MINA"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "apiBlueprintId": "api-05-host-basic"
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "id": "api-05-host-basic-1",
+      "name": "GET /hello",
+      "kind": "starter",
+      "description": "MINA API Blueprint: Host HTTPS with Basic authentication. Declared example response for testing; replace with business logic.",
+      "groups": [],
+      "activities": [
+        {
+          "id": "Receive",
+          "name": "REST-API-Receiver",
+          "type": "rest",
+          "position": {
+            "x": 150,
+            "y": 160
+          },
+          "config": {
+            "operation": "receiver",
+            "resourceId": "api-05-host-basic-http",
+            "operationId": "hello",
+            "apiBlueprintId": "api-05-host-basic",
+            "validateRequest": true,
+            "validateResponse": true
+          }
+        },
+        {
+          "id": "Reply",
+          "name": "HTTP-Response",
+          "type": "http_response",
+          "position": {
+            "x": 450,
+            "y": 160
+          },
+          "config": {
+            "operation": "response",
+            "statusCode": 200,
+            "contentType": "application/json",
+            "inputMappings": {
+              "body": "{\"message\": \"Hello from MINA\"}"
+            }
+          }
+        },
+        {
+          "id": "End",
+          "name": "End",
+          "type": "end",
+          "position": {
+            "x": 750,
+            "y": 160
+          },
+          "config": {}
+        }
+      ],
+      "transitions": [
+        {
+          "id": "receive-reply",
+          "source": "Receive",
+          "target": "Reply",
+          "type": "success"
+        },
+        {
+          "id": "reply-end",
+          "source": "Reply",
+          "target": "End",
+          "type": "success"
+        }
+      ]
+    }
+  ],
+  "active_task_id": "api-05-host-basic-1",
+  "active_environment": "local",
+  "properties": {
+    "local": [
+      {
+        "key": "demo.directory",
+        "value": "",
+        "data_type": "string"
+      },
+      {
+        "key": "demo.username",
+        "value": "mina-demo",
+        "data_type": "string"
+      },
+      {
+        "key": "demo.password",
+        "value": "mina-demo-password",
+        "data_type": "password"
+      },
+      {
+        "key": "demo.clientId",
+        "value": "mina-demo-client",
+        "data_type": "string"
+      },
+      {
+        "key": "demo.clientSecret",
+        "value": "mina-demo-client-secret",
+        "data_type": "password"
+      },
+      {
+        "key": "demo.hmacSecret",
+        "value": "mina-demo-hmac-secret-change-before-real-use",
+        "data_type": "password"
+      },
+      {
+        "key": "demo.jwtSecret",
+        "value": "mina-demo-jwt-secret-at-least-32-characters",
+        "data_type": "password"
+      }
+    ]
+  }
+}

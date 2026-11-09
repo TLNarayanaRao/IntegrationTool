@@ -3,6 +3,18 @@ import { connectorFieldHelp } from './connector-documentation.mjs';
 const meanings = {};
 export const missingFieldDescriptions = new Set();
 const describe = (keys, text) => keys.split(' ').forEach(key => meanings[key] = text);
+describe('recordCount', 'Number of parsed or rendered data records, excluding the header row. Use this integer to validate expected row counts or report processing totals.');
+describe('fields', 'Ordered field names from the parsed header, configured field list or selected flat-record schema. The order determines record column positions.');
+describe('root', 'Qualified root element name of the parsed XML document. Its namespace URI is retained; use the parsed value/tree for element and attribute mappings.');
+describe('headerPairs', 'Complete ordered received header name/value pairs, preserving repeated headers. Use this collection when every wire header occurrence is needed.');
+
+describe('openApiBaseUrl', 'Absolute contract document URL used to resolve relative external references. It does not change the REST service endpoint.');
+describe('openApiReferenceDocuments', 'URI-to-document JSON object supplying external API reference documents without a network fetch. Each URI identifies its JSON or YAML contract document.');
+describe('openApiAllowedRefOrigins', 'Explicit HTTPS origins permitted for external contract retrieval. Empty disables network reference retrieval. Redirects and implicit file access are forbidden; downloaded documents have size/count bounds.');
+describe('streamRequest', 'Stream MIME attachment content from files in bounded chunks instead of buffering the complete envelope. File body uploads stream automatically.');
+describe('responseFile', 'Runtime filename for a streamed download. A temporary file is atomically published only after successful completion; body returns fileName and size. Response schema validation requires buffered mode.');
+describe('overwriteResponseFile', 'Permit replacing an existing download destination after a successful transfer. Disabled by default to protect existing files.');
+describe('responseBodyMode', 'Set binary to preserve the response bytes as the body. File mode uses responseFile; structured output also exposes base64 binaryContent.');
 describe('operation', 'Select the operation performed by this activity. The operation determines the available configuration, input contract and output contract.');
 describe('resourceId', 'Select a saved shared connection of the matching connector family. Connection properties are resolved using the active environment.');
 describe('taskId', 'Select the Sub Task to invoke. Its Start interface defines the caller input and its End interface defines the returned value.');

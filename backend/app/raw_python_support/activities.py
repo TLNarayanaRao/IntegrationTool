@@ -131,81 +131,9 @@ def _value_to_xml(name: str, value: Any) -> ET.Element:
     return node
 
 
-def data_activity(kind: str, operation: str, cfg: dict, payload: Any) -> dict:
-    if kind == 'json':
-        def validate(value, flag):
-            if not _bool(cfg.get(flag)): return
-            from .native.mapper import validate_output
-            schema = cfg.get('schemaText')
-            if not schema: raise ValueError(f'{flag} requires a project or inline JSON schema')
-            errors = validate_output(value, schema)
-            if errors: raise ValueError('JSON schema validation failed: ' + '; '.join(errors))
-        if operation == 'parse':
-            text = cfg.get('jsonString', cfg.get('value', cfg.get('source', cfg.get('text', payload))))
-            if isinstance(text, dict): text = text.get('jsonString') or text.get('content') or text.get('body') or text
-            policy = str(cfg.get('duplicateKeyPolicy', 'Last wins')).lower()
-            def pairs(items):
-                result = {}
-                for key, value in items:
-                    if key in result and policy == 'error': raise ValueError(f'Duplicate JSON key: {key}')
-                    if key not in result or policy != 'first wins': result[key] = value
-                return result
-            value = json.loads(text, object_pairs_hook=pairs) if isinstance(text, (str, bytes, bytearray)) else text
-            validate(value, 'validateOutput')
-            return value
-        value = cfg.get('value', cfg.get('source', payload))
-        mapped = cfg.get('_mappedInput') or {}
-        if mapped and not any(key in mapped for key in ('value', 'source')):
-            value = next(iter(mapped.values())) if str(cfg.get('rootStyle', 'With root')).lower() == 'anonymous' and len(mapped) == 1 else mapped
-        validate(value, 'validateInput')
-        def without_nulls(item):
-            if isinstance(item, dict): return {key: without_nulls(child) for key, child in item.items() if child is not None}
-            if isinstance(item, list): return [without_nulls(child) for child in item if child is not None]
-            return item
-        if _bool(cfg.get('omitNulls')): value = without_nulls(value)
-        indent = int(cfg.get('indent', 2)) if _bool(cfg.get('prettyPrint'), True) else None
-        content = json.dumps(value, indent=indent, ensure_ascii=_bool(cfg.get('asciiOnly')), separators=None if indent is not None else (',', ':'))
-        return {'content': content, 'jsonString': content}
-    if kind == 'xml':
-        if operation == 'parse':
-            raw = cfg.get('xmlBinary') or cfg.get('xmlString', cfg.get('text', payload))
-            if cfg.get('xmlBinary') and isinstance(raw, str): raw = base64.b64decode(raw)
-            root = ET.fromstring(raw)
-            return {'xml': {root.tag: _xml_to_value(root)}, 'rootElement': root.tag}
-        value = cfg.get('value', payload)
-        if isinstance(value, dict) and len(value) == 1: root_name, body = next(iter(value.items()))
-        else: root_name, body = str(cfg.get('rootElement') or 'root'), value
-        raw = ET.tostring(_value_to_xml(root_name, body), encoding=cfg.get('encoding') or 'unicode',
-                          xml_declaration=not _bool(cfg.get('suppressXmlDeclaration')))
-        if isinstance(raw, bytes): raw = raw.decode(cfg.get('encoding') or 'utf-8')
-        if _bool(cfg.get('prettyPrint')):
-            try:
-                from xml.dom import minidom
-                raw = minidom.parseString(raw).toprettyxml(indent='  ')
-            except Exception: pass
-        return {'xmlString': raw}
-    text = cfg.get('text', payload)
-    if str(cfg.get('inputSource') or '').lower() == 'file path' or cfg.get('filePath'):
-        text = Path(str(cfg.get('filePath'))).read_text(encoding=cfg.get('fileEncoding') or 'utf-8-sig')
-    delimiter = str(cfg.get('delimiter') or ',')
-    fields = [item.strip() for item in str(cfg.get('fields') or '').split(',') if item.strip()]
-    if operation == 'parse':
-        if str(cfg.get('format') or 'delimited').lower() == 'fixed':
-            widths = [int(item.strip()) for item in str(cfg.get('widths') or '').split(',') if item.strip()]
-            rows = [[line[sum(widths[:i]):sum(widths[:i + 1])] for i in range(len(widths))] for line in str(text or '').splitlines() if line or not _bool(cfg.get('skipBlankLines'), True)]
-        else: rows = list(csv.reader(io.StringIO(str(text or '')), delimiter=delimiter))
-        if _bool(cfg.get('header'), True) and rows: fields, rows = rows[0], rows[1:]
-        if not fields: fields = [f'field{i + 1}' for i in range(max((len(row) for row in rows), default=0))]
-        records = [{name: (row[index].strip() if _bool(cfg.get('trimValues')) else row[index]) if index < len(row) else '' for index, name in enumerate(fields)} for row in rows]
-        return {'records': records, 'xml': {str(cfg.get('rootElement') or 'records'): {str(cfg.get('recordElement') or 'record'): records}}, 'recordCount': len(records), 'fields': fields}
-    records = cfg.get('records', payload)
-    if isinstance(records, dict): records = records.get('records', [records])
-    records = list(records or [])
-    fields = fields or list(records[0].keys() if records else [])
-    output = io.StringIO(); writer = csv.DictWriter(output, fieldnames=fields, delimiter=delimiter, lineterminator='\n')
-    if _bool(cfg.get('header'), True): writer.writeheader()
-    writer.writerows(records)
-    return {'text': output.getvalue(), 'content': output.getvalue(), 'recordCount': len(records), 'fields': fields}
+def data_activity(kind: str, operation: str, cfg: dict, payload: Any):
+    from .native.data_formats import execute_format
+    return execute_format(kind,operation,cfg,payload)
 
 
 def excel_read(cfg: dict) -> dict:

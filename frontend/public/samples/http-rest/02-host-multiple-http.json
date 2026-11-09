@@ -1,0 +1,407 @@
+{
+  "id": "mina-example-02-host-multiple-http",
+  "name": "Host multiple REST operations",
+  "description": "Local learning sample. Demo credentials only; see the accompanying README.",
+  "resources": [
+    {
+      "id": "api-02-host-multiple-http-http",
+      "type": "http",
+      "name": "Host multiple REST operations \u00b7 API server",
+      "config": {
+        "connectorMode": "server",
+        "host": "127.0.0.1",
+        "port": 9002,
+        "minimumQtpThreads": 1,
+        "maximumQtpThreads": 8,
+        "authentication": "None",
+        "apiDocsEnabled": true,
+        "apiDocsAccess": "authenticated",
+        "openApiDocument": {
+          "openapi": "3.0.3",
+          "info": {
+            "title": "MINA sample API",
+            "version": "1.0.0"
+          },
+          "paths": {
+            "/hello": {
+              "get": {
+                "operationId": "hello",
+                "summary": "Read a sample greeting",
+                "responses": {
+                  "200": {
+                    "description": "Greeting",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "required": [
+                            "message"
+                          ],
+                          "properties": {
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "example": {
+                          "message": "Hello from MINA"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "/orders/{id}": {
+              "get": {
+                "operationId": "getOrder",
+                "summary": "Read order using path and optional query values",
+                "parameters": [
+                  {
+                    "name": "id",
+                    "in": "path",
+                    "required": true,
+                    "schema": {
+                      "type": "string"
+                    },
+                    "example": "42"
+                  },
+                  {
+                    "name": "detail",
+                    "in": "query",
+                    "schema": {
+                      "type": "boolean"
+                    },
+                    "example": true
+                  }
+                ],
+                "responses": {
+                  "200": {
+                    "description": "Order example",
+                    "content": {
+                      "application/json": {
+                        "example": {
+                          "id": "42",
+                          "status": "accepted"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "/echo": {
+              "post": {
+                "operationId": "echo",
+                "summary": "Validate and echo a JSON body",
+                "requestBody": {
+                  "required": true,
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "required": [
+                          "name"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "quantity": {
+                            "type": "integer",
+                            "minimum": 1
+                          }
+                        }
+                      },
+                      "example": {
+                        "name": "Sample item",
+                        "quantity": 2
+                      }
+                    }
+                  }
+                },
+                "responses": {
+                  "200": {
+                    "description": "Validated body",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "required": [
+                            "name"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "quantity": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          }
+                        },
+                        "example": {
+                          "name": "Sample item",
+                          "quantity": 2
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "apiBlueprintId": "api-02-host-multiple-http"
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "id": "api-02-host-multiple-http-1",
+      "name": "GET /hello",
+      "kind": "starter",
+      "description": "MINA API Blueprint: Host multiple REST operations. Declared example response for testing; replace with business logic.",
+      "groups": [],
+      "activities": [
+        {
+          "id": "Receive",
+          "name": "REST-API-Receiver",
+          "type": "rest",
+          "position": {
+            "x": 150,
+            "y": 160
+          },
+          "config": {
+            "operation": "receiver",
+            "resourceId": "api-02-host-multiple-http-http",
+            "operationId": "hello",
+            "apiBlueprintId": "api-02-host-multiple-http",
+            "validateRequest": true,
+            "validateResponse": true
+          }
+        },
+        {
+          "id": "Reply",
+          "name": "HTTP-Response",
+          "type": "http_response",
+          "position": {
+            "x": 450,
+            "y": 160
+          },
+          "config": {
+            "operation": "response",
+            "statusCode": 200,
+            "contentType": "application/json",
+            "inputMappings": {
+              "body": "{\"message\": \"Hello from MINA\"}"
+            }
+          }
+        },
+        {
+          "id": "End",
+          "name": "End",
+          "type": "end",
+          "position": {
+            "x": 750,
+            "y": 160
+          },
+          "config": {}
+        }
+      ],
+      "transitions": [
+        {
+          "id": "receive-reply",
+          "source": "Receive",
+          "target": "Reply",
+          "type": "success"
+        },
+        {
+          "id": "reply-end",
+          "source": "Reply",
+          "target": "End",
+          "type": "success"
+        }
+      ]
+    },
+    {
+      "id": "api-02-host-multiple-http-2",
+      "name": "GET /orders/{id}",
+      "kind": "starter",
+      "description": "MINA API Blueprint: Host multiple REST operations. Declared example response for testing; replace with business logic.",
+      "groups": [],
+      "activities": [
+        {
+          "id": "Receive",
+          "name": "REST-API-Receiver",
+          "type": "rest",
+          "position": {
+            "x": 150,
+            "y": 160
+          },
+          "config": {
+            "operation": "receiver",
+            "resourceId": "api-02-host-multiple-http-http",
+            "operationId": "getOrder",
+            "apiBlueprintId": "api-02-host-multiple-http",
+            "validateRequest": true,
+            "validateResponse": true
+          }
+        },
+        {
+          "id": "Reply",
+          "name": "HTTP-Response",
+          "type": "http_response",
+          "position": {
+            "x": 450,
+            "y": 160
+          },
+          "config": {
+            "operation": "response",
+            "statusCode": 200,
+            "contentType": "application/json",
+            "inputMappings": {
+              "body": "{\"id\": \"42\", \"status\": \"accepted\"}"
+            }
+          }
+        },
+        {
+          "id": "End",
+          "name": "End",
+          "type": "end",
+          "position": {
+            "x": 750,
+            "y": 160
+          },
+          "config": {}
+        }
+      ],
+      "transitions": [
+        {
+          "id": "receive-reply",
+          "source": "Receive",
+          "target": "Reply",
+          "type": "success"
+        },
+        {
+          "id": "reply-end",
+          "source": "Reply",
+          "target": "End",
+          "type": "success"
+        }
+      ]
+    },
+    {
+      "id": "api-02-host-multiple-http-3",
+      "name": "POST /echo",
+      "kind": "starter",
+      "description": "MINA API Blueprint: Host multiple REST operations. Declared example response for testing; replace with business logic.",
+      "groups": [],
+      "activities": [
+        {
+          "id": "Receive",
+          "name": "REST-API-Receiver",
+          "type": "rest",
+          "position": {
+            "x": 150,
+            "y": 160
+          },
+          "config": {
+            "operation": "receiver",
+            "resourceId": "api-02-host-multiple-http-http",
+            "operationId": "echo",
+            "apiBlueprintId": "api-02-host-multiple-http",
+            "validateRequest": true,
+            "validateResponse": true
+          }
+        },
+        {
+          "id": "Reply",
+          "name": "HTTP-Response",
+          "type": "http_response",
+          "position": {
+            "x": 450,
+            "y": 160
+          },
+          "config": {
+            "operation": "response",
+            "statusCode": 200,
+            "contentType": "application/json",
+            "inputMappings": {
+              "body": "${input.body}"
+            }
+          }
+        },
+        {
+          "id": "End",
+          "name": "End",
+          "type": "end",
+          "position": {
+            "x": 750,
+            "y": 160
+          },
+          "config": {}
+        }
+      ],
+      "transitions": [
+        {
+          "id": "receive-reply",
+          "source": "Receive",
+          "target": "Reply",
+          "type": "success"
+        },
+        {
+          "id": "reply-end",
+          "source": "Reply",
+          "target": "End",
+          "type": "success"
+        }
+      ]
+    }
+  ],
+  "active_task_id": "api-02-host-multiple-http-1",
+  "active_environment": "local",
+  "properties": {
+    "local": [
+      {
+        "key": "demo.directory",
+        "value": "",
+        "data_type": "string"
+      },
+      {
+        "key": "demo.username",
+        "value": "mina-demo",
+        "data_type": "string"
+      },
+      {
+        "key": "demo.password",
+        "value": "mina-demo-password",
+        "data_type": "password"
+      },
+      {
+        "key": "demo.clientId",
+        "value": "mina-demo-client",
+        "data_type": "string"
+      },
+      {
+        "key": "demo.clientSecret",
+        "value": "mina-demo-client-secret",
+        "data_type": "password"
+      },
+      {
+        "key": "demo.hmacSecret",
+        "value": "mina-demo-hmac-secret-change-before-real-use",
+        "data_type": "password"
+      },
+      {
+        "key": "demo.jwtSecret",
+        "value": "mina-demo-jwt-secret-at-least-32-characters",
+        "data_type": "password"
+      }
+    ]
+  }
+}

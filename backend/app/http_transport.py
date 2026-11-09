@@ -3,8 +3,10 @@ from __future__ import annotations
 import atexit, base64, hashlib, hmac, ipaddress, json, math, os, re, ssl, tempfile, threading, time, urllib.parse, uuid
 from pathlib import Path
 import httpx
-from .rest_contract import operation_config, validate_parameters
+from .rest_contract import operation_config, validate_parameters, wire_parameters
 from .http_messages import request_config, mime_body, response_tree
+from .http_contracts import schema_errors, response_schema,request_schema,media_schema,response_content,parse_json
+from .http_policy import circuit_enter, circuit_result, retry_delay, retryable
 
 class HTTPFault(ValueError):
     def __init__(self, message, fault_type='HTTP_SECURITY', status=401):
@@ -91,6 +93,7 @@ def load_certificate_folder(ctx,folder):
 
 def tls_context(cfg,server=False):
     verify=boolean(cfg.get('verifyTls'),True)
+    if boolean(cfg.get('defaultConfidentiality')) and not verify:raise HTTPFault('Default confidentiality requires server certificate and hostname verification','HTTP_CONFIGURATION',400)
     ctx=ssl.create_default_context(ssl.Purpose.CLIENT_AUTH if server else ssl.Purpose.SERVER_AUTH)
     if not server and not verify: ctx.check_hostname=False;ctx.verify_mode=ssl.CERT_NONE
     version=str(cfg.get('tlsVersion') or 'TLSv1.2')
@@ -134,7 +137,10 @@ def validate_authentication(cfg,server=False):
     elif scheme=='bearer':require('bearerToken','Bearer token')
     elif scheme=='hmac':require('hmacSecret','HMAC secret')
     elif scheme=='jwt' and not (not server and cfg.get('jwtToken')):
-        if not _jwt_key(cfg,sign=not server):raise HTTPFault('JWT key is required','HTTP_CONFIGURATION',400)
+        if server and cfg.get('jwtJwksUrl'):
+            secure_url(str(cfg['jwtJwksUrl']),{**cfg,'confidentiality':True})
+            if str(cfg.get('jwtAlgorithm') or 'HS256').startswith('HS'):raise HTTPFault('JWKS requires an asymmetric JWT algorithm','HTTP_CONFIGURATION',400)
+        elif not _jwt_key(cfg,sign=not server):raise HTTPFault('JWT key is required','HTTP_CONFIGURATION',400)
     elif scheme=='oauth2':
         require('oauthClientId','OAuth client ID')
         secure_url(str(cfg.get('oauthIntrospectionUrl' if server else 'oauthTokenUrl') or ''),{**cfg,'confidentiality':True})
@@ -166,7 +172,7 @@ def close_clients(scope=None):
             if scope is None or _TOKEN_SCOPES.get(key)==scope:_TOKENS.pop(key,None);_TOKEN_SCOPES.pop(key,None)
 atexit.register(close_clients)
 
-_NETWORK=('verifyTls','tlsVersion','maximumTlsVersion','cipherSuites','certificateAuthorityFile','trustStoreFile','trustStoreType','trustStorePassword','identityStoreFile','identityStoreType','identityStorePassword','keyAlias','certificateFile','privateKeyFile','privateKeyPassword','clientCertificateFile','clientKeyFile','clientKeyPassword','crlFile','proxyHost','proxyPort','proxyUrl','proxyUsername','proxyPassword','httpVersion','maximumTotalConnections','maximumConnectionsPerHost','idleConnectionTimeoutMs','disableConnectionPooling','usePersistentConnections','authentication','username','password','bearerToken','oauthClientId','oauthClientSecret','oauthTokenUrl','oauthScope','oauthGrantType','oauthRefreshToken','oauthAuthorizationCode','oauthRedirectUri','jwtSecret','jwtToken','hmacSecret','hmacKeyId','enableCookies','resourceId','_httpScope','baseUrl','oauthCodeVerifier','oauthClientAuthentication','jwtPrivateKeyFile','jwtPublicKeyFile')
+_NETWORK=('defaultConfidentiality','confidentiality','tlsEnabled','verifyTls','tlsVersion','maximumTlsVersion','cipherSuites','certificateAuthorityFile','trustStoreFile','trustStoreType','trustStorePassword','identityStoreFile','identityStoreType','identityStorePassword','keyAlias','certificateFile','privateKeyFile','privateKeyPassword','clientCertificateFile','clientKeyFile','clientKeyPassword','crlFile','proxyHost','proxyPort','proxyUrl','proxyUsername','proxyPassword','httpVersion','maximumTotalConnections','maximumConnectionsPerHost','idleConnectionTimeoutMs','disableConnectionPooling','usePersistentConnections','authentication','username','password','bearerToken','oauthClientId','oauthClientSecret','oauthTokenUrl','oauthScope','oauthGrantType','oauthRefreshToken','oauthAuthorizationCode','oauthRedirectUri','jwtSecret','jwtToken','hmacSecret','hmacKeyId','enableCookies','resourceId','_httpScope','baseUrl','oauthCodeVerifier','oauthClientAuthentication','jwtPrivateKeyFile','jwtPublicKeyFile')
 def _fingerprint(cfg):
     values={key:cfg.get(key) for key in _NETWORK}
     folder=cfg.get('trustedCertificateFolder');values['trustedCertificateFolder']=folder
@@ -245,7 +251,7 @@ def hmac_signature(cfg,method,target,body,timestamp,nonce):
     if algorithm not in ('SHA256','SHA384','SHA512'):raise HTTPFault('Unsupported HMAC algorithm','HTTP_CONFIGURATION',400)
     secret=str(cfg.get('hmacSecret') or '')
     if not secret:raise HTTPFault('HMAC secret is required','HTTP_CONFIGURATION',400)
-    canonical='\n'.join((method.upper(),target,str(timestamp),nonce,hashlib.sha256(body).hexdigest()))
+    canonical='\n'.join((method.upper(),target,str(timestamp),nonce,body.sha256 if hasattr(body,'sha256') else hashlib.sha256(body).hexdigest()))
     return base64.b64encode(hmac.new(secret.encode(),canonical.encode(),getattr(hashlib,algorithm.lower())).digest()).decode()
 
 class NonPreemptiveBasic(httpx.Auth):
@@ -268,26 +274,38 @@ def request(cfg,connection=None):
     if cfg.get('connectorMode')=='server':raise HTTPFault('Outbound call requires a client shared connection','HTTP_CONFIGURATION',400)
     url=str(cfg.get('url') or cfg.get('path') or '')
     if not urllib.parse.urlsplit(url).scheme:
-        base=str(cfg.get('baseUrl') or f'{"https" if boolean(cfg.get("defaultConfidentiality")) or boolean(cfg.get("confidentiality")) or boolean(cfg.get("tlsEnabled")) else cfg.get("scheme") or "http"}://{cfg.get("host") or "localhost"}:{cfg.get("port") or (443 if cfg.get("scheme")=="https" else 80)}')
+        effective_scheme='https' if boolean(cfg.get('defaultConfidentiality')) or boolean(cfg.get('confidentiality')) or boolean(cfg.get('tlsEnabled')) else cfg.get('scheme') or 'http'
+        base=str(cfg.get('baseUrl') or f'{effective_scheme}://{cfg.get("host") or "localhost"}:{cfg.get("port") or (443 if effective_scheme=="https" else 80)}')
         url=base.rstrip('/')+'/'+('/'.join(part for part in (str(cfg.get('basePath') or '').strip('/'),url.lstrip('/')) if part))
-    for name,value in object_value(cfg.get('pathParameters'),'URI parameters').items():url=url.replace('{'+name+'}',urllib.parse.quote(str(value),safe=''))
+    for name,value in wire_parameters(cfg,'path',object_value(cfg.get('pathParameters'),'URI parameters')).items():url=url.replace('{'+name+'}',urllib.parse.quote(str(value),safe=';=,.' if any(p.get('in')=='path' and p.get('name')==name and p.get('style') in ('matrix','label') for p in cfg.get('_restParameters',[])) else ''))
     if re.search(r'\{[^}]+\}',url):raise HTTPFault('Required URI parameter is missing','HTTP_CONFIGURATION',400)
     secure_url(url,cfg);method=str(cfg.get('method') or 'GET').upper()
-    if method not in ('GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'):raise HTTPFault('Unsupported HTTP method','HTTP_CONFIGURATION',400)
+    if method not in ('GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','TRACE'):raise HTTPFault('Unsupported HTTP method','HTTP_CONFIGURATION',400)
     headers={str(k).lower():([str(item) for item in v] if isinstance(v,list) else str(v)) for k,v in cfg['headers'].items()}
     if any('\r' in k+str(v) or '\n' in k+str(v) for k,v in headers.items()):raise HTTPFault('HTTP headers cannot contain newlines','HTTP_CONFIGURATION',400)
     if cfg.get('accept'):headers.setdefault('accept',str(cfg['accept']))
     if cfg.get('contentType'):headers.setdefault('content-type',str(cfg['contentType']))
     body=cfg.get('body');mode=str(cfg.get('sendBodyMode') or 'ALWAYS').upper()
-    errors=validate_parameters(cfg,object_value(cfg.get('pathParameters'),'URI parameters'),cfg['query'],headers,body)
-    if errors:raise HTTPFault('; '.join(errors),'REST_VALIDATION',400)
-    if boolean(cfg.get('validateRequest'),bool(cfg.get('openApiDocument'))) and cfg.get('requestSchema'):
-        from .mapper import validate_output
-        if validate_output(body,cfg['requestSchema']):raise HTTPFault('Request schema validation failed','REST_VALIDATION',400)
     if mode not in ('ALWAYS','AUTO','NEVER'):raise HTTPFault('Invalid send body mode','HTTP_CONFIGURATION',400)
     if mode=='NEVER' or mode=='AUTO' and method in ('GET','HEAD','OPTIONS'):body=None
-    body_type=str(cfg.get('bodyType') or 'json').lower()
-    if '_mimeEnvelope' in cfg:
+    errors=validate_parameters(cfg,object_value(cfg.get('pathParameters'),'URI parameters'),cfg['query'],headers,body)
+    if errors:raise HTTPFault('; '.join(errors),'REST_VALIDATION',400)
+    headers=wire_parameters(cfg,'header',headers)
+    cfg['query']=wire_parameters(cfg,'query',cfg['query'])
+    request_type=str(headers.get('content-type') or '')
+    if body is not None and cfg.get('_restRequestSchemas') and media_schema(cfg['_restRequestSchemas'],request_type)[0] is None:raise HTTPFault('Unsupported request content type','REST_UNSUPPORTED_MEDIA',415)
+    schema=request_schema(cfg,request_type)
+    if body is not None and boolean(cfg.get('validateRequest'),bool(cfg.get('openApiDocument'))) and schema is not None:
+        if schema_errors(body,schema):raise HTTPFault('Request schema validation failed','REST_VALIDATION',400)
+    media_type=request_type.split(';',1)[0].lower()
+    inferred_type='form' if media_type=='application/x-www-form-urlencoded' else 'bytes' if isinstance(body,(bytes,bytearray,memoryview)) else 'text' if media_type.startswith('text/') or media_type.endswith(('/xml','+xml')) else 'json'
+    body_type=str(cfg.get('bodyType') or inferred_type).lower()
+    content_factory=None
+    if '_mimeEnvelope' in cfg and boolean(cfg.get('streamRequest')):
+        from .http_streams import multipart_stream
+        content_factory,mime_type=multipart_stream(cfg['_mimeEnvelope'],int(number(cfg,'maxRequestBodyBytes',64*1024**2,1)),body,str(headers.get('content-type') or 'application/json'))
+        raw=b'';headers['content-type']=mime_type
+    elif '_mimeEnvelope' in cfg:
         try:raw,mime_type=mime_body(cfg['_mimeEnvelope'],int(number(cfg,'maxRequestBodyBytes',64*1024**2,1)),body,str(headers.get('content-type') or headers.get('Content-Type') or cfg.get('contentType') or 'application/json'))
         except (ValueError,TypeError,OSError) as error:raise HTTPFault(str(error),'HTTP_CONFIGURATION',400) from None
         headers={key:value for key,value in headers.items() if key.lower()!='content-type'};headers['content-type']=mime_type
@@ -296,9 +314,14 @@ def request(cfg,connection=None):
     elif body_type=='file':
         source=Path(str(body))
         if source.stat().st_size>number(cfg,'maxRequestBodyBytes',64*1024**2,1):raise HTTPFault('HTTP request body limit exceeded','HTTP_BAD_REQUEST',413)
-        raw=source.read_bytes()
-    elif isinstance(body,(bytes,bytearray)):raw=bytes(body)
-    elif body_type=='json':raw=json.dumps(body,ensure_ascii=False,separators=(',',':')).encode();headers.setdefault('content-type','application/json')
+        from .http_streams import file_chunks
+        content_factory=lambda:file_chunks(source,int(number(cfg,'maxRequestBodyBytes',64*1024**2,1)))
+        raw=b''
+    elif isinstance(body,(bytes,bytearray,memoryview)):raw=bytes(body)
+    elif body_type=='json':
+        try:raw=json.dumps(body,ensure_ascii=False,separators=(',',':'),allow_nan=False).encode()
+        except (ValueError,TypeError):raise HTTPFault('Request body is not valid JSON','HTTP_CONFIGURATION',400) from None
+        headers.setdefault('content-type','application/json')
     else:raw=str(body).encode(str(cfg.get('encoding') or 'utf-8'))
     if len(raw)>number(cfg,'maxRequestBodyBytes',64*1024**2,1):raise HTTPFault('HTTP request body limit exceeded','HTTP_BAD_REQUEST',413)
     client=client_for(cfg);auth=None;scheme=str(cfg.get('authentication') or 'None').lower()
@@ -313,6 +336,7 @@ def request(cfg,connection=None):
         from httpx_ntlm import HttpNtlmAuth
         auth=HttpNtlmAuth(str(cfg.get('username') or ''),str(cfg.get('password') or ''))
     elif scheme not in ('none','certificate','hmac'):raise HTTPFault('Unsupported outbound authentication','HTTP_CONFIGURATION',400)
+    if content_factory and auth is not None and getattr(auth,'requires_request_body',False):raise HTTPFault('Streaming uploads require authentication that does not buffer the request body; use preemptive Basic, Bearer, OAuth2, JWT, HMAC or certificates','HTTP_CONFIGURATION',400)
     if scheme=='certificate' and not (cfg.get('identityStoreFile') or cfg.get('certificateFile') or cfg.get('clientCertificateFile')):raise HTTPFault('Certificate authentication requires an identity','HTTP_CONFIGURATION',400)
     timeout=httpx.Timeout(connect=_seconds(cfg,'connectionTimeoutMs','connectTimeoutSeconds',30),read=_seconds(cfg,'socketTimeoutMs','timeoutSeconds',60),write=_seconds(cfg,'writeTimeoutMs','writeTimeoutSeconds',60),pool=_seconds(cfg,'poolTimeoutMs','poolTimeoutSeconds',30))
     if cfg.get('timeout') not in (None,''):timeout=httpx.Timeout(number(cfg,'timeout',30) or None,connect=timeout.connect)
@@ -321,55 +345,108 @@ def request(cfg,connection=None):
         value=getattr(timeout,phase)
         if value is None or value>activity_limit:setattr(timeout,phase,activity_limit)
     started=time.monotonic();maximum=int(number(cfg,'maxResponseBodyBytes',64*1024**2,1));retries=int(number(cfg,'retryCount',0,0,10))
+    deadline=started+activity_limit
     # Per-route gates complement HTTPX's global connection limit.
     route=urllib.parse.urlsplit(url).netloc
     with client._mina_lock:gate=client._mina_routes.setdefault(route,threading.BoundedSemaphore(client._mina_route_limit))
     acquired=gate.acquire(timeout=timeout.pool)
     if not acquired:raise HTTPFault('HTTP pool timeout','HTTP_TIMEOUT',504)
+    circuit=None;failed=False
     try:
+        circuit=circuit_enter(cfg,route)
         for attempt in range(retries+1):
             try:
+                if time.monotonic()>=deadline:raise HTTPFault('HTTP activity timeout','HTTP_TIMEOUT',504)
                 pairs=[(key,item) for key,value in headers.items() for item in (value if isinstance(value,list) else [value])]
                 query=httpx.QueryParams(urllib.parse.urlsplit(url).query).merge(cfg['query']) if cfg['query'] else None
-                req=client.build_request(method,url,params=query,headers=pairs,content=raw if body is not None or '_mimeEnvelope' in cfg else None,timeout=timeout)
+                from .http_streams import ReplayStream
+                content=ReplayStream(content_factory) if content_factory else raw if body is not None or '_mimeEnvelope' in cfg else None
+                req=client.build_request(method,url,params=query,headers=pairs,content=content,timeout=timeout)
                 if not boolean(cfg.get('enableCookies')) and not any(key.lower()=='cookie' for key in headers):req.headers.pop('cookie',None)
                 if scheme=='hmac':
                     if boolean(cfg.get('followRedirects')):raise HTTPFault('Signed HMAC requests cannot follow redirects','HTTP_CONFIGURATION',400)
-                    stamp=str(int(time.time()));nonce=uuid.uuid4().hex
-                    req.headers['X-MINA-Timestamp']=stamp;req.headers['X-MINA-Nonce']=nonce;req.headers['X-MINA-Key-Id']=str(cfg.get('hmacKeyId') or 'default');req.headers['Authorization']='HMAC '+hmac_signature(cfg,method,req.url.raw_path.decode('ascii'),raw,stamp,nonce)
-                if str(cfg.get('requestEntityProcessing') or 'BUFFERED').upper()=='CHUNKED' and (body is not None or '_mimeEnvelope' in cfg):
+                    stamp=str(int(time.time()));nonce=uuid.uuid4().hex;signing_body=raw
+                    if content_factory:
+                        from .http_listener import HashedBody
+                        digest=hashlib.sha256()
+                        for chunk in content_factory():digest.update(chunk)
+                        signing_body=HashedBody(digest.hexdigest())
+                    req.headers['X-MINA-Timestamp']=stamp;req.headers['X-MINA-Nonce']=nonce;req.headers['X-MINA-Key-Id']=str(cfg.get('hmacKeyId') or 'default');req.headers['Authorization']='HMAC '+hmac_signature(cfg,method,req.url.raw_path.decode('ascii'),signing_body,stamp,nonce)
+                if str(cfg.get('requestEntityProcessing') or 'BUFFERED').upper()=='CHUNKED' and str(cfg.get('httpVersion') or '1.1')!='2' and (body is not None or '_mimeEnvelope' in cfg):
                     req.headers.pop('content-length',None);req.headers['Transfer-Encoding']='chunked'
+                temporary=None
                 response=client.send(req,auth=auth,follow_redirects=boolean(cfg.get('followRedirects')),stream=True)
                 try:
+                    if attempt<retries and retryable(cfg,method,headers,response.status_code):
+                        delay=retry_delay(cfg,attempt,response)
+                        response.close()
+                        if time.monotonic()+delay>=deadline:raise HTTPFault('HTTP retry exceeds activity timeout','HTTP_TIMEOUT',504)
+                        time.sleep(delay);continue
+                    destination=cfg.get('responseFile');temporary=None;sink=None
+                    if destination:
+                        if cfg.get('responseSchema') or cfg.get('_restResponseSchemas'):raise HTTPFault('File download mode cannot bypass configured response schemas','HTTP_CONFIGURATION',400)
+                        target=Path(destination).expanduser()
+                        if target.exists() and not boolean(cfg.get('overwriteResponseFile')):raise HTTPFault('Response file already exists','HTTP_CONFIGURATION',400)
+                        handle=tempfile.NamedTemporaryFile(prefix='.mina-download-',dir=target.parent,delete=False);temporary=Path(handle.name);sink=handle
                     chunks=[];size=0
-                    for chunk in response.iter_bytes(chunk_size=int(number(cfg,'responseBufferSize',65536,1024,1024**2))):
-                        size+=len(chunk)
-                        if size>maximum:raise HTTPFault('HTTP response body limit exceeded','HTTP_BAD_RESPONSE',502)
-                        if cfg.get('activityTimeoutSeconds') and time.monotonic()-started>number(cfg,'activityTimeoutSeconds',180,1):raise HTTPFault('HTTP activity timeout','HTTP_TIMEOUT',504)
-                        chunks.append(chunk)
+                    try:
+                        for chunk in response.iter_bytes(chunk_size=int(number(cfg,'responseBufferSize',65536,1024,1024**2))):
+                            size+=len(chunk)
+                            if size>maximum:raise HTTPFault('HTTP response body limit exceeded','HTTP_BAD_RESPONSE',502)
+                            if time.monotonic()>deadline:raise HTTPFault('HTTP activity timeout','HTTP_TIMEOUT',504)
+                            if sink:sink.write(chunk)
+                            else:chunks.append(chunk)
+                    except BaseException:
+                        if sink:sink.close();temporary.unlink(missing_ok=True)
+                        raise
+                    finally:
+                        if sink:sink.close()
                     data=b''.join(chunks);text=data.decode(response.encoding or 'utf-8',errors='replace')
-                    try:value=json.loads(text)
-                    except ValueError:value=text
+                    response_type=response.headers.get('content-type','').split(';',1)[0].lower()
+                    value=text
+                    if str(cfg.get('responseBodyMode') or '')!='binary' and (not response_type or response_type.endswith(('/json','+json'))):
+                        try:value=parse_json(text)
+                        except ValueError:
+                            if data and response_type:raise HTTPFault('Invalid JSON response body','HTTP_BAD_RESPONSE',502) from None
+                    if str(cfg.get('responseBodyMode') or '')=='binary' or response.headers.get('content-type','').split(';')[0].lower()=='application/octet-stream':value=data
                     valid=str(cfg.get('successStatusCodes') or '200-299')
                     accepted=any(int(part.split('-')[0])<=response.status_code<=int(part.split('-')[-1]) for part in valid.replace(' ','').split(','))
-                    if boolean(cfg.get('raiseForStatus'),True) and not accepted:raise HTTPFault(f'HTTP response status {response.status_code}','HTTP_CLIENT_ERROR' if response.status_code<500 else 'HTTP_SERVER_ERROR',response.status_code)
-                    schema=(cfg.get('_restResponseSchemas') or {}).get(str(response.status_code),cfg.get('responseSchema'))
-                    if boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and schema and accepted:
-                        from .mapper import validate_output
-                        if validate_output(value,schema):raise HTTPFault('Response schema validation failed','REST_VALIDATION',502)
-                    result={'statusCode':response.status_code,'headers':dict(response.headers),'body':value,'elapsedMs':round((time.monotonic()-started)*1000),'httpVersion':response.http_version}
-                    if cfg.get('_structuredRequest') or cfg.get('requestModel')=='tree':
+                    schema=response_schema(cfg,response.status_code,response.headers.get('content-type',''))
+                    has_body=method!='HEAD' and response.status_code not in (204,304)
+                    if has_body and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and response_content(cfg,response.status_code) and media_schema(response_content(cfg,response.status_code),response_type)[0] is None:raise HTTPFault('Undeclared response content type','REST_VALIDATION',502)
+                    if has_body and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and schema is not None and schema_errors(value,schema):raise HTTPFault('Response schema validation failed','REST_VALIDATION',502)
+                    if boolean(cfg.get('raiseForStatus'),True) and not accepted:
+                        if temporary:temporary.unlink(missing_ok=True)
+                        raise HTTPFault(f'HTTP response status {response.status_code}','HTTP_CLIENT_ERROR' if response.status_code<500 else 'HTTP_SERVER_ERROR',response.status_code)
+                    if temporary:
+                        if boolean(cfg.get('overwriteResponseFile')):temporary.replace(target)
+                        else:
+                            try:os.link(temporary,target)
+                            finally:temporary.unlink(missing_ok=True)
+                        value={'fileName':str(target),'size':size}
+                    result={'statusCode':response.status_code,'headers':{key:response.headers.get_list(key) if len(response.headers.get_list(key))>1 else val for key,val in response.headers.items()},'body':value,'elapsedMs':round((time.monotonic()-started)*1000),'httpVersion':response.http_version}
+                    if not destination and (cfg.get('_structuredRequest') or cfg.get('requestModel')=='tree'):
                         try:tree=response_tree(response,data)
                         except (ValueError,LookupError) as error:raise HTTPFault(str(error),'HTTP_BAD_RESPONSE',502) from None
                         tree['body']=value;result['RestOutputResponse']=tree
+                    failed=response.status_code>=500
                     return result
-                finally:response.close()
+                finally:
+                    response.close()
+                    if temporary:temporary.unlink(missing_ok=True)
             except (httpx.ConnectError,httpx.ConnectTimeout):
                 if attempt>=retries:raise HTTPFault('HTTP connection failed','HTTP_CONNECTIVITY',502) from None
-                time.sleep(number(cfg,'retryDelayMs',100,0,60000)/1000)
+                delay=retry_delay(cfg,attempt)
+                if time.monotonic()+delay>=deadline:raise HTTPFault('HTTP retry exceeds activity timeout','HTTP_TIMEOUT',504)
+                time.sleep(delay)
             except httpx.TimeoutException:raise HTTPFault('HTTP request timed out','HTTP_TIMEOUT',504) from None
             except httpx.HTTPError:raise HTTPFault('HTTP transport failed','HTTP_CONNECTIVITY',502) from None
-    finally:gate.release()
+            finally:
+                if 'content' in locals() and hasattr(content,'close'):content.close()
+    except HTTPFault as error:
+        failed=error.status>=500;raise
+    finally:
+        circuit_result(cfg,circuit,failed);gate.release()
 
 def _basic(headers):
     try:
@@ -439,7 +516,10 @@ def authorize(cfg,method,target,headers,body=b'',peer_verified=False):
         if not authorization.startswith('Bearer ') or not authorization[7:]:raise HTTPFault('Authentication failed')
         alg=str(cfg.get('jwtAlgorithm') or 'HS256')
         if alg not in ('HS256','HS384','HS512','RS256','RS384','RS512','ES256','ES384'):raise HTTPFault('Unsupported JWT algorithm','HTTP_CONFIGURATION',400)
-        key=_jwt_key(cfg)
+        if cfg.get('jwtJwksUrl'):
+            from .http_policy import jwks_key
+            key=jwks_key(cfg,authorization[7:])
+        else:key=_jwt_key(cfg)
         if not key:raise HTTPFault('JWT verification key is required','HTTP_CONFIGURATION',400)
         try:return jwt.decode(authorization.removeprefix('Bearer '),key,algorithms=[alg],issuer=cfg.get('jwtIssuer') or None,audience=cfg.get('jwtAudience') or None,leeway=number(cfg,'jwtClockSkewSeconds',30,0,300),options={'require':['exp'],'verify_aud':bool(cfg.get('jwtAudience'))})
         except Exception:raise HTTPFault('Authentication failed') from None
@@ -448,7 +528,7 @@ def authorize(cfg,method,target,headers,body=b'',peer_verified=False):
         if not authorization.startswith('Bearer ') or not authorization[7:]:raise HTTPFault('Authentication failed')
         try:
             response=client_for(cfg).post(endpoint,data={'token':authorization[7:]},auth=(str(cfg.get('oauthClientId') or ''),str(cfg.get('oauthClientSecret') or '')),timeout=number(cfg,'oauthTimeoutSeconds',30,1,300),follow_redirects=False);response.raise_for_status();claims=response.json()
-            if claims.get('active') is not True or claims.get('exp') is not None and float(claims['exp'])<=time.time():raise ValueError()
+            if claims.get('active') is not True or claims.get('exp') is not None and (not math.isfinite(float(claims['exp'])) or float(claims['exp'])<=time.time()):raise ValueError()
             scopes=set(str(claims.get('scope') or '').split())
             if not set(str(cfg.get('oauthRequiredScopes') or '').split()).issubset(scopes):raise ValueError()
             return claims
@@ -460,6 +540,10 @@ def authorize(cfg,method,target,headers,body=b'',peer_verified=False):
         if not valid or not re.fullmatch(r'[A-Za-z0-9_-]{16,128}',nonce) or headers.get('x-mina-key-id')!=str(cfg.get('hmacKeyId') or 'default'):raise HTTPFault('Authentication failed')
         expected='HMAC '+hmac_signature(cfg,method,target,body,stamp,nonce)
         if not hmac.compare_digest(authorization,expected):raise HTTPFault('Authentication failed')
+        if str(cfg.get('policyStore') or 'memory')=='redis':
+            from .http_policy import claim_nonce
+            if not claim_nonce(cfg,nonce,2*window):raise HTTPFault('Authentication failed')
+            return {'keyId':cfg.get('hmacKeyId') or 'default'}
         with _SECURITY_LOCK:
             now=time.time()
             for key,deadline in list(_NONCES.items()):

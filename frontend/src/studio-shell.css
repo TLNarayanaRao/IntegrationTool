@@ -15,7 +15,7 @@ main{grid-template-rows:38px minmax(260px,1fr) 285px}.canvas-content{position:re
 .app.monitor-hidden{grid-template-columns:var(--explorer-width,245px) minmax(0,1fr)}.app.monitor-hidden>.menu-bar,.app.monitor-hidden>.studio-ribbon,.app.monitor-hidden>header,.app.monitor-hidden>.studio-status-bar{grid-column:1/3!important}.app.monitor-hidden>main{grid-column:2!important}
 .studio-status-bar{grid-column:1/4;grid-row:5;z-index:1200;display:flex;align-items:center;gap:12px;min-width:0;padding:0 9px;border-top:1px solid #2a455a;color:#8ea9bc;background:linear-gradient(180deg,#0c1c29,#07131d);font:9px 'DM Mono',monospace;box-shadow:0 -3px 10px #0006}.studio-status-bar span{display:flex;align-items:center;gap:5px;min-width:0}.studio-status-bar svg{width:13px;height:13px}.status-product{color:#66d9ff}.status-context{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.status-spacer{flex:1}.status-environment{padding:2px 6px;border:1px solid #315367;border-radius:8px;color:#8edcf2}.status-progress{padding-left:10px;border-left:1px solid #294457}.status-progress.ready{color:#65dba9}.status-progress.working{color:#7ee7ff}.status-progress.working svg,.studio-progress-toast>svg{animation:studio-spin .9s linear infinite}.studio-progress-toast{position:fixed;z-index:6000;right:14px;bottom:38px;display:flex;align-items:center;gap:10px;min-width:230px;padding:10px 13px;border:1px solid #35a9cc;border-radius:8px;color:#dff8ff;background:linear-gradient(135deg,#113348f2,#081b29f5);box-shadow:0 12px 34px #000b,0 0 16px #25c8ff30}.studio-progress-toast>svg{width:19px;color:#61ddff}.studio-progress-toast>span{display:flex;flex-direction:column}.studio-progress-toast small{margin-top:2px;color:#8db5c7;font-size:9px}@keyframes studio-spin{to{transform:rotate(360deg)}}
 @media(max-width:1100px){.app>header,.studio-status-bar{grid-column:1/3}.app>main{grid-column:2}.app>.explorer{grid-column:1}}
-.task-editor-tabs{display:flex;align-items:stretch;min-width:0;overflow-x:auto;overflow-y:hidden;background:#091421;border-bottom:1px solid #31465b}.task-editor-tab{display:flex;align-items:center;flex:0 0 auto;min-width:145px;max-width:260px;border-right:1px solid #293b4e;color:#89a0b4;background:#0e1a28}.task-editor-tab.active{color:#e8f7ff;background:#15263a;box-shadow:inset 0 2px #44d6ff}.task-editor-tab button{border:0;background:transparent;color:inherit}.task-tab-title{display:grid;grid-template-columns:16px minmax(45px,1fr);grid-template-rows:18px 10px;align-items:center;column-gap:7px;min-width:0;flex:1;padding:3px 5px 3px 10px;text-align:left}.task-tab-title svg{grid-row:1/3;width:15px;color:#55d6ff}.task-tab-title span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:650}.task-tab-title small{font:7px 'DM Mono';text-transform:uppercase;color:#678299}.task-tab-more,.task-tab-close{width:25px;height:100%;padding:0;font-size:13px}.task-tab-more{font-size:9px;letter-spacing:-1px}.task-editor-tab button:hover{background:#20364c;color:white}.task-tab-context{position:fixed;z-index:5000;width:205px;padding:6px;background:#122033;border:1px solid #405873;border-radius:6px;box-shadow:0 18px 45px #000d}.task-tab-context button{display:block;width:100%;padding:8px 10px;border:0;border-radius:4px;background:transparent;color:#d5e3ef;text-align:left}.task-tab-context button:hover:not(:disabled){background:#1d405d;color:white}.task-tab-context button:disabled{opacity:.35}
+.task-editor-tabs{display:flex;align-items:stretch;min-width:0;overflow-x:auto;overflow-y:hidden;background:#091421;border-bottom:1px solid #31465b}.task-editor-tab{display:flex;align-items:center;flex:0 0 auto;min-width:168px;max-width:320px;border-right:1px solid #293b4e;color:#89a0b4;background:#0e1a28}.task-editor-tab.active{color:#e8f7ff;background:#15263a;box-shadow:inset 0 2px #44d6ff}.task-editor-tab button{border:0;background:transparent;color:inherit}.task-tab-title{display:flex;align-items:center;gap:8px;min-width:0;flex:1 1 auto;padding:4px 8px 4px 10px;text-align:left}.task-tab-title svg{flex-shrink:0;color:#55d6ff}.task-tab-title span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:650}.task-tab-more,.task-tab-close{flex:0 0 25px;width:25px;height:100%;padding:0;font-size:13px}.task-tab-more{font-size:9px;letter-spacing:-1px}.task-editor-tab button:hover{background:#20364c;color:white}.task-tab-context{position:fixed;z-index:5000;width:205px;padding:6px;background:#122033;border:1px solid #405873;border-radius:6px;box-shadow:0 18px 45px #000d}.task-tab-context button{display:block;width:100%;padding:8px 10px;border:0;border-radius:4px;background:transparent;color:#d5e3ef;text-align:left}.task-tab-context button:hover:not(:disabled){background:#1d405d;color:white}.task-tab-context button:disabled{opacity:.35}
 .config-splitter{height:8px;background:#0a1420;border-top:1px solid #31465c;border-bottom:1px solid #23384d;cursor:row-resize;display:grid;place-items:center;z-index:8}.config-splitter span{width:54px;height:2px;background:#55748f;border-radius:2px}.config-splitter:hover{background:#17334c}.config-splitter:hover span{background:#55d8ff;box-shadow:0 0 7px #46cfff}
 img[src$="start-end.png"],img[src$="transform.png"],img[src$="file-tools.png"]{mix-blend-mode:screen;filter:invert(1) hue-rotate(180deg) drop-shadow(0 6px 5px #0009)!important}
 .node:hover img[src$="start-end.png"],.node.selected img[src$="start-end.png"],.node:hover img[src$="transform.png"],.node.selected img[src$="transform.png"]{filter:invert(1) hue-rotate(180deg) drop-shadow(0 0 7px #65dcff)!important}
@@ -40,3 +40,31 @@ img[src$="start-end.png"],img[src$="transform.png"],img[src$="file-tools.png"]{m
 /* Activity names wrap in the canvas layout; quick-add text also stays contained. */
 .canvas-menu details button{min-width:0;overflow-wrap:break-word;word-break:normal;hyphens:none}
 .canvas-menu details button img,.canvas-menu details button svg{flex:0 0 auto}
+.app>main:has(>.orchestrator-empty){grid-template-rows:34px minmax(0,1fr)}
+.orchestrator-empty{grid-row:2/-1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted,#89a0b4);padding:24px;text-align:center;min-height:0}
+.orchestrator-empty>svg{width:48px;height:48px;opacity:.5}.orchestrator-empty>b{font-size:16px}
+.task-tabs-close-all{margin-left:auto;flex-shrink:0;border:0;border-left:1px solid var(--line,#293b4e);background:transparent;color:inherit;padding:6px 12px;cursor:pointer}
+.sample-gallery-search>button{flex-shrink:0;padding:7px;border:1px solid var(--line,#405873);border-radius:5px;color:inherit;background:transparent;cursor:pointer}
+.sample-gallery-footer{flex-wrap:wrap}.sample-gallery-footer>a{color:var(--accent,#71dcff);font-size:12px;overflow-wrap:anywhere}
+.project-tree .explorer-task-row {
+  --task-kind-color: var(--accent2, #a2eddc);
+}
+.project-tree .explorer-task-row.subtask {
+  --task-kind-color: color-mix(in srgb, var(--text) 62%, #9a72dd);
+}
+.project-tree .explorer-task-row > svg {
+  flex-shrink: 0;
+  color: var(--task-kind-color);
+}
+:is(.app, .debug-test-tree) svg.task-entry-icon {
+  width: 28px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.explorer-task-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media(max-width:600px){.sample-gallery-search{flex-wrap:wrap}.sample-gallery-search>input{min-width:0}.sample-gallery-search>button{width:100%}}

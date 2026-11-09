@@ -6,11 +6,12 @@ import ts from 'typescript';
 // Exercise the actual Task and Project validators without mounting the Studio.
 const source = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const ast = ts.createSourceFile('main.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-const names = new Set(['isEventActivity', 'propertyReferences', 'validateTaskDefinition', 'validateProjectDefinition']);
+const entrySource = await readFile(new URL('../src/taskEntry.ts', import.meta.url), 'utf8');
+const names = new Set(['isTaskTerminal', 'propertyReferences', 'validateTaskDefinition', 'validateProjectDefinition']);
 const declarations = ast.statements.filter(statement => ts.isVariableStatement(statement)
   && statement.declarationList.declarations.some(declaration => names.has(declaration.name.getText(ast))));
 assert.equal(declarations.length, names.size);
-const compiled = ts.transpileModule('const activityMappingIssues = () => [];\n' + declarations.map(statement => statement.getText(ast)).join('\n')
+const compiled = ts.transpileModule(entrySource + '\nconst activityMappingIssues = () => [];\n' + declarations.map(statement => statement.getText(ast)).join('\n')
   + '\nexport { validateTaskDefinition, validateProjectDefinition };',
   { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText;
 const { validateTaskDefinition, validateProjectDefinition } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);

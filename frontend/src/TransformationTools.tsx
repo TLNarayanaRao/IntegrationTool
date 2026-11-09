@@ -1,4 +1,5 @@
 import {useState} from 'react';
+import { studioObjectName } from './studioObjectName';
 import './transformation-tools.css';
 
 async function post(path: string, body: any) {
@@ -9,7 +10,7 @@ async function post(path: string, body: any) {
 }
 
 export default function TransformationTools({config, setConfig, customFunctions = []}: any) {
-  const [name, setName] = useState('Regression case'), [input, setInput] = useState(JSON.stringify(config.sampleInput ?? {}, null, 2));
+  const [name, setName] = useState('Regression-case'), [input, setInput] = useState(JSON.stringify(config.sampleInput ?? {}, null, 2));
   const [expected, setExpected] = useState(JSON.stringify(config.lastTestOutput ?? {}, null, 2));
   const [tables, setTables] = useState(JSON.stringify(config.lookupTables || {}, null, 2));
   const [templateName, setTemplateName] = useState(config.templateName || 'Transformation'), [version, setVersion] = useState(config.templateVersion || '1.0.0');
@@ -23,10 +24,12 @@ export default function TransformationTools({config, setConfig, customFunctions 
   };
   const capture = () => {
     try {
-      if (!name.trim()) throw new Error('Enter a case name');
-      if (cases.length >= 200 && !cases.some((item:any) => item.name === name)) throw new Error('A suite supports up to 200 cases');
-      const next = {name:name.trim(), input:JSON.parse(input), expected:JSON.parse(expected)};
-      setConfig({testCases:[...cases.filter((item:any) => item.name !== next.name), next]});
+      const caseName = studioObjectName(name);
+      if (!caseName) throw new Error('Enter a case name');
+      const matches = (item: any) => studioObjectName(item.name) === caseName;
+      if (cases.length >= 200 && !cases.some(matches)) throw new Error('A suite supports up to 200 cases');
+      const next = {name:caseName, input:JSON.parse(input), expected:JSON.parse(expected)};
+      setConfig({testCases:[...cases.filter((item:any) => !matches(item)), next]});
       setMessage('Case saved. Expected output is kept separately from generated output.');
     } catch (error:any) {setMessage(error.message);}
   };
@@ -38,7 +41,7 @@ export default function TransformationTools({config, setConfig, customFunctions 
     } catch (error:any) {setMessage(error.message);}
   };
   const exportTemplate = () => run(async () => {
-    const asset = await post('template', {config:current(), name:templateName, version});
+    const asset = await post('template', {config:current(), name:studioObjectName(templateName), version});
     const existing = (config.templateHistory || []).find((item:any)=>item.name===asset.name && item.version===asset.version);
     if(existing && existing.sha256 !== asset.sha256) throw new Error('This template version already exists with different content. Increase its version.');
     const history = [...(config.templateHistory || []).filter((item:any) => item.name !== asset.name || item.version !== asset.version), asset].slice(-20);
@@ -54,8 +57,9 @@ export default function TransformationTools({config, setConfig, customFunctions 
       const asset = JSON.parse(await file.text());
       const result = await post('template', {asset});
       const impact = await post('schema-impact', {previous:schemaOf(config), current:schemaOf(result.config), mappings:config.mappings});
-      setConfig({...result.config, targetSchemaId:'', sourceSchemaId:'', templateName:result.name, templateVersion:result.version});
-      setTables(JSON.stringify(result.config.lookupTables || {}, null, 2)); setTemplateName(result.name); setVersion(result.version); setReport({schemaImpact:impact});
+      const importedName = studioObjectName(result.name);
+      setConfig({...result.config, targetSchemaId:'', sourceSchemaId:'', templateName:importedName, templateVersion:result.version});
+      setTables(JSON.stringify(result.config.lookupTables || {}, null, 2)); setTemplateName(importedName); setVersion(result.version); setReport({schemaImpact:impact});
       setMessage('Template imported. Review the schema impact and run its saved tests.');
     });
   };

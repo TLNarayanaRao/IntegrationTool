@@ -18,6 +18,8 @@ backend/build/
 backend/dist/
 backend/*.spec
 
+tmp/
+
 administrator/.venv/
 administrator/data/
 administrator/build/

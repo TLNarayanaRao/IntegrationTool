@@ -1,0 +1,32 @@
+.runtime-modal.endpoint-setup-dialog { width: min(620px, 100%); }
+.endpoint-setup-fields { display: grid; gap: 12px; grid-column: 1 / -1; min-width: 0; }
+.endpoint-setup-fields label, .endpoint-schema-choice { display: grid; gap: 6px; min-width: 0; }
+.endpoint-schema-choice { align-content: start; }
+.endpoint-schema-choice .endpoint-schema-browse {
+  position: relative;
+  justify-self: start;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 6px 10px;
+}
+.endpoint-schema-browse:focus-within { outline: 2px solid var(--accent); }
+.endpoint-schema-browse input { position: absolute; width: 1px !important; height: 1px; opacity: 0; }
+.endpoint-schema-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.endpoint-setup-fields :is(input:not([type="checkbox"]), select, textarea) { width: 100%; min-width: 0; }
+.endpoint-setup-fields textarea { resize: vertical; }
+.endpoint-setup-fields fieldset { border: 1px solid var(--line); border-radius: 5px; min-width: 0; }
+.endpoint-methods { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.endpoint-methods label { display: flex; align-items: center; }
+.endpoint-media-types { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+.endpoint-media-type-picker { display: grid; gap: 6px; min-width: 0; align-content: start; }
+.endpoint-media-checkboxes { display: grid; align-content: start; gap: 8px; min-width: 0; border: 1px solid var(--line); border-radius: 5px; }
+.endpoint-media-checkboxes button { justify-self: start; }
+.endpoint-media-checkboxes small { color: var(--muted); }
+.endpoint-media-options { display: grid; gap: 4px 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); }
+.endpoint-media-options label { display: flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.endpoint-media-options input[type="checkbox"] { width: auto; flex: none; }
+.input-media-type-controls { display: grid; gap: 6px; min-width: 0; }
+.input-media-type-controls label { display: grid; gap: 4px; }
+.endpoint-setup-fields p { margin: 0; color: var(--muted); }
+.endpoint-setup-error { color: var(--text); background: #70232d; border-radius: 5px; padding: 8px; margin: 0; grid-column: 1 / -1; }

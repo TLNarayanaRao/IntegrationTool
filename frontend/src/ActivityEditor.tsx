@@ -1,4 +1,7 @@
 import ModalLayer from "./ModalLayer";
+import EndpointSchemaPicker, { savedSchemaChoice, schemaChoiceName } from "./EndpointSchemaPicker";
+import HttpContentTypePicker, { HttpContentTypeCheckboxes, savedContentTypes } from "./HttpContentTypePicker";
+import SharedConnectionSelect, { type SharedConnection } from "./SharedConnectionSelect";
 import TransformationTools from "./TransformationTools";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -47,6 +50,9 @@ type Field = {
     | "select"
     | "methods"
     | "textarea"
+    | "schema"
+    | "mediaType"
+    | "mediaTypes"
     | "resource"
     | "artifact"
     | "idoc"
@@ -121,11 +127,16 @@ function httpRequestFields(output = false): DataField[] {
     field("Config.host"),field("Config.port","integer"),field("Config.scheme"),field("Config.requestURI"),field("Config.Method"),field("Config.RequestBody","any"),field("Config.bodyFormat"),
     field("Config.QueryParameters","object"),field("Config.URIParameters","object"),field("Config.QueryString"),field("Config.FilePath"),
     field("Config.timeout","integer"),field("Config.activityTimeoutSeconds","number"),field("Config.followRedirects","boolean"),field("Config.raiseForStatus","boolean"),
+    field("Config.streamRequest","boolean"),field("Config.responseFile"),field("Config.overwriteResponseFile","boolean"),field("Config.responseBodyMode"),
+    ...["openApiDocument","openApiReferenceDocuments","requestSchema","responseSchema"].map(name => field(`Config.${name}`,"any")),
+    ...["openApiBaseUrl","openApiAllowedRefOrigins","operationId"].map(name => field(`Config.${name}`)),
+    field("Config.validateRequest","boolean"),field("Config.validateResponse","boolean"),
     ...["requestEntityProcessing","sendBodyMode","successStatusCodes"].map(name => field(`Config.${name}`))]),...headers,...mime];
 }
 
 function httpInputMappings(config: any): any {
   const aliases: Record<string,string> = {host:"host",port:"port",scheme:"scheme",url:"requestURI",method:"Method",body:"RequestBody",bodyType:"bodyFormat",query:"QueryParameters",pathParameters:"URIParameters",activityTimeoutSeconds:"activityTimeoutSeconds",followRedirects:"followRedirects",requestEntityProcessing:"requestEntityProcessing",sendBodyMode:"sendBodyMode",successStatusCodes:"successStatusCodes",raiseForStatus:"raiseForStatus",socketTimeoutMs:"timeout"};
+  for (const key of ["openApiDocument","openApiBaseUrl","openApiReferenceDocuments","openApiAllowedRefOrigins","operationId","validateRequest","requestSchema","validateResponse","responseSchema"]) aliases[key]=key;
   const convert = (key:string) => key === "headers" || key.startsWith("headers.") ? `RestInputRequest.Headers${key.slice(7)}` : key === "accept" ? "RestInputRequest.Headers.accept" : key === "contentType" ? "RestInputRequest.Headers.content-type" : aliases[key] ? `RestInputRequest.Config.${aliases[key]}` : key;
   const literal = (value:any) => typeof value === "string" && value.startsWith("${") ? value : JSON.stringify(value);
   const result:any = {};
@@ -163,7 +174,7 @@ function httpRequestOccurrences(fields: DataField[], mappings: any): DataField[]
   }
   return result;
 }
-const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE", "CONNECT"];
+export const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE"];
 const isMapperActivity = (type: string) => ["mapper", "transform", "ai_transform"].includes(type);
 type MappingWhen = { condition: string; source: any };
 type StructuredMapping = { $rule: "for-each" | "for-each-group" | "if" | "when-otherwise" | "choose"; source?: any; select?: string; groupBy?: string; condition?: string; otherwise?: any; whens?: MappingWhen[]; duplicateOf?: string };
@@ -503,16 +514,21 @@ export function activityContract(n: any): Contract {
         },
         f("path", "Listener path"),
         f("methods", "Allowed HTTP methods", "methods", "Select every HTTP method accepted by this listener."),
-        f("contentType", "Expected content type"),
+        f("requestContentTypes", "Request content types", "mediaTypes", "Select the accepted request media types. A selected XSD applies to XML and a JSON Schema applies to JSON when several formats are selected."),
+        f("responseContentTypes", "Response content types", "mediaTypes", "Select the offered response media types. With multiple selections, the Accept header selects the format; the first selected type is the default."),
         f("validateRequest", "Validate request schema", "boolean"),
-        f("requestSchema", "Request JSON Schema / XSD", "textarea"),
+        f("requestSchema", "Request schema", "schema", "Optional contract for the incoming request body. Select a project schema or browse for an XSD or JSON Schema file."),
         f("validateResponse", "Validate response schema", "boolean"),
-        f("responseSchema", "Response JSON Schema / XSD", "textarea"),
+        f("responseSchema", "Response schema", "schema", "Optional contract for the response body. Select or browse for a schema to make its fields available in HTTP Send Response."),
         f("activityTimeoutSeconds", "Request execution timeout (seconds)", "number"),
       ],
       input: [],
       output: [
-        d("body", "Request body", "object|string"),
+        d("body", "Request body", "any"),
+        d("binaryContent", "Base64 request bytes", "base64"),
+        d("fileName", "Temporary uploaded file"),
+        d("size", "Uploaded byte count", "integer"),
+        d("headerPairs", "All received header pairs", "array"),
         d("headers", "Request headers", "object"),
         d("query", "Query parameters", "object"),
         d("pathParameters", "Path parameters", "object"),
@@ -536,14 +552,6 @@ export function activityContract(n: any): Contract {
   if (n.type === "http" || (n.type === "rest" && op === "invoke"))
     return {
       configuration: [
-        f("openApiDocument", "OpenAPI 3 / Swagger 2 JSON contract", "textarea"),
-        f("operationId", "Contract operation ID"),
-        f("validateRequest", "Validate request schema", "boolean"),
-        f("requestSchema", "Request JSON Schema / XSD", "textarea"),
-        f("validateResponse", "Validate response schema", "boolean"),
-        f("responseSchema", "Response JSON Schema / XSD", "textarea"),
-
-
         {
           ...f("resourceId", "HTTP shared connection", "resource"),
           resourceType: "http",
@@ -574,11 +582,13 @@ export function activityContract(n: any): Contract {
     return {
       configuration: [
         f("statusCode", "Status code", "number"),
-        f("contentType", "Content type"),
+        f("contentType", "Response content type", "mediaType", "Choose a common media type, enter a custom value, or use Automatic to use the listener default."),
       ],
       input: [
         d("headers", "Response headers", "object"),
-        d("body", "Response body", "object|string", true),
+        d("body", "Response body", "any"),
+        d("binaryContent", "Base64 response bytes", "base64"),
+        d("fileName", "Response file to stream", "string"),
       ],
       output: [
         d("statusCode", "Sent status code", "integer"),
@@ -594,7 +604,10 @@ export function activityContract(n: any): Contract {
   if (n.type === "rest" && op === "receiver")
     return {
       configuration: [
-        f("openApiDocument", "OpenAPI 3 / Swagger 2 JSON contract", "textarea"),
+        f("openApiDocument", "OpenAPI 3 / Swagger 2 JSON or YAML contract", "textarea"),
+        f("openApiBaseUrl", "Contract base URL for relative references"),
+        f("openApiReferenceDocuments", "Supplied external reference documents (URI/document JSON)", "textarea"),
+        f("openApiAllowedRefOrigins", "Allowed external reference HTTPS origins"),
         f("operationId", "Contract operation ID"),
 
         {
@@ -603,17 +616,21 @@ export function activityContract(n: any): Contract {
         },
         f("path", "Resource path"),
         f("methods", "Allowed HTTP methods", "methods", "Select every HTTP method exposed by this REST resource."),
-        f("contentType", "Request content type"),
-        f("responseType", "Response content type"),
+        f("requestContentTypes", "Request content types", "mediaTypes", "Select one or more accepted media types. With an OpenAPI contract, select media types declared by the operation or leave all unchecked to use the contract."),
+        f("responseContentTypes", "Response content types", "mediaTypes", "Select the offered response media types. With multiple selections, the Accept header selects the format; the first selected type is the default."),
         f("activityTimeoutSeconds", "Request execution timeout (seconds)", "number"),
         f("validateRequest", "Validate request schema", "boolean"),
-        f("requestSchema", "Request JSON Schema / XSD", "textarea"),
+        f("requestSchema", "Request schema", "schema", "Optional contract for the incoming request body. Select a project schema or browse for an XSD or JSON Schema file."),
         f("validateResponse", "Validate response schema", "boolean"),
-        f("responseSchema", "Response JSON Schema / XSD", "textarea"),
+        f("responseSchema", "Response schema", "schema", "Optional contract for the response body. Select or browse for a schema to make its fields available in HTTP Send Response."),
       ],
       input: [],
       output: [
-        d("body", "Request entity", "object"),
+        d("body", "Request entity", "any"),
+        d("binaryContent", "Base64 request bytes", "base64"),
+        d("fileName", "Temporary uploaded file"),
+        d("size", "Uploaded byte count", "integer"),
+        d("headerPairs", "All received header pairs", "array"),
         d("headers", "Headers", "object"),
         d("query", "Query parameters", "object"),
         d("pathParameters", "URI parameters", "object"),
@@ -813,12 +830,12 @@ export function activityContract(n: any): Contract {
                 f("includeFinalLineSeparator", "Append final line separator", "boolean"),
               ]),
       ],
-      input: n.type === "xml" && parsing ? [d("xmlString", "XML text", "string"), d("xmlBinary", "XML binary/base64", "binary"), d("forceEncoding", "Forced encoding")] : n.type === "xml" ? [d("value", "XML schema tree", "object", true)] : n.type === "json" && parsing ? [d("jsonString", "JSON text", "string", true)] : n.type === "json" ? [d("value", "JSON schema tree", "object", true)] : parsing ? [d("text", "Formatted data string", "string"), d("filePath", "Direct file path", "string")] : [d("records", "Data records", "array", true)],
+      input: n.type === "xml" && parsing ? [d("xmlString", "XML text", "string"), d("xmlBinary", "XML binary/base64", "binary"), d("forceEncoding", "Forced encoding")] : n.type === "xml" ? [d("value", "XML schema tree", "object", true)] : n.type === "json" && parsing ? [d("jsonString", "JSON text", "string", true)] : n.type === "json" ? [d("value", "JSON value", "any", true)] : parsing ? [d("text", "Formatted data string", "string"), d("filePath", "Direct file path", "string")] : [d("records", "Data records", "array", true)],
       output: parsing
         ? n.type === "json"
           ? [d("value", "Parsed JSON value", "json")]
-          : [d("xml", n.type === "flat" ? "Parsed data XML" : "Parsed XML", "xml")]
-        : [d(n.type === "xml" ? "xmlString" : n.type === "json" ? "jsonString" : "text", `Rendered ${format} text`, "string")],
+          : [d("xml", n.type === "flat" ? "Parsed data XML" : "Parsed XML", "xml"),d("xmlString","XML text"),d("root","Root element"),d("value","Parsed tree","object"),...(n.type === "flat" ? [d("records","Typed records","array"),d("recordCount","Record count","integer"),d("fields","Field names","array")] : [])]
+        : n.type === "xml" && n.config?.outputStyle === "Binary" ? [d("binaryContent","Base64 XML bytes","base64"),d("bytes","Base64 XML bytes","base64"),d("byteCount","Byte count","integer"),d("encoding","Encoding")] : [d(n.type === "xml" ? "xmlString" : n.type === "json" ? "jsonString" : "text", `Rendered ${format} text`, "string"),d("content","Rendered content"),...(n.type === "flat" ? [d("recordCount","Record count","integer")] : [])],
       errors: [
         {
           type: `${format}_PARSE`,
@@ -875,8 +892,8 @@ export function activityContract(n: any): Contract {
       registry = [f("useRegistry", "Use Schema Registry", "boolean"), f("schemaRegistryUrl", "Schema Registry URL"), f("keySchemaSubject", "Key schema subject : version"), f("valueSchemaSubject", "Value schema subject : version")],
       serialization = [{ ...f("keySerializer", "Key serializer", "select"), options: ["String", "Byte Array", "Avro Schema", "JSON"] }, { ...f("valueSerializer", "Value serializer", "select"), options: ["String", "Byte Array", "Avro Schema", "JSON"] }, ...registry],
       consumerSerialization = [{ ...f("keyDeserializer", "Key deserializer", "select"), options: ["String", "Byte Array", "Avro Schema", "JSON"] }, { ...f("valueDeserializer", "Value deserializer", "select"), options: ["String", "Byte Array", "Avro Schema", "JSON"] }, ...registry],
-      consumer = [resource, f("groupId", "Consumer group ID"), f("topic", "Topic names", "text", "Separate multiple topic names with semicolons."), f("assignCustomPartition", "Assign custom partitions", "boolean"), f("partitionIds", "Partition IDs / ranges"), f("consumerCount", "Consumer count", "number"), ...consumerSerialization, { ...f("acknowledgeMode", "Acknowledgement mode", "select"), options: ["Auto", "Manual"] }, f("enableAutoCommit", "Enable auto commit", "boolean"), f("autoOffsetReset", "Auto offset reset", "select"), f("fetchMinBytes", "Fetch minimum bytes", "number"), f("maxPollRecords", "Maximum poll records", "number"), f("sessionTimeoutMs", "Session timeout (ms)", "number"), f("heartbeatIntervalMs", "Heartbeat interval (ms)", "number"), f("additionalProperties", "Additional consumer properties (JSON)", "textarea")],
-      producer = [resource, f("topic", "Topic name"), f("assignCustomPartition", "Assign custom partition", "boolean"), f("partitionId", "Partition ID", "number"), ...serialization, f("waitForDelivery", "Wait for broker confirmation", "boolean", "Off uses Kafka's persistent buffered producer for maximum throughput. Enable only when this activity must return the broker partition and offset."), { ...f("acks", "Acknowledgements", "select"), options: ["0", "1", "all"] }, { ...f("compressionType", "Compression type", "select"), options: ["none", "gzip", "snappy", "lz4", "zstd"] }, f("retries", "Producer retries", "number"), f("bufferMemory", "Buffer memory (bytes)", "number"), f("batchSize", "Batch size", "number"), f("lingerMs", "Linger (ms)", "number"), f("maxRequestSize", "Maximum request size", "number"), f("transactionalId", "Transactional ID"), f("enableIdempotence", "Enable idempotence", "boolean"), f("additionalProperties", "Additional producer properties (JSON)", "textarea")];
+      consumer = [resource, { ...f("groupId", "Consumer group ID"), propertyBrowse: true }, { ...f("topic", "Topic names", "text", "Separate multiple topic names with semicolons."), propertyBrowse: true }, f("assignCustomPartition", "Assign custom partitions", "boolean"), f("partitionIds", "Partition IDs / ranges"), f("consumerCount", "Consumer count", "number"), ...consumerSerialization, { ...f("acknowledgeMode", "Acknowledgement mode", "select"), options: ["Auto", "Manual"] }, f("enableAutoCommit", "Enable auto commit", "boolean"), f("autoOffsetReset", "Auto offset reset", "select"), f("fetchMinBytes", "Fetch minimum bytes", "number"), f("maxPollRecords", "Maximum poll records", "number"), f("sessionTimeoutMs", "Session timeout (ms)", "number"), f("heartbeatIntervalMs", "Heartbeat interval (ms)", "number"), f("additionalProperties", "Additional consumer properties (JSON)", "textarea")],
+      producer = [resource, { ...f("topic", "Topic name"), propertyBrowse: true }, f("assignCustomPartition", "Assign custom partition", "boolean"), f("partitionId", "Partition ID", "number"), ...serialization, f("waitForDelivery", "Wait for broker confirmation", "boolean", "Off uses Kafka's persistent buffered producer for maximum throughput. Enable only when this activity must return the broker partition and offset."), { ...f("acks", "Acknowledgements", "select"), options: ["0", "1", "all"] }, { ...f("compressionType", "Compression type", "select"), options: ["none", "gzip", "snappy", "lz4", "zstd"] }, f("retries", "Producer retries", "number"), f("bufferMemory", "Buffer memory (bytes)", "number"), f("batchSize", "Batch size", "number"), f("lingerMs", "Linger (ms)", "number"), f("maxRequestSize", "Maximum request size", "number"), f("transactionalId", "Transactional ID"), f("enableIdempotence", "Enable idempotence", "boolean"), f("additionalProperties", "Additional producer properties (JSON)", "textarea")];
     const configs: Record<string, Field[]> = {
       send: producer,
       publish: producer,
@@ -1291,6 +1308,33 @@ function boundaryFields(task: any, boundaryType: "start" | "end", schemas: any[]
 
 function resolvedActivityContract(node: any, task: any, tasks: any[], schemas: any[], resources: any[] = []): Contract {
   const contract = activityContract(node);
+  if (node.type === "http_listener" || (node.type === "rest" && node.config?.operation === "receiver")) {
+    const schema = node.config?.requestSchema;
+    const fields = schemaDataFields(schema);
+    if (fields.length) {
+      const xml = typeof schema === "string" && schema.trimStart().startsWith("<");
+      const root = xml ? "xmlBody" : "body";
+      const bodyFields = fields.map(child => ({ ...child, key: `${root}.${child.key}` }));
+      const output = contract.output.flatMap(field => {
+        if (field.key !== "body") return [field];
+        if (!xml) return [field, ...bodyFields];
+        return [d(root, "Request body (XML fields)", "object"), ...bodyFields, d("body", "Raw request body", "any")];
+      });
+      return { ...contract, output };
+    }
+  }
+  if (node.type === "http_response") {
+    const endpoint = task?.activities?.find((activity: any) =>
+      activity.type === "http_listener" || (activity.type === "rest" && activity.config?.operation === "receiver"),
+    );
+    const fields = schemaDataFields(endpoint?.config?.responseSchema);
+    if (fields.length) return {
+      ...contract,
+      input: contract.input.flatMap(field => field.key === "body"
+        ? [field, ...fields.map(child => ({ ...child, key: `body.${child.key}` }))]
+        : [field]),
+    };
+  }
   if (node.type === "sap" && node.config?.operation === "idoc_parser") {
     const resource = resources.find((item: any) => item.id === node.config?.resourceId);
     const selected = resource?.config?.idocCatalog?.find((item: any) => item.idocType === node.config?.idocType) || resource?.config?.selectedIdoc;
@@ -1324,7 +1368,7 @@ function resolvedActivityContract(node: any, task: any, tasks: any[], schemas: a
     const fields = node.type === "flat"
       ? [d("records", "Records", "array"), ...flatLeaves.map((field) => ({ ...field, key: `records.${field.label}` }))]
       : schemaFields;
-    return parsing ? { ...contract, output: fields } : { ...contract, input: fields };
+    return parsing ? { ...contract, output: [...contract.output.filter(field => !fields.some(candidate => candidate.key === field.key)), ...fields] } : { ...contract, input: fields };
   }
   if (node.type === "snowflake" && node.config?.entityMetadata?.columns?.length) {
     const columns = node.config.entityMetadata.columns.map((column: any) => d(column.name, column.name, column.xsdType || "string", !!column.notNull));
@@ -1398,11 +1442,11 @@ function runtimeMappableInputs(node: any, contract: Contract): DataField[] {
 const activityDocumentation: Record<string, { summary: string; behavior: string }> = {
   http_listener: {
     summary: "Starts a Starter Task when an inbound HTTP request matches its configured method and path.",
-    behavior: "Run or Debug deploys the task and publishes its live Studio endpoint. The request body, headers, query parameters, method, path, and path parameters become the activity output. Host, port, authentication, and TLS are inherited from the selected HTTP shared connection.",
+    behavior: "Run or Debug deploys the task and publishes its live Studio endpoint. A selected request schema exposes its fields in Output and downstream mappings. JSON fields appear under body. Parsed XSD fields appear under xmlBody, with the original XML available under body. Headers, query parameters, method, path, and path parameters are also available.",
   },
   http: { summary: "Sends an outbound HTTP request and exposes the response to downstream activities.", behavior: "The shared HTTP connection supplies base address, security, TLS, proxy, and timeout defaults. Activity values and mapped inputs override defaults at execution time." },
   http_response: { summary: "Completes the active inbound HTTP exchange.", behavior: "Status, headers, and body are returned to the caller that triggered the listener. Place it on the same execution path as the inbound HTTP, REST, or SOAP event." },
-  rest: { summary: "Hosts or invokes a REST operation, depending on the selected operation.", behavior: "A Receiver starts the task from an inbound request. Invoke performs an outbound call. Request and response structures remain available as hierarchical mapping trees." },
+  rest: { summary: "Hosts or invokes a REST operation, depending on the selected operation.", behavior: "A Receiver starts the task from an inbound request. Its selected request schema exposes JSON fields under body and parsed XSD fields under xmlBody. Invoke performs an outbound call." },
   soap: { summary: "Hosts a SOAP service or invokes a request/reply web service.", behavior: "Service mode publishes the configured contract and begins the task for a matching SOAP request. Request/reply mode uses the selected HTTP connection and WSDL metadata for outbound invocation." },
   file: { summary: "Performs the selected filesystem operation.", behavior: "File paths and operation-specific values accept constants, property expressions, or mappings from earlier execution-path outputs. Runtime output contains operation-specific metadata and content." },
   ftp: { summary: "Performs the selected FTP operation through a shared FTP connection.", behavior: "Connection defaults come from the resource; paths, names, content, and transfer settings may be mapped dynamically for each invocation." },
@@ -1518,6 +1562,7 @@ export default function ActivityEditor({
   updateCustomFunctions,
   handleExceptions,
   navigateTask,
+  createConnection,
   tab,
   update,
 }: any) {
@@ -1540,13 +1585,13 @@ export default function ActivityEditor({
     upstreamSources = mappingSources.sources,
     groupVariables = mappingSources.variables,
     [mapperOpen, setMapperOpen] = useState(false),
-    set = (key: string, value: any) => {
+    set = (key: string, value: any, createdResource?: SharedConnection) => {
       if (node.type === "sap" && cfg.operation === "idoc_listener" && key === "messagingSource") {
         update({ config: { ...cfg, messagingSource: value, messagingResourceId: "", messagingDestination: value === "NoMessaging" ? "" : cfg.messagingDestination || "" } });
         return;
       }
       if (node.type === "sap" && key === "resourceId") {
-        const connection = resources.find((resource: any) => resource.id === value);
+        const connection = createdResource || resources.find((resource: any) => resource.id === value);
         const connectionConfig = connection?.config || {};
         update({ config: {
           ...cfg,
@@ -1590,7 +1635,40 @@ export default function ActivityEditor({
               }}
             />
           </label>
-          {node.type !== "timer" && contract.configuration.filter((field) => !(node.type === "call_task" && field.key === "dynamicTaskId") && (!field.when || field.when(derivedConfiguration))).map((field) => (
+          {node.type !== "timer" && contract.configuration.filter((field) => !(node.type === "call_task" && field.key === "dynamicTaskId") && (!field.when || field.when(derivedConfiguration))).map((field) => field.type === "schema" ? (
+            <EndpointSchemaPicker
+              key={`${node.id}:${field.key}`}
+              label={field.key === "requestSchema" ? "Request" : "Response"}
+              schemas={schemas || []}
+              value={savedSchemaChoice(cfg[field.key], cfg[`${field.key}Name`], schemas || [])}
+              onChange={choice => {
+                const validationKey = field.key === "requestSchema" ? "validateRequest" : "validateResponse";
+                const next = { ...cfg };
+                if (choice.source) {
+                  next[field.key] = choice.text;
+                  next[`${field.key}Name`] = schemaChoiceName(choice, schemas || []);
+                  next[validationKey] ??= true;
+                } else {
+                  delete next[field.key];
+                  delete next[`${field.key}Name`];
+                  if (!next.openApiDocument) delete next[validationKey];
+                }
+                update({ config: next });
+              }}
+            />
+          ) : field.type === "mediaTypes" ? (
+            <HttpContentTypeCheckboxes key={`${node.id}:${field.key}`} label={field.label}
+              response={field.key === "responseContentTypes"}
+              value={savedContentTypes(cfg[field.key], cfg[field.key === "requestContentTypes" ? "contentType" : "responseType"])}
+              onChange={value => {
+                const next = { ...cfg, [field.key]: value };
+                delete next[field.key === "requestContentTypes" ? "contentType" : "responseType"];
+                update({ config: next });
+              }}/>
+          ) : field.type === "mediaType" ? (
+            <HttpContentTypePicker key={`${node.id}:${field.key}`} label={field.label}
+              value={String(cfg[field.key] ?? "")} onChange={value => set(field.key, value)}/>
+          ) : (
             <FieldEditor
               key={field.key}
               field={node.type === "catch" && field.key === "errorType" ? { ...field, type: "select", options: ["", ...exceptionTypes] } : field}
@@ -1601,6 +1679,8 @@ export default function ActivityEditor({
               properties={properties}
               selectedResourceId={cfg.resourceId}
               navigateTask={navigateTask}
+              createConnection={createConnection}
+              httpRole={node.type === "http_listener" || (node.type === "rest" && cfg.operation !== "invoke") || (node.type === "soap" && cfg.operation === "service") ? "http_server" : "http_client"}
             />
           ))}
         </div>
@@ -1901,7 +1981,7 @@ function JdbcDesigner({ config, resource, properties, setConfig }: any) {
   return <section className="jdbc-designer"><header><span><Database/><b>JDBC SQL DESIGNER</b></span><span><button type="button" onClick={fetchMetadata} disabled={busy || !resource}><RefreshCw/> Fetch metadata</button><button type="button" onClick={run} disabled={busy || !resource || (!String(config.sql || "").trim() && config.operation !== "call")}><FlaskConical/> Run &amp; fetch</button></span></header>{config.operation !== "call" && <><div className="jdbc-editor-toolbar"><span><b>SQL statement</b></span><button type="button" onClick={() => updateSql(samples[config.operation] || samples.query)}>Insert sample {config.operation || "query"}</button></div><div className="jdbc-code-editor"><span aria-hidden="true">SQL</span><textarea aria-label="JDBC SQL statement" value={config.sql || ""} onChange={(event) => updateSql(event.target.value)} placeholder={samples[config.operation] || samples.query} spellCheck={false}/></div></>} {!!configuredParameters.length && <div className="jdbc-parameters"><header><b>Derived input parameters</b></header>{configuredParameters.map((parameter: any, index: number) => <label key={`${parameter.name}-${index}`}><code>{index + 1}</code><span><b>:{parameter.name}</b><small>parameters.{parameter.name}</small></span><select aria-label={`Datatype for ${parameter.name}`} value={parameter.type || "string"} onChange={(event) => setParameterType(parameter.name, event.target.value)}>{parameterTypes.map((type) => <option key={type}>{type}</option>)}</select></label>)}</div>} {metadata && <div className="jdbc-schema-browser">{metadata.tables?.map((table: any) => <button type="button" key={`${table.schema}.${table.name}`} onClick={() => updateSql(`SELECT * FROM ${table.schema ? `${table.schema}.` : ""}${table.name}`)}><span><b>{table.name}</b><small>{table.schema} · {table.type}</small></span><code>{table.columns?.length || 0} columns</code></button>)}</div>} {preview && <pre>{JSON.stringify(preview, null, 2)}</pre>} {status && <p>{status}</p>}</section>;
 }
 
-function FieldEditor({ field, value, set, resources, tasks, properties = [], selectedResourceId, navigateTask }: any) {
+function FieldEditor({ field, value, set, resources, tasks, properties = [], selectedResourceId, navigateTask, createConnection, httpRole }: any) {
   const change = (v: any) => set(field.key, v);
   const propertyPanel = useRef<HTMLDetailsElement>(null);
   const [propertySearch, setPropertySearch] = useState("");
@@ -1974,16 +2054,13 @@ function FieldEditor({ field, value, set, resources, tasks, properties = [], sel
           ))}
         </select>
       ) : field.type === "resource" ? (
-        <select value={value || ""} onChange={(e) => change(e.target.value)}>
-          <option value="">Select shared connection…</option>
-          {resources
-            .filter((r: any) => field.resourceTypes ? field.resourceTypes.includes(r.type) : r.type === field.resourceType)
-            .map((r: any) => (
-              <option value={r.id} key={r.id}>
-                {r.name}
-              </option>
-            ))}
-        </select>
+        <SharedConnectionSelect
+          value={value || ""}
+          resources={resources}
+          kinds={field.resourceTypes ?? [field.resourceType === "http" ? httpRole : field.resourceType]}
+          onChange={(id, resource) => set(field.key, id, resource)}
+          onCreate={createConnection}
+        />
       ) : field.type === "artifact" ? (
         <span className="artifact-picker"><input value={value || ""} placeholder={`Select a ${field.artifactType} artifact…`} onChange={(e) => change(e.target.value)}/><button type="button" onClick={async () => { const selected = await window.minaDesktop?.selectCodeArtifact(field.artifactType || "java"); if (selected?.path) change(selected.path); }}>Browse…</button></span>
       ) : field.type === "idoc" ? (
@@ -2336,6 +2413,29 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
   const connectionMappings = Object.fromEntries(Object.entries(mappings).map(([path, value]) => [displayRows.find(row => row.field.path === path && row.kind === "loop")?.key ? `${displayRows.find(row => row.field.path === path && row.kind === "loop")!.key}:source` : path, mappingSource(value)]));
   const openDialog = () => { setDraftMappings(structuredClone(mappings)); setDialogOpen(true); };
   const setValue = (path: string, value: any) => set({ ...mappings, [path]: value });
+  const contentTypePicker = (path: string, label: string) => {
+    const expression = mappings[path];
+    let literal: string | undefined;
+    if (typeof expression === "string") {
+      try {
+        const parsed = JSON.parse(expression);
+        if (typeof parsed === "string") literal = parsed;
+      } catch {
+        const match = expression.match(/^'([^'\\]*)'$/);
+        if (match) literal = match[1];
+      }
+    }
+    return <HttpContentTypePicker label={label} value={literal ?? ""}
+      mapped={literal === undefined && expression != null && expression !== ""}
+      onChange={value => {
+        if (value) setValue(path, JSON.stringify(value));
+        else {
+          const next = { ...mappings };
+          delete next[path];
+          set(next);
+        }
+      }}/>;
+  };
   const addOccurrence = (path:string) => {
     const next={...mappings};
     const indices=Object.keys(next).filter(key=>key.startsWith(`${path}.`)).map(key=>key.slice(path.length+1).split('.')[0]).filter(key=>/^\d+$/.test(key)).map(Number);
@@ -2351,8 +2451,16 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
       <div className="input-contract-tree"><header><Braces/><b>{node.name}</b></header>{displayRows.map(row => {
         if (row.ancestors.some(key => tree.collapsed.has(key))) return null;
         const field = row.field;
+        const mediaLabel = requestTree && field.path === "RestInputRequest.Headers.content-type"
+          ? "Request content type"
+          : requestTree && field.path === "RestInputRequest.Headers.accept"
+            ? "Accept response type"
+            : node.type === "http_response" && field.path === "contentType" ? "Response content type" : "";
         if (row.kind !== "field") return <LoopMappingRow key={row.key} row={row} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle} sources={sources} patch={patch => setValue(field.path, {...mappings[field.path], ...patch})} remove={() => setValue(field.path, mappingSource(mappings[field.path]))}/>;
         const structural = row.hasChildren || isComplexSchemaType(field.validationType || field.type || ''), canMapStructure = structural && (row.hasChildren || /array|\[\]/.test(field.validationType || field.type || ''));
+        const binding = <MappingBinding structural={structural} expression={mappings[field.path] ?? ""}
+          fieldType={field.type} fieldLabel={`${field.label || field.name}${cardinalitySymbol(field)}`}
+          validationType={field.validationType || field.type} sources={sources} onChange={(value: any) => setValue(field.path,value)}/>;
         const showMenu = (event: React.MouseEvent) => { event.preventDefault(); setSelected(field.path); setContextMenu({x:event.clientX, y:event.clientY, path:field.path, label:field.label || field.name}); };
         return <div key={row.key} data-target={row.loopKey || (structural && !canMapStructure) ? undefined : field.path} className={`input-tree-row ${structural ? "structural-row" : ""} ${selected === field.path ? "selected" : ""}`} style={{"--target-depth":row.depth + 1} as React.CSSProperties} onClick={() => setSelected(field.path)} onContextMenu={showMenu} onDragOver={event => {event.preventDefault();event.dataTransfer.dropEffect="copy";}} onDrop={event => {
           event.preventDefault();const value=event.dataTransfer.getData("expression");if(!value)return;
@@ -2365,7 +2473,9 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
           {requestTree && /(?:DynamicHeaders|mimePart)$/.test(field.path) && !mappings[field.path] && <button type="button" aria-label={`Add ${field.name}`} title={`Add ${field.name}`} onClick={event=>{event.stopPropagation();addOccurrence(field.path);}}><Plus/></button>}
           {requestTree && /(?:DynamicHeaders|mimePart)\.\d+$/.test(field.path) && <button type="button" aria-label={`Remove ${field.label}`} title={`Remove ${field.label}`} onClick={event=>{event.stopPropagation();removeOccurrence(field.path);}}><X/></button>}
           </span>
-          {row.loopKey || (requestTree && /(?:DynamicHeaders|mimePart)\.\d+$/.test(field.path)) || (row.hasChildren && !mappings[field.path]) ? <span/> : <MappingBinding structural={structural} expression={mappings[field.path] ?? ""} fieldType={field.type} fieldLabel={`${field.label || field.name}${cardinalitySymbol(field)}`} validationType={field.validationType || field.type} sources={sources} onChange={(value: any) => setValue(field.path,value)}/>}
+          {row.loopKey || (requestTree && /(?:DynamicHeaders|mimePart)\.\d+$/.test(field.path)) || (row.hasChildren && !mappings[field.path]) ? <span/> : mediaLabel
+            ? <div className="input-media-type-controls">{contentTypePicker(field.path, mediaLabel)}{binding}</div>
+            : binding}
         </div>;
       })}</div>{!fields.length && <div className="contract-empty">No configurable input.</div>}
     </section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextMenu ? mappings[contextMenu.path] : null} close={() => setContextMenu(null)} change={(value: any) => contextMenu && setValue(contextMenu.path,value)} remove={() => {if(!contextMenu)return;const next={...mappings};delete next[contextMenu.path];set(next);}}/>
@@ -2603,6 +2713,11 @@ function AdvancedEditor({ node, value, properties, set }: any) {
       retryEnabled: "${properties.advanced.retryEnabled}",
       retryCount: "${properties.advanced.retryCount}",
       retryIntervalSeconds: "${properties.advanced.retryIntervalSeconds}",
+      retryBackoff: "fixed",
+      retryMaxIntervalSeconds: "",
+      retryMaxElapsedSeconds: 0,
+      retryJitter: false,
+      retryFaultTypes: "",
     },
     advanced = { ...defaults, ...value },
     change = (key: string, next: any) => set({ ...advanced, [key]: next }),
@@ -2614,9 +2729,11 @@ function AdvancedEditor({ node, value, properties, set }: any) {
     }),
     operation = node.config?.operation || "",
     outbound =
-      ["http", "jdbc", "snowflake", "amqp", "ftp", "sftp"].includes(
+      ["http", "jdbc", "snowflake", "ftp", "sftp"].includes(
         node.type,
       ) ||
+      (node.type === "amqp" && ["send", "get", "dead_letter"].includes(operation)) ||
+      (node.type === "jms" && ["send_message", "get_queue_message", "request_reply", "reply_message"].includes(operation)) ||
       (node.type === "ems" && ["send", "publish", "request_reply", "reply"].includes(operation)) ||
       (node.type === "kafka" && ["send", "publish", "get"].includes(operation)) ||
       (node.type === "pubsub" && operation === "publish") ||
@@ -2637,7 +2754,7 @@ function AdvancedEditor({ node, value, properties, set }: any) {
   useEffect(() => {
     if (outbound || !value || !("retryEnabled" in value || "retryCount" in value || "retryIntervalSeconds" in value)) return;
     const applicable = { ...value };
-    delete applicable.retryEnabled; delete applicable.retryCount; delete applicable.retryIntervalSeconds;
+    Object.keys(applicable).filter(key => key.startsWith("retry")).forEach(key => delete applicable[key]);
     set(applicable);
   }, [node.id, outbound, value.retryEnabled, value.retryCount, value.retryIntervalSeconds]);
   const suggestions = [
@@ -2726,7 +2843,13 @@ function AdvancedEditor({ node, value, properties, set }: any) {
               />
 
             </label>
+            <label className="advanced-tree-field">Retry backoff<select disabled={retryDisabled} value={advanced.retryBackoff} onChange={e => change("retryBackoff", e.target.value)}><option value="fixed">Fixed interval</option><option value="exponential">Exponential backoff</option></select></label>
+            <label className="advanced-tree-field">Maximum retry interval (seconds)<input disabled={retryDisabled} value={advanced.retryMaxIntervalSeconds} placeholder="300 or the base interval, whichever is greater" onChange={e => change("retryMaxIntervalSeconds", e.target.value)}/></label>
+            <label className="advanced-tree-field">Retry time budget (seconds, 0 unlimited)<input disabled={retryDisabled} value={advanced.retryMaxElapsedSeconds} onChange={e => change("retryMaxElapsedSeconds", e.target.value)}/></label>
+            <label className="advanced-tree-field">Randomize retry delay<input type="checkbox" disabled={retryDisabled} checked={advanced.retryJitter === true || String(advanced.retryJitter).toLowerCase() === "true"} onChange={e => change("retryJitter", e.target.checked)}/></label>
+            <label className="advanced-tree-field">Retry fault types or codes<input disabled={retryDisabled} value={advanced.retryFaultTypes} placeholder="All faults, or comma-separated names" onChange={e => change("retryFaultTypes", e.target.value)}/></label>
           </div>
+          <p>Up to 100 additional attempts. The retry budget prevents starting another attempt after its limit; it does not interrupt an in-flight request. Enable retries for writes only when the destination can safely handle duplicates.</p>
         </article>}
       </section>
       <aside>

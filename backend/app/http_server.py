@@ -4,6 +4,7 @@ import asyncio, ipaddress, json, re, threading, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from .http_transport import HTTPFault, authorize, boolean, number, tls_context, validate_authentication
 from .rest_contract import operation_config, validate_parameters
+from .http_contracts import listener_media_types, media_name, media_schema, schema_for_media
 
 def route_pattern(path):
     names=[];parts=[];start=0
@@ -14,27 +15,65 @@ def route_pattern(path):
 def listener_config(connection,activity):
     cfg={**connection,**activity}
     original_operation=cfg.get('operation')
-    try:cfg=operation_config({**cfg,'operation':'receiver'})
+    configured_type = str(cfg.get('contentType') or '').strip()
+    try:
+        request_types = listener_media_types(cfg, 'requestContentTypes')
+        response_types = listener_media_types(cfg, 'responseContentTypes')
+        cfg=operation_config({**cfg,'operation':'receiver'})
     except (ValueError,KeyError,TypeError) as error:raise HTTPFault('Invalid REST contract: '+str(error),'HTTP_CONFIGURATION',400) from None
     cfg['operation']=original_operation
+    if request_types:
+        cfg['requestContentTypes'] = request_types
+        cfg['contentType'] = request_types[0]
+        declared = cfg.get('_restRequestSchemas') or {}
+        selected = {}
+        for media in request_types:
+            match, schema = media_schema(declared, media)
+            if declared and match is None:
+                raise HTTPFault(f'Request media type {media} is not declared by the OpenAPI operation', 'HTTP_CONFIGURATION', 400)
+            if cfg.get('_explicitRequestSchema') or not declared:
+                schema = schema_for_media(cfg.get('requestSchema'), media, len(request_types) > 1)
+            selected[media_name(media)] = schema
+        cfg['_restRequestSchemas'] = selected
+    elif configured_type:
+        cfg['contentType'] = configured_type
+        formats = cfg.get('_restRequestSchemas')
+        if formats:
+            matched, schema = media_schema(formats, configured_type)
+            if matched is None:
+                raise HTTPFault('Configured request content type is not declared by the OpenAPI operation', 'HTTP_CONFIGURATION', 400)
+            cfg['_restRequestSchemas'] = {media_name(configured_type): schema}
+    if response_types:
+        declared = [formats for code, formats in (cfg.get('_restResponseContentSchemas') or {}).items()
+                    if code.startswith('2') and formats]
+        for media in response_types:
+            if declared and not any(media_schema(formats, media)[0] is not None for formats in declared):
+                raise HTTPFault(f'Response media type {media} is not declared by the OpenAPI operation', 'HTTP_CONFIGURATION', 400)
+        cfg['responseContentTypes'] = response_types
+        cfg['responseType'] = response_types[0]
     validate_authentication(cfg,server=True)
+    from .http_policy import validate_listener_policy
+    validate_listener_policy(cfg)
     if cfg.get('connectorMode')=='client':raise HTTPFault('Listener requires a server shared connection','HTTP_CONFIGURATION',400)
     path='/'+('/'.join((str(cfg.get('basePath') or '').strip('/'),str(cfg.get('path') or '/').strip('/')))).strip('/')
     cfg['path']=path
     minimum=int(number(cfg,'minimumQtpThreads',10,1,10000));maximum=int(number(cfg,'maximumQtpThreads',75,minimum,10000))
     number(cfg,'port',8080,1,65535);number(cfg,'maxRequestBodyBytes',64*1024**2,1);number(cfg,'maxHeaderBytes',65536,1024)
-    if str(cfg.get('httpVersion') or '1.1')!='1.1':raise HTTPFault('Python HTTP listeners currently support HTTP/1.1; terminate HTTP/2 at a gateway','HTTP_CONFIGURATION',400)
+    if str(cfg.get('httpVersion') or '1.1') not in ('1.1','2'):raise HTTPFault('HTTP listener version must be 1.1 or 2','HTTP_CONFIGURATION',400)
+    if str(cfg.get('httpVersion'))=='2' and not server_tls(cfg):raise HTTPFault('Inbound HTTP/2 requires HTTPS','HTTP_CONFIGURATION',400)
     if str(cfg.get('authentication') or '').lower()=='certificate' and (not server_tls(cfg) or cfg.get('clientAuthentication')!='required'):raise HTTPFault('Certificate authentication requires HTTPS and required client certificates','HTTP_CONFIGURATION',400)
     return cfg
 
-def server_tls(cfg):return boolean(cfg.get('tlsEnabled'),cfg.get('scheme')=='https') or boolean(cfg.get('confidentiality')) or boolean(cfg.get('defaultConfidentiality'))
+def server_tls(cfg):return str(cfg.get('scheme') or '').lower()=='https' or boolean(cfg.get('tlsEnabled')) or boolean(cfg.get('confidentiality')) or boolean(cfg.get('defaultConfidentiality'))
 
 class ListenerApp:
     def __init__(self,routes,handler,connection,verified_mtls=False,warm_workers=True):
         self.verified_mtls=verified_mtls
+        from .api_docs import HostedAPIDocs
+        self.docs=HostedAPIDocs(routes,connection)
         self.routes=routes;self.handler=handler;self.connection=connection;maximum=int(number(connection,'maximumQtpThreads',75,1,10000))
-        self.gate=asyncio.Semaphore(maximum);self.executor=ThreadPoolExecutor(max_workers=maximum,thread_name_prefix='mina-http')
-        self.compiled=[(*route_pattern(cfg['path']),metadata,cfg) for metadata,cfg in routes]
+        self.gate=asyncio.Semaphore(maximum);self.queued=0;self.executor=ThreadPoolExecutor(max_workers=maximum,thread_name_prefix='mina-http')
+        self.compiled=[(*route_pattern(cfg['path']),metadata,cfg) for metadata,cfg in sorted(routes,key=lambda item:('{' in item[1]['path'],-len(item[1]['path'])))]
         # Warm the minimum worker count for authentication/LDAP work.
         minimum=int(number(connection,'minimumQtpThreads',10,1,maximum)) if warm_workers else 0;ready=threading.Barrier(minimum+1)
         jobs=[self.executor.submit(ready.wait,10) for _ in range(minimum)];ready.wait(10)
@@ -46,75 +85,11 @@ class ListenerApp:
                 if event['type']=='lifespan.startup':await send({'type':'lifespan.startup.complete'})
                 elif event['type']=='lifespan.shutdown':self.executor.shutdown(wait=False,cancel_futures=True);await send({'type':'lifespan.shutdown.complete'});return
         if scope['type']!='http':return
-        acquired=False;headers={k.decode('latin1').lower():v.decode('latin1') for k,v in scope.get('headers',[])}
-        try:
-            method=scope['method'];path=scope['path'];selected=None
-            for pattern,names,metadata,cfg in self.compiled:
-                match=pattern.match(path)
-                methods=cfg.get('methods') or cfg.get('method') or 'POST';methods=methods if isinstance(methods,list) else str(methods).split(',')
-                if match and method in {str(item).strip().upper() for item in methods}:selected=(metadata,cfg,dict(zip(names,match.groups())));break
-            if not selected:raise HTTPFault('No matching listener','HTTP_NOT_FOUND',404)
-            metadata,cfg,parameters=selected
-            allowed=str(cfg.get('allowedIps') or '').replace(',',' ').split()
-            if allowed:
-                remote=scope.get('client',('',0))[0]
-                if not any(ipaddress.ip_address(remote) in ipaddress.ip_network(item,strict=False) for item in allowed):raise HTTPFault('Access denied','HTTP_SECURITY',403)
-            if sum(len(k)+len(v)+4 for k,v in scope['headers'])>number(cfg,'maxHeaderBytes',65536,1024):raise HTTPFault('HTTP headers too large','HTTP_BAD_REQUEST',431)
-            await asyncio.wait_for(self.gate.acquire(),timeout=number(cfg,'queueTimeoutMs',30000,1)/1000);acquired=True
-            chunks=[];size=0
-            while True:
-                event=await asyncio.wait_for(receive(),timeout=number(cfg,'readTimeoutMs',30000,1)/1000)
-                if event['type']=='http.disconnect':return
-                chunk=event.get('body',b'');size+=len(chunk)
-                if size>number(cfg,'maxRequestBodyBytes',64*1024**2,1):raise HTTPFault('Request body too large','HTTP_BAD_REQUEST',413)
-                chunks.append(chunk)
-                if not event.get('more_body'):break
-            raw=b''.join(chunks);target=(scope.get('raw_path') or path.encode()).decode('ascii')+('?' + scope['query_string'].decode('ascii') if scope.get('query_string') else '')
-            claims=await asyncio.get_running_loop().run_in_executor(self.executor,lambda:authorize(cfg,method,target,headers,raw,self.verified_mtls))
-            expected=str(cfg.get('contentType') or '').split(';')[0]
-            if raw and expected and headers.get('content-type','').split(';')[0]!=expected:raise HTTPFault('Unsupported content type','REST_UNSUPPORTED_MEDIA',415)
-            try:text=raw.decode(str(cfg.get('encoding') or 'utf-8'))
-            except (UnicodeError,LookupError):raise HTTPFault('Invalid body encoding','HTTP_BAD_REQUEST',400)
-            if 'json' in headers.get('content-type','') and raw:
-                try:body=json.loads(text)
-                except ValueError:raise HTTPFault('Invalid JSON body','HTTP_BAD_REQUEST',400)
-            elif 'application/x-www-form-urlencoded' in headers.get('content-type',''):body=dict(urllib.parse.parse_qsl(text,keep_blank_values=True))
-            else:body=text
-            query=dict(urllib.parse.parse_qsl(scope.get('query_string',b'').decode(),keep_blank_values=True))
-            errors=validate_parameters(cfg,parameters,query,headers,body if raw else None)
-            if errors:raise HTTPFault('; '.join(errors),'REST_VALIDATION',400)
-            if boolean(cfg.get('validateRequest'),bool(cfg.get('openApiDocument'))) and cfg.get('requestSchema'):
-                from .mapper import validate_output
-                if validate_output(body,cfg['requestSchema']):raise HTTPFault('Request schema validation failed','REST_VALIDATION',400)
-            payload={'body':body,'headers':headers,'method':method,'path':path,'pathParameters':parameters,'query':query,'remote':scope.get('client'),'auth':claims}
-            if cfg.get('operation')=='service':payload['envelope']=text
-            output=await asyncio.wait_for(self.handler(metadata,payload),timeout=number(cfg,'activityTimeoutSeconds',180,1))
-            response=output if isinstance(output,dict) and ('__httpResponse' in output or 'statusCode' in output or 'sent' in output) else {'body':output}
-            status=int(response.get('statusCode',200));value=response.get('body',response)
-            if not 200<=status<=599:raise HTTPFault('Invalid response status','HTTP_RESPONSE',500)
-            schema=(cfg.get('_restResponseSchemas') or {}).get(str(status),cfg.get('responseSchema'))
-            if boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and schema:
-                from .mapper import validate_output
-                if validate_output(value,schema):raise HTTPFault('Response schema validation failed','REST_VALIDATION',500)
-            response_headers={str(k):str(v) for k,v in (response.get('headers') or {}).items()}
-            body=json.dumps(value,ensure_ascii=False).encode() if isinstance(value,(dict,list)) else ('' if value is None else str(value)).encode()
-            response_headers.setdefault('Content-Type',str(cfg.get('responseType') or ('application/json' if isinstance(value,(dict,list)) else 'text/plain; charset=utf-8')))
-            if method=='HEAD' or status in (204,304):body=b''
-            if len(body)>number(cfg,'maxResponseBodyBytes',64*1024**2,1):raise HTTPFault('Response body too large','HTTP_BAD_RESPONSE',500)
-            if not boolean(cfg.get('usePersistentConnections'),True):response_headers['Connection']='close'
-            if any('\r' in k+v or '\n' in k+v for k,v in response_headers.items()):raise HTTPFault('Invalid response headers','HTTP_RESPONSE',500)
-        except HTTPFault as error:
-            status=error.status;body=json.dumps({'error':str(error)}).encode();response_headers={'Content-Type':'application/json'}
-            if status==401:response_headers['WWW-Authenticate']='Basic realm="MINA"' if str(self.connection.get('authentication') or '').lower() in ('basic','ldap') else 'Bearer'
-        except asyncio.TimeoutError:status=504;body=b'{"error":"HTTP execution or read timeout"}';response_headers={'Content-Type':'application/json'}
-        except Exception:status=500;body=b'{"error":"HTTP request failed"}';response_headers={'Content-Type':'application/json'}
-        finally:
-            if acquired:self.gate.release()
-        response_headers['Content-Length']=str(len(body))
-        await send({'type':'http.response.start','status':status,'headers':[(k.encode('latin1'),v.encode('latin1')) for k,v in response_headers.items()]})
-        await send({'type':'http.response.body','body':body})
+        if await self.docs.handle({**scope,'_mina_verified_mtls':self.verified_mtls},send):return
+        from .http_listener import handle_request
+        await handle_request(self,scope,receive,send)
 
-async def serve(routes,handler,ready=None):
+async def _serve_http1(routes,handler,ready=None):
     import uvicorn
     grouped={}
     for metadata,connection,activity in routes:
@@ -124,7 +99,7 @@ async def serve(routes,handler,ready=None):
     try:
         for (host,port),members in grouped.items():
             connection=members[0][1]
-            transport_keys=('tlsEnabled','scheme','confidentiality','certificateFile','privateKeyFile','privateKeyPassword','identityStoreFile','identityStoreType','identityStorePassword','trustedCertificateFolder','trustStoreFile','trustStoreType','trustStorePassword','certificateAuthorityFile','tlsVersion','maximumTlsVersion','cipherSuites','clientAuthentication','maximumQtpThreads','minimumQtpThreads','acceptQueueSize','idleConnectionTimeoutMs','maxHeaderBytes')
+            transport_keys=('tlsEnabled','scheme','confidentiality','defaultConfidentiality','certificateFile','privateKeyFile','privateKeyPassword','identityStoreFile','identityStoreType','identityStorePassword','trustedCertificateFolder','trustStoreFile','trustStoreType','trustStorePassword','certificateAuthorityFile','crlFile','tlsVersion','maximumTlsVersion','cipherSuites','clientAuthentication','maximumQtpThreads','minimumQtpThreads','maxQueueSize','acceptQueueSize','idleConnectionTimeoutMs','maxHeaderBytes')
             if any(any(cfg.get(key)!=connection.get(key) for key in transport_keys) for _,cfg in members):raise HTTPFault('Listeners on the same port must share the same transport configuration','HTTP_CONFIGURATION',400)
             route_methods=set()
             for _,cfg in members:
@@ -165,3 +140,31 @@ async def serve(routes,handler,ready=None):
                 except Exception:pass
             server.config.app.executor.shutdown(wait=False,cancel_futures=True)
         for sock in sockets:sock.close()
+
+async def serve(routes,handler,ready=None):
+    """Select Uvicorn HTTP/1.1 or Hypercorn TLS/ALPN HTTP/2 per bind address."""
+    groups={}
+    for metadata,connection,activity in routes:
+        cfg=listener_config(connection,activity)
+        groups.setdefault((str(cfg.get('host') or '0.0.0.0'),int(cfg.get('port') or 8080)),[]).append((metadata,connection,activity,cfg))
+    jobs=[];signals=[]
+    try:
+        for members in groups.values():
+            versions={str(cfg.get('httpVersion') or '1.1') for _,_,_,cfg in members}
+            if len(versions)!=1:raise HTTPFault('Listeners sharing a port must use the same HTTP version','HTTP_CONFIGURATION',400)
+            signal=asyncio.Event();signals.append(signal)
+            if '2' in versions:
+                from .http2_server import serve_http2
+                job=serve_http2([(metadata,cfg) for metadata,_,_,cfg in members],handler,signal)
+            else:job=_serve_http1([(metadata,connection,activity) for metadata,connection,activity,_ in members],handler,signal)
+            jobs.append(asyncio.create_task(job))
+        while not all(signal.is_set() for signal in signals):
+            for job in jobs:
+                if job.done():await job
+            await asyncio.sleep(.01)
+        if ready is not None:ready.set()
+        await asyncio.gather(*jobs)
+    finally:
+        for job in jobs:
+            if not job.done():job.cancel()
+        await asyncio.gather(*jobs,return_exceptions=True)

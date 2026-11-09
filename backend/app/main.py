@@ -67,6 +67,8 @@ async def _stop_debug_session(session_id: str) -> dict:
         # this flag, so they cannot re-arm while cancellation is delivered.
         state['stopRequested'] = True
         state['status'] = 'stopping'
+        from .debug_http import finish_request
+        finish_request(state,'HTTP debug session stopped')
         debug_task = debug_runs.pop(session_id, None)
         listener_task = active_runs.pop(project.id, None)
         await asyncio.gather(
@@ -136,22 +138,34 @@ def _resolved_resource_config(item: Project, activity, properties: dict) -> dict
     resource = next((value for value in item.resources if value.id == activity.config.get('resourceId')), None)
     if not resource: return {}
     context = {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}
-    return {key: runtime.resolve(value, context) for key, value in resource.config.items()}
+    return runtime.resolve(resource.config,context)
 
-async def _start_http_listener(item,task,event,environment):
+def _http_listener_members(item,task,event):
+    blueprint=event.config.get('apiBlueprintId')
+    if not blueprint:return [(task,event)]
+    members=[]
+    for candidate in item.tasks:
+        events=effective_event_activities(candidate.activities,candidate.transitions)
+        if candidate.kind=='starter' and len(events)==1 and events[0].type=='rest' and events[0].config.get('operation')=='receiver' and events[0].config.get('apiBlueprintId')==blueprint:members.append((candidate,events[0]))
+    return members
+
+async def _start_http_listener(item,task,event,environment,debug_handler=None):
     from .http_server import serve
     resources={value.id:value for value in item.resources};properties=_environment_values(item,environment)
     context={'properties':properties,'input':{},'last':{},'vars':{},'context':{}}
-    connection={**_resolved_resource_config(item,event,properties),'_httpScope':item.id}
+    members=_http_listener_members(item,task,event)
+    routes=[((selected.id,starter.id),{**_resolved_resource_config(item,starter,properties),'_httpScope':item.id},runtime.resolve(starter.config,context)) for selected,starter in members]
+    by_task={selected.id:selected for selected,_ in members}
     previous=active_runs.pop(item.id,None)
     if previous:await _cancel_and_wait(previous)
     async def handle(metadata,payload):
-        result=await runtime.run(task,payload,resources,properties,event.id,item)
+        task_id,event_id=metadata
+        result=await runtime.run(by_task[task_id],payload,resources,properties,event_id,item)
         append_project_logs(item.id,item.name,result.logs,_project_log_directory(item,environment))
         _publish_runtime_state(item.id,status='listening',logs=(runtime_states.get(item.id,{}).get('logs',[])+result.logs)[-500:],result=result,environment=environment)
         if result.status!='completed':raise RuntimeError('HTTP integration failed')
         return result.output
-    ready=asyncio.Event();job=asyncio.create_task(serve([(None,connection,runtime.resolve(event.config,context))],handle,ready));active_runs[item.id]=job
+    ready=asyncio.Event();job=asyncio.create_task(serve(routes,debug_handler or handle,ready));active_runs[item.id]=job
     waiter=asyncio.create_task(ready.wait())
     try:
         done,_=await asyncio.wait([job,waiter],timeout=15,return_when=asyncio.FIRST_COMPLETED)
@@ -180,13 +194,17 @@ def _listener_endpoints(item: Project, task, environment: str, base_url: str = '
         host = str(cfg.get('host') or 'localhost')
         port = int(cfg.get('port') or 8080)
         default_port = (scheme == 'https' and port == 443) or (scheme == 'http' and port == 80)
-        configured_url = f'{scheme}://{host}{"" if default_port else f":{port}"}{deployment_path}'
+        from .api_docs import public_base,document_urls,methods_for
+        from .http_transport import boolean
+        configured_url = public_base(effective)+deployment_path
         relative_url = f'/api/listeners/{item.id}{path}'
-        methods = str(effective.get('methods') or effective.get('method') or 'POST').replace(' ', '').split(',')
+        methods = methods_for(effective)
         endpoints.append({'taskId': task.id, 'activityId': activity.id, 'name': activity.name, 'type': activity.type,
                           'methods': methods, 'path': path, 'url': configured_url, 'previewUrl': base_url.rstrip('/') + relative_url if base_url else relative_url,
                           'relativeUrl': relative_url, 'configuredUrl': configured_url, 'tlsEnabled': tls,
-                          'authentication': cfg.get('authentication', 'None')})
+                          'authentication': cfg.get('authentication', 'None'),
+                          **(document_urls(effective) if activity.type!='soap' and boolean(effective.get('apiDocsEnabled'),True) else {}),
+                          'collectionDownloadUrl':f'/api/projects/{item.id}/http-docs/postman?environment={environment}&task_id={task.id}'})
     return endpoints
 
 def _lifecycle_logs(item: Project, endpoints: list[dict]) -> list[dict]:
@@ -635,6 +653,25 @@ def create_project(item: Project):
     try: return save_project(item)
     except ValueError as error: raise HTTPException(400, str(error)) from error
 
+class APIBlueprintRequest(BaseModel):
+    document: str | dict
+    operationIds: list[str] = Field(default_factory=list,max_length=512)
+    connection: dict = Field(default_factory=dict)
+    name: str = Field(default='',max_length=128)
+    responseMode: str = 'stub'
+
+@app.post('/api/api-blueprint/validate')
+def validate_api_blueprint(request: APIBlueprintRequest):
+    from .api_blueprint import validate_blueprint
+    try:return validate_blueprint(request.document)
+    except (ValueError,KeyError,TypeError,RecursionError) as error:raise HTTPException(400,str(error)) from None
+
+@app.post('/api/api-blueprint/plan')
+def plan_api_blueprint(request: APIBlueprintRequest):
+    from .api_blueprint import blueprint_plan
+    try:return blueprint_plan(request.document,request.operationIds,request.connection,request.name,request.responseMode)
+    except (ValueError,KeyError,TypeError,RecursionError) as error:raise HTTPException(400,str(error)) from None
+
 @app.put('/api/projects/{project_id}', response_model=Project)
 def update_project(project_id: str, item: Project):
     if project_id != item.id: raise HTTPException(400, 'Project id mismatch')
@@ -668,7 +705,7 @@ async def run(project_id: str, http_request: Request, request: RunRequest):
     if len(events) != 1: raise HTTPException(400, f'Starter Task requires exactly one event activity; found {len(events)}')
     event = events[0]
     diagnostics = _startup_diagnostics(item, task, resources, properties, request.environment, 'RUN')
-    endpoints = _listener_endpoints(item, task, request.environment, str(http_request.base_url).rstrip('/'))
+    endpoints = [endpoint for member,_ in _http_listener_members(item,task,event) for endpoint in _listener_endpoints(item, member, request.environment, str(http_request.base_url).rstrip('/'))]
     if endpoints:
         try:await _start_http_listener(item,task,event,request.environment)
         except Exception as error:raise HTTPException(400,f'HTTP listener startup failed: {error}')
@@ -997,7 +1034,7 @@ def deployment_package_files(item: Project, target: str, environment: str, artif
             for key, child in value.items():
                 child_path = f'{path}.{key}'.strip('.')
                 location = str(key).lower().endswith(('url','file','path'))
-                if sensitive.search(str(key)) and not location and isinstance(child, (str, bytes)) and not str(child).startswith('${properties.'):
+                if (str(key)=='policyRedisUrl' or sensitive.search(str(key)) and not location) and isinstance(child, (str, bytes)) and not str(child).startswith('${properties.'):
                     output[key] = ''
                     if child: secret_keys.append(child_path)
                 else: output[key] = scrub(child, child_path)
@@ -1849,10 +1886,29 @@ def evaluate_condition(payload: dict):
     try: return {'result': bool(runtime.condition(expression, context)), 'expression': expression}
     except Exception as exc: raise HTTPException(400, f'Condition evaluation failed: {exc}')
 
+@app.get('/api/projects/{project_id}/http-docs/postman')
+def download_http_collection(project_id: str, environment: str='local', task_id: str | None=None):
+    """Studio download uses project access; saved API credentials are never exported."""
+    from .http_server import listener_config
+    from .api_docs import generate_openapi,postman_collection,public_base
+    item=get_project(project_id)
+    if not item:raise HTTPException(404,'Project not found')
+    selected=next((task for task in item.tasks if task.id==(task_id or item.active_task_id)),None)
+    if not selected:raise HTTPException(404,'Process not found')
+    events=effective_event_activities(selected.activities,selected.transitions)
+    event=next((value for value in events if value.type in ('rest','http_listener') and value.config.get('operation') in INBOUND_OPERATIONS),None)
+    if not event:raise HTTPException(400,'Select a hosted HTTP or REST process')
+    properties=_environment_values(item,environment);context={'properties':properties,'input':{},'last':{},'vars':{},'context':{}}
+    routes=[((task.id,starter.id),listener_config(_resolved_resource_config(item,starter,properties),runtime.resolve(starter.config,context))) for task,starter in _http_listener_members(item,selected,event)]
+    base=public_base(routes[0][1]);spec=generate_openapi(routes,base,item.name)
+    return JSONResponse(postman_collection(spec,base),headers={'Content-Disposition':'attachment; filename="MINA-API.postman_collection.json"','Cache-Control':'no-store'})
+
 @app.post('/api/projects/{project_id}/debug')
 async def start_debug(project_id: str, http_request: Request, request: DebugRequest):
     item = get_project(project_id)
     if not item: raise HTTPException(404, 'Project not found')
+    for session_id,state in list(debugger.sessions.items()):
+        if state['project'].id==project_id and state.get('httpHandler') and not state.get('stopRequested'):await _stop_debug_session(session_id)
     task_id = request.task_id or item.active_task_id
     properties = {prop.key: prop.value for prop in item.properties.get(request.environment, [])}
     try:
@@ -1864,9 +1920,12 @@ async def start_debug(project_id: str, http_request: Request, request: DebugRequ
             test_state['frames'][-1]['context']['logs'] = test_state['logs']
         task = next(value for value in item.tasks if value.id == task_id)
         diagnostics = _startup_diagnostics(item, task, {resource.id: resource for resource in item.resources}, properties, request.environment, 'DEBUG')
-        endpoints = _listener_endpoints(item, task, request.environment, str(http_request.base_url).rstrip('/'))
+        endpoints = [] if request.test_mode else _listener_endpoints(item, task, request.environment, str(http_request.base_url).rstrip('/'))
         events = effective_event_activities(task.activities, task.transitions)
         event = events[0] if len(events) == 1 else None
+        http_debug=bool(event and event.type in ('http_listener','rest') and not request.test_mode and event.config.get('operation') in INBOUND_OPERATIONS)
+        if http_debug:
+            endpoints=[endpoint for selected,_ in _http_listener_members(item,task,event) for endpoint in _listener_endpoints(item,selected,request.environment,str(http_request.base_url).rstrip('/'))]
         if event and _is_continuous_event(event) and not request.test_mode:
             endpoints = [_event_subscription(item, task, event, request.environment)]
         state = debugger.sessions[view['sessionId']]
@@ -1875,7 +1934,16 @@ async def start_debug(project_id: str, http_request: Request, request: DebugRequ
         state['logs'][:] = diagnostics + _lifecycle_logs(item, endpoints) + state['logs']
         append_project_logs(project_id, item.name, state['logs'], _project_log_directory(item, request.environment))
         state['persistedLogCount'] = len(state['logs'])
-        if event and _is_continuous_event(event) and not request.test_mode:
+        if http_debug:
+            from .debug_http import HTTPDebugBridge
+            state.update(listenerMode=True,status='listening',pauseReason='event-listener')
+            bridge=HTTPDebugBridge(debugger,state)
+            state['httpHandler']=bridge
+            try:await _start_http_listener(item,task,event,request.environment,bridge)
+            except Exception:
+                await debugger.stop(state['id'])
+                raise
+        elif event and _is_continuous_event(event) and not request.test_mode:
             _start_continuous_listener(item, task, event, request.environment, view['sessionId'])
         elif not request.breakpoints and not request.test_mode:
             # Run without breakpoints in the background. This lets the Studio
@@ -1897,7 +1965,7 @@ async def start_debug(project_id: str, http_request: Request, request: DebugRequ
 
             debug_runs[session_id] = asyncio.create_task(finish_debug_session())
         return debugger.view(state)
-    except ValueError as exc: raise HTTPException(400, str(exc))
+    except (ValueError,RuntimeError,OSError) as exc: raise HTTPException(400, str(exc))
 
 @app.post('/api/debug/{session_id}/action')
 async def debug_action(session_id: str, request: DebugAction):
@@ -1942,44 +2010,50 @@ async def invoke_listener(project_id: str, listener_path: str, request: Request,
     starter_tasks = [task for task in item.tasks if task.kind == 'starter']
     candidates = [(task, activity) for task in starter_tasks for activity in task.activities if activity.type in ('http_listener', 'rest', 'soap') and activity.config.get('operation') in (None, 'listen', 'receiver', 'service')]
     properties=_environment_values(item,environment)
-    def configured_path(activity):
+    def configured_listener(activity):
         from .http_server import listener_config
-        connection=_resolved_resource_config(item,activity,properties)
+        connection={**_resolved_resource_config(item,activity,properties),'_httpScope':item.id}
         configured=runtime.resolve(activity.config,{'properties':properties,'input':{},'last':{},'vars':{},'context':{}})
-        return listener_config(connection,configured)['path']
+        return listener_config(connection,configured)
     def match_path(template: str):
         from .http_server import route_pattern
         pattern,names=route_pattern(str(template))
         match=pattern.match(request_path)
         return dict(zip(names,match.groups())) if match else None
-    matched = next(((task, activity, match_path(configured_path(activity))) for task, activity in candidates if match_path(configured_path(activity)) is not None and (request.method.upper() in _configured_http_methods(activity) or (activity.type == 'soap' and request.method == 'GET' and 'wsdl' in request.query_params))), None)
-    task, listener, path_parameters = matched if matched else (None, None, {})
+    from .api_docs import methods_for
+    resolved=[(task,activity,configured_listener(activity)) for task,activity in candidates]
+    matching=[(task,activity,cfg,match_path(cfg['path'])) for task,activity,cfg in resolved if match_path(cfg['path']) is not None]
+    matched=next((entry for entry in matching if request.method in methods_for(entry[2]) or request.method=='HEAD' and 'GET' in methods_for(entry[2]) or entry[1].type=='soap' and request.method=='GET' and 'wsdl' in request.query_params),next((entry for entry in matching if entry[1].type!='soap'),None))
+    task, listener, effective, path_parameters = matched if matched else (None, None, {}, {})
     if not listener: raise HTTPException(404, f'No listener configured for {request.method} {request_path}')
     properties = {prop.key: prop.value for prop in item.properties.get(environment, [])}
     listener_cfg = _resolved_resource_config(item, listener, properties)
     from .http_transport import HTTPFault, authorize, number, boolean
     listener_cfg = {**listener_cfg, '_httpScope':item.id, **runtime.resolve(listener.config, {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}})}
     if listener.type != 'soap':
-        from .http_server import ListenerApp, listener_config
+        from .http_server import ListenerApp, listener_config,server_tls
+        if server_tls(effective) and request.url.scheme!='https':return JSONResponse({'detail':'This connection requires HTTPS. Use the configured HTTPS endpoint.'},status_code=400)
         try:cfg=listener_config(listener_cfg,runtime.resolve(listener.config,{'properties':properties,'input':{},'last':{},'vars':{},'context':{}}))
         except HTTPFault as error:return JSONResponse({'detail':str(error)},status_code=error.status)
         async def handle_preview(metadata,payload):
+            task_id,listener_id=metadata
+            selected_task=next(value for value in item.tasks if value.id==task_id)
+            debug_state=next((state for state in debugger.sessions.values() if state['project'].id==project_id and state.get('httpHandler') and not state.get('stopRequested')),None)
+            if debug_state:return await debug_state['httpHandler'](metadata,payload)
             resources={resource.id:resource for resource in item.resources}
-            result=await runtime.run(task,payload,resources,properties,listener.id,item)
+            result=await runtime.run(selected_task,payload,resources,properties,listener_id,item)
             append_project_logs(project_id,item.name,result.logs,_project_log_directory(item,environment))
             combined_logs=list(runtime_states.get(project_id,{}).get('logs',[]))+result.logs
             _publish_runtime_state(project_id,status='listening' if result.status=='completed' else 'failed',logs=combined_logs[-500:],result=result,environment=environment)
             if result.status!='completed':raise RuntimeError('Integration execution failed')
             return result.output
-        preview=ListenerApp([(None,cfg)],handle_preview,cfg,warm_workers=False)
-        scope={**request.scope,'path':request_path,'raw_path':request_path.encode()}
-        messages=[]
-        async def collect(message):messages.append(message)
-        try:await preview(scope,request.receive,collect)
-        finally:preview.executor.shutdown(wait=False,cancel_futures=True)
-        start=next(message for message in messages if message['type']=='http.response.start')
-        body=b''.join(message.get('body',b'') for message in messages if message['type']=='http.response.body')
-        return Response(body,status_code=start['status'],headers={key.decode('latin1'):value.decode('latin1') for key,value in start['headers']})
+        preview_routes=[((selected.id,activity.id),resolved_cfg) for selected,activity,resolved_cfg in resolved if activity.type!='soap' and (resolved_cfg.get('host'),resolved_cfg.get('port'))==(effective.get('host'),effective.get('port'))]
+        preview=ListenerApp(preview_routes,handle_preview,cfg,warm_workers=False)
+        class ListenerResponse(Response):
+            async def __call__(self,scope,receive,send):
+                try:await preview({**scope,'path':request_path},receive,send)
+                finally:preview.executor.shutdown(wait=False,cancel_futures=True)
+        return ListenerResponse()
     raw_chunks=[];raw_size=0
     async for chunk in request.stream():
         raw_size+=len(chunk)

@@ -1,0 +1,184 @@
+{
+  "scenarios": [
+    {
+      "file": "projects/01-host-one-http.mpackage",
+      "projectId": "mina-example-01-host-one-http",
+      "title": "Host one REST API",
+      "role": "host",
+      "port": 9001,
+      "pairedProject": null,
+      "notes": ""
+    },
+    {
+      "file": "projects/02-host-multiple-http.mpackage",
+      "projectId": "mina-example-02-host-multiple-http",
+      "title": "Host multiple REST operations",
+      "role": "host",
+      "port": 9002,
+      "pairedProject": null,
+      "notes": ""
+    },
+    {
+      "file": "projects/03-host-generic-http.mpackage",
+      "projectId": "mina-example-03-host-generic-http",
+      "title": "Host a plain HTTP listener",
+      "role": "host",
+      "port": 9003,
+      "pairedProject": null,
+      "notes": ""
+    },
+    {
+      "file": "projects/04-host-https.mpackage",
+      "projectId": "mina-example-04-host-https",
+      "title": "Host HTTPS with root-only client trust",
+      "role": "host",
+      "port": 9443,
+      "pairedProject": null,
+      "notes": ""
+    },
+    {
+      "file": "projects/05-host-basic.mpackage",
+      "projectId": "mina-example-05-host-basic",
+      "title": "Host HTTPS with Basic authentication",
+      "role": "host",
+      "port": 9445,
+      "pairedProject": null,
+      "notes": ""
+    },
+    {
+      "file": "projects/06-host-oauth2.mpackage",
+      "projectId": "mina-example-06-host-oauth2",
+      "title": "Host HTTPS with OAuth2 token introspection",
+      "role": "host",
+      "port": 9446,
+      "pairedProject": null,
+      "notes": "Start the OAuth fixture first."
+    },
+    {
+      "file": "projects/07-host-jwt.mpackage",
+      "projectId": "mina-example-07-host-jwt",
+      "title": "Host HTTPS with JWT validation",
+      "role": "host",
+      "port": 9447,
+      "pairedProject": null,
+      "notes": ""
+    },
+    {
+      "file": "projects/08-host-hmac.mpackage",
+      "projectId": "mina-example-08-host-hmac",
+      "title": "Host HTTPS with HMAC signatures",
+      "role": "host",
+      "port": 9448,
+      "pairedProject": null,
+      "notes": ""
+    },
+    {
+      "file": "projects/09-host-mtls.mpackage",
+      "projectId": "mina-example-09-host-mtls",
+      "title": "Host HTTPS with mutual TLS",
+      "role": "host",
+      "port": 9449,
+      "pairedProject": null,
+      "notes": ""
+    },
+    {
+      "file": "projects/10-call-http.mpackage",
+      "projectId": "mina-example-10-call-http",
+      "title": "Call Http",
+      "role": "caller",
+      "port": 9001,
+      "pairedProject": "01-host-one-http",
+      "notes": ""
+    },
+    {
+      "file": "projects/11-invoke-rest.mpackage",
+      "projectId": "mina-example-11-invoke-rest",
+      "title": "Invoke Rest",
+      "role": "caller",
+      "port": 9002,
+      "pairedProject": "02-host-multiple-http",
+      "notes": ""
+    },
+    {
+      "file": "projects/12-call-https.mpackage",
+      "projectId": "mina-example-12-call-https",
+      "title": "Call Https",
+      "role": "caller",
+      "port": 9443,
+      "pairedProject": "04-host-https",
+      "notes": ""
+    },
+    {
+      "file": "projects/13-default-confidentiality.mpackage",
+      "projectId": "mina-example-13-default-confidentiality",
+      "title": "Default Confidentiality",
+      "role": "caller",
+      "port": 9443,
+      "pairedProject": "04-host-https",
+      "notes": ""
+    },
+    {
+      "file": "projects/14-call-basic.mpackage",
+      "projectId": "mina-example-14-call-basic",
+      "title": "Call Basic",
+      "role": "caller",
+      "port": 9445,
+      "pairedProject": "05-host-basic",
+      "notes": ""
+    },
+    {
+      "file": "projects/15-call-oauth2.mpackage",
+      "projectId": "mina-example-15-call-oauth2",
+      "title": "Call Oauth2",
+      "role": "caller",
+      "port": 9446,
+      "pairedProject": "06-host-oauth2",
+      "notes": ""
+    },
+    {
+      "file": "projects/16-call-jwt.mpackage",
+      "projectId": "mina-example-16-call-jwt",
+      "title": "Call Jwt",
+      "role": "caller",
+      "port": 9447,
+      "pairedProject": "07-host-jwt",
+      "notes": ""
+    },
+    {
+      "file": "projects/17-call-hmac.mpackage",
+      "projectId": "mina-example-17-call-hmac",
+      "title": "Call Hmac",
+      "role": "caller",
+      "port": 9448,
+      "pairedProject": "08-host-hmac",
+      "notes": ""
+    },
+    {
+      "file": "projects/18-call-mtls.mpackage",
+      "projectId": "mina-example-18-call-mtls",
+      "title": "Call Mtls",
+      "role": "caller",
+      "port": 9449,
+      "pairedProject": "09-host-mtls",
+      "notes": ""
+    },
+    {
+      "file": "projects/19-post-json.mpackage",
+      "projectId": "mina-example-19-post-json",
+      "title": "Post Json",
+      "role": "caller",
+      "port": 9002,
+      "pairedProject": "02-host-multiple-http",
+      "notes": ""
+    },
+    {
+      "file": "projects/20-path-query-headers.mpackage",
+      "projectId": "mina-example-20-path-query-headers",
+      "title": "Path Query Headers",
+      "role": "caller",
+      "port": 9002,
+      "pairedProject": "02-host-multiple-http",
+      "notes": ""
+    }
+  ]
+}

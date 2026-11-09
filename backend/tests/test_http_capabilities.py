@@ -155,7 +155,7 @@ class HTTPListenerTests(unittest.IsolatedAsyncioTestCase):
         finally:app.executor.shutdown()
         with self.assertRaises(ValueError):operation_config({'openApiDocument':spec,'operationId':'missing'})
         broken=json.loads(json.dumps(spec));broken['paths']['/items/{id}']['post']['requestBody']['content']['application/json']['schema']={'$ref':'https://untrusted.test/schema'}
-        with self.assertRaisesRegex(ValueError,'local'):operation_config({'openApiDocument':broken,'operationId':'create'})
+        with self.assertRaisesRegex(ValueError,'explicitly allowed HTTPS origin'):operation_config({'openApiDocument':broken,'operationId':'create'})
 
     async def test_live_mutual_tls_listener_and_stop(self):
         import socket, ipaddress
@@ -198,7 +198,7 @@ class HTTPListenerTests(unittest.IsolatedAsyncioTestCase):
                 response=await client.post('/items/42',json={'x':1},auth=('u','p'));self.assertEqual(response.status_code,201);self.assertEqual(response.json(),{'id':'42','value':{'x':1}})
                 response=await client.post('/items/42',content=b'x'*101,auth=('u','p'));self.assertEqual(response.status_code,413)
                 response=await client.post('/items/42',content='{bad',headers={'Content-Type':'application/json'},auth=('u','p'));self.assertEqual(response.status_code,400)
-                response=await client.get('/items/42');self.assertEqual(response.status_code,404)
+                response=await client.get('/items/42');self.assertEqual(response.status_code,405);self.assertIn('POST',response.headers['allow'])
         finally:app.executor.shutdown()
     def test_literal_route_metacharacters_and_shared_base_path(self):
         cfg=listener_config({'basePath':'api'},{'path':'/v1.0/{id}'});pattern,names=route_pattern(cfg['path']);self.assertIsNotNone(pattern.match('/api/v1.0/1'));self.assertIsNone(pattern.match('/api/v1x0/1'));self.assertEqual(names,['id'])
@@ -231,7 +231,7 @@ class HTTPExportTests(unittest.TestCase):
                 for kind in ('http','soap'):
                     config={'operation':'request','resourceId':'http','url':'/echo','method':'POST','body':{'value':False},'responseMode':'envelope'}
                     if kind=='soap':config.update(operation='request_reply',envelope='<Request>test</Request>')
-                    project={'id':'folder-trust','name':'Folder Trust','properties':{'local':[{'key':'http.roots','value':str(roots),'data_type':'string'}]},'resources':[{'id':'http','name':'HTTP','type':'http','config':{'connectorMode':'client','baseUrl':f'https://localhost:{server.server_port}','trustedCertificateFolder':'${properties.http.roots}'}}],'tasks':[{'id':'main','name':'Main','kind':'starter','groups':[],'activities':[{'id':'Start','name':'Start','type':'start','config':{}},{'id':'Call','name':'Call','type':kind,'config':config},{'id':'End','name':'End','type':'end','config':{}}],'transitions':[{'id':'t1','source':'Start','target':'Call'},{'id':'t2','source':'Call','target':'End'}]}]}
+                    project={'id':'folder-trust','name':'Folder Trust','properties':{'local':[{'key':'http.roots','value':str(roots),'data_type':'string'}]},'resources':[{'id':'http','name':'HTTP','type':'http','config':{'connectorMode':'client','defaultConfidentiality':True,'baseUrl':f'https://localhost:{server.server_port}','trustedCertificateFolder':'${properties.http.roots}'}}],'tasks':[{'id':'main','name':'Main','kind':'starter','groups':[],'activities':[{'id':'Start','name':'Start','type':'start','config':{}},{'id':'Call','name':'Call','type':kind,'config':config},{'id':'End','name':'End','type':'end','config':{}}],'transitions':[{'id':'t1','source':'Start','target':'Call'},{'id':'t2','source':'Call','target':'End'}]}]}
                     model=Project.model_validate(project);result=asyncio.run(WorkflowRuntime().run(model.tasks[0],{}, {resource.id:resource for resource in model.resources},{'http.roots':str(roots)},project=model))
                     self.assertEqual(result.status,'completed',result.logs);self.assertEqual(result.output['statusCode'],200)
                     for compiler in (raw_python_files,engine_python_files):
@@ -241,6 +241,9 @@ class HTTPExportTests(unittest.TestCase):
                             command=[sys.executable,'run.py'] if compiler is raw_python_files else [sys.executable,'-m','application.main']
                             completed=subprocess.run([*command,'--task','main','--input','{}'],cwd=destination,capture_output=True,text=True,timeout=30)
                             self.assertEqual(completed.returncode,0,completed.stderr);self.assertEqual(json.loads(completed.stdout)['statusCode'],200)
+                self.assertEqual([path.name for path in roots.iterdir()],['root.crt'])
+                # Default confidentiality must also reject a hostname mismatch.
+                with self.assertRaises(transport.HTTPFault):transport.request({'url':f'https://127.0.0.1:{server.server_port}/echo','defaultConfidentiality':True,'trustedCertificateFolder':str(roots)})
                 # An optional intermediate in the folder completes a leaf-only server chain.
                 (roots/'chain.pem').write_bytes(intermediate.public_bytes(serialization.Encoding.PEM));certificate.write_bytes(leaf.public_bytes(serialization.Encoding.PEM));context.load_cert_chain(certificate,private)
                 self.assertEqual(transport.request({'url':f'https://localhost:{server.server_port}/echo','trustedCertificateFolder':str(roots)})['statusCode'],200)

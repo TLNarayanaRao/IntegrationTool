@@ -6,15 +6,22 @@ const section=(title,blocks)=>({title,blocks});
 const table=(columns,rows)=>({kind:'table',columns,rows});
 const rt='backend/app/runtime.py', ui='frontend/src/main.tsx', ed='frontend/src/ActivityEditor.tsx';
 const raw='backend/app/raw_python.py', core='backend/app/raw_python_support/core.py';
+const formats='backend/app/data_formats.py';
 const connectors='backend/app/raw_python_support/connectors.py', acts='backend/app/raw_python_support/activities.py';
 export const developerSources=[ui,ed,rt,raw,core,connectors,acts,
+ formats,'backend/app/faults.py','backend/app/schema_validation.py','backend/app/retry_policy.py','backend/tests/test_integration_resilience.py','backend/tests/test_format_activities.py','backend/tests/test_http_dynamic_contracts.py',
  'frontend/scripts/developer-documentation.mjs','frontend/src/ActivityPicker.tsx','frontend/src/MapperStudio.tsx',
  'frontend/src/ModalLayer.tsx','frontend/src/modal-layer.css','frontend/src/FontControls.tsx',
+ 'frontend/src/taskEditors.ts',
  'frontend/src/TransformationTools.tsx','frontend/src/transformation-tools.css','backend/app/transformation.py','backend/app/message_state.py','backend/tests/test_transformation_capabilities.py','frontend/src/MappingExpressionInput.tsx','frontend/src/mappingCompletion.ts','frontend/src/mapper-functions.ts',
  'frontend/src/copyTask.ts','frontend/src/repairCopiedTask.ts','frontend/src/DebugJobData.tsx',
  'frontend/src/DebugActivityTree.tsx','frontend/src/debugTaskTree.ts','frontend/src/DebugPayloadEditor.tsx',
  'frontend/src/groups.css','frontend/src/activity-editor.css','frontend/src/canvas-selection.css',
  'backend/app/http_messages.py','backend/app/http_transport.py','backend/app/http_server.py','backend/app/rest_contract.py','backend/tests/test_http_capabilities.py',
+ 'backend/app/http_contracts.py','backend/app/http_policy.py','backend/app/http_listener.py','backend/app/http_streams.py','backend/app/http2_server.py','backend/tests/test_http_production.py',
+ 'backend/tests/test_http_activity_e2e.py',
+ 'backend/app/api_blueprint.py','backend/tests/test_api_blueprint.py','frontend/src/ApiBlueprint.tsx','frontend/src/api-blueprint.css',
+ 'backend/app/api_docs.py','backend/app/api_docs_ui.py','backend/app/xsd_openapi.py','backend/app/debug_http.py','backend/tests/test_api_docs.py','frontend/scripts/sync-swagger-assets.mjs',
  'backend/app/main.py','backend/app/models.py','backend/app/store.py','backend/app/debugger.py',
  'backend/app/mapper.py','backend/app/mapping_literals.py','backend/app/project_import.py','backend/app/sftp.py','backend/app/jdbc.py','backend/app/snowflake.py','backend/app/amqp.py',
  'backend/app/sap.py','backend/app/java_bridge.py','backend/app/google_pubsub.py','backend/app/dataweave.py',
@@ -59,9 +66,9 @@ export function developerPages(activities,groups,functions,sources){
   jms:[rt,'async def messaging(','JMS operation routing and body/ack handling',connectors,'async def jms('],
   kafka:[rt,'async def messaging(','Kafka producer/consumer operation dispatch',connectors,'async def kafka('],
   pubsub:[rt,'async def messaging(','Pub/Sub publish/receive dispatch',connectors,'async def pubsub('],
-  xml:[rt,'def parse_xml_activity(','XML parse; render_xml_activity handles render',acts,'def data_activity('],
-  json:[rt,'def json_activity(','JSON parse/render and validation',acts,'def data_activity('],
-  flat:[rt,'def flat_data(','Flat record parse/render',acts,'def data_activity('],
+  xml:[formats,'def parse_xml_activity(','XML parse; render_xml_activity handles render',acts,'def data_activity('],
+  json:[formats,'def json_activity(','JSON parse/render and validation',acts,'def data_activity('],
+  flat:[formats,'def flat_data(','Flat record parse/render',acts,'def data_activity('],
   excel:[rt,'def read_excel(','Workbook reading',acts,'def excel_read('],
   mapper:['backend/app/mapper.py','def execute(','Schema mapping engine',core,'async def execute('],
   dataweave:['backend/app/dataweave.py','def execute_details(','Transformation script parser and evaluator',core,'async def execute('],
@@ -84,7 +91,7 @@ export function developerPages(activities,groups,functions,sources){
    relevant.push(r(rt,sources.get(rt).includes(dispatch)?dispatch:'async def execute(self,',`Engine ${type} dispatch; operation ${operation}`),r(core,'async def execute(',`Direct helper dispatch for ${type}; task graph may also be generated inline`));
   }
   if(type==='file'&&operation==='read')relevant.push(r(rt,"content = path.read_text(",'Text read implementation'),r(rt,"path.read_bytes()",'Binary read implementation'));
-  if(type==='xml'&&operation==='render')relevant.push(r(rt,'def render_xml_activity(','XML render implementation'));
+  if(type==='xml'&&operation==='render')relevant.push(r(formats,'def render_xml_activity(','XML render implementation'));
   if(type==='amqp'&&operation!=='send')relevant.push(r('backend/app/amqp.py','def get(','Receive adapter and acknowledgement callback'));
   if(type==='sap'&&operation.includes('listener'))relevant.push(r('backend/app/sap.py','async def receive_idoc(','Inbound SAP adapter'),r('backend/app/main.py','async def _continuous_sap_event_loop(','Continuous SAP jobs'));
   if(['ems','jms','sap','java'].includes(type))relevant.push(r('backend/app/java_bridge.py','', 'Python/native worker lifecycle'),r('java-bridge/src/com/mina/bridge/MinaJavaBridge.java','', 'Native Java connector implementation'));

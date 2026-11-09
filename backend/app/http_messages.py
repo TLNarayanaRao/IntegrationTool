@@ -8,6 +8,14 @@ from pathlib import Path
 
 STANDARD_HEADERS={'accept','content-type','accept-charset','accept-encoding','cookie','pragma'}
 
+def multi_values(pairs):
+    result={}
+    for key,value in pairs:
+        if key not in result:result[key]=value
+        elif isinstance(result[key],list):result[key].append(value)
+        else:result[key]=[result[key],value]
+    return result
+
 def repeating(value):
     if isinstance(value,dict) and value and all(str(key).isdigit() for key in value):return [value[key] for key in sorted(value,key=lambda item:int(item))]
     return value
@@ -40,13 +48,16 @@ def request_config(cfg):
     result=dict(cfg);config=root.get('Config') or {}
     if not isinstance(config,dict):raise ValueError('RestInputRequest.Config must be an object')
     aliases={'host':'host','Host':'host','port':'port','Port':'port','scheme':'scheme','requestURI':'url','RequestURI':'url','Method':'method','method':'method','RequestBody':'body','PostData':'body','bodyFormat':'bodyType','QueryParameters':'query','URIParameters':'pathParameters','timeout':'socketTimeoutMs','Timeout':'socketTimeoutMs','activityTimeoutSeconds':'activityTimeoutSeconds','followRedirects':'followRedirects','sendBodyMode':'sendBodyMode','requestEntityProcessing':'requestEntityProcessing','successStatusCodes':'successStatusCodes','raiseForStatus':'raiseForStatus','FilePath':'body'}
+    aliases.update({key:key for key in ('openApiDocument','openApiBaseUrl','openApiReferenceDocuments','openApiAllowedRefOrigins','operationId','validateRequest','requestSchema','validateResponse','responseSchema')})
     for key,target in aliases.items():
         if key in config:result[target]=config[key]
+    for key in ('streamRequest','responseFile','overwriteResponseFile','responseBodyMode'):
+        if key in config:result[key]=config[key]
     if 'FilePath' in config:result['bodyType']='file'
     if 'PostData' in config and 'bodyFormat' not in config:result['bodyType']='text'
     if 'timeout' in config or 'Timeout' in config:result.pop('timeout',None)
     if 'QueryString' in config:
-        result['query']={**(result.get('query') or {}),**dict(urllib.parse.parse_qsl(str(config['QueryString']).lstrip('?'),keep_blank_values=True))}
+        result['query']={**(result.get('query') or {}),**multi_values(urllib.parse.parse_qsl(str(config['QueryString']).lstrip('?'),keep_blank_values=True))}
     if any(key in config for key in ('host','Host','port','Port','scheme')):
         base=urllib.parse.urlsplit(str(result.get('baseUrl') or result.get('url') or ''))
         host=str(config.get('host') or config.get('Host') or base.hostname or result.get('host') or 'localhost')

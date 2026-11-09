@@ -17,7 +17,7 @@ test('full-screen dialogs render outside panel clipping and preserve interaction
  assert.equal(result.content.props.children,'dialog');
 });
 test('all full-screen modal backdrops use the common viewport layer',async()=>{
- for(const name of ['main.tsx','MapperStudio.tsx','ActivityEditor.tsx','DebugJobData.tsx','SchemaStudio.tsx']){
+ for(const name of ['main.tsx','MapperStudio.tsx','ActivityEditor.tsx','DebugJobData.tsx','SchemaStudio.tsx','ApiBlueprint.tsx']){
   const text=await readFile(new URL('../src/'+name,import.meta.url),'utf8');
   const file=ts.createSourceFile(name,text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   function check(node){if(ts.isJsxOpeningElement(node)&&node.attributes.properties.some(attr=>ts.isJsxAttribute(attr)&&attr.name.text==='className'&&attr.initializer&&ts.isStringLiteral(attr.initializer)&&['modal-backdrop','schema-backdrop','sap-idoc-picker'].some(cls=>attr.initializer.text.split(' ').includes(cls))))assert.equal(node.tagName.getText(file),'ModalLayer',name);ts.forEachChild(node,check);}

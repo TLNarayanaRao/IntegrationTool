@@ -159,7 +159,7 @@ async def _receive_forever(project, task, event, environment: str) -> None:
 
 
 async def _serve_http(project, listeners, environment: str) -> None:
-    from .http_server import serve
+    from .engine.http_server import serve
     resources = {item.id: item for item in project.resources}; properties = _properties(project, environment)
     context = {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}
     routes=[]

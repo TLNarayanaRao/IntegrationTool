@@ -1,0 +1,177 @@
+{
+  "id": "mina-example-04-host-https",
+  "name": "Host HTTPS with root-only client trust",
+  "description": "Local learning sample. Demo credentials only; see the accompanying README.",
+  "resources": [
+    {
+      "id": "api-04-host-https-http",
+      "type": "http",
+      "name": "Host HTTPS with root-only client trust \u00b7 API server",
+      "config": {
+        "connectorMode": "server",
+        "host": "127.0.0.1",
+        "port": 9443,
+        "minimumQtpThreads": 1,
+        "maximumQtpThreads": 8,
+        "authentication": "None",
+        "apiDocsEnabled": true,
+        "apiDocsAccess": "authenticated",
+        "scheme": "https",
+        "tlsEnabled": true,
+        "certificateFile": "${properties.demo.directory}/server-chain.pem",
+        "privateKeyFile": "${properties.demo.directory}/server-key.pem",
+        "trustedCertificateFolder": "${properties.demo.directory}/trusted-roots",
+        "verifyTls": true,
+        "openApiDocument": {
+          "openapi": "3.0.3",
+          "info": {
+            "title": "MINA sample API",
+            "version": "1.0.0"
+          },
+          "paths": {
+            "/hello": {
+              "get": {
+                "operationId": "hello",
+                "summary": "Read a sample greeting",
+                "responses": {
+                  "200": {
+                    "description": "Greeting",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "required": [
+                            "message"
+                          ],
+                          "properties": {
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "example": {
+                          "message": "Hello from MINA"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "apiBlueprintId": "api-04-host-https"
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "id": "api-04-host-https-1",
+      "name": "GET /hello",
+      "kind": "starter",
+      "description": "MINA API Blueprint: Host HTTPS with root-only client trust. Declared example response for testing; replace with business logic.",
+      "groups": [],
+      "activities": [
+        {
+          "id": "Receive",
+          "name": "REST-API-Receiver",
+          "type": "rest",
+          "position": {
+            "x": 150,
+            "y": 160
+          },
+          "config": {
+            "operation": "receiver",
+            "resourceId": "api-04-host-https-http",
+            "operationId": "hello",
+            "apiBlueprintId": "api-04-host-https",
+            "validateRequest": true,
+            "validateResponse": true
+          }
+        },
+        {
+          "id": "Reply",
+          "name": "HTTP-Response",
+          "type": "http_response",
+          "position": {
+            "x": 450,
+            "y": 160
+          },
+          "config": {
+            "operation": "response",
+            "statusCode": 200,
+            "contentType": "application/json",
+            "inputMappings": {
+              "body": "{\"message\": \"Hello from MINA\"}"
+            }
+          }
+        },
+        {
+          "id": "End",
+          "name": "End",
+          "type": "end",
+          "position": {
+            "x": 750,
+            "y": 160
+          },
+          "config": {}
+        }
+      ],
+      "transitions": [
+        {
+          "id": "receive-reply",
+          "source": "Receive",
+          "target": "Reply",
+          "type": "success"
+        },
+        {
+          "id": "reply-end",
+          "source": "Reply",
+          "target": "End",
+          "type": "success"
+        }
+      ]
+    }
+  ],
+  "active_task_id": "api-04-host-https-1",
+  "active_environment": "local",
+  "properties": {
+    "local": [
+      {
+        "key": "demo.directory",
+        "value": "",
+        "data_type": "string"
+      },
+      {
+        "key": "demo.username",
+        "value": "mina-demo",
+        "data_type": "string"
+      },
+      {
+        "key": "demo.password",
+        "value": "mina-demo-password",
+        "data_type": "password"
+      },
+      {
+        "key": "demo.clientId",
+        "value": "mina-demo-client",
+        "data_type": "string"
+      },
+      {
+        "key": "demo.clientSecret",
+        "value": "mina-demo-client-secret",
+        "data_type": "password"
+      },
+      {
+        "key": "demo.hmacSecret",
+        "value": "mina-demo-hmac-secret-change-before-real-use",
+        "data_type": "password"
+      },
+      {
+        "key": "demo.jwtSecret",
+        "value": "mina-demo-jwt-secret-at-least-32-characters",
+        "data_type": "password"
+      }
+    ]
+  }
+}

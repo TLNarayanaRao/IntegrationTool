@@ -1,0 +1,135 @@
+{
+  "id": "mina-example-16-call-jwt",
+  "name": "Call Jwt",
+  "description": "Local learning sample. Demo credentials only; see the accompanying README.",
+  "resources": [
+    {
+      "id": "client",
+      "name": "HTTP client connection",
+      "type": "http",
+      "config": {
+        "connectorMode": "client",
+        "baseUrl": "https://localhost:9447",
+        "authentication": "JWT",
+        "verifyTls": true,
+        "connectionTimeoutMs": 5000,
+        "socketTimeoutMs": 10000,
+        "activityTimeoutSeconds": 30,
+        "trustedCertificateFolder": "${properties.demo.directory}/trusted-roots",
+        "tlsEnabled": true,
+        "jwtSecret": "${properties.demo.jwtSecret}",
+        "jwtAlgorithm": "HS256",
+        "jwtIssuer": "mina-demo",
+        "jwtAudience": "mina-sample-api",
+        "jwtClaims": {
+          "sub": "sample-client"
+        },
+        "jwtLifetimeSeconds": 300
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "id": "Main",
+      "name": "Main",
+      "kind": "starter",
+      "activities": [
+        {
+          "id": "Start",
+          "name": "Start",
+          "type": "start",
+          "position": {
+            "x": 150,
+            "y": 160
+          },
+          "config": {}
+        },
+        {
+          "id": "Call",
+          "name": "Call",
+          "type": "rest",
+          "position": {
+            "x": 450,
+            "y": 160
+          },
+          "config": {
+            "resourceId": "client",
+            "operation": "invoke",
+            "requestModel": "tree",
+            "responseMode": "structured",
+            "inputMappings": {
+              "RestInputRequest.Config.requestURI": "\"/hello\"",
+              "RestInputRequest.Config.Method": "\"GET\"",
+              "RestInputRequest.Headers.accept": "\"application/json\""
+            }
+          }
+        },
+        {
+          "id": "End",
+          "name": "End",
+          "type": "end",
+          "position": {
+            "x": 750,
+            "y": 160
+          },
+          "config": {}
+        }
+      ],
+      "transitions": [
+        {
+          "id": "edge-0",
+          "source": "Start",
+          "target": "Call",
+          "type": "success"
+        },
+        {
+          "id": "edge-1",
+          "source": "Call",
+          "target": "End",
+          "type": "success"
+        }
+      ]
+    }
+  ],
+  "active_task_id": "Main",
+  "active_environment": "local",
+  "properties": {
+    "local": [
+      {
+        "key": "demo.directory",
+        "value": "",
+        "data_type": "string"
+      },
+      {
+        "key": "demo.username",
+        "value": "mina-demo",
+        "data_type": "string"
+      },
+      {
+        "key": "demo.password",
+        "value": "mina-demo-password",
+        "data_type": "password"
+      },
+      {
+        "key": "demo.clientId",
+        "value": "mina-demo-client",
+        "data_type": "string"
+      },
+      {
+        "key": "demo.clientSecret",
+        "value": "mina-demo-client-secret",
+        "data_type": "password"
+      },
+      {
+        "key": "demo.hmacSecret",
+        "value": "mina-demo-hmac-secret-change-before-real-use",
+        "data_type": "password"
+      },
+      {
+        "key": "demo.jwtSecret",
+        "value": "mina-demo-jwt-secret-at-least-32-characters",
+        "data_type": "password"
+      }
+    ]
+  }
+}

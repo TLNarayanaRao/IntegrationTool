@@ -225,5 +225,285 @@
     ],
     "file": "/samples/sap-idoc-inbound.json",
     "ready": false
+  },
+  {
+    "id": "http-rest-01-host-one-http",
+    "name": "01 \u00b7 Host one REST API",
+    "category": "HTTP & REST / Hosting",
+    "description": "Host on port 9001.",
+    "activities": [
+      "End",
+      "HTTP-Response",
+      "REST-API-Receiver"
+    ],
+    "file": "/samples/http-rest/01-host-one-http.json",
+    "ready": true,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-02-host-multiple-http",
+    "name": "02 \u00b7 Host multiple REST operations",
+    "category": "HTTP & REST / Hosting",
+    "description": "Host on port 9002.",
+    "activities": [
+      "End",
+      "HTTP-Response",
+      "REST-API-Receiver"
+    ],
+    "file": "/samples/http-rest/02-host-multiple-http.json",
+    "ready": true,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-03-host-generic-http",
+    "name": "03 \u00b7 Host a plain HTTP listener",
+    "category": "HTTP & REST / Hosting",
+    "description": "Host on port 9003.",
+    "activities": [
+      "End",
+      "HTTP-Listener",
+      "HTTP-Response"
+    ],
+    "file": "/samples/http-rest/03-host-generic-http.json",
+    "ready": true,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-04-host-https",
+    "name": "04 \u00b7 Host HTTPS with root-only client trust",
+    "category": "HTTP & REST / Hosting",
+    "description": "Host on port 9443. Set local demo.directory to the prepared helper kit local folder.",
+    "activities": [
+      "End",
+      "HTTP-Response",
+      "REST-API-Receiver"
+    ],
+    "file": "/samples/http-rest/04-host-https.json",
+    "ready": false,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-05-host-basic",
+    "name": "05 \u00b7 Host HTTPS with Basic authentication",
+    "category": "HTTP & REST / Hosting",
+    "description": "Host on port 9445. Set local demo.directory to the prepared helper kit local folder.",
+    "activities": [
+      "End",
+      "HTTP-Response",
+      "REST-API-Receiver"
+    ],
+    "file": "/samples/http-rest/05-host-basic.json",
+    "ready": false,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-06-host-oauth2",
+    "name": "06 \u00b7 Host HTTPS with OAuth2 token introspection",
+    "category": "HTTP & REST / Hosting",
+    "description": "Host on port 9446. Set local demo.directory to the prepared helper kit local folder. Start the local OAuth fixture before running this example.",
+    "activities": [
+      "End",
+      "HTTP-Response",
+      "REST-API-Receiver"
+    ],
+    "file": "/samples/http-rest/06-host-oauth2.json",
+    "ready": false,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-07-host-jwt",
+    "name": "07 \u00b7 Host HTTPS with JWT validation",
+    "category": "HTTP & REST / Hosting",
+    "description": "Host on port 9447. Set local demo.directory to the prepared helper kit local folder.",
+    "activities": [
+      "End",
+      "HTTP-Response",
+      "REST-API-Receiver"
+    ],
+    "file": "/samples/http-rest/07-host-jwt.json",
+    "ready": false,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-08-host-hmac",
+    "name": "08 \u00b7 Host HTTPS with HMAC signatures",
+    "category": "HTTP & REST / Hosting",
+    "description": "Host on port 9448. Set local demo.directory to the prepared helper kit local folder.",
+    "activities": [
+      "End",
+      "HTTP-Response",
+      "REST-API-Receiver"
+    ],
+    "file": "/samples/http-rest/08-host-hmac.json",
+    "ready": false,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-09-host-mtls",
+    "name": "09 \u00b7 Host HTTPS with mutual TLS",
+    "category": "HTTP & REST / Hosting",
+    "description": "Host on port 9449. Set local demo.directory to the prepared helper kit local folder.",
+    "activities": [
+      "End",
+      "HTTP-Response",
+      "REST-API-Receiver"
+    ],
+    "file": "/samples/http-rest/09-host-mtls.json",
+    "ready": false,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-10-call-http",
+    "name": "10 \u00b7 Call Http",
+    "category": "HTTP & REST / Calls",
+    "description": "Start 01-host-one-http first.",
+    "activities": [
+      "Call",
+      "End",
+      "Start"
+    ],
+    "file": "/samples/http-rest/10-call-http.json",
+    "ready": false,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-11-invoke-rest",
+    "name": "11 \u00b7 Invoke Rest",
+    "category": "HTTP & REST / Calls",
+    "description": "Start 02-host-multiple-http first.",
+    "activities": [
+      "Call",
+      "End",
+      "Start"
+    ],
+    "file": "/samples/http-rest/11-invoke-rest.json",
+    "ready": false,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-12-call-https",
+    "name": "12 \u00b7 Call Https",
+    "category": "HTTP & REST / Calls",
+    "description": "Start 04-host-https first. Set local demo.directory to the prepared helper kit local folder.",
+    "activities": [
+      "Call",
+      "End",
+      "Start"
+    ],
+    "file": "/samples/http-rest/12-call-https.json",
+    "ready": false,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-13-default-confidentiality",
+    "name": "13 \u00b7 Default Confidentiality",
+    "category": "HTTP & REST / Calls",
+    "description": "Start 04-host-https first. Set local demo.directory to the prepared helper kit local folder. Default confidentiality enforces HTTPS with certificate and hostname verification.",
+    "activities": [
+      "Call",
+      "End",
+      "Start"
+    ],
+    "file": "/samples/http-rest/13-default-confidentiality.json",
+    "ready": false,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-14-call-basic",
+    "name": "14 \u00b7 Call Basic",
+    "category": "HTTP & REST / Calls",
+    "description": "Start 05-host-basic first. Set local demo.directory to the prepared helper kit local folder.",
+    "activities": [
+      "Call",
+      "End",
+      "Start"
+    ],
+    "file": "/samples/http-rest/14-call-basic.json",
+    "ready": false,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-15-call-oauth2",
+    "name": "15 \u00b7 Call Oauth2",
+    "category": "HTTP & REST / Calls",
+    "description": "Start 06-host-oauth2 first. Set local demo.directory to the prepared helper kit local folder. Start the local OAuth fixture before running this example.",
+    "activities": [
+      "Call",
+      "End",
+      "Start"
+    ],
+    "file": "/samples/http-rest/15-call-oauth2.json",
+    "ready": false,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-16-call-jwt",
+    "name": "16 \u00b7 Call Jwt",
+    "category": "HTTP & REST / Calls",
+    "description": "Start 07-host-jwt first. Set local demo.directory to the prepared helper kit local folder.",
+    "activities": [
+      "Call",
+      "End",
+      "Start"
+    ],
+    "file": "/samples/http-rest/16-call-jwt.json",
+    "ready": false,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-17-call-hmac",
+    "name": "17 \u00b7 Call Hmac",
+    "category": "HTTP & REST / Calls",
+    "description": "Start 08-host-hmac first. Set local demo.directory to the prepared helper kit local folder.",
+    "activities": [
+      "Call",
+      "End",
+      "Start"
+    ],
+    "file": "/samples/http-rest/17-call-hmac.json",
+    "ready": false,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-18-call-mtls",
+    "name": "18 \u00b7 Call Mtls",
+    "category": "HTTP & REST / Calls",
+    "description": "Start 09-host-mtls first. Set local demo.directory to the prepared helper kit local folder.",
+    "activities": [
+      "Call",
+      "End",
+      "Start"
+    ],
+    "file": "/samples/http-rest/18-call-mtls.json",
+    "ready": false,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-19-post-json",
+    "name": "19 \u00b7 Post Json",
+    "category": "HTTP & REST / Calls",
+    "description": "Start 02-host-multiple-http first.",
+    "activities": [
+      "Call",
+      "End",
+      "Start"
+    ],
+    "file": "/samples/http-rest/19-post-json.json",
+    "ready": false,
+    "family": "http-rest"
+  },
+  {
+    "id": "http-rest-20-path-query-headers",
+    "name": "20 \u00b7 Path Query Headers",
+    "category": "HTTP & REST / Calls",
+    "description": "Start 02-host-multiple-http first.",
+    "activities": [
+      "Call",
+      "End",
+      "Start"
+    ],
+    "file": "/samples/http-rest/20-path-query-headers.json",
+    "ready": false,
+    "family": "http-rest"
   }
 ]

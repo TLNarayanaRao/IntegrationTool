@@ -23,7 +23,7 @@ SUPPORTED = {
     *((('ftp', operation) for operation in ('get', 'put', 'delete', 'dir', 'change_dir'))),
     *((('sftp', operation) for operation in ('get', 'put', 'delete', 'dir', 'change_dir'))),
     ('http_listener', 'listen'), ('http', 'request'), ('rest', 'receiver'), ('rest', 'invoke'),
-    ('soap', 'service'), ('soap', 'request_reply'), ('http_response', 'response'),
+    ('soap', 'service'), ('soap', 'request_reply'), ('http_response', 'response'), ('http_response', ''),
     ('xml', 'parse'), ('xml', 'render'), ('json', 'parse'), ('json', 'render'),
     ('flat', 'parse'), ('flat', 'render'), ('excel', 'read'), ('dataweave', 'transform'),
     ('python', 'invoke'), ('java', 'invoke'),
@@ -465,9 +465,9 @@ def _direct_literal(value, indent: int = 0) -> str:
         if not value: return 'dict()'
         if all(isinstance(key, str) and key.isidentifier() and not keyword.iskeyword(key) for key in value):
             pad = ' ' * indent
-            fields = [f'{pad}    {key}={repr(item) if key in {"constant", "customFunctions", "targetSchema", "targetSchemaText", "schemaText", "interfaceSchemaText", "lookupTables", "testCases", "templateHistory", "contractBaseline"} else _direct_literal(item, indent + 4)},' for key, item in value.items()]
+            fields = [f'{pad}    {key}={repr(item) if key in {"constant", "openApiDocument", "openApiReferenceDocuments", "customFunctions", "targetSchema", "targetSchemaText", "schemaText", "interfaceSchemaText", "lookupTables", "testCases", "templateHistory", "contractBaseline"} else _direct_literal(item, indent + 4)},' for key, item in value.items()]
             return 'dict(\n' + '\n'.join(fields) + f'\n{pad})'
-        return '{' + ', '.join(f'{key!r}: {repr(item) if key in {"constant", "customFunctions", "targetSchema", "targetSchemaText", "schemaText", "interfaceSchemaText", "lookupTables", "testCases", "templateHistory", "contractBaseline"} else _direct_literal(item, indent)}' for key, item in value.items()) + '}'
+        return '{' + ', '.join(f'{key!r}: {repr(item) if key in {"constant", "openApiDocument", "openApiReferenceDocuments", "customFunctions", "targetSchema", "targetSchemaText", "schemaText", "interfaceSchemaText", "lookupTables", "testCases", "templateHistory", "contractBaseline"} else _direct_literal(item, indent)}' for key, item in value.items()) + '}'
     if isinstance(value, list):
         return '[' + ', '.join(_direct_literal(item, indent) for item in value) + ']'
     return repr(value)
@@ -538,14 +538,19 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
         if not any(item['name'] == name for item in checks):
             checks.append({'name': name, 'modules': modules, 'install': install, 'any': any_module, 'java': java})
     http_configs = [*(resources.get('http') or []), *(a.get('config') or {} for t in project.get('tasks',[]) for a in t.get('activities',[]) if a.get('type') in {'http','http_listener','rest','soap'})]
+    if any(kind in {'xml','json'} for kind,_ in activity_pairs):add('Data schema validation',['jsonschema','regex'],'python -m pip install jsonschema regex')
+    if any(kind=='xml' for kind,_ in activity_pairs):add('XML schema validation',['lxml.etree'],'python -m pip install lxml')
     if any(kind in {'http','http_listener','rest','soap'} for kind,_ in activity_pairs):
         add('HTTP transport', ['httpx'], 'python -m pip install httpx')
+        add('HTTP contracts', ['jsonschema','yaml','regex','lxml.etree'], 'python -m pip install jsonschema PyYAML regex lxml')
     if any(kind == 'http_listener' or kind == 'rest' and op == 'receiver' or kind == 'soap' and op == 'service' for kind,op in activity_pairs):
         add('HTTP server', ['uvicorn'], 'python -m pip install uvicorn')
     if any(str(c.get('authentication','')).lower()=='jwt' for c in http_configs):add('JWT authentication',['jwt'],'python -m pip install PyJWT cryptography')
     if any(str(c.get('authentication','')).lower()=='ldap' for c in http_configs):add('LDAP authentication',['ldap3'],'python -m pip install ldap3')
     if any(str(c.get('authentication','')).lower()=='ntlm' for c in http_configs):add('NTLM authentication',['httpx_ntlm'],'python -m pip install httpx-ntlm')
     if any(str(c.get('httpVersion',''))=='2' for c in http_configs):add('HTTP/2',['h2'],'python -m pip install h2')
+    if any(str(c.get('httpVersion',''))=='2' for c in http_configs) and any(kind == 'http_listener' or kind == 'rest' and op == 'receiver' for kind,op in activity_pairs):add('HTTP/2 server',['hypercorn'],'python -m pip install hypercorn')
+    if any(str(c.get('policyStore',''))=='redis' for c in http_configs):add('Distributed HTTP policies',['redis'],'python -m pip install redis')
     if any(str(c.get(key,'' )).upper()=='JKS' for c in http_configs for key in ('trustStoreType','identityStoreType')):add('JKS stores',[],'Provision Java keytool or convert JKS stores to PKCS12.',java=True)
     if any(str(c.get(key,'' )).upper() in {'PKCS12','P12','PFX'} for c in http_configs for key in ('trustStoreType','identityStoreType')):add('PKCS12 stores',['cryptography'],'python -m pip install cryptography')
     if any(token in repr(project.get('schemas', [])) + repr([a.get('config', {}) for t in project.get('tasks', []) for a in t.get('activities', [])]) for token in ('pattern', 'patternProperties')):
@@ -622,12 +627,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     files['application/flow_graph.py'] = Path(__file__).with_name('flow_graph.py').read_bytes()
     core_source = _filter_capability_blocks((root / 'core.py').read_text(encoding='utf-8'), capabilities)
     core_source = core_source.replace('from .native.mapping_literals import parse_literal', Path(__file__).with_name('mapping_literals.py').read_text(encoding='utf-8'))
-    retry_expressions = []
-    if 'kafka' in capabilities: retry_expressions.append("(kind == 'kafka' and raw.get('operation') in {'publish', 'send'})")
-    if 'pubsub' in capabilities: retry_expressions.append("(kind == 'pubsub' and raw.get('operation') == 'publish')")
-    if 'jms' in capabilities: retry_expressions.append("(kind in {'ems', 'jms'} and raw.get('operation') in {'send', 'publish', 'send_message', 'request_reply', 'reply', 'reply_message'})")
-    if 'sap' in capabilities: retry_expressions.append("(kind == 'sap' and raw.get('operation') in {'post_idoc', 'invoke_rfc_bapi', 'reply_rfc_bapi'})")
-    core_source = core_source.replace('False  # OUTBOUND_RETRY_EXPRESSION', ' or '.join(retry_expressions) or 'False')
+    core_source = core_source.replace('from .retry_policy import RetryPlan, outbound_activity, retry_boolean', Path(__file__).with_name('retry_policy.py').read_text(encoding='utf-8'))
     core_roots = {'Context', 'Reference', 'Template', 'resolve', 'execute_with_policy'}
     if any(task.get('groups') or any(edge.get('type') == 'success_condition' for edge in task.get('transitions', [])) for task in project.get('tasks', [])):
         core_roots.add('condition')
@@ -721,8 +721,9 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     files['run.py'] = launcher
     files['__main__.py'] = launcher
     native_modules = set()
-    if capabilities & {'http_client','inbound_http'}: native_modules.update({'http_transport.py','http_messages.py','rest_contract.py','mapper.py'})
-    if 'inbound_http' in capabilities: native_modules.update({'http_server.py','mapper.py'})
+    if capabilities & {'http_client','inbound_http'}: native_modules.update({'http_transport.py','http_messages.py','rest_contract.py','mapper.py','http_contracts.py','schema_validation.py','data_formats.py','faults.py','http_policy.py','http_listener.py','http_streams.py'})
+    if 'inbound_http' in capabilities: native_modules.update({'http_server.py','http2_server.py','mapper.py','api_docs.py','api_docs_ui.py','swagger_assets.py','xsd_openapi.py'})
+    if 'data_formats' in capabilities:native_modules.update({'data_formats.py','faults.py','mapper.py','schema_validation.py'})
     if any(activity.get('config', {}).get('operation') in {'deduplicate', 'message_receipt', 'replay_messages', 'aggregate_messages', 'split_records'} for task in project.get('tasks', []) for activity in task.get('activities', [])):
         native_modules.add('message_state.py')
     if any(activity.get('type') == 'sftp' for task in project.get('tasks', []) for activity in task.get('activities', [])):

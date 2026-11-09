@@ -5,7 +5,7 @@ from .flow_graph import parallel_plan
 from datetime import datetime, timezone
 from time import perf_counter
 from uuid import uuid4
-from .models import Project
+from .models import Project, find_subtask
 from .runtime import WorkflowRuntime
 from .time_utils import log_timestamp
 
@@ -110,7 +110,10 @@ class DebugManager:
         if matched: state['pauseReason'] = f'conditional-breakpoint:{activity.id}'
         return matched
 
-    def rearm_listener(self, state: dict):
+    def rearm_listener(self, state: dict, complete_request=True):
+        if complete_request and state.get('httpPending') is not None:
+            from .debug_http import finish_request
+            finish_request(state)
         if not state.get('listenerMode') or state.get('status') == 'stopped' or state.get('stopRequested'): return
         task = next(item for item in state['project'].tasks if item.id == state['listenerTaskId'])
         activity_id = state['listenerActivityId']
@@ -132,7 +135,7 @@ class DebugManager:
         frame = state['frames'][-1]
         task = next(item for item in state['project'].tasks if item.id == frame['taskId'])
         activity = next(item for item in task.activities if item.id == frame['activityId'])
-        ctx = frame['context']; ctx['last'] = output; ctx['context']['activityId'] = activity.id
+        ctx = frame['context']; ctx['input'] = output; ctx['last'] = output; ctx['context']['activityId'] = activity.id
         now = log_timestamp()
         state['logs'].append({'time': now, 'level': 'INFO', 'kind': 'event', 'message': f'Event received: {task.name} / {activity.name}', 'activityId': activity.id, 'taskId': task.id, 'sessionId': session_id})
         self.runtime.record_activity_output(activity, output, ctx, output)
@@ -286,6 +289,8 @@ class DebugManager:
             state['_autoContinue'] = False
             state['logs'].append({'time': log_timestamp(), 'level': 'ERROR', 'message': str(exc), 'activityId': self.current_activity(state).id if self.current_activity(state) else None})
             state['status'] = 'failed'
+            from .debug_http import finish_request
+            finish_request(state,'HTTP debug execution failed')
         return self.view(state)
 
     async def stop(self, session_id: str):
@@ -293,6 +298,8 @@ class DebugManager:
         state = self.sessions.get(session_id)
         if not state: raise ValueError('Debug session not found')
         state['stopRequested'] = True
+        from .debug_http import finish_request
+        finish_request(state,'HTTP debug session stopped')
         state['status'] = 'stopping'
         state['pauseReason'] = 'stop'
         for frame in reversed(state.get('frames', [])):
@@ -335,7 +342,7 @@ class DebugManager:
         if activity.type == 'call_task' and '_mockOutput' not in state:
             dynamic_id = self.runtime.resolve(activity.config.get('dynamicTaskId', ''), ctx)
             target_id = str(dynamic_id or activity.config.get('taskId') or '').strip()
-            target = next((item for item in project.tasks if (item.id == target_id or item.name.casefold() == target_id.casefold()) and item.kind == 'subtask'), None)
+            target = find_subtask(project.tasks, target_id)
             if target:
                 incoming = {edge.target for edge in target.transitions}; starter = next((item for item in target.activities if item.type == 'start'), None) or next(item for item in target.activities if item.id not in incoming)
                 values = self.runtime.map_input_values(activity.config.get('inputMappings', {}), ctx)
@@ -394,7 +401,7 @@ class DebugManager:
         self.runtime.record_activity_output(activity, ctx['last'], ctx, activity_input)
         outgoing = [edge for edge in task.transitions if edge.source == activity.id]
         chosen_edges = self.runtime.select_group_transitions(self.runtime.eligible_success_transitions(outgoing, ctx), ctx, plans)
-        if activity.type == 'end' or not chosen_edges:
+        if activity.type in ('end','http_response') or not chosen_edges:
             target = await self.runtime.leave_group_boundaries(activity.id, None, ctx, plans)
             if target:
                 frame['activityId'] = target

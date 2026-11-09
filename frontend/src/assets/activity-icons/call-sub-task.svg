@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+  <defs>
+    <linearGradient id="arrow" x1="22" y1="18" x2="79" y2="75" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#d6faff"/>
+      <stop offset=".52" stop-color="#71dff4"/>
+      <stop offset="1" stop-color="#a996ff"/>
+    </linearGradient>
+    <path id="bend" d="M23 18v32a11 11 0 0 0 11 11h43M60 44l17 17-17 17"/>
+  </defs>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#bend" stroke="#172c49" stroke-width="15"/>
+    <use href="#bend" stroke="url(#arrow)" stroke-width="8"/>
+  </g>
+</svg>
