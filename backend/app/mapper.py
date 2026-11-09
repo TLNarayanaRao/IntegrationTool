@@ -111,7 +111,7 @@ def flatten_schema(schema: Any, path: str = '', repeating: bool = False, repeat_
                             restriction = next((node for node in simple_type.iter() if local(node) == 'restriction'), None)
                             if restriction is not None: xsd_type = restriction.attrib.get('base', 'string').split(':')[-1]
                         normalized = {'decimal':'number','double':'number','float':'number','int':'integer','long':'integer','dateTime':'string'}.get(xsd_type, xsd_type)
-                        rows.append({'path': current, 'name': ('@' if local(element) == 'attribute' else '') + name, 'type': normalized, 'required': element.attrib.get('use') == 'required' if local(element) == 'attribute' else element.attrib.get('minOccurs', '1') != '0', 'repeating': repeated, 'repeatPath': current_repeat})
+                        rows.append({'path': current, 'name': ('@' if local(element) == 'attribute' else '') + name, 'type': normalized, 'required': element.attrib.get('use') == 'required' if local(element) == 'attribute' else element.attrib.get('minOccurs', '1') != '0', 'nillable': declaration.get('nillable') in ('true', '1'), 'repeating': repeated, 'repeatPath': current_repeat})
                     return rows
                 top = next((child for child in root if local(child) == 'element'), None)
                 return walk(top, path, repeating, repeat_path) if top is not None else []
@@ -152,7 +152,7 @@ def flatten_schema(schema: Any, path: str = '', repeating: bool = False, repeat_
     elif isinstance(schema, list) and schema and isinstance(schema[0], dict): fields.extend(flatten_schema(schema[0], path, True, path))
     return fields
 
-def recommend(source_schema: Any, target_schema: Any, threshold: float = 0.7, weights: dict | None = None) -> list[dict]:
+def recommend(source_schema: Any, target_schema: Any, threshold: float = 0.7, weights: dict | None = None, learned=None) -> list[dict]:
     weights = weights or {'linguistic': .5, 'type': .2, 'ancestor': .2, 'cardinality': .1}
     sources, targets = flatten_schema(source_schema), flatten_schema(target_schema)
     result = []
@@ -162,6 +162,7 @@ def recommend(source_schema: Any, target_schema: Any, threshold: float = 0.7, we
         return token_cache[name]
     for target in targets:
         candidates = []
+        learned_source = (learned or {}).get(target['path'])
         for source in sources:
             source_name, target_name = source['name'].lower(), target['name'].lower()
             pair = (source_name, target_name)
@@ -176,10 +177,10 @@ def recommend(source_schema: Any, target_schema: Any, threshold: float = 0.7, we
             ancestor = ancestor_cache[ancestors]
             cardinality = 1 if source.get('repeating') == target.get('repeating') else (.65 if source.get('required') == target.get('required') else .35)
             score = linguistic*weights.get('linguistic',.5)+type_score*weights.get('type',.2)+ancestor*weights.get('ancestor',.2)+cardinality*weights.get('cardinality',.1)
-            candidates.append({'source': source['path'], 'score': round(score*100, 1), 'sourceType': source['type'], 'sourceRepeating': bool(source.get('repeating')), 'sourceRepeatPath': source.get('repeatPath', '')})
-        candidates.sort(key=lambda x: x['score'], reverse=True)
+            candidates.append({'source': source['path'], 'score': round(score*100, 1), 'sourceType': source['type'], 'sourceRepeating': bool(source.get('repeating')), 'sourceRepeatPath': source.get('repeatPath', ''), 'learned': source['path'] == learned_source})
+        candidates.sort(key=lambda x: (x['learned'], x['score']), reverse=True)
         top = candidates[:3]
-        selected = top[0] if top and top[0]['score'] >= threshold*100 else None
+        selected = top[0] if top and (top[0]['learned'] or top[0]['score'] >= threshold*100) else None
         result.append({'target': target['path'], 'targetType': target['type'], 'targetRepeating': bool(target.get('repeating')), 'targetRepeatPath': target.get('repeatPath', ''), 'selected': selected['source'] if selected else None, 'sourceRepeating': bool(selected and selected.get('sourceRepeating')), 'sourceRepeatPath': selected.get('sourceRepeatPath', '') if selected else '', 'operator': 'for-each' if selected and selected.get('sourceRepeating') and target.get('repeating') else None, 'confidence': top[0]['score'] if top else 0, 'alternatives': top})
     return result
 
@@ -809,7 +810,7 @@ def validate_mapping_rules(mappings: Any, schema: Any = None, input_types: dict 
     integer_types = {'integer', 'int', 'long', 'short', 'byte', 'nonnegativeinteger', 'positiveinteger'}
     import inspect
     function_tree = ast.parse(inspect.getsource(apply_function))
-    functions = {'true', 'false', 'currentgroup'}
+    functions = {'true', 'false', 'currentgroup', 'xpath', 'xpath1', 'xpath2'}
     for node in ast.walk(function_tree):
         if isinstance(node, ast.Compare) and isinstance(node.left, ast.Name) and node.left.id == 'key':
             for comparator in node.comparators:
@@ -941,6 +942,92 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
         if callable(cancelled) and cancelled(): raise ValueError('Transformation cancelled')
         if steps > maximum_steps: raise ValueError(f'Transformation exceeds {maximum_steps} evaluation steps')
         if (clock.monotonic() - started) * 1000 > maximum_ms: raise ValueError('Transformation execution deadline exceeded')
+    xml_root = None
+    source_types = options.get('sourceTypeOverrides') or {}
+    if isinstance(source_types, str): source_types = json.loads(source_types)
+    allowed_source_types = {'string', 'int', 'integer', 'long', 'short', 'byte', 'number', 'decimal', 'double', 'float', 'boolean', 'date', 'datetime', 'time'}
+    if not isinstance(source_types, dict) or any(not isinstance(value, str) or value.lower() not in allowed_source_types for value in source_types.values()):
+        raise ValueError('Source type overrides must map source paths to scalar types')
+    source_types = {_clean_path(path): value.lower() for path, value in source_types.items()}
+    source_coercions = options.get('sourceCoercions') or {}
+    coerced_values = {}
+    if source_coercions:
+        from .mapper_coercions import validate_source_coercions
+        validate_source_coercions(source_coercions)
+
+    def coercion_value(path):
+        from .mapper_coercions import source_view
+        name, _, child = path.removeprefix('coerced.').partition('.')
+        if name not in source_coercions:
+            raise ValueError(f'Mapper source coercion {name!r} was not found')
+        if name not in coerced_values:
+            rule = source_coercions[name]
+            coerced_values[name] = source_view(get_path(document, rule['path']), rule, name, tick,
+                                               options.get('xmlSchemaDocuments'))
+        return get_path(coerced_values[name], child) if child else coerced_values[name]
+
+    def typed_source(path, value):
+        kind = source_types.get(path)
+        if not kind and options.get('_mapperSample'):
+            kinds = {source_types[key] for key in ('input.' + path, 'last.' + path) if key in source_types}
+            if len(kinds) == 1: kind = kinds.pop()
+        if not kind: return value
+        try:
+            return [_coerce(item, kind, 'safe') for item in value] if isinstance(value, list) else _coerce(value, kind, 'safe')
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise ValueError(f'Source {path} could not be converted to {kind}: {exc}') from exc
+
+    def xml_path(path):
+        value = get_path(document, path)
+        head, separator, tail = path.partition('.')
+        if value is None and head not in {'input', 'last', 'activities', 'context', 'properties', 'vars', 'tasks'}:
+            return get_path(document, 'activities.' + head + '.output' + separator + tail)
+        return value
+
+    def get_xml_root():
+        nonlocal xml_root
+        if xml_root is None:
+            from .mapper_xml import parse_xml
+            source = options.get('xmlSource')
+            if isinstance(source, str) and not source.lstrip().startswith('<'):
+                source = xml_path(_clean_path(source))
+                if source is None: raise ValueError('The configured Mapper XML source is missing')
+            if source is None:
+                source = document.get('last', document) if isinstance(document, dict) else document
+            xml_root = parse_xml(source)
+        return xml_root
+
+    def xml_bindings():
+        variables = options.get('xmlVariables') or {}
+        if isinstance(variables, str): variables = json.loads(variables)
+        if not isinstance(variables, dict): raise ValueError('XML variables must be a JSON object')
+        return {name: typed_source(_clean_path(value), xml_path(_clean_path(value))) if isinstance(value, str) and value.startswith('${') and value.endswith('}') else value
+                for name, value in variables.items()}
+
+    stylesheet = options.get('xmlStylesheet')
+    schema = options.get('targetSchema') or options.get('targetSchemaText')
+    if options.get('generatedXmlBinding'):
+        from .mapper_binding import generate_binding
+        source_schema = options.get('sourceSchemaText') or ''
+        stylesheet = generate_binding(mappings, schema or '', source_schema if source_schema.lstrip().startswith('<') else '',
+                                      preferences=options.get('xmlBindingPreferences'))
+    if stylesheet:
+        from .mapper_xml import element_value, etree, transform_xml, validate_xml_result
+        root = transform_xml(get_xml_root(), stylesheet, timeout=min(30, maximum_ms / 1000), variables=xml_bindings(),
+                             properties=document.get('properties') if isinstance(document, dict) else None,
+                             element_variables=options.get('bwXmlElementVariables', False))
+        tick()
+        if schema and options.get('validateOutput', True):
+            if not isinstance(schema, str) or not schema.lstrip().startswith('<'):
+                raise ValueError('An XSLT binding requires an XSD target contract')
+            validate_xml_result(root, schema, options.get('xmlSchemaDocuments'))
+        xml = etree.tostring(root, encoding='unicode')
+        maximum_kb = int(options.get('maxOutputSizeKb') or 0)
+        if maximum_kb and len(xml.encode('utf-8')) > maximum_kb * 1024:
+            raise ValueError(f'Mapped output exceeds {maximum_kb} KB limit')
+        value = element_value(root)
+        return {root.tag.rsplit('}', 1)[-1]: element_value(root, local_names=True),
+                'xmlString': xml, 'xml': xml, 'root': root.tag, 'value': value}
     loop_contexts = []
     custom_functions = {item['name']: item for item in options.get('customFunctions', []) if item.get('name')}
     result: dict[str, Any] = {}
@@ -979,7 +1066,7 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
             if depth > 32: raise ValueError('Custom function recursion exceeded 32 calls')
             if bindings and text in bindings: return bindings[text]
             if not text: return None
-            if text == 'current-group()': return loop_contexts[-1][1] if loop_contexts else []
+            if text == 'current-group()': return (loop_contexts[-1][1] or []) if loop_contexts else []
             if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'"):
                 try: return ast.literal_eval(text)
                 except (SyntaxError, ValueError): return text[1:-1]
@@ -993,6 +1080,15 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
             call = re.fullmatch(r'([\w:-]+)\((.*)\)', text, re.S)
             if call:
                 values = [evaluate_source(argument, bindings, depth + 1) for argument in _function_arguments(call.group(2))]
+                if call.group(1) in {'xpath', 'xpath1', 'xpath2'}:
+                    from .mapper_xml import parse_xml, xpath_value
+                    if not 1 <= len(values) <= 2: raise ValueError('xpath expects an expression and optional XML source')
+                    root = get_xml_root() if len(values) == 1 else parse_xml(values[1])
+                    version = {'xpath1': '1.0', 'xpath2': '2.0'}.get(call.group(1), str(options.get('xpathVersion') or '1.0'))
+                    result = xpath_value(root, values[0], version, options.get('xmlNamespaces'), xml_bindings(),
+                                         document.get('properties') if isinstance(document, dict) else None)
+                    tick()
+                    return result
                 if call.group(1).startswith('custom:'):
                     name = call.group(1).split(':', 1)[1]
                     definition = custom_functions.get(name)
@@ -1006,11 +1102,16 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
                 return apply_function(call.group(1), values[0] if values else None, values[1:])
             source_path = _clean_path(text)
             if loop_contexts and source_path.startswith('vars.currentGroup'):
-                return get_path(loop_contexts[-1][1], source_path[len('vars.currentGroup'):].lstrip('.'))
+                current, group = loop_contexts[-1]
+                return get_path(group if group is not None else [current], source_path[len('vars.currentGroup'):].lstrip('.'))
             if loop_contexts and (source_path == 'vars.current' or source_path.startswith('vars.current.')):
                 return get_path(loop_contexts[-1][0], source_path[len('vars.current'):].lstrip('.'))
             relative = _relative_path(source_path, scope_source) if scope is not None else None
-            return get_path(scope, relative) if relative is not None else get_path(document, source_path)
+            if relative is not None:
+                return typed_source(source_path, get_path(scope, relative))
+            if source_path.startswith('coerced.'):
+                return typed_source(source_path, coercion_value(source_path))
+            return typed_source(source_path, get_path(document, source_path))
         return evaluate_source(rule.get('select') or rule.get('source', ''))
 
     def condition_passes(rule: dict, scope: Any = None, scope_source: str = '') -> bool:
@@ -1056,6 +1157,7 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
     def render_loop(loop: dict, scope: Any = None, scope_source: str = '') -> list[Any]:
         loop_source = _clean_path(loop.get('select') or loop.get('source', ''))
         value = resolve_value(loop, scope, scope_source)
+        if loop_source == 'current-group()': loop_source = scope_source
         values = value if isinstance(value, list) else ([] if value in (None, '') else [value])
         operator = str(loop.get('operator', '')).lower()
         iterations: list[tuple[Any, list[Any] | None]] = [(item, None) for item in values]
@@ -1087,7 +1189,8 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
                 item = mapped_value(loop, current)
                 if item is not _OMIT: output.append(item)
                 continue
-            loop_contexts.append((current, current_group or [current]))
+            active_group = current_group if current_group is not None else loop_contexts[-1][1] if loop_contexts else None
+            loop_contexts.append((current, active_group))
             item_result: dict[str, Any] = {}
             for child in direct:
                 relative_target = _relative_path(str(child['target']), target)

@@ -1,4 +1,10 @@
 import os
+import sys
+
+if __name__ == '__main__' and sys.argv[1:] == ['--mina-xslt-worker']:
+    from app.mapper_xml import xslt_worker
+    raise SystemExit(xslt_worker())
+
 import uvicorn
 from app.main import app
 

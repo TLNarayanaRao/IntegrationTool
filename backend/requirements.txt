@@ -46,5 +46,7 @@ h2>=4.2,<5
 hypercorn>=0.17.3,<0.19
 jsonschema>=4.23,<5
 lxml>=6,<7  # Offline XSD validation for XML parse/render activities
+elementpath>=5.1.4,<6  # Offline XPath 2.0 expressions in Mapper
+saxonche>=13.1.1,<14  # Isolated XSLT 2.0 worker
 PyYAML>=6.0.2,<7
 redis>=5.2,<7

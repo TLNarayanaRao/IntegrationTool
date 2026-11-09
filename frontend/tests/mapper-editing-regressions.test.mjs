@@ -11,13 +11,44 @@ function all(node) {return node && typeof node==='object' ? [node,...(node.child
 
 test('selected project schema renders only its selector; inline schema remains editable',()=>{
   const fn=ast.statements.find(s=>s.name?.text==='TransformSchemaEditor');
-  const context=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children:children.flat(Infinity)})},Braces:'icon',SchemaHierarchyPreview:'preview'});
+  const context=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children:children.flat(Infinity)})},Braces:'icon',SchemaHierarchyPreview:'preview',InlineMapperFields:'fields'});
   vm.runInContext(compile(fn.getText(ast)),context);
   const render=config=>context.TransformSchemaEditor({config,schemas:[{id:'schema',name:'Order.xsd',content:'<schema/>'}],setConfig() {}});
   const selected=all(render({targetSchemaId:'schema',targetSchemaText:'<schema/>'}));
   assert.equal(selected.filter(n=>n.type==='textarea'||n.type==='preview').length,0);
   assert.equal(selected.find(n=>n.type==='select').props.value,'schema');
   assert.equal(all(render({targetSchemaText:'<schema/>'})).find(n=>n.type==='textarea').props.value,'<schema/>');
+});
+
+test('inline Mapper field controls edit children of a repeating object and update requiredness',()=>{
+  const fn=ast.statements.find(s=>s.name?.text==='InlineMapperFields');
+  const initial={type:'object',properties:{orders:{type:'array',items:{type:'object',properties:{id:{type:'string'}}}}}};
+  const values=['orders.amount','number',true,false,'keep',''];
+  let saved;
+  const context=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children:children.flat(Infinity)})},
+    useState:()=>[values.shift(),()=>{}]});
+  vm.runInContext(compile(fn.getText(ast)),context);
+  const tree=all(context.InlineMapperFields({text:JSON.stringify(initial),save:text=>saved=JSON.parse(text)}));
+  const button=label=>tree.find(node=>node.type==='button'&&node.children.includes(label));
+  button('Add or update field').props.onClick();
+  assert.deepEqual(saved.properties.orders.items,{type:'object',properties:{id:{type:'string'},amount:{type:'number'}},required:['amount']});
+});
+
+test('XPath builder tests and applies the same quoted expression',async()=>{
+  const fn=ast.statements.find(s=>s.name?.text==='MapperXPathBuilder');
+  const values=['string(/orders/order[@id="2"])','<orders><order id="2">west</order></orders>','',false,'',[],''];
+  let request, applied;
+  const context=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children:children.flat(Infinity)})},
+    useState:()=>[values.shift(),()=>{}],useMemo:()=>[],useEffect:()=>{},fetch:async (_url,options)=>{request=JSON.parse(options.body);return {ok:true,json:async()=>({output:{value:'west'}})};}});
+  const templates=ast.statements.find(s=>ts.isVariableStatement(s)&&s.declarationList.declarations.some(d=>d.name.getText(ast)==='xpathTemplates'));
+  vm.runInContext(compile(`${templates.getText(ast)}\n${fn.getText(ast)}`),context);
+  const nodes=all(context.MapperXPathBuilder({config:{xpathVersion:'2.0'},target:'region',apply:value=>applied=value}));
+  const button=label=>nodes.find(node=>node.type==='button'&&node.children.includes(label));
+  await button('Test XPath').props.onClick();
+  button('Apply to ').props.onClick();
+  assert.equal(applied,request.mappings[0].source);
+  assert.equal(request.options.xpathVersion,'2.0');
+  assert.equal(request.input.xmlString,'<orders><order id="2">west</order></orders>');
 });
 
 test('duplicating a repeating structure creates an independent empty occurrence even before mapping',()=>{
@@ -41,19 +72,27 @@ test('duplicating a repeating structure creates an independent empty occurrence 
   }
 });
 
-test('the context menu offers Duplicate mapping for an unmapped repeat',()=>{
+test('the context menu offers Duplicate mapping for an unmapped repeat and follows target and group rules',()=>{
   const fn=ast.statements.find(s=>s.name?.text==='MappingContextMenu');
   const context=vm.createContext({
     React:{createElement:(type,props,...children)=>({type,props,children:children.flat(Infinity)})},
     createPortal:content=>content, document:{body:{}}, window:{innerWidth:800,innerHeight:800}, DataNodeIcon:'icon',
     useRef:()=>({current:null}), useState:()=>[null,()=>{}], useEffect:()=>{}, mappingSource:value=>value,
   });
-  vm.runInContext(compile(fn.getText(ast)),context);
-  let copies=0;
-  const menu=canDuplicate=>all(context.MappingContextMenu({menu:{label:'Record',x:0,y:0},canDuplicate,
-    duplicate:()=>copies++,close() {}})).find(node=>node.type==='button'&&node.children.includes('Duplicate mapping'));
-  assert.equal(menu(true).props.disabled,false);
-  menu(true).props.onClick();
+  const grouped=ast.statements.find(s=>s.name?.text==='defaultGroupedLoopSource');
+  vm.runInContext(compile(`${fn.getText(ast)}\n${grouped.getText(ast)}`),context);
+  const parent={key:'group',kind:'loop',rule:{operator:'for-each-group'}};
+  assert.equal(context.defaultGroupedLoopSource({ancestors:['group']},[parent]),'current-group()');
+  assert.equal(context.defaultGroupedLoopSource({ancestors:['group'],loopKey:'group'},[parent]),undefined);
+  let copies=0, rule;
+  const menu=(label,canDuplicate, options={})=>all(context.MappingContextMenu({menu:{label:'Record',x:0,y:0,...options},canDuplicate,
+    duplicate:()=>copies++,change:value=>rule=value,close() {}})).find(node=>node.type==='button'&&node.children.includes(label));
+  assert.equal(menu('Duplicate mapping',true).props.disabled,false);
+  menu('Duplicate mapping',true).props.onClick();
   assert.equal(copies,1);
-  assert.equal(menu(false).props.disabled,true);
+  assert.equal(menu('Duplicate mapping',false).props.disabled,true);
+  assert.equal(menu('If…',true,{required:true}).props.disabled,true);
+  assert.ok(!menu('If…',true,{required:false}).props.disabled);
+  menu('For Each…',true,{defaultLoopSource:'current-group()'}).props.onClick();
+  assert.equal(rule.source,'current-group()');
 });

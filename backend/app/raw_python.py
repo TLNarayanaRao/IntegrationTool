@@ -465,9 +465,9 @@ def _direct_literal(value, indent: int = 0) -> str:
         if not value: return 'dict()'
         if all(isinstance(key, str) and key.isidentifier() and not keyword.iskeyword(key) for key in value):
             pad = ' ' * indent
-            fields = [f'{pad}    {key}={repr(item) if key in {"constant", "openApiDocument", "openApiReferenceDocuments", "customFunctions", "targetSchema", "targetSchemaText", "schemaText", "interfaceSchemaText", "lookupTables", "testCases", "templateHistory", "contractBaseline"} else _direct_literal(item, indent + 4)},' for key, item in value.items()]
+            fields = [f'{pad}    {key}={repr(item) if key in {"constant", "openApiDocument", "openApiReferenceDocuments", "customFunctions", "targetSchema", "targetSchemaText", "sourceSchemaText", "schemaText", "interfaceSchemaText", "lookupTables", "testCases", "templateHistory", "contractBaseline", "xmlSource", "xmlStylesheet", "xmlNamespaces", "xmlVariables", "sourceTypeOverrides", "sourceCoercions", "xmlSchemaDocuments"} else _direct_literal(item, indent + 4)},' for key, item in value.items()]
             return 'dict(\n' + '\n'.join(fields) + f'\n{pad})'
-        return '{' + ', '.join(f'{key!r}: {repr(item) if key in {"constant", "openApiDocument", "openApiReferenceDocuments", "customFunctions", "targetSchema", "targetSchemaText", "schemaText", "interfaceSchemaText", "lookupTables", "testCases", "templateHistory", "contractBaseline"} else _direct_literal(item, indent)}' for key, item in value.items()) + '}'
+        return '{' + ', '.join(f'{key!r}: {repr(item) if key in {"constant", "openApiDocument", "openApiReferenceDocuments", "customFunctions", "targetSchema", "targetSchemaText", "sourceSchemaText", "schemaText", "interfaceSchemaText", "lookupTables", "testCases", "templateHistory", "contractBaseline", "xmlSource", "xmlStylesheet", "xmlNamespaces", "xmlVariables", "sourceTypeOverrides", "sourceCoercions", "xmlSchemaDocuments"} else _direct_literal(item, indent)}' for key, item in value.items()) + '}'
     if isinstance(value, list):
         return '[' + ', '.join(_direct_literal(item, indent) for item in value) + ']'
     return repr(value)
@@ -496,16 +496,19 @@ def validate_raw_python(project: dict) -> None:
                     failures.append(f"{task['name']} / {activity['name']}: client acknowledgement requires a Starter Task receiver")
             if kind == 'call_task' and str(activity.get('config', {}).get('taskId') or '') not in task_ids:
                 failures.append(f"{task['name']} / {activity['name']}: Call Sub Task needs a static taskId")
-        outgoing: dict[str, int] = {}
+        outbound: dict[str, list[str]] = {}
         for edge in task.get('transitions', []):
-            if _edge_type(edge) == 'success':
-                outgoing[edge['source']] = outgoing.get(edge['source'], 0) + 1
+            if _edge_type(edge) in {'success', 'success_condition', 'success_no_match'}:
+                outbound.setdefault(edge['source'], []).append(_edge_type(edge))
+        outgoing = {source: max(kinds.count('success') + kinds.count('success_condition'),
+                                0 if 'success' in kinds else kinds.count('success_no_match'))
+                    for source, kinds in outbound.items()}
 
         if task.get('groups') and any(count > 1 for count in outgoing.values()):
             failures.append(f"{task['name']}: parallel branches inside groups are not yet supported by direct code")
         for source_id, count in outgoing.items():
             if count <= 1: continue
-            pending = [edge['target'] for edge in task.get('transitions', []) if edge['source'] == source_id and _edge_type(edge) == 'success']
+            pending = [edge['target'] for edge in task.get('transitions', []) if edge['source'] == source_id and _edge_type(edge) != 'error']
             visited = set()
             while pending:
                 candidate = pending.pop()
@@ -514,14 +517,25 @@ def validate_raw_python(project: dict) -> None:
                     break
                 if candidate in visited: continue
                 visited.add(candidate)
-                pending.extend(edge['target'] for edge in task.get('transitions', []) if edge['source'] == candidate and _edge_type(edge) == 'success')
-        for activity in task['activities']:
-            edges = [edge for edge in task.get('transitions', []) if edge['source'] == activity['id']]
-            conditions = [edge for edge in edges if edge.get('type') == 'success_condition']
-            if len(conditions) > 1 or conditions and any(_edge_type(edge) == 'success' for edge in edges):
-                failures.append(f"{task['name']} / {activity['name']}: parallel conditional branches are not yet supported by direct code")
+                pending.extend(edge['target'] for edge in task.get('transitions', []) if edge['source'] == candidate and _edge_type(edge) != 'error')
     if failures:
         raise ValueError('Raw Python export cannot preserve these behaviors yet: ' + '; '.join(failures))
+
+
+def mapper_xml_dependencies(project: dict) -> list[str]:
+    configs = [a.get('config') or {} for task in project.get('tasks', []) for a in task.get('activities', [])
+               if a.get('type') in {'mapper', 'transform', 'ai_transform'}]
+    guards = [edge['bw_xpath'] for task in project.get('tasks', []) for edge in task.get('transitions', []) if edge.get('bw_xpath')]
+    def xpath_call(config, version='[12]?'):
+        return re.search(r'\bxpath' + version + r'\s*\(', repr(config))
+    if not guards and not any(c.get('generatedXmlBinding') or c.get('xmlStylesheet') or c.get('sourceCoercions') or xpath_call(c) for c in configs):
+        return []
+    requirements = ['lxml>=6,<7']
+    if any(str(c.get('xpathVersion')) == '2.0' or xpath_call(c, '2') for c in configs):
+        requirements.append('elementpath>=5.1.4,<6')
+    if any(guard.get('version') == '2.0' for guard in guards) or any(c.get('generatedXmlBinding') or re.search(r'''\bversion\s*=\s*["']2\.0["']''', str(c.get('xmlStylesheet') or '')) for c in configs):
+        requirements.append('saxonche>=13.1.1,<14')
+    return requirements
 
 
 def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
@@ -540,6 +554,13 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
     http_configs = [*(resources.get('http') or []), *(a.get('config') or {} for t in project.get('tasks',[]) for a in t.get('activities',[]) if a.get('type') in {'http','http_listener','rest','soap'})]
     if any(kind in {'xml','json'} for kind,_ in activity_pairs):add('Data schema validation',['jsonschema','regex'],'python -m pip install jsonschema regex')
     if any(kind=='xml' for kind,_ in activity_pairs):add('XML schema validation',['lxml.etree'],'python -m pip install lxml')
+    xml_dependencies = mapper_xml_dependencies(project)
+    if xml_dependencies:
+        add('Mapper XML binding', ['lxml.etree'], 'python -m pip install lxml')
+    if any(item.startswith('elementpath') for item in xml_dependencies):
+        add('Mapper XPath 2.0', ['elementpath'], 'python -m pip install "elementpath>=5.1.4,<6"')
+    if any(item.startswith('saxonche') for item in xml_dependencies):
+        add('Mapper XSLT 2.0', ['saxonche'], 'python -m pip install "saxonche>=13.1.1,<14"')
     if any(kind in {'http','http_listener','rest','soap'} for kind,_ in activity_pairs):
         add('HTTP transport', ['httpx'], 'python -m pip install httpx')
         add('HTTP contracts', ['jsonschema','yaml','regex','lxml.etree'], 'python -m pip install jsonschema PyYAML regex lxml')
@@ -601,7 +622,7 @@ def validate_export_mappings(project: dict) -> None:
             config = activity.get('config') or {}
             if activity.get('type') in ('mapper', 'transform', 'ai_transform'):
                 schema = schemas.get(config.get('targetSchemaId')) or config.get('targetSchemaText') or config.get('targetSchema')
-                errors = validator.validate_mapping_rules(config.get('mappings') or [], schema, custom_functions=[*config.get('customFunctions', []), *project.get('custom_functions', [])])
+                errors = [] if config.get('xmlStylesheet') or config.get('generatedXmlBinding') else validator.validate_mapping_rules(config.get('mappings') or [], schema, custom_functions=[*config.get('customFunctions', []), *project.get('custom_functions', [])])
             else:
                 schema = task.get('input_schema') if activity.get('type') == 'start' else task.get('output_schema') if activity.get('type') == 'end' else None
                 schema = schemas.get(config.get('interfaceSchemaId')) or config.get('interfaceSchemaText') or schema
@@ -741,11 +762,16 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
             for task in project.get('tasks', []) for activity in task.get('activities', [])
             for value in (activity.get('config', {}).get('inputMappings') or {}).values()):
         native_modules.add('mapper.py')
+    if 'mapper.py' in native_modules:
+        native_modules.update({'mapper_xml.py', 'mapper_binding.py', 'mapper_coercions.py'})
     if native_modules:
         files['application/native/__init__.py'] = b'"""Capability-selected native adapters; vendor binaries remain external."""\n'
         for name in sorted(native_modules): files[f'application/native/{name}'] = Path(__file__).with_name(name).read_bytes()
     files['application/tasks/__init__.py'] = b'"""Generated async tasks."""\n'
     checks, external_files = raw_python_requirements(linked_project)
+    xml_dependencies = mapper_xml_dependencies(linked_project)
+    if xml_dependencies:
+        files['requirements-mapper.txt'] = ('\n'.join(xml_dependencies) + '\n').encode('utf-8')
     files['application/requirements.py'] = (
         '"""Generated deployment requirements for this application."""\n'
         f'CHECKS = {pformat(checks, width=100, sort_dicts=False)}\n'
@@ -959,13 +985,15 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
                 selected = next((schema for schema in project.get('schemas', []) if schema.get('id') == config['targetSchemaId'] or schema.get('name') == config['targetSchemaId']), None)
                 if not selected: raise ValueError(f'{activity.get("name")}: selected Mapper target schema was not found')
                 config.update(targetSchema={}, targetSchemaText=selected['content'])
+            if activity.get('type') == 'mapper' and (config.get('xmlStylesheet') or config.get('generatedXmlBinding') or config.get('sourceCoercions')):
+                config['xmlSchemaDocuments'] = {asset['name']: asset['content'] for asset in project.get('schemas', []) if asset['name'].lower().endswith('.xsd')}
             if project.get('custom_functions'): config['customFunctions'] = list({item['name']:item for item in [*config.get('customFunctions', []), *project['custom_functions']]}.values())
             outgoing = [edge for edge in task['transitions'] if edge['source'] == activity['id']]
             error_target = next((edge['target'] for edge in outgoing if edge.get('type') == 'error'), None)
             conditional = [edge for edge in outgoing if edge.get('type') == 'success_condition']
             ordinary = next((edge['target'] for edge in outgoing if _edge_type(edge) == 'success'), None)
             ordinary_targets = [edge['target'] for edge in outgoing if _edge_type(edge) == 'success']
-            no_match = next((edge['target'] for edge in outgoing if edge.get('type') == 'success_no_match'), None)
+            no_match = [edge['target'] for edge in outgoing if edge.get('type') == 'success_no_match']
             lines.extend([
                 f'        {prefix} current == {activity["id"]!r}:',
                 '            try:',
@@ -1038,17 +1066,19 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
             lines.extend(['                if current is None: raise', '            else:', f'                ctx.record({activity["id"]!r}, result)'])
             if activity['type'] == 'end':
                 lines.append('                return result')
-            elif conditional:
-                for condition_index, edge in enumerate(conditional):
-                    condition = str(edge.get('condition') or '').strip()
-                    expression = _condition_source(condition)
-                    lines.append(f'                {"if" if condition_index == 0 else "elif"} {expression}: current = {edge["target"]!r}')
-                lines.append(f'                else: current = {no_match!r}')
-            elif len(ordinary_targets) > 1:
+            elif conditional or no_match or len(ordinary_targets) > 1:
+                lines.append('                targets = []')
+                for edge in conditional:
+                    lines.append(f'                if condition({edge.get("condition", "")!r}, ctx, {edge.get("bw_xpath")!r}): targets.append({edge["target"]!r})')
+                lines.extend([f'                targets.extend({ordinary_targets!r})',
+                              f'                targets = targets or {no_match!r}',
+                              '                if len(targets) < 2:',
+                              '                    current = targets[0] if targets else None',
+                              '                    continue'])
                 graph_edges = [(edge['source'], edge['target'], _edge_type(edge)) for edge in task['transitions']]
                 terminals = [node['id'] for node in task['activities'] if node['type'] in ('end', 'http_response')]
                 lines.extend([
-                    f'                plan = parallel_plan({graph_edges!r}, {ordinary_targets!r}, {terminals!r}, boundary=stop_at, fork=current)',
+                    f'                plan = parallel_plan({graph_edges!r}, targets, {terminals!r}, boundary=stop_at, fork=current)',
                     '                async def run_branch(target, stop, value):',
                     '                    child = ctx.fork()',
                     '                    child.last = value',
@@ -1237,6 +1267,8 @@ def _transformation_tools(project, package):
             if config.get('targetSchemaId'):
                 config['targetSchema'] = {}
                 config['targetSchemaText'] = schemas[config['targetSchemaId']]
+            if config.get('xmlStylesheet') or config.get('generatedXmlBinding') or config.get('sourceCoercions'):
+                config['xmlSchemaDocuments'] = {asset['name']: asset['content'] for asset in project.get('schemas', []) if asset['name'].lower().endswith('.xsd')}
             assets[f"{task['id']}/{activity['id']}"] = config
     if not assets: return {}
     root = Path(__file__).parent
@@ -1299,7 +1331,7 @@ def engine_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[
             _python_call('Activity', activity, ('id', 'type', 'name', 'config'))
             for activity in task['activities'])
         transitions = ',\n        '.join(
-            _python_call('Transition', edge, ('id', 'source', 'target', 'label', 'type', 'condition', 'color'))
+            _python_call('Transition', edge, ('id', 'source', 'target', 'label', 'type', 'condition', 'color', 'bw_xpath'))
             for edge in task['transitions'])
         groups = ',\n        '.join(
             _python_call('GroupDefinition', group, ('id', 'type', 'name', 'member_activity_ids', 'config', 'parent_group_id'))
@@ -1342,6 +1374,9 @@ def engine_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[
         f'        tasks=[{", ".join(task_calls)}])\n'
     ).encode('utf-8')
     files.update(_transformation_tools(project, 'application.engine'))
+    xml_dependencies = mapper_xml_dependencies(project)
+    if xml_dependencies:
+        files['requirements-mapper.txt'] = ('\n'.join(xml_dependencies) + '\n').encode('utf-8')
     for name, body in files.items():
         if name.endswith('.py'):
             try: compile(body, name, 'exec')

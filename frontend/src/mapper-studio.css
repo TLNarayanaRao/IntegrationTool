@@ -35,3 +35,10 @@
 .mapper-ai-options { flex:0 0 auto; max-height:30dvh; overflow:auto; border-bottom:1px solid #254760; }
 .mapper-ai-options > summary { padding:9px 18px; color:#bcdcff; cursor:pointer; }
 .mapper-ai-options .ai-policy-panel { margin:0 12px 10px; }
+
+@media (max-height:540px) {
+  .mapper-studio { overflow:auto; }
+  .mapper-studio>main { flex:none; min-height:240px; }
+}
+.mapper-xml-preferences{display:flex;flex-wrap:wrap;gap:8px 16px;padding:0 18px 10px}
+.mapper-xml-preferences label{display:flex;align-items:center;gap:6px}

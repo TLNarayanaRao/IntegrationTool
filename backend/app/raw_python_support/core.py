@@ -123,6 +123,12 @@ def mapping_document(ctx: Context) -> dict:
             'last': ctx.last, 'properties': ctx.properties, 'vars': ctx.variables, 'activities': ctx.outputs}
 
 
+def boundary_value(values, wrapper, fallback):
+    if not values:
+        return fallback
+    return values[wrapper] if set(values) == {wrapper} else values
+
+
 def assign_path(target: dict, path: str, value: Any) -> None:
     parts = path.split('.')
     cursor = target
@@ -199,7 +205,10 @@ def mapped(config: dict, ctx: Context) -> dict:
     return result
 
 
-def condition(expression: Any, ctx: Context) -> bool:
+def condition(expression: Any, ctx: Context, bw_xpath=None) -> bool:
+    if bw_xpath is not None:
+        from .native.mapper_xml import bw_transition_condition
+        return bw_transition_condition(expression, bw_xpath, lambda path: lookup(path, ctx), ctx.properties)
     from .native.mapper import execute as execute_mapping
     # Use the same scope-aware expression engine as field mappings. Values are
     # resolved before comparison, never interpolated into executable Python.
@@ -259,12 +268,13 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
         and ctx.transport.get('listenerKey')
     )
     ignored_confirm_handles = {'ackId', 'ackIds', 'acknowledgementHandle'} if sap_early_confirm else set()
+    literal_keys = {'targetSchema', 'targetSchemaText', 'sourceSchemaText', 'schemaText', 'interfaceSchemaText', 'lookupTables', 'testCases', 'templateHistory', 'contractBaseline', 'xmlSource', 'xmlStylesheet', 'xmlNamespaces', 'xmlVariables', 'sourceTypeOverrides', 'sourceCoercions', 'xmlSchemaDocuments'}
     static_config = {
         key: value for key, value in raw.items()
-        if key not in {'inputMappings', 'mappings', 'customFunctions', 'targetSchema', 'targetSchemaText', 'schemaText', 'interfaceSchemaText', 'lookupTables', 'testCases', 'templateHistory', 'contractBaseline'} and key not in ignored_confirm_handles
+        if key not in literal_keys and key not in {'inputMappings', 'mappings', 'customFunctions'} and key not in ignored_confirm_handles
     }
     cfg = resolve(static_config, ctx)
-    cfg.update({key: value for key, value in raw.items() if key in {'targetSchema', 'targetSchemaText', 'schemaText', 'interfaceSchemaText', 'lookupTables', 'testCases', 'templateHistory', 'contractBaseline'}})
+    cfg.update({key: value for key, value in raw.items() if key in literal_keys})
     if raw.get('customFunctions'):
         cfg['customFunctions'] = raw['customFunctions']
         ctx.attributes['customFunctions'] = raw['customFunctions']
@@ -277,8 +287,8 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
     for key, value in resolved_input.items():
         cfg[key] = value
     operation = str(cfg.get('operation') or '')
-    if kind == 'start': return resolved_input.get('payload', ctx.input)
-    if kind == 'end': return resolved_input.get('result', ctx.last)
+    if kind == 'start': return boundary_value(resolved_input, 'payload', ctx.input)
+    if kind == 'end': return boundary_value(resolved_input, 'result', ctx.last)
     if kind == 'catch':
         if not ctx.error: return ctx.last
         return {'type': getattr(ctx.error, 'fault_type', type(ctx.error).__name__),
@@ -384,7 +394,8 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
         from .registry import TASKS
         target = str(cfg.get('taskId') or '')
         values = mapped(raw, ctx)
-        child = Context(values or ctx.last, ctx.properties, ctx.resources)
+        fallback = ctx.last if isinstance(ctx.last, dict) else {'value': ctx.last}
+        child = Context(boundary_value(values, 'payload', fallback), ctx.properties, ctx.resources)
         return await TASKS[target](child)
     # CAPABILITY call_task END
     # CAPABILITY file START

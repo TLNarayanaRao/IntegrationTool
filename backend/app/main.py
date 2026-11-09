@@ -18,6 +18,8 @@ from .runtime import WorkflowRuntime
 from .http_transport import HTTPFault
 from .debugger import DebugManager
 from .mapper import execute as execute_mapping, recommend, rewrite_references, validate_output
+from .mapper_learning import shared_paths
+from .mapper_binding import generate_binding, reopen_binding
 from .dataweave import DataWeaveError, execute_details as execute_dataweave
 from .sap import sap_adapter
 from .snowflake import snowflake_adapter
@@ -1559,7 +1561,8 @@ async def package_and_deploy_project(project_id: str, payload: ControlPlaneDeplo
 async def import_project(file: UploadFile = File(...)):
     raw = await file.read(MAX_IMPORT_BYTES + 1)
     try:
-        item = Project.model_validate_json(project_payload(raw))
+        payload = await asyncio.to_thread(project_payload, raw, file.filename or '')
+        item = Project.model_validate_json(payload)
         return await asyncio.to_thread(save_project, item)
     except Exception as exc: raise HTTPException(400, f'Invalid MINA project: {exc}')
 
@@ -1712,7 +1715,35 @@ async def jdbc_test_query(payload: dict):
 
 @app.post('/api/mapper/suggest')
 def mapper_suggest(payload: dict):
-    return {'recommendations': recommend(payload.get('sourceSchema',{}), payload.get('targetSchema',{}), float(payload.get('threshold',70))/100, payload.get('weights'))}
+    source, target = payload.get('sourceSchema', {}), payload.get('targetSchema', {})
+    return {'recommendations': recommend(source, target, float(payload.get('threshold',70))/100,
+                                         payload.get('weights'), shared_paths(source, target))}
+
+@app.post('/api/mapper/share')
+def mapper_share(payload: dict):
+    try:
+        return {'shared': shared_paths(payload.get('sourceSchema', {}), payload.get('targetSchema', {}),
+                                       payload.get('mappings', []))}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+@app.post('/api/mapper/binding')
+def mapper_binding(payload: dict):
+    from lxml.etree import XMLSyntaxError
+    try:
+        if 'stylesheet' in payload:
+            return reopen_binding(payload['stylesheet'])
+        return {'xmlStylesheet': generate_binding(payload.get('mappings'), payload.get('targetSchemaText', ''),
+                                                  payload.get('sourceSchemaText', ''), preferences=payload.get('preferences'))}
+    except (ValueError, XMLSyntaxError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+@app.get('/api/mapper/xpath/functions')
+def mapper_xpath_functions(version: str = '1.0'):
+    from .mapper_xml import xpath_function_palette
+    if version not in {'1.0', '2.0'}:
+        raise HTTPException(400, 'Unsupported XPath version')
+    return {'functions': xpath_function_palette(version)}
 
 @app.post('/api/mapper/test')
 def mapper_test(payload: dict):
@@ -1730,7 +1761,7 @@ def mapper_test(payload: dict):
                 return path[5:]
             # Studio activity-name expressions omit the internal activity ID
             # and output envelope: ${IDoc-Parser.IDOC.EDI_DC40.DOCNUM}.
-            if '.' in path and not path.startswith(('properties.', 'vars.', 'context.', 'tasks.')):
+            if '.' in path and not path.startswith(('properties.', 'vars.', 'context.', 'tasks.', 'coerced.')):
                 return path.split('.', 1)[1]
             return '' if path in ('input', 'last') else path
         normalized = []
@@ -1750,7 +1781,9 @@ def mapper_test(payload: dict):
                     'source': rewrite_references(branch['source'], test_path) if isinstance(branch.get('source'), str) else branch.get('source'),
                 } for branch in rule['whens']]
             normalized.append(rule)
-        options = {**(payload.get('options') or {}), 'validateOutput': False}
+        options = {**(payload.get('options') or {}), '_mapperSample': True}
+        xml_binding = bool(options.get('xmlStylesheet') or options.get('generatedXmlBinding'))
+        if not xml_binding: options['validateOutput'] = False
         if payload.get('targetSchema'): options = {**options, 'targetSchema': payload.get('targetSchema')}
         if payload.get('targetSchemaText'): options = {**options, 'targetSchemaText': payload.get('targetSchemaText')}
         # Mapper expressions use the same aliases as the runtime.  In
@@ -1765,15 +1798,17 @@ def mapper_test(payload: dict):
             'last': test_input,
             'input': test_input,
         }
-        output = execute_mapping(test_document, normalized, options)
+        output = execute_mapping(test_document, mappings if options.get('generatedXmlBinding') else normalized, options)
         schema = payload.get('targetSchema') or payload.get('targetSchemaText')
-        errors = validate_output(output, schema) if schema and (payload.get('options') or {}).get('validateOutput', True) else []
+        errors = validate_output(output, schema) if not xml_binding and schema and (payload.get('options') or {}).get('validateOutput', True) else []
         active = [rule for rule in normalized if rule.get('enabled', True)]
         mapped_targets = sorted({str(rule.get('target')) for rule in active if rule.get('target')})
         # Preserve the runtime value and return a separate readable preview.
         output_format = 'json'
         output_text = json.dumps(output, indent=2, ensure_ascii=False)
-        if isinstance(output, str):
+        if xml_binding:
+            output_text, output_format = output['xmlString'], 'xml'
+        elif isinstance(output, str):
             output_text = output
             output_format = 'xml' if output.lstrip().startswith('<') else 'text'
         elif isinstance(schema, str) and '<' in schema and 'schema' in schema:
@@ -1882,8 +1917,17 @@ def evaluate_condition(payload: dict):
     context = {
         'last': supplied.get('last', {}), 'input': supplied.get('input', {}),
         'properties': supplied.get('properties', {}), 'vars': supplied.get('vars', {}),
+        'activities': supplied.get('activities', {}),
     }
-    try: return {'result': bool(runtime.condition(expression, context)), 'expression': expression}
+    try:
+        if payload.get('bw_xpath'):
+            from .models import Transition
+            edge = Transition(id='preview', source='preview', target='output', type='success_condition',
+                              condition=expression, bw_xpath=payload['bw_xpath'])
+            result = bool(runtime.eligible_success_transitions([edge], context))
+        else:
+            result = bool(runtime.condition(expression, context))
+        return {'result': result, 'expression': expression}
     except Exception as exc: raise HTTPException(400, f'Condition evaluation failed: {exc}')
 
 @app.get('/api/projects/{project_id}/http-docs/postman')

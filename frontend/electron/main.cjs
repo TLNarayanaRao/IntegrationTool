@@ -293,8 +293,9 @@ ipcMain.handle('mina:open-file', async (_event, fileType) => {
     : fileType === 'ifpackage' ? ['ifpackage']
     : fileType === 'ifpkg' ? ['ifpkg']
     : fileType === 'zip' ? ['zip']
+    : fileType === 'bwp' ? ['bwp']
     : fileType === 'json' ? ['json']
-    : ['mpackage', 'mpkg', 'ifproject', 'ifpackage', 'ifpkg', 'zip', 'json'];
+    : ['mpackage', 'mpkg', 'ifproject', 'ifpackage', 'ifpkg', 'zip', 'json', 'bwp'];
   const result = await dialog.showOpenDialog(mainWindow, {
     // Import must be a file picker. Combining openFile and openDirectory on
     // Windows causes Electron to show a folder-only dialog and prevents the
@@ -304,7 +305,7 @@ ipcMain.handle('mina:open-file', async (_event, fileType) => {
   });
   if (result.canceled || !result.filePaths[0]) return null;
   const filePath = result.filePaths[0];
-  return { path: filePath, name: path.basename(filePath), bytes: [...fs.readFileSync(filePath)], kind: 'file' };
+  return { path: filePath, name: path.basename(filePath), bytes: [...await fs.promises.readFile(filePath)], kind: 'file' };
 });
 
 ipcMain.handle('mina:open-utility-file', async (_event, options = {}) => {
@@ -430,10 +431,10 @@ ipcMain.handle('mina:open-project-source', async () => {
     if (result.canceled || !result.filePaths[0]) return null;
     return readProjectFolder(result.filePaths[0]);
   }
-  const result = await dialog.showOpenDialog(mainWindow, { title: 'Open MINA project file', properties: ['openFile'], filters: [{ name: 'MINA Project', extensions: ['mpackage', 'mpkg', 'ifproject', 'ifpackage', 'ifpkg', 'zip', 'json'] }] });
+  const result = await dialog.showOpenDialog(mainWindow, { title: 'Open MINA project file', properties: ['openFile'], filters: [{ name: 'MINA Project', extensions: ['mpackage', 'mpkg', 'ifproject', 'ifpackage', 'ifpkg', 'zip', 'json', 'bwp'] }] });
   if (result.canceled || !result.filePaths[0]) return null;
   const filePath = result.filePaths[0];
-  return { path: filePath, name: path.basename(filePath), bytes: [...fs.readFileSync(filePath)], kind: 'file' };
+  return { path: filePath, name: path.basename(filePath), bytes: [...await fs.promises.readFile(filePath)], kind: 'file' };
 });
 
 ipcMain.handle('mina:select-code-artifact', async (_event, kind) => {

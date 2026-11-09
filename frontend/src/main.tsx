@@ -166,6 +166,7 @@ type Edge = {
   label?: string;
   type?: "success" | "success_condition" | "success_no_match" | "error";
   condition?: string;
+  bw_xpath?: { version: string; variables: Record<string, string>; namespaces: Record<string, string> } | null;
   color?: string;
 };
 type Task = {
@@ -287,6 +288,7 @@ type ValidationIssue = {
   activityId?: string;
 };
 const themeOptions = [
+  { value: "plain-bw", label: "BusinessWorks 6.12", detail: "Eclipse-style desktop that follows system appearance" },
   { value: "plain-classic", label: "Plain Classic", detail: "Light grey desktop panels, white editors, and blue selections" },
   { value: "plain-studio", label: "Plain Studio", detail: "Soft rounded panels and controls with teal selections" },
   { value: "midnight", label: "Midnight Studio", detail: "Deep blue professional workspace" },
@@ -628,6 +630,13 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
     ],
   },
 ];
+const canvasDefinitions = new Map<string, Def[]>();
+for (const item of packs.flatMap(pack => pack.items)) {
+  const items = canvasDefinitions.get(item.type) || [];
+  items.push(item);
+  canvasDefinitions.set(item.type, items);
+}
+
 const defaultProperties: Property[] = [
   { key: "runtime.logDirectory", value: "", data_type: "string" },
   { key: "advanced.logPayload", value: false, data_type: "boolean" },
@@ -1168,6 +1177,10 @@ const rewriteActivityReference = (value: any, from: string, to: string): any => 
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, rewriteActivityReference(item, from, to)]));
   return value;
 };
+const rewriteBwEdgeVariables = (edge: Edge, aliases: Record<string, string>) => edge.bw_xpath
+  ? { ...edge.bw_xpath, variables: Object.fromEntries(Object.entries(edge.bw_xpath.variables || {}).map(([name, path]) =>
+      [name, path.replace(/^activities\.([^.]+)(?=\.output(?:\.|$))/, (prefix, id) => aliases[id] ? `activities.${aliases[id]}` : prefix)])) }
+  : edge.bw_xpath;
 const normalizeObjectNames = (project: Project, previous?: Project): Project => {
   const named = <T extends { name: string }>(item: T): T => {
     if (typeof item.name !== "string") return item;
@@ -1274,7 +1287,7 @@ const normalizeProject = (value: any): Project => {
     return {
       ...task,
       activities: task.activities.map((activity: Node) => ({ ...activity, id: aliases[activity.id], name: aliases[activity.id], config: migrate(activity.config) })),
-      transitions: task.transitions.map((transition) => ({ ...transition, condition: migrate(transition.condition), source: aliases[transition.source] || transition.source, target: aliases[transition.target] || transition.target })),
+      transitions: task.transitions.map((transition) => ({ ...transition, condition: migrate(transition.condition), bw_xpath: rewriteBwEdgeVariables(transition, aliases), source: aliases[transition.source] || transition.source, target: aliases[transition.target] || transition.target })),
       groups: (task.groups || []).map((group) => ({ ...group, config: migrate(group.config), member_activity_ids: group.member_activity_ids.map((id) => aliases[id] || id) })),
     };
   });
@@ -1523,13 +1536,16 @@ function App() {
     activityClipboard = useRef<{ activities: Node[]; transitions: Edge[] } | null>(null),
     explorerClipboard = useRef<{ type: string; value: any } | null>(null),
     projectFileHandle = useRef<any>(null);
+  const [dragPreview, setDragPreview] = useState<{ projectId: string; taskId: string; positions: Record<string, Node['position']> } | null>(null);
   const task =
       project.tasks.find((t) => t.id === project.active_task_id) ||
       project.tasks[0],
     editorOpen = openTaskIds.includes(project.active_task_id),
-    nodes = task.activities,
+    nodes = useMemo(() => dragPreview?.projectId === project.id && dragPreview.taskId === task.id
+      ? task.activities.map(item => dragPreview.positions[item.id] ? {...item, position:dragPreview.positions[item.id]} : item)
+      : task.activities, [dragPreview, project.id, task.id, task.activities]),
     edges = task.transitions,
-    node = nodes.find((n) => n.id === selected),
+    node = task.activities.find((n) => n.id === selected),
     edge = edges.find((e) => e.id === selectedEdge),
     resource = project.resources.find((r) => r.id === selectedResource),
     byId = useMemo(
@@ -1537,14 +1553,30 @@ function App() {
       [nodes],
     );
   const entryMode = taskEntryMode(task);
+  const groupLayout = useMemo(() => {
+    const groups = task.groups || [];
+    const byGroupId = new Map(groups.map(group => [group.id, group]));
+    const layout = new Map(groups.map(group => [group.id, {depth:0, members:new Set(group.member_activity_ids)}]));
+    for (const group of groups) {
+      const visited = new Set([group.id]);
+      let parent = group.parent_group_id;
+      while (parent && !visited.has(parent)) {
+        const ancestor = byGroupId.get(parent);
+        if (!ancestor) break;
+        visited.add(parent);
+        layout.get(group.id)!.depth++;
+        for (const member of group.member_activity_ids) layout.get(parent)!.members.add(member);
+        parent = ancestor.parent_group_id;
+      }
+    }
+    return layout;
+  }, [task.groups]);
   const groupBounds = useMemo(() => Object.fromEntries((task.groups || []).map((group) => {
-    const nested = new Set([group.id]); let changed = true; while (changed) { changed = false; (task.groups || []).forEach((child) => { if (child.parent_group_id && nested.has(child.parent_group_id) && !nested.has(child.id)) { nested.add(child.id); changed = true; } }); }
-    const activityIds = new Set((task.groups || []).filter((item) => nested.has(item.id)).flatMap((item) => item.member_activity_ids));
-    const members = nodes.filter((item) => activityIds.has(item.id));
+    const members = [...groupLayout.get(group.id)!.members].flatMap(id => byId[id] ? [byId[id]] : []);
     if (!members.length) return [group.id, { x: group.position.x, y: group.position.y, width: group.size?.width || 420, height: group.size?.height || 220 }];
     const left = Math.min(...members.map((item) => item.position.x)) - 42, top = Math.min(...members.map((item) => item.position.y)) - 54;
     return [group.id, { x: left, y: top, width: Math.max(230, Math.max(...members.map((item) => item.position.x + 104)) - left + 42), height: Math.max(165, Math.max(...members.map((item) => item.position.y + 94)) - top + 35) }];
-  })), [task.groups, nodes]);
+  })), [task.groups, groupLayout, byId]);
   const setProject = React.useCallback((update: React.SetStateAction<Project>) => {
     setProjectState(previous => {
       const next = typeof update === "function" ? update(previous) : update;
@@ -1599,9 +1631,14 @@ function App() {
   const [plainMode, setPlainMode] = useState<"light" | "dark">(() =>
     localStorage.getItem("mina-plain-theme-mode") === "dark" ? "dark" : "light");
   useEffect(() => {
-    document.body.dataset.plainMode = plainMode;
     localStorage.setItem("mina-plain-theme-mode", plainMode);
-  }, [plainMode]);
+    if (theme !== "plain-bw") { document.body.dataset.plainMode = plainMode; return; }
+    const system = window.matchMedia("(prefers-color-scheme: dark)");
+    const update = () => { document.body.dataset.plainMode = system.matches ? "dark" : "light"; };
+    update();
+    system.addEventListener("change", update);
+    return () => system.removeEventListener("change", update);
+  }, [theme, plainMode]);
   const projectSnapshot = useMemo(() => JSON.stringify(project), [project]);
   const projectDirty = projectSnapshot !== savedProjectSnapshot.current;
   const wireLanes = useMemo(() => transitionLanes(edges), [edges]);
@@ -1822,45 +1859,55 @@ function App() {
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [project.id, endpoints.length, debugState?.sessionId]);
   useEffect(() => {
-    const move = (e: PointerEvent) => {
-        const activeDrag = drag.current;
-        if (!activeDrag || !activeDrag.positions || !canvas.current || (activeDrag.pointerId != null && activeDrag.pointerId !== e.pointerId)) return;
-        const deltaX = (e.clientX - activeDrag.startX) / zoom;
-        const deltaY = (e.clientY - activeDrag.startY) / zoom;
-        mutateTask((t) => ({
-          ...t,
-          activities: t.activities.map((n) =>
-            activeDrag.positions[n.id]
-              ? {
-                  ...n,
-                  position: {
-                    x: Math.max(0, activeDrag.positions[n.id].x + deltaX),
-                    y: Math.max(0, activeDrag.positions[n.id].y + deltaY),
-                  },
-                }
-              : n,
-          ),
-        }));
-      },
-      stopDrag = (event?: PointerEvent) => {
-        if (!drag.current || (event && drag.current.pointerId != null && drag.current.pointerId !== event.pointerId)) return;
-        const target = drag.current.captureTarget as HTMLElement | undefined;
-        const pointerId = drag.current.pointerId as number | undefined;
-        if (target && pointerId != null && target.hasPointerCapture?.(pointerId)) target.releasePointerCapture(pointerId);
-        drag.current = null;
-      },
-      blur = () => stopDrag();
+    let frame = 0;
+    let preview: typeof dragPreview = null;
+    const matches = (event?: PointerEvent) => drag.current && (!event || drag.current.pointerId === event.pointerId);
+    const move = (event: PointerEvent) => {
+      const active = drag.current;
+      if (!matches(event) || !canvas.current) return;
+      if (!event.buttons && event.pointerType === "mouse") { finish(event); return; }
+      const x = (event.clientX - active.startX) / zoom;
+      const y = (event.clientY - active.startY) / zoom;
+      if (!preview && !x && !y) return;
+      const positions = Object.fromEntries(Object.entries(active.positions as Record<string, Node['position']>)
+        .map(([id, position]) => [id, {x:Math.max(0, position.x + x), y:Math.max(0, position.y + y)}]));
+      preview = {projectId:project.id, taskId:task.id, positions};
+      if (!frame) frame = requestAnimationFrame(() => { frame = 0; setDragPreview(preview); });
+    };
+    const finish = (event?: PointerEvent) => {
+      if (!matches(event)) return;
+      const active = drag.current;
+      drag.current = null;
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+      const final = preview;
+      preview = null;
+      setDragPreview(null);
+      if (active.captureTarget?.hasPointerCapture(active.pointerId)) active.captureTarget.releasePointerCapture(active.pointerId);
+      if (final) setProjectState(current => {
+        if (current.id !== final.projectId) return current;
+        const tasks = current.tasks.map(item => item.id !== final.taskId ? item : {
+          ...item, activities:item.activities.map(activity => final.positions[activity.id]
+            ? {...activity, position:final.positions[activity.id]} : activity),
+        });
+        return {...current, tasks, process:undefined};
+      });
+    };
+    const blur = () => finish();
     window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", stopDrag);
-    window.addEventListener("pointercancel", stopDrag);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+    window.addEventListener("lostpointercapture", finish, true);
     window.addEventListener("blur", blur);
     return () => {
+      finish();
       window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", stopDrag);
-      window.removeEventListener("pointercancel", stopDrag);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      window.removeEventListener("lostpointercapture", finish, true);
       window.removeEventListener("blur", blur);
     };
-  }, [zoom, project.active_task_id]);
+  }, [zoom, project.id, task.id, editorOpen]);
   useEffect(() => {
     if (!connectionDraft) return;
     const move = (event: PointerEvent) => {
@@ -2324,7 +2371,7 @@ function App() {
     const now = Date.now(), idMap: Record<string, string> = {}, usedActivityNames = new Set(nodes.map((activity) => String(activity.name || "").trim().toLowerCase()).filter(Boolean));
     clipboard.activities.forEach((item) => { idMap[item.id] = uniqueActivityName(activityReferenceName(`${item.name}-Copy`), usedActivityNames); });
     const pasted = clipboard.activities.map((item) => ({ ...structuredClone(item), id: idMap[item.id], name: idMap[item.id], config: rewriteActivityReference(item.config, item.id, idMap[item.id]), position: { x: item.position.x + 34, y: item.position.y + 34 } }));
-    const pastedEdges = clipboard.transitions.map((item, index) => ({ ...structuredClone(item), id: `edge-${now}-${index}`, source: idMap[item.source], target: idMap[item.target] }));
+    const pastedEdges = clipboard.transitions.map((item, index) => ({ ...structuredClone(item), id: `edge-${now}-${index}`, bw_xpath: rewriteBwEdgeVariables(item, idMap), source: idMap[item.source], target: idMap[item.target] }));
     mutateTask((current) => ({ ...current, activities: [...current.activities, ...pasted], transitions: [...current.transitions, ...pastedEdges] }));
     setSelected(pasted[0].id); setSelectedIds(pasted.map((item) => item.id)); setSelectedEdge(null); setSelectedResource(null);
     setLogs([{ level: "INFO", message: `Pasted ${pasted.length} activit${pasted.length === 1 ? "y" : "ies"} with internal transitions.` }]);
@@ -2755,7 +2802,9 @@ function App() {
         setSelected(first); setSelectedIds(first ? [first] : []);
         projectFileHandle.current = null;
         setLogs([
-          { level: "INFO", message: `Imported complete project ${out.name}.` },
+          ...(String(out.id).startsWith("bw-")
+            ? String(out.description || "").split("\n").map((message, index) => ({ level: index ? "WARN" : "INFO", message }))
+            : [{ level: "INFO", message: `Imported complete project ${out.name}.` }]),
         ]);
         return out;
       } else setLogs([{ level: "ERROR", message: out.detail }]);
@@ -2765,7 +2814,7 @@ function App() {
       return null;
     } finally { setWorkStatus(""); }
   };
-  const importFromFileSystem = async (fileType?: "mpackage" | "mpkg" | "legacy" | "ifproject" | "ifpackage" | "ifpkg" | "zip" | "json") => {
+  const importFromFileSystem = async (fileType?: "mpackage" | "mpkg" | "legacy" | "ifproject" | "ifpackage" | "ifpkg" | "zip" | "json" | "bwp") => {
     setWorkStatus("Opening project from filesystem…");
     try {
     if (window.minaDesktop) {
@@ -2794,10 +2843,10 @@ function App() {
     const picker = (window as any).showOpenFilePicker;
     if (!picker) { fileInput.current?.click(); return; }
     try {
-      const [handle] = await picker({ multiple: false, types: [{ description: "MINA Project", accept: { "application/zip": [".mpackage", ".mpkg", ".ifproject", ".ifpackage", ".ifpkg", ".zip"], "application/json": [".json"] } }] });
+      const [handle] = await picker({ multiple: false, types: [{ description: "MINA Project", accept: { "application/zip": [".mpackage", ".mpkg", ".ifproject", ".ifpackage", ".ifpkg", ".zip"], "application/json": [".json"], "application/xml": [".bwp"] } }] });
       const file = await handle.getFile();
-      await importProject(file);
-      projectFileHandle.current = handle;
+      const imported = await importProject(file);
+      if (imported && !String(imported.id).startsWith("bw-")) projectFileHandle.current = handle;
     } catch (error: any) {
       if (error?.name !== "AbortError") setLogs([{ level: "ERROR", message: error?.message || "Project import failed" }]);
     }
@@ -3403,10 +3452,9 @@ function App() {
           >
             {(task.groups || []).map((group) => {
               const bounds = groupBounds[group.id];
-              const depth = (() => { let value = 0, current = group; while (current.parent_group_id) { value += 1; current = (task.groups || []).find((item) => item.id === current.parent_group_id) || { ...current, parent_group_id: null }; } return value; })();
-              const nestedGroupIds = new Set([group.id]); let expanded = true; while (expanded) { expanded = false; (task.groups || []).forEach((child) => { if (child.parent_group_id && nestedGroupIds.has(child.parent_group_id) && !nestedGroupIds.has(child.id)) { nestedGroupIds.add(child.id); expanded = true; } }); } const memberIds = new Set((task.groups || []).filter((item) => nestedGroupIds.has(item.id)).flatMap((item) => item.member_activity_ids));
+              const {depth, members:memberIds} = groupLayout.get(group.id)!;
               return <section key={group.id} className={`execution-group depth-${Math.min(depth, 3)} ${debugState?.currentGroupIds?.includes(group.id) ? "debug-active" : ""}`} style={{ left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height }} onPointerDown={(event) => event.stopPropagation()}>
-                <div className="execution-group-header" title="Drag to move the group" onPointerDown={(event) => { if (event.button !== 0 || (event.target as Element).closest(".group-edit")) return; event.preventDefault(); event.stopPropagation(); const ids = [...memberIds], positions = Object.fromEntries(nodes.filter((item) => memberIds.has(item.id)).map((item) => [item.id, { ...item.position }])); drag.current = { ids, positions, startX: event.clientX, startY: event.clientY, pointerId: event.pointerId, captureTarget: event.currentTarget }; event.currentTarget.setPointerCapture(event.pointerId); setSelectedIds(ids); setSelected(ids[0] || ""); }}><Workflow/><b>{group.name}</b><small>{group.type.replaceAll("_", " ")}</small>{debugState?.groupIterations?.[group.id] !== undefined && <em>iteration {Number(debugState.groupIterations[group.id]) + 1}</em>}<button className="group-edit" title="Edit group" onPointerDown={(event) => event.stopPropagation()} onClick={() => setGroupEditor(group.id)}><Settings2/></button></div>
+                <div className="execution-group-header" title="Drag to move the group" onPointerDown={(event) => { if (event.button !== 0 || drag.current || (event.target as Element).closest(".group-edit")) return; event.preventDefault(); event.stopPropagation(); const ids = [...memberIds], positions = Object.fromEntries(nodes.filter((item) => memberIds.has(item.id)).map((item) => [item.id, { ...item.position }])); drag.current = { ids, positions, startX: event.clientX, startY: event.clientY, pointerId: event.pointerId, captureTarget: event.currentTarget }; event.currentTarget.setPointerCapture(event.pointerId); setSelectedIds(ids); setSelected(ids[0] || ""); }}><Workflow/><b>{group.name}</b><small>{group.type.replaceAll("_", " ")}</small>{debugState?.groupIterations?.[group.id] !== undefined && <em>iteration {Number(debugState.groupIterations[group.id]) + 1}</em>}<button className="group-edit" title="Edit group" onPointerDown={(event) => event.stopPropagation()} onClick={() => setGroupEditor(group.id)}><Settings2/></button></div>
               </section>;
             })}
             <svg className="wires" style={{ width: Math.max(1400, ...nodes.map((n) => n.position.x + 260)), height: Math.max(750, ...nodes.map((n) => n.position.y + 150)) }}>
@@ -3458,13 +3506,8 @@ function App() {
             </svg>
             {selectionBox && <div className="canvas-selection-box" style={{ left: Math.min(selectionBox.startX, selectionBox.x), top: Math.min(selectionBox.startY, selectionBox.y), width: Math.abs(selectionBox.x - selectionBox.startX), height: Math.abs(selectionBox.y - selectionBox.startY) }} />}
             {nodes.map((n) => {
-              const def = packs
-                .flatMap((p) => p.items)
-                .find(
-                  (d) =>
-                    d.type === n.type &&
-                    (!d.operation || d.operation === n.config.operation),
-                ) || packs.flatMap((p) => p.items).find((d) => d.type === n.type);
+              const definitions = canvasDefinitions.get(n.type);
+              const def = definitions?.find(d => !d.operation || d.operation === n.config.operation) || definitions?.[0];
               return (
                 <button
                   key={n.id}
@@ -3472,7 +3515,7 @@ function App() {
                   className={`node ${selectedIds.includes(n.id) ? "selected" : ""} ${selectedIds.length > 1 && selectedIds.includes(n.id) ? "multi-selected" : ""} ${currentActivityIds.has(n.id) ? "debug-current" : ""} ${executionOutputs[n.id] ? "runtime-executed" : ""}`}
                   style={{ left: n.position.x, top: n.position.y }}
                   onPointerDown={(e) => {
-                    if (e.button !== 0) return;
+                    if (e.button !== 0 || drag.current) return;
                     e.preventDefault();
                     e.stopPropagation();
                     const additive = e.ctrlKey || e.metaKey || e.shiftKey;
@@ -3605,7 +3648,7 @@ function App() {
                     activities: t.activities.map((n) => n.id === selected
                       ? { ...n, ...c, id: to, name: to }
                       : { ...n, config: rewriteActivityReference(n.config, from, to) }),
-                    transitions: t.transitions.map((edge) => ({ ...edge, source: edge.source === selected ? to : edge.source, target: edge.target === selected ? to : edge.target })),
+                    transitions: t.transitions.map((edge) => ({ ...edge, bw_xpath: rewriteBwEdgeVariables(edge, { [selected]: to }), source: edge.source === selected ? to : edge.source, target: edge.target === selected ? to : edge.target })),
                     groups: (t.groups || []).map((group) => ({ ...group, member_activity_ids: group.member_activity_ids.map((id) => id === selected ? to : id) })),
                   };
                 });
@@ -3715,7 +3758,7 @@ function App() {
         hidden
         ref={fileInput}
         type="file"
-        accept=".mpackage,.mpkg,.ifproject,.ifpackage,.ifpkg,.zip,.json"
+        accept=".mpackage,.mpkg,.ifproject,.ifpackage,.ifpkg,.zip,.json,.bwp"
         onChange={(e) =>
           e.target.files?.[0] && importProject(e.target.files[0])
         }
@@ -4243,16 +4286,16 @@ function StudioRibbon(props: any) {
   </section>;
 }
 function OpenProjectSourceDialog({ onClose, onFile, onFolder, title = "Open MINA project", actionLabel = "Browse", exportMode = false }: any) {
-  type ProjectSource = "mpackage" | "mpkg" | "legacy" | "zip" | "json" | "folder";
+  type ProjectSource = "mpackage" | "mpkg" | "legacy" | "zip" | "json" | "bwp" | "folder";
   const [source, setSource] = useState<ProjectSource>("mpackage");
   const choices: Array<[ProjectSource, string, string]> = [
     ["mpackage", ".mpackage", exportMode ? "Export complete MINA project package" : "Complete MINA project package"],
     ["mpkg", ".mpkg", exportMode ? "Export deployment package" : "MINA deployment package"],
-    ["zip", "ZIP", "ZIP project archive"],
+    ["zip", "ZIP", exportMode ? "ZIP project archive" : "MINA package or BusinessWorks project ZIP"],
     ["json", "JSON", "Project JSON descriptor"],
     ["folder", "Structured project folder", "Folder containing project.json and project content"],
   ];
-  if (!exportMode) choices.splice(2, 0, ["legacy", "Legacy MINA packages", ".ifproject, .ifpackage, and .ifpkg remain importable"]);
+  if (!exportMode) choices.splice(2, 0, ["bwp", "BusinessWorks process (.bwp)", "Import activity bindings as Mapper tasks"], ["legacy", "Legacy MINA packages", ".ifproject, .ifpackage, and .ifpkg remain importable"]);
   return <ModalLayer className="modal-backdrop"><div className="runtime-modal" role="dialog" aria-modal="true" aria-labelledby="open-project-title">
     <header><b id="open-project-title">{title}</b><button onClick={onClose} aria-label="Close">×</button></header>
     <main><p>Select the project format, then browse for the matching file or folder.</p><div className="open-project-source-options">{choices.map(([value, label, detail]) => <label key={value}><input type="radio" name={exportMode ? "export-source" : "project-source"} checked={source === value} onChange={() => setSource(value)}/><span><b>{label}</b><small>{detail}</small></span></label>)}</div></main>
@@ -4807,7 +4850,7 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, im
       </section>
     </main>
     <footer><span><ShieldCheck/> Enterprise integration development</span><span>DESIGN TIME <i/> RUNTIME <i/> DEPLOYMENT</span></footer>
-    <input ref={input} hidden type="file" accept=".mpackage,.mpkg,.ifproject,.ifpackage,.ifpkg,.zip,.json" onChange={(event) => void importFile(event.target.files?.[0])}/>
+    <input ref={input} hidden type="file" accept=".mpackage,.mpkg,.ifproject,.ifpackage,.ifpkg,.zip,.json,.bwp" onChange={(event) => void importFile(event.target.files?.[0])}/>
     {samplesOpen && <SampleGallery
       onClose={() => setSamplesOpen(false)}
       onImport={importProject}
@@ -6223,7 +6266,7 @@ function EdgeConfig({ edge, properties, update, onDelete }: any) {
   const evaluate = async () => {
     setTesting(true);
     try {
-      const context = JSON.parse(sample), response = await fetch("/api/conditions/evaluate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expression: edge.condition || "", context }) });
+      const context = JSON.parse(sample), response = await fetch("/api/conditions/evaluate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ expression: edge.condition || "", bw_xpath: edge.bw_xpath, context }) });
       const output = await response.json(); setResult(response.ok ? output.result : output.detail || "Evaluation failed");
     } catch (error: any) { setResult(error.message); }
     setTesting(false);

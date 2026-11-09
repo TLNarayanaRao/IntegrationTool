@@ -33,7 +33,24 @@ body[data-theme="plain-studio"] {
   --accent2: #276b46;
   --selection: #dceff2;
 }
-body:is([data-theme="plain-classic"], [data-theme="plain-studio"]) {
+body[data-theme="plain-bw"] {
+  --plain-panel-radius: 0px;
+  --plain-control-radius: 2px;
+  --plain-card-radius: 2px;
+  --plain-badge-radius: 2px;
+  --shell: #e9eaec;
+  --panel: #e2e4e7;
+  --panel2: #f3f4f5;
+  --surface: #ffffff;
+  --field: #ffffff;
+  --line: #b5bac2;
+  --text: #22252b;
+  --muted: #555d69;
+  --accent: #1b5a98;
+  --accent2: #286b43;
+  --selection: #d4e6fa;
+}
+body:is([data-theme="plain-classic"], [data-theme="plain-studio"], [data-theme="plain-bw"]) {
   --glow: transparent;
   --plain-scheme: light;
   --plain-grid: #c8cdd1;

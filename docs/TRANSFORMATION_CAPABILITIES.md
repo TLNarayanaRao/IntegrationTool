@@ -3,6 +3,129 @@
 The Mapper remains the transformation activity. General activities provide
 durable message composition and recovery without reintroducing Mediation.
 
+## ActiveMatrix BusinessWorks 6.12 Mapper comparison
+
+This comparison uses the 6.12.0 product documentation and MINA regression tests.
+Matching a documented interaction does not establish compatibility with a
+BusinessWorks project or with the BusinessWorks runtime. The comparison does
+not include a live BusinessWorks installation.
+
+| Capability | Documented BW 6.12 behavior | MINA behavior |
+| --- | --- | --- |
+| Schema design | The schema editor exposes element types and occurrences. Source coercions can specialize schema elements and their cardinality. | The Mapper can expose multiple named views of one source, with a schema, an optional named XSD complex type, and a separate occurrence range for each view. The original source stays available. |
+| XPath design | The builder lists functions and accepts schema elements in function argument placeholders. | The searchable palette is populated from MINA's supported XPath 1.0 and 2.0 signatures, XML Schema constructors, and implemented TIBCO functions. Arguments accept draggable sample XML fields. Java plug-ins and BW runtime-specific functions remain outside the portable palette. |
+| Migration fixes | BW provides version and type fixes for selected migrated expressions. | A mapping can preview both XPath versions on the same sample and use a version override for that expression. The builder can also add a supported target-type constructor. BW's migration diagnostics and project-wide repairs remain open. |
+| Conditional and repeating mappings | If, Choose, For-Each, For-Each-Group, and repeated occurrences shape output. | MINA supports those statements and can generate editable XSLT for supported rules, including nested groups and independently mapped duplicates. |
+| Runtime bindings | Mapper preferences can detect a stored runtime XSLT that differs from the current mapping. | In generated mode, Map & Test, Run, Debug, and both Python archives use the current visual rules. A manually selected stylesheet retains its own execution mode. |
+| Optional and nil values | Mapper preferences control implicit existence guards and optional nil-to-optional mappings. | Generated bindings distinguish missing fields from `xsi:nil` and expose existence checks, nil propagation, and optional nil suppression. XML output can be checked against the target XSD. |
+| Smart Mapper | Smart Mapper ranks candidates using schema features and can record and share manual selections. | Studio users connected to the same MINA server can share reviewed field pairs. BW model and shared database integration remain open. |
+
+Vendor references include [BusinessWorks 6.12 Application Development](https://docs.tibco.com/pub/activematrix_businessworks/6.12.0/doc/pdf/TIB_BW_6.12.0_application_development.pdf),
+[Bindings and Palette Reference](https://docs.tibco.com/pub/activematrix_businessworks/6.12.0/doc/pdf/TIB_bwce_6.12.0_bindings_palettes_reference.pdf),
+and [Migration Guide](https://docs.tibco.com/pub/activematrix_businessworks/6.12.0/doc/pdf/TIB_BW_6.12.0_migration.pdf).
+
+### XML expressions and bindings
+
+In Mapper **Configuration**, choose the XPath version and expand **XML
+expressions and runtime binding**. Set the XML source to a mapping path such as
+`${last.xmlString}`, or leave it empty to use the previous activity's XML
+output. Add namespace prefixes and variables as JSON objects. For example,
+`{"ord":"urn:orders"}` binds a namespace and
+`{"minimum":"${input.minimum}"}` binds a value to `$minimum`.
+
+In **Input**, enter an expression such as
+`xpath('string(/ord:orders/ord:order[@id=$minimum]/@id)')`.
+The **XPath expression builder** can test a raw formula against sample XML or
+a JSON envelope and apply it to the selected target. Choose a function to
+display its arguments. Drag a sample XML field into an argument, or select the
+field and use the argument's button. In XPath 2.0, the target cast action wraps
+the current formula in the target's supported XML Schema constructor.
+XPath node selections return sequences. Use an XPath scalar function when the
+target expects one value. Map & Test accepts raw XML or a JSON input envelope.
+XPath resource loading is disabled. XPath 2.0 regex functions run in an isolated
+worker with a deadline.
+
+Import an `.xsl` or `.xslt` file or edit the binding directly to select manual
+XSLT. A manual XSLT 1.0 or 2.0 binding publishes `xmlString` and
+structured XML values. Select a target XSD to validate the generated XML.
+Referenced XSDs must be present in project schemas under their declared
+locations. Stylesheets run with file and network access disabled. XML inputs,
+stylesheets, and parsed results are limited to 8 MiB per document. XSLT 2.0
+runs in a separate SaxonC worker with a scrubbed environment and a deadline.
+The configured XML variables also supply stylesheet parameters. XSLT 2.0
+accepts XML-valued parameters as document nodes.
+
+In **Configuration**, use **Source type overrides** to coerce specific source
+paths before formulas and XML parameter binding. For example,
+`{"input.order.amount":"decimal"}` converts the input amount to a number.
+
+In **Input → Source coercions and cardinality**, create named views of the same
+source path. Set optional, exactly one, repeating, or at least one. Select a
+project schema to copy its contract into the view, or enter an inline contract.
+For XML, a named complex type must be valid for the source element's declaration.
+For JSON, the selected contract validates each occurrence. Choose a view or one
+of its fields from Data Sources. Occurrence ranges and type validation apply
+when a rule reads that view. Source views run in visual mapping mode.
+
+In the XPath builder, use **Check XPath 1.0 quick fix** or **Check XPath 2.0
+quick fix** to compare the two evaluations. Apply a passing fix to the selected
+visual mapping. Other mappings keep their existing XPath version. A matching
+sample result does not establish equivalence for every possible input.
+
+In **Input → Open visual AI Mapper**, use **Download XSLT** to save the active
+stylesheet or generate XSLT 2.0 from direct rules. Generation supports XML element
+paths, scalar constants, If, Choose, For-Each, For-Each-Group, nested loops,
+and duplicate loop occurrences with mapped children. It supports trim,
+normalize space, and case conversion. A selected
+XSD must have one root and a uniform element qualification policy. Supply an
+XML sample with the named document root for testing. Use **Open XSLT** to restore
+the editable mappings from a generated file. **Use generated XSLT** binds
+execution to the current visual rules. **Generated XML binding preferences**
+controls optional field existence checks, suppression when a nil source maps
+to an optional non-nillable target, and copying `xsi:nil` to nillable targets.
+Generated conditions accept XML field paths, scalar literals, comparisons,
+and logical operators. Custom functions and mapping statements outside this
+subset require a handwritten stylesheet.
+
+BusinessWorks XML bindings can use the vendor namespace for `trim`,
+`upper-case`, `lower-case`, `left`, `right`, `concat-sequence`, `xor`,
+`substring-before-last`, `substring-after-last`, `timestamp`,
+`base64-to-hex`, and `hex-to-base64`.
+`getModuleProperty` reads scalar MINA project
+properties supplied to the execution. Java system properties, proprietary
+extensions, and custom Java XPath functions require a separate migration.
+
+### BusinessWorks project import
+
+Open a `.bwp` file or a BusinessWorks project ZIP through Studio's project
+import. Supported sequences, simple scopes, conditional XPath links,
+no-match links, error links, static subtask calls, Mapper bindings, XML render,
+file activities, and basic outbound HTTP requests become MINA activities.
+Supported HTTP, JMS and Timer event definitions become native starters.
+HTTP XML reply bindings become response activities. The importer also reads
+supported HTTP client and server settings, non-XA JDBC resources and static
+SQL activities, and JMS text-message activities with direct or JNDI connections.
+Passwords are represented by empty deployment properties. Project XSDs are included. Check the
+import messages in Studio for processes and settings that need review.
+Unsupported processes can contribute standalone Mapper tasks for their
+recoverable bindings. Supply original activity variables as task input for
+these standalone tasks. REST/SOAP service descriptors, explicit BPEL join
+expressions, XA transactions, vendor-specific JDBC/JMS features, and proprietary
+transport policies still need manual conversion.
+
+### Shared Smart Mapper learning
+
+Use **Share reviewed mappings** in Visual AI Mapper after reviewing direct
+field mappings. The Studio server stores field paths and schema fingerprints.
+Recommendations for the same source and target schema rank shared field pairs
+first. Disabled rules, pending suggestions, formulas, and literal values
+are excluded from learning. The catalog is stored in the Studio server's
+data directory and is available to Studio users connected to that server.
+
+Both Python archive formats include `requirements-mapper.txt` when they use
+XML bindings. Install those dependencies in the target runtime before running
+the archive.
+
 ## Mapper tests, templates and contracts
 
 Open **Map & Test** and expand **Saved transformation tests**. Give each case a

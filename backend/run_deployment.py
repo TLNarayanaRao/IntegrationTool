@@ -145,4 +145,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ['--mina-xslt-worker']:
+        from app.mapper_xml import xslt_worker
+        raise SystemExit(xslt_worker())
     raise SystemExit(main())

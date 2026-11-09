@@ -534,7 +534,14 @@ class WorkflowRuntime(DataFormats):
         out. Otherwise all normal success edges (or all success_no_match edges)
         are returned.
         """
-        conditional = [edge for edge in outgoing if edge.type == 'success_condition' and self.condition(edge.condition, context)]
+        def matches(edge):
+            if edge.bw_xpath is not None:
+                from .mapper_xml import bw_transition_condition
+                return bw_transition_condition(edge.condition, edge.bw_xpath, lambda path: get_path(context, path),
+                                               context.get('properties', {}))
+            return self.condition(edge.condition, context)
+
+        conditional = [edge for edge in outgoing if edge.type == 'success_condition' and matches(edge)]
         # Older project files omitted the type on ordinary success edges;
         # preserve their historical behavior as executable success paths.
         success = [edge for edge in outgoing if edge.type in ('success', None)]
@@ -680,7 +687,7 @@ class WorkflowRuntime(DataFormats):
 
     def resolve_activity_config(self, activity: Activity, ctx: dict):
         # Resolve environment, input, variable, and previous-output expressions in every activity field.
-        literal_keys = {'mappings', 'inputMappings', 'targetSchema', 'targetSchemaText', 'schemaText', 'interfaceSchemaText', 'lookupTables', 'testCases', 'templateHistory', 'customFunctions', 'contractBaseline'}
+        literal_keys = {'mappings', 'inputMappings', 'targetSchema', 'targetSchemaText', 'sourceSchemaText', 'schemaText', 'interfaceSchemaText', 'lookupTables', 'testCases', 'templateHistory', 'customFunctions', 'contractBaseline', 'xmlSource', 'xmlStylesheet', 'xmlNamespaces', 'xmlVariables', 'sourceTypeOverrides', 'sourceCoercions'}
         cfg = self.resolve({key: value for key, value in activity.config.items() if key not in literal_keys}, ctx)
         cfg.update({key: value for key, value in activity.config.items() if key in literal_keys})
         if activity.type in ('mapper', 'transform', 'ai_transform') and cfg.get('targetSchemaId'):
@@ -897,6 +904,8 @@ class WorkflowRuntime(DataFormats):
                 return {'confirmed': False, 'count': 0, 'ackIds': [], 'technologies': []}
             return await self.confirm_messages(handles)
         if activity.type in ('mapper', 'transform', 'ai_transform'):
+            if cfg.get('xmlStylesheet') or cfg.get('generatedXmlBinding') or cfg.get('sourceCoercions'):
+                cfg['xmlSchemaDocuments'] = {asset.name: asset.content for asset in getattr(ctx.get('project'), 'schemas', []) if asset.name.lower().endswith('.xsd')}
             source = {
                 **(ctx['last'] if isinstance(ctx.get('last'), dict) else {}),
                 'last': ctx.get('last'), 'input': ctx.get('input'),

@@ -32,10 +32,12 @@ def normalize_rules(mappings):
 def test_mapping(config, value):
     # Tests emulate the selected upstream output, without invoking connectors.
     document = {**(value if isinstance(value, dict) else {}), 'input': value, 'last': value}
-    options = {**config, 'validateOutput': False}
+    xml_binding = bool(config.get('xmlStylesheet'))
+    options = {**config, '_mapperSample': True}
+    if not xml_binding: options['validateOutput'] = False
     result = execute(document, normalize_rules(config.get('mappings', [])), options)
     schema = config.get('targetSchema') or config.get('targetSchemaText')
-    errors = validate_output(result, schema) if config.get('validateOutput', True) else []
+    errors = validate_output(result, schema) if not xml_binding and config.get('validateOutput', True) else []
     return {'output': result, 'valid': not errors, 'validationErrors': errors}
 
 
@@ -100,7 +102,7 @@ def schema_impact(previous, current, mappings=None):
             'affectedTargets': sorted(set(affected)), 'contractChanges': contract_changes}
 
 
-ASSET_KEYS = ('mappings', 'targetSchema', 'targetSchemaText', 'sourceSchema', 'sourceSchemaText', 'lookupTables', 'testCases', 'maxIterations', 'maxExecutionMs', 'maxOutputSizeKb', 'nullPolicy', 'typeCoercion', 'customFunctions', 'copyNil', 'removeEmptyStructures', 'trimStrings', 'defaultValue', 'onMappingError', 'validateOutput', 'maxSuiteMs', 'maxBatchSizeKb')
+ASSET_KEYS = ('mappings', 'targetSchema', 'targetSchemaText', 'sourceSchema', 'sourceSchemaText', 'lookupTables', 'testCases', 'maxIterations', 'maxExecutionMs', 'maxOutputSizeKb', 'nullPolicy', 'typeCoercion', 'customFunctions', 'copyNil', 'removeEmptyStructures', 'trimStrings', 'defaultValue', 'onMappingError', 'validateOutput', 'maxSuiteMs', 'maxBatchSizeKb', 'xmlSource', 'xmlStylesheet', 'xmlNamespaces', 'xmlVariables', 'sourceTypeOverrides', 'xpathVersion')
 
 
 def template(config, name, version):

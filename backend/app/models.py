@@ -38,6 +38,7 @@ class Transition(BaseModel):
     label: str = ''
     type: Literal['success', 'success_condition', 'success_no_match', 'error'] = 'success'
     condition: str = ''
+    bw_xpath: dict[str, Any] | None = None
     color: str = Field(default='', pattern=r'^(#[0-9a-fA-F]{6})?$')
 
 class EnvironmentProperty(BaseModel):
