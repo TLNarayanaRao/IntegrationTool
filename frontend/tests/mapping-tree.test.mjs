@@ -48,3 +48,15 @@ test('large schemas use indexed lookups rather than scanning every field for eac
   assert.equal(rows.length,3001);
   assert.ok(pathReads < 3000 * 12, `Expected linear field access; observed ${pathReads} reads`);
 });
+
+test('an unmapped repeat can have an empty copy and nested copies stay in their parent occurrence', () => {
+  const rows = mappingTreeRows(fields, [
+    {target:'Orders.Order',operator:'for-each',source:'',occurrenceId:'outer',duplicateOf:'primary'},
+    {target:'Orders.Order.Price',operator:'for-each',source:'',occurrenceId:'inner',duplicateOf:'outer',parentOccurrenceId:'outer'},
+  ]);
+  const outer = rows.find(row => row.duplicateRoot && row.occurrenceId === 'outer');
+  const inner = rows.find(row => row.duplicateRoot && row.occurrenceId === 'inner');
+  assert.ok(outer && inner);
+  assert.ok(inner.ancestors.includes(outer.key));
+  assert.equal(inner.rule.source, '');
+});

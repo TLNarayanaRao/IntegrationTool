@@ -43,7 +43,13 @@ export function mappingTreeRows(fields: MappingTreeField[], mappings: any[] | Re
       result.push({kind:'grouping', key:`${key}:grouping`, field, rule, depth:depth+1, ancestors:[...ancestors,key], occurrenceId, hasChildren:false});
     }
     descendants.forEach(child => visit(child, depth + 1, [...ancestors, key], occurrenceId));
-    if (!occurrenceId) for (const duplicate of duplicates.get(field.path) || []) {
+    if (!duplicateRoot) for (const duplicate of duplicates.get(field.path) || []) {
+      if (duplicate.parentOccurrenceId !== occurrenceId) continue;
+      // Older saved copies may lack duplicateOf. A loop inside their subtree is not itself a copy.
+      if (!duplicate.duplicateOf && ancestors.some(key => {
+        const prefix = key.slice(key.indexOf(':') + 1).replace(/:loop$/, '');
+        return prefix !== field.path && ruleIndex.get(prefix)?.has(duplicate.occurrenceId);
+      })) continue;
       visit(field, depth, loop ? ancestors.slice(0, -1) : ancestors, duplicate.occurrenceId, true);
     }
   }

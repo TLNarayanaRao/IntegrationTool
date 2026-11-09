@@ -223,7 +223,7 @@ function MappingContextMenu({ menu, value, close, change, remove, duplicate, can
         apply({$rule: 'choose', source: JSON.stringify(branches), whens: branches, otherwise: value?.otherwise ?? ''});
       }}>Create branches</button></div>
     </section>}
-    <button disabled={!canDuplicate && !value} onClick={() => { if (duplicate) duplicate(); else change(typeof value === "object" ? { ...value, duplicateOf: `${menu.path}-${Date.now()}` } : { $rule: "if", source: value, condition: "true()", duplicateOf: `${menu.path}-${Date.now()}` }); close(); }}>Duplicate {canDuplicate ? "repeating occurrence" : "mapping"}</button>
+    <button disabled={duplicate ? !canDuplicate : !value} onClick={() => { if (duplicate) duplicate(); else change(typeof value === "object" ? { ...value, duplicateOf: `${menu.path}-${Date.now()}` } : { $rule: "if", source: value, condition: "true()", duplicateOf: `${menu.path}-${Date.now()}` }); close(); }}>Duplicate mapping</button>
     <button disabled={!value} className="danger" onClick={() => { remove(); close(); }}>Delete mapping</button>
   </div>;
   return createPortal(content, document.body);
@@ -2386,10 +2386,10 @@ function ExpandedInputMappingDialog({ title, mappingCount, onClose, onApply, chi
   </ModalLayer>, document.body);
 }
 
-function LoopMappingRow({ row, collapsed, toggle, patch, remove, duplicate, sources }: { row: MappingTreeRow; collapsed: boolean; toggle: (key: string) => void; patch: (value: any) => void; remove: () => void; duplicate?: () => void; sources: any[] }) {
+function LoopMappingRow({ row, collapsed, toggle, patch, remove, duplicate, sources, onContextMenu }: { row: MappingTreeRow; collapsed: boolean; toggle: (key: string) => void; patch: (value: any) => void; remove: () => void; duplicate?: () => void; sources: any[]; onContextMenu?: React.MouseEventHandler<HTMLDivElement> }) {
   const grouped = (row.rule.operator || row.rule.$rule) === "for-each-group";
   const paths = ["input", "last", "current-group()", ...(sources || []).flatMap((source: ActivitySource) => [activityReferenceName(source.activity.name), ...source.fields.map(field => `${activityReferenceName(source.activity.name)}.${field.key}`)])];
-  return <div className={`mapping-loop-row ${row.kind === "grouping" ? "mapping-grouping-row" : ""}`} data-target={row.kind === "loop" ? `${row.key}:source` : undefined} style={{ paddingLeft: 10 + row.depth * 16 }} onContextMenu={event => event.stopPropagation()} onDragOver={event => {event.preventDefault();event.stopPropagation();}} onDrop={event => {
+  return <div className={`mapping-loop-row ${row.kind === "grouping" ? "mapping-grouping-row" : ""}`} data-target={row.kind === "loop" ? `${row.key}:source` : undefined} style={{ paddingLeft: 10 + row.depth * 16 }} onContextMenu={event => {event.stopPropagation(); if (row.kind === "loop") onContextMenu?.(event);}} onDragOver={event => {event.preventDefault();event.stopPropagation();}} onDrop={event => {
     event.preventDefault();event.stopPropagation();const value=event.dataTransfer.getData("expression");if(!value)return;
     if(row.kind === "grouping") {
       const source = String(mappingSource(row.rule) || "").replace(/^\$\{|\}$/g, "");
@@ -2569,14 +2569,23 @@ function TransformInputEditor({ config, properties, sources, runtimeVariables = 
   };
   const mapConstant = (target: string, constant: any) => setMappings([...mappings.filter((rule: any) => !(rule.target === target && !rule.occurrenceId)), { target, constant, targetType: fields.find((field) => field.path === target)?.type || "any", functions: [], enabled: true }]);
   const duplicateOccurrence = (target: string, selectedOccurrence?: string) => {
-    const sourceLoop = mappings.find((rule: any) => rule.target === target && ["for-each", "for-each-group"].includes(rule.operator) && rule.occurrenceId === selectedOccurrence);
-    if (!sourceLoop) return;
+    const field = fields.find(field => field.path === target);
+    if (!field?.repeating) return;
+    const selectedRule = mappings.find((rule: any) => rule.target === target && rule.occurrenceId === selectedOccurrence);
+    const operator = selectedRule?.operator === 'for-each-group' ? 'for-each-group' : 'for-each';
+    const parentOccurrenceId = selectedRule?.duplicateOf ? selectedRule.parentOccurrenceId : selectedOccurrence;
     const occurrenceId = `occurrence-${crypto.randomUUID()}`;
-    setMappings([...mappings, { target, targetType: sourceLoop.targetType, operator: sourceLoop.operator,
-      source: "", ...(sourceLoop.operator === "for-each-group" ? { groupBy: "" } : {}),
-      functions: [], enabled: true, occurrenceId, duplicateOf: sourceLoop.occurrenceId || "primary" }]);
+    setMappings([...mappings, { target, targetType: field.type, operator,
+      source: "", ...(operator === "for-each-group" ? { groupBy: "" } : {}),
+      functions: [], enabled: true, occurrenceId, parentOccurrenceId, duplicateOf: selectedOccurrence || "primary" }]);
   };
-  const removeOccurrence = (occurrenceId: string) => setMappings(mappings.filter((rule: any) => rule.occurrenceId !== occurrenceId));
+  const removeOccurrence = (occurrenceId: string) => {
+    const removed = new Set([occurrenceId]);
+    for (const id of removed) for (const rule of mappings) {
+      if (rule.parentOccurrenceId === id && rule.occurrenceId) removed.add(rule.occurrenceId);
+    }
+    setMappings(mappings.filter((rule: any) => !removed.has(rule.occurrenceId)));
+  };
   const displayRows = useMemo(() => mappingTreeRows(fields, mappings), [fields, mappings]);
   const updateRule = (target: string, occurrenceId: string | undefined, patch: any) => {
     const previous = mappings.find((item: any) => item.target === target && item.occurrenceId === occurrenceId);
@@ -2599,18 +2608,24 @@ function TransformInputEditor({ config, properties, sources, runtimeVariables = 
   return <><div ref={root} className={`activity-tab mapping-editor transform-input-editor resizable-mapper visual-field-mapper ${expanded ? "expanded-input-workspace" : ""}`} style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}><MemoizedDataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}><span/></div><section><div className="contract-heading mapping-editor-heading"><SettingsTitle title="Target schema mapping" />{!expanded && <button type="button" className="edit-input-mapping" onClick={openDialog}><Pencil/> Edit mappings </button>}{actions}</div><div className="mapper-target-search"><input aria-label="Find target field" placeholder="Find target field…" value={targetSearch} onChange={event=>setTargetSearch(event.target.value)}/><button type="button" onClick={()=>tree.collapseAll(displayRows.filter(row=>row.hasChildren).map(row=>row.key))}>Collapse all</button><button type="button" onClick={tree.expandAll}>Expand all</button></div><div className="target-schema-tree">{filteredRows.map(row => {
     if (!targetSearch.trim() && row.ancestors.some(key => tree.collapsed.has(key))) return null;
     const field = row.field, rule = row.rule, structural = row.hasChildren || isComplexSchemaType(field.type), canMapStructure = structural && field.repeating;
-    if(row.kind !== "field") return <LoopMappingRow key={row.key} row={row} sources={sources} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle} patch={patch => updateRule(field.path,row.occurrenceId,patch)} duplicate={() => duplicateOccurrence(field.path,row.occurrenceId)} remove={() => row.occurrenceId ? removeOccurrence(row.occurrenceId) : updateRule(field.path,undefined,{operator:undefined,select:undefined})}/>;
+    const showMenu = (event: React.MouseEvent) => {
+      if (structural && !canMapStructure) return;
+      event.preventDefault();
+      setSelected(field.path);
+      setContextMenu({x:event.clientX,y:event.clientY,path:field.path,label:field.name,occurrenceId:row.occurrenceId,duplicateRoot:row.duplicateRoot});
+    };
+    if(row.kind !== "field") return <LoopMappingRow key={row.key} row={row} sources={sources} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle} patch={patch => updateRule(field.path,row.occurrenceId,patch)} duplicate={field.repeating ? () => duplicateOccurrence(field.path,row.occurrenceId) : undefined} onContextMenu={showMenu} remove={() => updateRule(field.path,row.occurrenceId,{operator:undefined,select:undefined})}/>;
     const change = (value: any) => {
       if (!row.occurrenceId) {mapTo(field.path,value);return;}
       updateRule(field.path,row.occurrenceId,{source:value,constant:undefined});
     };
-    return <div key={row.key} data-target={row.loopKey || (structural && !canMapStructure) ? undefined : row.key} className={`schema-tree-row ${row.occurrenceId ? "mapping-duplicate-row" : ""} ${row.duplicateRoot ? "mapping-duplicate-root" : ""} ${structural ? "structural-row" : ""} ${selected === field.path ? "selected" : ""}`} style={{paddingLeft:12+row.depth*18}} onClick={() => setSelected(field.path)} onContextMenu={event => {event.preventDefault();if(structural&&!canMapStructure)return;setSelected(field.path);setContextMenu({x:event.clientX,y:event.clientY,path:field.path,label:field.name,occurrenceId:row.occurrenceId});}} onDragOver={event => {if(structural&&!canMapStructure)return;event.preventDefault();event.dataTransfer.dropEffect="copy";}} onDrop={event => {event.preventDefault();const value=event.dataTransfer.getData("expression");if(!value)return;if(row.loopKey)updateRule(field.path,row.occurrenceId,{source:value,select:value});else if(row.occurrenceId)change(value);else mapTo(field.path,value,event.dataTransfer.getData("sourceRepeating")==="true");}}>
+    return <div key={row.key} data-target={row.loopKey || (structural && !canMapStructure) ? undefined : row.key} className={`schema-tree-row ${row.occurrenceId ? "mapping-duplicate-row" : ""} ${row.duplicateRoot ? "mapping-duplicate-root" : ""} ${structural ? "structural-row" : ""} ${selected === field.path ? "selected" : ""}`} style={{paddingLeft:12+row.depth*18}} onClick={() => setSelected(field.path)} onContextMenu={showMenu} onDragOver={event => {if(structural&&!canMapStructure)return;event.preventDefault();event.dataTransfer.dropEffect="copy";}} onDrop={event => {event.preventDefault();const value=event.dataTransfer.getData("expression");if(!value)return;if(row.loopKey)updateRule(field.path,row.occurrenceId,{source:value,select:value});else if(row.occurrenceId)change(value);else mapTo(field.path,value,event.dataTransfer.getData("sourceRepeating")==="true");}}>
       {row.hasChildren ? <TreeToggle path={row.key} label={field.name} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle}/> : <span className="tree-node-dot"/>}
       <span className="tree-field"><b>{field.name}<sup className="cardinality-symbol">{cardinalitySymbol(field)}</sup>{row.duplicateRoot && <button type="button" className="remove-duplicate-mapping" aria-label={`Delete duplicate ${field.name}`} title="Delete duplicate occurrence" onClick={event => {event.stopPropagation(); removeOccurrence(row.occurrenceId!);}}>×</button>}</b><small>{field.type} · {field.minOccurs || "1"}..{field.maxOccurs || "1"}</small></span>
       <span className={`mapping-connection ${rule ? "connected" : ""}`}><i/><ArrowRight/></span>
       {row.loopKey || (structural&&!canMapStructure) ? <span/> : <MappingBinding sourceScope={sourceScopeFor(row)} structural={structural} expression={rule?.operator ? {...rule,$rule:rule.operator} : rule && rule.constant !== undefined ? (typeof rule.constant === "string" ? JSON.stringify(rule.constant) : rule.constant) : rule?.source ?? ""} fieldType={field.type} fieldLabel={`${field.name}${cardinalitySymbol(field)}`} sources={sources} onChange={(value: any) => value?.$rule ? updateRule(field.path,row.occurrenceId,{...value,operator:value.$rule}) : change(value)} onConstantChange={(value: any) => row.occurrenceId ? updateRule(field.path,row.occurrenceId,{constant:value,source:undefined}) : mapConstant(field.path,value)}/>}
     </div>;
-  })}{!fields.length && <div className="contract-empty">Select a project XSD or enter a valid inline target schema on Configuration.</div>}</div></section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextValue} canDuplicate={!!contextField?.repeating && !!contextValue?.operator} duplicate={() => contextMenu && duplicateOccurrence(contextMenu.path,contextMenu.occurrenceId)} close={() => setContextMenu(null)} change={(value: any) => contextMenu && updateRule(contextMenu.path,contextMenu.occurrenceId,value?.$rule ? {...value,operator:value.$rule} : {source:value,operator:undefined})} remove={() => {if (!contextMenu) return; if (contextMenu.occurrenceId && contextField?.repeating) removeOccurrence(contextMenu.occurrenceId); else setMappings(mappings.filter((item:any) => !(item.target === contextMenu.path && item.occurrenceId === contextMenu.occurrenceId)));}}/></div>{dialogOpen && <ExpandedInputMappingDialog title={editorTitle} mappingCount={draftMappings.length} onClose={() => setDialogOpen(false)} onApply={() => { setMappings(draftMappings); setDialogOpen(false); }}><TransformInputEditor config={{ ...config, mappings: draftMappings }} editorTitle={editorTitle} properties={properties} sources={sources} runtimeVariables={runtimeVariables} setMappings={setDraftMappings} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} expanded/></ExpandedInputMappingDialog>}</>;
+  })}{!fields.length && <div className="contract-empty">Select a project XSD or enter a valid inline target schema on Configuration.</div>}</div></section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextValue} canDuplicate={!!contextField?.repeating} duplicate={() => contextMenu && duplicateOccurrence(contextMenu.path,contextMenu.occurrenceId)} close={() => setContextMenu(null)} change={(value: any) => contextMenu && updateRule(contextMenu.path,contextMenu.occurrenceId,value?.$rule ? {...value,operator:value.$rule} : {source:value,operator:undefined})} remove={() => {if (!contextMenu) return; if (contextMenu.duplicateRoot) removeOccurrence(contextMenu.occurrenceId); else setMappings(mappings.filter((item:any) => !(item.target === contextMenu.path && item.occurrenceId === contextMenu.occurrenceId)));}}/></div>{dialogOpen && <ExpandedInputMappingDialog title={editorTitle} mappingCount={draftMappings.length} onClose={() => setDialogOpen(false)} onApply={() => { setMappings(draftMappings); setDialogOpen(false); }}><TransformInputEditor config={{ ...config, mappings: draftMappings }} editorTitle={editorTitle} properties={properties} sources={sources} runtimeVariables={runtimeVariables} setMappings={setDraftMappings} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} expanded/></ExpandedInputMappingDialog>}</>;
 }
 function TransformOutputEditor({ config }: any) {
   const fields = transformSchemaFields(config);

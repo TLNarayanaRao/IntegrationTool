@@ -517,8 +517,8 @@ def validate_xsd_output(document: Any, schema: str, _budget=None) -> list[str]:
         if value is None:
             if minimum: errors.append(f'{path}: required field is not mapped')
             return
+        # A scalar or object represents one XSD occurrence, even when more are allowed.
         values = value if isinstance(value, list) else [value]
-        if maximum not in ('0', '1') and not isinstance(value, list): errors.append(f'{path}: expected repeating value')
         if len(values) < minimum or maximum != 'unbounded' and len(values) > int(maximum): errors.append(f'{path}: occurrence count is outside {minimum}..{maximum}')
         declaration = elements.get(node.attrib.get('ref', '').split(':')[-1], node)
         type_name = declaration.attrib.get('type', 'string').split(':')[-1]
@@ -953,6 +953,23 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
     def under(path: str, parent: str) -> bool:
         return path.startswith(parent + '.')
 
+    # A copy owns its child rules but runs in the scope of the surrounding occurrence.
+    child_loops = {}
+    for loop in loops:
+        scope = loop.get('parentOccurrenceId') if loop.get('duplicateOf') else loop.get('occurrenceId')
+        parents = (candidate for candidate in loops if candidate.get('occurrenceId') == scope
+                   and under(str(loop['target']).strip('.'), str(candidate['target']).strip('.')))
+        parent = max(parents, key=lambda candidate: len(candidate['target']), default=None)
+        child_loops.setdefault(id(parent) if parent is not None else None, []).append(loop)
+    for siblings in child_loops.values():
+        siblings.sort(key=lambda rule: bool(rule.get('duplicateOf')))
+
+    def merge_loop(output, target, generated, loop):
+        if loop.get('duplicateOf') and not generated: return
+        existing = get_path(output, target)
+        previous = existing if isinstance(existing, list) else [existing] if existing is not None else []
+        set_path(output, target, [*previous, *generated])
+
     def resolve_value(rule: dict, scope: Any = None, scope_source: str = ''):
         tick()
         if 'constant' in rule: return rule['constant']
@@ -1054,14 +1071,9 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
         occurrence_id = loop.get('occurrenceId')
         if id(loop) not in loop_plans:
             descendants = [rule for rule in rules if under(str(rule['target']).strip('.'), target) and rule.get('occurrenceId') == occurrence_id]
-            descendant_ids = {id(rule) for rule in descendants}
-            nested_loops = [candidate for candidate in loops if id(candidate) in descendant_ids and not any(
-                other is not candidate and id(other) in descendant_ids and under(str(candidate['target']), str(other['target']))
-                for other in loops
-            )]
-            nested_ids = {id(rule) for rule in nested_loops}
-            nested_targets = [str(candidate['target']).strip('.') for candidate in nested_loops]
-            direct = [rule for rule in descendants if id(rule) not in nested_ids and not any(under(str(rule['target']).strip('.'), nested) for nested in nested_targets)]
+            nested_loops = child_loops.get(id(loop), [])
+            nested_targets = [str(candidate['target']).strip('.') for candidate in nested_loops if not candidate.get('duplicateOf')]
+            direct = [rule for rule in descendants if id(rule) not in loop_ids and not any(under(str(rule['target']).strip('.'), nested) for nested in nested_targets)]
             loop_plans[id(loop)] = (descendants, nested_loops, direct)
         descendants, nested_loops, direct = loop_plans[id(loop)]
         output: list[Any] = []
@@ -1071,6 +1083,10 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
             return values
         for current, current_group in iterations:
             tick()
+            if loop.get('duplicateOf') and not descendants and not nested_loops:
+                item = mapped_value(loop, current)
+                if item is not _OMIT: output.append(item)
+                continue
             loop_contexts.append((current, current_group or [current]))
             item_result: dict[str, Any] = {}
             for child in direct:
@@ -1084,25 +1100,23 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
                 relative_target = _relative_path(str(nested['target']), target)
                 if relative_target:
                     nested_scope = current_group if _clean_path(nested.get('source')) == 'current-group()' else current
-                    set_path(item_result, relative_target, render_loop(nested, nested_scope, loop_source))
+                    merge_loop(item_result, relative_target, render_loop(nested, nested_scope, loop_source), nested)
             output.append(transform_value(item_result, loop.get('functions', [])))
             loop_contexts.pop()
         return output
 
-    top_loops = [loop for loop in loops if not any(other is not loop and under(str(loop['target']), str(other['target'])) for other in loops)]
-    loop_targets = [str(loop['target']).strip('.') for loop in top_loops]
+    top_loops = child_loops.get(None, [])
+    loop_targets = [str(loop['target']).strip('.') for loop in top_loops if not loop.get('duplicateOf')]
     for rule in rules:
         target = str(rule['target']).strip('.')
-        if id(rule) in loop_ids or any(under(target, loop_target) for loop_target in loop_targets): continue
+        if id(rule) in loop_ids or rule.get('occurrenceId') or any(under(target, loop_target) for loop_target in loop_targets): continue
         value, present = conditional_value(rule)
         if not present: continue
         value = mapped_value(rule, value)
         if value is not _OMIT: set_path(result, target, value)
     for loop in top_loops:
         target = str(loop['target'])
-        generated = render_loop(loop)
-        existing = get_path(result, target)
-        set_path(result, target, ([*existing, *generated] if isinstance(existing, list) else generated))
+        merge_loop(result, target, render_loop(loop), loop)
     tick()
     if options.get('removeEmptyStructures'): result = _clean_empty(result)
     schema = options.get('targetSchema') or options.get('targetSchemaText')

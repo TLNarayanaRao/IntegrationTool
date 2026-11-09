@@ -1,4 +1,5 @@
 """Run generated archives outside Studio to verify Mapper/Input execution parity."""
+import asyncio
 import json
 import subprocess
 import sys
@@ -135,6 +136,17 @@ class PythonMapperParityTests(unittest.TestCase):
         payload = {'rows': [{'name': 'A', 'items': [{'value': 1}, {'value': 2}]}], 'other': [{'name': 'B'}]}
         self.assert_exports(self.project(rules), payload, {'rows': [payload['rows'][0], {'name': 'B'}]})
 
+    def test_empty_and_configured_copies_preserve_direct_and_nested_mappings(self):
+        rules = [dict(target='airports', source='${input.primary}'),
+                 dict(target='airports', operator='for-each', source='', occurrenceId='empty', duplicateOf='primary'),
+                 dict(target='airports', operator='for-each', source='${input.extra}', occurrenceId='extra', duplicateOf='primary'),
+                 dict(target='airports.terminals', operator='for-each', source='${input.extra.terminals}', occurrenceId='terminals',
+                      duplicateOf='extra', parentOccurrenceId='extra'),
+                 dict(target='airports.code', source='${input.extra.code}', occurrenceId='extra')]
+        payload = {'primary': {'code': 'PHX'}, 'extra': [{'code': 'LAX', 'terminals': ['A', 'B']}]}
+        self.assert_exports(self.project(rules[:2]), payload, {'airports': payload['primary']})
+        self.assert_exports(self.project(rules), payload, {'airports': [payload['primary'], *payload['extra']]})
+
     def test_new_functions_conditions_grouping_and_activity_references(self):
         rules = [dict(target=target, source=source) for target, source in [
             ('add', 'add(${input.n}, 2)'), ('subtract', 'subtract(${input.n}, 2)'),
@@ -270,6 +282,43 @@ class PythonMapperParityTests(unittest.TestCase):
         self.assertEqual(validate_output({'Root': {'rows': []}}, xsd), [])
         self.assertTrue(validate_output({'Root': {'rows': [{'name': 123}]}}, xsd))
         self.assertTrue(validate_output({'Root': {'rows': [{}]}}, xsd))
+
+    def test_selected_xsd_accepts_direct_mapping_of_one_repeating_element(self):
+        from app.debugger import DebugManager
+        from app.mapper import validate_output
+        from app.models import Project
+        from app.runtime import WorkflowRuntime
+
+        xsd = '''<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+          <xs:element name="airports"><xs:complexType><xs:sequence>
+            <xs:element name="airportlist" minOccurs="1" maxOccurs="2">
+              <xs:complexType><xs:sequence><xs:element name="code" type="xs:string"/></xs:sequence></xs:complexType>
+            </xs:element>
+          </xs:sequence></xs:complexType></xs:element>
+        </xs:schema>'''
+        project = self.project([dict(target='airports.airportlist', source='${input.airportlist}')])
+        project['schemas'] = [dict(id='contract', name='airports.xsd', content=xsd)]
+        project['tasks'][0]['activities'][1]['config']['targetSchemaId'] = 'contract'
+        airport = {'code': 'PHX'}
+        payload = {'airportlist': airport}
+        expected = {'airports': payload}
+
+        async def run_in_studio():
+            studio_project = Project.model_validate(project)
+            runtime = WorkflowRuntime()
+            result = await runtime.run(studio_project.tasks[0], payload, project=studio_project)
+            self.assertEqual((result.status, result.output), ('completed', expected))
+            debugger = DebugManager(runtime)
+            session = debugger.start(studio_project, 'main', payload, {}, {}, [])['sessionId']
+            view = await debugger.action(session, 'continue')
+            self.assertEqual((view['status'], view['output']), ('completed', expected))
+
+        asyncio.run(run_in_studio())
+        self.assert_exports(project, payload, expected)
+        self.assertEqual(validate_output({'airports': {'airportlist': [airport, airport]}}, xsd), [])
+        for invalid in ([], [airport] * 3, {'code': 123}):
+            with self.subTest(value=invalid):
+                self.assertTrue(validate_output({'airports': {'airportlist': invalid}}, xsd))
 
     def test_local_json_refs_enforce_export_literal_types(self):
         project = self.project([dict(target='person.name', source='123')])

@@ -1,11 +1,11 @@
 {
-  "fingerprint": "da0990de83d72b714ed5ffff2de900028a1804d7edf313cea5f4f6de785211c5",
+  "fingerprint": "073c1be1d52948f06d1db55a855f4e29cdf4e0e1f53f1ba26a3bd09d0de9a574",
   "files": {
-    "documentation-data.json": "1c1791b8d3ec17b83eb46bef8dcd9288ac291a719dd650641df36573ba05c012",
-    "documentation-data.js": "2472e58b316d5ebf8a372db78c651204109d9828899a84a6eb1f4a12ac0e586b",
-    "MINA-Documentation.pdf": "e843a57f8fc19a60822549e1dbb21ab2fed45ad5c8ab025fbb7a080b34025807",
-    "developer-data.json": "5e798418dd90fce966673862d48c5703d5a4b3429e2c4626bf6cd4eabbe0b162",
-    "MINA-Developer-Guide.pdf": "083e457bbdbe5737edbd594453716cbb23c97919a2449cb799fbb3ae8ccebbc5",
+    "documentation-data.json": "655e207fa3b55b5ccb688259a261a91b82abb4eee274048895023462c92d15e6",
+    "documentation-data.js": "6ed5a4bdee0a8a8cfa07ad490b249565f274b7a5c9643ebcc21438fa21e6ef2a",
+    "MINA-Documentation.pdf": "c74e6535e204f72451277d6004e45e830b4274b401c9b8330b4527a877e94407",
+    "developer-data.json": "40487b10764cd6b18970f48f8d1c347e7fd73d55e70bd5791871c2a2c6cccb00",
+    "MINA-Developer-Guide.pdf": "17eb5563cae68ca8a3132462fbeb84097fb12aa6053641f41bafe494184a4b3f",
     "activity-icons/f3a93a6e7102-start-play.png": "b5224c82d6600f4066260aaf7a163411a394b2445fc3ecadf3584c7be0299e6f",
     "activity-icons/8ef29f8110cc-scheduler.svg": "8ef29f8110cc4993a5c1a3a635444a6cb0c957fdf1b8725e50278d30c3edb8a9",
     "activity-icons/8ef29f8110cc-scheduler.svg.png": "7d42664f162d20872a44faa3b07a9ea2f33660a9f2ad3811f955a0f7e71c6df5",

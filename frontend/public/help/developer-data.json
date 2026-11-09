@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "da0990de83d72b714ed5ffff2de900028a1804d7edf313cea5f4f6de785211c5",
+  "fingerprint": "073c1be1d52948f06d1db55a855f4e29cdf4e0e1f53f1ba26a3bd09d0de9a574",
   "counts": {
     "activities": 101,
     "groups": 11,
@@ -112,19 +112,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -240,15 +240,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -403,19 +403,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -587,15 +587,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -746,19 +746,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -924,15 +924,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -1087,19 +1087,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -1271,15 +1271,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -1434,19 +1434,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -1618,15 +1618,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -1785,19 +1785,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -1975,15 +1975,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -2134,19 +2134,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -2312,15 +2312,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -2471,19 +2471,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -2649,15 +2649,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -2808,19 +2808,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -2986,15 +2986,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -3145,19 +3145,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -3323,15 +3323,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -3482,19 +3482,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -3660,15 +3660,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -3819,19 +3819,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -3997,15 +3997,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -4152,19 +4152,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -4324,15 +4324,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -4479,19 +4479,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -4651,15 +4651,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -4806,19 +4806,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -4978,15 +4978,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -5133,19 +5133,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -5305,15 +5305,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -5460,19 +5460,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -5632,15 +5632,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -5787,19 +5787,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -5959,15 +5959,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -6114,19 +6114,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -6286,15 +6286,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -6441,19 +6441,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -6613,15 +6613,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -6768,19 +6768,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -6940,15 +6940,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -7095,19 +7095,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -7267,15 +7267,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -7434,19 +7434,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -7624,15 +7624,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -7779,19 +7779,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -7951,15 +7951,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -8118,19 +8118,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -8308,15 +8308,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -8471,19 +8471,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -8655,15 +8655,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -8818,19 +8818,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -9002,15 +9002,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -9169,19 +9169,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -9359,15 +9359,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -9526,19 +9526,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -9716,15 +9716,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -9879,19 +9879,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -10063,15 +10063,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -10226,19 +10226,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -10410,15 +10410,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -10573,19 +10573,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -10757,15 +10757,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -10920,19 +10920,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -11104,15 +11104,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -11267,19 +11267,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -11451,15 +11451,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -11614,19 +11614,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -11798,15 +11798,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -11961,19 +11961,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -12145,15 +12145,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -12308,19 +12308,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -12492,15 +12492,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -12655,19 +12655,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -12839,15 +12839,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -13002,19 +13002,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -13186,15 +13186,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -13349,19 +13349,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -13533,15 +13533,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -13696,19 +13696,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -13880,15 +13880,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -14039,19 +14039,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -14217,15 +14217,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -14376,19 +14376,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -14554,15 +14554,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -14713,19 +14713,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -14891,15 +14891,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -15054,19 +15054,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -15238,15 +15238,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -15401,19 +15401,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -15585,15 +15585,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -15752,19 +15752,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -15942,15 +15942,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -16109,19 +16109,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -16299,15 +16299,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -16466,19 +16466,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -16656,15 +16656,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -16823,19 +16823,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -17013,15 +17013,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -17188,19 +17188,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -17390,15 +17390,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -17557,19 +17557,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -17747,15 +17747,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -17914,19 +17914,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -18104,15 +18104,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -18271,19 +18271,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -18461,15 +18461,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -18628,19 +18628,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -18818,15 +18818,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -18993,19 +18993,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -19195,15 +19195,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -19362,19 +19362,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -19552,15 +19552,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -19719,19 +19719,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -19909,15 +19909,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -20076,19 +20076,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -20266,15 +20266,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -20425,19 +20425,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -20603,15 +20603,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -20762,19 +20762,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -20940,15 +20940,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -21099,19 +21099,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -21277,15 +21277,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -21436,19 +21436,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -21614,15 +21614,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -21773,19 +21773,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -21951,15 +21951,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -22110,19 +22110,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -22288,15 +22288,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -22447,19 +22447,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -22625,15 +22625,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -22784,19 +22784,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -22962,15 +22962,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -23121,19 +23121,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -23299,15 +23299,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -23458,19 +23458,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -23636,15 +23636,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -23795,19 +23795,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -23973,15 +23973,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -24132,19 +24132,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -24310,15 +24310,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -24473,19 +24473,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -24657,15 +24657,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -24820,19 +24820,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -25004,15 +25004,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -25163,19 +25163,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -25341,15 +25341,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -25504,19 +25504,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -25688,15 +25688,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -25843,19 +25843,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -26015,15 +26015,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -26174,19 +26174,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -26352,15 +26352,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -26507,19 +26507,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -26679,15 +26679,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -26834,19 +26834,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -27006,15 +27006,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -27161,19 +27161,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -27333,15 +27333,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -27488,19 +27488,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -27660,15 +27660,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -27819,19 +27819,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -27997,15 +27997,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -28152,19 +28152,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -28324,15 +28324,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -28483,19 +28483,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -28661,15 +28661,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -28820,19 +28820,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -28998,15 +28998,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -29157,19 +29157,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -29335,15 +29335,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -29494,19 +29494,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -29672,15 +29672,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -29831,19 +29831,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -30009,15 +30009,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -30168,19 +30168,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -30346,15 +30346,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -30513,19 +30513,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -30703,15 +30703,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -30862,19 +30862,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -31040,15 +31040,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -31199,19 +31199,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -31377,15 +31377,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -31536,19 +31536,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -31714,15 +31714,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -31873,19 +31873,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -32051,15 +32051,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -32210,19 +32210,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -32388,15 +32388,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -32547,19 +32547,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -32725,15 +32725,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -32884,19 +32884,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -33062,15 +33062,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -33221,19 +33221,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -33399,15 +33399,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -33558,19 +33558,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -33736,15 +33736,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -33895,19 +33895,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -34073,15 +34073,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -34232,19 +34232,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
@@ -34410,15 +34410,15 @@
                 ],
                 [
                   "Output schema editor",
-                  "frontend/src/ActivityEditor.tsx:2656\nfunction OutputEditor("
+                  "frontend/src/ActivityEditor.tsx:2671\nfunction OutputEditor("
                 ],
                 [
                   "Advanced logging/retry UI",
-                  "frontend/src/ActivityEditor.tsx:2706\nfunction AdvancedEditor("
+                  "frontend/src/ActivityEditor.tsx:2721\nfunction AdvancedEditor("
                 ],
                 [
                   "Error handling UI",
-                  "frontend/src/ActivityEditor.tsx:2867\nfunction ErrorEditor("
+                  "frontend/src/ActivityEditor.tsx:2882\nfunction ErrorEditor("
                 ],
                 [
                   "Persisted activity model",
@@ -34569,19 +34569,19 @@
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2656,
+          "line": 2671,
           "symbol": "function OutputEditor(",
           "role": "Output schema editor"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2706,
+          "line": 2721,
           "symbol": "function AdvancedEditor(",
           "role": "Advanced logging/retry UI"
         },
         {
           "file": "frontend/src/ActivityEditor.tsx",
-          "line": 2867,
+          "line": 2882,
           "symbol": "function ErrorEditor(",
           "role": "Error handling UI"
         },
