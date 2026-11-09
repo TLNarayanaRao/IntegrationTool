@@ -12,9 +12,15 @@ import { fieldDescription, missingFieldDescriptions } from './field-documentatio
 import { Resvg } from '@resvg/resvg-js';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const out = path.join(root, 'frontend/public/help');
-const read = name => fs.readFile(path.join(root, name), 'utf8');
+// A checkout may use CRLF even though the generated help files use LF.
+const normalizeLineEndings = text => text.replace(/\r\n/g, '\n');
+const read = async name => normalizeLineEndings(await fs.readFile(path.join(root, name), 'utf8'));
 const slug = text => String(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const sha = text => createHash('sha256').update(text).digest('hex');
+const readHelpAsset = async (directory, name) => {
+ const bytes = await fs.readFile(path.join(directory, name));
+ return /\.(json|js|svg)$/.test(name) ? Buffer.from(normalizeLineEndings(bytes.toString('utf8'))) : bytes;
+};
 const guides = [
  ['Getting started', 'DOCUMENTATION.md'],
  ['Data', 'PARSE_RENDER_ACTIVITIES.md'],
@@ -32,7 +38,7 @@ sources.set('frontend/scripts/field-documentation.mjs', await read('frontend/scr
 const artwork = new Map();
 for (const directory of ['frontend/public/activity-icons','frontend/src/assets/activity-icons']) {
  for (const name of (await fs.readdir(path.join(root,directory))).sort()) {
-  if (/\.(svg|png)$/.test(name)) artwork.set(name, await fs.readFile(path.join(root,directory,name)));
+  if (/\.(svg|png)$/.test(name)) artwork.set(name, await readHelpAsset(path.join(root, directory), name));
  }
 }
 const fingerprint = sha([...sources].map(([name,body]) => `${name}\n${body}`).join('\n') + [...artwork].map(([name,body]) => `${name}:${sha(body)}`).join('\n'));
@@ -40,7 +46,7 @@ if (process.argv.includes('--check')) {
  const receipt = JSON.parse(await read('frontend/public/help/documentation-build.json'));
  if (receipt.fingerprint !== fingerprint) throw new Error('Documentation is stale. Run npm run docs:build (requires Python and reportlab).');
  for (const [name, digest] of Object.entries(receipt.files)) {
-  if (sha(await fs.readFile(path.join(out, name))) !== digest) throw new Error(`Documentation artifact changed or missing: ${name}. Run npm run docs:build.`);
+  if (sha(await readHelpAsset(out, name)) !== digest) throw new Error(`Documentation artifact changed or missing: ${name}. Run npm run docs:build.`);
  }
  console.log('Documentation source coverage and PDF/web fingerprints verified.');
  process.exit(0);
@@ -231,6 +237,6 @@ const developerModel={...model,counts:{...model.counts,pages:development.pages.l
 await fs.writeFile(path.join(out,'developer-data.json'),JSON.stringify(developerModel,null,2)+'\n');
 const developerResult=spawnSync(python,[path.join(root,'scripts/build-documentation-pdf.py'),path.join(out,'developer-data.json'),path.join(out,'MINA-Developer-Guide.pdf')],{stdio:'inherit'});
 if(developerResult.error||developerResult.status!==0)throw new Error('Developer PDF generation failed.');
-const files={};for(const file of ['documentation-data.json','documentation-data.js','MINA-Documentation.pdf','developer-data.json','MINA-Developer-Guide.pdf',...Object.keys(iconFiles)]) files[file]=sha(await fs.readFile(path.join(out,file)));
+const files={};for(const file of ['documentation-data.json','documentation-data.js','MINA-Documentation.pdf','developer-data.json','MINA-Developer-Guide.pdf',...Object.keys(iconFiles)]) files[file]=sha(await readHelpAsset(out,file));
 await fs.writeFile(path.join(out,'documentation-build.json'),JSON.stringify({fingerprint,files,counts:model.counts},null,2)+'\n');
 console.log(JSON.stringify(model.counts));

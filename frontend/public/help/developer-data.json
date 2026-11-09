@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "b0a22cc0443650df9559a43a89840f2022e8dc124da80c1496fd7566e9ab3c05",
+  "fingerprint": "da0990de83d72b714ed5ffff2de900028a1804d7edf313cea5f4f6de785211c5",
   "counts": {
     "activities": 101,
     "groups": 11,
@@ -8590,8 +8590,8 @@
           "role": "Regression suite: engine_export"
         }
       ],
-      "icon": "activity-icons/820577d23ac8-rest-receiver.svg",
-      "iconPdf": "activity-icons/820577d23ac8-rest-receiver.svg.png"
+      "icon": "activity-icons/cb7c5de313b6-rest-receiver.svg",
+      "iconPdf": "activity-icons/cb7c5de313b6-rest-receiver.svg.png"
     },
     {
       "id": "developer-activity-rest-invoke",
@@ -8937,8 +8937,8 @@
           "role": "Regression suite: engine_export"
         }
       ],
-      "icon": "activity-icons/b127dc80bae3-rest-invoke.svg",
-      "iconPdf": "activity-icons/b127dc80bae3-rest-invoke.svg.png"
+      "icon": "activity-icons/3c0a822abbff-rest-invoke.svg",
+      "iconPdf": "activity-icons/3c0a822abbff-rest-invoke.svg.png"
     },
     {
       "id": "developer-activity-soap-service",
