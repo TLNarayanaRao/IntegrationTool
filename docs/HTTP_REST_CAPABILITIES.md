@@ -26,6 +26,12 @@ For HTTP Request and REST Invoke, map the contract, operation ID, reference docu
 
 REST Receiver starts a task when its configured method and path match a request. Add an HTTP response activity to control status, headers and body. Run starts a real listener on the shared connection's host and port, and Stop releases the port. Multiple exported receiver tasks can share a port when their transport settings agree and their routes do not conflict.
 
+Use **HTTP Response** on the same workflow path to reply to a REST Receiver's caller. Studio may name the generated node **HTTP-Send-Response**. Set the status code and map the response body and any headers there.
+
+Select every method you want the receiver to accept. In **Request parameters**, use **URI path** to type a placeholder already in the route, such as `{id}` in `/orders/{id}`. Add **Query** entries for values such as `?details=true` and **Custom header** entries for values such as `X-Tenant`. Set the type and mark any required entries. The receiver returns HTTP 400 if a required value is missing or a declared value has the wrong type. The workflow receives the values in `pathParameters`, `query`, and `headers`, with header names normalized to lowercase. OpenAPI and Postman include these declarations.
+
+Run and Debug show the live listener address. If the connection has a public API base URL, Studio shows that separately as the deployment address. Selecting HTTP on the shared server connection disables TLS and switches HTTP/2 back to HTTP/1.1.
+
 REST Invoke and HTTP Request support URI parameters, default and activity headers/query parameters, JSON, text/XML, form, binary and file bodies, buffered/chunked transfer, response status validation, and optional request/response schema validation. XML requires a text body and the appropriate media type. REST invocation returns `statusCode`, `headers`, `body`, `elapsedMs`, and `httpVersion`; Untouched legacy HTTP Request activities retain their payload response; new requests and requests edited through the Input tree return the response envelope.
 
 Optionally paste an **OpenAPI 3 or Swagger 2 JSON/YAML contract** and select its exact **operation ID**. The operation defines the HTTP method/path, required parameters, media types and request/response schemas. Invocation uses the connection's base URL when supplied, otherwise the contract server URL. A receiver combines its base path with the operation path; without a configured base path it uses the contract server's path. Body validation defaults to enabled. Parameter validation includes required values, arrays, objects, cookies, numeric/string constraints and formats. Operation-level parameters override path-level definitions. Response schemas select exact status, status class (for example `4XX`), then `default`, including error responses before status faults are raised.
@@ -40,12 +46,15 @@ The Studio preview URL uses the same validation and authentication as the real l
 Configuration holds the shared HTTP client connection and optional API contract and schema validation settings. Request values belong in Input, under `RestInputRequest`:
 
 - `Config`: host, port, scheme, requestURI, Method, RequestBody, bodyFormat, query and URI parameters, QueryString, FilePath, timeout in milliseconds, and request policy overrides. Unmapped connection settings supply defaults.
-- `Headers`: accept, content-type, Accept-Charset, Accept-Encoding, Cookie and pragma. Repeating `DynamicHeaders` entries contain name/value pairs. Add or remove entries independently, or map a source collection with For Each. Repeated custom headers retain all values; duplicate dynamic entries for a nonrepeating standard header fail validation. Header names and values must be ASCII and cannot contain line breaks.
+- `Headers`: accept, content-type, Accept-Charset, Accept-Encoding, Cookie and pragma.
+- `CustomHeaders`: choose **Add header** to create a row with separate **name** and **value** mappings. Add or remove rows independently, or map a source collection with **For Each**. Repeated custom headers retain all values. Duplicate entries for a nonrepeating standard header fail validation. Header names and values must be ASCII and cannot contain line breaks.
 - `mimeEnvelopeElement`: repeating `mimePart` entries containing `mimeHeaders` and exactly one of binaryContent (base64), textContent or fileName. MIME headers include content-type, content-transfer-encoding, content-id and content-disposition. File names refer to files available on the runtime host. Multipart messages are buffered by default; `Config.streamRequest` enables bounded streaming within the configured size limit.
 
 Legacy request configuration values appear as Input mappings when opened; editing saves them into the new structure. String constants require quotes; numbers and booleans use native literals, while expressions supply runtime values. Output exposes `RestOutputResponse` with statusLine (httpVersion, statusCode, reasonPhrase), body, asciiContent, binaryContent, Headers, repeating DynamicHeaders and parsed MIME parts. The runtime also retains the envelope's statusCode, headers, body, elapsedMs and httpVersion fields. Input and Output trees show optional and repeating cardinalities.
 
-This organization follows the [BWCE Send HTTP Request input, header and MIME documentation](https://docs.tibco.com/pub/bwce/2.5.3/doc/html/GUID-3E3F3D02-EE74-46C3-935B-ECF1C3D3B618.html), using the requested `RestInputRequest` root. Studio, Direct Python and Engine Python exports use the same request and MIME implementation.
+The request input uses the `RestInputRequest` root. Studio, Direct Python and Engine Python exports use the same request and MIME implementation.
+
+For a request to `/orders/{id}`, map `Config.URIParameters` to an object such as `{"id":"A/B"}` and `Config.QueryParameters` to an object such as `{"tag":["open","priority"]}`. The slash in the ID is encoded as part of the path value, and both tags are sent. To send `X-Tenant: west`, open **CustomHeaders**, choose **Add header**, and map the name to `"X-Tenant"` and the value to `"west"`. A mapped query value overrides the same key from the connection or request URI.
 
 ## Connection configuration
 
@@ -144,9 +153,7 @@ Direct archives can run with `python run.py` after extraction or as a Python zip
 
 ## Reference documentation and scope
 
-The design was compared against the [TIBCO BusinessWorks 6.12 REST Reference](https://docs.tibco.com/pub/activematrix_businessworks/6.12.0/doc/pdf/TIB_BW_6.12.0_rest_reference.pdf), [MuleSoft HTTP connector reference](https://docs.mulesoft.com/http-connector/latest/http-documentation), [HTTP authentication](https://docs.mulesoft.com/http-connector/latest/http-authentication), and [LDAP Basic authentication policy](https://docs.mulesoft.com/mule-gateway/policies-included-basic-auth-ldap). Detailed HTTP client settings were available in the [BW 6.11 HTTP Client reference](https://docs.tibco.com/pub/activematrix_businessworks/6.11.0/doc/html/binding-palette/http-client.htm); the corresponding 6.12 HTML reference was unavailable during review.
-
-This implementation provides the Python capabilities listed above. It does not claim full TIBCO/Mule engine or complete OpenAPI conformance. Java client implementations, Jetty QTP internals, Mule policy deployment, WADL generation, automatic OpenAPI multipart-rule synthesis, incremental inbound multipart-part extraction, provider-specific OAuth browser integrations and vendor-specific security modules remain outside the implementation.
+The HTTP runtime supports the capabilities listed above. Its OpenAPI support covers the operations and validation rules described in this guide.
 
 ## Deployment qualification
 

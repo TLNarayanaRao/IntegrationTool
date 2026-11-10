@@ -53,7 +53,12 @@
               "RestInputRequest.Headers.accept": "\"application/json\"",
               "RestInputRequest.Config.URIParameters": "{\"id\": \"42\"}",
               "RestInputRequest.Config.QueryParameters": "{\"detail\": true}",
-              "RestInputRequest.Headers.DynamicHeaders": "[{\"name\": \"X-Correlation-ID\", \"value\": \"mina-sample-001\"}, {\"name\": \"X-Channel\", \"value\": \"studio\"}]"
+              "RestInputRequest.CustomHeaders.0": "{}",
+              "RestInputRequest.CustomHeaders.0.name": "\"X-Correlation-ID\"",
+              "RestInputRequest.CustomHeaders.0.value": "\"mina-sample-001\"",
+              "RestInputRequest.CustomHeaders.1": "{}",
+              "RestInputRequest.CustomHeaders.1.name": "\"X-Channel\"",
+              "RestInputRequest.CustomHeaders.1.value": "\"studio\""
             }
           }
         },

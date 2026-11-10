@@ -204,11 +204,39 @@ def _java_connection_values(config: dict) -> dict[str, Any]:
     return values
 
 
+_SQL_BIND_TOKENS = re.compile(
+    r"""--[^\r\n]*|/\*.*?\*/|\$(?P<tag>[A-Za-z_][A-Za-z0-9_]*|)\$.*?\$(?P=tag)\$"""
+    r"""|\bq'\[.*?\]'|\bq'\{.*?\}'|\bq'\(.*?\)'|\bq'<.*?>'|\bq'(?P<delimiter>[^\s']).*?(?P=delimiter)'"""
+    r"""|'(?:''|\\.|[^'])*'|"(?:""|[^"])*"|`(?:``|[^`])*`"""
+    r"""|(?<!:):(?P<name>[A-Za-z_][A-Za-z0-9_]*)|(?P<position>(?<!\?)\?(?![|&?]))""",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _named_bindings(sql, parameters, placeholder):
+    names = []
+
+    def replace(match):
+        name = match.group("name")
+        if name is None:
+            return match.group()
+        if name not in parameters:
+            raise JdbcAdapterError(f"Missing SQL parameter: {name}", "InvalidInputException")
+        names.append(name)
+        return placeholder if placeholder is not None else match.group()
+
+    return _SQL_BIND_TOKENS.sub(replace, sql), names
+
+
+def _positional_sql(sql, replacement):
+    return _SQL_BIND_TOKENS.sub(lambda match: replacement() if match.group("position") else match.group(), sql)
+
+
 def _java_parameters(sql: str, parameters: Any) -> tuple[str, list[Any], list[str]]:
     if isinstance(parameters, dict):
-        names = re.findall(r"(?<!:):([A-Za-z_][A-Za-z0-9_]*)", sql)
+        statement, names = _named_bindings(sql, parameters, "?")
         if names:
-            return re.sub(r"(?<!:):[A-Za-z_][A-Za-z0-9_]*", "?", sql), [parameters.get(name) for name in names], names
+            return statement, [parameters[name] for name in names], names
         return sql, list(parameters.values()), list(parameters.keys())
     values = list(parameters or [])
     return sql, values, [f"Parameter{index + 1}" for index in range(len(values))]
@@ -254,13 +282,34 @@ def _java_execute(connection_config: dict, config: dict, worker=None) -> dict:
         values = list(parameters.values()) if isinstance(parameters, dict) else list(parameters or [])
         sql, parameters = "{call " + procedure + "(" + ",".join("?" for _ in values) + ")}", values
     if not sql: raise JdbcAdapterError("An SQL statement is required", "InvalidInputException")
-    sql, parameters, parameter_names = _java_parameters(sql, parameters)
     declared = _parameter_types(config)
-    values = {**_java_connection_values(connection_config), "sql": sql, "parameterCount": len(parameters), "queryTimeoutSeconds": config.get("timeout", 0), "maxRows": config.get("maxRows") if config.get("maxRows") is not None else config.get("maximumRows", 0)}
-    for index, value in enumerate(parameters):
-        data_type = _java_parameter_type(value, declared.get(parameter_names[index], ""))
-        values[f"parameter.{index}.type"] = data_type
-        values[f"parameter.{index}.value"] = _java_parameter_value(value, data_type)
+    maximum, subset, offset = _query_window(config)
+    values = {**_java_connection_values(connection_config), "queryTimeoutSeconds": config.get("timeout", 0),
+              "maxRows": maximum, "subsetSize": subset, "rowOffset": offset}
+
+    def add_statement(statement, rows, prefix=""):
+        for index, row in enumerate(rows):
+            bound_sql, bindings, names = _java_parameters(statement, _empty_as_null(row, config))
+            if index and (bound_sql != values[prefix + "sql"] or len(bindings) != values[prefix + "parameterCount"]):
+                raise JdbcAdapterError("Batch records must use the same SQL parameter style", "InvalidInputException")
+            values[prefix + "sql"] = bound_sql
+            values[prefix + "parameterCount"] = len(bindings)
+            binding_prefix = prefix + (f"batch.{index}." if batch is not None else "")
+            for position, value in enumerate(bindings):
+                data_type = _java_parameter_type(value, declared.get(names[position], ""))
+                values[f"{binding_prefix}parameter.{position}.type"] = data_type
+                values[f"{binding_prefix}parameter.{position}.value"] = _java_parameter_value(value, data_type)
+
+    batch = _write_batch(config, operation)
+    if batch == []:
+        return {"noOfUpdates": 0, "rowCount": 0}
+    if batch is not None:
+        values["batchCount"] = len(batch)
+    rows = batch if batch is not None else [parameters]
+    add_statement(sql, rows)
+    fallback = _insert_fallback(config, operation)
+    if fallback:
+        add_statement(fallback, rows, "fallback.")
     try:
         if worker is not None: return worker.request("execute", values, timeout=float(config.get("timeout") or connection_config.get("timeoutSeconds") or 30) + 5)
         return invoke_java("jdbc.execute", connection_config, values, family=_java_family(connection_config), timeout=float(config.get("timeout") or connection_config.get("timeoutSeconds") or 30) + 5)
@@ -494,7 +543,7 @@ def _parameters(config: dict) -> Any:
         return [item.get("value") if isinstance(item, dict) else item for item in value]
     definitions = _parameter_types(config)
     if isinstance(value, dict):
-        return {key: _coerce_parameter(item, definitions.get(key, "string")) for key, item in value.items()}
+        return _typed_parameters(value, definitions)
     return value
 
 
@@ -519,22 +568,66 @@ def _coerce_parameter(value: Any, data_type: str) -> Any:
     return value
 
 
+def _typed_parameters(values, definitions):
+    return {key: _coerce_parameter(value, definitions[key]) if key in definitions else value
+            for key, value in values.items()}
+
+
+def _empty_as_null(values, config):
+    if config.get("interpretEmptyStringAsNull"):
+        if isinstance(values, dict):
+            return {key: None if value == "" else value for key, value in values.items()}
+        if isinstance(values, (list, tuple)):
+            return [None if value == "" else value for value in values]
+    return values
+
+
+def _write_batch(config, operation):
+    if operation not in ("insert", "update", "delete") or not config.get("batchUpdate"):
+        return None
+    records = config.get("records")
+    if records is None:
+        return None
+    if not isinstance(records, list) or any(not isinstance(row, (list, tuple, dict)) for row in records):
+        raise JdbcAdapterError("Batch records must be a list of parameter records", "InvalidInputException")
+    definitions = _parameter_types(config)
+    return [_typed_parameters(row, definitions) if isinstance(row, dict) else row for row in records]
+
+
+def _insert_fallback(config, operation):
+    if operation != "update" or not config.get("insertIfRecordDoesNotExist"):
+        return ""
+    statement = str(config.get("InsertStatement") or "").strip()
+    if not re.match(r"INSERT\b", statement, re.IGNORECASE):
+        raise JdbcAdapterError("Insert if missing requires an INSERT statement", "InvalidInputException")
+    return statement
+
+
+def _query_window(config):
+    maximum = int(config.get("maxRows") if config.get("maxRows") is not None else config.get("maximumRows") or 0)
+    subset = int(config.get("subsetSize") or 0) if config.get("processInSubsets") else 0
+    offset = int(config.get("rowOffset") or 0) if config.get("processInSubsets") else 0
+    if min(maximum, subset, offset) < 0:
+        raise JdbcAdapterError("Maximum rows, subset size, and row offset cannot be negative", "InvalidInputException")
+    return maximum, subset, offset
+
+
 def _normalize_sql(sql: str, parameters: Any, driver: str):
     if isinstance(parameters, dict):
         if driver == "sqlite":
+            _named_bindings(sql, parameters, None)
             return sql, parameters
-        if driver == "oracle" and re.search(r":[A-Za-z_][A-Za-z0-9_]*", sql):
-            return sql, parameters
-        names = re.findall(r"(?<!:):([A-Za-z_][A-Za-z0-9_]*)", sql)
         placeholder = "?" if driver in ("sqlserver", "mssql", "db2", "databricks") else "%s"
+        statement, names = _named_bindings(sql, parameters, None if driver == "oracle" else placeholder)
         if names:
-            return re.sub(r"(?<!:):[A-Za-z_][A-Za-z0-9_]*", placeholder, sql), [parameters.get(name) for name in names]
-        return (sql if placeholder == "?" else sql.replace("?", placeholder)), list(parameters.values())
-    if driver == "oracle" and isinstance(parameters, (list, tuple)):
-        index = iter(range(1, len(parameters) + 1))
-        return re.sub(r"\?", lambda _: f":{next(index)}", sql), parameters
-    if driver not in ("sqlite", "sqlserver", "mssql", "db2", "databricks"):
-        sql = sql.replace("?", "%s")
+            return (statement, parameters) if driver == "oracle" else (statement, [parameters[name] for name in names])
+        parameters = list(parameters.values())
+    if driver == "oracle":
+        from itertools import count
+        positions = count(1)
+        sql = _positional_sql(sql, lambda: f":{next(positions)}")
+    elif parameters and driver not in ("sqlite", "sqlserver", "mssql", "db2", "databricks"):
+        sql = _positional_sql(sql, lambda: "%s")
     return sql, parameters
 
 
@@ -550,6 +643,7 @@ def execute(connection_config: dict, config: dict, connection=None, manage_trans
     owns_connection = connection is None
     connection = connection or connect(connection_config)
     driver = str(connection_config.get("driver") or "sqlite").lower()
+    cursor = None
     try:
         cursor = connection.cursor()
         timeout = int(config.get("timeout") or 0)
@@ -579,57 +673,82 @@ def execute(connection_config: dict, config: dict, connection=None, manage_trans
             return {"resultSets": result_sets, "outParameters": result, "UnresolvedResultSets": []}
         if not sql:
             raise JdbcAdapterError("An SQL statement is required", "InvalidInputException")
-        def bind(statement, values):
-            statement, values = _normalize_sql(statement, values, driver)
-            if config.get("interpretEmptyStringAsNull"):
-                if isinstance(values, dict):
-                    values = {key: None if value == "" else value for key, value in values.items()}
-                elif isinstance(values, list):
-                    values = [None if value == "" else value for value in values]
-            return statement, values
+        maximum, subset, offset = _query_window(config)
 
-        records = config.get("records") if isinstance(config.get("records"), list) else None
-        if operation in ("insert", "update", "delete") and config.get("batchUpdate") and records:
-            batch = []
-            definitions = _parameter_types(config)
-            statement = sql
-            for row in records:
-                parameters = row
-                if isinstance(row, dict) and definitions:
-                    parameters = {key: _coerce_parameter(value, definitions[key]) if key in definitions else value
-                                  for key, value in row.items()}
-                if driver == "sqlite" and isinstance(parameters, dict) and "?" in sql and not re.search(r"(?<!:):[A-Za-z_][A-Za-z0-9_]*", sql):
-                    parameters = list(parameters.values())
-                bound_statement, parameters = bind(sql, parameters)
-                if batch and bound_statement != statement:
-                    raise JdbcAdapterError("Batch records must use the same SQL parameter style", "InvalidInputException")
-                statement = bound_statement
-                batch.append(parameters)
-            cursor.executemany(statement, batch)
+        def bind(statement, values):
+            return _normalize_sql(statement, _empty_as_null(values, config), driver)
+
+        batch = _write_batch(config, operation)
+        fallback = _insert_fallback(config, operation)
+        if batch == []:
+            return {"noOfUpdates": 0, "rowCount": 0, "lastInsertId": None}
+        if fallback:
+            rows = batch if batch is not None else [_parameters(config)]
+            statements = [(bind(sql, row), bind(fallback, row)) for row in rows]
+            count = 0
+            for (statement, bindings), (insert, insert_bindings) in statements:
+                cursor.execute(statement, bindings)
+                if cursor.rowcount == 0:
+                    cursor.execute(insert, insert_bindings)
+                count = -2 if count < 0 or cursor.rowcount < 0 else count + cursor.rowcount
+            if manage_transaction:
+                connection.commit()
+            return {"noOfUpdates": count, "rowCount": count, "lastInsertId": getattr(cursor, "lastrowid", None)}
+        if batch is not None:
+            bound = []
+            for row in batch:
+                if driver == "sqlite" and isinstance(row, dict):
+                    tokens = list(_SQL_BIND_TOKENS.finditer(sql))
+                    if any(token.group("position") for token in tokens) and not any(token.group("name") for token in tokens):
+                        row = list(row.values())
+                bound.append(bind(sql, row))
+            statement = bound[0][0]
+            if any(item[0] != statement for item in bound):
+                raise JdbcAdapterError("Batch records must use the same SQL parameter style", "InvalidInputException")
+            cursor.executemany(statement, [bindings for _, bindings in bound])
         else:
             sql, parameters = bind(sql, _parameters(config))
             cursor.execute(sql, parameters or ())
         if cursor.description:
             names = [item[0] for item in cursor.description]
-            maximum = int(config.get("maxRows") if config.get("maxRows") is not None else config.get("maximumRows") or 0)
-            if maximum < 0: raise JdbcAdapterError("Maximum rows cannot be negative", "InvalidInputException")
-            subset = int(config.get("subsetSize") or 0) if config.get("processInSubsets") else 0
-            limit = subset or maximum
-            rows = cursor.fetchall() if limit == 0 else cursor.fetchmany(limit)
+            columns = [{"name": item[0], "dataType": str(item[1] or "unknown")} for item in cursor.description]
+            remaining = min(offset, maximum) if maximum else offset
+            while remaining:
+                skipped = cursor.fetchmany(min(remaining, 1024))
+                if not skipped:
+                    break
+                remaining -= len(skipped)
+            available = max(0, maximum - offset) if maximum else None
+            limit = min(subset, available) if subset and available is not None else subset or available
+            lookahead = bool(subset and limit and (available is None or limit < available))
+            rows = cursor.fetchall() if limit is None else cursor.fetchmany(limit + lookahead) if limit else []
+            has_next = lookahead and len(rows) > limit
+            if has_next:
+                rows = rows[:limit]
             output = [dict(zip(names, row)) for row in rows]
-            return {"resultSet": {"Record": output}, "rows": output, "rowCount": len(output), "lastSubset": not subset or len(rows) < subset, "columns": [{"name": item[0], "dataType": str(item[1] or "unknown")} for item in cursor.description]}
+            cursor.close()
+            cursor = None
+            if manage_transaction:
+                connection.commit()
+            return {"resultSet": {"Record": output}, "rows": output, "rowCount": len(output), "lastSubset": not has_next,
+                    "nextRowOffset": offset + len(output) if has_next else None, "columns": columns}
         if manage_transaction: connection.commit()
         count = int(cursor.rowcount or 0)
         return {"noOfUpdates": count, "rowCount": count, "lastInsertId": getattr(cursor, "lastrowid", None)}
-    except JdbcAdapterError:
-        raise
     except Exception as exc:
         if manage_transaction:
             try: connection.rollback()
             except Exception: pass
+        if isinstance(exc, JdbcAdapterError):
+            raise
         raise JdbcAdapterError(str(exc), "JDBCSQLException") from exc
     finally:
-        if owns_connection: connection.close()
+        try:
+            if cursor is not None:
+                cursor.close()
+        finally:
+            if owns_connection:
+                connection.close()
 
 
 jdbc_adapter = type("JdbcAdapter", (), {

@@ -34,9 +34,9 @@ Configure the format inline or add a JSON schema asset under **Project Explorer 
 
 An optional `schemaId` links the shared format to a project row schema. Parse Data exposes typed `records`, `Rows.schema`, record counts and the XML representation. Render Data accepts mapped records and exposes the rendered value as `text`, `Text` and `content`.
 
-To reuse a BusinessWorks layout, right-click **Schemas** and choose **Import XSD or BW Data Format**. Select a Data Format XML resource (`.dataformat`, `.dataformatresource` or `.dataformatsharedresource`) or a ZIP containing it and its companion XSDs. ZIP entries retain their relative paths. The importer converts delimited and fixed layouts into reusable MINA assets and links supported Parse/Render Data references when importing a BW project.
+To reuse an existing layout, right-click **Schemas** and choose **Import XSD or Data Format**. Select a Data Format XML resource (`.dataformat`, `.dataformatresource` or `.dataformatsharedresource`) or a ZIP containing it and its companion XSDs. ZIP entries retain their relative paths. The importer converts delimited and fixed layouts into reusable MINA assets and links supported Parse/Render Data references in imported processes.
 
-A BW module property bound to the Data Format column separator becomes a MINA environment property and an editable **Input → formatOptions → Column separator** mapping. Import the ZIP with its `default.substvar` and, if available, `local.substvar`, `dev.substvar`, `qa.substvar`, `pre.substvar` or `production.substvar`. A profile value overrides the default, which falls back to the resource's literal separator if present. If no value is available, set the imported property before running. Select the imported Data Format on both activities to add its mapping without overwriting custom mappings. Unsupported substitution targets and ambiguous or secret profile values are reported during import.
+A source module property bound to the Data Format column separator becomes a MINA environment property and an editable **Input → formatOptions → Column separator** mapping. Import the ZIP with its `default.substvar` and, if available, `local.substvar`, `dev.substvar`, `qa.substvar`, `pre.substvar` or `production.substvar`. A profile value overrides the default, which falls back to the resource's literal separator if present. If no value is available, set the imported property before running. Select the imported Data Format on both activities to add its mapping without overwriting custom mappings. Unsupported substitution targets and ambiguous or secret profile values are reported during import.
 
 Quoted CSV values retain delimiters, escaped quotes and embedded line breaks. Literal multi-character delimiters and any-character separator sets also support quoting. Render Data exposes both `content` and `text` for mapping into HTTP bodies, files or subsequent activities. Headers, line endings and final separators are configurable.
 
@@ -57,7 +57,7 @@ RestInputRequest
     validateRequest, requestSchema, validateResponse, responseSchema
   Headers
     accept, content-type, Accept-Charset, Accept-Encoding, Cookie, pragma
-    DynamicHeaders[] → name, value
+  CustomHeaders[] → name, value
   mimeEnvelopeElement
     mimePart[] → mimeHeaders, binaryContent | textContent | fileName
 ```
@@ -68,13 +68,11 @@ Previously saved Configuration values appear as typed Input mappings without a m
 
 ## Verification
 
-The tests cover binary encoding overrides, CDATA, XML namespaces, XSD import/include resolution and access boundaries, Generic and XSD JSON conversion, BW Data Format import, dynamic Input mappings, rejected records, batching, multiline CSV and fixed offsets. All six activities run in fresh Direct and Engine archives and are compared with Studio Run and Debug. These are MINA compatibility tests, not certification against a live BusinessWorks engine.
+The tests cover binary encoding overrides, CDATA, XML namespaces, XSD import/include resolution and access boundaries, Generic and XSD JSON conversion, Data Format import, dynamic Input mappings, rejected records, batching, multiline CSV and fixed offsets. All six activities run in fresh Direct and Engine archives and are compared with Studio Run and Debug.
 
-### BusinessWorks 6.13 projects
+### Imported processes
 
-Import a BW source ZIP from Studio. MINA can retain the native XML and JSON Parse/Render steps and their original XSLT input bindings. Selected XSD elements are resolved by namespace and local name, including schemas embedded in the process. When an unrelated connector blocks full process conversion, the import can recover supported Mapper and format activities as separate subtasks. Supply each recovered activity's original BW input variables by name. An unbound Parse Data resource or an empty BW input binding is reported so it can be completed in Studio.
-
-To verify against the unmodified Mapper and XML samples installed by TIBCO, set `MINA_BW613_HOME` to the BW 6.13 directory (the one containing `samples`), then run `python -m unittest tests.test_bw613_vendor_samples -v` from `backend`. The test reads the installed samples and compares Run, Debug and both Python exports. It does not change the TIBCO workspace.
+Import a compatible process ZIP from Studio. MINA can retain XML and JSON Parse/Render steps and their original XSLT input bindings. Selected XSD elements are resolved by namespace and local name, including schemas embedded in the process. When a connector blocks full process conversion, the import can recover supported Mapper and format activities as separate subtasks. Supply each recovered activity's original input variables by name. Studio reports unbound Parse Data resources and empty input bindings.
 
 From `backend`, with its Python environment:
 
@@ -82,4 +80,4 @@ From `backend`, with its Python environment:
 python -m unittest tests.test_format_activities tests.test_http_dynamic_contracts tests.test_ai_exception_data tests.test_raw_python tests.test_engine_export tests.test_activity_packs -q
 ```
 
-References: [TIBCO BW 6.12 Binding and Palette Reference](https://docs.tibco.com/pub/activematrix_businessworks/6.12.0/doc/pdf/TIB_BW_6.12.0_bindings_palletes_reference.pdf), [Python CSV newline handling](https://docs.python.org/3/library/csv.html) and [lxml parsing/validation](https://lxml.de/apidoc/lxml.etree.html).
+References: [Python CSV newline handling](https://docs.python.org/3/library/csv.html) and [lxml parsing and validation](https://lxml.de/apidoc/lxml.etree.html).

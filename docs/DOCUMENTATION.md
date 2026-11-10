@@ -10,6 +10,12 @@ Activity Configuration, Input, Output, Advanced and Errors sections are generate
 
 Only explicitly selected product source files and guides are read. The generator does not inspect project data, environment credentials or user payloads. Existing implementation limitations are documented, not claimed as implemented.
 
+## JDBC query and writes
+
+Use `:name` parameters for Query, Update, and Insert, and map each value under **Input → parameters**. To execute multiple records together, enable **Batch update** and map **records**. An empty list writes zero rows. For **Insert if record does not exist**, map an INSERT statement to **InsertStatement** and provide the parameters used by both statements. MINA runs the INSERT only when the UPDATE affects zero rows. If you need an atomic upsert across concurrent executions, use your database's native upsert statement.
+
+To page through a query, enable **Process result in subsets** and use a stable `ORDER BY`. Start with **Row offset** zero. Pass the previous result's **nextRowOffset** to the next call and stop when **lastSubset** is true. **Maximum rows** caps the total rows across those pages. Each call re-executes the query.
+
 ## Updating the guide
 
 From the repository root, install the documentation authoring dependencies into your chosen Python environment:

@@ -1,4 +1,4 @@
-"""Convert a supported BusinessWorks process graph into executable MINA activities."""
+"""Convert a supported legacy process graph into executable MINA activities."""
 import re
 from urllib.parse import urlsplit
 
@@ -39,14 +39,14 @@ def _link_options(link, variables):
     source = link['condition']
     if kind != 'success_condition':
         if source is not None:
-            raise ValueError('unexpected XPath on BusinessWorks transition')
+            raise ValueError('unexpected XPath on imported transition')
         return {'type': kind}
     if source is None:
-        raise ValueError('conditional BusinessWorks transition requires executable XPath')
+        raise ValueError('imported conditional transition requires executable XPath')
     expression = (source.text or '').strip()
     version = source.get('expressionLanguage', '').rsplit(':', 1)[-1].removeprefix('xpath') or '1.0'
     if not expression or len(expression) > 4096 or version not in {'1.0', '2.0'}:
-        raise ValueError('unsupported BusinessWorks transition XPath')
+        raise ValueError('unsupported transition XPath')
     names = set(re.findall(r'\$([A-Za-z_][\w.-]*)', expression))
     if any(name in variables and variables[name] is None for name in names):
         raise ValueError('conditional link refers to a connector output requiring a BW XML shape adapter')
@@ -200,7 +200,7 @@ def http_resource(document, name, resource_id):
             raise ValueError('expected one HTTP client configuration')
         prefix, _, type_name = configuration.get(XSI_TYPE, '').partition(':')
         if configuration.nsmap.get(prefix) != HTTP_CLIENT_NS or type_name != 'HttpClientConfiguration':
-            raise ValueError('expected a BusinessWorks HTTP client shared resource')
+            raise ValueError('expected an HTTP client shared resource')
         tcp = configuration.find('tcpDetails')
         if (tcp is None or len(configuration) != 1 or len(tcp)
                 or set(configuration.attrib) - {XSI_TYPE, XMI + 'id', 'httpClientVersion'} - allowed
@@ -324,7 +324,7 @@ class ProcessConverter:
         else:
             self.connect(last, self.node('end', 'End'))
         return {'id': self.task_id, 'name': self.name, 'kind': 'starter' if self.starter else 'subtask',
-                'description': 'Converted BusinessWorks process. Check its input XML and connection settings before deployment.',
+                'description': 'Imported process. Check its input XML and connection settings before deployment.',
                 'activities': self.activities, 'transitions': self.transitions}
 
     def linked_flow(self, node, previous):
@@ -335,7 +335,7 @@ class ProcessConverter:
                 name = link.get('name')
                 kind = _LINK_TYPES.get(link.get(BW + 'linkType', 'SUCCESS'))
                 if link.tag != BPEL + 'link' or not name or name in declared or len(link) or not kind:
-                    raise ValueError('unsupported BusinessWorks link declaration')
+                    raise ValueError('unsupported link declaration')
                 declared[name] = {'type': kind, 'condition': None}
         members = [child for child in node if child is not links]
         for index, child in enumerate(members):
@@ -348,7 +348,7 @@ class ProcessConverter:
                             raise ValueError('unsupported cross-scope process link')
                         allowed = {BPEL + 'transitionCondition', BW + 'DesignExpression'} if endpoint_name == 'source' else set()
                         if any(child.tag not in allowed for child in item):
-                            raise ValueError('unsupported BusinessWorks link metadata')
+                            raise ValueError('unsupported link metadata')
                         if endpoint_name == 'source':
                             match['condition'] = item.find(BPEL + 'transitionCondition')
                         self.link_endpoints.add(item)
@@ -401,7 +401,7 @@ class ProcessConverter:
         if node.tag == BPEL + 'extensionActivity':
             extensions = [child for child in node if child.tag in {BW + 'extActivity', BW + 'activityExtension', BW + 'receiveEvent'}]
             if len(extensions) != 1:
-                raise ValueError('expected one TIBCO extension activity')
+                raise ValueError('expected one extension activity')
             return extensions[0]
         return node
 

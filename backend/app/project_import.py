@@ -34,7 +34,7 @@ def project_payload(raw: bytes, filename: str = '') -> bytes:
             property_suffix = ('.substvar',) if any(name.lower().endswith(BW_DATA_FORMAT_SUFFIXES) for name in names) else ()
             relevant = [member for member in members if member.filename.lower().endswith(('.bwp', '.xsd', '.httpclientresource', '.httpconnresource', '.jdbcresource', '.jmsresource', '.jmsconnresource', *property_suffix, *BW_DATA_FORMAT_SUFFIXES))]
             if sum(member.file_size for member in relevant) > MAX_IMPORT_BYTES:
-                raise ValueError('BusinessWorks process and schema files exceed the configured size limit')
+                raise ValueError('Process and schema files exceed the configured size limit')
             return bw_project({member.filename: read(member.filename) for member in relevant}, filename)
         manifest = json.loads(read('manifest.json'))
         if not isinstance(manifest, dict): raise ValueError('Project manifest must be an object')
@@ -58,7 +58,7 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
     for name, content in sorted(files.items()):
         path = PurePosixPath(name.replace('\\', '/'))
         if path.is_absolute() or '..' in path.parts or ':' in path.as_posix() or path.as_posix() in paths:
-            raise ValueError('BusinessWorks archive contains an invalid asset path')
+            raise ValueError('Process archive contains an invalid asset path')
         paths.add(path.as_posix())
         if path.suffix.lower() == '.substvar':
             profile = path.stem.lower()
@@ -259,8 +259,8 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
                                               {'id': 'map-end', 'source': 'Mapper', 'target': 'End'}]})
         schemas.extend(embedded_assets.values())
     if not tasks and not formats and (pending_layouts or processes or not schemas):
-        raise ValueError('No executable BusinessWorks processes or activity bindings were converted. ' + ' | '.join(diagnostics[:20]))
-    description = f'Converted {len(ready)} BusinessWorks processes, imported {len(formats)} Data Formats, and recovered {len(tasks) - len(ready)} independent activities or Mapper bindings.'
+        raise ValueError('No executable processes or activity bindings were converted. ' + ' | '.join(diagnostics[:20]))
+    description = f'Converted {len(ready)} processes, imported {len(formats)} Data Formats, and recovered {len(tasks) - len(ready)} independent activities or Mapper bindings.'
     from .models import default_environment_properties
     properties = {item.key: item.model_dump() for item in default_environment_properties()}
     for resource_id in sorted(used_resources):
@@ -277,7 +277,7 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
         description += '\nReview required:\n' + '\n'.join(diagnostics[:30])
         if len(diagnostics) > 30:
             description += f'\n{len(diagnostics) - 30} additional items require review.'
-    return json.dumps({'id': f'bw-{uuid4().hex}', 'name': PurePosixPath(filename.replace('\\', '/')).stem or 'BusinessWorks mappings',
+    return json.dumps({'id': f'bw-{uuid4().hex}', 'name': PurePosixPath(filename.replace('\\', '/')).stem or 'Imported mappings',
                        'description': description, 'tasks': tasks, 'schemas': schemas,
                        'resources': [item for item in resources.values() if item['id'] in used_resources],
                        'properties': {profile: [*properties.values(), *(

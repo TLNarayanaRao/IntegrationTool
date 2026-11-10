@@ -20,6 +20,18 @@ def repeating(value):
     if isinstance(value,dict) and value and all(str(key).isdigit() for key in value):return [value[key] for key in sorted(value,key=lambda item:int(item))]
     return value
 
+def object_value(value, label):
+    if value in (None, ''):
+        return {}
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            raise ValueError(f'{label} must be a JSON object') from None
+    if not isinstance(value, dict):
+        raise ValueError(f'{label} must be a JSON object')
+    return value
+
 def header_values(values):
     if not isinstance(values,dict):raise ValueError('Headers must be an object')
     result={str(key).lower():value for key,value in values.items() if key.lower()!='dynamicheaders'}
@@ -31,13 +43,22 @@ def header_values(values):
         if not isinstance(item,dict):raise ValueError('Each dynamic header requires a name/value pair')
         name=str(item.get('name',item.get('Name','')));value=item.get('value',item.get('Value'))
         if not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+",name) or value is None:raise ValueError('Each dynamic header requires a valid name and value')
-        text=str(value)
-        if not text.isascii() or '\r' in text or '\n' in text:raise ValueError('Dynamic header values must be US-ASCII without newlines')
-        key=name.lower();seen[key]=seen.get(key,0)+1
-        if key in STANDARD_HEADERS and key!='cookie' and seen[key]>1:raise ValueError(f'Header {name} is non-repeating')
-        if seen[key]==1 and key!='cookie':result[key]=text
-        else:
-            existing=result.get(key,[]);result[key]=([existing] if not isinstance(existing,list) else existing)+[text]
+        entries = value if isinstance(value, list) else [value]
+        if any(not isinstance(entry, (str, int, float, bool)) for entry in entries):
+            raise ValueError('Dynamic header values must be scalars or a list of scalars')
+        key = name.lower()
+        for entry in entries:
+            text = str(entry)
+            if not text.isascii() or '\r' in text or '\n' in text:
+                raise ValueError('Dynamic header values must be US-ASCII without newlines')
+            seen[key] = seen.get(key, 0) + 1
+            if key in STANDARD_HEADERS and key != 'cookie' and seen[key] > 1:
+                raise ValueError(f'Header {name} is non-repeating')
+            if seen[key] == 1 and key != 'cookie':
+                result[key] = text
+            else:
+                existing = result.get(key, [])
+                result[key] = (existing if isinstance(existing, list) else [existing]) + [text]
     if isinstance(result.get('cookie'),list):result['cookie']='; '.join(str(value) for value in result['cookie'])
     return result
 
@@ -47,7 +68,7 @@ def request_config(cfg):
     if not isinstance(root,dict):raise ValueError('RestInputRequest must be an object')
     result=dict(cfg);config=root.get('Config') or {}
     if not isinstance(config,dict):raise ValueError('RestInputRequest.Config must be an object')
-    aliases={'host':'host','Host':'host','port':'port','Port':'port','scheme':'scheme','requestURI':'url','RequestURI':'url','Method':'method','method':'method','RequestBody':'body','PostData':'body','bodyFormat':'bodyType','QueryParameters':'query','URIParameters':'pathParameters','timeout':'socketTimeoutMs','Timeout':'socketTimeoutMs','activityTimeoutSeconds':'activityTimeoutSeconds','followRedirects':'followRedirects','sendBodyMode':'sendBodyMode','requestEntityProcessing':'requestEntityProcessing','successStatusCodes':'successStatusCodes','raiseForStatus':'raiseForStatus','FilePath':'body'}
+    aliases={'host':'host','Host':'host','port':'port','Port':'port','scheme':'scheme','requestURI':'url','RequestURI':'url','Method':'method','method':'method','RequestBody':'body','PostData':'body','bodyFormat':'bodyType','URIParameters':'pathParameters','timeout':'socketTimeoutMs','Timeout':'socketTimeoutMs','activityTimeoutSeconds':'activityTimeoutSeconds','followRedirects':'followRedirects','sendBodyMode':'sendBodyMode','requestEntityProcessing':'requestEntityProcessing','successStatusCodes':'successStatusCodes','raiseForStatus':'raiseForStatus','FilePath':'body'}
     aliases.update({key:key for key in ('openApiDocument','openApiBaseUrl','openApiReferenceDocuments','openApiAllowedRefOrigins','operationId','validateRequest','requestSchema','validateResponse','responseSchema')})
     for key,target in aliases.items():
         if key in config:result[target]=config[key]
@@ -56,8 +77,11 @@ def request_config(cfg):
     if 'FilePath' in config:result['bodyType']='file'
     if 'PostData' in config and 'bodyFormat' not in config:result['bodyType']='text'
     if 'timeout' in config or 'Timeout' in config:result.pop('timeout',None)
+    if 'QueryParameters' in config:
+        result['query'] = {**object_value(result.get('query'), 'Default query'),
+                           **object_value(config['QueryParameters'], 'Query parameters')}
     if 'QueryString' in config:
-        result['query']={**(result.get('query') or {}),**multi_values(urllib.parse.parse_qsl(str(config['QueryString']).lstrip('?'),keep_blank_values=True))}
+        result['query']={**object_value(result.get('query'), 'Query parameters'),**multi_values(urllib.parse.parse_qsl(str(config['QueryString'] or '').lstrip('?'),keep_blank_values=True))}
     if any(key in config for key in ('host','Host','port','Port','scheme')):
         base=urllib.parse.urlsplit(str(result.get('baseUrl') or result.get('url') or ''))
         host=str(config.get('host') or config.get('Host') or base.hostname or result.get('host') or 'localhost')
@@ -68,8 +92,15 @@ def request_config(cfg):
         if ':' in host and not host.startswith('['):host='['+host+']'
         result['baseUrl']=f'{scheme}://{host}'+(f':{int(port)}' if port else '')+(base.path.rstrip('/') if cfg.get('baseUrl') else '')
         if 'requestURI' not in config and 'RequestURI' not in config and base.scheme:result['url']=base.path+('?' + base.query if base.query else '')
-    if 'Headers' in root:
-        headers={str(key).lower():value for key,value in (result.get('headers') or {}).items()};headers.update(header_values(root['Headers'] or {}));result['headers']=headers
+    if 'Headers' in root or 'CustomHeaders' in root:
+        mapped_headers = root.get('Headers') or {}
+        if 'CustomHeaders' in root:
+            if not isinstance(mapped_headers, dict):
+                raise ValueError('Headers must be an object')
+            mapped_headers = {**mapped_headers, 'DynamicHeaders': root['CustomHeaders']}
+        headers = {str(key).lower(): value for key, value in (result.get('headers') or {}).items()}
+        headers.update(header_values(mapped_headers))
+        result['headers'] = headers
         # Explicit mapped headers take precedence over inherited shorthand settings.
         for key in ('accept','contentType'):
             if ('content-type' if key=='contentType' else key) in headers:result.pop(key,None)

@@ -3,34 +3,12 @@
 The Mapper remains the transformation activity. General activities provide
 durable message composition and recovery without reintroducing Mediation.
 
-## ActiveMatrix BusinessWorks 6.12 Mapper comparison
+## Mapper schemas and suggestions
 
-This comparison uses the 6.12.0 product documentation and MINA regression tests.
-Matching a documented interaction does not establish compatibility with a
-BusinessWorks project or with the BusinessWorks runtime. The comparison does
-not include a live BusinessWorks installation.
-
-| Capability | Documented BW 6.12 behavior | MINA behavior |
-| --- | --- | --- |
-| Schema design | The schema editor exposes element types and occurrences. Source coercions can specialize schema elements and their cardinality. | The Mapper can expose multiple named views of one source, with a schema, an optional named XSD complex type, and a separate occurrence range for each view. The original source stays available. |
-| XPath design | The builder lists functions and accepts schema elements in function argument placeholders. | The searchable palette is populated from MINA's supported XPath 1.0 and 2.0 signatures, XML Schema constructors, and implemented TIBCO functions. Arguments accept draggable sample XML fields. Java plug-ins and BW runtime-specific functions remain outside the portable palette. |
-| Migration fixes | BW provides version and type fixes for selected migrated expressions. | A mapping can preview both XPath versions on the same sample and use a version override for that expression. The builder can also add a supported target-type constructor. BW's migration diagnostics and project-wide repairs remain open. |
-| Conditional and repeating mappings | If, Choose, For-Each, For-Each-Group, and repeated occurrences shape output. | MINA supports those statements and can generate editable XSLT for supported rules, including nested groups and independently mapped duplicates. |
-| Runtime bindings | Mapper preferences can detect a stored runtime XSLT that differs from the current mapping. | In generated mode, Map & Test, Run, Debug, and both Python archives use the current visual rules. A manually selected stylesheet retains its own execution mode. |
-| Optional and nil values | Mapper preferences control implicit existence guards and optional nil-to-optional mappings. | Generated bindings distinguish missing fields from `xsi:nil` and expose existence checks, nil propagation, and optional nil suppression. XML output can be checked against the target XSD. |
-| Smart Mapper | Smart Mapper ranks candidates using schema features and can record and share manual selections. | Studio users connected to the same MINA server can share reviewed field pairs. BW model and shared database integration remain open. |
-
-Vendor references include [BusinessWorks 6.12 Application Development](https://docs.tibco.com/pub/activematrix_businessworks/6.12.0/doc/pdf/TIB_BW_6.12.0_application_development.pdf),
-[Bindings and Palette Reference](https://docs.tibco.com/pub/activematrix_businessworks/6.12.0/doc/pdf/TIB_bwce_6.12.0_bindings_palettes_reference.pdf),
-and [Migration Guide](https://docs.tibco.com/pub/activematrix_businessworks/6.12.0/doc/pdf/TIB_BW_6.12.0_migration.pdf).
-
-### BusinessWorks 6.13 Mapper compatibility
-
-The installed 6.13 Unit Testing and InvokeCode samples cover imported
-`xsl:choose`, `xsl:if`, and `xsl:for-each` bindings. The InvokeCode Mapper
-references a target XSD that imports sibling XSDs. Keep the schema files at
-their project-relative paths when importing or editing the contract. The
-Mapper resolves imports and includes from project assets. A repeating element
+The Mapper supports multiple named views of one source, each with its own
+schema, optional XSD complex type, and occurrence range. Keep schema files
+at their project-relative paths when importing or editing the contract.
+The Mapper resolves imports and includes from project assets. A repeating element
 stays an array in the structured result even when the generated XML has one
 occurrence; the XML itself retains the original element structure.
 
@@ -38,9 +16,7 @@ In **Visual AI Mapper → AI mapping options**, choose **Exact names** or a
 similarity strategy. Select a source or target branch to limit matching to
 that branch, then set each side's search depth from 1 to 10 (default 4).
 Leave a side on **Entire schema** to search all fields on that side. Existing
-manual mappings are preserved. See [BusinessWorks 6.13 Application Development](https://docs.tibco.com/pub/activematrix_businessworks/6.13.0/doc/pdf/TIB_BW_6.13.0_application_development.pdf?id=0)
-for the vendor options. MINA uses its own suggestion ranking and shared
-learning store.
+manual mappings are preserved.
 
 ### XML expressions and bindings
 
@@ -105,17 +81,17 @@ Generated conditions accept XML field paths, scalar literals, comparisons,
 and logical operators. Custom functions and mapping statements outside this
 subset require a handwritten stylesheet.
 
-BusinessWorks XML bindings can use the vendor namespace for `trim`,
+The XPath builder provides extension functions such as `ext:trim`,
 `upper-case`, `lower-case`, `left`, `right`, `concat-sequence`, `xor`,
 `substring-before-last`, `substring-after-last`, `timestamp`,
 `base64-to-hex`, and `hex-to-base64`.
-`getModuleProperty` reads scalar MINA project
+`project:getModuleProperty` reads scalar MINA project
 properties supplied to the execution. Java system properties, proprietary
 extensions, and custom Java XPath functions require a separate migration.
 
-### BusinessWorks project import
+### Legacy process import
 
-Open a `.bwp` file or a BusinessWorks project ZIP through Studio's project
+Open a compatible process file or ZIP through Studio's project
 import. Supported sequences, simple scopes, conditional XPath links,
 no-match links, error links, static subtask calls, Mapper bindings, XML render,
 file activities, and basic outbound HTTP requests become MINA activities.

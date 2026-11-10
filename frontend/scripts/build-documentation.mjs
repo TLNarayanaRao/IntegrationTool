@@ -74,7 +74,7 @@ function declarations(file, names, stripIcons = false) {
  for (const name of names) if (!found.has(name)) throw new Error(`Documentation extractor cannot find ${name} in ${file}`);
  return names.map(name => found.get(name)).join('\n');
 }
-const contractNames = ['f', 'd', 'commonErrors', 'httpRequestFields', 'httpRequestOccurrences', 'HTTP_METHODS', 'isMapperActivity', 'activityContract', 'runtimeMappableInputs', 'activityDocumentation'];
+const contractNames = ['f', 'd', 'commonErrors', 'httpRequestFields', 'httpRequestOccurrences', 'httpInputMappings', 'HTTP_METHODS', 'isMapperActivity', 'activityContract', 'runtimeMappableInputs', 'activityDocumentation'];
 const mainNames = ['packs', 'supportsOutboundRetry', 'advancedDefaults', 'defaultProperties', 'connectionFieldSets', 'propertyExpression', 'connectionDefaults', 'groupConfigDefaults', 'connectorType', 'connectorPropertyPrefix', 'protocolPropertyTemplates'];
 const extracted = declarations('frontend/src/ActivityEditor.tsx', contractNames) + '\n' + declarations('frontend/src/main.tsx', mainNames, true) + '\nexport {' + [...contractNames, ...mainNames].join(',') + '};';
 const compile = code => ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;

@@ -849,7 +849,17 @@ public final class MinaJavaBridge {
                 return map("ok", valid, "message", valid ? "JDBC connection succeeded" : "JDBC driver reported an invalid connection", "databaseProduct", connection.getMetaData().getDatabaseProductName(), "databaseVersion", connection.getMetaData().getDatabaseProductVersion());
             }
             if (operation.equals("metadata")) return jdbcMetadata(connection, p);
-            if (operation.equals("execute")) return jdbcExecute(connection, p);
+            if (operation.equals("execute")) {
+                connection.setAutoCommit(false);
+                try {
+                    Map<String, Object> result = jdbcExecute(connection, p);
+                    connection.commit();
+                    return result;
+                } catch (Exception error) {
+                    try { connection.rollback(); } catch (SQLException rollback) { error.addSuppressed(rollback); }
+                    throw error;
+                }
+            }
             if (operation.equals("worker")) return jdbcWorker(connection);
             throw new IllegalArgumentException("Unsupported JDBC operation: " + operation);
         }
@@ -982,30 +992,80 @@ public final class MinaJavaBridge {
     private static Map<String, Object> jdbcExecute(Connection connection, Properties p) throws SQLException {
         String sql = required(p, "sql");
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            int timeout = integer(p, "queryTimeoutSeconds", 0); if (timeout > 0) statement.setQueryTimeout(timeout);
-            int count = integer(p, "parameterCount", 0);
-            for (int index = 0; index < count; index++) setParameter(statement, index + 1, p.getProperty("parameter." + index + ".type", "string"), p.getProperty("parameter." + index + ".value"));
+            int timeout = integer(p, "queryTimeoutSeconds", 0);
+            if (timeout > 0) statement.setQueryTimeout(timeout);
+            int batch = integer(p, "batchCount", 0);
+            String fallbackSql = p.getProperty("fallback.sql");
+            if (fallbackSql != null) {
+                try (PreparedStatement fallback = connection.prepareStatement(fallbackSql)) {
+                    if (timeout > 0) fallback.setQueryTimeout(timeout);
+                    long updated = 0;
+                    for (int row = 0; row < Math.max(1, batch); row++) {
+                        String rowPrefix = batch > 0 ? "batch." + row + "." : "";
+                        bindJdbcParameters(statement, p, "", rowPrefix);
+                        int count = statement.executeUpdate();
+                        if (count == 0) {
+                            bindJdbcParameters(fallback, p, "fallback.", rowPrefix);
+                            count = fallback.executeUpdate();
+                        }
+                        updated = addJdbcCount(updated, count);
+                    }
+                    return map("noOfUpdates", updated, "rowCount", updated);
+                }
+            }
+            if (batch > 0) {
+                for (int row = 0; row < batch; row++) {
+                    bindJdbcParameters(statement, p, "", "batch." + row + ".");
+                    statement.addBatch();
+                }
+                long updated = 0;
+                for (int count : statement.executeBatch()) updated = addJdbcCount(updated, count);
+                return map("noOfUpdates", updated, "rowCount", updated);
+            }
+            bindJdbcParameters(statement, p, "", "");
             boolean hasResult = statement.execute();
             if (!hasResult) { int updates = statement.getUpdateCount(); return map("noOfUpdates", updates, "rowCount", updates); }
             try (ResultSet result = statement.getResultSet()) {
                 ResultSetMetaData metadata = result.getMetaData(); int columns = metadata.getColumnCount();
-                int maximum = integer(p, "maxRows", 0), seen = 0; List<Object> rows = new ArrayList<>(), columnOutput = new ArrayList<>();
+                int maximum = integer(p, "maxRows", 0), offset = integer(p, "rowOffset", 0);
+                int subset = integer(p, "subsetSize", 0);
+                int remaining = maximum == 0 ? Integer.MAX_VALUE : Math.max(0, maximum - offset);
+                int limit = subset == 0 ? remaining : Math.min(remaining, subset);
+                List<Object> rows = new ArrayList<>(), columnOutput = new ArrayList<>();
                 for (int index = 1; index <= columns; index++) columnOutput.add(map("name", metadata.getColumnLabel(index), "dataType", metadata.getColumnTypeName(index)));
-                while (result.next() && (maximum <= 0 || seen < maximum)) {
+                if (limit > 0) {
+                    for (int index = 0; index < offset && result.next(); index++) { /* advance to requested page */ }
+                }
+                while (rows.size() < limit && result.next()) {
                     Map<String, Object> row = new LinkedHashMap<>();
                     for (int index = 1; index <= columns; index++) row.put(metadata.getColumnLabel(index), sqlValue(result.getObject(index)));
-                    rows.add(row); seen++;
+                    rows.add(row);
                 }
-                return map("resultSet", map("Record", rows), "rows", rows, "rowCount", rows.size(), "columns", columnOutput, "lastSubset", true);
+                boolean hasNext = subset > 0 && rows.size() == limit && limit < remaining && result.next();
+                return map("resultSet", map("Record", rows), "rows", rows, "rowCount", rows.size(), "columns", columnOutput,
+                        "lastSubset", !hasNext, "nextRowOffset", hasNext ? (long) offset + rows.size() : null);
             }
         }
+    }
+
+    private static void bindJdbcParameters(PreparedStatement statement, Properties p, String prefix, String rowPrefix) throws SQLException {
+        int count = integer(p, prefix + "parameterCount", 0);
+        for (int index = 0; index < count; index++) {
+            String key = prefix + rowPrefix + "parameter." + index;
+            setParameter(statement, index + 1, p.getProperty(key + ".type", "string"), p.getProperty(key + ".value"));
+        }
+    }
+
+    private static long addJdbcCount(long total, int count) throws SQLException {
+        if (count == Statement.EXECUTE_FAILED) throw new SQLException("JDBC batch statement failed");
+        return total < 0 || count < 0 ? Statement.SUCCESS_NO_INFO : total + count;
     }
 
     private static void setParameter(PreparedStatement statement, int index, String type, String value) throws SQLException {
         if ("null".equals(type)) statement.setObject(index, null);
         else if ("boolean".equals(type)) statement.setBoolean(index, Boolean.parseBoolean(value));
-        else if ("integer".equals(type)) statement.setLong(index, Long.parseLong(value));
-        else if ("number".equals(type) || "decimal".equals(type)) statement.setBigDecimal(index, new java.math.BigDecimal(value));
+        else if ("integer".equals(type) || "long".equals(type)) statement.setLong(index, Long.parseLong(value));
+        else if (Set.of("number", "decimal", "double", "float").contains(type)) statement.setBigDecimal(index, new java.math.BigDecimal(value));
         else if ("date".equals(type)) statement.setDate(index, java.sql.Date.valueOf(value));
         else if ("time".equals(type)) statement.setTime(index, java.sql.Time.valueOf(value));
         else if ("timestamp".equals(type) || "datetime".equals(type)) statement.setTimestamp(index, java.sql.Timestamp.valueOf(value.replace('T', ' ')));

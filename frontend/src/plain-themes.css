@@ -33,7 +33,7 @@ body[data-theme="plain-studio"] {
   --accent2: #276b46;
   --selection: #dceff2;
 }
-body[data-theme="plain-bw"] {
+body[data-theme="plain-system"] {
   --plain-panel-radius: 0px;
   --plain-control-radius: 2px;
   --plain-card-radius: 2px;
@@ -50,7 +50,7 @@ body[data-theme="plain-bw"] {
   --accent2: #286b43;
   --selection: #d4e6fa;
 }
-body:is([data-theme="plain-classic"], [data-theme="plain-studio"], [data-theme="plain-bw"]) {
+body:is([data-theme="plain-classic"], [data-theme="plain-studio"], [data-theme="plain-system"]) {
   --glow: transparent;
   --plain-scheme: light;
   --plain-grid: #c8cdd1;

@@ -67,6 +67,40 @@ class AmqpJdbcExcelCommandTests(unittest.TestCase):
         cursor.callproc.assert_called_once_with("ship_order", [7, "shipped"])
         self.assertEqual(result["resultSets"], [[{"status": "OK"}]])
 
+    def test_jdbc_binding_ignores_quoted_and_commented_markers(self):
+        sql = """SELECT ':ignored ?', q'[it's :quoted]', $$:dollar ?$$, "a:b", value::text
+                  FROM orders /* :comment ? */ WHERE id=:id OR parent=:id -- :also_ignored"""
+        expected = sql.replace("id=:id", "id=%s").replace("parent=:id", "parent=%s")
+        self.assertEqual(_normalize_sql(sql, {"id": 7}, "postgresql"), (expected, [7, 7]))
+        self.assertEqual(_normalize_sql("SELECT '?' WHERE id=?", [7], "oracle"),
+                         ("SELECT '?' WHERE id=:1", [7]))
+        with self.assertRaisesRegex(JdbcAdapterError, "Missing SQL parameter: id"):
+            _normalize_sql("SELECT 1 WHERE id=:id", {}, "postgresql")
+
+    def test_jdbc_insert_fallback_subsets_and_returning_persist(self):
+        with tempfile.TemporaryDirectory() as folder:
+            connection = {"driver": "sqlite", "url": str(Path(folder) / "orders.db")}
+            def run(operation, sql, **config):
+                return jdbc_execute(connection, {"operation": operation, "sql": sql, **config})
+            run("dynamic", "CREATE TABLE orders(id INTEGER PRIMARY KEY, label TEXT UNIQUE)")
+            self.assertEqual(run("insert", "INSERT INTO orders VALUES (1,'one') RETURNING id")["rows"], [{"id": 1}])
+            update = {"insertIfRecordDoesNotExist": True, "InsertStatement": "INSERT INTO orders VALUES (:id,:label)",
+                      "batchUpdate": True}
+            self.assertEqual(run("update", "UPDATE orders SET label=:label WHERE id=:id", **update,
+                                 records=[{"label": "updated", "id": 1}, {"id": 2, "label": "new"}])["noOfUpdates"], 2)
+            self.assertEqual(run("insert", "INSERT INTO orders VALUES (9,'wrong')", batchUpdate=True,
+                                 records=[])["noOfUpdates"], 0)
+            with self.assertRaises(JdbcAdapterError):
+                run("update", "UPDATE orders SET label=:label WHERE id=:id", **update,
+                    records=[{"id": 3, "label": "rollback"}, {"id": 4, "label": "new"}])
+            query = {"processInSubsets": True, "subsetSize": 1}
+            first = run("query", "SELECT * FROM orders ORDER BY id", **query)
+            self.assertEqual((first["lastSubset"], first["nextRowOffset"]), (False, 1))
+            last = run("query", "SELECT * FROM orders ORDER BY id", **query, rowOffset=first["nextRowOffset"])
+            self.assertEqual((last["rows"], last["lastSubset"], last["nextRowOffset"]), ([{"id": 2, "label": "new"}], True, None))
+            capped = run("query", "SELECT * FROM orders ORDER BY id", maxRows=1, processInSubsets=True, subsetSize=5)
+            self.assertEqual((capped["rowCount"], capped["lastSubset"]), (1, True))
+
     def test_jdbc_prepared_parameter_metadata_coerces_runtime_input_types(self):
         values = _parameters({
             "preparedParameters": [

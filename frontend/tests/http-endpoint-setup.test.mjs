@@ -9,6 +9,7 @@ for (const [file, names] of [
   ["SharedConnectionSelect.tsx", ["matchesConnection"]],
   ["EndpointSchemaPicker.tsx", ["schemaText", "schemaChoiceName", "savedSchemaChoice"]],
   ["HttpContentTypePicker.tsx", ["savedContentTypes"]],
+  ["HttpRequestParameters.tsx", ["validateRequestParameters"]],
   ["HttpEndpointSetup.tsx", ["isHttpEndpoint", "newEndpointDraft", "endpointConfig"]],
   ["main.tsx", ["uniqueActivityName", "isTaskTerminal", "withHttpResponse", "ensureTaskEnd"]],
 ]) {
@@ -77,7 +78,7 @@ test("selecting an XSD keeps media types automatic unless the user supplies them
     }
   };
   const response = { source: "@file", name: "reply.xsd", text: '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"/>' };
-  const draft = { ...newEndpointDraft(), resourceId: "server", response };
+  const draft = { ...newEndpointDraft(), resourceId: "server", response, methods: ["GET"] };
   const options = { resources, schemas };
   const auto = endpointConfig(draft, options);
   assert.equal(auto.responseSchemaName, "reply.xsd");
@@ -90,13 +91,26 @@ test("selecting an XSD keeps media types automatic unless the user supplies them
 });
 
 test("setup rejects incompatible connections, malformed routes and schema text before creation", () => {
-  const draft = { ...newEndpointDraft(), resourceId: "server" };
+  const draft = { ...newEndpointDraft(), resourceId: "server", methods: ["GET"] };
   const options = { resources, schemas };
   assert.throws(() => endpointConfig({ ...draft, resourceId: "client" }, options), /HTTP server connection/);
   assert.throws(() => endpointConfig({ ...draft, path: "/orders/{bad-id}?x=1" }, options), /URI path/);
   assert.throws(() => endpointConfig({ ...draft, methods: [] }, options), /HTTP method/);
   assert.throws(() => endpointConfig({ ...draft, request: { source: "@inline", text: "[]" } }, options), /valid JSON Schema/);
   assert(!("validateRequest" in endpointConfig(draft, options)));
+});
+
+test("a GET-only setup persists only GET and validates request parameter declarations", () => {
+  const fresh = newEndpointDraft();
+  assert.equal(fresh.methods.length, 0);
+  const draft = { ...fresh, resourceId: "server", path: "/orders/{id}", methods: ["GET"],
+    requestParameters: [{in: "path", name: "id", type: "integer", required: true},
+      {in: "header", name: " X-Request-ID ", type: "string", required: true}] };
+  const options = {resources, schemas};
+  const config = endpointConfig(draft, options);
+  assert.equal(config.methods, "GET");
+  assert.equal(config.requestParameters[1].name, "X-Request-ID");
+  assert.throws(() => endpointConfig({...draft, path: "/orders"}, options), /URI parameter/);
 });
 
 test("saved definitions keep their display names and legacy inline XSD has a fallback label", () => {

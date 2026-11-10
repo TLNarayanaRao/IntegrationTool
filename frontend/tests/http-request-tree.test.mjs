@@ -46,9 +46,11 @@ test('HTTP and REST requests expose a request tree without operational configura
     const contract=context.activityContract(node);
     assert.deepEqual(Array.from(contract.configuration.map(field=>field.key)).filter(key=>['method','url','bodyType','timeout','contentType','accept','openApiDocument','openApiBaseUrl','openApiReferenceDocuments','openApiAllowedRefOrigins','operationId','validateRequest','requestSchema','validateResponse','responseSchema'].includes(key)),[]);
     const input=context.runtimeMappableInputs(node,contract);
-    for(const key of ['RestInputRequest.Config.host','RestInputRequest.Config.port','RestInputRequest.Config.Method','RestInputRequest.Config.requestURI','RestInputRequest.Config.RequestBody','RestInputRequest.Headers.accept','RestInputRequest.Headers.DynamicHeaders.name','RestInputRequest.mimeEnvelopeElement.mimePart.fileName'])assert(input.some(field=>field.key===key),key);
-    assert.equal(input.find(field=>field.key==='RestInputRequest.Headers.DynamicHeaders').maxOccurs,'unbounded');
+    for(const key of ['RestInputRequest.Config.host','RestInputRequest.Config.port','RestInputRequest.Config.Method','RestInputRequest.Config.requestURI','RestInputRequest.Config.RequestBody','RestInputRequest.Config.QueryParameters','RestInputRequest.Headers.accept','RestInputRequest.CustomHeaders.name','RestInputRequest.CustomHeaders.value','RestInputRequest.mimeEnvelopeElement.mimePart.fileName'])assert(input.some(field=>field.key===key),key);
+    assert.equal(input.find(field=>field.key==='RestInputRequest.CustomHeaders').maxOccurs,'unbounded');
     assert(!input.some(field=>field.key==='openApiDocument'));
+    assert(!input.some(field=>field.key.startsWith('RestInputRequest.Headers.DynamicHeaders')));
+    assert(contract.output.some(field=>field.key==='RestOutputResponse.Headers.DynamicHeaders.name'));
     assert(contract.output.some(field=>field.key==='RestOutputResponse.statusLine.reasonPhrase'));
   }
 });
@@ -82,18 +84,30 @@ test('legacy request defaults become typed input mappings while expressions rema
 });
 
 test('manual repeated header structures have independent name/value mappings',()=>{
-  const mappings={'RestInputRequest.Headers.DynamicHeaders.0':'{}','RestInputRequest.Headers.DynamicHeaders.0.name':'"X-A"','RestInputRequest.Headers.DynamicHeaders.1':'{}'};
+  const mappings={'RestInputRequest.CustomHeaders.0':'{}','RestInputRequest.CustomHeaders.0.name':'"X-A"','RestInputRequest.CustomHeaders.1':'{}'};
   const fields=context.httpRequestOccurrences(context.httpRequestFields(),mappings);
-  assert(fields.some(field=>field.key==='RestInputRequest.Headers.DynamicHeaders.0.value'));
-  assert(fields.some(field=>field.key==='RestInputRequest.Headers.DynamicHeaders.1.name'));
-  assert(!fields.some(field=>field.key==='RestInputRequest.Headers.DynamicHeaders.name'));
-  const refreshed=context.httpRequestOccurrences(fields,{...mappings,'RestInputRequest.Headers.DynamicHeaders.2':'{}'});
-  assert(refreshed.some(field=>field.key==='RestInputRequest.Headers.DynamicHeaders.2.value'));
-  assert(!refreshed.some(field=>field.key.includes('DynamicHeaders.0.0')));
+  assert(fields.some(field=>field.key==='RestInputRequest.CustomHeaders.0.value'));
+  assert(fields.some(field=>field.key==='RestInputRequest.CustomHeaders.1.name'));
+  assert(!fields.some(field=>field.key==='RestInputRequest.CustomHeaders.name'));
+  const refreshed=context.httpRequestOccurrences(fields,{...mappings,'RestInputRequest.CustomHeaders.2':'{}'});
+  assert(refreshed.some(field=>field.key==='RestInputRequest.CustomHeaders.2.value'));
+  assert(!refreshed.some(field=>field.key.includes('CustomHeaders.0.0')));
 });
 test('old custom headers migrate into visible repeating name/value entries',()=>{
   const mappings=context.httpInputMappings({headers:{'Content-Type':'text/plain','X-Old':'before'},inputMappings:{'headers.X-Old':'${input.value}'}});
   assert.equal(mappings['RestInputRequest.Headers.content-type'],'"text/plain"');
-  assert.equal(mappings['RestInputRequest.Headers.DynamicHeaders.0.name'],'"X-Old"');
-  assert.equal(mappings['RestInputRequest.Headers.DynamicHeaders.0.value'],'${input.value}');
+  assert.equal(mappings['RestInputRequest.CustomHeaders.0.name'],'"X-Old"');
+  assert.equal(mappings['RestInputRequest.CustomHeaders.0.value'],'${input.value}');
+});
+
+test('saved DynamicHeaders row and collection mappings move to the new section',()=>{
+  const oldRoot='RestInputRequest.Headers.DynamicHeaders', root='RestInputRequest.CustomHeaders';
+  const loop={$rule:'for-each',source:'${input.headers}'};
+  for(const original of [{[oldRoot]:loop,[oldRoot+'.name']:'name'}, {[oldRoot+'.2.name']:'"X-Legacy"',[oldRoot+'.2.value']:'${input.value}'}]){
+    const mappings=context.httpInputMappings({inputMappings:original});
+    for(const [key,value] of Object.entries(original))assert.equal(mappings[root+key.slice(oldRoot.length)],value);
+    assert(!Object.keys(mappings).some(key=>key.startsWith(oldRoot)));
+  }
+  const mappings=context.httpInputMappings({inputMappings:{[oldRoot]:loop,[root+'.0.name']:'"X-New"'}});
+  assert.deepEqual(Object.keys(mappings),[root+'.0.name']);
 });

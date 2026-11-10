@@ -7,6 +7,7 @@ describe('recordCount', 'Number of parsed or rendered data records, excluding th
 describe('fields', 'Ordered field names from the parsed header, configured field list or selected flat-record schema. The order determines record column positions.');
 describe('root', 'Qualified root element name of the parsed XML document. Its namespace URI is retained; use the parsed value/tree for element and attribute mappings.');
 describe('headerPairs', 'Complete ordered received header name/value pairs, preserving repeated headers. Use this collection when every wire header occurrence is needed.');
+describe('requestParameters', 'Declare URI placeholders, query parameters, and custom request headers. Set their type and required status. URI parameters are always required.');
 
 describe('openApiBaseUrl', 'Absolute contract document URL used to resolve relative external references. It does not change the REST service endpoint.');
 describe('openApiReferenceDocuments', 'URI-to-document JSON object supplying external API reference documents without a network fetch. Each URI identifies its JSON or YAML contract document.');
@@ -50,9 +51,10 @@ describe('Content-Length', 'HTTP content length in bytes. Use the actual encoded
 describe('Date timestamp PublishTime', 'Time reported by the operation/provider. Preserve the original representation when tracing; epoch values and formatted date/time strings need explicit conversion.');
 describe('Location', 'HTTP redirect or newly created resource URL returned by the server.');
 describe('DynamicHeaders', 'Repeating custom HTTP headers. Add one name/value entry for each header that is not represented by a fixed field.');
+describe('CustomHeaders', 'Repeating request headers. Use Add header to map each name/value pair independently, or map a collection with For Each.');
 describe('RestInputRequest', 'Root request structure. Map endpoint and request settings under Config, HTTP headers under Headers and multipart content under mimeEnvelopeElement.');
 describe('Config', 'Request endpoint and processing settings. Map host, port, requestURI, Method and RequestBody here; shared connection settings provide connection-level defaults.');
-describe('Headers', 'HTTP header container. Use fixed header fields or repeating DynamicHeaders entries for additional headers.');
+describe('Headers', 'HTTP header container. On requests, use CustomHeaders for additional headers. On responses, DynamicHeaders lists the received headers.');
 describe('RestOutputResponse', 'Complete HTTP response envelope containing statusLine, headers, decoded body and optional text/binary/multipart content.');
 describe('statusLine', 'HTTP protocol version, numeric response status and reason phrase returned by the server.');
 describe('httpVersion', 'HTTP protocol version reported for the response, for example HTTP/1.1.');
@@ -127,7 +129,8 @@ describe('maximumRows maxRows limit', 'Upper bound on returned rows/items. Use a
 describe('statement SqlStatement SqlUpdateStatement InsertStatement overrideSqlStatement', 'SQL statement executed by the database activity. Use bound parameters for values and match the statement to the selected operation/connection.');
 describe('catalog database schema warehouse role account tableName sid', 'Database namespace/connection identifier. Match the selected provider account, database, schema, warehouse, role or table and the runtime user permissions.');
 describe('parameters parameterColumns valueColumns outParameters', 'SQL/procedure parameters or mapped columns. Match parameter names and types to metadata and use parameter binding rather than constructing SQL from values.');
-describe('processInSubsets subsetSize lastSubset', 'Result subset processing configuration/metadata. subsetSize bounds each returned batch; lastSubset indicates the final batch where supported by the driver.');
+describe('processInSubsets subsetSize lastSubset', 'Enable result subsets and set the size of each page. The lastSubset output is true on the final page or when the maximum row limit is reached.');
+describe('rowOffset nextRowOffset', 'Start at row offset zero. For subsequent pages, map the previous nextRowOffset to rowOffset. Use a stable ORDER BY and stop when lastSubset is true.');
 describe('batchUpdate batchSize', 'Batch execution size/policy. Bound batches to control memory and transaction duration; inspect per-batch failures before considering all records complete.');
 describe('lastInsertId', 'Generated identity reported after an insert when supported by the database driver. Do not assume every provider supplies it.');
 describe('UnresolvedResultSets', 'Additional result sets whose row metadata was not resolved at design time. Inspect the actual procedure response before mapping child fields.');
@@ -233,8 +236,8 @@ export function fieldDescription(field, context = {}) {
   const help = connectorFieldHelp(field);
   if (help && !/^See the .*procedure/.test(help)) return help;
  }
- if (key.includes('DynamicHeaders.') && leaf === 'name') return 'Custom HTTP header name, for example X-Correlation-ID. Provide one name/value pair per repeating entry.';
- if (key.includes('DynamicHeaders.') && leaf === 'value') return 'Value of the custom HTTP header named in this entry. Map the required string without embedding confidential tokens in logs.';
+ if (/(?:CustomHeaders|DynamicHeaders)\./.test(key) && leaf === 'name') return 'Custom HTTP header name, for example X-Correlation-ID. Provide one name/value pair per repeating entry.';
+ if (/(?:CustomHeaders|DynamicHeaders)\./.test(key) && leaf === 'value') return 'Value of the custom HTTP header named in this entry. Map the required string without embedding confidential tokens in logs.';
  if (leaf === 'timeout') {
   return ({kafka:'Maximum poll wait in seconds for each receive attempt.',snowflake:'Statement execution timeout in seconds; a positive value configures the Snowflake session statement timeout.',sap:'SAP editor timeout in milliseconds. Native worker calls also use timeoutSeconds; inspect the operation-specific procedure.',http:'HTTP timeout in milliseconds. Distinguish connect/read timeouts in the shared connection from the whole-activity timeout.',rest:'HTTP timeout in milliseconds. activityTimeoutSeconds separately bounds the overall activity.',ftp:'FTP connection/transfer socket timeout in seconds.',sftp:'SSH connection timeout in seconds.',jdbc:'SQL execution timeout in seconds passed to the selected database driver.',soap:'SOAP HTTP transport timeout; configure connection/read waits on the selected HTTP shared connection.'})[context.type] || 'Maximum time allowed for the selected operation. Configure the provider-specific wait and whole-activity timeout separately where both are exposed.';
  }

@@ -149,7 +149,10 @@ def _http_listener_members(item,task,event):
     members=[]
     for candidate in item.tasks:
         events=effective_event_activities(candidate.activities,candidate.transitions)
-        if candidate.kind=='starter' and len(events)==1 and events[0].type=='rest' and events[0].config.get('operation')=='receiver' and events[0].config.get('apiBlueprintId')==blueprint:members.append((candidate,events[0]))
+        if (candidate.kind=='starter' and len(events)==1 and events[0].type=='rest'
+                and events[0].config.get('operation')=='receiver' and events[0].config.get('apiBlueprintId')==blueprint
+                and events[0].config.get('resourceId')==event.config.get('resourceId')):
+            members.append((candidate,events[0]))
     return members
 
 async def _start_http_listener(item,task,event,environment,debug_handler=None):
@@ -182,31 +185,25 @@ async def _start_http_listener(item,task,event,environment,debug_handler=None):
 def _listener_endpoints(item: Project, task, environment: str, base_url: str = '') -> list[dict]:
     properties = {prop.key: prop.value for prop in item.properties.get(environment, [])}
     endpoints = []
-    for activity in task.activities:
+    for activity in effective_event_activities(task.activities, task.transitions):
         if activity.type not in ('http_listener', 'rest', 'soap') or activity.config.get('operation') not in INBOUND_OPERATIONS: continue
         cfg = _resolved_resource_config(item, activity, properties)
-        path = str(runtime.resolve(activity.config.get('path', '/'), {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}) or '/')
-        if not path.startswith('/'): path = '/' + path
-        from .http_server import listener_config
+        from .http_server import listener_config, server_tls
         effective=listener_config(cfg,runtime.resolve(activity.config,{'properties':properties,'input':{},'last':{},'vars':{},'context':{}}))
-        deployment_path=effective['path']
-        path=deployment_path
-        from .http_server import server_tls
-        tls = server_tls(cfg)
-        scheme = 'https' if tls else str(cfg.get('scheme') or 'http')
-        host = str(cfg.get('host') or 'localhost')
-        port = int(cfg.get('port') or 8080)
-        default_port = (scheme == 'https' and port == 443) or (scheme == 'http' and port == 80)
+        path = effective['path']
+        tls = server_tls(effective)
         from .api_docs import public_base,document_urls,methods_for
         from .http_transport import boolean
-        configured_url = public_base(effective)+deployment_path
+        live = {**effective, 'apiPublicBaseUrl': ''}
+        configured_url = public_base(effective) + path
+        live_url = public_base(live) + path
         relative_url = f'/api/listeners/{item.id}{path}'
         methods = methods_for(effective)
         endpoints.append({'taskId': task.id, 'activityId': activity.id, 'name': activity.name, 'type': activity.type,
-                          'methods': methods, 'path': path, 'url': configured_url, 'previewUrl': base_url.rstrip('/') + relative_url if base_url else relative_url,
+                          'methods': methods, 'path': path, 'url': live_url, 'previewUrl': base_url.rstrip('/') + relative_url if base_url else relative_url,
                           'relativeUrl': relative_url, 'configuredUrl': configured_url, 'tlsEnabled': tls,
                           'authentication': cfg.get('authentication', 'None'),
-                          **(document_urls(effective) if activity.type!='soap' and boolean(effective.get('apiDocsEnabled'),True) else {}),
+                          **(document_urls(live) if activity.type!='soap' and boolean(effective.get('apiDocsEnabled'),True) else {}),
                           'collectionDownloadUrl':f'/api/projects/{item.id}/http-docs/postman?environment={environment}&task_id={task.id}'})
     return endpoints
 
@@ -260,7 +257,8 @@ def _connector_endpoint(connector_type: str, config: dict) -> dict:
     """Return connection targets without credentials or secret query values."""
     kind = str(connector_type or '').lower()
     if kind in ('http', 'rest', 'soap'):
-        scheme = config.get('scheme') or ('https' if config.get('tlsEnabled') else 'http')
+        from .http_server import server_tls
+        scheme = 'https' if server_tls(config) else 'http'
         host, port = config.get('host') or config.get('hostname') or '', config.get('port')
         base = f'{scheme}://{host}{f":{port}" if port and str(port) not in ("80", "443") else ""}'
         return {'protocol': scheme, 'url': base + str(config.get('basePath') or config.get('path') or '')}
@@ -1573,13 +1571,13 @@ async def import_format_assets(file: UploadFile = File(...)):
     from .bw_data_format import PROPERTY_PREFIX
     name = file.filename or ''
     if not name.lower().endswith(('.zip', '.xsd', *BW_DATA_FORMAT_SUFFIXES)):
-        raise HTTPException(400, 'Choose an XSD, a BusinessWorks Data Format, or a ZIP containing these assets')
+        raise HTTPException(400, 'Choose an XSD, a Data Format resource, or a ZIP containing these assets')
     raw = await file.read(MAX_IMPORT_BYTES + 1)
     try:
         converted = json.loads(await asyncio.to_thread(project_payload, raw, name))
         assets = [asset for asset in converted['schemas'] if asset['id'].startswith(('bw-xsd-', 'bw-data-format-'))]
         formats = [asset for asset in assets if asset['id'].startswith('bw-data-format-')]
-        if not assets: raise ValueError('No XSD or BusinessWorks Data Format assets were found')
+        if not assets: raise ValueError('No XSD or Data Format assets were found')
         properties = {environment: [entry for entry in entries if entry['key'].startswith(PROPERTY_PREFIX)]
                       for environment, entries in converted.get('properties', {}).items()}
         return {'schemas': assets, 'formatCount': len(formats), 'properties': properties,
@@ -2096,9 +2094,20 @@ def _configured_http_methods(activity) -> set[str]:
 async def invoke_listener(project_id: str, listener_path: str, request: Request, environment: str = 'local'):
     item = get_project(project_id)
     if not item: raise HTTPException(404, 'Project not found')
+    debug_state = next((state for state in debugger.sessions.values()
+                        if state['project'].id == project_id and state.get('httpHandler') and not state.get('stopRequested')), None)
+    debug_routes = None
+    if debug_state:
+        item = debug_state['project']
+        environment = debug_state.get('environment', environment)
+        debug_routes = {(endpoint['taskId'], endpoint['activityId']) for endpoint in debug_state.get('endpoints', [])}
     request_path = '/' + listener_path
     starter_tasks = [task for task in item.tasks if task.kind == 'starter']
-    candidates = [(task, activity) for task in starter_tasks for activity in task.activities if activity.type in ('http_listener', 'rest', 'soap') and activity.config.get('operation') in (None, 'listen', 'receiver', 'service')]
+    candidates = [(task, activity) for task in starter_tasks
+                  for activity in effective_event_activities(task.activities, task.transitions)
+                  if activity.type in ('http_listener', 'rest', 'soap')
+                  and activity.config.get('operation') in (None, 'listen', 'receiver', 'service')
+                  and (debug_routes is None or (task.id, activity.id) in debug_routes)]
     properties=_environment_values(item,environment)
     def configured_listener(activity):
         from .http_server import listener_config
@@ -2128,7 +2137,6 @@ async def invoke_listener(project_id: str, listener_path: str, request: Request,
         async def handle_preview(metadata,payload):
             task_id,listener_id=metadata
             selected_task=next(value for value in item.tasks if value.id==task_id)
-            debug_state=next((state for state in debugger.sessions.values() if state['project'].id==project_id and state.get('httpHandler') and not state.get('stopRequested')),None)
             if debug_state:return await debug_state['httpHandler'](metadata,payload)
             resources={resource.id:resource for resource in item.resources}
             result=await runtime.run(selected_task,payload,resources,properties,listener_id,item)

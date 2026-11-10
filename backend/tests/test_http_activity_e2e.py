@@ -196,6 +196,72 @@ class InboundContractTests(unittest.IsolatedAsyncioTestCase):
         finally:app.executor.shutdown(wait=True)
 
 class StudioPreviewTests(unittest.TestCase):
+    def test_debug_get_only_uses_live_http_and_excludes_other_ports(self):
+        from app import main
+        from app.api_docs import postman_collection
+
+        with socket.socket() as first, socket.socket() as second:
+            first.bind(('127.0.0.1', 0))
+            second.bind(('127.0.0.1', 0))
+            port, other_port = first.getsockname()[1], second.getsockname()[1]
+        declarations = [
+            {'in': 'path', 'name': 'id', 'type': 'integer', 'required': True},
+            {'in': 'query', 'name': 'details', 'type': 'boolean', 'required': True},
+            {'in': 'header', 'name': 'X-Tenant', 'type': 'string', 'required': True},
+        ]
+        def task(task_id, resource_id, method):
+            return {'id': task_id, 'name': task_id, 'kind': 'starter', 'activities': [
+                {'id': 'receive', 'type': 'rest', 'name': 'Receive', 'config': {'operation': 'receiver',
+                 'resourceId': resource_id, 'methods': method, 'path': '/orders/{id}', 'apiBlueprintId': 'orders',
+                 'requestParameters': declarations}},
+                {'id': 'respond', 'type': 'http_response', 'name': 'Respond', 'config': {
+                    'operation': 'response', 'inputMappings': {'body': '${input}'}}},
+            ], 'transitions': [{'id': 'next', 'source': 'receive', 'target': 'respond'}]}
+        def resource(resource_id, bind_port):
+            return {'id': resource_id, 'type': 'http', 'name': resource_id, 'config': {
+                'host': '127.0.0.1', 'port': bind_port, 'scheme': 'http', 'tlsEnabled': 'false',
+                'apiPublicBaseUrl': 'https://gateway.example.test', 'minimumQtpThreads': 1, 'maximumQtpThreads': 2}}
+        project = Project.model_validate({'id': 'receiver-get-debug', 'name': 'Receiver GET',
+            'resources': [resource('one', port), resource('two', other_port)],
+            'tasks': [task('get-orders', 'one', 'GET'), task('post-orders', 'two', 'POST')]})
+        with patch.object(main, 'get_project', return_value=project), patch.object(main, 'append_project_logs'), TestClient(main.app) as client:
+            started = client.post(f'/api/projects/{project.id}/debug', json={'task_id': 'get-orders'})
+            self.assertEqual(started.status_code, 200, started.text)
+            state = started.json()
+            base = f'http://127.0.0.1:{port}'
+            try:
+                endpoint, = state['endpoints']
+                self.assertEqual(endpoint['methods'], ['GET'])
+                self.assertEqual(endpoint['url'], base + '/orders/{id}')
+                self.assertEqual(endpoint['configuredUrl'], 'https://gateway.example.test/orders/{id}')
+                self.assertFalse(endpoint['tlsEnabled'])
+                with httpx.Client(trust_env=False, timeout=5) as live:
+                    self.assertEqual(live.post(base + '/orders/42').status_code, 405)
+                    with self.assertRaises(httpx.ConnectError):
+                        live.post(f'http://127.0.0.1:{other_port}/orders/42')
+                    self.assertEqual(live.get(base + '/orders/42?details=true').status_code, 400)
+                    self.assertEqual(live.get(base + '/orders/nope?details=true', headers={'X-Tenant': 'west'}).status_code, 400)
+                    response = live.get(base + '/orders/42?details=true', headers={'X-Tenant': 'west'})
+                    self.assertEqual(response.status_code, 200, response.text)
+                    self.assertEqual(response.json()['pathParameters'], {'id': 42})
+                    self.assertEqual(response.json()['query'], {'details': True})
+                    self.assertEqual(response.json()['headers']['x-tenant'], 'west')
+                    spec = live.get(base + '/_mina/openapi.json').json()
+                    methods = spec['paths']['/orders/{id}']
+                    self.assertEqual(set(methods), {'get'})
+                    def parameter_type(parameter):
+                        schema = parameter['schema']
+                        if '$ref' in schema:
+                            schema = spec['components']['schemas'][schema['$ref'].rsplit('/', 1)[-1]]
+                        return schema['type']
+                    self.assertEqual({p['in']: parameter_type(p) for p in methods['get']['parameters']},
+                                     {'path': 'integer', 'query': 'boolean', 'header': 'string'})
+                    self.assertIn('X-Tenant', json.dumps(postman_collection(spec, base)))
+                    self.assertEqual(client.post(f'/api/listeners/{project.id}/orders/42').status_code, 405)
+            finally:
+                client.post(f"/api/debug/{state['sessionId']}/action", json={'action': 'stop'})
+        main.runtime_states.pop(project.id, None)
+
     def test_hmac_preview_uses_the_actual_encoded_request_target(self):
         import time
         from tests.test_api_blueprint import plan_project

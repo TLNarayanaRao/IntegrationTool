@@ -63,8 +63,8 @@ async def _handle_request(app,scope,receive,send,state):
         for pattern,names,metadata,cfg in app.compiled:
             match=pattern.match(scope['path'])
             if match:
-                methods=cfg.get('methods') or cfg.get('method') or 'POST'
-                methods={str(item).strip().upper() for item in (methods if isinstance(methods,list) else str(methods).split(','))}
+                from .api_docs import methods_for
+                methods=set(methods_for(cfg))
                 if 'GET' in methods:methods.add('HEAD')
                 matches.append((metadata,cfg,dict(zip(names,match.groups())),methods))
         if not matches:raise HTTPFault('No matching listener','HTTP_NOT_FOUND',404)
@@ -74,9 +74,7 @@ async def _handle_request(app,scope,receive,send,state):
         if (requested or method)=='HEAD':
             # A declared HEAD operation overrides the automatic GET fallback.
             for item in matches:
-                configured=item[1].get('methods') or item[1].get('method') or 'POST'
-                declared=configured if isinstance(configured,list) else str(configured).split(',')
-                if 'HEAD' in {str(value).strip().upper() for value in declared}:selected=item;break
+                if 'HEAD' in methods_for(item[1]):selected=item;break
         if selected is None and method!='OPTIONS':
             extra['Allow']=', '.join(sorted(allowed_methods));raise HTTPFault('Method not allowed','HTTP_METHOD_NOT_ALLOWED',405)
         metadata,cfg,parameters,methods=selected or matches[0]
@@ -138,12 +136,15 @@ async def _handle_request(app,scope,receive,send,state):
         try:body_value=typed_form_body(cfg,body_value,content_type)
         except (ValueError,TypeError,KeyError):raise HTTPFault('Form fields violate their declared types','REST_VALIDATION',400) from None
         query=multi_values(urllib.parse.parse_qsl(scope.get('query_string',b'').decode('utf-8'),keep_blank_values=True))
-        errors=validate_parameters(cfg,parameters,query,headers,body_value if size else None)
+        decoded = {'path': {}, 'query': {}, 'header': {}}
+        errors=validate_parameters(cfg,parameters,query,headers,body_value if size else None,decoded)
         if errors:raise HTTPFault('; '.join(errors),'REST_VALIDATION',400)
         schema=request_schema(cfg,content_type)
         validate_request = boolean(cfg.get('validateRequest'), bool(cfg.get('openApiDocument')))
         if size and validate_request and schema is not None and schema_errors(body_value,schema):raise HTTPFault('Request schema validation failed','REST_VALIDATION',400)
-        payload={'body':body_value,'headers':headers,'headerPairs':[{'name':k,'value':v} for k,v in pairs],'method':method,'path':scope['path'],'pathParameters':parameters,'query':query,'remote':scope.get('client'),'auth':claims}
+        payload={'body':body_value,'headers':{**headers, **decoded['header']},'headerPairs':[{'name':k,'value':v} for k,v in pairs],
+                 'method':method,'path':scope['path'],'pathParameters':{**parameters, **decoded['path']},
+                 'query':{**query, **decoded['query']},'remote':scope.get('client'),'auth':claims}
         if size and not upload and (isinstance(schema, str) and schema.lstrip().startswith('<')
                                     or cfg.get('requestContentTypes') and media_family(content_type) == 'xml'):
             from .data_formats import DataFormats

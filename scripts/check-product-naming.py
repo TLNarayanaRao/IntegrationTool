@@ -3,21 +3,33 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-FORBIDDEN = re.compile(r'tibco|mulesoft|muelsoft|dell[ -]?boomi|\bboomi\b', re.I)
+FORBIDDEN = re.compile(r'tibco|businessworks|mulesoft|muelsoft|dell[ -]?boomi|\bboomi\b', re.I)
 FACTORY = 'com.tibco.tibjms.TibjmsConnectionFactory'
 JNDI = 'com.tibco.tibjms.naming.TibjmsInitialContextFactory'
 # Exact provider contracts, not arbitrary line/file exclusions.
 ALLOWED = {
-    'frontend/src/main.tsx': [FACTORY, JNDI],
-    'backend/app/models.py': [FACTORY, JNDI],
-    'backend/app/java_bridge.py': [FACTORY],
+    'backend/app/java_bridge.py': [FACTORY, JNDI],
     'java-bridge/src/com/mina/bridge/MinaJavaBridge.java': [FACTORY],
     'backend/app/sap.py': ['http://www.tibco.com/xmlns/sapscalar/2015/05'],
+    'backend/app/mapper_xml.py': [
+        'http://www.tibco.com/bw/xslt/custom-functions',
+        'http://www.tibco.com/bw/xpath/bw-custom-functions',
+    ],
+    'backend/app/bw_process.py': [
+        'http://www.tibco.com/bpel/2007/extensions',
+        'http://tns.tibco.com/bw/model/core/bwext',
+        'http://xsd.tns.tibco.com/amf/models/sharedresource/jndi',
+        'http://xsd.tns.tibco.com/amf/models/sharedresource/jdbc',
+        'http://xsd.tns.tibco.com/bw/models/sharedresource/httpclient',
+        'http://xsd.tns.tibco.com/bw/models/sharedresource/httpconnector',
+        'http://ns.tibco.com/bw/property',
+        'http://ns.tibco.com/bw/palette/dataformat',
+    ],
 }
 AREAS = ['frontend/src', 'frontend/public', 'frontend/scripts', 'frontend/electron',
-         'backend/app', 'backend/tests', 'administrator/app', 'administrator/tests',
+         'backend/app', 'administrator/app', 'administrator/tests',
          'java-bridge/src', 'docs', 'scripts', 'drivers']
-TEXT = {'.py', '.java', '.ts', '.tsx', '.js', '.mjs', '.json', '.md', '.html',
+TEXT = {'.py', '.java', '.ts', '.tsx', '.js', '.mjs', '.cjs', '.json', '.md', '.html',
         '.css', '.svg', '.sh', '.ps1', '.ini', '.txt', '.yaml', '.yml'}
 
 

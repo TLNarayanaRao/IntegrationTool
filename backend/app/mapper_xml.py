@@ -127,7 +127,7 @@ def _bw_xslt_functions(binding, properties, parameters):
                 function(BW_FUNCTIONS, name, arguments, expression)
     if BW_RUNTIME_FUNCTIONS in namespaces and (BW_RUNTIME_FUNCTIONS, 'getModuleProperty', 1) not in declared:
         if BW_PROPERTIES in parameters or any(node.get('name') == BW_PROPERTIES for node in binding):
-            raise ValueError('XSLT uses a reserved MINA BusinessWorks parameter')
+            raise ValueError('XSLT uses a reserved project property parameter')
         document = etree.Element('properties')
         for key, value in properties.items():
             if isinstance(value, (str, bool, int, float)):
@@ -246,9 +246,9 @@ def xpath_function_palette(version):
             except ElementPathError:
                 continue
             palette.append({'name':'xs:' + name, 'args':['value'], 'category':'XML Schema constructors', 'signature':''})
-    palette.extend({'name': 'tib:' + name, 'args': list(args), 'category': 'TIBCO functions', 'signature': ''}
+    palette.extend({'name': 'ext:' + name, 'args': list(args), 'category': 'Extension functions', 'signature': ''}
                    for name, (_, args, _, _) in _BW_FUNCTIONS.items())
-    palette.append({'name': 'bw:getModuleProperty', 'args': ['property name'], 'category': 'TIBCO functions', 'signature': ''})
+    palette.append({'name': 'project:getModuleProperty', 'args': ['property name'], 'category': 'Extension functions', 'signature': ''})
     return sorted(palette, key=lambda entry: (entry['category'], entry['name'], len(entry['args'])))
 
 
@@ -265,7 +265,8 @@ def xpath_value(root, expression, version, namespace_text, variables=None, prope
     if not isinstance(namespaces, dict) or any(not isinstance(prefix, str) or not prefix or not isinstance(uri, str)
                                                for prefix, uri in namespaces.items()):
         raise ValueError('XPath namespaces must be a JSON object of prefix-to-URI strings')
-    conventional = {prefix: uri for prefix, uri in {'tib': BW_FUNCTIONS, 'bw': BW_RUNTIME_FUNCTIONS}.items()
+    conventional = {prefix: uri for prefix, uri in {'ext': BW_FUNCTIONS, 'project': BW_RUNTIME_FUNCTIONS,
+                                                    'tib': BW_FUNCTIONS, 'bw': BW_RUNTIME_FUNCTIONS}.items()
                     if prefix + ':' in expression}
     namespaces = {**conventional, **{prefix: uri for prefix, uri in root.nsmap.items() if prefix}, **namespaces}
     properties = properties or {}
@@ -314,7 +315,7 @@ def xpath_value(root, expression, version, namespace_text, variables=None, prope
 def bw_transition_condition(expression, config, lookup, properties):
     """Evaluate imported transition XPath with the BW variables in scope."""
     if not expression or len(expression) > 4096:
-        raise ValueError('BusinessWorks transition requires XPath of at most 4096 characters')
+        raise ValueError('Imported transition requires XPath of at most 4096 characters')
     variables = {name: lookup(path) for name, path in config.get('variables', {}).items()}
     namespaces = config.get('namespaces', {})
     root = parse_xml('<input/>')
@@ -322,7 +323,7 @@ def bw_transition_condition(expression, config, lookup, properties):
     if version == '1.0':
         return xpath_value(root, f'boolean({expression})', '1.0', namespaces, variables, properties)
     if version != '2.0':
-        raise ValueError('Unsupported BusinessWorks transition XPath version')
+        raise ValueError('Unsupported transition XPath version')
     binding = etree.Element(XSL + 'stylesheet', nsmap={**namespaces, 'mina-xsl': XSL[1:-1]}, version='2.0',
                             attrib={'exclude-result-prefixes': '#all'})
     for name in variables:

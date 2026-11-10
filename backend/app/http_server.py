@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio, ipaddress, json, re, threading, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from .http_transport import HTTPFault, authorize, boolean, number, tls_context, validate_authentication
-from .rest_contract import operation_config, validate_parameters
+from .rest_contract import listener_parameters, operation_config
 from .http_contracts import listener_media_types, media_name, media_schema, schema_for_media
 
 def route_pattern(path):
@@ -57,6 +57,15 @@ def listener_config(connection,activity):
     if cfg.get('connectorMode')=='client':raise HTTPFault('Listener requires a server shared connection','HTTP_CONFIGURATION',400)
     path='/'+('/'.join((str(cfg.get('basePath') or '').strip('/'),str(cfg.get('path') or '/').strip('/')))).strip('/')
     cfg['path']=path
+    from .api_docs import methods_for
+    methods = methods_for(cfg)
+    if not methods or any(method not in {'GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','TRACE'} for method in methods):
+        raise HTTPFault('Select at least one supported HTTP method','HTTP_CONFIGURATION',400)
+    cfg['methods'] = methods
+    try:
+        cfg['_restParameters'] = listener_parameters(cfg, route_pattern(path)[1])
+    except (ValueError, KeyError, TypeError) as error:
+        raise HTTPFault(str(error), 'HTTP_CONFIGURATION', 400) from None
     minimum=int(number(cfg,'minimumQtpThreads',10,1,10000));maximum=int(number(cfg,'maximumQtpThreads',75,minimum,10000))
     number(cfg,'port',8080,1,65535);number(cfg,'maxRequestBodyBytes',64*1024**2,1);number(cfg,'maxHeaderBytes',65536,1024)
     if str(cfg.get('httpVersion') or '1.1') not in ('1.1','2'):raise HTTPFault('HTTP listener version must be 1.1 or 2','HTTP_CONFIGURATION',400)

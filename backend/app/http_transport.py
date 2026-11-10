@@ -4,7 +4,7 @@ import atexit, base64, hashlib, hmac, ipaddress, json, math, os, re, ssl, tempfi
 from pathlib import Path
 import httpx
 from .rest_contract import operation_config, validate_parameters, wire_parameters
-from .http_messages import request_config, mime_body, response_tree
+from .http_messages import request_config, mime_body, response_tree, multi_values, object_value as message_object_value
 from .http_contracts import schema_errors, response_schema,request_schema,media_schema,response_content,parse_json
 from .http_policy import circuit_enter, circuit_result, retry_delay, retryable
 
@@ -23,12 +23,10 @@ def number(cfg,key,default,minimum=0,maximum=1000000000):
     return value
 
 def object_value(value,label):
-    if value in (None,''): return {}
-    if isinstance(value,str):
-        try: value=json.loads(value)
-        except ValueError: raise HTTPFault(f'{label} must be a JSON object','HTTP_CONFIGURATION',400)
-    if not isinstance(value,dict): raise HTTPFault(f'{label} must be a JSON object','HTTP_CONFIGURATION',400)
-    return value
+    try:
+        return message_object_value(value, label)
+    except ValueError as error:
+        raise HTTPFault(str(error), 'HTTP_CONFIGURATION', 400) from None
 
 def merged(connection,activity):
     result={**(connection or {}),**(activity or {})}
@@ -277,8 +275,21 @@ def request(cfg,connection=None):
         effective_scheme='https' if boolean(cfg.get('defaultConfidentiality')) or boolean(cfg.get('confidentiality')) or boolean(cfg.get('tlsEnabled')) else cfg.get('scheme') or 'http'
         base=str(cfg.get('baseUrl') or f'{effective_scheme}://{cfg.get("host") or "localhost"}:{cfg.get("port") or (443 if effective_scheme=="https" else 80)}')
         url=base.rstrip('/')+'/'+('/'.join(part for part in (str(cfg.get('basePath') or '').strip('/'),url.lstrip('/')) if part))
-    for name,value in wire_parameters(cfg,'path',object_value(cfg.get('pathParameters'),'URI parameters')).items():url=url.replace('{'+name+'}',urllib.parse.quote(str(value),safe=';=,.' if any(p.get('in')=='path' and p.get('name')==name and p.get('style') in ('matrix','label') for p in cfg.get('_restParameters',[])) else ''))
-    if re.search(r'\{[^}]+\}',url):raise HTTPFault('Required URI parameter is missing','HTTP_CONFIGURATION',400)
+    path_parameters = {name: value for name, value in object_value(cfg.get('pathParameters'), 'URI parameters').items()
+                       if value is not None}
+    parts = urllib.parse.urlsplit(url)
+    path = parts.path
+    for name, value in wire_parameters(cfg, 'path', path_parameters).items():
+        style = next((p.get('style') for p in cfg.get('_restParameters', [])
+                      if p.get('in') == 'path' and p.get('name') == name), None)
+        path = path.replace('{' + name + '}', urllib.parse.quote(str(value), safe=';=,.' if style in ('matrix', 'label') else ''))
+    if re.search(r'\{[^}]+\}', path):
+        raise HTTPFault('Required URI parameter is missing', 'HTTP_CONFIGURATION', 400)
+    if any(character in parts.netloc for character in '{}'):
+        raise HTTPFault('URI parameters may only be used in the request path', 'HTTP_CONFIGURATION', 400)
+    url = urllib.parse.urlunsplit(parts._replace(path=path))
+    mapped_query = object_value(cfg.get('query'), 'Query parameters')
+    url_query = multi_values(urllib.parse.parse_qsl(parts.query, keep_blank_values=True))
     secure_url(url,cfg);method=str(cfg.get('method') or 'GET').upper()
     if method not in ('GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','TRACE'):raise HTTPFault('Unsupported HTTP method','HTTP_CONFIGURATION',400)
     headers={str(k).lower():([str(item) for item in v] if isinstance(v,list) else str(v)) for k,v in cfg['headers'].items()}
@@ -288,10 +299,10 @@ def request(cfg,connection=None):
     body=cfg.get('body');mode=str(cfg.get('sendBodyMode') or 'ALWAYS').upper()
     if mode not in ('ALWAYS','AUTO','NEVER'):raise HTTPFault('Invalid send body mode','HTTP_CONFIGURATION',400)
     if mode=='NEVER' or mode=='AUTO' and method in ('GET','HEAD','OPTIONS'):body=None
-    errors=validate_parameters(cfg,object_value(cfg.get('pathParameters'),'URI parameters'),cfg['query'],headers,body)
+    errors=validate_parameters(cfg,path_parameters,{**url_query, **mapped_query},headers,body)
     if errors:raise HTTPFault('; '.join(errors),'REST_VALIDATION',400)
     headers=wire_parameters(cfg,'header',headers)
-    cfg['query']=wire_parameters(cfg,'query',cfg['query'])
+    query_parameters = wire_parameters(cfg, 'query', mapped_query)
     request_type=str(headers.get('content-type') or '')
     if body is not None and cfg.get('_restRequestSchemas') and media_schema(cfg['_restRequestSchemas'],request_type)[0] is None:raise HTTPFault('Unsupported request content type','REST_UNSUPPORTED_MEDIA',415)
     schema=request_schema(cfg,request_type)
@@ -358,7 +369,7 @@ def request(cfg,connection=None):
             try:
                 if time.monotonic()>=deadline:raise HTTPFault('HTTP activity timeout','HTTP_TIMEOUT',504)
                 pairs=[(key,item) for key,value in headers.items() for item in (value if isinstance(value,list) else [value])]
-                query=httpx.QueryParams(urllib.parse.urlsplit(url).query).merge(cfg['query']) if cfg['query'] else None
+                query=httpx.QueryParams(parts.query).merge(query_parameters) if query_parameters else None
                 from .http_streams import ReplayStream
                 content=ReplayStream(content_factory) if content_factory else raw if body is not None or '_mimeEnvelope' in cfg else None
                 req=client.build_request(method,url,params=query,headers=pairs,content=content,timeout=timeout)

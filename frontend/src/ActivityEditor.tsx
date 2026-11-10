@@ -2,6 +2,7 @@ import ModalLayer from "./ModalLayer";
 import { editMapperXsd } from "./mapperXsd";
 import EndpointSchemaPicker, { savedSchemaChoice, schemaChoiceName } from "./EndpointSchemaPicker";
 import HttpContentTypePicker, { HttpContentTypeCheckboxes, savedContentTypes } from "./HttpContentTypePicker";
+import HttpRequestParameters, { type RequestParameter } from "./HttpRequestParameters";
 import SharedConnectionSelect, { type SharedConnection } from "./SharedConnectionSelect";
 import TransformationTools from "./TransformationTools";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -50,6 +51,7 @@ type Field = {
     | "boolean"
     | "select"
     | "methods"
+    | "requestParameters"
     | "textarea"
     | "schema"
     | "dataFormat"
@@ -123,8 +125,9 @@ function httpRequestFields(output = false): DataField[] {
     field("mimeEnvelopeElement.mimePart.mimeHeaders", "object"),
     ...["content-type","content-transfer-encoding","content-id","content-disposition"].map(name => field(`mimeEnvelopeElement.mimePart.mimeHeaders.${name}`)),
     field("mimeEnvelopeElement.mimePart.binaryContent"),field("mimeEnvelopeElement.mimePart.textContent"),field("mimeEnvelopeElement.mimePart.fileName")];
+  const customHeaders = output ? "Headers.DynamicHeaders" : "CustomHeaders";
   const headers = [field("Headers", "object"),...(output ? ["Allow","Content-Type","Content-Length","Content-Encoding","Date","Location","Set-Cookie","Pragma"] : ["accept","content-type","Accept-Charset","Accept-Encoding","Cookie","pragma"]).map(name => field(`Headers.${name}`, output && ["Allow","Set-Cookie"].includes(name) ? "string[]" : "string", output && ["Allow","Set-Cookie"].includes(name))),
-    field("Headers.DynamicHeaders", "object[]", true),field("Headers.DynamicHeaders.name"),field("Headers.DynamicHeaders.value")];
+    field(customHeaders, "object[]", true),field(`${customHeaders}.name`),field(`${customHeaders}.value`)];
   return [{...d(root,root,"object",true),minOccurs:"1",maxOccurs:"1"},...(output ? [field("statusLine","object"),field("statusLine.httpVersion"),field("statusLine.statusCode","integer"),field("statusLine.reasonPhrase"),field("body","any"),field("asciiContent"),field("binaryContent")] : [field("Config","object"),
     field("Config.host"),field("Config.port","integer"),field("Config.scheme"),field("Config.requestURI"),field("Config.Method"),field("Config.RequestBody","any"),field("Config.bodyFormat"),
     field("Config.QueryParameters","object"),field("Config.URIParameters","object"),field("Config.QueryString"),field("Config.FilePath"),
@@ -137,6 +140,15 @@ function httpRequestFields(output = false): DataField[] {
 }
 
 function httpInputMappings(config: any): any {
+  const customRoot = "RestInputRequest.CustomHeaders";
+  const legacyRoot = "RestInputRequest.Headers.DynamicHeaders";
+  const saved = Object.entries(config.inputMappings || {});
+  const isUnder = (key: string, root: string) => key === root || key.startsWith(`${root}.`);
+  const hasCustomHeaders = saved.some(([key]) => isUnder(key, customRoot));
+  const mappings = saved.flatMap(([key, value]): [string, unknown][] => {
+    if (!isUnder(key, legacyRoot)) return [[key, value]];
+    return hasCustomHeaders ? [] : [[customRoot + key.slice(legacyRoot.length), value]];
+  });
   const aliases: Record<string,string> = {host:"host",port:"port",scheme:"scheme",url:"requestURI",method:"Method",body:"RequestBody",bodyType:"bodyFormat",query:"QueryParameters",pathParameters:"URIParameters",activityTimeoutSeconds:"activityTimeoutSeconds",followRedirects:"followRedirects",requestEntityProcessing:"requestEntityProcessing",sendBodyMode:"sendBodyMode",successStatusCodes:"successStatusCodes",raiseForStatus:"raiseForStatus",socketTimeoutMs:"timeout"};
   for (const key of ["openApiDocument","openApiBaseUrl","openApiReferenceDocuments","openApiAllowedRefOrigins","operationId","validateRequest","requestSchema","validateResponse","responseSchema"]) aliases[key]=key;
   const convert = (key:string) => key === "headers" || key.startsWith("headers.") ? `RestInputRequest.Headers${key.slice(7)}` : key === "accept" ? "RestInputRequest.Headers.accept" : key === "contentType" ? "RestInputRequest.Headers.content-type" : aliases[key] ? `RestInputRequest.Config.${aliases[key]}` : key;
@@ -144,20 +156,20 @@ function httpInputMappings(config: any): any {
   const result:any = {};
   const standard:Record<string,string>={accept:"accept","content-type":"content-type","accept-charset":"Accept-Charset","accept-encoding":"Accept-Encoding",cookie:"Cookie",pragma:"pragma"};
   const custom = new Map<string,number>();
-  let nextIndex=Math.max(-1,...Object.keys(config.inputMappings || {}).map(key=>Number(key.match(/^RestInputRequest\.Headers\.DynamicHeaders\.(\d+)/)?.[1] ?? -1)))+1;
+  let nextIndex=Math.max(-1,...mappings.map(([key])=>Number(key.match(/^RestInputRequest\.CustomHeaders\.(\d+)(?:\.|$)/)?.[1] ?? -1)))+1;
   const header=(name:string,value:any,mapped=false) => {
     const known=standard[name.toLowerCase()];
     if(known) {result[`RestInputRequest.Headers.${known}`]=mapped ? value : literal(value);return;}
     const index=custom.get(name.toLowerCase()) ?? nextIndex++;
     custom.set(name.toLowerCase(),index);
-    const prefix=`RestInputRequest.Headers.DynamicHeaders.${index}`;
+    const prefix=`${customRoot}.${index}`;
     result[prefix]='{}';result[`${prefix}.name`]=JSON.stringify(name);result[`${prefix}.value`]=mapped ? value : literal(value);
   };
   for (const key of [...Object.keys(aliases),"accept","contentType"]) if (config[key] !== undefined) result[convert(key)] = literal(config[key]);
   if(config.headers && typeof config.headers==='object') for(const [name,value] of Object.entries(config.headers)) header(name,value);
   else if(config.headers) result['RestInputRequest.Headers']=literal(config.headers);
   if (config.timeout !== undefined) result["RestInputRequest.Config.timeout"] = typeof config.timeout === 'number' ? String(config.timeout*1000) : `multiply(${literal(config.timeout)}, 1000)`;
-  for (const [key,value] of Object.entries(config.inputMappings || {})) {
+  for (const [key,value] of mappings) {
     if(key.startsWith('headers.')) header(key.slice(8),value,true);
     else result[convert(key)] = value;
   }
@@ -166,7 +178,7 @@ function httpInputMappings(config: any): any {
 
 function httpRequestOccurrences(fields: DataField[], mappings: any): DataField[] {
   let result=fields;
-  for (const root of ["RestInputRequest.Headers.DynamicHeaders","RestInputRequest.mimeEnvelopeElement.mimePart"]) {
+  for (const root of ["RestInputRequest.CustomHeaders","RestInputRequest.mimeEnvelopeElement.mimePart"]) {
     const indices=[...new Set(Object.keys(mappings || {}).filter(key => key.startsWith(`${root}.`)).map(key => key.slice(root.length+1).split('.')[0]).filter(key => /^\d+$/.test(key)))].sort((a,b)=>Number(a)-Number(b));
     if (!indices.length) continue;
     const children=httpRequestFields().filter(field => field.key.startsWith(`${root}.`));
@@ -522,6 +534,7 @@ export function activityContract(n: any): Contract {
         },
         f("path", "Listener path"),
         f("methods", "Allowed HTTP methods", "methods", "Select every HTTP method accepted by this listener."),
+        f("requestParameters", "Request parameters", "requestParameters", "Declare typed URI parameters, query parameters, and custom headers."),
         f("requestContentTypes", "Request content types", "mediaTypes", "Select the accepted request media types. A selected XSD applies to XML and a JSON Schema applies to JSON when several formats are selected."),
         f("responseContentTypes", "Response content types", "mediaTypes", "Select the offered response media types. With multiple selections, the Accept header selects the format; the first selected type is the default."),
         f("validateRequest", "Validate request schema", "boolean"),
@@ -624,6 +637,7 @@ export function activityContract(n: any): Contract {
         },
         f("path", "Resource path"),
         f("methods", "Allowed HTTP methods", "methods", "Select every HTTP method exposed by this REST resource."),
+        f("requestParameters", "Request parameters", "requestParameters", "Declare typed URI parameters, query parameters, and custom headers."),
         f("requestContentTypes", "Request content types", "mediaTypes", "Select one or more accepted media types. With an OpenAPI contract, select media types declared by the operation or leave all unchecked to use the contract."),
         f("responseContentTypes", "Response content types", "mediaTypes", "Select the offered response media types. With multiple selections, the Accept header selects the format; the first selected type is the default."),
         f("activityTimeoutSeconds", "Request execution timeout (seconds)", "number"),
@@ -727,10 +741,11 @@ export function activityContract(n: any): Contract {
         f("overrideTransactionBehavior", "Override transaction behavior", "boolean"),
         f("overrideJdbcConnection", "Override JDBC connection", "boolean"),
         ...(["query", "dynamic"].includes(op) ? [f("useNil", "Use nil for SQL NULL", "boolean"), f("interpretEmptyStringAsNull", "Interpret empty string as NULL", "boolean"), f("interpretInvalidXmlChars", "Interpret invalid XML characters", "boolean"), f("processInSubsets", "Process result in subsets", "boolean"), f("subsetSize", "Subset size", "number"), f("overrideSqlStatement", "Allow mapped SQL override", "boolean")] : []),
-        ...(["insert", "update", "delete"].includes(op) ? [f("insertIfRecordDoesNotExist", "Insert if record does not exist", "boolean"), f("interpretEmptyStringAsNull", "Interpret empty string as NULL", "boolean"), f("batchUpdate", "Batch update", "boolean"), f("overrideSqlStatement", "Allow mapped SQL override", "boolean")] : []),
+        ...(op === "update" ? [f("insertIfRecordDoesNotExist", "Insert if record does not exist", "boolean")] : []),
+        ...(["insert", "update", "delete"].includes(op) ? [f("interpretEmptyStringAsNull", "Interpret empty string as NULL", "boolean"), f("batchUpdate", "Batch update", "boolean"), f("overrideSqlStatement", "Allow mapped SQL override", "boolean")] : []),
       ],
-      input: [d("ServerTimeZone", "Database server time zone", "string"), d("timeout", "Dynamic timeout", "number"), ...(["query", "dynamic"].includes(op) ? [d("maxRows", "Dynamic maximum rows", "number"), d("SqlStatement", "Dynamic SQL override", "string"), d("parameters", "Prepared statement parameters", "object")] : op === "call" ? [d("parameters", "IN and IN/OUT procedure parameters", "object")] : [d("parameters", "Prepared statement parameters", "object"), d("records", "Batch parameter records", "array"), d("SqlUpdateStatement", "Dynamic update SQL", "string"), d("InsertStatement", "Insert-if-missing SQL", "string")])],
-      output: ["query", "dynamic"].includes(op) ? [d("resultSet", "JDBC result set", "object"), d("resultSet.Record", "Result records", "array"), d("rows", "Result records", "array"), d("rowCount", "Rows returned", "integer"), d("lastSubset", "Last result subset", "boolean")] : op === "call" ? [d("resultSets", "Procedure result sets", "array"), d("outParameters", "OUT and IN/OUT parameters", "object"), d("UnresolvedResultSets", "Unresolved result sets", "array")] : [d("noOfUpdates", "Number of updates", "integer"), d("rowCount", "Affected rows", "integer"), d("lastInsertId", "Generated key", "integer|string")],
+      input: [d("ServerTimeZone", "Database server time zone", "string"), d("timeout", "Dynamic timeout", "number"), ...(["query", "dynamic"].includes(op) ? [d("maxRows", "Dynamic maximum rows", "number"), d("SqlStatement", "Dynamic SQL override", "string"), d("parameters", "Prepared statement parameters", "object"), d("rowOffset", "Row offset when processing subsets", "integer")] : op === "call" ? [d("parameters", "IN and IN/OUT procedure parameters", "object")] : [d("parameters", "Prepared statement parameters", "object"), d("records", "Batch parameter records", "array"), d("SqlUpdateStatement", "Dynamic update SQL", "string"), ...(op === "update" ? [d("InsertStatement", "Insert-if-missing SQL", "string")] : [])])],
+      output: ["query", "dynamic"].includes(op) ? [d("resultSet", "JDBC result set", "object"), d("resultSet.Record", "Result records", "array"), d("rows", "Result records", "array"), d("rowCount", "Rows returned", "integer"), d("lastSubset", "Last result subset", "boolean"), d("nextRowOffset", "Offset for the next subset, when available", "integer")] : op === "call" ? [d("resultSets", "Procedure result sets", "array"), d("outParameters", "OUT and IN/OUT parameters", "object"), d("UnresolvedResultSets", "Unresolved result sets", "array")] : [d("noOfUpdates", "Number of updates", "integer"), d("rowCount", "Affected rows", "integer"), d("lastInsertId", "Generated key", "integer|string")],
       errors: [
         { type: "JDBCConnectionNotFoundException", description: "The selected JDBC shared connection is unavailable." },
         { type: "InvalidTimeZoneException", description: "The database server time zone is invalid." },
@@ -1388,6 +1403,17 @@ function boundaryFields(task: any, boundaryType: "start" | "end", schemas: any[]
 function resolvedActivityContract(node: any, task: any, tasks: any[], schemas: any[], resources: any[] = []): Contract {
   const contract = activityContract(node);
   if (node.type === "http_listener" || (node.type === "rest" && node.config?.operation === "receiver")) {
+    const declarations: RequestParameter[] = Array.isArray(node.config?.requestParameters) ? node.config.requestParameters : [];
+    const groups = {pathParameters: "path", query: "query", headers: "header"};
+    contract.output = contract.output.flatMap(field => {
+      const location = groups[field.key as keyof typeof groups];
+      if (!location) return [field];
+      return [field, ...declarations.filter(parameter => parameter.in === location && parameter.name?.trim()).map(parameter => {
+        const name = parameter.name.trim();
+        return {...d(`${field.key}.${location === "header" ? name.toLowerCase() : name}`, name, parameter.type),
+          required: location === "path" || parameter.required};
+      })];
+    });
     const schema = node.config?.requestSchema;
     const fields = schemaDataFields(schema);
     if (fields.length) {
@@ -1504,7 +1530,7 @@ export function possibleTaskExceptions(task: any, tasks: any[] = [], schemas: an
 }
 
 function runtimeMappableInputs(node: any, contract: Contract): DataField[] {
-  if (node.type === "http" || (node.type === "rest" && node.config?.operation === "invoke")) return httpRequestOccurrences(contract.input,node.config?.inputMappings);
+  if (node.type === "http" || (node.type === "rest" && node.config?.operation === "invoke")) return httpRequestOccurrences(contract.input,httpInputMappings(node.config || {}));
   if (["xml", "json", "flat"].includes(node.type)) return contract.input;
   if (["start", "timer", "http_listener"].includes(node.type) || (node.type === "file" && node.config?.operation === "poll")) return contract.input;
   const existing = new Set(contract.input.map((field) => field.key));
@@ -1783,6 +1809,10 @@ export default function ActivityEditor({
                 update({ config: next });
               }}
             />
+          ) : field.type === "requestParameters" ? (
+            <HttpRequestParameters key={node.id} path={String(cfg.path || "")}
+              value={Array.isArray(cfg.requestParameters) ? cfg.requestParameters : []}
+              onChange={value => set(field.key, value)}/>
           ) : field.type === "mediaTypes" ? (
             <HttpContentTypeCheckboxes key={`${node.id}:${field.key}`} label={field.label}
               response={field.key === "responseContentTypes"}
@@ -1799,7 +1829,7 @@ export default function ActivityEditor({
             <FieldEditor
               key={field.key}
               field={node.type === "catch" && field.key === "errorType" ? { ...field, type: "select", options: ["", ...exceptionTypes] } : field}
-              value={derivedConfiguration[field.key] ?? (
+              value={derivedConfiguration[field.key] ?? (field.type === "methods" ? cfg.method || "POST" :
                 ((["validateRequest", "validateResponse"].includes(field.key) && derivedConfiguration.openApiDocument)
                   || (node.type === "json" && cfg.schemaType === "XSD" && ["validateOutput", "validateInput"].includes(field.key))) ? true
                   : field.key === "blankLinePolicy" ? (cfg.skipBlankLines === false ? "Stop" : "Skip") : undefined)}
@@ -1854,7 +1884,7 @@ export default function ActivityEditor({
     ) : (
       <InputEditor
         node={node}
-        fields={runtimeMappableInputs(node, contract)}
+        fields={node.type === "http" || (node.type === "rest" && cfg.operation === "invoke") ? contract.input : runtimeMappableInputs(node, contract)}
         mappings={node.type === "http" || (node.type === "rest" && cfg.operation === "invoke") ? httpInputMappings(cfg) : isParseRender(node) ? formatInputMappings(cfg, contract).values : cfg.inputMappings || {}}
         set={(v: any) => {
           const config = {...cfg,inputMappings:v,inputMappingTypes:activityInputMappingTypes({...node,config:{...cfg,inputMappings:v}},task,tasks,schemas || [],resources || [])};
@@ -2219,9 +2249,11 @@ function JdbcDesigner({ config, resource, properties, setConfig }: any) {
     dynamic: "SELECT * FROM orders WHERE customer_id = :customerId",
   };
   const configuredParameters = Array.isArray(config.preparedParameters) ? config.preparedParameters : [];
+  const sqlTokens = /--[^\r\n]*|\/\*[\s\S]*?\*\/|\$(?<tag>[A-Za-z_][A-Za-z0-9_]*|)\$[\s\S]*?\$\k<tag>\$|\bq'\[[\s\S]*?\]'|\bq'\{[\s\S]*?\}'|\bq'\([\s\S]*?\)'|\bq'<[\s\S]*?>'|\bq'(?<delimiter>[^\s'])[\s\S]*?\k<delimiter>'|'(?:''|\\[\s\S]|[^'])*'|"(?:""|[^"])*"|`(?:``|[^`])*`|(?<!:):(?<name>[A-Za-z_][A-Za-z0-9_]*)|(?<position>(?<!\?)\?(?![|&?]))/gi;
   const updateSql = (sql: string) => {
-    const named = [...sql.matchAll(/(^|[^:]):([A-Za-z_][A-Za-z0-9_]*)/g)].map((match) => match[2]);
-    const count = (sql.match(/\?/g) || []).length;
+    const tokens = [...sql.matchAll(sqlTokens)];
+    const named = tokens.flatMap(token => token.groups?.name ? [token.groups.name] : []);
+    const count = tokens.filter(token => token.groups?.position).length;
     const names = [...new Set(named.length ? named : Array.from({ length: count }, (_, index) => `Parameter${index + 1}`))];
     const existing = Object.fromEntries(configuredParameters.map((item: any) => [item.name, item.type]));
     setConfig({ sql, preparedParameterNames: names, preparedParameters: names.map((name) => ({ name, type: existing[name] || "string" })) });
@@ -2235,8 +2267,13 @@ function JdbcDesigner({ config, resource, properties, setConfig }: any) {
     finally { setBusy(false); }
   };
   const fetchMetadata = async () => { const output = await request("/api/jdbc/metadata", { resource: runtimeResource }); if (output) { setMetadata(output); setStatus(`${output.tables?.length || 0} tables and views fetched.`); } };
+  const tableSelect = (table: {schema?: string; name: string}) => {
+    const quote = ["mysql", "mariadb"].includes(String(runtimeResource?.config?.driver).toLowerCase()) ? "`" : '"';
+    const identifier = (value: string) => quote + value.split(quote).join(quote + quote) + quote;
+    return "SELECT * FROM " + (table.schema ? identifier(table.schema) + "." : "") + identifier(table.name);
+  };
   const run = async () => { const output = await request("/api/jdbc/test-query", { resource: runtimeResource, operation: config.operation, config: { ...config, parameters: Object.fromEntries((config.preparedParameterNames || []).map((name: string) => [name, null])) } }); if (output) { setPreview(output); const columns = output.columns || Object.keys(output.rows?.[0] || {}).map((name) => ({ name, dataType: typeof output.rows[0][name] })); setConfig({ outputColumns: columns }); setStatus(`${output.rowCount ?? output.noOfUpdates ?? 0} rows returned/affected. Output schema refreshed.`); } };
-  return <section className="jdbc-designer"><header><span><Database/><b>JDBC SQL DESIGNER</b></span><span><button type="button" onClick={fetchMetadata} disabled={busy || !resource}><RefreshCw/> Fetch metadata</button><button type="button" onClick={run} disabled={busy || !resource || (!String(config.sql || "").trim() && config.operation !== "call")}><FlaskConical/> Run &amp; fetch</button></span></header>{config.operation !== "call" && <><div className="jdbc-editor-toolbar"><span><b>SQL statement</b></span><button type="button" onClick={() => updateSql(samples[config.operation] || samples.query)}>Insert sample {config.operation || "query"}</button></div><div className="jdbc-code-editor"><span aria-hidden="true">SQL</span><textarea aria-label="JDBC SQL statement" value={config.sql || ""} onChange={(event) => updateSql(event.target.value)} placeholder={samples[config.operation] || samples.query} spellCheck={false}/></div></>} {!!configuredParameters.length && <div className="jdbc-parameters"><header><b>Derived input parameters</b></header>{configuredParameters.map((parameter: any, index: number) => <label key={`${parameter.name}-${index}`}><code>{index + 1}</code><span><b>:{parameter.name}</b><small>parameters.{parameter.name}</small></span><select aria-label={`Datatype for ${parameter.name}`} value={parameter.type || "string"} onChange={(event) => setParameterType(parameter.name, event.target.value)}>{parameterTypes.map((type) => <option key={type}>{type}</option>)}</select></label>)}</div>} {metadata && <div className="jdbc-schema-browser">{metadata.tables?.map((table: any) => <button type="button" key={`${table.schema}.${table.name}`} onClick={() => updateSql(`SELECT * FROM ${table.schema ? `${table.schema}.` : ""}${table.name}`)}><span><b>{table.name}</b><small>{table.schema} · {table.type}</small></span><code>{table.columns?.length || 0} columns</code></button>)}</div>} {preview && <pre>{JSON.stringify(preview, null, 2)}</pre>} {status && <p>{status}</p>}</section>;
+  return <section className="jdbc-designer"><header><span><Database/><b>JDBC SQL DESIGNER</b></span><span><button type="button" onClick={fetchMetadata} disabled={busy || !resource}><RefreshCw/> Fetch metadata</button><button type="button" onClick={run} disabled={busy || !resource || (!String(config.sql || "").trim() && config.operation !== "call")}><FlaskConical/> Run &amp; fetch</button></span></header>{config.operation !== "call" && <><div className="jdbc-editor-toolbar"><span><b>SQL statement</b></span><button type="button" onClick={() => updateSql(samples[config.operation] || samples.query)}>Insert sample {config.operation || "query"}</button></div><div className="jdbc-code-editor"><span aria-hidden="true">SQL</span><textarea aria-label="JDBC SQL statement" value={config.sql || ""} onChange={(event) => updateSql(event.target.value)} placeholder={samples[config.operation] || samples.query} spellCheck={false}/></div></>} {!!configuredParameters.length && <div className="jdbc-parameters"><header><b>Derived input parameters</b></header>{configuredParameters.map((parameter: any, index: number) => <label key={`${parameter.name}-${index}`}><code>{index + 1}</code><span><b>:{parameter.name}</b><small>parameters.{parameter.name}</small></span><select aria-label={`Datatype for ${parameter.name}`} value={parameter.type || "string"} onChange={(event) => setParameterType(parameter.name, event.target.value)}>{parameterTypes.map((type) => <option key={type}>{type}</option>)}</select></label>)}</div>} {metadata && <div className="jdbc-schema-browser">{metadata.tables?.map((table: any) => <button type="button" key={`${table.schema}.${table.name}`} onClick={["query", "dynamic"].includes(config.operation) ? () => updateSql(tableSelect(table)) : undefined}><span><b>{table.name}</b><small>{table.schema} · {table.type}</small></span><code>{table.columns?.length || 0} columns</code></button>)}</div>} {preview && <pre>{JSON.stringify(preview, null, 2)}</pre>} {status && <p>{status}</p>}</section>;
 }
 
 function FieldEditor({ field, value, set, resources, tasks, properties = [], selectedResourceId, navigateTask, createConnection, httpRole }: any) {
@@ -2735,6 +2772,8 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
             : node.type === "http_response" && field.path === "contentType" ? "Response content type" : "";
         if (row.kind !== "field") return <LoopMappingRow key={row.key} row={row} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle} sources={sources} patch={patch => setValue(field.path, {...mappings[field.path], ...patch})} remove={() => setValue(field.path, mappingSource(mappings[field.path]))}/>;
         const structural = row.hasChildren || isComplexSchemaType(field.validationType || field.type || ''), canMapStructure = structural && (row.hasChildren || /array|\[\]/.test(field.validationType || field.type || ''));
+        const isCustomHeaders = field.path === "RestInputRequest.CustomHeaders";
+        const addLabel = isCustomHeaders ? "Add header" : `Add ${field.name}`;
         const binding = <MappingBinding structural={structural} expression={mappings[field.path] ?? ""}
           fieldType={field.type} fieldLabel={`${field.label || field.name}${cardinalitySymbol(field)}`}
           validationType={field.validationType || field.type} sources={sources} onChange={(value: any) => setValue(field.path,value)}/>;
@@ -2748,10 +2787,10 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
         }}>
           {row.hasChildren ? <TreeToggle path={row.key} label={field.name} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle}/> : <i className="tree-elbow"/>}
           <span className="target-tree-field"><b>{row.loopKey ? field.name : field.label || field.name}<sup className="cardinality-symbol">{cardinalitySymbol(field)}</sup></b><small>{field.type}</small>
-          {requestTree && /(?:DynamicHeaders|mimePart)$/.test(field.path) && !mappings[field.path] && <button type="button" aria-label={`Add ${field.name}`} title={`Add ${field.name}`} onClick={event=>{event.stopPropagation();addOccurrence(field.path);}}><Plus/></button>}
-          {requestTree && /(?:DynamicHeaders|mimePart)\.\d+$/.test(field.path) && <button type="button" aria-label={`Remove ${field.label}`} title={`Remove ${field.label}`} onClick={event=>{event.stopPropagation();removeOccurrence(field.path);}}><X/></button>}
+          {requestTree && (isCustomHeaders || field.path === "RestInputRequest.mimeEnvelopeElement.mimePart") && !mappings[field.path] && <button type="button" className={isCustomHeaders ? "add-custom-header" : undefined} aria-label={addLabel} title={addLabel} onClick={event=>{event.stopPropagation();addOccurrence(field.path);}}><Plus/>{isCustomHeaders && addLabel}</button>}
+          {requestTree && /\.(?:CustomHeaders|mimePart)\.\d+$/.test(field.path) && <button type="button" aria-label={`Remove ${field.label}`} title={`Remove ${field.label}`} onClick={event=>{event.stopPropagation();removeOccurrence(field.path);}}><X/></button>}
           </span>
-          {row.loopKey || (requestTree && /(?:DynamicHeaders|mimePart)\.\d+$/.test(field.path)) || (row.hasChildren && !mappings[field.path]) ? <span/> : mediaLabel
+          {row.loopKey || (requestTree && /\.(?:CustomHeaders|mimePart)\.\d+$/.test(field.path)) || (row.hasChildren && !mappings[field.path]) ? <span/> : mediaLabel
             ? <div className="input-media-type-controls">{contentTypePicker(field.path, mediaLabel)}{binding}</div>
             : binding}
         </div>;

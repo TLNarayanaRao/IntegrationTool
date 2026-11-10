@@ -18,8 +18,11 @@ def asset_bytes(name,compressed):
     return body if compressed else gzip.decompress(body)
 
 def methods_for(cfg):
-    value=cfg.get('methods') or cfg.get('method') or 'POST'
-    return [str(item).strip().upper() for item in (value if isinstance(value,list) else str(value).split(',')) if str(item).strip()]
+    value = cfg.get('methods')
+    if value is None:
+        value = cfg.get('method') or 'POST'
+    return list(dict.fromkeys(str(item).strip().upper() for item in
+                             (value if isinstance(value, list) else str(value).split(',')) if str(item).strip()))
 
 def public_base(cfg):
     explicit=str(cfg.get('apiPublicBaseUrl') or '').rstrip('/')

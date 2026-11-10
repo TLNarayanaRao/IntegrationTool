@@ -1,6 +1,6 @@
 """Local OpenAPI 3 / Swagger 2 operation contracts. Never fetch remote refs."""
 from __future__ import annotations
-import copy, json, urllib.parse
+import copy, json, re, urllib.parse
 from .http_contracts import bundle_document, schema_errors
 
 def operation_config(config):
@@ -162,7 +162,37 @@ def parameter_value(parameter, values):
     if style=='matrix':value=str(value).split('=',1)[-1]
     return _primitive(value,schema)
 
-def validate_parameters(cfg,parameters,query,headers,body):
+def listener_parameters(cfg, path_names):
+    """Merge listener declarations with the selected operation's contract."""
+    declared = cfg.get('requestParameters', [])
+    if not isinstance(declared, list) or len(declared) > 100:
+        raise ValueError('Configure up to 100 request parameter declarations')
+    parameters = [item for item in cfg.get('_restParameters') or [] if not item.get('_minaDeclared')]
+
+    def key(location, name):
+        return location, name.lower() if location == 'header' else name
+
+    seen = {key(parameter['in'], parameter['name']) for parameter in parameters}
+    for row in declared:
+        if not isinstance(row, dict):
+            raise ValueError('Each request parameter must be an object')
+        location, name, kind = row.get('in'), str(row.get('name') or '').strip(), row.get('type')
+        if location not in ('path', 'query', 'header') or kind not in ('string', 'integer', 'number', 'boolean'):
+            raise ValueError('Select a supported request parameter location and type')
+        if (location == 'path' and name not in path_names) or not re.fullmatch(r'[A-Za-z0-9_-]+', name):
+            raise ValueError(f'Invalid {location} parameter name: {name or "(blank)"}')
+        identity = key(location, name)
+        if identity in seen:
+            raise ValueError(f'{location} parameter {name} is already declared')
+        if identity in {('header', 'accept'), ('header', 'content-type'), ('header', 'authorization')}:
+            raise ValueError(f'Configure {name} through media types or authentication')
+        seen.add(identity)
+        parameters.append({'name': name, 'in': location, 'schema': {'type': kind}, '_minaDeclared': True,
+                           'required': location == 'path' or row.get('required') is True})
+    return parameters
+
+
+def validate_parameters(cfg,parameters,query,headers,body,decoded=None):
     """Validate presence and primitive wire types before invoking a workflow/API."""
     from http.cookies import SimpleCookie
     errors=[];headers={str(key).lower():value for key,value in headers.items()}
@@ -175,7 +205,10 @@ def validate_parameters(cfg,parameters,query,headers,body):
         if value is None:
             if parameter.get('required') or location=='path':errors.append(f'{location} parameter {name} is required')
             continue
-        if schema_errors(value,parameter.get('schema') or parameter):errors.append(f'{location} parameter {name} violates its schema')
+        if schema_errors(value,parameter.get('schema') or parameter):
+            errors.append(f'{location} parameter {name} violates its schema')
+        elif decoded is not None and parameter.get('_minaDeclared'):
+            decoded[location][name.lower() if location == 'header' else name] = value
     if cfg.get('_requiredBody') and body is None:errors.append('Request body is required')
     return errors
 

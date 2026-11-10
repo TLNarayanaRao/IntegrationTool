@@ -2,7 +2,7 @@
 
 ## 1. Purpose and scope
 
-MINA is a BusinessWorks-inspired integration design and execution platform. It separates the visual design experience from the runtime that executes integration applications. Projects are declarative `.mpackage` documents containing tasks, activities, mappings, transitions, shared resources, and environment properties.
+MINA is an integration design and execution platform. It separates the visual design experience from the runtime that executes integration applications. Projects are declarative `.mpackage` documents containing tasks, activities, mappings, transitions, shared resources, and environment properties.
 
 This document records the technologies currently used in this repository, what each technology does, and the deployment implications for Windows, Linux, containers, and cloud environments.
 

@@ -1,4 +1,4 @@
-"""Convert BusinessWorks XML Data Format resources into portable project assets."""
+"""Convert legacy XML Data Format resources into portable project assets."""
 import json
 import re
 from hashlib import sha256
@@ -34,7 +34,7 @@ def property_name(value):
     qualified = re.fullmatch(r'//([^/]+)///(.+)', value)
     module, name = qualified.groups() if qualified else ('', value.lstrip('/'))
     if not re.fullmatch(r'[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*', name):
-        raise ValueError('unsupported BusinessWorks module-property name')
+        raise ValueError('unsupported module-property name')
     return module, name
 
 
@@ -98,7 +98,7 @@ def layout_assets(document, path, schemas, profiles=()):
     config = next((node for node in document if isinstance(node.tag, str) and key(local(node)) == 'configuration'), document)
     declared = key(config.get(XSI_TYPE, '').split(':')[-1])
     if 'dataformat' not in kind and 'dataformat' not in declared:
-        raise ValueError(f'{name}: expected a BusinessWorks Data Format XML resource')
+        raise ValueError(f'{name}: expected a Data Format XML resource')
     nodes = []
     embedded = []
     bindings = []

@@ -4,6 +4,7 @@ import ModalLayer from "./ModalLayer";
 import type { SchemaDoc } from "./SchemaStudio";
 import EndpointSchemaPicker, { schemaChoiceName, schemaText, type SchemaChoice } from "./EndpointSchemaPicker";
 import { HttpContentTypeCheckboxes } from "./HttpContentTypePicker";
+import HttpRequestParameters, { validateRequestParameters, type RequestParameter } from "./HttpRequestParameters";
 import SharedConnectionSelect, { matchesConnection, type CreateConnection, type SharedConnection } from "./SharedConnectionSelect";
 import "./http-endpoint-setup.css";
 
@@ -11,6 +12,7 @@ type EndpointDraft = {
   resourceId: string;
   path: string;
   methods: string[];
+  requestParameters: RequestParameter[];
   requestContentTypes: string[];
   responseContentTypes: string[];
   request: SchemaChoice;
@@ -21,6 +23,7 @@ export type EndpointConfig = {
   resourceId: string;
   path: string;
   methods: string;
+  requestParameters?: RequestParameter[];
   requestContentTypes?: string[];
   responseContentTypes?: string[];
   requestSchema?: string;
@@ -37,7 +40,7 @@ export function isHttpEndpoint(type: string, operation?: string) {
 
 export function newEndpointDraft(): EndpointDraft {
   return {
-    resourceId: "", path: "/events", methods: ["POST"], requestContentTypes: [], responseContentTypes: [],
+    resourceId: "", path: "/events", methods: [], requestParameters: [], requestContentTypes: [], responseContentTypes: [],
     request: { source: "", text: "" }, response: { source: "", text: "" },
   };
 }
@@ -54,10 +57,13 @@ export function endpointConfig(draft: EndpointDraft, { resources, schemas }: Pic
   }
   const methods = HTTP_METHODS.filter(method => draft.methods.includes(method));
   if (!methods.length) throw new Error("Select at least one HTTP method.");
+  const parameterError = validateRequestParameters(draft.requestParameters, path);
+  if (parameterError) throw new Error(parameterError);
   const requestSchema = schemaText(draft.request, schemas, "Request");
   const responseSchema = schemaText(draft.response, schemas, "Response");
   return {
     resourceId: draft.resourceId, path, methods: methods.join(","),
+    ...(draft.requestParameters.length && {requestParameters: draft.requestParameters.map(parameter => ({ ...parameter, name: parameter.name.trim() }))}),
     ...(draft.requestContentTypes.length && { requestContentTypes: [...draft.requestContentTypes] }),
     ...(draft.responseContentTypes.length && { responseContentTypes: [...draft.responseContentTypes] }),
     ...(requestSchema !== undefined && { requestSchema, requestSchemaName: schemaChoiceName(draft.request, schemas), validateRequest: true }),
@@ -89,6 +95,8 @@ export function HttpEndpointFields({ draft, onChange, resources, schemas, create
           </label>)}
         </div>
       </fieldset>
+      <HttpRequestParameters path={draft.path} value={draft.requestParameters}
+        onChange={requestParameters => onChange({ ...draft, requestParameters })}/>
       <div className="endpoint-media-types">
         <HttpContentTypeCheckboxes label="Request content types" value={draft.requestContentTypes}
           onChange={requestContentTypes => onChange({ ...draft, requestContentTypes })}/>

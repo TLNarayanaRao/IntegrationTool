@@ -291,7 +291,7 @@ type ValidationIssue = {
   activityId?: string;
 };
 const themeOptions = [
-  { value: "plain-bw", label: "BusinessWorks 6.12", detail: "Eclipse-style desktop that follows system appearance" },
+  { value: "plain-system", label: "System Desktop", detail: "Plain desktop that follows your system appearance" },
   { value: "plain-classic", label: "Plain Classic", detail: "Light grey desktop panels, white editors, and blue selections" },
   { value: "plain-studio", label: "Plain Studio", detail: "Soft rounded panels and controls with teal selections" },
   { value: "midnight", label: "Midnight Studio", detail: "Deep blue professional workspace" },
@@ -764,7 +764,7 @@ const defaultProperties: Property[] = [
   { key: "connections.ems.port", value: 7222, data_type: "integer" },
   { key: "connections.ems.serverUrl", value: "tcp://localhost:7222", data_type: "string" },
   { key: "connections.ems.driverDirectory", value: "", data_type: "string" },
-  { key: "connections.ems.connectionFactoryClass", value: "com.tibco.tibjms.TibjmsConnectionFactory", data_type: "string" },
+  { key: "connections.ems.connectionFactoryClass", value: "", data_type: "string" },
   { key: "connections.ems.connectionTimeoutSeconds", value: 30, data_type: "integer" },
   { key: "connections.ems.destination", value: "orders", data_type: "string" },
   { key: "connections.ems.sessionCount", value: 1, data_type: "integer" },
@@ -779,7 +779,7 @@ const defaultProperties: Property[] = [
   { key: "connections.ems.messagingStyle", value: "Generic", data_type: "string" },
   { key: "connections.ems.queueConnectionFactory", value: "QueueConnectionFactory", data_type: "string" },
   { key: "connections.ems.topicConnectionFactory", value: "TopicConnectionFactory", data_type: "string" },
-  { key: "connections.ems.jndiContextFactory", value: "com.tibco.tibjms.naming.TibjmsInitialContextFactory", data_type: "string" },
+  { key: "connections.ems.jndiContextFactory", value: "", data_type: "string" },
   { key: "connections.ems.jndiProviderUrl", value: "tcp://localhost:7222", data_type: "string" },
   { key: "connections.ems.jndiUsername", value: "", data_type: "string" },
   { key: "connections.ems.jndiPassword", value: "", data_type: "password" },
@@ -1534,6 +1534,16 @@ function App() {
   const latestProject = useRef(project);
   latestProject.current = project;
   const autosaveTimer = useRef<number | null>(null);
+  const projectWrites = useRef<Promise<unknown>>(Promise.resolve());
+  const writeProject = (id: string, body: string, autosave = false) => {
+    const write = projectWrites.current.then(() => fetch(`/api/projects/${id}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", ...(autosave ? {"x-mina-autosave": "true"} : {}) },
+      body,
+    }));
+    projectWrites.current = write.catch(() => {});
+    return write;
+  };
   const savedProjectSnapshot = useRef(JSON.stringify(initial));
   const pendingLeaveAction = useRef<(() => void) | null>(null);
   const canvas = useRef<HTMLDivElement>(null),
@@ -1632,7 +1642,10 @@ function App() {
   }, []);
   const [closed, setClosed] = useState(true),
     [theme, setTheme] = useState(
-      localStorage.getItem("mina-theme") || "midnight",
+      () => {
+        const saved = localStorage.getItem("mina-theme");
+        return saved === "plain-bw" ? "plain-system" : saved || "midnight";
+      },
     );
   const [unsavedPrompt, setUnsavedPrompt] = useState(false);
   const { screenFont, setScreenFont, configFont, setConfigFont } = useFontPreferences();
@@ -1640,7 +1653,7 @@ function App() {
     localStorage.getItem("mina-plain-theme-mode") === "dark" ? "dark" : "light");
   useEffect(() => {
     localStorage.setItem("mina-plain-theme-mode", plainMode);
-    if (theme !== "plain-bw") { document.body.dataset.plainMode = plainMode; return; }
+    if (theme !== "plain-system") { document.body.dataset.plainMode = plainMode; return; }
     const system = window.matchMedia("(prefers-color-scheme: dark)");
     const update = () => { document.body.dataset.plainMode = system.matches ? "dark" : "light"; };
     update();
@@ -1669,12 +1682,7 @@ function App() {
     const snapshot = project;
     autosaveTimer.current = window.setTimeout(() => {
       autosaveTimer.current = null;
-      void fetch(`/api/projects/${snapshot.id}`, {
-        method: "PUT",
-        headers: { "content-type": "application/json", "x-mina-autosave": "true" },
-        body: projectSnapshot,
-        keepalive: true,
-      }).catch((error) => console.warn("MINA autosave failed", error));
+      void writeProject(snapshot.id, projectSnapshot, true).catch(error => console.warn("MINA autosave failed", error));
     }, 700);
     return () => { if (autosaveTimer.current !== null) { window.clearTimeout(autosaveTimer.current); autosaveTimer.current = null; } };
   }, [project, projectSnapshot, closed]);
@@ -2449,14 +2457,18 @@ function App() {
     setLogs(output.logs||[]);setEndpoints(output.endpoints||[]);setExecutionOutputs(output.activity_outputs||{});setRuntimeState(output);setExecutionPanelOpen(true);return output;
   };
   const persistProject = async () => {
-    const response = await fetch(`/api/projects/${project.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(normalizeProject(project)) });
+    if (autosaveTimer.current !== null) {
+      window.clearTimeout(autosaveTimer.current);
+      autosaveTimer.current = null;
+    }
+    const response = await writeProject(project.id, JSON.stringify(normalizeProject(project)));
     const contentType = response.headers.get("content-type") || "";
     if (!contentType.includes("application/json")) throw new Error("The project API returned HTML instead of project JSON. Verify the local runtime is running on port 8787.");
     const output = await response.json();
     if (!response.ok) throw new Error(output.detail || "Project save failed");
     const normalized = normalizeProject(output);
     savedProjectSnapshot.current = JSON.stringify(normalized);
-    setProject(normalized);
+    setProject(current => current === project ? normalized : current);
     return output;
   };
   const fetchProjectFile = async (format: "package" | "json") => {
@@ -2656,6 +2668,7 @@ function App() {
     debug = async (requestedTaskId?: unknown, testMode = false) => {
       if (!editorOpen && typeof requestedTaskId !== "string") { setLogs([{level: "INFO", message: "Open a task from Project Explorer before debugging it."}]); return; }
       setBusy(true);
+      setEndpoints([]);
       setWorkStatus("Starting debugger…");
       try {
         await persistProject();
@@ -2988,7 +3001,7 @@ function App() {
         }
         return { ...current, schemas: [...current.schemas, ...assets], properties };
       });
-      setLogs([{level:"INFO",message:result.description || `Imported ${result.formatCount} BusinessWorks Data Formats.`}]);
+      setLogs([{level:"INFO",message:result.description || `Imported ${result.formatCount} Data Formats.`}]);
     } catch (error) {
       setLogs([{level:"ERROR",message:error instanceof Error ? error.message : String(error)}]);
     }
@@ -3787,7 +3800,7 @@ function App() {
               } catch (error) { alert(`Unable to download Postman collection: ${String(error)}`); }
             }}>Download Postman collection</button></>}
             {endpoint.kind === "subscription" && <small>Waiting continuously for events on {endpoint.destination}</small>}
-            {endpoint.configuredUrl && endpoint.configuredUrl !== endpoint.url && <small>Packaged deployment: {endpoint.configuredUrl}</small>}
+            {endpoint.configuredUrl && endpoint.configuredUrl !== endpoint.url && <small>Configured public URL: {endpoint.configuredUrl}</small>}
           </article>)}
         </section>}
         {(() => {
@@ -4370,11 +4383,11 @@ function OpenProjectSourceDialog({ onClose, onFile, onFolder, title = "Open MINA
   const choices: Array<[ProjectSource, string, string]> = [
     ["mpackage", ".mpackage", exportMode ? "Export complete MINA project package" : "Complete MINA project package"],
     ["mpkg", ".mpkg", exportMode ? "Export deployment package" : "MINA deployment package"],
-    ["zip", "ZIP", exportMode ? "ZIP project archive" : "MINA package or BusinessWorks project ZIP"],
+    ["zip", "ZIP", exportMode ? "ZIP project archive" : "MINA package or compatible process archive"],
     ["json", "JSON", "Project JSON descriptor"],
     ["folder", "Structured project folder", "Folder containing project.json and project content"],
   ];
-  if (!exportMode) choices.splice(2, 0, ["bwp", "BusinessWorks process (.bwp)", "Import activity bindings as Mapper tasks"], ["legacy", "Legacy MINA packages", ".ifproject, .ifpackage, and .ifpkg remain importable"]);
+  if (!exportMode) choices.splice(2, 0, ["bwp", "Legacy process file", "Import compatible activity bindings as Mapper tasks"], ["legacy", "Legacy MINA packages", ".ifproject, .ifpackage, and .ifpkg remain importable"]);
   return <ModalLayer className="modal-backdrop"><div className="runtime-modal" role="dialog" aria-modal="true" aria-labelledby="open-project-title">
     <header><b id="open-project-title">{title}</b><button onClick={onClose} aria-label="Close">×</button></header>
     <main><p>Select the project format, then browse for the matching file or folder.</p><div className="open-project-source-options">{choices.map(([value, label, detail]) => <label key={value}><input type="radio" name={exportMode ? "export-source" : "project-source"} checked={source === value} onChange={() => setSource(value)}/><span><b>{label}</b><small>{detail}</small></span></label>)}</div></main>
@@ -5045,7 +5058,7 @@ function Context({
       {menu.type === "application" && <>{item("New Project", "Create another integration application", IntegrationApplicationIcon, actions.newProject)}{item("Run Active Task", "Execute the current task", Zap, () => actions.run())}{item("Debug Active Task", "Start a debug session", Bug, () => actions.debug())}</>}
       {menu.type === "task" && <>{item("Run Task", "Execute this task", Zap, () => actions.run(menu.id))}{item("Debug Task", "Debug this task", Bug, () => actions.debug(menu.id))}{item("Validate Task", "Validate configuration and mappings", ShieldCheck, () => actions.validate(menu.id))}</>}
       {menu.type === "schemas" && item("New XSD Schema", "Open the schema designer", CodeXml, actions.newSchema)}
-      {menu.type === "schemas" && item("Import XSD or BW Data Format", "Import schema files or a BusinessWorks Data Format", CodeXml, actions.importBwDataFormat)}
+      {menu.type === "schemas" && item("Import XSD or Data Format", "Import schema files or a shared data layout", CodeXml, actions.importBwDataFormat)}
       {menu.type === "properties" && item("New Environment", "Create another properties environment", Plus, actions.newEnvironment)}
       {menu.type === "packaging" && item("Configure Package", "Open deployment packaging", Package, actions.package)}
       {menu.type === "resources" && (
@@ -5252,7 +5265,7 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "basePath", label: "Base path" },
     { key: "apiDocsEnabled", label: "Host Swagger documentation", options: ["true", "false"], help: "Serve browser API documentation at /_mina/docs, the OpenAPI document at /_mina/openapi.json, and a downloadable Postman collection at /_mina/postman.json. Enabled by default for HTTP and REST listeners; /_mina is reserved while enabled.", when: (config: any) => config.connectorMode !== "client" },
     { key: "apiDocsAccess", label: "API documentation access", options: ["authenticated", "public"], help: "Authenticated documentation uses the listener's configured authentication for its OpenAPI document and Postman download. Public exposes those documents without credentials. API operations always retain their own authentication.", when: (config: any) => config.connectorMode !== "client" },
-    { key: "apiPublicBaseUrl", label: "Public API base URL", help: "Optional externally reachable HTTP or HTTPS URL, including a gateway prefix. Used for endpoint links and generated Postman requests; omit to use the listener host and port. Do not include credentials, query strings, or fragments.", when: (config: any) => config.connectorMode !== "client" },
+    { key: "apiPublicBaseUrl", label: "Public API base URL", help: "Optional externally reachable HTTP or HTTPS URL, including a gateway prefix. Used by generated API clients. Run and Debug show the live listener address separately. Do not include credentials, query strings, or fragments.", when: (config: any) => config.connectorMode !== "client" },
     { key: "baseUrl", label: "Outbound base URL", when: (config: any) => config.connectorMode !== "server" },
     { key: "httpVersion", label: "HTTP protocol version (HTTP/2 listeners require HTTPS)", options: ["1.1", "2"] },
     { key: "authentication", label: "Authentication", options: ["None", "Basic", "Digest", "NTLM", "Bearer", "OAuth2", "JWT", "HMAC", "LDAP", "Certificate"] },
@@ -5394,7 +5407,7 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "clientId", label: "Client ID", placeholder: "Generated automatically when blank" },
     { key: "connectionFactory", label: "JNDI connection factory", required: true, when: (config: any) => config.connectionFactoryType === "JNDI", options: ["ConnectionFactory", "QueueConnectionFactory", "TopicConnectionFactory"] },
     { key: "queueConnectionFactory", label: "Queue connection factory", when: (config: any) => config.connectionFactoryType === "JNDI" && config.messagingStyle === "Queue/Topic" }, { key: "topicConnectionFactory", label: "Topic connection factory", when: (config: any) => config.connectionFactoryType === "JNDI" && config.messagingStyle === "Queue/Topic" },
-    { key: "jndiContextFactory", label: "JNDI context factory", required: true, when: (config: any) => config.connectionFactoryType === "JNDI" }, { key: "jndiProviderUrl", label: "JNDI provider URL", required: true, when: (config: any) => config.connectionFactoryType === "JNDI" },
+    { key: "jndiContextFactory", label: "JNDI context factory", placeholder: "Leave blank to use the connector default", when: (config: any) => config.connectionFactoryType === "JNDI" }, { key: "jndiProviderUrl", label: "JNDI provider URL", required: true, when: (config: any) => config.connectionFactoryType === "JNDI" },
     { key: "jndiUsername", label: "JNDI username", required: true, when: (config: any) => config.connectionFactoryType === "JNDI" }, { key: "jndiPassword", label: "JNDI password", required: true, password: true, when: (config: any) => config.connectionFactoryType === "JNDI" },
     { key: "useXa", label: "Use XA connection factory", options: ["false", "true"] }, { key: "useUfo", label: "Use EMS unshared failover", options: ["false", "true"] },
     { key: "sslEnabled", label: "Enable SSL", options: ["false", "true"] }, { key: "sslTrustedCertificates", label: "SSL trusted certificates" },
@@ -5490,7 +5503,7 @@ function connectionDefaults(type: string) {
   if (type === "sap") Object.assign(values, { mode: "external", release: "current", connectionType: "dedicated", maximumConnections: 8, outboundWorkerCount: 2, poolCapacity: 1, peakLimit: 1, connectionExpirationMilliseconds: 600000, outboundPoolIdleSeconds: 1800, maximumOutboundPools: 16, maxPendingEvents: 16, jvmInitialHeapMb: 64, jvmMaximumHeapMb: 512, ackTimeoutSeconds: 300 });
   if (type === "sap_tid") Object.assign(values, { mode: "active", storageFile: "data/sap-tids.properties" });
   if (type === "jdbc") Object.assign(values, { driver: "postgresql", connectionMode: "python", authentication: "SQL Server Authentication", encrypt: "true", trustServerCertificate: "false" });
-  if (type === "ems") Object.assign(values, { connectionFactoryType: "Direct", connectionFactoryClass: "com.tibco.tibjms.TibjmsConnectionFactory", connectionTimeoutSeconds: 30 });
+  if (type === "ems") Object.assign(values, { connectionFactoryType: "Direct", connectionTimeoutSeconds: 30 });
   if (type === "jms") Object.assign(values, { connectionFactoryType: "Direct", connectionTimeoutSeconds: 30 });
   if (type === "snowflake") Object.assign(values, { mode: "external", authenticationType: "Username/Password", provider: "Snowflake" });
   if (type === "amqp") Object.assign(values, { brokerType: "RabbitMQ", amqpVersion: "AMQP-0-9-1", authenticationType: "SAS", connectionRecovery: "true", sslEnabled: "false" });
@@ -5518,6 +5531,18 @@ function SharedConnectionDialog({ type, initial, initialRole, requireInitialRole
   const set = (key: string, value: any) => setDraft((current: any) => ({ ...current, config: { ...current.config, [key]: value } }));
   const setConnectionField = (key: string, value: any) => setDraft((current: any) => {
     const config = { ...current.config, [key]: value };
+    if (type === "http" && config.connectorMode !== "client") {
+      const scheme = key === "scheme" ? value : key === "tlsEnabled" ? (value === "true" ? "https" : "http") : null;
+      if (scheme === "http" || scheme === "https") {
+        config.scheme = scheme;
+        config.tlsEnabled = scheme === "https" ? "true" : "false";
+        if (scheme === "http") {
+          config.confidentiality = "false";
+          config.defaultConfidentiality = "false";
+          if (String(config.httpVersion) === "2") config.httpVersion = "1.1";
+        }
+      }
+    }
     if (type === "http" && key === "connectorMode") {
       if ((value === "client" && config.authentication === "LDAP") || (value === "server" && ["Digest", "NTLM"].includes(config.authentication))) config.authentication = "None";
     }
