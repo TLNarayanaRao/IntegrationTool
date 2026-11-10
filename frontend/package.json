@@ -80,6 +80,7 @@
       "artifactName": "MINAStudio-${version}-Setup.${ext}"
     },
     "nsis": {
+      "include": "build/installer-progress.nsh",
       "oneClick": false,
       "perMachine": true,
       "allowElevation": true,

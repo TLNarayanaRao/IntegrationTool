@@ -561,7 +561,13 @@ def execute(connection_config: dict, config: dict, connection=None, manage_trans
                 raise JdbcAdapterError("A stored procedure or function is required", "InvalidInputException")
             if not hasattr(cursor, "callproc"):
                 raise JdbcAdapterError("The selected database adapter does not support stored procedures", "JDBCSQLException")
-            result = cursor.callproc(procedure, list(_parameters(config) or []))
+            parameters = _parameters(config)
+            if isinstance(parameters, dict):
+                ordered_names = [name for name in _parameter_types(config) if name in parameters]
+                declared_names = set(ordered_names)
+                ordered_names.extend(name for name in parameters if name not in declared_names)
+                parameters = [parameters[name] for name in ordered_names]
+            result = cursor.callproc(procedure, list(parameters or []))
             result_sets = []
             while cursor.description:
                 names = [item[0] for item in cursor.description]
@@ -573,15 +579,35 @@ def execute(connection_config: dict, config: dict, connection=None, manage_trans
             return {"resultSets": result_sets, "outParameters": result, "UnresolvedResultSets": []}
         if not sql:
             raise JdbcAdapterError("An SQL statement is required", "InvalidInputException")
-        parameters = _parameters(config)
-        sql, parameters = _normalize_sql(sql, parameters, driver)
-        if config.get("interpretEmptyStringAsNull"):
-            if isinstance(parameters, dict): parameters = {key: None if value == "" else value for key, value in parameters.items()}
-            elif isinstance(parameters, list): parameters = [None if value == "" else value for value in parameters]
+        def bind(statement, values):
+            statement, values = _normalize_sql(statement, values, driver)
+            if config.get("interpretEmptyStringAsNull"):
+                if isinstance(values, dict):
+                    values = {key: None if value == "" else value for key, value in values.items()}
+                elif isinstance(values, list):
+                    values = [None if value == "" else value for value in values]
+            return statement, values
+
         records = config.get("records") if isinstance(config.get("records"), list) else None
         if operation in ("insert", "update", "delete") and config.get("batchUpdate") and records:
-            cursor.executemany(sql, [list(row.values()) if isinstance(row, dict) else row for row in records])
+            batch = []
+            definitions = _parameter_types(config)
+            statement = sql
+            for row in records:
+                parameters = row
+                if isinstance(row, dict) and definitions:
+                    parameters = {key: _coerce_parameter(value, definitions[key]) if key in definitions else value
+                                  for key, value in row.items()}
+                if driver == "sqlite" and isinstance(parameters, dict) and "?" in sql and not re.search(r"(?<!:):[A-Za-z_][A-Za-z0-9_]*", sql):
+                    parameters = list(parameters.values())
+                bound_statement, parameters = bind(sql, parameters)
+                if batch and bound_statement != statement:
+                    raise JdbcAdapterError("Batch records must use the same SQL parameter style", "InvalidInputException")
+                statement = bound_statement
+                batch.append(parameters)
+            cursor.executemany(statement, batch)
         else:
+            sql, parameters = bind(sql, _parameters(config))
             cursor.execute(sql, parameters or ())
         if cursor.description:
             names = [item[0] for item in cursor.description]

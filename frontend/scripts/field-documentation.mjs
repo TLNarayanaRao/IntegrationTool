@@ -108,6 +108,17 @@ describe('strictColumns', 'Require record column counts to match the configured 
 describe('header headerRow startRow', 'Header/starting-row selection for tabular data. Row-number fields use the activity-defined indexing; Excel headerRow/startRow are one-based.');
 describe('widths fillCharacter', 'Fixed-width layout: widths defines each field length and fillCharacter supplies padding. Ensure lengths match the sender/receiver record specification.');
 describe('duplicateKeyPolicy', 'Choose how JSON Parse handles repeated property names: First wins, Last wins or Error. Error detects ambiguous documents.');
+describe('schemaType', 'Choose Native JSON for ordinary JSON data, Generic for XML and JSON conversion without a schema, or XSD for a schema-defined XML structure.');
+describe('formatUsingDefaultNamespacePrefix', 'Render the root namespace as the default namespace while preserving the namespace of each child and attribute.');
+describe('blankLinePolicy', 'Skip empty records, stop at the first empty record, or keep empty records in the parsed batch.');
+describe('lineLength', 'Total fixed record length, including the configured line separator. It must cover all field offsets.');
+describe('skipHeaderCharacters', 'Number of leading characters to ignore before reading the header and records.');
+describe('noOfRecords', 'Maximum input records to read in this batch, including rejected records. Use -1 to read to the end.');
+describe('done', 'True when no more records are available from this input.');
+describe('nextRecord', 'Zero-based offset for the next batch when manually choosing the start record.');
+describe('ErrorRows.error.recordNumber', 'One-based record number after the preamble and header, for the rejected record.');
+describe('ErrorRows.error.raw', 'Input values from the rejected record, before conversion to the configured field types.');
+describe('Text', 'Formatted records as text, including the configured column and line separators.');
 describe('sheetName', 'Excel worksheet name. Supply an exact existing sheet name, or leave empty to read the workbook sheets supported by this operation.');
 describe('dataOnly', 'Read stored Excel formula results instead of formula text. Results depend on the workbook having been calculated and saved by a spreadsheet application.');
 describe('nestedHeaders', 'Interpret dotted Excel header names as nested object paths when enabled; otherwise retain literal column names.');

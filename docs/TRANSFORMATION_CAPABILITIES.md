@@ -24,6 +24,24 @@ Vendor references include [BusinessWorks 6.12 Application Development](https://d
 [Bindings and Palette Reference](https://docs.tibco.com/pub/activematrix_businessworks/6.12.0/doc/pdf/TIB_bwce_6.12.0_bindings_palettes_reference.pdf),
 and [Migration Guide](https://docs.tibco.com/pub/activematrix_businessworks/6.12.0/doc/pdf/TIB_BW_6.12.0_migration.pdf).
 
+### BusinessWorks 6.13 Mapper compatibility
+
+The installed 6.13 Unit Testing and InvokeCode samples cover imported
+`xsl:choose`, `xsl:if`, and `xsl:for-each` bindings. The InvokeCode Mapper
+references a target XSD that imports sibling XSDs. Keep the schema files at
+their project-relative paths when importing or editing the contract. The
+Mapper resolves imports and includes from project assets. A repeating element
+stays an array in the structured result even when the generated XML has one
+occurrence; the XML itself retains the original element structure.
+
+In **Visual AI Mapper → AI mapping options**, choose **Exact names** or a
+similarity strategy. Select a source or target branch to limit matching to
+that branch, then set each side's search depth from 1 to 10 (default 4).
+Leave a side on **Entire schema** to search all fields on that side. Existing
+manual mappings are preserved. See [BusinessWorks 6.13 Application Development](https://docs.tibco.com/pub/activematrix_businessworks/6.13.0/doc/pdf/TIB_BW_6.13.0_application_development.pdf?id=0)
+for the vendor options. MINA uses its own suggestion ranking and shared
+learning store.
+
 ### XML expressions and bindings
 
 In Mapper **Configuration**, choose the XPath version and expand **XML

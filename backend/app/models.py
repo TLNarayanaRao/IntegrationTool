@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 ActivityKind = Literal[
@@ -7,11 +7,14 @@ ActivityKind = Literal[
     'file', 'ftp', 'sftp', 'jdbc', 'snowflake', 'amqp', 'excel', 'xml', 'json', 'flat',
     'mapper', 'dataweave', 'transform', 'ai_transform', 'log', 'confirm', 'catch', 'throw', 'rethrow', 'timer', 'call_task', 'ems', 'jms', 'kafka', 'pubsub', 'sap', 'java', 'python', 'basic', 'end'
 ]
+PackagePath = Annotated[str, Field(max_length=1024, pattern=r'^[\p{L}\p{N}_-]+(?:/[\p{L}\p{N}_-]+){0,15}$')]
+PackageCategory = Literal['tasks', 'resources', 'schemas']
 
 class SharedResource(BaseModel):
     id: str
     type: Literal['jdbc', 'snowflake', 'amqp', 'ftp', 'sftp', 'http', 'ems', 'jms', 'kafka', 'pubsub', 'sap', 'sap_tid'] = 'jdbc'
     name: str
+    package_path: PackagePath = 'Default'
     config: dict[str, Any] = Field(default_factory=dict)
 
 class Activity(BaseModel):
@@ -72,6 +75,8 @@ class SchemaAsset(BaseModel):
     id: str
     name: str
     content: str
+    source_path: str = ''
+    package_path: PackagePath = 'Default'
 
 def is_event_activity(activity: Activity) -> bool:
     operation = activity.config.get('operation', '')
@@ -155,6 +160,7 @@ class ProcessDefinition(BaseModel):
 class TaskDefinition(ProcessDefinition):
     kind: Literal['starter', 'subtask'] = 'starter'
     description: str = ''
+    package_path: PackagePath = 'Default'
     input_schema: dict[str, Any] = Field(default_factory=dict)
     output_schema: dict[str, Any] = Field(default_factory=dict)
 
@@ -188,6 +194,7 @@ class Project(BaseModel):
         'target': 'on-prem', 'environment': 'production'
     })
     schemas: list[SchemaAsset] = Field(default_factory=list)
+    object_packages: dict[PackageCategory, list[PackagePath]] = Field(default_factory=dict)
     custom_functions: list[CustomFunction] = Field(default_factory=list)
     properties: dict[str, list[EnvironmentProperty]] = Field(default_factory=lambda: {
         name: default_environment_properties() for name in ('local', 'dev', 'qa', 'pre', 'production')

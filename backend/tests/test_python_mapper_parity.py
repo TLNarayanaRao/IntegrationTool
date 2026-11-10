@@ -119,6 +119,50 @@ class PythonMapperParityTests(unittest.TestCase):
         }})
         self.assertEqual((preview['outputFormat'], preview['outputText'], preview['valid']), ('xml', xml, True))
 
+    def test_mapper_preview_and_archives_resolve_nested_relative_xsd(self):
+        from app.main import mapper_test
+        project = self.project([])
+        xs = '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">'
+        project['schemas'] = [
+            dict(id='root', name='root.xsd', source_path='orders/contract/root.xsd',
+                 content=xs + '<xs:include schemaLocation="../types/container.xsd"/><xs:element name="orders" type="Orders"/></xs:schema>'),
+            dict(id='container', name='container.xsd', source_path='orders/types/container.xsd',
+                 content=xs + '<xs:include schemaLocation="entry.xsd"/><xs:complexType name="Orders"><xs:sequence><xs:element name="entry" type="Entry" maxOccurs="unbounded"/></xs:sequence></xs:complexType></xs:schema>'),
+            dict(id='entry', name='entry.xsd', source_path='orders/types/entry.xsd',
+                 content=xs + '<xs:complexType name="Entry"><xs:sequence><xs:element name="note" nillable="true"/></xs:sequence></xs:complexType></xs:schema>'),
+            dict(id='other', name='entry.xsd', source_path='other/entry.xsd', content=xs + '</xs:schema>'),
+        ]
+        config = project['tasks'][0]['activities'][1]['config']
+        config.update(targetSchemaId='root', xmlStylesheet='''<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="1.0">
+          <xsl:template match="/"><orders xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+            <entry><note xsi:nil="true"/></entry>
+          </orders></xsl:template></xsl:stylesheet>''')
+        options = {**config, 'xmlTargetSchemaPath': project['schemas'][0]['source_path'],
+                   'xmlSchemaDocuments': {asset['source_path']: asset['content'] for asset in project['schemas']}}
+        request = {'input': '<source/>', 'targetSchemaText': project['schemas'][0]['content'], 'options': options}
+        preview = mapper_test(request)
+        self.assertTrue(preview['valid'], preview)
+        expected = preview['output']
+        self.assertEqual(expected['orders'], {'entry': [{'note': None}]})
+        self.assert_studio(project, {'xmlString': '<source/>'}, expected)
+        self.assert_exports(project, {'xmlString': '<source/>'}, expected)
+        from fastapi import HTTPException
+        with self.assertRaisesRegex(HTTPException, 'Target schema validation failed'):
+            mapper_test({**request, 'options': {**options, 'xmlStylesheet': config['xmlStylesheet'].replace('note', 'unexpected')}})
+
+    def test_smart_mapper_branch_levels_and_exact_names(self):
+        from app.main import mapper_suggest
+        payload = {'sourceSchema': {'origin': {'id': 1, 'nested': {'item': 2}}, 'other': {'name': 'x'}},
+                   'targetSchema': {'dest': {'id': 0, 'nested': {'item': 0}, 'names': ''}},
+                   'sourceScope': 'origin', 'targetScope': 'dest', 'sourceLevel': 1, 'targetLevel': 1,
+                   'exactNames': True}
+        first = mapper_suggest(payload)['recommendations']
+        self.assertEqual({row['target']: row['selected'] for row in first}, {'dest.id': 'origin.id', 'dest.names': None})
+        second = mapper_suggest({**payload, 'targetLevel': 2})['recommendations']
+        self.assertIsNone(next(row['selected'] for row in second if row['target'] == 'dest.nested.item'))
+        third = mapper_suggest({**payload, 'sourceLevel': 2, 'targetLevel': 2})['recommendations']
+        self.assertEqual(next(row['selected'] for row in third if row['target'] == 'dest.nested.item'), 'origin.nested.item')
+
     def test_xml_bindings_reject_external_resources(self):
         from app.mapper_xml import parse_xml, transform_xml, xpath_value
         from lxml import etree

@@ -4,6 +4,7 @@ import re
 import platform
 import threading
 import httpx
+from .faults import MinaFault
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -1566,6 +1567,26 @@ async def import_project(file: UploadFile = File(...)):
         return await asyncio.to_thread(save_project, item)
     except Exception as exc: raise HTTPException(400, f'Invalid MINA project: {exc}')
 
+@app.post('/api/schemas/import-format-assets')
+async def import_format_assets(file: UploadFile = File(...)):
+    from .project_import import BW_DATA_FORMAT_SUFFIXES
+    from .bw_data_format import PROPERTY_PREFIX
+    name = file.filename or ''
+    if not name.lower().endswith(('.zip', '.xsd', *BW_DATA_FORMAT_SUFFIXES)):
+        raise HTTPException(400, 'Choose an XSD, a BusinessWorks Data Format, or a ZIP containing these assets')
+    raw = await file.read(MAX_IMPORT_BYTES + 1)
+    try:
+        converted = json.loads(await asyncio.to_thread(project_payload, raw, name))
+        assets = [asset for asset in converted['schemas'] if asset['id'].startswith(('bw-xsd-', 'bw-data-format-'))]
+        formats = [asset for asset in assets if asset['id'].startswith('bw-data-format-')]
+        if not assets: raise ValueError('No XSD or BusinessWorks Data Format assets were found')
+        properties = {environment: [entry for entry in entries if entry['key'].startswith(PROPERTY_PREFIX)]
+                      for environment, entries in converted.get('properties', {}).items()}
+        return {'schemas': assets, 'formatCount': len(formats), 'properties': properties,
+                'description': converted.get('description', '')}
+    except (ValueError, KeyError, TypeError, SyntaxError, OSError, zipfile.BadZipFile) as error:
+        raise HTTPException(400, f'Cannot import format assets: {error}') from error
+
 @app.post('/api/connections/test')
 async def test_connection(resource: SharedResource):
     cfg = resource.config
@@ -1715,16 +1736,41 @@ async def jdbc_test_query(payload: dict):
 
 @app.post('/api/mapper/suggest')
 def mapper_suggest(payload: dict):
-    source, target = payload.get('sourceSchema', {}), payload.get('targetSchema', {})
-    return {'recommendations': recommend(source, target, float(payload.get('threshold',70))/100,
-                                         payload.get('weights'), shared_paths(source, target))}
+    try:
+        source, target = mapper_matching_schemas(payload)
+        return {'recommendations': recommend(source, target, float(payload.get('threshold',70))/100,
+                                             payload.get('weights'), shared_paths(source, target),
+                                             source_scope=payload.get('sourceScope', ''), target_scope=payload.get('targetScope', ''),
+                                             source_level=payload.get('sourceLevel', 4), target_level=payload.get('targetLevel', 4),
+                                             exact_names=payload.get('exactNames') is True)}
+    except (ValueError, TypeError, MinaFault) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+def mapper_matching_schemas(payload):
+    from .data_formats import xsd_shape
+    documents = payload.get('xmlSchemaDocuments') or {}
+    if not isinstance(documents, dict):
+        raise ValueError('Mapper schema documents must be keyed by project path')
+    assets = None
+    def matching_schema(side):
+        nonlocal assets
+        schema = payload.get(side + 'Schema', {})
+        if isinstance(schema, str) and schema.lstrip().startswith('<') and re.search(r'<(?:[\w.-]+:)?(?:import|include)\b', schema):
+            if assets is None:
+                if any(not isinstance(value, str) for value in documents.values()):
+                    raise ValueError('Mapper schema documents must contain XSD text')
+                assets = tuple(sorted(documents.items()))
+            shape = xsd_shape(schema, bundle=(payload.get(side + 'SchemaPath') or '', assets))
+            name = shape['xml']['name']
+            return {'type': 'object', 'properties': {name: shape}, 'required': [name]}
+        return schema
+    return matching_schema('source'), matching_schema('target')
 
 @app.post('/api/mapper/share')
 def mapper_share(payload: dict):
     try:
-        return {'shared': shared_paths(payload.get('sourceSchema', {}), payload.get('targetSchema', {}),
-                                       payload.get('mappings', []))}
-    except ValueError as exc:
+        return {'shared': shared_paths(*mapper_matching_schemas(payload), payload.get('mappings', []))}
+    except (ValueError, TypeError, MinaFault) as exc:
         raise HTTPException(400, str(exc)) from exc
 
 @app.post('/api/mapper/binding')

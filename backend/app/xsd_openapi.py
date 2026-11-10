@@ -33,16 +33,25 @@ def describe_xsd(source):
 
 
 class XsdProjection:
-    def __init__(self, document):
-        self.namespace = document.get('targetNamespace')
-        self.forms = {kind: document.get(kind + 'FormDefault') for kind in ('element', 'attribute')}
-        self.globals = {(etree.QName(node).localname, node.get('name')): node
-                        for node in document if isinstance(node.tag, str) and node.tag.startswith(XS) and node.get('name')}
+    def __init__(self, document, graph=None):
+        self.scopes = {}
+        self.globals = {}
+        self.roots = []
+        scopes = graph.scopes.items() if graph else [((None, document.get('targetNamespace')), document)]
+        for scope, source in scopes:
+            _, namespace = scope
+            root = deepcopy(source) if graph else source
+            self.scopes[root] = namespace
+            for node in root:
+                if not isinstance(node.tag, str) or not node.tag.startswith(XS) or not node.get('name'): continue
+                kind = etree.QName(node).localname
+                self.globals.setdefault((namespace, kind, node.get('name')), node)
+                if kind == 'element' and (not graph or scope in graph.roots): self.roots.append(node)
         self.nodes_left = 16000
         self.examples_left = 512
 
     def describe(self):
-        roots = [node for (kind, _), node in self.globals.items() if kind == 'element']
+        roots = self.roots
         if not roots:
             return None
         schema, example = self.element(roots[0], global_element=True)
@@ -57,9 +66,11 @@ class XsdProjection:
             return None
         prefix, colon, name = value.rpartition(':')
         namespace = node.nsmap.get(prefix if colon else None)
-        if namespace not in (None, self.namespace):
-            return None
-        return next((self.globals[kind, name] for kind in kinds if (kind, name) in self.globals), None)
+        if colon and namespace is None: return None
+        scope = self.scopes[node.getroottree().getroot()]
+        spaces = (namespace,) if namespace is not None else (None, scope)
+        return next((self.globals[space, kind, name] for space in spaces for kind in kinds
+                     if (space, kind, name) in self.globals), None)
 
     def primitive(self, node, kind, active):
         restriction = node.find(XS + 'restriction')
@@ -123,13 +134,14 @@ class XsdProjection:
     def element(self, occurrence, active=(), *, global_element=False, example=True):
         kind = etree.QName(occurrence).localname
         declaration = self.lookup(occurrence, occurrence.get('ref'), kind)
-        qualified = declaration is not None or global_element or occurrence.get('form', self.forms[kind]) == 'qualified'
+        qualified = declaration is not None or global_element or occurrence.get('form', occurrence.getroottree().getroot().get(kind + 'FormDefault')) == 'qualified'
         if declaration is None:
             declaration = occurrence
         name = declaration.get('name') or (occurrence.get('ref') or '').split(':')[-1]
         xml = {'name': name}
-        if qualified and self.namespace:
-            xml['namespace'] = self.namespace
+        namespace = self.scopes[declaration.getroottree().getroot()] if qualified else None
+        if namespace:
+            xml['namespace'] = namespace
         if kind == 'attribute':
             xml['attribute'] = True
         if self.nodes_left <= 0 or len(active) >= 32:
@@ -143,7 +155,7 @@ class XsdProjection:
         if content is not None and content in active:
             return {'type': 'object', 'xml': xml, 'description': 'Recursive XML type.'}, None
 
-        qname = '{' + self.namespace + '}' + name if qualified and self.namespace else name
+        qname = '{' + namespace + '}' + name if namespace else name
         node = None
         if example and self.examples_left > 0:
             self.examples_left -= 1

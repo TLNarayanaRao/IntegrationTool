@@ -7,6 +7,7 @@ support library.  Unsupported activity semantics are rejected at build time.
 from __future__ import annotations
 
 import ast
+import json
 import keyword
 import re
 from pathlib import Path
@@ -179,7 +180,20 @@ def _project_artifact_closure(project: dict) -> tuple[list[dict], list[dict]]:
         elif isinstance(value, str) and 'schema' in key.lower():
             if value in known_schemas: schema_references.add(value)
             elif '${' in value: dynamic_schema_reference = True
-    for task in project.get('tasks', []): collect_schemas(task)
+    for task in project.get('tasks', []):
+        collect_schemas(task)
+        for activity in task.get('activities', []):
+            if activity.get('type') not in ('xml', 'json', 'flat'): continue
+            config = activity.get('config', {})
+            layout = known_schemas.get(config.get('dataFormatId'))
+            if layout:
+                schema_references.add(config['dataFormatId'])
+                try: collect_schemas(json.loads(layout['content']))
+                except (ValueError, TypeError): pass
+            # A format contract can reference a namespace rather than a file.
+            # Ship the offline XSD catalog for activities that use schemas.
+            if layout or config.get('schemaId') or config.get('schemaText'):
+                schema_references.update(name for name, asset in known_schemas.items() if asset.get('name', '').lower().endswith('.xsd'))
     for resource in selected_resources: collect_schemas(resource)
     if dynamic_schema_reference:
         schema_references.update(known_schemas)
@@ -742,9 +756,9 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     files['run.py'] = launcher
     files['__main__.py'] = launcher
     native_modules = set()
-    if capabilities & {'http_client','inbound_http'}: native_modules.update({'http_transport.py','http_messages.py','rest_contract.py','mapper.py','http_contracts.py','schema_validation.py','data_formats.py','faults.py','http_policy.py','http_listener.py','http_streams.py'})
+    if capabilities & {'http_client','inbound_http'}: native_modules.update({'http_transport.py','http_messages.py','rest_contract.py','mapper.py','http_contracts.py','schema_validation.py','data_formats.py','faults.py','http_policy.py','http_listener.py','http_streams.py','xsd_catalog.py'})
     if 'inbound_http' in capabilities: native_modules.update({'http_server.py','http2_server.py','mapper.py','api_docs.py','api_docs_ui.py','swagger_assets.py','xsd_openapi.py'})
-    if 'data_formats' in capabilities:native_modules.update({'data_formats.py','faults.py','mapper.py','schema_validation.py'})
+    if 'data_formats' in capabilities:native_modules.update({'data_formats.py','faults.py','mapper.py','schema_validation.py','xsd_openapi.py','xsd_catalog.py'})
     if any(activity.get('config', {}).get('operation') in {'deduplicate', 'message_receipt', 'replay_messages', 'aggregate_messages', 'split_records'} for task in project.get('tasks', []) for activity in task.get('activities', [])):
         native_modules.add('message_state.py')
     if any(activity.get('type') == 'sftp' for task in project.get('tasks', []) for activity in task.get('activities', [])):
@@ -764,6 +778,8 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         native_modules.add('mapper.py')
     if 'mapper.py' in native_modules:
         native_modules.update({'mapper_xml.py', 'mapper_binding.py', 'mapper_coercions.py'})
+    if _has_mapper_binding(project):
+        native_modules.update({'data_formats.py', 'faults.py', 'xsd_openapi.py', 'xsd_catalog.py', 'schema_validation.py'})
     if native_modules:
         files['application/native/__init__.py'] = b'"""Capability-selected native adapters; vendor binaries remain external."""\n'
         for name in sorted(native_modules): files[f'application/native/{name}'] = Path(__file__).with_name(name).read_bytes()
@@ -788,14 +804,14 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         f'{resource["id"]!r}: Resource(id={resource["id"]!r}, type={resource["type"]!r}, name={resource["name"]!r}, config={_direct_literal(resource["config"], 8)})'
         for resource in linked_resources)
     schema_source = ',\n    '.join(
-        f'{schema["name"]!r}: {_python_call("Schema", schema, ("name", "content"), 4)}'
+        f'{schema["id"]!r}: {_python_call("Schema", schema, ("name", "content", "source_path"), 4)}'
         for schema in linked_schemas)
     files['application/config.py'] = (
         '"""Typed, sanitized deployment configuration. Secrets come from environment variables."""\n'
         'from dataclasses import dataclass, field\nfrom typing import Any\nimport json\nimport os\nfrom .core import Reference, Template\n\n'
         '@dataclass(frozen=True)\nclass Property:\n    key: str\n    value: Any\n    data_type: str = "string"\n\n'
         '@dataclass(frozen=True)\nclass Resource:\n    id: str\n    type: str\n    name: str\n    config: dict[str, Any] = field(default_factory=dict)\n\n'
-        '@dataclass(frozen=True)\nclass Schema:\n    name: str\n    content: str\n\n'
+        '@dataclass(frozen=True)\nclass Schema:\n    name: str\n    content: str\n    source_path: str = ""\n\n'
         f'PROFILES = {{\n    {profile_source}\n}}\n'
         'DEFAULT_ENVIRONMENT = next(iter(PROFILES), "local")\n'
         f'RESOURCES = {{\n    {resource_source}\n}}\n'
@@ -978,15 +994,23 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         for index, activity in enumerate(task['activities']):
             prefix = 'if' if index == 0 else 'elif'
             config = {**(activity.get('config') or {})}
+            if activity.get('type') == 'flat' and config.get('dataFormatId'):
+                selected = next((schema for schema in project.get('schemas', []) if config['dataFormatId'] in (schema.get('id'), schema.get('name'))), None)
+                if selected:
+                    config['_dataFormatText'] = selected['content']
+                    try:
+                        shared = json.loads(selected['content'])['dataFormat']
+                        if isinstance(shared, dict) and shared.get('schemaId'):
+                            config.setdefault('schemaId', shared['schemaId'])
+                    except (TypeError, ValueError, KeyError):
+                        pass
             if activity.get('type') in ('xml', 'json', 'flat') and config.get('schemaId'):
                 selected = next((schema for schema in project.get('schemas', []) if schema.get('id') == config['schemaId'] or schema.get('name') == config['schemaId']), None)
-                if selected: config['schemaText'] = selected['content']
-            if activity.get('type') == 'mapper' and config.get('targetSchemaId'):
-                selected = next((schema for schema in project.get('schemas', []) if schema.get('id') == config['targetSchemaId'] or schema.get('name') == config['targetSchemaId']), None)
-                if not selected: raise ValueError(f'{activity.get("name")}: selected Mapper target schema was not found')
-                config.update(targetSchema={}, targetSchemaText=selected['content'])
-            if activity.get('type') == 'mapper' and (config.get('xmlStylesheet') or config.get('generatedXmlBinding') or config.get('sourceCoercions')):
-                config['xmlSchemaDocuments'] = {asset['name']: asset['content'] for asset in project.get('schemas', []) if asset['name'].lower().endswith('.xsd')}
+                if selected and not config.get('schemaText'):
+                    config['schemaText'] = selected['content']
+                    config['_formatSchemaPath'] = selected.get('source_path') or selected['name']
+            if activity.get('type') in ('mapper', 'transform', 'ai_transform'):
+                _mapper_schema_config(config, project.get('schemas', []), activity.get('name'))
             if project.get('custom_functions'): config['customFunctions'] = list({item['name']:item for item in [*config.get('customFunctions', []), *project['custom_functions']]}.values())
             outgoing = [edge for edge in task['transitions'] if edge['source'] == activity['id']]
             error_target = next((edge['target'] for edge in outgoing if edge.get('type') == 'error'), None)
@@ -1199,6 +1223,12 @@ def _engine_lazy_imports(source: str, modules: set[str], package: str) -> str:
     return ast.unparse(ast.fix_missing_locations(tree)) + '\n'
 
 
+def _has_mapper_binding(project):
+    return any(a['type'] in ('mapper', 'transform', 'ai_transform') and
+               (a.get('config', {}).get('xmlStylesheet') or a.get('config', {}).get('generatedXmlBinding'))
+               for task in project.get('tasks', []) for a in task.get('activities', []))
+
+
 def _engine_module_files(project: dict, source_root: Path) -> dict[str, bytes]:
     """Link the connector and transitive module closure for packaged tasks."""
     kinds = {activity['type'] for task in project.get('tasks', []) for activity in task.get('activities', [])}
@@ -1208,6 +1238,7 @@ def _engine_module_files(project: dict, source_root: Path) -> dict[str, bytes]:
     optional = set(ENGINE_CAPABILITY_MODULES.values())
     pending = {'runtime', 'models', 'mapper', 'time_utils'}
     pending.update(module for kind, module in ENGINE_CAPABILITY_MODULES.items() if kind in kinds)
+    xsd_projection = bool(kinds & {'xml', 'json', 'flat'}) or _has_mapper_binding(project)
     if any(a['type']=='http_listener' or a['type']=='rest' and a.get('config',{}).get('operation')=='receiver' or a['type']=='soap' and a.get('config',{}).get('operation')=='service' for t in project.get('tasks',[]) for a in t.get('activities',[])):pending.add('http_server')
     files = {}
     while pending:
@@ -1221,6 +1252,8 @@ def _engine_module_files(project: dict, source_root: Path) -> dict[str, bytes]:
             if isinstance(node, ast.ImportFrom) and node.level:
                 if node.level != 1 or not node.module or '.' in node.module:
                     raise ValueError(f'Engine dependency needs a linker rule: {module}: {ast.unparse(node)}')
+                if module == 'data_formats' and node.module == 'xsd_openapi' and not xsd_projection:
+                    continue  # API docs link the projection independently.
                 # Only runtime dispatch imports are capability-dependent.
                 # Adapter dependencies (e.g. SAP/JDBC -> Java bridge) are mandatory.
                 if module != 'runtime' or node.module not in optional:
@@ -1255,20 +1288,29 @@ def _python_call(name: str, values: dict, fields: tuple[str, ...], indent: int =
 
 
 
+def _mapper_schema_config(config, schemas, activity_name):
+    if config.get('targetSchemaId'):
+        schema_id = config['targetSchemaId']
+        selected = next((asset for asset in schemas if schema_id in (asset.get('id'), asset.get('name'))), None)
+        if not selected: raise ValueError(f'{activity_name}: selected Mapper target schema was not found')
+        config.update(targetSchema={}, targetSchemaText=selected['content'],
+                      xmlTargetSchemaPath=selected.get('source_path') or selected['name'])
+    if config.get('xmlStylesheet') or config.get('generatedXmlBinding') or config.get('sourceCoercions'):
+        config['xmlSchemaDocuments'] = {**(config.get('xmlSchemaDocuments') or {}),
+            **{asset.get('source_path') or asset['name']: asset['content'] for asset in schemas
+               if (asset.get('source_path') or asset['name']).lower().endswith('.xsd')}}
+
+
 def _transformation_tools(project, package):
     """Ship portable regression and JSONL tools only for transformation tasks."""
     assets = {}
-    schemas = {schema['id']: schema.get('content', '') for schema in project.get('schemas', [])}
+    schemas = project.get('schemas', [])
     for task in project.get('tasks', []):
         for activity in task.get('activities', []):
             if activity.get('type') != 'mapper': continue
             config = {key:value for key,value in (activity.get('config') or {}).items() if key not in {'templateHistory','contractBaseline','lastTestOutput','sampleInput'}}
             config['customFunctions'] = list({item['name']: item for item in [*config.get('customFunctions', []), *project.get('custom_functions', [])]}.values())
-            if config.get('targetSchemaId'):
-                config['targetSchema'] = {}
-                config['targetSchemaText'] = schemas[config['targetSchemaId']]
-            if config.get('xmlStylesheet') or config.get('generatedXmlBinding') or config.get('sourceCoercions'):
-                config['xmlSchemaDocuments'] = {asset['name']: asset['content'] for asset in project.get('schemas', []) if asset['name'].lower().endswith('.xsd')}
+            _mapper_schema_config(config, schemas, activity.get('name'))
             assets[f"{task['id']}/{activity['id']}"] = config
     if not assets: return {}
     root = Path(__file__).parent
@@ -1355,7 +1397,7 @@ def engine_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[
     project_fields = {key: value for key, value in project.items()
                       if key not in {'tasks', 'resources', 'schemas', 'properties', 'custom_functions', 'process'}}
     resources = ',\n        '.join(_python_call('SharedResource', value, ('id', 'type', 'name', 'config')) for value in project['resources'])
-    schemas = ',\n        '.join(_python_call('SchemaAsset', value, ('id', 'name', 'content')) for value in project.get('schemas', []))
+    schemas = ',\n        '.join(_python_call('SchemaAsset', value, ('id', 'name', 'content', 'source_path')) for value in project.get('schemas', []))
     functions = ',\n        '.join(_python_call('CustomFunction', value, ('id', 'name', 'parameters', 'expression', 'description')) for value in project.get('custom_functions', []))
     profile_lines = ',\n        '.join(
         f'{name!r}: [{", ".join(_python_call("EnvironmentProperty", value, ("key", "value", "data_type")) for value in values)}]'

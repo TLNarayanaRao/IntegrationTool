@@ -131,9 +131,9 @@ def _value_to_xml(name: str, value: Any) -> ET.Element:
     return node
 
 
-def data_activity(kind: str, operation: str, cfg: dict, payload: Any):
+def data_activity(kind: str, operation: str, cfg: dict, payload: Any, cursors=None, activity_id=None):
     from .native.data_formats import execute_format
-    return execute_format(kind,operation,cfg,payload)
+    return execute_format(kind,operation,cfg,payload,cursors,activity_id)
 
 
 def excel_read(cfg: dict) -> dict:

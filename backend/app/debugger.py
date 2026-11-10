@@ -347,7 +347,7 @@ class DebugManager:
                 incoming = {edge.target for edge in target.transitions}; starter = next((item for item in target.activities if item.type == 'start'), None) or next(item for item in target.activities if item.id not in incoming)
                 values = self.runtime.map_input_values(activity.config.get('inputMappings', {}), ctx)
                 mapped = self.runtime.unwrap_boundary(values, 'payload', ctx['last'])
-                child_context = {**ctx, 'input': mapped, 'last': mapped, 'context': {'taskId': target.id, 'activityId': starter.id, 'environment': project.active_environment, 'debugSessionId': state['id'], 'executionId': state['id']}, '_process': target, 'groupStack': [], 'jdbcTransactions': {}}
+                child_context = {**ctx, 'input': mapped, 'last': mapped, 'context': {'taskId': target.id, 'activityId': starter.id, 'environment': project.active_environment, 'debugSessionId': state['id'], 'executionId': state['id']}, '_process': target, 'groupStack': [], 'jdbcTransactions': {}, 'formatCursors': {}}
                 ctx['tasks'].setdefault(target.id, {'name': target.name, 'activities': {}})
                 state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'call', 'message': f'Entering Sub Task: {target.name}', 'activityId': activity.id, 'taskId': task.id, 'calledTaskId': target.id})
                 ctx['tasks'][target.id]['input'] = mapped

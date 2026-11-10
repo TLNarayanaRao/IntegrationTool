@@ -142,8 +142,13 @@ class ProjectResolver(etree.Resolver):
         self.documents = documents or {}
 
     def resolve(self, url, public_id, context):
-        if url in self.documents:
-            return self.resolve_string(etree.tostring(parse_xml(self.documents[url])), context, base_url=url)
+        key = url
+        if key not in self.documents and ':' not in url and not url.startswith('/'):
+            matches = [path for path in self.documents if path.endswith('/' + url)]
+            if len(matches) == 1:
+                key = matches[0]
+        if key in self.documents:
+            return self.resolve_string(etree.tostring(parse_xml(self.documents[key])), context, base_url=key)
         raise OSError(f'External XML resource is unavailable: {url}')
 
 
@@ -165,7 +170,7 @@ def parse_xml(value, documents=None):
     return root
 
 
-def element_value(element, *, local_names=False):
+def element_value(element, *, local_names=False, shape=None):
     if element.get(XSI_NIL) in ('true', '1'):
         return None
     def name(key): return key.rsplit('}', 1)[-1] if local_names else key
@@ -175,10 +180,17 @@ def element_value(element, *, local_names=False):
     if element.text and element.text.strip():
         fields['#text'] = element.text
     for child in element:
-        value = element_value(child, local_names=local_names)
+        local = child.tag.rsplit('}', 1)[-1]
+        definition = (shape or {}).get('properties', {}).get(local, {})
+        xml = (definition.get('items', {}) if definition.get('type') == 'array' else definition).get('xml', {})
+        namespace = child.tag[1:].partition('}')[0] if child.tag.startswith('{') else ''
+        if (xml.get('namespace') or '') != namespace:
+            definition = {}
+        repeated = definition.get('type') == 'array'
+        value = element_value(child, local_names=local_names, shape=definition.get('items') if repeated else definition)
         key = name(child.tag)
         if key not in fields:
-            fields[key] = value
+            fields[key] = [value] if repeated else value
         elif isinstance(fields[key], list):
             fields[key].append(value)
         else:
@@ -421,7 +433,23 @@ def transform_xml(root, stylesheet, timeout=30, variables=None, *, properties=No
     return parse_xml(bytes(result))
 
 
-def validate_xml_result(root, schema, documents):
-    validator = etree.XMLSchema(parse_xml(schema, documents))
-    if not validator.validate(root):
-        raise ValueError('Target schema validation failed: ' + '; '.join(error.message for error in list(validator.error_log)[:10]))
+def xml_result_shape(root, schema, documents, path='', *, validate=True):
+    from .data_formats import compiled_xsd, xsd_shape
+    from .faults import MinaFault
+
+    bundle = (path, tuple(sorted((documents or {}).items()))) if re.search(
+        r'<(?:[\w.-]+:)?(?:import|include|redefine|override)\b', schema) else ()
+    if validate:
+        try:
+            validator, lock = compiled_xsd(schema, bundle)
+            with lock:
+                if not validator.validate(root):
+                    raise ValueError('; '.join(error.message for error in list(validator.error_log)[:10]))
+        except (ValueError, etree.Error) as error:
+            raise ValueError('Target schema validation failed: ' + str(error)) from error
+    try:
+        return xsd_shape(schema, root.tag, bundle)
+    except MinaFault:
+        # A valid XML result can use XSD constructs the field projection
+        # cannot describe. Preserve the output even without shape metadata.
+        return None

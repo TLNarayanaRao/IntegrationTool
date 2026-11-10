@@ -45,6 +45,7 @@ class Context:
     attributes: dict[str, Any] = field(default_factory=dict)
     environment_name: str = 'local'
     error: Exception | None = None
+    format_cursors: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.last = self.input
@@ -268,7 +269,7 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
         and ctx.transport.get('listenerKey')
     )
     ignored_confirm_handles = {'ackId', 'ackIds', 'acknowledgementHandle'} if sap_early_confirm else set()
-    literal_keys = {'targetSchema', 'targetSchemaText', 'sourceSchemaText', 'schemaText', 'interfaceSchemaText', 'lookupTables', 'testCases', 'templateHistory', 'contractBaseline', 'xmlSource', 'xmlStylesheet', 'xmlNamespaces', 'xmlVariables', 'sourceTypeOverrides', 'sourceCoercions', 'xmlSchemaDocuments'}
+    literal_keys = {'targetSchema', 'targetSchemaText', 'sourceSchemaText', 'schemaText', '_dataFormatText', 'interfaceSchemaText', 'lookupTables', 'testCases', 'templateHistory', 'contractBaseline', 'xmlSource', 'xmlStylesheet', 'xmlNamespaces', 'xmlVariables', 'sourceTypeOverrides', 'sourceCoercions', 'xmlSchemaDocuments'}
     static_config = {
         key: value for key, value in raw.items()
         if key not in literal_keys and key not in {'inputMappings', 'mappings', 'customFunctions'} and key not in ignored_confirm_handles
@@ -406,7 +407,10 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
     # CAPABILITY data_formats START
     if kind in {'xml', 'json', 'flat'}:
         from . import activities
-        return activities.data_activity(kind, operation, cfg, ctx.last)
+        from .config import SCHEMAS
+        cfg['_formatSchemaAssets'] = [(asset.source_path or asset.name, asset.content) for asset in SCHEMAS.values()
+                                      if (asset.source_path or asset.name).lower().endswith('.xsd')]
+        return activities.data_activity(kind, operation, cfg, ctx.last, ctx.format_cursors, activity_id)
     # CAPABILITY data_formats END
     # CAPABILITY excel START
     if kind == 'excel':

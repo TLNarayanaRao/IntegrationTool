@@ -13,6 +13,9 @@ SPEC.loader.exec_module(compiler)
 
 
 class EngineExportTests(unittest.TestCase):
+    BASE = {'runtime', 'models', 'mapper', 'mapping_literals', 'time_utils', 'flow_graph', 'data_formats',
+            'faults', 'schema_validation', 'retry_policy', 'mapper_binding', 'mapper_coercions', 'mapper_xml', 'xsd_catalog'}
+
     def project(self, kind='log'):
         return dict(id='sample', name='Sample', resources=[], tasks=[dict(
             id='main', name='Main', kind='starter', groups=[],
@@ -25,10 +28,10 @@ class EngineExportTests(unittest.TestCase):
     def test_unused_resources_do_not_pull_in_connectors(self):
         project = self.project()
         project['resources'] = [dict(id='sap', type='sap', name='Unused SAP', config={})]
-        self.assertEqual(self.modules(project), {'runtime', 'models', 'mapper', 'mapping_literals', 'time_utils', 'flow_graph', 'data_formats', 'faults', 'schema_validation', 'retry_policy'})
+        self.assertEqual(self.modules(project), self.BASE)
 
     def test_connector_dependency_closure(self):
-        base = {'runtime', 'models', 'mapper', 'mapping_literals', 'time_utils', 'flow_graph', 'data_formats', 'faults', 'schema_validation', 'retry_policy'}
+        base = self.BASE
         for kind, extra in [
             ('sap', {'sap', 'java_bridge'}), ('jdbc', {'jdbc', 'java_bridge', 'snowflake'}),
             ('ems', {'java_bridge'}), ('jms', {'java_bridge'}),
@@ -37,6 +40,11 @@ class EngineExportTests(unittest.TestCase):
         ]:
             with self.subTest(kind=kind):
                 self.assertEqual(self.modules(self.project(kind)), base | extra)
+
+    def test_format_activities_link_the_xsd_projection(self):
+        for kind in ('xml', 'json', 'flat'):
+            with self.subTest(kind=kind):
+                self.assertEqual(self.modules(self.project(kind)), self.BASE | {'xsd_openapi'})
 
     def test_subtasks_and_nested_transaction_groups_are_included(self):
         project = self.project()

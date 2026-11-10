@@ -10,5 +10,5 @@ module.exports={
   files:['main.cjs','policy.cjs','preload.cjs','connect.html','connect.css','connect.js','package.json','!node_modules/**/*'],
   asar:true,
   win:{target:['nsis'],artifactName:'MINAControlPlane-${version}-Setup.${ext}'},
-  nsis:{oneClick:false,perMachine:false,allowToChangeInstallationDirectory:true,createDesktopShortcut:true,createStartMenuShortcut:true,shortcutName:'MINA Control Plane'}
+  nsis:{include:path.join(__dirname,'../build/installer-progress.nsh'),oneClick:false,perMachine:false,allowToChangeInstallationDirectory:true,createDesktopShortcut:true,createStartMenuShortcut:true,shortcutName:'MINA Control Plane'}
 };

@@ -2,6 +2,7 @@ export type SharedConnection = {
   id: string;
   type: "jdbc" | "snowflake" | "amqp" | "ftp" | "sftp" | "http" | "ems" | "jms" | "kafka" | "pubsub" | "sap" | "sap_tid";
   name: string;
+  package_path?: string;
   config: Record<string, any>;
 };
 

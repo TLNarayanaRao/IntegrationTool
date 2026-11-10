@@ -1,5 +1,6 @@
 import asyncio
 import unittest
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
@@ -54,6 +55,18 @@ class SnowflakeConnectorTests(unittest.TestCase):
         self.assertTrue(metadata["columns"][0]["primaryKey"])
         with self.assertRaises(SnowflakeAdapterError):
             entity_metadata(self.resource.config, "SALES", "PUBLIC", "MISSING")
+
+    def test_zero_maximum_rows_fetches_every_row_in_mock_and_driver_modes(self):
+        mock_rows = [{"ORDER_ID": index} for index in range(120)]
+        self.assertEqual(self.runtime("query", {"maximumRows": 0, "mockRows": mock_rows}, {})["rows"], mock_rows)
+        connection = Mock()
+        cursor = connection.cursor.return_value
+        cursor.description = [("ORDER_ID",)]
+        cursor.fetchall.return_value = [(index,) for index in range(120)]
+        with patch("app.snowflake.connect", return_value=connection):
+            result = execute({}, {"operation": "query", "statement": "SELECT ORDER_ID FROM ORDERS", "maximumRows": 0}, {})
+        self.assertEqual(result["rows"], mock_rows)
+        cursor.fetchmany.assert_not_called()
 
     def test_connection_and_entity_endpoints_support_design_time_mock(self):
         client = TestClient(app)

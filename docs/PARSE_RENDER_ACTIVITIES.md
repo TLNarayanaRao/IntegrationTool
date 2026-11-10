@@ -1,28 +1,46 @@
 # XML JSON and Data parse and render activities
 
-All six Parse/Render XML, JSON and Data activities use one implementation in Studio, Direct Python archives and Engine Python archives. Map document content in Input and choose format/validation policies in Configuration. Attach project or inline schemas using the Input/Output Editor where applicable.
+All six Parse/Render XML, JSON and Data activities use one implementation in Studio, Direct Python archives and Engine Python archives. **Configuration** contains design selectors and checkboxes. Map documents, paths, encodings, delimiters, fixed offsets, root names, JSON formatting and other runtime values in **Input → formatOptions**. A mapped option takes precedence over the checkbox, activity default or shared Data Format value. Existing text settings appear as editable Input mappings; Studio migrates them when you edit the mappings. Attach project or inline schemas in the Input/Output Editor.
 
 ## XML
 
-Parse XML accepts text, base64 binary or dynamic input. Binary XML respects its declaration/BOM unless a forced encoding is supplied. Attributes use `@name`, repeated elements use arrays, and ordered mixed text/child content uses `#content`. Render XML accepts a parsed wrapper or a mapped schema tree, supports declarations, pretty printing and encoded binary output. Binary Output exposes `binaryContent`, `bytes`, `byteCount` and `encoding`.
+Parse XML accepts text, base64 binary or dynamic input. Map binary input to `xmlBinary.bytes` and optionally supply `xmlBinary.forceEncoding` and `xmlBinary.byteCount`. Without an override, Parse XML uses the byte order mark or XML declaration. Attributes use `@name`, schema-defined repeating elements are arrays even with one occurrence, and ordered mixed text and child elements use `#content`.
 
-Validate parsed output and Validate input tree perform full XSD validation for self-contained schemas, including required children, attributes and datatypes. Validators use a bounded cache. The backend needs `lxml`; generated archives list the dependency. Refresh backend requirements when starting from source.
+Render XML accepts a parsed wrapper or a mapped schema tree. In Configuration, choose text or binary and set the default validation, declaration, indentation and namespace options. In Input, map `byteEncoding` for binary output and `formatOptions.cdataElements` for CDATA. The CDATA picker can insert paths from the selected input schema. Binary output includes `xmlBytes`, plus the existing MINA `binaryContent`, `bytes`, `byteCount` and `encoding` fields.
 
-DTDs/entities and external XSD includes/imports are disabled; supply a self-contained XSD. XML input is limited to 64 MiB and XSD content to 8 MiB. Namespace URIs and mixed text are preserved structurally; serialized prefixes, pretty-print whitespace and lexical formatting need not match the original bytes.
+Validate parsed output and Validate input tree perform XSD validation, including required children, attributes and datatypes. Select the entry XSD as the activity schema. Keep its `xs:include` and `xs:import` dependencies as project schema assets with the relative filenames used by `schemaLocation`. An import without a location resolves only when there is one project XSD for that namespace. The schema tree and both Python archives use the same project assets.
+
+The resolver is offline: URLs, local machine paths, traversal outside the project, DTDs, entities, XSD redefine and override are rejected. XML input is limited to 64 MiB; each XSD to 8 MiB and a dependency graph to 32 MiB. Namespace URIs and mixed text are preserved structurally; serialized prefixes, whitespace and lexical formatting need not match the original bytes.
 
 ## JSON
 
-Parse JSON supports First wins, Last wins and Error policies for duplicate keys. Malformed JSON and NaN/Infinity are rejected. The parsed value is published directly; map the activity root or selected schema fields.
+Select the conversion mode under **Configuration → Schema type**:
 
-Render JSON accepts objects, arrays and primitive values. It supports pretty printing, bounded indentation, non-ASCII escaping and omission of null object fields. Null array positions are preserved. Validation uses bounded offline JSON Schema validation with local references. Invalid schema content fails rather than silently disabling validation.
+- **Native JSON** is the existing MINA mode. It parses and renders objects, arrays and primitive values directly. It supports offline JSON Schema validation with local references, and can omit null object fields without changing array positions.
+- **Generic** converts between a JSON string and an XML string without a schema. With Badgerfish selected, namespaces use `@xmlns`, attributes use `@name` and text uses `$`. Generic Render JSON treats XML text as strings unless **Infer numeric and boolean values** is enabled.
+- **XSD** converts between JSON and a schema-defined XML tree. Select an XSD in Parse JSON's Output Editor or Render JSON's Input Editor. Validation is on by default. **Ignore additional JSON fields** filters unknown input fields when validation is enabled. An array declared by the XSD remains an array even when only one value is present.
+
+New JSON activities default to **XSD**. Existing activities without a saved mode continue to use **Native JSON**. The JSON root styles are **None**, **JSON with Root** and **Anonymous Array**. For Anonymous Array in XSD mode, the root must have one repeating child. **Use null for empty values** represents empty containers as nil when there is an XML container. Parse JSON rejects malformed JSON and non-finite numbers; its duplicate-key policy supports First wins, Last wins and Error. Render JSON can format the result and exposes the serialized output as `jsonString`.
 
 ## Delimited and fixed-width Data
 
-Parse Data accepts a string or runtime file path with a selected encoding. It supports headers or configured/schema-derived field names, scalar type conversion, blank-line policy and strict column counts. Output includes typed `records`, `recordCount`, field names and an XML representation.
+Parse Data accepts a string or runtime file path with a selected encoding. Map `text` or `fileName` in Input. Use `skipHeaderCharacters` to bypass a preamble, `noOfRecords` to limit a batch (`-1` means all records), and `startRecord` for a zero-based manual offset. If you leave the offset unmapped, each batch advances the same activity's cursor within that task execution. Use `done` to exit a loop and `nextRecord` when supplying your own offset. **Continue on record errors** returns invalid field values or column counts in `ErrorRows.error`; an invalid document structure, such as an unterminated quoted field, still fails.
+
+Configure the format inline or add a JSON schema asset under **Project Explorer → Schemas** with a `dataFormat` object. Select it as **Shared Data Format** on both activities. For example:
+
+```json
+{"dataFormat":{"format":"delimited","delimiter":",","header":true,"fields":"id,name","fieldTypes":"integer,string","strictColumns":true}}
+```
+
+An optional `schemaId` links the shared format to a project row schema. Parse Data exposes typed `records`, `Rows.schema`, record counts and the XML representation. Render Data accepts mapped records and exposes the rendered value as `text`, `Text` and `content`.
+
+To reuse a BusinessWorks layout, right-click **Schemas** and choose **Import XSD or BW Data Format**. Select a Data Format XML resource (`.dataformat`, `.dataformatresource` or `.dataformatsharedresource`) or a ZIP containing it and its companion XSDs. ZIP entries retain their relative paths. The importer converts delimited and fixed layouts into reusable MINA assets and links supported Parse/Render Data references when importing a BW project.
+
+A BW module property bound to the Data Format column separator becomes a MINA environment property and an editable **Input → formatOptions → Column separator** mapping. Import the ZIP with its `default.substvar` and, if available, `local.substvar`, `dev.substvar`, `qa.substvar`, `pre.substvar` or `production.substvar`. A profile value overrides the default, which falls back to the resource's literal separator if present. If no value is available, set the imported property before running. Select the imported Data Format on both activities to add its mapping without overwriting custom mappings. Unsupported substitution targets and ambiguous or secret profile values are reported during import.
 
 Quoted CSV values retain delimiters, escaped quotes and embedded line breaks. Literal multi-character delimiters and any-character separator sets also support quoting. Render Data exposes both `content` and `text` for mapping into HTTP bodies, files or subsequent activities. Headers, line endings and final separators are configurable.
 
-Fixed-width records require positive widths matching field names. Numeric fields use left padding and preserve significant trailing zeroes. Strict mode rejects over-width values; permissive mode retains truncation. Invalid boolean values, non-finite numbers and duplicate columns fail explicitly. File input is bounded to 64 MiB. These activities represent flat records; use Mapper for additional hierarchy and complex transformations.
+Fixed-width records use positive widths or zero-based `start:end` offsets (end excluded), so columns can have gaps. The optional fixed line length includes the separator. Numeric fields use left padding and preserve significant trailing zeroes. Strict mode rejects over-width values; permissive mode retains truncation. Single-character delimited and fixed-width files are read record by record; the multi-character delimiter reader has a 64 MiB limit. Use Mapper for hierarchy and complex transformations.
 
 ## Dynamic HTTP and REST invocation settings
 
@@ -50,7 +68,13 @@ Previously saved Configuration values appear as typed Input mappings without a m
 
 ## Verification
 
-The tests cover XSD content validation, binary encodings, mixed XML, duplicate JSON keys, local schema references, null positions, multiline CSV, separators, fixed-width padding and file input. All six activities run in fresh Direct and Engine archives and are compared with Studio. HTTP tests exercise dynamic contract selection and JSON/XSD validation.
+The tests cover binary encoding overrides, CDATA, XML namespaces, XSD import/include resolution and access boundaries, Generic and XSD JSON conversion, BW Data Format import, dynamic Input mappings, rejected records, batching, multiline CSV and fixed offsets. All six activities run in fresh Direct and Engine archives and are compared with Studio Run and Debug. These are MINA compatibility tests, not certification against a live BusinessWorks engine.
+
+### BusinessWorks 6.13 projects
+
+Import a BW source ZIP from Studio. MINA can retain the native XML and JSON Parse/Render steps and their original XSLT input bindings. Selected XSD elements are resolved by namespace and local name, including schemas embedded in the process. When an unrelated connector blocks full process conversion, the import can recover supported Mapper and format activities as separate subtasks. Supply each recovered activity's original BW input variables by name. An unbound Parse Data resource or an empty BW input binding is reported so it can be completed in Studio.
+
+To verify against the unmodified Mapper and XML samples installed by TIBCO, set `MINA_BW613_HOME` to the BW 6.13 directory (the one containing `samples`), then run `python -m unittest tests.test_bw613_vendor_samples -v` from `backend`. The test reads the installed samples and compares Run, Debug and both Python exports. It does not change the TIBCO workspace.
 
 From `backend`, with its Python environment:
 
@@ -58,4 +82,4 @@ From `backend`, with its Python environment:
 python -m unittest tests.test_format_activities tests.test_http_dynamic_contracts tests.test_ai_exception_data tests.test_raw_python tests.test_engine_export tests.test_activity_packs -q
 ```
 
-References: [Python CSV newline handling](https://docs.python.org/3/library/csv.html) and [lxml parsing/validation](https://lxml.de/apidoc/lxml.etree.html).
+References: [TIBCO BW 6.12 Binding and Palette Reference](https://docs.tibco.com/pub/activematrix_businessworks/6.12.0/doc/pdf/TIB_BW_6.12.0_bindings_palletes_reference.pdf), [Python CSV newline handling](https://docs.python.org/3/library/csv.html) and [lxml parsing/validation](https://lxml.de/apidoc/lxml.etree.html).

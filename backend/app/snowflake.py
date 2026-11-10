@@ -201,11 +201,20 @@ def entity_metadata(config: dict, database: str, schema: str, entity: str) -> di
         connection.close()
 
 
+def _query_limit(cfg: dict) -> int:
+    maximum = cfg.get("maximumRows")
+    maximum = 100 if maximum is None or maximum == "" else int(maximum)
+    if maximum < 0:
+        raise SnowflakeAdapterError("Maximum Rows cannot be negative", "MINA-SNOWFLAKE_DATABASE_JDBC-500014")
+    return maximum
+
+
 def _mock_execute(operation: str, cfg: dict, records: list[dict]) -> dict:
     if operation == "query":
         rows = list(cfg.get("mockRows") or [])
-        maximum = int(cfg.get("maximumRows") or 100)
-        return {"rows": rows if maximum == 0 else rows[:maximum], "rowCount": len(rows if maximum == 0 else rows[:maximum])}
+        maximum = _query_limit(cfg)
+        rows = rows[:maximum] if maximum else rows
+        return {"rows": rows, "rowCount": len(rows)}
     if operation == "insert":
         failed = int(cfg.get("mockFailedRows") or 0)
         return {"rowsAttempted": len(records), "rowsAffected": max(0, len(records) - failed), "batchFailures": [] if not failed else [{"batch": 1, "reason": "Configured mock failure", "failedRows": failed}]}
@@ -243,13 +252,11 @@ def execute(connection_config: dict, cfg: dict, payload: Any) -> dict:
         if _bool(cfg.get("createTableFromXsd")) or _bool(cfg.get("createTableIfNoneExists")):
             _create_table(cursor, table, cfg)
         if operation == "query":
+            maximum = _query_limit(cfg)
             statement = str(cfg.get("statement") or cfg.get("sql") or (f"SELECT * FROM {table}" if table else ""))
             parameters = cfg.get("parameters") or []
             cursor.execute(statement.replace("?", "%s"), parameters)
             names = [item[0] for item in cursor.description or []]
-            maximum = int(cfg.get("maximumRows") or 100)
-            if maximum < 0:
-                raise SnowflakeAdapterError("Maximum Rows cannot be negative", "MINA-SNOWFLAKE_DATABASE_JDBC-500014")
             rows = cursor.fetchall() if maximum == 0 else cursor.fetchmany(maximum)
             return {"rows": [dict(zip(names, row)) for row in rows], "rowCount": len(rows)}
         if operation == "insert":

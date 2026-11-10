@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from app.jdbc import (
     JdbcAdapterError, _connection_url, _databricks_settings, _db2_connection_string,
@@ -32,6 +33,39 @@ class AmqpJdbcExcelCommandTests(unittest.TestCase):
             catalog = jdbc_metadata(connection)
             self.assertEqual(catalog["tables"][0]["name"], "orders")
             self.assertEqual(catalog["tables"][0]["columns"][0]["name"], "id")
+            updated = jdbc_execute(connection, {"operation": "update", "sql": "UPDATE orders SET status=:status WHERE customer=:customer",
+                "parameters": {"customer": "Ada", "status": "SHIPPED"}})
+            self.assertEqual(updated["noOfUpdates"], 1)
+            deleted = jdbc_execute(connection, {"operation": "delete", "sql": "DELETE FROM orders WHERE status=:status",
+                "parameters": {"status": "SHIPPED"}})
+            self.assertEqual(deleted["noOfUpdates"], 1)
+            jdbc_execute(connection, {"operation": "insert", "sql": "INSERT INTO orders(customer,status) VALUES ('Jo','NEW')"})
+            jdbc_execute(connection, {"operation": "truncate", "sql": "TRUNCATE TABLE orders"})
+            self.assertEqual(jdbc_execute(connection, {"operation": "query", "sql": "SELECT * FROM orders"})["rows"], [])
+
+    def test_jdbc_batch_binds_by_sql_name_instead_of_record_key_order(self):
+        with tempfile.TemporaryDirectory() as folder:
+            connection = {"driver": "sqlite", "url": str(Path(folder) / "batch.db")}
+            jdbc_execute(connection, {"operation": "dynamic", "sql": "CREATE TABLE orders (id INTEGER, name TEXT, note TEXT)"})
+            jdbc_execute(connection, {"operation": "insert", "sql": "INSERT INTO orders VALUES (:id,:name,:note)",
+                "batchUpdate": True, "interpretEmptyStringAsNull": True,
+                "records": [{"note": "", "name": "Ada", "id": 1}, {"name": "Jo", "id": 2, "note": "ready"}]})
+            rows = jdbc_execute(connection, {"operation": "query", "sql": "SELECT * FROM orders ORDER BY id"})["rows"]
+            self.assertEqual(rows, [{"id": 1, "name": "Ada", "note": None}, {"id": 2, "name": "Jo", "note": "ready"}])
+
+    def test_jdbc_native_procedure_passes_typed_values_in_declared_order(self):
+        connection = Mock()
+        cursor = connection.cursor.return_value
+        cursor.description = [("status",)]
+        cursor.fetchall.return_value = [("OK",)]
+        cursor.nextset.return_value = False
+        cursor.callproc.return_value = [7, "shipped"]
+        with patch("app.jdbc.connect", return_value=connection):
+            result = jdbc_execute({"driver": "mysql"}, {"operation": "call", "procedure": "ship_order",
+                "parameters": {"status": "shipped", "id": "7"},
+                "preparedParameters": [{"name": "id", "type": "integer"}, {"name": "status", "type": "string"}]})
+        cursor.callproc.assert_called_once_with("ship_order", [7, "shipped"])
+        self.assertEqual(result["resultSets"], [[{"status": "OK"}]])
 
     def test_jdbc_prepared_parameter_metadata_coerces_runtime_input_types(self):
         values = _parameters({

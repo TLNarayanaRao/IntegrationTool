@@ -18,6 +18,20 @@ _PROCESS_METADATA = {'partnerLinks', 'variables', 'extensions', 'import'}
 _NODE_METADATA = {'sources', 'targets', 'documentation'}
 _LINK_TYPES = {'SUCCESS': 'success', 'SUCCESSWITHCONDITION': 'success_condition',
                'SUCCESSWITHNOCONDITION': 'success_no_match', 'ERROR': 'error'}
+XML_JSON_FORMATS = {
+    'bw.xml.parsexml': ('xml', 'parse'), 'bw.xml.renderxml': ('xml', 'render'),
+    'bw.restjson.jsonparser': ('json', 'parse'), 'bw.restjson.jsonrender': ('json', 'render'),
+}
+
+
+def expanded_name(node, value):
+    if not value: return ''
+    if value.startswith('{'): return str(etree.QName(value))
+    prefix, separator, name = value.partition(':')
+    if not separator: return str(etree.QName(value))
+    namespace = node.nsmap.get(prefix)
+    if not namespace: raise ValueError(f'unknown schema prefix {prefix!r}')
+    return str(etree.QName(namespace, name))
 
 
 def _link_options(link, variables):
@@ -266,17 +280,19 @@ def _binding_fields(binding):
 
 
 class ProcessConverter:
-    def __init__(self, document, task_id, name, resolve_task, resolve_resource):
+    def __init__(self, document, task_id, name, resolve_task, resolve_resource, resolve_schema=None):
         self.document = document
         self.task_id = task_id
         self.name = name
         self.resolve_task = resolve_task
         self.resolve_resource = resolve_resource
+        self.resolve_schema = resolve_schema or (lambda name: None)
         self.activities = []
         self.transitions = []
         self.variables = {}
         self.dependencies = set()
         self.resources = set()
+        self.diagnostics = []
         self.link_endpoints = set()
         self.starter = False
 
@@ -432,6 +448,16 @@ class ProcessConverter:
         if event.tag in {BW + 'JMSReceiveMessage', BW + 'JMSReceiveMessageEvent'}:
             config = self.jms_config(event, 'receive_message')
             kind, output = 'jms', 'body'
+        elif event.tag == BW_ACTIVITY and event.get('activityTypeID', '').lower() == 'bw.generalactivities.timer':
+            value = event.find("activityConfig/properties[@name='config']/value")
+            if value is None: raise ValueError(f'{label}: missing BW timer configuration')
+            cron, date = value.get('cronExpression'), value.get('startTime')
+            if not cron and (value.get('runOnce', '').lower() != 'true' or not date):
+                raise ValueError(f'{label}: repeating BW timers require review')
+            config = {'operation': 'schedule', 'runOnceOnLocalStart': False,
+                      'scheduleMode': 'cron' if cron else 'dateTime'}
+            config['cronExpression' if cron else 'scheduledDateTime'] = cron or date
+            kind, output = 'timer', ''
         elif event.tag == BW + 'TimerEvent':
             settings = _settings(event, {'cronExpression', 'scheduledDateTime'})
             if bool(settings.get('cronExpression')) == bool(settings.get('scheduledDateTime')):
@@ -508,14 +534,85 @@ class ProcessConverter:
         if kind in {'bw.generalactivities.mapper', 'bw.generalactivities.map'} and binding is not None:
             activity = map_binding()
             self.activities[-1]['name'] = label
+            if value is not None and value.get('inputQName'):
+                name = expanded_name(value, value.get('inputQName'))
+                schema = self.resolve_schema(name)
+                if schema:
+                    # BW Mapper has no Parse/Render validation switch. Attach
+                    # its design contract without adding runtime validation.
+                    self.activities[-1]['config'].update(targetSchemaId=schema, validateOutput=False)
             self.variables[output_variable] = '${activities.' + activity + '.output.xmlString}'
-        elif kind in {'bw.internal.end', 'bw.xml.renderxml'} and binding is not None:
-            if kind == 'bw.xml.renderxml' and (value is None or value.get('outputStyle') != 'text'
-                    or set(value.attrib) - {XSI_TYPE, 'inputElementQName', 'outputStyle'} or len(value)):
-                raise ValueError(f'{label}: Render XML uses unsupported output options')
+        elif kind == 'bw.internal.end' and binding is not None:
             activity = map_binding()
             self.activities[-1]['name'] = label
             self.variables[output_variable] = '${activities.' + activity + '.output.xmlString}'
+        elif kind in XML_JSON_FORMATS:
+            family, operation = XML_JSON_FORMATS[kind]
+            parsing = operation == 'parse'
+            if value is None: raise ValueError(f'{label}: missing BW format configuration')
+            config = {'operation': operation}
+            flag = 'validateOutput' if parsing else 'validateInput'
+            if family == 'xml':
+                style_key = 'inputStyle' if parsing else 'outputStyle'
+                style = (value.get(style_key) or 'text').lower()
+                if style not in ({'text','binary','dynamic'} if parsing else {'text','binary'}):
+                    raise ValueError(f'{label}: unsupported XML style {style!r}')
+                config[style_key] = style.title()
+                config[flag] = value.get(flag, 'false').lower() == 'true'
+                qname = value.get('outputElementQName' if parsing else 'inputElementQName')
+                if not parsing:
+                    config.update(
+                        suppressXmlDeclaration=value.get('suppressXMLDeclaration','false').lower() == 'true',
+                        prettyPrint=value.get('disablePrettyPrint','false').lower() != 'true',
+                        formatUsingDefaultNamespacePrefix=value.get('formatUsingDefaultNSPrefix','false').lower() == 'true',
+                    )
+                    if value.get('encoding'): config['encoding'] = value.get('encoding')
+                    if value.get('cdata') or any(etree.QName(child).localname == 'cdata' for child in value):
+                        raise ValueError(f'{label}: select the imported CDATA paths in MINA Input')
+            else:
+                mode = (value.get('schemaType') or 'xsd').lower()
+                if mode not in ('generic','xsd'): raise ValueError(f'{label}: unsupported JSON schema type {mode!r}')
+                config['schemaType'] = 'Generic' if mode == 'generic' else 'XSD'
+                config[flag] = value.get(flag,'true' if parsing else 'false').lower() == 'true'
+                style = (value.get('jsonInputStyle' if parsing else 'jsonOutputStyle') or '').lower()
+                style = re.sub(r'[^a-z]', '', style)
+                if style not in ('', 'none', 'jsonwithroot', 'withroot', 'anonymousarray', 'anonymous'):
+                    raise ValueError(f'{label}: unsupported JSON root style {style!r}')
+                config['jsonStyle'] = ('Anonymous Array' if style.startswith('anonymous') else
+                                       'JSON with Root' if style.endswith('withroot') or (not parsing and not style and value.get('removeRoot') == 'false') else 'None')
+                for source_key, target_key in (
+                    ('bagerfish','badgerfish'), ('nullForEmpty','useNullForEmptyValues'),
+                    ('IgnoreAdditionalJSONFields','ignoreAdditionalJsonFields'), ('emptyForNull','useEmptyValuesForNull'),
+                    ('prettyPrint','prettyPrint'),
+                ):
+                    if source_key in value.attrib: config[target_key] = value.get(source_key).lower() == 'true'
+                qname = value.get('outputElementQName') if mode == 'xsd' else None
+            if qname:
+                name = expanded_name(value, qname)
+                schema = self.resolve_schema(name)
+                if schema:
+                    config.update(schemaId=schema, rootElement=name)
+            if not config.get('schemaId') and ((family == 'xml' and config[flag]) or config.get('schemaType') == 'XSD'):
+                raise ValueError(f'{label}: selected schema {qname or "(missing)"} is not in the imported project')
+            if binding is not None:
+                mapped = map_binding()
+                previous = self.connect(previous, mapped)
+                prefix = '${activities.' + mapped + '.output.'
+                input_mappings = config.setdefault('inputMappings', {})
+                if parsing:
+                    expected = {'xmlString','xmlBinary'} if family == 'xml' else {'jsonString'}
+                    root, fields = _binding_fields(binding)
+                    if root in expected:
+                        input_mappings[root] = prefix + ('value}' if root != 'xmlBinary' else root + '}')
+                    elif fields and fields <= expected:
+                        for field in fields: input_mappings[field] = prefix + root + '.' + field + '}'
+                    else:
+                        raise ValueError(f'{label}: unsupported Parse {family.upper()} input binding')
+                else:
+                    input_mappings['xmlString'] = prefix + 'xmlString}'
+            if not parsing: config['bwOutputEnvelope'] = True
+            activity = self.node(family, label, config)
+            self.variables[output_variable] = '${activities.' + activity + '.output.' + ('xmlString' if parsing else 'bwXml') + '}'
         elif kind == 'bw.generalactivities.callprocess':
             call = owner.find(BW + 'CallProcess')
             if binding is not None or call is None or set(call.attrib) != {'subProcessName'} or len(call):
@@ -524,6 +621,58 @@ class ProcessConverter:
             self.dependencies.add(target)
             activity = self.node('call_task', label, {'taskId': target})
             self.variables[output_variable] = '${activities.' + activity + '.output}'
+        elif kind in {'bw.parse.parsedata', 'bw.parse.renderdata', 'bw.dataconversion.parsedata', 'bw.dataconversion.renderdata'}:
+            parsing = kind.endswith('.parsedata')
+            settings = value if value is not None else owner.find(BW + ('ParseData' if parsing else 'RenderData'))
+            if settings is None: raise ValueError(f'{label}: missing Parse/Render Data configuration')
+            options = {etree.QName(k).localname: v for k, v in settings.attrib.items() if not k.startswith('{')}
+            for child in settings:
+                if not isinstance(child.tag, str): continue
+                if len(child) or child.attrib: raise ValueError(f'{label}: unsupported Data Format setting {etree.QName(child).localname}')
+                options[etree.QName(child).localname] = (child.text or '').strip()
+            reference = next((options.get(key) for key in ('dataFormatResource', 'dataFormat', 'dataFormatResourceName', 'sharedResourceProperty') if options.get(key)), None)
+            variable = next((item for item in self.document.findall(f'{BPEL}variables/{BPEL}variable') if item.get('name') == reference), None)
+            unbound = False
+            if variable is not None:
+                literal = (variable.findtext(f'{BPEL}from/{BPEL}literal') or
+                           variable.get('{http://ns.tibco.com/bw/property}source'))
+                unbound = not literal and variable.get(
+                    '{http://docs.oasis-open.org/ns/opencsa/sca-bpel/200801}sharedResourceType') == '{http://ns.tibco.com/bw/palette/dataformat}DataFormat'
+                reference = literal or reference
+            try:
+                format_id = self.resolve_resource(reference, 'data_format')
+            except ValueError:
+                if not unbound: raise
+                format_id = 'bw-unbound:' + reference
+                self.diagnostics.append(f'{label}: Data Format {reference!r} is unbound; select a shared Data Format before running.')
+            config = {'operation': 'parse' if parsing else 'render', 'dataFormatId': format_id}
+            if parsing:
+                mode = options.get('inputType', options.get('inputSource', 'String')).lower()
+                if mode not in ('string','file','text','file path'): raise ValueError(f'{label}: unsupported Parse Data input type')
+                config['inputSource'] = 'File path' if mode.startswith('file') else 'String'
+                for name, alias in (('skipBlankSpaces','skipBlankLines'), ('manuallySpecifyStartRecord','manualStartRecord'),
+                                    ('manuallySpecifiedStartRecord','manualStartRecord'),
+                                    ('strictValidation','strictColumns'), ('continueOnError','continueOnError')):
+                    if name in options: config[alias] = options[name].lower() == 'true'
+                if options.get('encoding'): config['fileEncoding'] = options['encoding']
+            if binding is not None:
+                root, fields = _binding_fields(binding)
+                if parsing and not fields:
+                    self.diagnostics.append(f'{label}: the BW input binding is empty; map the text or file in MINA Input.')
+                else:
+                    mapped = map_binding()
+                    previous = self.connect(previous, mapped)
+                    prefix = '${activities.' + mapped + '.output.' + root
+                    if parsing:
+                        allowed = {'text', 'fileName', 'startRecord', 'noOfRecords', 'SkipHeaderCharacters'}
+                        if not fields <= allowed: raise ValueError(f'{label}: unsupported Parse Data input binding')
+                        config['inputMappings'] = {
+                            ('skipHeaderCharacters' if field == 'SkipHeaderCharacters' else field): prefix + '.' + field + '}'
+                            for field in fields}
+                    else:
+                        config['Rows'] = prefix + ('.Rows' if 'Rows' in fields else '') + '}'
+            activity = self.node('flat', label, config)
+            self.variables[output_variable] = '${activities.' + activity + '.output' + ('.xmlString' if parsing else '.text') + '}'
         elif kind in {'bw.file.read', 'bw.file.readfile', 'bw.file.write'} and value is not None:
             root, fields = _binding_fields(binding)
             writing = kind == 'bw.file.write'
@@ -605,7 +754,8 @@ class ProcessConverter:
         else:
             raise ValueError(f'{label}: unsupported BW activity {kind or "(unspecified)"}')
         if kind not in {'bw.generalactivities.mapper', 'bw.generalactivities.map', 'bw.generalactivities.callprocess',
-                        'bw.internal.end', 'bw.xml.renderxml'}:
+                        'bw.parse.parsedata', 'bw.parse.renderdata', 'bw.dataconversion.parsedata', 'bw.dataconversion.renderdata',
+                        'bw.internal.end', *XML_JSON_FORMATS}:
             # Connector result shapes differ from the BW variable XML; demand an explicit adapter.
             self.variables[output_variable] = None
         return self.connect(previous, activity)

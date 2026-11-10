@@ -152,9 +152,23 @@ def flatten_schema(schema: Any, path: str = '', repeating: bool = False, repeat_
     elif isinstance(schema, list) and schema and isinstance(schema[0], dict): fields.extend(flatten_schema(schema[0], path, True, path))
     return fields
 
-def recommend(source_schema: Any, target_schema: Any, threshold: float = 0.7, weights: dict | None = None, learned=None) -> list[dict]:
+def recommend(source_schema: Any, target_schema: Any, threshold: float = 0.7, weights: dict | None = None,
+              learned=None, *, source_scope='', target_scope='', source_level=4, target_level=4,
+              exact_names=False) -> list[dict]:
     weights = weights or {'linguistic': .5, 'type': .2, 'ancestor': .2, 'cardinality': .1}
-    sources, targets = flatten_schema(source_schema), flatten_schema(target_schema)
+    def fields(schema, scope, level):
+        if not isinstance(scope, str) or type(level) is not int or not 1 <= level <= 10:
+            raise ValueError('Mapper matching levels must be whole numbers from 1 to 10')
+        rows = flatten_schema(schema)
+        if not scope:
+            return rows
+        prefix = scope + '.'
+        return [row for row in rows if row['path'] == scope or
+                (row['path'].startswith(prefix) and row['path'][len(prefix):].count('.') < level)]
+    sources = fields(source_schema, source_scope, source_level)
+    targets = fields(target_schema, target_scope, target_level)
+    if len(sources) * len(targets) > 5_000_000:
+        raise ValueError('Select a source or target branch to narrow the mapping search')
     result = []
     linguistic_cache, ancestor_cache, token_cache = {}, {}, {}
     def tokens(name):
@@ -165,6 +179,8 @@ def recommend(source_schema: Any, target_schema: Any, threshold: float = 0.7, we
         learned_source = (learned or {}).get(target['path'])
         for source in sources:
             source_name, target_name = source['name'].lower(), target['name'].lower()
+            if exact_names and source_name != target_name:
+                continue
             pair = (source_name, target_name)
             if pair not in linguistic_cache:
                 st, tt = tokens(source_name), tokens(target_name)
@@ -177,9 +193,9 @@ def recommend(source_schema: Any, target_schema: Any, threshold: float = 0.7, we
             ancestor = ancestor_cache[ancestors]
             cardinality = 1 if source.get('repeating') == target.get('repeating') else (.65 if source.get('required') == target.get('required') else .35)
             score = linguistic*weights.get('linguistic',.5)+type_score*weights.get('type',.2)+ancestor*weights.get('ancestor',.2)+cardinality*weights.get('cardinality',.1)
-            candidates.append({'source': source['path'], 'score': round(score*100, 1), 'sourceType': source['type'], 'sourceRepeating': bool(source.get('repeating')), 'sourceRepeatPath': source.get('repeatPath', ''), 'learned': source['path'] == learned_source})
-        candidates.sort(key=lambda x: (x['learned'], x['score']), reverse=True)
-        top = candidates[:3]
+            candidates.append((score, {'source': source['path'], 'score': 100.0 if exact_names else round(score*100, 1), 'sourceType': source['type'], 'sourceRepeating': bool(source.get('repeating')), 'sourceRepeatPath': source.get('repeatPath', ''), 'learned': source['path'] == learned_source}))
+        candidates.sort(key=lambda x: (x[1]['learned'], x[0]), reverse=True)
+        top = [entry for _, entry in candidates[:3]]
         selected = top[0] if top and (top[0]['learned'] or top[0]['score'] >= threshold*100) else None
         result.append({'target': target['path'], 'targetType': target['type'], 'targetRepeating': bool(target.get('repeating')), 'targetRepeatPath': target.get('repeatPath', ''), 'selected': selected['source'] if selected else None, 'sourceRepeating': bool(selected and selected.get('sourceRepeating')), 'sourceRepeatPath': selected.get('sourceRepeatPath', '') if selected else '', 'operator': 'for-each' if selected and selected.get('sourceRepeating') and target.get('repeating') else None, 'confidence': top[0]['score'] if top else 0, 'alternatives': top})
     return result
@@ -1012,21 +1028,23 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
         stylesheet = generate_binding(mappings, schema or '', source_schema if source_schema.lstrip().startswith('<') else '',
                                       preferences=options.get('xmlBindingPreferences'))
     if stylesheet:
-        from .mapper_xml import element_value, etree, transform_xml, validate_xml_result
+        from .mapper_xml import element_value, etree, transform_xml, xml_result_shape
         root = transform_xml(get_xml_root(), stylesheet, timeout=min(30, maximum_ms / 1000), variables=xml_bindings(),
                              properties=document.get('properties') if isinstance(document, dict) else None,
                              element_variables=options.get('bwXmlElementVariables', False))
         tick()
-        if schema and options.get('validateOutput', True):
-            if not isinstance(schema, str) or not schema.lstrip().startswith('<'):
-                raise ValueError('An XSLT binding requires an XSD target contract')
-            validate_xml_result(root, schema, options.get('xmlSchemaDocuments'))
+        shape = None
+        if isinstance(schema, str) and schema.lstrip().startswith('<'):
+            shape = xml_result_shape(root, schema, options.get('xmlSchemaDocuments'),
+                                     options.get('xmlTargetSchemaPath', ''), validate=options.get('validateOutput', True))
+        elif schema and options.get('validateOutput', True):
+            raise ValueError('An XSLT binding requires an XSD target contract')
         xml = etree.tostring(root, encoding='unicode')
         maximum_kb = int(options.get('maxOutputSizeKb') or 0)
         if maximum_kb and len(xml.encode('utf-8')) > maximum_kb * 1024:
             raise ValueError(f'Mapped output exceeds {maximum_kb} KB limit')
-        value = element_value(root)
-        return {root.tag.rsplit('}', 1)[-1]: element_value(root, local_names=True),
+        value = element_value(root, shape=shape)
+        return {root.tag.rsplit('}', 1)[-1]: element_value(root, local_names=True, shape=shape),
                 'xmlString': xml, 'xml': xml, 'root': root.tag, 'value': value}
     loop_contexts = []
     custom_functions = {item['name']: item for item in options.get('customFunctions', []) if item.get('name')}

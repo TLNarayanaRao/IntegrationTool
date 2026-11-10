@@ -1,0 +1,97 @@
+import { useState, type MouseEvent, type ReactNode } from "react";
+import { ChevronDown, ChevronRight, Folder, FolderOpen } from "lucide-react";
+import ModalLayer from "./ModalLayer";
+
+export const DEFAULT_PACKAGE = "Default";
+export type PackageCategory = "tasks" | "resources" | "schemas";
+export type PackageCatalog = Partial<Record<PackageCategory, string[]>>;
+type PackageItem = { id: string; package_path?: string };
+const packagePattern = /^[\p{L}\p{N}_-]+(?:\/[\p{L}\p{N}_-]+){0,15}$/u;
+const windowsDevice = /^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])$/i;
+
+export function packagePath(value?: string) {
+  return value && value.length <= 1024 && packagePattern.test(value) ? value : DEFAULT_PACKAGE;
+}
+
+export function packagePaths(explicit: string[] = [], items: PackageItem[] = []) {
+  const paths = new Set([DEFAULT_PACKAGE]);
+  for (const candidate of [...explicit, ...items.map(item => item.package_path)]) {
+    const segments = packagePath(candidate).split("/");
+    segments.forEach((_, index) => paths.add(segments.slice(0, index + 1).join("/")));
+  }
+  return [...paths].sort((left, right) => left.localeCompare(right));
+}
+
+export function PackageTree<T extends PackageItem>({ paths, items, indent, isCollapsed, toggle, onMenu, renderItem }: {
+  paths: string[];
+  items: T[];
+  indent: number;
+  isCollapsed: (path: string) => boolean;
+  toggle: (path: string) => void;
+  onMenu: (event: MouseEvent, path: string) => void;
+  renderItem: (item: T) => ReactNode;
+}) {
+  const children = new Map<string, string[]>();
+  const contents = new Map<string, T[]>();
+  for (const path of paths) {
+    const parent = path.slice(0, Math.max(0, path.lastIndexOf("/")));
+    children.set(parent, [...(children.get(parent) || []), path]);
+  }
+  for (const item of items) {
+    const path = packagePath(item.package_path);
+    const entries = contents.get(path);
+    if (entries) entries.push(item);
+    else contents.set(path, [item]);
+  }
+  const render = (parent: string, depth: number): ReactNode => children.get(parent)?.map(path => {
+    const expanded = !isCollapsed(path);
+    return <div className="explorer-package" key={path}>
+      <button type="button" className="tree-row explorer-package-row" aria-expanded={expanded} title={path}
+        style={{paddingInlineStart: indent + depth * 12}}
+        onClick={() => toggle(path)} onContextMenu={event => { event.preventDefault(); onMenu(event, path); }}>
+        {expanded ? <ChevronDown/> : <ChevronRight/>}{expanded ? <FolderOpen/> : <Folder/>}
+        <span>{path.slice(path.lastIndexOf("/") + 1)}</span>
+      </button>
+      {expanded && <>
+        {render(path, depth + 1)}
+        <div style={{paddingInlineStart: depth * 12 + indent - 12}}>
+          {contents.get(path)?.map(renderItem)}
+        </div>
+      </>}
+    </div>;
+  });
+  return <>{render("", 0)}</>;
+}
+
+export function PackageDialog({ paths, parent, moving, onClose, onSave }: {
+  paths: string[];
+  parent?: string;
+  moving?: string;
+  onClose: () => void;
+  onSave: (path: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [destination, setDestination] = useState(moving || DEFAULT_PACKAGE);
+  const segment = name.trim().replace(/\s+/g, "-");
+  const candidate = parent ? `${parent}/${segment}` : segment;
+  const valid = moving ? destination !== moving && paths.includes(destination) :
+    !!segment && !segment.includes("/") && !windowsDevice.test(segment) && candidate.length <= 1024 && packagePattern.test(candidate) &&
+    !paths.some(path => path.toLowerCase() === candidate.toLowerCase());
+  return <ModalLayer className="modal-backdrop">
+    <form className="runtime-modal rename-modal" role="dialog" aria-modal="true" aria-labelledby="object-package-title"
+      onSubmit={event => { event.preventDefault(); if (valid) onSave(moving ? destination : candidate); }}>
+      <header><b id="object-package-title">{moving ? "Move to package" : "Create package"}</b>
+        <button type="button" aria-label="Close package dialog" onClick={onClose}>×</button></header>
+      <main>{moving ? <label>Destination package<select autoFocus value={destination} onChange={event => setDestination(event.target.value)}>
+        {paths.map(path => <option key={path}>{path}</option>)}
+      </select></label> : <>
+        {parent && <small>Parent package · {parent}</small>}
+        <label>Package name<input autoFocus value={name} onChange={event => setName(event.target.value)} maxLength={64} required/></label>
+        <small>Use letters, numbers, underscores, or hyphens. Spaces become hyphens.</small>
+        {name.trim() && !valid && <small role="alert">Enter a valid package name that is unique in this folder.</small>}
+      </>}</main>
+      <footer><button type="button" onClick={onClose}>Cancel</button>
+        <button type="submit" className="primary" disabled={!valid}>{moving ? "Move" : "Create package"}</button></footer>
+    </form>
+  </ModalLayer>;
+}

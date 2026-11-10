@@ -66,6 +66,7 @@ import SchemaStudio, { SchemaDoc } from "./SchemaStudio";
 import ActivityEditor, { activityContract, activityReferenceName, activityMappingIssues, activityInputMappingTypes, possibleTaskExceptions, DataSourcePane, upstreamActivitySources } from "./ActivityEditor";
 import HttpEndpointSetup, { HttpEndpointFields, endpointConfig, isHttpEndpoint, newEndpointDraft, type EndpointConfig } from "./HttpEndpointSetup";
 import type { ConnectionKind, CreateConnection, SharedConnection } from "./SharedConnectionSelect";
+import { DEFAULT_PACKAGE, PackageDialog as ObjectPackageDialog, PackageTree, packagePath, packagePaths, type PackageCatalog, type PackageCategory } from "./ProjectPackages";
 import ActivityPicker from "./ActivityPicker";
 import CanvasMagnifier from "./CanvasMagnifier";
 import { activityIconUrl } from "./activityIconUrl";
@@ -174,6 +175,7 @@ type Task = {
   name: string;
   kind: "starter" | "subtask";
   description?: string;
+  package_path?: string;
   activities: Node[];
   transitions: Edge[];
   input_schema?: Record<string, any>;
@@ -243,6 +245,7 @@ type Project = {
   resources: Resource[];
   packaging: Record<string, any>;
   schemas: SchemaDoc[];
+  object_packages?: PackageCatalog;
   custom_functions: Array<{ id: string; name: string; parameters: string[]; expression: string; description?: string }>;
   properties: Record<string, Property[]>;
   active_environment: string;
@@ -1478,11 +1481,14 @@ function App() {
       "GCP Pub/Sub": true,
     }),
     [menu, setMenu] = useState<any>(null),
-    [taskDialog, setTaskDialog] = useState<"starter" | "subtask" | null>(null),
-    [connectionDialog, setConnectionDialog] = useState<{ kind: ConnectionKind; select?: (resource: Resource) => void } | null>(null),
+    [taskDialog, setTaskDialog] = useState<{ kind: "starter" | "subtask"; path?: string } | null>(null),
+    [connectionDialog, setConnectionDialog] = useState<{ kind: ConnectionKind; select?: (resource: Resource) => void; path?: string } | null>(null),
     [pendingEndpoint, setPendingEndpoint] = useState<{ definition: Def; position?: ActivityPlacement } | null>(null),
     [editingConnection, setEditingConnection] = useState<Resource | null>(null),
     [schemaEditor, setSchemaEditor] = useState<SchemaDoc | "new" | null>(null),
+    [schemaPackage, setSchemaPackage] = useState(DEFAULT_PACKAGE),
+    [objectPackageDialog, setObjectPackageDialog] = useState<{ category: PackageCategory; parent?: string; itemId?: string; moving?: string } | null>(null),
+    [collapsedPackages, setCollapsedPackages] = useState<Record<string, boolean>>({}),
     [aiBuilderOpen, setAiBuilderOpen] = useState(false),
     [apiBlueprintOpen, setApiBlueprintOpen] = useState(false),
     [catchAIOpen, setCatchAIOpen] = useState<string | null>(null),
@@ -1532,6 +1538,8 @@ function App() {
   const pendingLeaveAction = useRef<(() => void) | null>(null);
   const canvas = useRef<HTMLDivElement>(null),
     fileInput = useRef<HTMLInputElement>(null),
+    bwDataFormatInput = useRef<HTMLInputElement>(null),
+    bwDataFormatPackage = useRef(DEFAULT_PACKAGE),
     drag = useRef<any>(null),
     activityClipboard = useRef<{ activities: Node[]; transitions: Edge[] } | null>(null),
     explorerClipboard = useRef<{ type: string; value: any } | null>(null),
@@ -2169,11 +2177,9 @@ function App() {
       sortBy: "Name", sortOrder: "Ascending", eventType: "Created", pollInterval: 5,
       includeExisting: false, postAction: "None", moveTo: "",
     });
-    if (d.type === "flat") Object.assign(config, {
-      inputSource: "String", filePath: "", fileEncoding: "UTF-8", format: "delimited",
-      delimiter: ",", lineSeparator: "Auto", header: true, rootElement: "records",
-      recordElement: "record", trimValues: true, skipBlankLines: true,
-    });
+    if (d.type === "flat" && d.operation === "parse") config.inputSource = "String";
+    if (d.type === "xml" && d.operation === "render") config.prettyPrint = true;
+    if (d.type === "json") Object.assign(config, { schemaType: "XSD", jsonStyle: "None" });
     if (endpoint) Object.assign(config, endpoint);
     if (d.type === "http" || (d.type === "rest" && d.operation === "invoke"))
       Object.assign(config, {
@@ -2524,13 +2530,17 @@ function App() {
       };
       const taskPaths = saved.tasks.map((item: any) => `tasks/${item.id}.json`);
       const resourcePaths = saved.resources.map((item: any) => `resources/connections/${item.id}.json`);
-      const schemaPaths = saved.schemas.map((item: any) => `schemas/${item.name}`);
+      const schemaPaths = saved.schemas.map((item: any) => `schemas/${item.source_path || item.name}`);
       const propertyPaths = Object.keys(saved.properties).map((environment) => `properties/${environment}.json`);
       const metadata: any = { ...saved, tasks: undefined, resources: undefined, schemas: undefined, properties: undefined, packaging: undefined, process: undefined, layout: { version: 1, tasks: taskPaths, resources: resourcePaths, schemas: schemaPaths, properties: propertyPaths, packaging: "packaging/packaging.json" } };
       await write(["project.json"], JSON.stringify(metadata, null, 2));
       await Promise.all(saved.tasks.map((item: any) => write(["tasks", `${item.id}.json`], JSON.stringify(item, null, 2))));
       await Promise.all(saved.resources.map((item: any) => write(["resources", "connections", `${item.id}.json`], JSON.stringify(item, null, 2))));
-      await Promise.all(saved.schemas.map((item: any) => write(["schemas", item.name], item.content || "")));
+      await Promise.all(saved.schemas.map((item: any) => {
+        const parts = String(item.source_path || item.name).split("/");
+        if (parts.some(part => !part || part === "." || part === ".." || /[\\:]/.test(part))) throw new Error(`Invalid schema path: ${item.name}`);
+        return write(["schemas", ...parts], item.content || "");
+      }));
       await Promise.all(Object.entries(saved.properties).map(([environment, values]) => write(["properties", `${environment}.json`], JSON.stringify({ environment, values }, null, 2))));
       await write(["packaging", "packaging.json"], JSON.stringify(saved.packaging, null, 2));
       setLogs([{ level: "INFO", message: `Saved structured project folder ${folderName}.` }]);
@@ -2944,18 +2954,44 @@ function App() {
       : null;
     if (value) { explorerClipboard.current = { type, value: structuredClone(value) }; setLogs([{ level: "INFO", message: `Copied ${type} ${id || ""} to Project Explorer clipboard.` }]); }
   };
-  const explorerPaste = (target: string) => {
+  const explorerPaste = (target: string, path?: string) => {
     const copied = explorerClipboard.current;
     if (!copied) { setLogs([{ level: "WARN", message: "Project Explorer clipboard is empty." }]); return; }
     const stamp = Date.now();
     if (target === "tasks" && copied.type === "task") {
       const item = copyTask(repairCopiedTask(copied.value), `task-${crypto.randomUUID()}`, `${copied.value.name} Copy`);
-      setProject((current) => ({ ...current, tasks: [...current.tasks, item] }));
-    } else if (target === "resources" && copied.type === "resource") setProject((current) => ({ ...current, resources: [...current.resources, { ...structuredClone(copied.value), id: `resource-${stamp}`, name: `${copied.value.name} Copy` }] }));
-    else if (target === "schemas" && copied.type === "schema") setProject((current) => ({ ...current, schemas: [...current.schemas, { ...structuredClone(copied.value), id: `schema-${stamp}`, name: copied.value.name.replace(/\.xsd$/i, "-copy.xsd") }] }));
+      setProject((current) => ({ ...current, tasks: [...current.tasks, { ...item, package_path: packagePath(path || item.package_path) }] }));
+    } else if (target === "resources" && copied.type === "resource") setProject((current) => ({ ...current, resources: [...current.resources, { ...structuredClone(copied.value), package_path: packagePath(path || copied.value.package_path), id: `resource-${stamp}`, name: `${copied.value.name} Copy` }] }));
+    else if (target === "schemas" && copied.type === "schema") setProject((current) => ({ ...current, schemas: [...current.schemas, { ...structuredClone(copied.value), package_path: packagePath(path || copied.value.package_path), source_path: "", id: `schema-${stamp}`, name: copied.value.name.replace(/(\.[^.\/]+)$/, "-copy$1") }] }));
     else if (target === "properties" && copied.type === "property") { const name = `${copied.value.name}-copy`; setProject((current) => ({ ...current, properties: { ...current.properties, [name]: structuredClone(copied.value.values) } })); }
     else { setLogs([{ level: "WARN", message: `A ${copied.type} cannot be pasted into ${target}.` }]); return; }
     setLogs([{ level: "INFO", message: `Pasted ${copied.type} into ${target}.` }]);
+  };
+  const importBwDataFormat = async (file: File, path: string) => {
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const response = await fetch("/api/schemas/import-format-assets", { method: "POST", body: form });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Import failed.");
+      const assets = (result.schemas as SchemaDoc[]).map(asset => ({...asset, package_path:path}));
+      const duplicate = assets.find(asset => project.schemas.some(existing => existing.name === asset.name));
+      if (duplicate) throw new Error(`A project schema already uses ${duplicate.name}. Rename or remove it before importing this format.`);
+      const projectId = project.id;
+      setProject(current => {
+        if (current.id !== projectId || assets.some(asset => current.schemas.some(existing => existing.name === asset.name))) return current;
+        const properties = { ...current.properties };
+        for (const [environment, entries] of Object.entries(result.properties || {}) as [string, Property[]][]) {
+          const existing = properties[environment] || [];
+          const keys = new Set(existing.map(property => property.key));
+          properties[environment] = [...existing, ...entries.filter(property => !keys.has(property.key))];
+        }
+        return { ...current, schemas: [...current.schemas, ...assets], properties };
+      });
+      setLogs([{level:"INFO",message:result.description || `Imported ${result.formatCount} BusinessWorks Data Formats.`}]);
+    } catch (error) {
+      setLogs([{level:"ERROR",message:error instanceof Error ? error.message : String(error)}]);
+    }
   };
   const explorerRename = (type: string, id?: string) => {
     if (type === "application") { setRenameOpen(true); return; }
@@ -2984,6 +3020,33 @@ function App() {
     if (type === "property" && id) setProject((current) => { const properties = { ...current.properties }; delete properties[id]; return { ...current, properties, active_environment: current.active_environment === id ? Object.keys(properties)[0] || "local" : current.active_environment }; });
   };
   const explorerRefresh = async () => { setWorkStatus("Refreshing project workspace…"); try { const response = await fetch(`/api/projects/${project.id}`); if (response.ok) { setProject(normalizeProject(await response.json())); setLogs([{ level: "INFO", message: "Project Explorer refreshed from saved project storage." }]); } } finally { setWorkStatus(""); } };
+  const explorerPackagePaths = (category: PackageCategory) => packagePaths(project.object_packages?.[category], project[category]);
+  const packageTreeProps = (category: PackageCategory) => ({
+    paths: explorerPackagePaths(category),
+    indent: category === "resources" ? 37 : 25,
+    isCollapsed: (path: string) => !!collapsedPackages[`${project.id}:${category}:${path}`],
+    toggle: (path: string) => {
+      const key = `${project.id}:${category}:${path}`;
+      setCollapsedPackages(current => ({...current, [key]: !current[key]}));
+    },
+    onMenu: (event: React.MouseEvent, path: string) => setMenu({type: category, path, x: event.clientX, y: event.clientY}),
+  });
+  const saveObjectPackage = (path: string) => {
+    if (!objectPackageDialog) return;
+    const {category, itemId} = objectPackageDialog;
+    setProject(current => ({
+      ...current,
+      ...(itemId ? {[category]: current[category].map(item => item.id === itemId ? {...item, package_path: path} : item)} : {}),
+      object_packages: {...current.object_packages, [category]: [...new Set([...(current.object_packages?.[category] || []), path])]},
+    }));
+    setCollapsedPackages(current => {
+      const next = {...current};
+      path.split("/").forEach((_, index, parts) => { delete next[`${project.id}:${category}:${parts.slice(0, index + 1).join("/")}`]; });
+      return next;
+    });
+    setOpen(current => ({...current, ...(category === "tasks" ? {Tasks:true} : category === "schemas" ? {Schemas:true} : {Resources:true, Connections:true})}));
+    setObjectPackageDialog(null);
+  };
   useEffect(() => {
     const projectFileShortcuts = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") return;
@@ -3149,7 +3212,7 @@ function App() {
             <Network aria-hidden="true" /> Tasks
           </button>
           {open.Tasks &&
-            project.tasks.map((t) => {
+            <PackageTree {...packageTreeProps("tasks")} items={project.tasks} renderItem={t => {
               const mode = taskEntryMode(t);
               return (
                 <button
@@ -3159,14 +3222,14 @@ function App() {
                   onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setRenameTaskId(t.id); }}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    setMenu({ type: "task", id: t.id, x: e.clientX, y: e.clientY });
+                    setMenu({ type: "task", id: t.id, path: packagePath(t.package_path), x: e.clientX, y: e.clientY });
                   }}
                 >
                   <TaskEntryIcon mode={mode} />
                   <span className="explorer-task-name" title={t.name}>{t.name}</span>
                 </button>
               );
-            })}
+            }}/>}
           <button
             className="tree-row indent"
             aria-expanded={!!open.Resources}
@@ -3194,11 +3257,11 @@ function App() {
                 <Cable /> Connections
               </button>
               {open.Connections &&
-                project.resources.map((r) => (
+                <PackageTree {...packageTreeProps("resources")} items={project.resources} renderItem={r => (
                   <button
                     className={`tree-row indent3 ${selectedResource === r.id ? "active" : ""}`}
                     key={r.id}
-                    onContextMenu={(e) => { e.preventDefault(); setMenu({ type: "resource", id: r.id, x: e.clientX, y: e.clientY }); }}
+                    onContextMenu={(e) => { e.preventDefault(); setMenu({ type: "resource", id: r.id, path: packagePath(r.package_path), x: e.clientX, y: e.clientY }); }}
                      onClick={() => {
                         setSelectedResource(null);
                         setEditingConnection(r);
@@ -3212,7 +3275,7 @@ function App() {
                     {r.name}
                     <small>{r.type}</small>
                   </button>
-                ))}
+                )}/>}
             </>
           )}
           <button
@@ -3242,17 +3305,17 @@ function App() {
             <CodeXml /> Schemas
           </button>
           {open.Schemas &&
-            project.schemas.map((s) => (
+            <PackageTree {...packageTreeProps("schemas")} items={project.schemas} renderItem={s => (
               <button
                 className="tree-row indent2"
                 key={s.id}
                 onClick={() => setSchemaEditor(s)}
-                onContextMenu={(e) => { e.preventDefault(); setMenu({ type: "schema", id: s.id, x: e.clientX, y: e.clientY }); }}
+                onContextMenu={(e) => { e.preventDefault(); setMenu({ type: "schema", id: s.id, path: packagePath(s.package_path), x: e.clientX, y: e.clientY }); }}
               >
                 <CodeXml />
                 {s.name}
               </button>
-            ))}
+            )}/>}
           <button
             className="tree-row indent"
             aria-expanded={!!open.Properties}
@@ -3763,23 +3826,28 @@ function App() {
           e.target.files?.[0] && importProject(e.target.files[0])
         }
       />
+      <input hidden ref={bwDataFormatInput} type="file" accept=".xsd,.dataformat,.dataformatresource,.dataformatsharedresource,.zip"
+        onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void importBwDataFormat(file, bwDataFormatPackage.current); }}/>
       {typeof menu === "object" && menu && (
         <Context
           menu={menu}
           projectActivity={(id: string) => nodes.find((item) => item.id === id)}
           addActivity={addActivity}
-          createTask={setTaskDialog}
-          createConnection={(kind: ConnectionKind) => setConnectionDialog({ kind })}
+          createTask={(kind: "starter" | "subtask") => setTaskDialog({kind, path:menu.path})}
+          createConnection={(kind: ConnectionKind) => setConnectionDialog({kind, path:menu.path})}
           actions={{
             newProject, importProject: importFromFileSystem, exportProject, save, refresh: explorerRefresh,
             rename: explorerRename, copy: explorerCopy, paste: explorerPaste, remove: explorerRemove,
+            newObjectPackage: (category: PackageCategory) => setObjectPackageDialog({category, parent:menu.path}),
+            moveToPackage: (category: PackageCategory) => setObjectPackageDialog({category, itemId:menu.id, moving:packagePath(menu.path)}),
             run: (id?: string) => run(id), debug: (id?: string) => debug(id), validate: (id?: string) => { const target = id ? project.tasks.find((item) => item.id === id) : null; if (!target) { runValidation("project"); return; } const issues = validateTaskDefinition(project, target); setValidation({ title: `Validate Task · ${target.name}`, issues }); selectTask(target.id); setLogs([{ level: issues.some((item) => item.severity === "error") ? "ERROR" : issues.length ? "WARN" : "INFO", message: issues.length ? `${target.name}: ${issues.length} validation finding${issues.length === 1 ? "" : "s"}.` : `${target.name}: validation successful.` }]); },
             properties: (type: string, id?: string) => { if (type === "application") setRenameOpen(true); else if (type === "task" && id) selectTask(id); else if (type === "activity" && id) { setSelected(id); setSelectedIds([id]); setActiveTab("configuration"); } else if (type === "resource" && id) setEditingConnection(project.resources.find((item) => item.id === id) || null); else if (type === "schema" && id) setSchemaEditor(project.schemas.find((item) => item.id === id) || null); else if (type === "property" && id) setPropertyEditor(id); else if (type === "packaging") setPackageOpen(true); },
             copyActivity: copySelection, cutActivity: cutSelection, pasteActivity: pasteSelection,
             deleteActivity: deleteSelectedActivity,
             toggleBreakpoint: (id: string) => setBreakpoints((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]),
             groupActivity: createGroup,
-            newSchema: () => setSchemaEditor("new"), newEnvironment: () => {
+            newSchema: () => { setSchemaPackage(packagePath(menu.path)); setSchemaEditor("new"); },
+            importBwDataFormat: () => { bwDataFormatPackage.current = packagePath(menu.path); bwDataFormatInput.current?.click(); }, newEnvironment: () => {
               const name = studioObjectName(prompt("New environment name") ?? "").toLowerCase();
               if (name) setProject(current => Object.prototype.hasOwnProperty.call(current.properties, name) ? current : {
                 ...current,
@@ -3796,9 +3864,14 @@ function App() {
           close={() => setMenu(null)}
         />
       )}{" "}
+      {objectPackageDialog && <ObjectPackageDialog paths={explorerPackagePaths(objectPackageDialog.category)}
+        parent={objectPackageDialog.parent} moving={objectPackageDialog.moving}
+        onClose={() => setObjectPackageDialog(null)} onSave={saveObjectPackage}/>}
       {taskDialog && (
         <TaskDialog
-          kind={taskDialog}
+          kind={taskDialog.kind}
+          packages={explorerPackagePaths("tasks")}
+          initialPackage={packagePath(taskDialog.path)}
           resources={project.resources}
           schemas={project.schemas}
           createConnection={createConnectionForField}
@@ -3808,10 +3881,11 @@ function App() {
             name: string,
             kind: "starter" | "subtask",
             event: string,
+            path: string,
             endpoint?: EndpointConfig,
           ) => {
             const id = `task-${Date.now()}`,
-              t = { ...newSubtask(id, name), kind };
+              t = { ...newSubtask(id, name), kind, package_path:path };
             if (kind === "starter")
               t.activities[0] = {
                 ...t.activities[0],
@@ -3886,9 +3960,10 @@ function App() {
           onSapSchemaFetched={(idoc: any) => upsertSapIdocSchema(idoc)}
           onClose={() => setConnectionDialog(null)}
           onCreate={(r: Resource) => {
-            setProject((p) => ({ ...p, resources: [...p.resources, r] }));
+            const resource = {...r, package_path:packagePath(connectionDialog.path)};
+            setProject((p) => ({ ...p, resources: [...p.resources, resource] }));
             setConnectionDialog(null);
-            if (connectionDialog.select) connectionDialog.select(r);
+            if (connectionDialog.select) connectionDialog.select(resource);
             else setSelectedResource(r.id);
           }}
         />
@@ -3901,7 +3976,7 @@ function App() {
           onSapSchemaFetched={(idoc: any) => upsertSapIdocSchema(idoc)}
           onClose={() => setEditingConnection(null)}
           onCreate={(updated: Resource) => {
-            setProject((current) => ({ ...current, resources: current.resources.map((item) => item.id === editingConnection.id ? updated : item) }));
+            setProject((current) => ({ ...current, resources: current.resources.map((item) => item.id === editingConnection.id ? {...updated, package_path:packagePath(item.package_path)} : item) }));
             setSelectedResource(null);
             setEditingConnection(null);
           }}
@@ -3915,7 +3990,11 @@ function App() {
           onSave={(s) => {
             setProject((p) => ({
               ...p,
-              schemas: [...p.schemas.filter((x) => x.id !== s.id), s],
+              schemas: [...p.schemas.filter((x) => x.id !== s.id), {
+                ...s,
+                source_path: p.schemas.find(x => x.id === s.id)?.source_path || "",
+                package_path: schemaEditor === "new" ? schemaPackage : packagePath(schemaEditor.package_path),
+              }],
             }));
             setSchemaEditor(null);
           }}
@@ -4923,7 +5002,7 @@ function Context({
   }
   const fileCommands = <div className="explorer-context-commands">
     {item("Copy", "Copy this explorer item", ClipboardCopy, () => actions.copy(menu.type, menu.id), !["task", "resource", "schema", "property"].includes(menu.type))}
-    {item("Paste", `Paste into ${targetFolder}`, ClipboardPaste, () => actions.paste(targetFolder), !["tasks", "resources", "resources-root", "schemas", "properties"].includes(targetFolder))}
+    {item("Paste", `Paste into ${menu.path || targetFolder}`, ClipboardPaste, () => actions.paste(targetFolder, menu.path), !["tasks", "resources", "resources-root", "schemas", "properties"].includes(targetFolder))}
     {item("Rename", "Change the displayed name", Settings2, () => actions.rename(menu.type, menu.id), !["application", "task", "resource", "schema", "property"].includes(menu.type))}
     {item("Remove", "Remove from this project", Trash2, () => actions.remove(menu.type, menu.id), !["application", "task", "resource", "schema", "property"].includes(menu.type))}
     {item("Refresh", "Reload saved project state", Redo2, actions.refresh)}
@@ -4938,6 +5017,10 @@ function Context({
       style={{ left: Math.max(8, Math.min(menu.x, window.innerWidth - 340)), top: explorerMenuTop, maxHeight: explorerMenuMaxHeight }}
       onClick={(e) => e.stopPropagation()}
     >
+      {["tasks", "resources", "resources-root", "schemas"].includes(menu.type) &&
+        item("New Package", menu.path ? `Create a package inside ${menu.path}` : "Create a top-level package", Folder, () => actions.newObjectPackage(targetFolder))}
+      {["task", "resource", "schema"].includes(menu.type) &&
+        item("Move to Package", "Keep existing references and change the folder", FolderOpen, () => actions.moveToPackage(targetFolder))}
       {(menu.type === "tasks" || menu.type === "task") && (
         <>
           <b>Create Task</b>
@@ -4962,6 +5045,7 @@ function Context({
       {menu.type === "application" && <>{item("New Project", "Create another integration application", IntegrationApplicationIcon, actions.newProject)}{item("Run Active Task", "Execute the current task", Zap, () => actions.run())}{item("Debug Active Task", "Start a debug session", Bug, () => actions.debug())}</>}
       {menu.type === "task" && <>{item("Run Task", "Execute this task", Zap, () => actions.run(menu.id))}{item("Debug Task", "Debug this task", Bug, () => actions.debug(menu.id))}{item("Validate Task", "Validate configuration and mappings", ShieldCheck, () => actions.validate(menu.id))}</>}
       {menu.type === "schemas" && item("New XSD Schema", "Open the schema designer", CodeXml, actions.newSchema)}
+      {menu.type === "schemas" && item("Import XSD or BW Data Format", "Import schema files or a BusinessWorks Data Format", CodeXml, actions.importBwDataFormat)}
       {menu.type === "properties" && item("New Environment", "Create another properties environment", Plus, actions.newEnvironment)}
       {menu.type === "packaging" && item("Configure Package", "Open deployment packaging", Package, actions.package)}
       {menu.type === "resources" && (
@@ -5001,27 +5085,31 @@ function Context({
     </div>
   );
 }
-function TaskDialog({ kind, resources, schemas, createConnection, connectionOpen, onClose, onCreate }: {
+function TaskDialog({ kind, packages, initialPackage, resources, schemas, createConnection, connectionOpen, onClose, onCreate }: {
   kind: "starter" | "subtask";
+  packages: string[];
+  initialPackage: string;
   resources: Resource[];
   schemas: SchemaDoc[];
   createConnection: CreateConnection;
   connectionOpen: boolean;
   onClose: () => void;
-  onCreate: (name: string, kind: "starter" | "subtask", event: string, endpoint?: EndpointConfig) => void;
+  onCreate: (name: string, kind: "starter" | "subtask", event: string, path: string, endpoint?: EndpointConfig) => void;
 }) {
   const [name, setName] = useState(
       kind === "starter" ? "New Starter Task" : "New Sub Task",
     ),
     [event, setEvent] = useState("http_listener");
   const [endpoint, setEndpoint] = useState(newEndpointDraft);
+  const [taskPackage, setTaskPackage] = useState(initialPackage);
   const [error, setError] = useState("");
   const needsEndpoint = kind === "starter" && isHttpEndpoint(event, event === "rest" ? "receiver" : undefined);
   const create = () => {
+    if (!packages.includes(taskPackage)) { setError("Select a task package."); return; }
     let config;
     try { if (needsEndpoint) config = endpointConfig(endpoint, { resources, schemas }); }
     catch (error) { setError((error as Error).message); return; }
-    onCreate(name, kind, event, config);
+    onCreate(name, kind, event, taskPackage, config);
   };
   return (
     <ModalLayer className="modal-backdrop">
@@ -5035,6 +5123,9 @@ function TaskDialog({ kind, resources, schemas, createConnection, connectionOpen
             Task name
             <input value={name} onChange={(e) => setName(e.target.value)} />
           </label>
+          <label>Task package<select value={taskPackage} required onChange={event => setTaskPackage(event.target.value)}>
+            {packages.map(path => <option key={path}>{path}</option>)}
+          </select></label>
           {kind === "starter" && (
             <label>
               How the task starts

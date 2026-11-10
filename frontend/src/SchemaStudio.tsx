@@ -4,7 +4,7 @@ import{CheckCircle2,CodeXml,FileJson,Plus,Sparkles,Trash2,X}from'lucide-react';
 import DataNodeIcon from './DataNodeIcon';
 const Braces=DataNodeIcon;
 
-export type SchemaDoc={id:string;name:string;content:string};
+export type SchemaDoc={id:string;name:string;content:string;source_path?:string;package_path?:string};
 type Field={id:string;name:string;type:string;min:string;max:string};
 const header=`<?xml version="1.0" encoding="UTF-8"?>\n<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">`;
 const footer=`</xs:schema>`;

@@ -188,6 +188,15 @@ const safeProjectPart = (value, fallback = 'item') => {
   const normalized = String(value || '').replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '');
   return normalized || fallback;
 };
+const diskPackagePath = (value = 'Default') => {
+  if (typeof value !== 'string' || !/^[\p{L}\p{N}_-]+(?:\/[\p{L}\p{N}_-]+){0,15}$/u.test(value)) {
+    throw new Error('Invalid project package path.');
+  }
+  if (value.split('/').some(part => /^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])$/i.test(part))) {
+    throw new Error('A package name is reserved by Windows.');
+  }
+  return value;
+};
 const writeProjectJson = (filePath, value) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const temporary = `${filePath}.tmp`;
@@ -229,7 +238,8 @@ const readProjectFolder = (folderPath) => {
     if (!fs.existsSync(target) || !fs.statSync(target).isFile()) throw new Error(`Missing schema: ${relative}`);
     const metaPath = `${target}.meta.json`;
     const meta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf8')) : {};
-    return { id: meta.id || safeProjectPart(path.basename(normalized, path.extname(normalized))), name: meta.name || path.basename(normalized), content: fs.readFileSync(target, 'utf8') };
+    return { id: meta.id || safeProjectPart(path.basename(normalized, path.extname(normalized))), name: meta.name || path.basename(normalized),
+      content: fs.readFileSync(target, 'utf8'), source_path: meta.source_path || '', package_path: meta.package_path || 'Default' };
   });
   const packaging = layout.packaging ? readJson(layout.packaging, 'packaging') : {};
   const tasks = taskFiles.map((item) => readJson(item, 'task'));
@@ -260,9 +270,17 @@ ipcMain.handle('mina:save-project-folder', async (_event, options) => {
   const resources = Array.isArray(project.resources) ? project.resources : [];
   const schemas = Array.isArray(project.schemas) ? project.schemas : [];
   const properties = project.properties || {};
-  const taskFiles = tasks.map((item) => `tasks/${safeProjectPart(item.id)}.json`);
-  const resourceFiles = resources.map((item) => `resources/connections/${safeProjectPart(item.id)}.json`);
-  const schemaFiles = schemas.map((item) => `schemas/${safeProjectPart(item.name || item.id, 'schema.xsd')}`);
+  const packageRoots = { tasks: 'tasks', resources: 'resources/connections', schemas: 'schemas' };
+  const taskFiles = tasks.map(item => `tasks/${diskPackagePath(item.package_path)}/${safeProjectPart(item.id)}.json`);
+  const resourceFiles = resources.map(item => `resources/connections/${diskPackagePath(item.package_path)}/${safeProjectPart(item.id)}.json`);
+  const schemaFiles = schemas.map(item => `schemas/${diskPackagePath(item.package_path)}/${safeProjectPart(item.name || item.id, 'schema.xsd')}`);
+  const savedPaths = [...taskFiles, ...resourceFiles, ...schemaFiles].map(relative => relative.toLowerCase());
+  if (new Set(savedPaths).size !== savedPaths.length) throw new Error('Two project objects resolve to the same folder file name.');
+  for (const [category, root] of Object.entries(packageRoots)) {
+    for (const packagePath of project.object_packages?.[category] || []) {
+      fs.mkdirSync(path.join(folderPath, root, diskPackagePath(packagePath)), { recursive: true });
+    }
+  }
   const propertyFiles = Object.keys(properties).map((environment) => `properties/${safeProjectPart(environment)}.json`);
   tasks.forEach((task) => (task.activities || []).forEach((activity) => {
     const source = activity.config?.artifactPath;
@@ -276,12 +294,12 @@ ipcMain.handle('mina:save-project-folder', async (_event, options) => {
   }));
   const metadata = { ...project, tasks: undefined, resources: undefined, schemas: undefined, properties: undefined, packaging: undefined, process: undefined,
     layout: { format: 'mina-folder-project', version: 1, tasks: taskFiles, resources: resourceFiles, schemas: schemaFiles, properties: propertyFiles, packaging: 'packaging/packaging.json' } };
-  writeProjectJson(path.join(folderPath, 'project.json'), metadata);
   tasks.forEach((item, index) => writeProjectJson(path.join(folderPath, taskFiles[index]), item));
   resources.forEach((item, index) => writeProjectJson(path.join(folderPath, resourceFiles[index]), item));
-  schemas.forEach((item, index) => { const target = path.join(folderPath, schemaFiles[index]); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, item.content || '', 'utf8'); writeProjectJson(`${target}.meta.json`, { id: item.id, name: item.name }); });
+  schemas.forEach((item, index) => { const target = path.join(folderPath, schemaFiles[index]); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, item.content || '', 'utf8'); writeProjectJson(`${target}.meta.json`, { id: item.id, name: item.name, source_path: item.source_path, package_path: item.package_path }); });
   Object.entries(properties).forEach(([environment, values], index) => writeProjectJson(path.join(folderPath, propertyFiles[index]), { environment, values }));
   writeProjectJson(path.join(folderPath, 'packaging', 'packaging.json'), project.packaging || {});
+  writeProjectJson(path.join(folderPath, 'project.json'), metadata);
   return folderPath;
 });
 

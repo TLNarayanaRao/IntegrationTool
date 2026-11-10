@@ -663,7 +663,9 @@ class WorkflowRuntime(DataFormats):
                 raise
 
     @staticmethod
-    def as_bool(value):
+    def as_bool(value, default=False):
+        if value is None:
+            return default
         return value if isinstance(value, bool) else str(value).strip().lower() in ('true','1','yes','on')
 
     @staticmethod
@@ -691,9 +693,10 @@ class WorkflowRuntime(DataFormats):
         cfg = self.resolve({key: value for key, value in activity.config.items() if key not in literal_keys}, ctx)
         cfg.update({key: value for key, value in activity.config.items() if key in literal_keys})
         if activity.type in ('mapper', 'transform', 'ai_transform') and cfg.get('targetSchemaId'):
-            content = self.schema_content(cfg['targetSchemaId'], ctx)
-            if not content: raise MinaFault('Selected Mapper target schema was not found', fault_type='ValidationException')
-            cfg.update(targetSchema={}, targetSchemaText=content)
+            schema_id = cfg['targetSchemaId']
+            asset = next((item for item in getattr(ctx.get('project'), 'schemas', ()) if schema_id in (item.id, item.name)), None)
+            if not asset or not asset.content: raise MinaFault('Selected Mapper target schema was not found', fault_type='ValidationException')
+            cfg.update(targetSchema={}, targetSchemaText=asset.content, xmlTargetSchemaPath=asset.source_path or asset.name)
         mapped_input = {}
         execution_scope = str(ctx.get('context', {}).get('executionId') or ctx.get('context', {}).get('debugSessionId') or '')
         if execution_scope: cfg['_executionScope'] = execution_scope
@@ -905,7 +908,9 @@ class WorkflowRuntime(DataFormats):
             return await self.confirm_messages(handles)
         if activity.type in ('mapper', 'transform', 'ai_transform'):
             if cfg.get('xmlStylesheet') or cfg.get('generatedXmlBinding') or cfg.get('sourceCoercions'):
-                cfg['xmlSchemaDocuments'] = {asset.name: asset.content for asset in getattr(ctx.get('project'), 'schemas', []) if asset.name.lower().endswith('.xsd')}
+                cfg['xmlSchemaDocuments'] = {**(activity.config.get('xmlSchemaDocuments') or {}),
+                    **{asset.source_path or asset.name: asset.content for asset in getattr(ctx.get('project'), 'schemas', [])
+                       if (asset.source_path or asset.name).lower().endswith('.xsd')}}
             source = {
                 **(ctx['last'] if isinstance(ctx.get('last'), dict) else {}),
                 'last': ctx.get('last'), 'input': ctx.get('input'),
@@ -1127,7 +1132,8 @@ class WorkflowRuntime(DataFormats):
         if activity.type == 'ftp': return await asyncio.to_thread(self.ftp, cfg, ctx)
         if activity.type == 'sftp': return await asyncio.to_thread(self.sftp, cfg, ctx)
         if activity.type in ('xml','json','flat'):
-            return self.run_format(activity.type,cfg.get('operation','parse'),cfg,ctx)
+            ctx.setdefault('formatCursors', {})
+            return await asyncio.to_thread(DataFormats().run_format, activity.type,cfg.get('operation','parse'),cfg,ctx)
         if activity.type == 'call_task':
             project = ctx.get('project')
             if not project: raise RuntimeError('Call Sub Task requires project execution context')
