@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from .java_bridge import JavaBridgeError, invoke as invoke_java, start_jdbc_worker
 
+_POSTGRES = {"postgresql", "postgres"}
 
 class JdbcAdapterError(RuntimeError):
     def __init__(self, message: str, fault_type: str = "JDBCSQLException"):
@@ -39,18 +40,27 @@ def _parsed_url(config: dict, *jdbc_prefixes: str):
 
 def _connect_postgresql(config: dict):
     import psycopg
+    from psycopg import sql
+
     value = _connection_url(config, "jdbc:")
-    timeout = int(config.get("timeoutSeconds") or 30)
-    if value.startswith(("postgresql://", "postgres://")):
-        options = {"connect_timeout": timeout}
-        if config.get("username"): options["user"] = config["username"]
-        if config.get("password"): options["password"] = config["password"]
-        return psycopg.connect(value, **options)
-    return psycopg.connect(
-        host=config.get("host") or "localhost", port=int(config.get("port") or 5432),
-        dbname=config.get("database") or None, user=config.get("username") or None,
-        password=config.get("password") or None, connect_timeout=timeout,
-    )
+    options = {"connect_timeout": int(config.get("timeoutSeconds") or 30)}
+    for key, field in (("user", "username"), ("password", "password"),
+                       ("sslmode", "postgresSslMode"), ("sslrootcert", "postgresSslRootCert")):
+        if config.get(field) not in (None, ""):
+            options[key] = config[field]
+    if not value:
+        options.update(host=config.get("host") or "localhost", port=int(config.get("port") or 5432))
+        if config.get("database"):
+            options["dbname"] = config["database"]
+    connection = psycopg.connect(value, **options)
+    try:
+        if config.get("schema"):
+            connection.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(str(config["schema"]))))
+            connection.commit()
+        return connection
+    except BaseException:
+        connection.close()
+        raise
 
 
 def _connect_mysql(config: dict):
@@ -537,13 +547,18 @@ def metadata(config: dict) -> dict:
         connection.close()
 
 
-def _parameters(config: dict) -> Any:
+def _parameters(config: dict, driver: str = "") -> Any:
     value = config.get("parameters") or {}
+    if driver in _POSTGRES:
+        value = _empty_as_null(value, config)
     if isinstance(value, list):
-        return [item.get("value") if isinstance(item, dict) else item for item in value]
+        if driver not in _POSTGRES:
+            return [item.get("value") if isinstance(item, dict) else item for item in value]
+        return [_coerce_parameter(item.get("value"), item.get("type", ""), driver)
+                if isinstance(item, dict) and "value" in item else item for item in value]
     definitions = _parameter_types(config)
     if isinstance(value, dict):
-        return _typed_parameters(value, definitions)
+        return _typed_parameters(value, definitions, driver)
     return value
 
 
@@ -556,9 +571,21 @@ def _parameter_types(config: dict) -> dict[str, str]:
     }
 
 
-def _coerce_parameter(value: Any, data_type: str) -> Any:
+def _coerce_parameter(value: Any, data_type: str, driver: str = "") -> Any:
     if value is None: return None
     kind = str(data_type or "string").lower()
+    if driver in _POSTGRES:
+        from datetime import date, datetime, time
+        from decimal import Decimal
+        from psycopg.types.json import Json, Jsonb
+
+        if kind == "decimal": return Decimal(str(value))
+        if kind == "date": return date.fromisoformat(str(value))
+        if kind == "time": return time.fromisoformat(str(value))
+        if kind in ("timestamp", "datetime"): return datetime.fromisoformat(str(value))
+        if kind in ("json", "jsonb"):
+            parsed = json.loads(value) if isinstance(value, str) else value
+            return (Json if kind == "json" else Jsonb)(parsed)
     if kind in ("string", "date", "time", "timestamp", "datetime"): return str(value)
     if kind in ("integer", "long"): return int(value)
     if kind in ("number", "decimal", "float", "double"): return float(value)
@@ -568,8 +595,8 @@ def _coerce_parameter(value: Any, data_type: str) -> Any:
     return value
 
 
-def _typed_parameters(values, definitions):
-    return {key: _coerce_parameter(value, definitions[key]) if key in definitions else value
+def _typed_parameters(values, definitions, driver=""):
+    return {key: _coerce_parameter(value, definitions[key], driver) if key in definitions else value
             for key, value in values.items()}
 
 
@@ -582,7 +609,7 @@ def _empty_as_null(values, config):
     return values
 
 
-def _write_batch(config, operation):
+def _write_batch(config, operation, driver=""):
     if operation not in ("insert", "update", "delete") or not config.get("batchUpdate"):
         return None
     records = config.get("records")
@@ -591,7 +618,9 @@ def _write_batch(config, operation):
     if not isinstance(records, list) or any(not isinstance(row, (list, tuple, dict)) for row in records):
         raise JdbcAdapterError("Batch records must be a list of parameter records", "InvalidInputException")
     definitions = _parameter_types(config)
-    return [_typed_parameters(row, definitions) if isinstance(row, dict) else row for row in records]
+    if driver in _POSTGRES:
+        records = [_empty_as_null(row, config) for row in records]
+    return [_typed_parameters(row, definitions, driver) if isinstance(row, dict) else row for row in records]
 
 
 def _insert_fallback(config, operation):
@@ -613,6 +642,8 @@ def _query_window(config):
 
 
 def _normalize_sql(sql: str, parameters: Any, driver: str):
+    if driver in _POSTGRES:
+        return _postgres_bindings(sql, parameters)
     if isinstance(parameters, dict):
         if driver == "sqlite":
             _named_bindings(sql, parameters, None)
@@ -631,6 +662,38 @@ def _normalize_sql(sql: str, parameters: Any, driver: str):
     return sql, parameters
 
 
+def _postgres_bindings(sql, parameters):
+    if isinstance(parameters, dict):
+        statement, names = _named_bindings(sql.replace("%", "%%"), parameters, "%s")
+        if names:
+            return statement, [parameters[name] for name in names]
+        if re.search(r"%\([A-Za-z_][A-Za-z0-9_]*\)[sbt]", sql):
+            return sql, parameters
+        parameters = list(parameters.values())
+    if parameters and not re.search(r"(?<!%)%[sbt]", sql):
+        sql = _positional_sql(sql.replace("%", "%%"), lambda: "%s")
+    return sql, parameters
+
+
+def _postgres_call(cursor, procedure, parameters, schema=None):
+    from psycopg import sql
+
+    identifier = r'(?:[A-Za-z_][\w$]*|"(?:[^"]|"")+")'
+    if not re.fullmatch(rf'{identifier}(?:\.{identifier})?', procedure):
+        raise JdbcAdapterError("Enter a PostgreSQL procedure name or schema.procedure", "InvalidInputException")
+    parts = [part[1:-1].replace('""', '"') if part.startswith('"') else part.lower()
+             for part in re.findall(identifier, procedure)]
+    if schema and len(parts) == 1:
+        parts.insert(0, str(schema))
+    cursor.execute(sql.SQL("CALL {}({})").format(sql.Identifier(*parts),
+                   sql.SQL(", ").join(sql.Placeholder() for _ in parameters)), parameters)
+    if cursor.description:
+        names = [column[0] for column in cursor.description]
+        row = cursor.fetchone()
+        return dict(zip(names, row)) if row is not None else {}
+    return {}
+
+
 def execute(connection_config: dict, config: dict, connection=None, manage_transaction: bool = True) -> dict:
     if _uses_java(connection_config):
         if isinstance(connection, JavaJdbcTransaction): return connection.execute(config)
@@ -644,23 +707,34 @@ def execute(connection_config: dict, config: dict, connection=None, manage_trans
     connection = connection or connect(connection_config)
     driver = str(connection_config.get("driver") or "sqlite").lower()
     cursor = None
+    previous_timeout = None
     try:
         cursor = connection.cursor()
         timeout = int(config.get("timeout") or 0)
         if driver == "sqlite" and timeout > 0:
             connection.execute(f"PRAGMA busy_timeout={timeout * 1000}")
+        if driver in _POSTGRES and timeout > 0:
+            if not manage_transaction:
+                cursor.execute("SHOW statement_timeout")
+                previous_timeout = cursor.fetchone()[0]
+            cursor.execute("SELECT set_config('statement_timeout', %s, true)", (str(timeout * 1000),))
         if operation == "call":
             procedure = str(config.get("procedure") or "").strip()
             if not procedure:
                 raise JdbcAdapterError("A stored procedure or function is required", "InvalidInputException")
-            if not hasattr(cursor, "callproc"):
+            if driver not in _POSTGRES and not hasattr(cursor, "callproc"):
                 raise JdbcAdapterError("The selected database adapter does not support stored procedures", "JDBCSQLException")
-            parameters = _parameters(config)
+            parameters = _parameters(config, driver)
             if isinstance(parameters, dict):
                 ordered_names = [name for name in _parameter_types(config) if name in parameters]
                 declared_names = set(ordered_names)
                 ordered_names.extend(name for name in parameters if name not in declared_names)
                 parameters = [parameters[name] for name in ordered_names]
+            if driver in _POSTGRES:
+                result = _postgres_call(cursor, procedure, list(parameters or []), config.get("schema"))
+                if manage_transaction and not config.get("overrideTransactionBehavior"):
+                    connection.commit()
+                return {"resultSets": [[result]] if result else [], "outParameters": result, "UnresolvedResultSets": []}
             result = cursor.callproc(procedure, list(parameters or []))
             result_sets = []
             while cursor.description:
@@ -678,12 +752,12 @@ def execute(connection_config: dict, config: dict, connection=None, manage_trans
         def bind(statement, values):
             return _normalize_sql(statement, _empty_as_null(values, config), driver)
 
-        batch = _write_batch(config, operation)
+        batch = _write_batch(config, operation, driver)
         fallback = _insert_fallback(config, operation)
         if batch == []:
             return {"noOfUpdates": 0, "rowCount": 0, "lastInsertId": None}
         if fallback:
-            rows = batch if batch is not None else [_parameters(config)]
+            rows = batch if batch is not None else [_parameters(config, driver)]
             statements = [(bind(sql, row), bind(fallback, row)) for row in rows]
             count = 0
             for (statement, bindings), (insert, insert_bindings) in statements:
@@ -707,11 +781,16 @@ def execute(connection_config: dict, config: dict, connection=None, manage_trans
                 raise JdbcAdapterError("Batch records must use the same SQL parameter style", "InvalidInputException")
             cursor.executemany(statement, [bindings for _, bindings in bound])
         else:
-            sql, parameters = bind(sql, _parameters(config))
-            cursor.execute(sql, parameters or ())
+            sql, parameters = bind(sql, _parameters(config, driver))
+            if driver in _POSTGRES and not parameters:
+                cursor.execute(sql)
+            else:
+                cursor.execute(sql, parameters or ())
         if cursor.description:
             names = [item[0] for item in cursor.description]
-            columns = [{"name": item[0], "dataType": str(item[1] or "unknown")} for item in cursor.description]
+            types = connection.adapters.types if driver in _POSTGRES else None
+            columns = [{"name": item[0], "dataType": getattr(types.get(item[1]), "name", str(item[1] or "unknown"))
+                        if types is not None else str(item[1] or "unknown")} for item in cursor.description]
             remaining = min(offset, maximum) if maximum else offset
             while remaining:
                 skipped = cursor.fetchmany(min(remaining, 1024))
@@ -736,6 +815,7 @@ def execute(connection_config: dict, config: dict, connection=None, manage_trans
         count = int(cursor.rowcount or 0)
         return {"noOfUpdates": count, "rowCount": count, "lastInsertId": getattr(cursor, "lastrowid", None)}
     except Exception as exc:
+        previous_timeout = None
         if manage_transaction:
             try: connection.rollback()
             except Exception: pass
@@ -746,6 +826,9 @@ def execute(connection_config: dict, config: dict, connection=None, manage_trans
         try:
             if cursor is not None:
                 cursor.close()
+            if previous_timeout is not None:
+                with connection.cursor() as restore:
+                    restore.execute("SELECT set_config('statement_timeout', %s, true)", (previous_timeout,))
         finally:
             if owns_connection:
                 connection.close()

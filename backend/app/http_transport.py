@@ -6,7 +6,8 @@ import httpx
 from .rest_contract import encode_reserved_query, multipart_contract, multipart_form_bytes, operation_config, reserved_query_keys, validate_parameters, wire_parameters
 from .http_messages import request_config, mime_body, response_tree, multi_values, object_value as message_object_value
 from .http_contracts import schema_errors, response_schema,request_schema,media_schema,response_content,parse_json
-from .http_policy import circuit_enter, circuit_result, outbound_trace, retry_delay, retryable
+from .http_policy import (cached_http_response, circuit_enter, circuit_result, invalidate_shared_cache, outbound_trace,
+                          retry_delay, retryable, shared_cache_request, store_http_response)
 
 class HTTPFault(ValueError):
     def __init__(self, message, fault_type='HTTP_SECURITY', status=401):
@@ -180,6 +181,8 @@ atexit.register(close_clients)
 _NETWORK=('defaultConfidentiality','confidentiality','tlsEnabled','verifyTls','tlsVersion','maximumTlsVersion','cipherSuites','certificateAuthorityFile','trustStoreFile','trustStoreType','trustStorePassword','identityStoreFile','identityStoreType','identityStorePassword','keyAlias','certificateFile','privateKeyFile','privateKeyPassword','clientCertificateFile','clientKeyFile','clientKeyPassword','crlFile','proxyHost','proxyPort','proxyUrl','proxyUsername','proxyPassword','httpVersion','maximumTotalConnections','maximumConnectionsPerHost','idleConnectionTimeoutMs','disableConnectionPooling','usePersistentConnections','authentication','username','password','bearerToken','oauthClientId','oauthClientSecret','oauthTokenUrl','oauthScope','oauthGrantType','oauthRefreshToken','oauthAuthorizationCode','oauthRedirectUri','jwtSecret','jwtToken','hmacSecret','hmacKeyId','enableCookies','resourceId','_httpScope','baseUrl','oauthCodeVerifier','oauthClientAuthentication','jwtPrivateKeyFile','jwtPublicKeyFile')
 def _fingerprint(cfg):
     values={key:cfg.get(key) for key in _NETWORK}
+    if str(cfg.get('httpVersion')) == '3':
+        values.update({key:cfg.get(key) for key in ('_inboundHttp','maxRequestBodyBytes','maxResponseBodyBytes','activityTimeoutSeconds')})
     folder=cfg.get('trustedCertificateFolder');values['trustedCertificateFolder']=folder
     if folder:
         try:values['_certificateFiles']=[(str(path),path.stat().st_mtime_ns,path.stat().st_size) for path in certificate_files(folder)]
@@ -198,12 +201,27 @@ def client_for(cfg):
             credentials=urllib.parse.quote(str(cfg.get('proxyUsername') or ''),safe='')+':'+urllib.parse.quote(str(cfg.get('proxyPassword') or ''),safe='')+'@' if cfg.get('proxyUsername') else ''
             proxy=f'http://{credentials}{cfg["proxyHost"]}:{int(number(cfg,"proxyPort",8080,1,65535))}'
         version=str(cfg.get('httpVersion') or '1.1')
-        if version not in ('1.1','2'): raise HTTPFault('Client HTTP version must be 1.1 or 2','HTTP_CONFIGURATION',400)
+        if version == '3' and cfg.get('_inboundHttp'):
+            version = '2'  # Authentication and reference services still use the HTTPS client.
+        if version not in ('1.1','2','3'): raise HTTPFault('Client HTTP version must be 1.1, 2 or 3','HTTP_CONFIGURATION',400)
+        transport = None
+        if version == '3':
+            if proxy or not boolean(cfg.get('verifyTls'), True) or cfg.get('clientCertificateFile') or cfg.get('certificateFile') or cfg.get('identityStoreFile') or cfg.get('maximumTlsVersion') == 'TLSv1.2':
+                raise HTTPFault('HTTP/3 requires direct HTTPS, verified TLS 1.3 and no client certificate','HTTP_CONFIGURATION',400)
+            if cfg.get('crlFile') or cfg.get('cipherSuites'):
+                raise HTTPFault('HTTP/3 does not support custom CRLs or cipher suites','HTTP_CONFIGURATION',400)
+            try:
+                import aioquic  # noqa: F401
+            except ImportError:
+                raise HTTPFault('Install aioquic to use HTTP/3','HTTP_CONFIGURATION',400) from None
+            from .http3_client import HTTP3Transport
+            transport = HTTP3Transport(tls_context(cfg), int(number(cfg,'maxRequestBodyBytes',64*1024**2,1)),
+                                       int(number(cfg,'maxResponseBodyBytes',64*1024**2,1)), number(cfg,'activityTimeoutSeconds',180,1))
         import http.cookiejar
         class RejectCookies(http.cookiejar.DefaultCookiePolicy):
             def set_ok(self,cookie,request):return False
         cookies=None if boolean(cfg.get('enableCookies')) else http.cookiejar.CookieJar(policy=RejectCookies())
-        client=httpx.Client(cookies=cookies,verify=tls_context(cfg),proxy=proxy or None,http2=version=='2',trust_env=False,limits=httpx.Limits(max_connections=total,max_keepalive_connections=total if persistent else 0,keepalive_expiry=number(cfg,'idleConnectionTimeoutMs',30000)/1000),timeout=30)
+        client=httpx.Client(cookies=cookies,verify=tls_context(cfg),proxy=proxy or None,http2=version=='2',transport=transport,trust_env=False,limits=httpx.Limits(max_connections=total,max_keepalive_connections=total if persistent else 0,keepalive_expiry=number(cfg,'idleConnectionTimeoutMs',30000)/1000),timeout=30)
         client._mina_route_limit=per;client._mina_routes={};client._mina_lock=threading.Lock();client._mina_scope=cfg.get('_httpScope');_POOL[key]=client
         return client
 
@@ -296,10 +314,16 @@ def request(cfg,connection=None):
     cfg=merged(connection,cfg)
     try:cfg=request_config(cfg)
     except (ValueError,TypeError,KeyError) as error:raise HTTPFault(str(error),'HTTP_CONFIGURATION',400) from None
+    operation = cfg.get('operation')
+    if operation == 'write_precondition':
+        from .http_policy import write_precondition
+        return write_precondition(cfg)
     try:cfg=operation_config(cfg)
     except (ValueError,KeyError,TypeError) as error:raise HTTPFault('Invalid REST contract: '+str(error),'HTTP_CONFIGURATION',400) from None
     validate_authentication(cfg)
     if cfg.get('connectorMode')=='server':raise HTTPFault('Outbound call requires a client shared connection','HTTP_CONFIGURATION',400)
+    if str(cfg.get('httpVersion')) == '3' and (cfg.get('streamRequest') or cfg.get('responseFile') or cfg.get('bodyType') == 'file' or operation in ('sse_read','websocket_exchange')):
+        raise HTTPFault('HTTP/3 client currently supports buffered HTTP requests only','HTTP_CONFIGURATION',400)
     url=str(cfg.get('url') or cfg.get('path') or '')
     if not urllib.parse.urlsplit(url).scheme:
         effective_scheme='https' if boolean(cfg.get('defaultConfidentiality')) or boolean(cfg.get('confidentiality')) or boolean(cfg.get('tlsEnabled')) else cfg.get('scheme') or 'http'
@@ -320,7 +344,9 @@ def request(cfg,connection=None):
     url = urllib.parse.urlunsplit(parts._replace(path=path))
     mapped_query = object_value(cfg.get('query'), 'Query parameters')
     url_query = multi_values(urllib.parse.parse_qsl(parts.query, keep_blank_values=True))
-    secure_url(url,cfg);method=str(cfg.get('method') or 'GET').upper()
+    if operation != 'websocket_exchange':
+        secure_url(url,cfg)
+    method='GET' if operation == 'sse_read' else str(cfg.get('method') or 'GET').upper()
     if method not in ('GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','TRACE'):raise HTTPFault('Unsupported HTTP method','HTTP_CONFIGURATION',400)
     headers={str(k).lower():([str(item) for item in v] if isinstance(v,list) else str(v)) for k,v in cfg['headers'].items()}
     if boolean(cfg.get('propagateTraceContext')) and 'traceparent' not in headers:
@@ -328,7 +354,17 @@ def request(cfg,connection=None):
     if any('\r' in k+str(v) or '\n' in k+str(v) for k,v in headers.items()):raise HTTPFault('HTTP headers cannot contain newlines','HTTP_CONFIGURATION',400)
     if cfg.get('accept'):headers.setdefault('accept',str(cfg['accept']))
     if cfg.get('contentType'):headers.setdefault('content-type',str(cfg['contentType']))
-    body=cfg.get('body');mode=str(cfg.get('sendBodyMode') or 'ALWAYS').upper()
+    if operation == 'websocket_exchange':
+        from .http_streams import websocket_exchange
+        query = httpx.QueryParams(parts.query).merge(mapped_query)
+        events = websocket_exchange(cfg, urllib.parse.urlunsplit(parts._replace(path=path, query=str(query))), headers)
+        return {'events':events,'eventCount':len(events)}
+    if operation == 'sse_read':
+        headers['accept'] = 'text/event-stream'
+        if cfg.get('lastEventId'):
+            headers['last-event-id'] = str(cfg['lastEventId'])
+    body=None if operation == 'sse_read' else cfg.get('body')
+    mode=str(cfg.get('sendBodyMode') or 'ALWAYS').upper()
     if mode not in ('ALWAYS','AUTO','NEVER'):raise HTTPFault('Invalid send body mode','HTTP_CONFIGURATION',400)
     if mode=='NEVER' or mode=='AUTO' and method in ('GET','HEAD','OPTIONS'):body=None
     errors=validate_parameters(cfg,path_parameters,{**url_query, **mapped_query},headers,body)
@@ -424,11 +460,25 @@ def request(cfg,connection=None):
                         for chunk in content_factory():digest.update(chunk)
                         signing_body=HashedBody(digest.hexdigest())
                     req.headers['X-MINA-Timestamp']=stamp;req.headers['X-MINA-Nonce']=nonce;req.headers['X-MINA-Key-Id']=str(cfg.get('hmacKeyId') or 'default');req.headers['Authorization']='HMAC '+hmac_signature(cfg,method,req.url.raw_path.decode('ascii'),signing_body,stamp,nonce)
-                if str(cfg.get('requestEntityProcessing') or 'BUFFERED').upper()=='CHUNKED' and str(cfg.get('httpVersion') or '1.1')!='2' and (body is not None or '_mimeEnvelope' in cfg):
+                if str(cfg.get('requestEntityProcessing') or 'BUFFERED').upper()=='CHUNKED' and str(cfg.get('httpVersion') or '1.1')=='1.1' and (body is not None or '_mimeEnvelope' in cfg):
                     req.headers.pop('content-length',None);req.headers['Transfer-Encoding']='chunked'
                 temporary=None
-                response=client.send(req,auth=auth,follow_redirects=boolean(cfg.get('followRedirects')),stream=True)
+                cache = None if operation == 'sse_read' else shared_cache_request(cfg, req)
+                cached = cached_http_response(cache, req)
+                if cached is None and boolean(cfg.get('sharedHttpCache')) and any(
+                        directive.strip().lower() == 'only-if-cached' for directive in req.headers.get('cache-control','').split(',')):
+                    raise HTTPFault('No fresh cached response is available','HTTP_CACHE_MISS',504)
+                response=cached if cached is not None else client.send(req,auth=auth,follow_redirects=boolean(cfg.get('followRedirects')),stream=True)
                 try:
+                    if operation == 'sse_read':
+                        from .http_streams import read_sse
+                        if response.status_code != 200 or response.headers.get('content-type','').split(';',1)[0].strip().lower() != 'text/event-stream':
+                            raise HTTPFault('Endpoint did not return a successful SSE stream','HTTP_BAD_RESPONSE',502)
+                        events = read_sse(response, int(number(cfg,'maxEvents',1,1,1000)), maximum, deadline)
+                        failed = False
+                        return {'statusCode':200,'events':events,'eventCount':len(events)}
+                    if method not in ('GET','HEAD','OPTIONS','TRACE') and response.status_code < 400:
+                        invalidate_shared_cache(cfg, req)
                     if attempt<retries and retryable(cfg,method,headers,response.status_code):
                         delay=retry_delay(cfg,attempt,response)
                         response.close()
@@ -483,6 +533,8 @@ def request(cfg,connection=None):
                         except (ValueError,LookupError) as error:raise HTTPFault(str(error),'HTTP_BAD_RESPONSE',502) from None
                         tree['body']=value;result['RestOutputResponse']=tree
                     failed=response.status_code>=500
+                    if cached is None:
+                        store_http_response(cache, response, data)
                     return result
                 finally:
                     response.close()

@@ -505,5 +505,35 @@
     "file": "/samples/http-rest/20-path-query-headers.json",
     "ready": false,
     "family": "http-rest"
+  },
+  {
+    "id": "postgresql-crud",
+    "name": "PostgreSQL CRUD",
+    "category": "Database",
+    "description": "Run postgresql-setup.sql, set the local JDBC properties, then Debug. Shows typed JSONB and decimal binds, atomic upsert, guarded update and delete.",
+    "activities": [
+      "Start",
+      "Upsert",
+      "Guarded-Update",
+      "Read",
+      "Delete",
+      "End"
+    ],
+    "file": "/samples/postgresql-crud.json",
+    "ready": false
+  },
+  {
+    "id": "postgresql-procedure-and-paging",
+    "name": "PostgreSQL Procedure and Paging",
+    "category": "Database",
+    "description": "Run postgresql-setup.sql and set the local JDBC properties. Shows stable paging and a PostgreSQL procedure with an INOUT numeric parameter.",
+    "activities": [
+      "Start",
+      "First-Page",
+      "Order-Total",
+      "End"
+    ],
+    "file": "/samples/postgresql-procedure-and-paging.json",
+    "ready": false
   }
 ]

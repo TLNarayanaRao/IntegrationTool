@@ -134,8 +134,19 @@ def generate_openapi(routes,base_url='/',title='MINA hosted APIs'):
             if identity in operation_ids:identity+='_'+hashlib.sha256((path+method+str(metadata)).encode()).hexdigest()[:8]
             operation_ids.add(identity)
             entry={'operationId':identity,'summary':str(operation.get('summary') or method+' '+path),'responses':{},'security':requirement}
-            if any(scopes for _, scopes in cfg.get('_restSecurityAlternatives', ())):
-                entry['x-mina-required-scope-alternatives'] = [scopes for _, scopes in cfg['_restSecurityAlternatives']]
+            alternatives = cfg.get('_restSecurityAlternatives') or []
+            if any(scopes for _, scopes, _ in alternatives):
+                entry['x-mina-required-scope-alternatives'] = [scopes for _, scopes, _ in alternatives]
+            if any(keys for _, _, keys in alternatives):
+                effective = []
+                for _, _, keys in alternatives:
+                    mapped = {}
+                    for name, location, field in keys:
+                        key = 'MINA_Key_' + hashlib.sha256(f'{name}:{location}:{field}'.encode()).hexdigest()[:16]
+                        spec['components']['securitySchemes'][key] = {'type':'apiKey','in':location,'name':field}
+                        mapped[key] = []
+                    effective.extend({**base, **mapped} for base in requirement or [{}])
+                entry['security'] = effective
             for key in ('description','tags','deprecated'):
                 if key in operation:entry[key]=copy.deepcopy(operation[key])
             parameters=[]

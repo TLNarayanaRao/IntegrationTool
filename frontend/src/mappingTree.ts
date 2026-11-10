@@ -33,16 +33,17 @@ export function mappingTreeRows(fields: MappingTreeField[], mappings: any[] | Re
     const key = `${occurrenceId || "primary"}:${field.path}`, loopKey = `${key}:loop`;
     const loop = ["for-each", "for-each-group"].includes(rule?.operator || rule?.$rule);
     const descendants = childIndex.get(field.path) || [];
+    const copy = rule?.operator === "copy-of" && rule.enabled !== false;
     if (loop && !duplicateRoot) {
       result.push({ kind: "loop", key: loopKey, field, rule, depth, ancestors, occurrenceId, loopKey, hasChildren: true });
       ancestors = [...ancestors, loopKey]; depth++;
       if ((rule.operator || rule.$rule) === "for-each-group") result.push({ kind: "grouping", key: `${key}:grouping`, field, rule, depth, ancestors, occurrenceId, loopKey, hasChildren: false });
     }
-    result.push({ kind: "field", key, field, rule, depth, ancestors, occurrenceId, loopKey: loop && !duplicateRoot ? loopKey : undefined, hasChildren: !!descendants.length, duplicateRoot });
+    result.push({ kind: "field", key, field, rule, depth, ancestors, occurrenceId, loopKey: loop && !duplicateRoot ? loopKey : undefined, hasChildren: !copy && !!descendants.length, duplicateRoot });
     if (duplicateRoot && (rule?.operator || rule?.$rule) === 'for-each-group') {
       result.push({kind:'grouping', key:`${key}:grouping`, field, rule, depth:depth+1, ancestors:[...ancestors,key], occurrenceId, hasChildren:false});
     }
-    descendants.forEach(child => visit(child, depth + 1, [...ancestors, key], occurrenceId));
+    if (!copy) descendants.forEach(child => visit(child, depth + 1, [...ancestors, key], occurrenceId));
     if (!duplicateRoot) for (const duplicate of duplicates.get(field.path) || []) {
       if (duplicate.parentOccurrenceId !== occurrenceId) continue;
       // Older saved copies may lack duplicateOf. A loop inside their subtree is not itself a copy.

@@ -13,14 +13,20 @@ export function packagePath(value?: string) {
   return value && value.length <= 1024 && packagePattern.test(value) ? value : DEFAULT_PACKAGE;
 }
 
-export function packagePaths(explicit: string[] = [], items: PackageItem[] = []) {
-  const paths = new Set([DEFAULT_PACKAGE]);
+export function packagePaths(explicit: string[] = [], items: PackageItem[] = [], includeDefault = true) {
+  const paths = new Set(includeDefault ? [DEFAULT_PACKAGE] : []);
   for (const candidate of [...explicit, ...items.map(item => item.package_path)]) {
     const segments = packagePath(candidate).split("/");
     segments.forEach((_, index) => paths.add(segments.slice(0, index + 1).join("/")));
   }
   return [...paths].sort((left, right) => left.localeCompare(right));
 }
+
+export function renamedPackagePath(path: string, from: string, to: string) {
+  return path === from || path.startsWith(from + "/") ? to + path.slice(from.length) : path;
+}
+
+export const artifactNamePattern = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 
 export function PackageTree<T extends PackageItem>({ paths, items, indent, isCollapsed, toggle, onMenu, renderItem }: {
   paths: string[];
@@ -63,35 +69,46 @@ export function PackageTree<T extends PackageItem>({ paths, items, indent, isCol
   return <>{render("", 0)}</>;
 }
 
-export function PackageDialog({ paths, parent, moving, onClose, onSave }: {
+export function PackageDialog({ paths, parent, moving, renaming, artifact = false, onClose, onSave }: {
   paths: string[];
   parent?: string;
   moving?: string;
+  renaming?: string;
+  artifact?: boolean;
   onClose: () => void;
   onSave: (path: string) => void;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(renaming?.split("/").pop() || "");
   const [destination, setDestination] = useState(moving || DEFAULT_PACKAGE);
   const segment = name.trim().replace(/\s+/g, "-");
   const candidate = parent ? `${parent}/${segment}` : segment;
-  const valid = moving ? destination !== moving && paths.includes(destination) :
+  const renamedPaths = renaming ? paths.filter(path => path === renaming || path.startsWith(renaming + "/")) : [];
+  const unaffected = new Set(paths.filter(path => !renamedPaths.includes(path)).map(path => path.toLowerCase()));
+  const valid = moving ? destination !== moving && paths.includes(destination) : artifact ?
+    artifactNamePattern.test(segment) && !windowsDevice.test(segment.split(".")[0]) && segment !== renaming :
     !!segment && !segment.includes("/") && !windowsDevice.test(segment) && candidate.length <= 1024 && packagePattern.test(candidate) &&
-    !paths.some(path => path.toLowerCase() === candidate.toLowerCase());
+    (renaming ? candidate !== renaming && renamedPaths.every(path => {
+      const next = renamedPackagePath(path, renaming, candidate);
+      return next.length <= 1024 && !unaffected.has(next.toLowerCase());
+    }) :
+      !paths.some(path => path.toLowerCase() === candidate.toLowerCase()));
+  const title = moving ? "Move to package" : artifact ? "Rename deployment package" : renaming ? "Rename package" : "Create package";
   return <ModalLayer className="modal-backdrop">
     <form className="runtime-modal rename-modal" role="dialog" aria-modal="true" aria-labelledby="object-package-title"
+      onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } }}
       onSubmit={event => { event.preventDefault(); if (valid) onSave(moving ? destination : candidate); }}>
-      <header><b id="object-package-title">{moving ? "Move to package" : "Create package"}</b>
+      <header><b id="object-package-title">{title}</b>
         <button type="button" aria-label="Close package dialog" onClick={onClose}>×</button></header>
       <main>{moving ? <label>Destination package<select autoFocus value={destination} onChange={event => setDestination(event.target.value)}>
         {paths.map(path => <option key={path}>{path}</option>)}
       </select></label> : <>
         {parent && <small>Parent package · {parent}</small>}
-        <label>Package name<input autoFocus value={name} onChange={event => setName(event.target.value)} maxLength={64} required/></label>
-        <small>Use letters, numbers, underscores, or hyphens. Spaces become hyphens.</small>
-        {name.trim() && !valid && <small role="alert">Enter a valid package name that is unique in this folder.</small>}
+        <label>{artifact ? "Artifact name" : "Package name"}<input autoFocus onFocus={event => event.target.select()} value={name} onChange={event => setName(event.target.value)} maxLength={artifact ? undefined : 64} required/></label>
+        <small>{artifact ? "This changes the name of future exports. The version and other settings are kept." : "Use letters, numbers, underscores, or hyphens. Spaces become hyphens."}</small>
+        {segment && segment !== renaming?.split("/").pop() && !valid && <small role="alert">{artifact ? "Use a valid artifact name: letters, numbers, dots, underscores, or hyphens." : "Enter a valid package name that is unique in this folder."}</small>}
       </>}</main>
       <footer><button type="button" onClick={onClose}>Cancel</button>
-        <button type="submit" className="primary" disabled={!valid}>{moving ? "Move" : "Create package"}</button></footer>
+        <button type="submit" className="primary" disabled={!valid}>{moving ? "Move" : renaming ? "Rename" : "Create package"}</button></footer>
     </form>
   </ModalLayer>;
 }

@@ -169,7 +169,9 @@ class InboundContractTests(unittest.IsolatedAsyncioTestCase):
             'count':{'type':'integer'},'file':{'type':'string','format':'binary'}}}
         spec={'openapi':'3.1.0','paths':{'/upload':{'post':{'operationId':'upload',
               'requestBody':{'required':True,'content':{media:{'schema':schema,'encoding':{
-                  'options':{'contentType':'application/vnd.test+json'},'file':{'contentType':'text/plain'}}}}},
+                  'options':{'contentType':'application/vnd.test+json','headers':{
+                      'X-Part-Version':{'required':True,'schema':{'type':'integer','minimum':2,'default':2}}}},
+                  'file':{'contentType':'text/plain'}}}}},
               'responses':{'200':{'description':'OK'}}}}}}
         def echo(request):
             return httpx.Response(200,json={'raw':request.content.decode('latin1'),'type':request.headers['content-type']})
@@ -185,6 +187,9 @@ class InboundContractTests(unittest.IsolatedAsyncioTestCase):
                 good = await client.post('/upload',content=raw,headers={'Content-Type':result['type']})
                 self.assertEqual(good.status_code,200,good.text)
                 self.assertEqual(good.json(),body)
+                self.assertIn(b'X-Part-Version: 2', raw)
+                invalid_header = await client.post('/upload',content=raw.replace(b'X-Part-Version: 2',b'X-Part-Version: 1'),headers={'Content-Type':result['type']})
+                self.assertEqual(invalid_header.status_code,400,invalid_header.text)
                 bad = await client.post('/upload',content=raw.replace(b'application/vnd.test+json',b'application/json'),headers={'Content-Type':result['type']})
                 self.assertEqual(bad.status_code,400,bad.text)
         finally:

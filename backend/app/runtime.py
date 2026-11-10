@@ -1013,6 +1013,8 @@ class WorkflowRuntime(DataFormats):
         if activity.type == 'http' or activity.type == 'rest' and cfg.get('operation') == 'invoke':
             cfg['_httpScope'] = getattr(ctx.get('project'), 'id', None) or str(id(self))
             response = await asyncio.to_thread(http_request, cfg)
+            if cfg.get('operation') in ('sse_read', 'websocket_exchange', 'write_precondition'):
+                return response
             return response['body'] if activity.type == 'http' and cfg.get('responseMode', 'payload') == 'payload' and not (cfg.get('RestInputRequest') is not None or cfg.get('requestModel') == 'tree') else response
         if activity.type == 'soap' and cfg.get('operation') == 'request_reply':
             envelope = cfg.get('envelope') or ctx['last']

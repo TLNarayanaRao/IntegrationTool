@@ -78,20 +78,22 @@ The checks do not certify a particular external OAuth issuer, LDAP directory, pr
 
 This is a request/response API implementation. The table below identifies the remaining protocol and contract boundaries. Certificate and authentication settings must be available on the execution host when deploying an exported application.
 
-## Remaining standards and interoperability gaps
+## Standards coverage and deployment limits
 
 The activities cover ordinary HTTP/REST request and response integrations. This table separates protocol defects from capabilities needed by particular API contracts or deployment environments.
 
 | Priority | Gap | Current behavior and impact |
 | --- | --- | --- |
-| Security scope | Imported OpenAPI security | Hosting rejects contracts when the selected connection cannot enforce a declared security alternative. It enforces supported credential and mutual TLS combinations and operation scopes. API keys and combinations of multiple independent application credentials are unsupported. |
+| Security scope | Imported OpenAPI security | Hosting rejects unenforceable requirements. A supported alternative can combine multiple OpenAPI API keys with the connection's Authorization scheme and mutual TLS. The connection supports one Authorization scheme at a time. |
 | Corrected | HTTP 205 Reset Content | Listeners suppress response content, and clients skip body processing and validation. Generated OpenAPI omits content for 205. |
-| Partial | OpenAPI serialization and multipart | Outbound query values honor `allowReserved` for safe wire characters. Contract-driven multipart handles typed form fields and part content types. Additional per-part headers and streaming still use explicit MIME mappings. |
+| Supported for buffered forms | OpenAPI serialization and multipart | Outbound query values honor `allowReserved` for safe wire characters. Contract-driven forms apply and validate declared non-reserved part headers and content types. |
 | Implemented as a setting | Problem Details | Opt in to RFC 9457 responses for listener-generated errors. Existing connections retain their legacy JSON format. |
 | Implemented as settings | Trace context and proxy trust | Version 00 W3C trace context can follow inbound and outbound activities. Explicit proxy CIDRs enable trusted X-Forwarded-For client attribution. Span export and other forwarded-header formats are outside this feature. |
 | Implemented as a setting | OAuth client authentication | The runtime can sign a private-key JWT assertion for the configured HTTPS endpoint. Real provider registration, credential rotation and interoperation remain staging checks. |
-| Partial | Conditional requests and caching | Conditional GET/HEAD uses workflow-supplied ETag or Last-Modified. Write preconditions and an RFC 9111 cache policy are still open. |
-| Open | Callbacks, streaming protocols and HTTP/3 | OpenAPI callback/webhook lifecycle scaffolding, dedicated SSE or WebSocket activities, and native HTTP/3 remain separate capabilities. |
+| Opt-in | Conditional requests and caching | Conditional GET/HEAD uses mapped validators. A dedicated activity evaluates write preconditions before a datastore write. The bounded process cache serves fresh public GETs and does not perform stale serving or distributed invalidation. |
+| Supported with limits | Callbacks and webhooks | Named webhooks become hosted endpoints. Callback Sub Tasks require explicit workflow calls and an HTTPS allowlist. Durable subscriptions and automatic callback delivery remain outside the scaffold. |
+| Bounded clients | SSE and WebSocket | Activities read SSE events or exchange WebSocket messages and close after their configured limits. Inbound SSE publishing and WebSocket hosting are outside these activities. |
+| Native transport | HTTP/3 | QUIC hosting and direct buffered clients use TLS 1.3. Mutual TLS, custom CRLs or cipher suites, proxies, and outbound file or event streaming are outside HTTP/3 support. |
 
 ## Standards references
 
@@ -99,6 +101,7 @@ The activities cover ordinary HTTP/REST request and response integrations. This 
 - [OpenAPI parameter serialization and security requirements](https://spec.openapis.org/oas/v3.1.2.html)
 - [HTTP 205 Reset Content and conditional requests](https://www.rfc-editor.org/rfc/rfc9110.html#section-15.3.6)
 - [HTTP caching](https://www.rfc-editor.org/rfc/rfc9111.html)
+- [HTTP/3](https://www.rfc-editor.org/rfc/rfc9114.html)
 - [Problem Details for HTTP APIs](https://www.rfc-editor.org/rfc/rfc9457.html)
 - [OAuth JWT client authentication](https://www.rfc-editor.org/rfc/rfc7523.html#section-2.2)
 - [W3C Trace Context](https://www.w3.org/TR/trace-context/)

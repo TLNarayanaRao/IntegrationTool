@@ -70,6 +70,7 @@ def request_config(cfg):
     if not isinstance(config,dict):raise ValueError('RestInputRequest.Config must be an object')
     aliases={'host':'host','Host':'host','port':'port','Port':'port','scheme':'scheme','requestURI':'url','RequestURI':'url','Method':'method','method':'method','RequestBody':'body','PostData':'body','bodyFormat':'bodyType','URIParameters':'pathParameters','timeout':'socketTimeoutMs','Timeout':'socketTimeoutMs','activityTimeoutSeconds':'activityTimeoutSeconds','followRedirects':'followRedirects','sendBodyMode':'sendBodyMode','requestEntityProcessing':'requestEntityProcessing','successStatusCodes':'successStatusCodes','raiseForStatus':'raiseForStatus','FilePath':'body'}
     aliases.update({key:key for key in ('openApiDocument','openApiBaseUrl','openApiReferenceDocuments','openApiAllowedRefOrigins','operationId','validateRequest','requestSchema','validateResponse','responseSchema')})
+    aliases.update({key:key for key in ('maxEvents','lastEventId','currentETag','currentLastModified','representationExists','requireWritePrecondition','multipartPartHeaders','callbackUrl')})
     for key,target in aliases.items():
         if key in config:result[target]=config[key]
     for key in ('streamRequest','responseFile','overwriteResponseFile','responseBodyMode'):

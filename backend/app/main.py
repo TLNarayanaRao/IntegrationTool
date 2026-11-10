@@ -1035,7 +1035,8 @@ def deployment_package_files(item: Project, target: str, environment: str, artif
             for key, child in value.items():
                 child_path = f'{path}.{key}'.strip('.')
                 location = str(key).lower().endswith(('url','file','path'))
-                if (str(key)=='policyRedisUrl' or sensitive.search(str(key)) and not location) and isinstance(child, (str, bytes)) and not str(child).startswith('${properties.'):
+                is_api_key_map = key == 'openApiApiKeySecrets' and isinstance(child, dict)
+                if is_api_key_map or (str(key)=='policyRedisUrl' or sensitive.search(str(key)) and not location) and isinstance(child, (str, bytes)) and not str(child).startswith('${properties.'):
                     output[key] = ''
                     if child: secret_keys.append(child_path)
                 else: output[key] = scrub(child, child_path)

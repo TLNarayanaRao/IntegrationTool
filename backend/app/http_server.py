@@ -22,6 +22,7 @@ def listener_config(connection,activity):
         cfg=operation_config({**cfg,'operation':'receiver'})
     except (ValueError,KeyError,TypeError) as error:raise HTTPFault('Invalid REST contract: '+str(error),'HTTP_CONFIGURATION',400) from None
     cfg['operation']=original_operation
+    cfg['_inboundHttp'] = True
     if request_types:
         cfg['requestContentTypes'] = request_types
         cfg['contentType'] = request_types[0]
@@ -69,8 +70,18 @@ def listener_config(connection,activity):
         raise HTTPFault(str(error), 'HTTP_CONFIGURATION', 400) from None
     minimum=int(number(cfg,'minimumQtpThreads',10,1,10000));maximum=int(number(cfg,'maximumQtpThreads',75,minimum,10000))
     number(cfg,'port',8080,1,65535);number(cfg,'maxRequestBodyBytes',64*1024**2,1);number(cfg,'maxHeaderBytes',65536,1024)
-    if str(cfg.get('httpVersion') or '1.1') not in ('1.1','2'):raise HTTPFault('HTTP listener version must be 1.1 or 2','HTTP_CONFIGURATION',400)
-    if str(cfg.get('httpVersion'))=='2' and not server_tls(cfg):raise HTTPFault('Inbound HTTP/2 requires HTTPS','HTTP_CONFIGURATION',400)
+    version = str(cfg.get('httpVersion') or '1.1')
+    if version not in ('1.1','2','3'):
+        raise HTTPFault('HTTP listener version must be 1.1, 2 or 3','HTTP_CONFIGURATION',400)
+    if version in ('2', '3') and not server_tls(cfg):
+        raise HTTPFault(f'Inbound HTTP/{version} requires HTTPS','HTTP_CONFIGURATION',400)
+    if version == '3':
+        if not cfg.get('certificateFile') or not cfg.get('privateKeyFile') or cfg.get('privateKeyPassword') or cfg.get('identityStoreFile'):
+            raise HTTPFault('HTTP/3 requires a PEM certificate and an unencrypted PEM private key','HTTP_CONFIGURATION',400)
+        if cfg.get('clientAuthentication') not in (None, '', 'none') or cfg.get('maximumTlsVersion') == 'TLSv1.2':
+            raise HTTPFault('HTTP/3 requires TLS 1.3 and cannot use client certificates','HTTP_CONFIGURATION',400)
+        if cfg.get('crlFile') or cfg.get('cipherSuites'):
+            raise HTTPFault('HTTP/3 does not support custom CRLs or cipher suites','HTTP_CONFIGURATION',400)
     if str(cfg.get('authentication') or '').lower()=='certificate' and (not server_tls(cfg) or cfg.get('clientAuthentication')!='required'):raise HTTPFault('Certificate authentication requires HTTPS and required client certificates','HTTP_CONFIGURATION',400)
     if cfg.get('clientAuthentication') == 'required' and not server_tls(cfg):
         raise HTTPFault('Required client certificates need HTTPS','HTTP_CONFIGURATION',400)
@@ -122,6 +133,9 @@ async def _serve_http1(routes,handler,ready=None):
                     route_methods.add(identity)
             app=ListenerApp(members,handler,connection,verified_mtls=server_tls(connection) and connection.get('clientAuthentication')=='required')
             options=uvicorn.Config(app,host=host,port=port,proxy_headers=False,server_header=False,backlog=int(number(connection,'acceptQueueSize',128,1,65535)),limit_concurrency=int(number(connection,'maximumQtpThreads',75,1,10000))+int(number(connection,'maxQueueSize',100,0,100000)),timeout_keep_alive=int(number(connection,'idleConnectionTimeoutMs',40000)/1000),h11_max_incomplete_event_size=int(number(connection,'maxHeaderBytes',65536,1024)),log_level='info')
+            if any(location == 'query' for _, cfg in members
+                   for _, _, keys in cfg.get('_restSecurityAlternatives', []) for _, location, _ in keys):
+                options.access_log = False
             options.load()
             if server_tls(connection):options.ssl=tls_context(connection,server=True)
             import socket
@@ -154,7 +168,7 @@ async def _serve_http1(routes,handler,ready=None):
         for sock in sockets:sock.close()
 
 async def serve(routes,handler,ready=None):
-    """Select Uvicorn HTTP/1.1 or Hypercorn TLS/ALPN HTTP/2 per bind address."""
+    """Select Uvicorn HTTP/1.1 or Hypercorn HTTP/2 and HTTP/3 per bind address."""
     groups={}
     for metadata,connection,activity in routes:
         cfg=listener_config(connection,activity)
@@ -165,7 +179,7 @@ async def serve(routes,handler,ready=None):
             versions={str(cfg.get('httpVersion') or '1.1') for _,_,_,cfg in members}
             if len(versions)!=1:raise HTTPFault('Listeners sharing a port must use the same HTTP version','HTTP_CONFIGURATION',400)
             signal=asyncio.Event();signals.append(signal)
-            if '2' in versions:
+            if versions & {'2', '3'}:
                 from .http2_server import serve_http2
                 job=serve_http2([(metadata,cfg) for metadata,_,_,cfg in members],handler,signal)
             else:job=_serve_http1([(metadata,connection,activity) for metadata,connection,activity,_ in members],handler,signal)

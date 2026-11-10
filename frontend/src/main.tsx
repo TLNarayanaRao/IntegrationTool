@@ -66,7 +66,7 @@ import SchemaStudio, { SchemaDoc } from "./SchemaStudio";
 import ActivityEditor, { activityContract, activityReferenceName, activityMappingIssues, activityInputMappingTypes, possibleTaskExceptions, DataSourcePane, upstreamActivitySources } from "./ActivityEditor";
 import HttpEndpointSetup, { HttpEndpointFields, endpointConfig, isHttpEndpoint, newEndpointDraft, type EndpointConfig } from "./HttpEndpointSetup";
 import type { ConnectionKind, CreateConnection, SharedConnection } from "./SharedConnectionSelect";
-import { DEFAULT_PACKAGE, PackageDialog as ObjectPackageDialog, PackageTree, packagePath, packagePaths, type PackageCatalog, type PackageCategory } from "./ProjectPackages";
+import { DEFAULT_PACKAGE, PackageDialog as ObjectPackageDialog, PackageTree, artifactNamePattern, packagePath, packagePaths, renamedPackagePath, type PackageCatalog, type PackageCategory } from "./ProjectPackages";
 import HomeRoutes from "./HomeRoutes";
 import ActivityPicker from "./ActivityPicker";
 import CanvasMagnifier from "./CanvasMagnifier";
@@ -438,6 +438,9 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
         label: "HTTP Request",
         asset: "http-request.svg",
       },
+      { type: "http", operation: "sse_read", label: "Read Server-Sent Events", asset: "http-request.svg" },
+      { type: "http", operation: "websocket_exchange", label: "WebSocket Exchange", asset: "http-request.svg" },
+      { type: "http", operation: "write_precondition", label: "HTTP Write Preconditions", asset: "http-response.svg" },
       {
         type: "http_response",
         operation: "response",
@@ -1488,7 +1491,8 @@ function App() {
     [editingConnection, setEditingConnection] = useState<Resource | null>(null),
     [schemaEditor, setSchemaEditor] = useState<SchemaDoc | "new" | null>(null),
     [schemaPackage, setSchemaPackage] = useState(DEFAULT_PACKAGE),
-    [objectPackageDialog, setObjectPackageDialog] = useState<{ category: PackageCategory; parent?: string; itemId?: string; moving?: string } | null>(null),
+    [objectPackageDialog, setObjectPackageDialog] = useState<{ category: PackageCategory; parent?: string; itemId?: string; moving?: string; renaming?: string } | null>(null),
+    [renameArtifactOpen, setRenameArtifactOpen] = useState(false),
     [collapsedPackages, setCollapsedPackages] = useState<Record<string, boolean>>({}),
     [aiBuilderOpen, setAiBuilderOpen] = useState(false),
     [apiBlueprintOpen, setApiBlueprintOpen] = useState(false),
@@ -3035,8 +3039,12 @@ function App() {
   };
   const explorerRefresh = async () => { setWorkStatus("Refreshing project workspace…"); try { const response = await fetch(`/api/projects/${project.id}`); if (response.ok) { setProject(normalizeProject(await response.json())); setLogs([{ level: "INFO", message: "Project Explorer refreshed from saved project storage." }]); } } finally { setWorkStatus(""); } };
   const explorerPackagePaths = (category: PackageCategory) => packagePaths(project.object_packages?.[category], project[category]);
+  const visiblePackagePaths = (category: PackageCategory) => {
+    const paths = packagePaths(project.object_packages?.[category], project[category], false);
+    return paths.length ? paths : [DEFAULT_PACKAGE];
+  };
   const packageTreeProps = (category: PackageCategory) => ({
-    paths: explorerPackagePaths(category),
+    paths: visiblePackagePaths(category),
     indent: category === "resources" ? 37 : 25,
     isCollapsed: (path: string) => !!collapsedPackages[`${project.id}:${category}:${path}`],
     toggle: (path: string) => {
@@ -3047,15 +3055,29 @@ function App() {
   });
   const saveObjectPackage = (path: string) => {
     if (!objectPackageDialog) return;
-    const {category, itemId} = objectPackageDialog;
-    setProject(current => ({
-      ...current,
-      ...(itemId ? {[category]: current[category].map(item => item.id === itemId ? {...item, package_path: path} : item)} : {}),
-      object_packages: {...current.object_packages, [category]: [...new Set([...(current.object_packages?.[category] || []), path])]},
-    }));
+    const {category, itemId, renaming} = objectPackageDialog;
+    setProject(current => {
+      const rewrite = (value: string) => renaming ? renamedPackagePath(value, renaming, path) : value;
+      return {
+        ...current,
+        ...(itemId || renaming ? {[category]: current[category].map(item => {
+          const previous = packagePath(item.package_path);
+          const next = item.id === itemId ? path : rewrite(previous);
+          return next !== previous ? {...item, package_path: next} : item;
+        })} : {}),
+        object_packages: {...current.object_packages, [category]: [...new Set([...(current.object_packages?.[category] || []).map(rewrite), path])]},
+      };
+    });
     setCollapsedPackages(current => {
       const next = {...current};
-      path.split("/").forEach((_, index, parts) => { delete next[`${project.id}:${category}:${parts.slice(0, index + 1).join("/")}`]; });
+      const prefix = `${project.id}:${category}:`;
+      if (renaming) {
+        for (const [key, collapsed] of Object.entries(current)) {
+          if (!key.startsWith(prefix)) continue;
+          const previous = key.slice(prefix.length), renamed = renamedPackagePath(previous, renaming, path);
+          if (renamed !== previous) { delete next[key]; next[prefix + renamed] = collapsed; }
+        }
+      } else path.split("/").forEach((_, index, parts) => { delete next[prefix + parts.slice(0, index + 1).join("/")]; });
       return next;
     });
     setOpen(current => ({...current, ...(category === "tasks" ? {Tasks:true} : category === "schemas" ? {Schemas:true} : {Resources:true, Connections:true})}));
@@ -3302,10 +3324,10 @@ function App() {
             <Package /> Packaging
           </button>
           {open.Packaging && (
-            <button className="tree-row indent2" onClick={() => setPackageOpen(true)}>
+            <button className="tree-row indent2" onClick={() => setPackageOpen(true)}
+              onContextMenu={event => { event.preventDefault(); setMenu({type:"artifact", x:event.clientX, y:event.clientY}); }}>
               <Package />
-              {project.packaging?.artifact_name || project.id}-
-              {project.packaging?.version || "1.0.0"}
+              <span className="explorer-item-name">{project.packaging?.artifact_name || project.id}-{project.packaging?.version || "1.0.0"}</span>
             </button>
           )}
           <button
@@ -3853,9 +3875,14 @@ function App() {
             newProject, importProject: importFromFileSystem, exportProject, save, refresh: explorerRefresh,
             rename: explorerRename, copy: explorerCopy, paste: explorerPaste, remove: explorerRemove,
             newObjectPackage: (category: PackageCategory) => setObjectPackageDialog({category, parent:menu.path}),
+            renameObjectPackage: (category: PackageCategory) => {
+              const path = menu.path;
+              if (path) setObjectPackageDialog({category, renaming:path, parent:path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : undefined});
+            },
+            renameArtifact: () => setRenameArtifactOpen(true),
             moveToPackage: (category: PackageCategory) => setObjectPackageDialog({category, itemId:menu.id, moving:packagePath(menu.path)}),
             run: (id?: string) => run(id), debug: (id?: string) => debug(id), validate: (id?: string) => { const target = id ? project.tasks.find((item) => item.id === id) : null; if (!target) { runValidation("project"); return; } const issues = validateTaskDefinition(project, target); setValidation({ title: `Validate Task · ${target.name}`, issues }); selectTask(target.id); setLogs([{ level: issues.some((item) => item.severity === "error") ? "ERROR" : issues.length ? "WARN" : "INFO", message: issues.length ? `${target.name}: ${issues.length} validation finding${issues.length === 1 ? "" : "s"}.` : `${target.name}: validation successful.` }]); },
-            properties: (type: string, id?: string) => { if (type === "application") setRenameOpen(true); else if (type === "task" && id) selectTask(id); else if (type === "activity" && id) { setSelected(id); setSelectedIds([id]); setActiveTab("configuration"); } else if (type === "resource" && id) setEditingConnection(project.resources.find((item) => item.id === id) || null); else if (type === "schema" && id) setSchemaEditor(project.schemas.find((item) => item.id === id) || null); else if (type === "property" && id) setPropertyEditor(id); else if (type === "packaging") setPackageOpen(true); },
+            properties: (type: string, id?: string) => { if (type === "application") setRenameOpen(true); else if (type === "task" && id) selectTask(id); else if (type === "activity" && id) { setSelected(id); setSelectedIds([id]); setActiveTab("configuration"); } else if (type === "resource" && id) setEditingConnection(project.resources.find((item) => item.id === id) || null); else if (type === "schema" && id) setSchemaEditor(project.schemas.find((item) => item.id === id) || null); else if (type === "property" && id) setPropertyEditor(id); else if (type === "packaging" || type === "artifact") setPackageOpen(true); },
             copyActivity: copySelection, cutActivity: cutSelection, pasteActivity: pasteSelection,
             deleteActivity: deleteSelectedActivity,
             toggleBreakpoint: (id: string) => setBreakpoints((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]),
@@ -3878,9 +3905,14 @@ function App() {
           close={() => setMenu(null)}
         />
       )}{" "}
-      {objectPackageDialog && <ObjectPackageDialog paths={explorerPackagePaths(objectPackageDialog.category)}
-        parent={objectPackageDialog.parent} moving={objectPackageDialog.moving}
+      {objectPackageDialog && <ObjectPackageDialog paths={objectPackageDialog.moving ? explorerPackagePaths(objectPackageDialog.category) : visiblePackagePaths(objectPackageDialog.category)}
+        parent={objectPackageDialog.parent} moving={objectPackageDialog.moving} renaming={objectPackageDialog.renaming}
         onClose={() => setObjectPackageDialog(null)} onSave={saveObjectPackage}/>}
+      {renameArtifactOpen && <ObjectPackageDialog paths={[]} artifact renaming={project.packaging?.artifact_name || project.id}
+        onClose={() => setRenameArtifactOpen(false)} onSave={name => {
+          setProject(current => ({...current, packaging:{...current.packaging, artifact_name:name}}));
+          setRenameArtifactOpen(false);
+        }}/>}
       {taskDialog && (
         <TaskDialog
           kind={taskDialog.kind}
@@ -4293,7 +4325,7 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
   const build = async (deploy = false, pythonArchive = false) => {
     setError("");
     const artifactName = studioObjectName(draft.artifact_name);
-    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(artifactName)) { setError("Artifact name may contain letters, numbers, dots, dashes, and underscores."); return; }
+    if (!artifactNamePattern.test(artifactName)) { setError("Artifact name may contain letters, numbers, dots, dashes, and underscores."); return; }
     if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(draft.version.trim())) { setError("Use a semantic version such as 1.0.0 or 1.0.0-beta.1."); return; }
     if (!pythonArchive && draft.format !== "python-engine" && !draft.artifacts.length) { setError("Select at least one deployment artifact."); return; }
     if (!draft.environments.length) { setError("Select at least one environment profile."); return; }
@@ -4998,6 +5030,9 @@ function Context({
     >
       {["tasks", "resources", "resources-root", "schemas"].includes(menu.type) &&
         item("New Package", menu.path ? `Create a package inside ${menu.path}` : "Create a top-level package", Folder, () => actions.newObjectPackage(targetFolder))}
+      {menu.path && ["tasks", "resources", "schemas"].includes(menu.type) &&
+        item("Rename Package", "Rename this folder and keep its contents", Settings2, () => actions.renameObjectPackage(targetFolder))}
+      {["packaging", "artifact"].includes(menu.type) && item("Rename Package", "Change the artifact name for future exports", Settings2, actions.renameArtifact)}
       {["task", "resource", "schema"].includes(menu.type) &&
         item("Move to Package", "Keep existing references and change the folder", FolderOpen, () => actions.moveToPackage(targetFolder))}
       {(menu.type === "tasks" || menu.type === "task") && (
@@ -5026,7 +5061,7 @@ function Context({
       {menu.type === "schemas" && item("New XSD Schema", "Open the schema designer", CodeXml, actions.newSchema)}
       {menu.type === "schemas" && item("Import XSD or Data Format", "Import schema files or a shared data layout", CodeXml, actions.importBwDataFormat)}
       {menu.type === "properties" && item("New Environment", "Create another properties environment", Plus, actions.newEnvironment)}
-      {menu.type === "packaging" && item("Configure Package", "Open deployment packaging", Package, actions.package)}
+      {["packaging", "artifact"].includes(menu.type) && item("Configure Package", "Open deployment packaging", Package, actions.package)}
       {menu.type === "resources" && (
         <>
           <div className="connection-menu-heading"><Cable/><span><b>Create shared connection</b><small>Choose a reusable connector</small></span></div>
@@ -5152,6 +5187,8 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "driverClass", label: "JDBC driver class (blank = vendor default)", when: (config: any) => ["sqlserver", "mssql", "oracle"].includes(config.driver) && config.connectionMode !== "python" },
     { key: "url", label: "JDBC URL" }, { key: "host", label: "Host" }, { key: "port", label: "Port" },
     { key: "database", label: "Database name" }, { key: "schema", label: "Schema" },
+    { key: "postgresSslMode", label: "PostgreSQL TLS mode", options: ["", "disable", "allow", "prefer", "require", "verify-ca", "verify-full"], when: (config: any) => config.driver === "postgresql" },
+    { key: "postgresSslRootCert", label: "PostgreSQL trusted root certificate", when: (config: any) => config.driver === "postgresql" },
     { key: "username", label: "Username" }, { key: "password", label: "Password", password: true },
     { key: "odbcDriver", label: "SQL Server ODBC driver (legacy Python mode)", when: (config: any) => ["sqlserver", "mssql"].includes(config.driver) && config.connectionMode === "python" },
     { key: "authentication", label: "SQL Server authentication", options: ["SQL Server Authentication", "Windows Integrated"], when: (config: any) => ["sqlserver", "mssql"].includes(config.driver) },
@@ -5233,7 +5270,7 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "apiDocsAccess", label: "API documentation access", options: ["authenticated", "public"], help: "Authenticated documentation uses the listener's configured authentication for its OpenAPI document and Postman download. Public exposes those documents without credentials. API operations always retain their own authentication.", when: (config: any) => config.connectorMode !== "client" },
     { key: "apiPublicBaseUrl", label: "Public API base URL", help: "Optional externally reachable HTTP or HTTPS URL, including a gateway prefix. Used by generated API clients. Run and Debug show the live listener address separately. Do not include credentials, query strings, or fragments.", when: (config: any) => config.connectorMode !== "client" },
     { key: "baseUrl", label: "Outbound base URL", when: (config: any) => config.connectorMode !== "server" },
-    { key: "httpVersion", label: "HTTP protocol version (HTTP/2 listeners require HTTPS)", options: ["1.1", "2"] },
+    { key: "httpVersion", label: "HTTP protocol version", options: ["1.1", "2", "3"] },
     { key: "authentication", label: "Authentication", options: ["None", "Basic", "Digest", "NTLM", "Bearer", "OAuth2", "JWT", "HMAC", "LDAP", "Certificate"] },
     { key: "username", label: "Username", when: (config: any) => ["Basic", "Digest", "NTLM"].includes(config.authentication) },
     { key: "password", label: "Password", password: true, when: (config: any) => ["Basic", "Digest", "NTLM"].includes(config.authentication) },
@@ -5308,10 +5345,13 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "maxRequestBodyBytes", label: "Maximum request body bytes" },
     { key: "maxResponseBodyBytes", label: "Maximum response body bytes" },
     { key: "allowedIps", label: "Allowed client IPs / CIDRs", when: (config: any) => config.connectorMode !== "client" },
+    { key: "openApiApiKeySecrets", label: "OpenAPI API key secrets", password: true, when: (config: any) => config.connectorMode !== "client" },
     { key: "trustedProxyCidrs", label: "Trusted proxy IPs / CIDRs", when: (config: any) => config.connectorMode !== "client" },
     { key: "httpErrorFormat", label: "Listener error response format", options: ["json", "problem"], when: (config: any) => config.connectorMode !== "client" },
     { key: "conditionalResponses", label: "Conditional GET and HEAD", options: ["false", "true"], when: (config: any) => config.connectorMode !== "client" },
     { key: "propagateTraceContext", label: "Propagate HTTP trace context", options: ["false", "true"] },
+    { key: "sharedHttpCache", label: "Shared public response cache", options: ["false", "true"], when: (config: any) => config.connectorMode !== "server" },
+    { key: "callbackAllowedOrigins", label: "Allowed callback HTTPS origins", when: (config: any) => config.connectorMode !== "server" },
     { key: "activityTimeoutSeconds", label: "Total activity / listener timeout (seconds)" },
     { key: "oauthGrantType", label: "OAuth2 grant", options: ["client_credentials", "authorization_code", "refresh_token"], when: (config: any) => ["OAuth2"].includes(config.authentication) },
     { key: "oauthTokenUrl", label: "OAuth2 token URL", when: (config: any) => ["OAuth2"].includes(config.authentication) },
@@ -5512,7 +5552,7 @@ function SharedConnectionDialog({ type, initial, initialRole, requireInitialRole
         if (scheme === "http") {
           config.confidentiality = "false";
           config.defaultConfidentiality = "false";
-          if (String(config.httpVersion) === "2") config.httpVersion = "1.1";
+          if (["2", "3"].includes(String(config.httpVersion))) config.httpVersion = "1.1";
         }
       }
     }

@@ -18,6 +18,16 @@ that branch, then set each side's search depth from 1 to 10 (default 4).
 Leave a side on **Entire schema** to search all fields on that side. Existing
 manual mappings are preserved.
 
+### Drop a repeating structure
+
+On Mapper **Input**, drag a repeating complex source onto a repeating complex target and choose **Finish** after selecting a mapping mode:
+
+- **Make a copy of each** copies the whole collection. The target shows one **[Copy-Of]** row with its source expression and hides the children. Existing child mappings in that occurrence are replaced. Clear the copy to show the children again. Use this when the source items already match the target structure.
+- **For each** adds a **[For-Each]** row for the collection and keeps the item and its children visible. Matching paths are filled in without regard to case. Children display expressions relative to the current item, such as `Name` or `Address.City`, and remain editable.
+- **SmartMap** builds an editable loop and also matches child paths that differ by underscores or hyphens. Ambiguous matches are left unmapped.
+
+Use **Map & Test** to check the generated result before running or exporting the flow.
+
 ### XML expressions and bindings
 
 In Mapper **Configuration**, choose the XPath version and expand **XML

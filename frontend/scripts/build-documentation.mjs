@@ -117,7 +117,7 @@ for (const pack of defs.packs) for (const entry of pack.items) {
  const node = { type: entry.type, config: { operation: entry.operation || '' } };
  let contract = defs.activityContract(node);
  if (!contract || !Array.isArray(contract.configuration)) throw new Error(`Missing activity contract: ${entry.type}/${entry.operation}`);
- const doc = defs.activityDocumentation[entry.type === 'rest' ? (entry.operation === 'invoke' ? 'rest_invoke' : 'rest_receiver') : entry.type];
+ const doc = defs.activityDocumentation[entry.type === 'rest' ? (entry.operation === 'invoke' ? 'rest_invoke' : 'rest_receiver') : entry.type === 'http' && defs.activityDocumentation[entry.operation] ? entry.operation : entry.type];
  const advanced = defs.advancedDefaults(entry.type, entry.operation);
  const detail = connectorDetails(entry.type, entry.operation, contract);
  if (['kafka','sap','ems'].includes(entry.type) && !detail) throw new Error(`Missing detailed activity guide: ${entry.type}/${entry.operation}`);

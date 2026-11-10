@@ -24,6 +24,7 @@ SUPPORTED = {
     *((('ftp', operation) for operation in ('get', 'put', 'delete', 'dir', 'change_dir'))),
     *((('sftp', operation) for operation in ('get', 'put', 'delete', 'dir', 'change_dir'))),
     ('http_listener', 'listen'), ('http', 'request'), ('rest', 'receiver'), ('rest', 'invoke'),
+    ('http', 'sse_read'), ('http', 'websocket_exchange'), ('http', 'write_precondition'),
     ('soap', 'service'), ('soap', 'request_reply'), ('http_response', 'response'), ('http_response', ''),
     ('xml', 'parse'), ('xml', 'render'), ('json', 'parse'), ('json', 'render'),
     ('flat', 'parse'), ('flat', 'render'), ('excel', 'read'), ('dataweave', 'transform'),
@@ -566,6 +567,12 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
         if not any(item['name'] == name for item in checks):
             checks.append({'name': name, 'modules': modules, 'install': install, 'any': any_module, 'java': java})
     http_configs = [*(resources.get('http') or []), *(a.get('config') or {} for t in project.get('tasks',[]) for a in t.get('activities',[]) if a.get('type') in {'http','http_listener','rest','soap'})]
+    def setting_values(value):
+        binding = re.fullmatch(r'\$\{properties\.([^}]+)\}', str(value))
+        if not binding:
+            return {str(value).lower()}
+        return {str(prop.get('value')).lower() for profile in (project.get('properties') or {}).values()
+                for prop in profile if prop.get('key') == binding.group(1)}
     if any(kind in {'xml','json'} for kind,_ in activity_pairs):add('Data schema validation',['jsonschema','regex'],'python -m pip install jsonschema regex')
     if any(kind=='xml' for kind,_ in activity_pairs):add('XML schema validation',['lxml.etree'],'python -m pip install lxml')
     xml_dependencies = mapper_xml_dependencies(project)
@@ -585,6 +592,10 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
     if any(str(c.get('authentication','')).lower()=='ntlm' for c in http_configs):add('NTLM authentication',['httpx_ntlm'],'python -m pip install httpx-ntlm')
     if any(str(c.get('httpVersion',''))=='2' for c in http_configs):add('HTTP/2',['h2'],'python -m pip install h2')
     if any(str(c.get('httpVersion',''))=='2' for c in http_configs) and any(kind == 'http_listener' or kind == 'rest' and op == 'receiver' for kind,op in activity_pairs):add('HTTP/2 server',['hypercorn'],'python -m pip install hypercorn')
+    if any('3' in setting_values(c.get('httpVersion')) for c in http_configs):
+        add('HTTP/3 transport',['hypercorn','aioquic'],'python -m pip install hypercorn aioquic')
+    if ('http', 'websocket_exchange') in activity_pairs:
+        add('WebSocket client',['websockets'],'python -m pip install "websockets>=15,<18"')
     if any(str(c.get('policyStore',''))=='redis' for c in http_configs):add('Distributed HTTP policies',['redis'],'python -m pip install redis')
     if any(str(c.get(key,'' )).upper()=='JKS' for c in http_configs for key in ('trustStoreType','identityStoreType')):add('JKS stores',[],'Provision Java keytool or convert JKS stores to PKCS12.',java=True)
     if any(str(c.get(key,'' )).upper() in {'PKCS12','P12','PFX'} for c in http_configs for key in ('trustStoreType','identityStoreType')):add('PKCS12 stores',['cryptography'],'python -m pip install cryptography')
@@ -610,12 +621,16 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
     if bridge_kinds or any(kind == 'java' for kind, _ in activity_pairs):
         add('Java vendor bridge', [], 'Provision Java plus the licensed vendor JARs in the configured driver directory.', java=True)
     external: list[str] = []
+    if any(kind == 'jdbc' for kind, _ in activity_pairs) and any(
+        setting_values(config.get('driver')) & {'postgres', 'postgresql'} for config in resources.get('jdbc', [])
+    ):
+        add('PostgreSQL JDBC activity', ['psycopg'], 'python -m pip install "psycopg[binary]"')
     for task in project.get('tasks', []):
         for activity in task.get('activities', []):
             cfg = activity.get('config') or {}
             if activity.get('type') in {'java', 'python'} and cfg.get('artifactPath'):
                 external.append(str(cfg['artifactPath']))
-    certificate_keys = ('trustedCertificateFolder','trustStoreFile','certificateAuthorityFile','identityStoreFile','certificateFile','privateKeyFile','clientCertificateFile','clientKeyFile','crlFile','jwtPrivateKeyFile','jwtPublicKeyFile','ldapCaFile','oauthClientPrivateKeyFile')
+    certificate_keys = ('trustedCertificateFolder','trustStoreFile','certificateAuthorityFile','identityStoreFile','certificateFile','privateKeyFile','clientCertificateFile','clientKeyFile','crlFile','jwtPrivateKeyFile','jwtPublicKeyFile','ldapCaFile','oauthClientPrivateKeyFile','postgresSslRootCert')
     configurations = [resource.get('config') or {} for resource in project.get('resources', [])]
     configurations += [activity.get('config') or {} for task in project.get('tasks', []) for activity in task.get('activities', [])]
     for cfg in configurations:
@@ -756,7 +771,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     files['run.py'] = launcher
     files['__main__.py'] = launcher
     native_modules = set()
-    if capabilities & {'http_client','inbound_http'}: native_modules.update({'http_transport.py','http_messages.py','rest_contract.py','mapper.py','http_contracts.py','schema_validation.py','data_formats.py','faults.py','http_policy.py','http_listener.py','http_streams.py','xsd_catalog.py'})
+    if capabilities & {'http_client','inbound_http'}: native_modules.update({'http_transport.py','http3_client.py','http_messages.py','rest_contract.py','mapper.py','http_contracts.py','schema_validation.py','data_formats.py','faults.py','http_policy.py','http_listener.py','http_streams.py','xsd_catalog.py'})
     if 'inbound_http' in capabilities: native_modules.update({'http_server.py','http2_server.py','mapper.py','api_docs.py','api_docs_ui.py','swagger_assets.py','xsd_openapi.py'})
     if 'data_formats' in capabilities:native_modules.update({'data_formats.py','faults.py','mapper.py','schema_validation.py','xsd_openapi.py','xsd_catalog.py'})
     if any(activity.get('config', {}).get('operation') in {'deduplicate', 'message_receipt', 'replay_messages', 'aggregate_messages', 'split_records'} for task in project.get('tasks', []) for activity in task.get('activities', [])):

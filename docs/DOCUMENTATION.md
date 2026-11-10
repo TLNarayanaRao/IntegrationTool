@@ -16,6 +16,8 @@ New projects start with a Sub Task containing Start and End. Use a Starter Task 
 
 Tasks, shared connections, and schemas belong to packages. Right-click their category or an existing package and choose **New Package** to create a top-level or nested folder. Choose the package when creating an item. **Default** is available for each category. Right-click an existing item and choose **Move to Package** to organize it without changing its references. Studio replaces spaces with hyphens in object names.
 
+To rename a package, right-click the folder under **Tasks**, **Resources → Connections**, or **Schemas** and choose **Rename Package**. Its nested folders and items move with it, keeping task, connection, and schema references intact. Under **Packaging**, right-click the deployment artifact and choose **Rename Package** to update its name for future exports while keeping its version and settings. Save the project to keep these changes.
+
 Package contents appear below their folder. If a name is shortened in a narrow Project Explorer, hover over it to see the full name or drag the pane divider to widen it.
 
 When you first add a protocol activity or shared connection, Studio adds the relevant missing environment properties. Connection setup also offers those properties for binding. Review the generated defaults in the active environment before running the task.
@@ -31,6 +33,14 @@ The welcome screen shows packets moving along the integration routes. Use **Paus
 Use `:name` parameters for Query, Update, and Insert, and map each value under **Input → parameters**. To execute multiple records together, enable **Batch update** and map **records**. An empty list writes zero rows. For **Insert if record does not exist**, map an INSERT statement to **InsertStatement** and provide the parameters used by both statements. MINA runs the INSERT only when the UPDATE affects zero rows. If you need an atomic upsert across concurrent executions, use your database's native upsert statement.
 
 To page through a query, enable **Process result in subsets** and use a stable `ORDER BY`. Start with **Row offset** zero. Pass the previous result's **nextRowOffset** to the next call and stop when **lastSubset** is true. **Maximum rows** caps the total rows across those pages. Each call re-executes the query.
+
+### PostgreSQL samples
+
+1. Run [postgresql-setup.sql](/samples/postgresql-setup.sql) in a disposable PostgreSQL database. It creates `mina_demo.orders` and the `mina_demo.order_total` procedure.
+2. In Studio **Samples**, open **PostgreSQL CRUD** or **PostgreSQL Procedure and Paging**. Set the JDBC URL, username, and password in the local environment. Use **Debug** to run the example Sub Task or run it by task ID in an exported Python archive.
+3. CRUD upserts a demo row, updates it with a version guard, queries the JSONB field, and deletes that row. The other sample reads the first page and calls the procedure with an INOUT numeric argument.
+
+PostgreSQL accepts libpq connection strings and JDBC-style PostgreSQL URLs. Configure **PostgreSQL TLS mode** and a trusted root certificate for verified TLS. A configured **Schema** becomes the search path. Use named `:parameter` bindings to avoid ambiguity with PostgreSQL's JSONB question-mark operator. Declare JSON or JSONB, ISO date/time, and decimal types for driver adaptation. To retain exact decimal digits from a mapped value, provide it as a string. Use JDBC Query with `SELECT` for PostgreSQL functions and Call Procedure for `CALL` operations. PostgreSQL statement timeout applies when configured on the activity.
 
 ## Updating the guide
 

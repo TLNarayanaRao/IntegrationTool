@@ -1,11 +1,103 @@
 """HTTP resilience, JWT rotation and optional distributed request policies."""
 from __future__ import annotations
 import hashlib, ipaddress, json, math, random, re, secrets, threading, time, urllib.parse
+from collections import OrderedDict
 from contextvars import ContextVar
 from email.utils import parsedate_to_datetime
 
 _LOCK=threading.RLock();_CIRCUITS={};_RATES={};_JWKS={};_REDIS={}
 trace_context = ContextVar('mina_http_trace', default=None)
+_HTTP_CACHE = OrderedDict()
+_HTTP_CACHE_GENERATION = {}
+
+
+def _cache_directives(value):
+    return {key.strip().lower(): argument.strip().strip('"')
+            for item in value.split(',') for key, _, argument in [item.partition('=')] if key.strip()}
+
+
+def shared_cache_request(cfg, request):
+    """Cache only explicitly public, unconditional GETs. No stale serving."""
+    from .http_transport import boolean
+    if not boolean(cfg.get('sharedHttpCache')) or boolean(cfg.get('enableCookies')):
+        return None
+    if str(cfg.get('authentication') or 'none').lower() != 'none' or boolean(cfg.get('followRedirects')):
+        return None
+    prohibited = ('authorization', 'cookie', 'range', 'if-match', 'if-none-match',
+                  'if-modified-since', 'if-unmodified-since', 'if-range')
+    directives = _cache_directives(request.headers.get('cache-control', ''))
+    if (request.method != 'GET' or cfg.get('responseFile') or request.headers.get('content-length', '0') != '0'
+            or any(name in request.headers for name in prohibited)
+            or 'no-store' in directives or 'no-cache' in directives or 'max-age' in directives
+            or 'min-fresh' in directives or request.headers.get('pragma')):
+        return None
+    scope = _http_cache_scope(cfg, request)
+    with _LOCK:
+        generation = _HTTP_CACHE_GENERATION.get(scope, '')
+    headers = sorted((key, value) for key, value in request.headers.multi_items() if key != 'cache-control')
+    fingerprint = json.dumps([scope, str(generation), str(request.url), cfg.get('httpVersion'), headers])
+    return hashlib.sha256(fingerprint.encode()).hexdigest()
+
+
+def _http_cache_scope(cfg, request):
+    return hashlib.sha256(json.dumps([cfg.get('_httpScope'), request.url.scheme, request.url.host,
+                                      request.url.port], default=str).encode()).hexdigest()
+
+
+def invalidate_shared_cache(cfg, request):
+    from .http_transport import boolean
+    if not boolean(cfg.get('sharedHttpCache')):
+        return
+    scope = _http_cache_scope(cfg, request)
+    generation = secrets.token_hex(16)
+    with _LOCK:
+        if len(_HTTP_CACHE_GENERATION) >= 256 and scope not in _HTTP_CACHE_GENERATION:
+            _HTTP_CACHE.clear()
+            _HTTP_CACHE_GENERATION.clear()
+        _HTTP_CACHE_GENERATION[scope] = generation
+
+
+def cached_http_response(cache, request):
+    import httpx
+    if cache is None:
+        return None
+    with _LOCK:
+        record = _HTTP_CACHE.get(cache)
+    if not record or time.time() >= record['expires']:
+        return None
+    headers = [(name, value) for name, value in record['headers'] if name != 'age']
+    headers.append(('age', str(max(0, int(time.time() - record['created'])))))
+    return httpx.Response(200, headers=headers, content=record['content'],
+                          request=request, extensions={'http_version':record['version'].encode()})
+
+
+def store_http_response(cache, response, content):
+    if cache is None or response.status_code != 200 or len(content) > 1024**2:
+        return
+    directives = _cache_directives(response.headers.get('cache-control', ''))
+    vary = {name.strip().lower() for name in response.headers.get('vary', '').split(',')}
+    if (('public' not in directives and 's-maxage' not in directives)
+            or {'private', 'no-cache', 'no-store'} & directives.keys()
+            or {'*', 'cache-control'} & vary or 'set-cookie' in response.headers):
+        return
+    now = time.time()
+    try:
+        age = max(0, int(response.headers.get('age', '0')))
+        if response.headers.get('date'):
+            age = max(age, int(now - parsedate_to_datetime(response.headers['date']).timestamp()))
+        lifetime = min(3600, int(directives.get('s-maxage', directives.get('max-age', '0')))) - age
+    except (ValueError, TypeError, OverflowError):
+        return
+    if lifetime <= 0:
+        return
+    record = {'created':now - age, 'expires':now + lifetime, 'content':content,
+              'version':response.http_version, 'headers':[(name, value) for name, value in response.headers.multi_items()
+                  if name not in ('content-encoding', 'transfer-encoding', 'content-length')]}
+    with _LOCK:
+        _HTTP_CACHE[cache] = record
+        _HTTP_CACHE.move_to_end(cache)
+        if len(_HTTP_CACHE) > 128:
+            _HTTP_CACHE.popitem(last=False)
 
 
 def trace_headers(headers):
@@ -65,6 +157,49 @@ def representation_unchanged(request_headers, response_headers):
         return modified <= since
     except (ValueError, TypeError, OverflowError):
         return False
+
+
+def write_precondition(cfg):
+    from .http_transport import boolean, object_value
+    headers = {str(name).lower(): value for name, value in object_value(cfg.get('headers'), 'Headers').items()}
+    exists = boolean(cfg.get('representationExists'), True)
+    tag = str(cfg.get('currentETag') or '')
+    if_match = headers.get('if-match')
+    none_match = headers.get('if-none-match')
+    since = headers.get('if-unmodified-since')
+    def tags(condition):
+        text = ','.join(condition) if isinstance(condition, list) else str(condition)
+        if text.strip() == '*':
+            return ['*']
+        tag_pattern = r'(?:W/)?"[\x21\x23-\x7e\x80-\xff]*"'
+        if not re.fullmatch(rf'\s*{tag_pattern}(?:\s*,\s*{tag_pattern})*\s*', text):
+            return []
+        return re.findall(tag_pattern, text)
+    def result(status):
+        return {'allowed': status == 200, 'statusCode': status}
+    if all(value is None for value in (if_match, none_match, since)) and boolean(cfg.get('requireWritePrecondition')):
+        return result(428)
+    if if_match is not None:
+        candidates = tags(if_match)
+        if not exists or ('*' not in candidates and (not tag or tag.startswith('W/') or tag not in candidates)):
+            return result(412)
+    elif since is not None and exists:
+        try:
+            limit = parsedate_to_datetime(since)
+        except (TypeError, ValueError, OverflowError):
+            limit = None  # An invalid request date is ignored.
+        if limit is not None:
+            try:
+                modified = parsedate_to_datetime(cfg.get('currentLastModified', ''))
+                if modified > limit:
+                    return result(412)
+            except (TypeError, ValueError, OverflowError):
+                return result(412)
+    if none_match is not None and exists:
+        candidates = tags(none_match)
+        if not candidates or '*' in candidates or tag and tag.removeprefix('W/') in [value.removeprefix('W/') for value in candidates]:
+            return result(412)
+    return result(200)
 
 def validate_listener_policy(cfg):
     from .http_transport import number, boolean

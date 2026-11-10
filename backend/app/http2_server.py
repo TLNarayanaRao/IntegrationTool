@@ -1,4 +1,4 @@
-"""TLS HTTP/2 host using Hypercorn's programmatic ASGI API."""
+"""HTTP/2 and HTTP/3 hosting using Hypercorn's programmatic ASGI API."""
 from __future__ import annotations
 import asyncio
 
@@ -8,6 +8,12 @@ async def serve_http2(routes,handler,ready):
     from .http_server import ListenerApp
     from .http_transport import tls_context, number, HTTPFault
     connection=routes[0][1]
+    http3 = str(connection.get('httpVersion')) == '3'
+    if http3:
+        try:
+            import aioquic  # noqa: F401
+        except ImportError:
+            raise HTTPFault('Install aioquic to host HTTP/3','HTTP_CONFIGURATION',400) from None
     transport_keys=('host','port','httpVersion','scheme','tlsEnabled','defaultConfidentiality','confidentiality','certificateFile','privateKeyFile','privateKeyPassword','identityStoreFile','identityStoreType','identityStorePassword','trustStoreFile','trustStoreType','trustStorePassword','certificateAuthorityFile','trustedCertificateFolder','clientAuthentication','tlsVersion','maximumTlsVersion','cipherSuites','crlFile','maximumQtpThreads','minimumQtpThreads','maxQueueSize','maxHeaderBytes','acceptQueueSize','idleConnectionTimeoutMs','readTimeoutMs')
     if any(any(cfg.get(key)!=connection.get(key) for key in transport_keys) for _,cfg in routes):raise HTTPFault('HTTP/2 listeners sharing a port require the same transport configuration','HTTP_CONFIGURATION',400)
     identities=set()
@@ -19,6 +25,7 @@ async def serve_http2(routes,handler,ready):
             if identity in identities:raise HTTPFault('Duplicate listener route and HTTP method','HTTP_CONFIGURATION',400)
             identities.add(identity)
     context=tls_context(connection,server=True);context.set_alpn_protocols(['h2','http/1.1'])
+    bound_sockets = []
     class HTTP2Config(Config):
         @property
         def ssl_enabled(self):return True
@@ -26,10 +33,15 @@ async def serve_http2(routes,handler,ready):
             return context
         def create_sockets(self):
             sockets=super().create_sockets()
+            bound_sockets.extend([*sockets.secure_sockets, *sockets.insecure_sockets, *sockets.quic_sockets])
             for sock in sockets.secure_sockets:sock.listen(self.backlog)
             ready.set();return sockets
     config=HTTP2Config();host=str(connection.get('host') or '0.0.0.0');host='['+host+']' if ':' in host else host
     config.bind=[f"{host}:{int(connection.get('port') or 8080)}"]
+    if http3:
+        config.quic_bind = config.bind
+        config.certfile = str(connection['certificateFile'])
+        config.keyfile = str(connection['privateKeyFile'])
     config.backlog=int(number(connection,'acceptQueueSize',128,1,65535))
     config.keep_alive_timeout=number(connection,'idleConnectionTimeoutMs',40000)/1000
     config.read_timeout=number(connection,'readTimeoutMs',30000,1)/1000
@@ -39,4 +51,7 @@ async def serve_http2(routes,handler,ready):
     app=ListenerApp(routes,handler,connection,verified_mtls=connection.get('clientAuthentication')=='required')
     stop=asyncio.Event()
     try:await serve(app,config,shutdown_trigger=stop.wait,mode='asgi')
-    finally:app.executor.shutdown(wait=False,cancel_futures=True)
+    finally:
+        for sock in bound_sockets:
+            sock.close()
+        app.executor.shutdown(wait=False,cancel_futures=True)

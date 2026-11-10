@@ -81,6 +81,33 @@ class PythonMapperParityTests(unittest.TestCase):
         self.assert_exports(self.project(rules), {'text': 'A and B > C', 'n': 5},
                             {f'value{i}': 'passed' for i in range(len(expressions))})
 
+    def test_repeating_complex_copy_and_for_each_across_runtimes(self):
+        payload = {'rows': [{'Name': 'Ada', 'Marks': 9}]}
+        copy = [dict(target='report.Record', operator='copy-of', source='${input.rows}', targetType='object[]')]
+        loop = [dict(target='report.Record', operator='for-each', source='${input.rows}'),
+                dict(target='report.Record.Name', source='${input.rows.Name}', targetType='string')]
+        for rules, expected in ((copy, {'report': {'Record': payload['rows']}}),
+                                (loop, {'report': {'Record': [{'Name': 'Ada'}]}})):
+            with self.subTest(operator=rules[0]['operator']):
+                project = self.project(rules)
+                self.assert_studio(project, payload, expected)
+                self.assert_exports(project, payload, expected)
+
+    def test_repeating_copy_round_trips_as_an_xml_binding(self):
+        from app.mapper_binding import generate_binding, reopen_binding
+        rules = [dict(target='report.Record', operator='copy-of', source='${input.notes.note}')]
+        binding = generate_binding(rules)
+        restored = reopen_binding(binding)
+        self.assertEqual(restored['mappings'], rules)
+        project = self.project(rules)
+        project['tasks'][0]['activities'][1]['config'].update(restored, xmlSource='${input.xmlString}')
+        payload = {'xmlString': '<notes><note><name>Ada</name></note><note><name>Lin</name></note></notes>'}
+        xml = '<report><Record><name>Ada</name></Record><Record><name>Lin</name></Record></report>'
+        result = {'Record': [{'name': 'Ada'}, {'name': 'Lin'}]}
+        expected = {'report': result, 'value': result, 'xml': xml, 'xmlString': xml, 'root': 'report'}
+        self.assert_studio(project, payload, expected)
+        self.assert_exports(project, payload, expected)
+
     def test_xpath_versions_and_namespace_predicates(self):
         payload = {'minimum': 2, 'xmlString': '<o:orders xmlns:o="urn:orders"><o:order id="1">skip</o:order><o:order id="2">west</o:order></o:orders>'}
         for version, formula, expected in [('1.0', 'string(/p:orders/p:order[@id=$minimum])', 'west'),
@@ -378,7 +405,7 @@ class PythonMapperParityTests(unittest.TestCase):
         two = {item['name'] for item in xpath_function_palette('2.0')}
         self.assertIn('substring', one)
         self.assertNotIn('upper-case', one)
-        self.assertTrue({'xs:dateTime', 'round-half-to-even', 'tib:substring-after-last', 'matches', 'replace', 'tokenize'} <= two)
+        self.assertTrue({'xs:dateTime', 'round-half-to-even', 'ext:substring-after-last', 'matches', 'replace', 'tokenize'} <= two)
         self.assertTrue({'doc', 'collection'}.isdisjoint(two))
         rules = [
             {'target':'old', 'source':'xpath1("string(/record/id)")'},

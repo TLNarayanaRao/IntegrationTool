@@ -1,0 +1,138 @@
+{
+  "id": "postgresql-procedure-and-paging",
+  "name": "PostgreSQL Procedure and Paging",
+  "description": "Run postgresql-setup.sql and set the local JDBC properties. Shows stable paging and a PostgreSQL procedure with an INOUT numeric parameter.",
+  "active_environment": "local",
+  "active_task_id": "main",
+  "resources": [
+    {
+      "id": "postgres",
+      "type": "jdbc",
+      "name": "PostgreSQL-MINA-Demo",
+      "config": {
+        "driver": "postgresql",
+        "connectionMode": "python",
+        "schema": "mina_demo",
+        "url": "${properties.connections.jdbc.url}",
+        "username": "${properties.connections.jdbc.username}",
+        "password": "${properties.connections.jdbc.password}"
+      }
+    }
+  ],
+  "properties": {
+    "local": [
+      {
+        "key": "connections.jdbc.url",
+        "value": "postgresql://localhost:5432/postgres",
+        "data_type": "string"
+      },
+      {
+        "key": "connections.jdbc.username",
+        "value": "postgres",
+        "data_type": "string"
+      },
+      {
+        "key": "connections.jdbc.password",
+        "value": "",
+        "data_type": "password"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "main",
+      "name": "PostgreSQL Procedure and Paging",
+      "kind": "subtask",
+      "activities": [
+        {
+          "id": "n0",
+          "name": "Start",
+          "type": "start",
+          "position": {
+            "x": 80,
+            "y": 150
+          },
+          "config": {}
+        },
+        {
+          "id": "n1",
+          "name": "First-Page",
+          "type": "jdbc",
+          "position": {
+            "x": 290,
+            "y": 150
+          },
+          "config": {
+            "resourceId": "postgres",
+            "operation": "query",
+            "sql": "SELECT id, amount::text AS amount, details FROM orders ORDER BY id",
+            "processInSubsets": true,
+            "subsetSize": 1
+          }
+        },
+        {
+          "id": "n2",
+          "name": "Order-Total",
+          "type": "jdbc",
+          "position": {
+            "x": 500,
+            "y": 150
+          },
+          "config": {
+            "resourceId": "postgres",
+            "operation": "call",
+            "procedure": "mina_demo.order_total",
+            "preparedParameters": [
+              {
+                "name": "minimumId",
+                "type": "integer"
+              },
+              {
+                "name": "total",
+                "type": "decimal"
+              }
+            ],
+            "inputMappings": {
+              "parameters.minimumId": "1",
+              "parameters.total": "0"
+            }
+          }
+        },
+        {
+          "id": "n3",
+          "name": "End",
+          "type": "end",
+          "position": {
+            "x": 710,
+            "y": 150
+          },
+          "config": {
+            "inputMappings": {
+              "result": "${last}"
+            }
+          }
+        }
+      ],
+      "transitions": [
+        {
+          "id": "t0",
+          "source": "n0",
+          "target": "n1",
+          "type": "success"
+        },
+        {
+          "id": "t1",
+          "source": "n1",
+          "target": "n2",
+          "type": "success"
+        },
+        {
+          "id": "t2",
+          "source": "n2",
+          "target": "n3",
+          "type": "success"
+        }
+      ]
+    }
+  ]
+}

@@ -8,7 +8,7 @@ from .http_contracts import (response_schema, schema_errors, request_schema, med
                              parse_json, hosted_response_content, media_family, negotiate_media)
 from .http_messages import multi_values
 from .http_policy import client_address, cors_headers, rate_limit, representation_unchanged, trace_context, trace_headers
-from .rest_contract import decode_multipart_form, multipart_contract, validate_parameters,typed_form_body
+from .rest_contract import authorize_contract, decode_multipart_form, multipart_contract, validate_parameters,typed_form_body
 
 class HashedBody:
     def __init__(self,digest):self.sha256=digest
@@ -126,12 +126,8 @@ async def _handle_request(app,scope,receive,send,state):
         if upload:upload.close()
         target=(scope.get('raw_path') or scope['path'].encode()).decode('ascii')+('?' + scope['query_string'].decode('ascii') if scope.get('query_string') else '')
         claims=await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(app.executor,lambda:authorize(cfg,method,target,headers,HashedBody(digest.hexdigest()) if upload else raw,app.verified_mtls)),number(cfg,'activityTimeoutSeconds',180,1))
-        if cfg.get('_restSecurityAlternatives'):
-            scope_claim = claims.get('scope', claims.get('scp', ''))
-            granted = scope_claim.split() if isinstance(scope_claim, str) else scope_claim if isinstance(scope_claim, list) and all(isinstance(value, str) for value in scope_claim) else []
-            if not any((not certificate or app.verified_mtls) and set(required).issubset(granted)
-                       for certificate, required in cfg['_restSecurityAlternatives']):
-                raise HTTPFault('Insufficient scope','HTTP_SECURITY',403)
+        query=multi_values(urllib.parse.parse_qsl(scope.get('query_string',b'').decode('utf-8'),keep_blank_values=True))
+        authorize_contract(cfg, headers, query, claims, app.verified_mtls)
         content_type=str(headers.get('content-type','')).split(';')[0].strip().lower();expected=str(cfg.get('contentType') or '').split(';')[0].strip().lower()
         formats=cfg.get('_restRequestSchemas') or {}
         if size and (media_schema(formats,content_type)[0] is None if formats else expected and content_type!=expected):raise HTTPFault('Unsupported content type','REST_UNSUPPORTED_MEDIA',415)
@@ -161,7 +157,6 @@ async def _handle_request(app,scope,receive,send,state):
                 raise HTTPFault('Invalid multipart request body','REST_VALIDATION',400) from None
         try:body_value=typed_form_body(cfg,body_value,content_type)
         except (ValueError,TypeError,KeyError):raise HTTPFault('Form fields violate their declared types','REST_VALIDATION',400) from None
-        query=multi_values(urllib.parse.parse_qsl(scope.get('query_string',b'').decode('utf-8'),keep_blank_values=True))
         decoded = {'path': {}, 'query': {}, 'header': {}}
         errors=validate_parameters(cfg,parameters,query,headers,body_value if size else None,decoded)
         if errors:raise HTTPFault('; '.join(errors),'REST_VALIDATION',400)
@@ -171,6 +166,19 @@ async def _handle_request(app,scope,receive,send,state):
         payload={'body':body_value,'headers':{**headers, **decoded['header']},'headerPairs':[{'name':k,'value':v} for k,v in pairs],
                  'method':method,'path':scope['path'],'pathParameters':{**parameters, **decoded['path']},
                  'query':{**query, **decoded['query']},'remote':scope.get('client'),'clientIp':remote,'auth':claims}
+        secret_headers = set()
+        for _, _, keys in cfg.get('_restSecurityAlternatives', []):
+            for _, location, field in keys:
+                if location == 'header':
+                    secret_headers.add(field.lower())
+                elif location == 'query':
+                    payload['query'].pop(field, None)
+                else:
+                    secret_headers.add('cookie')
+        for key in secret_headers:
+            payload['headers'].pop(key, None)
+        if secret_headers:
+            payload['headerPairs'] = [pair for pair in payload['headerPairs'] if pair['name'] not in secret_headers]
         if size and not upload and (isinstance(schema, str) and schema.lstrip().startswith('<')
                                     or cfg.get('requestContentTypes') and media_family(content_type) == 'xml'):
             from .data_formats import DataFormats

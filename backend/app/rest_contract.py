@@ -59,7 +59,14 @@ def operation_config(config):
     preferred=str(preferred).split(';',1)[0].strip().lower()
     content_type,schema=media(request.get('content') or {},preferred)
     cfg['_restRequestSchemas']={name:wrapped(dereference(definition).get('schema',{})) for name,definition in (request.get('content') or {}).items()}
-    cfg['_restMultipartEncoding'] = copy.deepcopy(dereference((request.get('content') or {}).get('multipart/form-data', {})).get('encoding', {}))
+    multipart = dereference((request.get('content') or {}).get('multipart/form-data', {}))
+    cfg['_restMultipartEncoding'] = {
+        name: {**settings, 'headers': {
+            header: {**dereference(definition), 'schema': wrapped(dereference(definition).get('schema') or {})}
+            for header, definition in (settings.get('headers') or {}).items()
+        }}
+        for name, settings in (multipart.get('encoding') or {}).items()
+    }
     cfg['_explicitRequestSchema']=config.get('_explicitRequestSchema',config.get('requestSchema') not in (None,''))
     # An operation parameter overrides the path-level parameter of the same name/location.
     parameters=list({(p.get('in'),p.get('name')):p for p in (dereference(value) for value in [*(path_item.get('parameters') or []),*(operation.get('parameters') or [])])}.values())
@@ -89,7 +96,15 @@ def operation_config(config):
         server=servers[0];url=str(server.get('url') or '')
         for key,value in (server.get('variables') or {}).items():url=url.replace('{'+key+'}',str(value.get('default') or ''))
     else:url=((supplied.get('schemes') or ['https'])[0]+'://'+str(supplied.get('host') or '')+str(supplied.get('basePath') or '')) if supplied.get('host') else ''
-    if cfg.get('operation')!='receiver':
+    if cfg.get('callbackDelivery'):
+        target = str(cfg.get('callbackUrl') or '')
+        parsed = urllib.parse.urlsplit(target)
+        origin = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, '', '', ''))
+        allowed = str(cfg.get('callbackAllowedOrigins') or '').replace(',', ' ').split()
+        if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.fragment or origin not in allowed:
+            raise ValueError('Callback URL must use an explicitly allowed HTTPS origin')
+        cfg.update(url=target, basePath='', defaultConfidentiality=True, followRedirects=False)
+    elif cfg.get('operation')!='receiver':
         base=str(cfg.get('baseUrl') or url)
         if not base:raise ValueError('OpenAPI invocation requires a server URL or HTTP connection base URL')
         cfg['url']=base.rstrip('/')+path;cfg['basePath']=''
@@ -153,6 +168,9 @@ def multipart_form_bytes(cfg, body, limit):
         raise ValueError('Multipart request body must be an object')
     fields = form_properties(cfg, 'multipart/form-data')
     encoding = cfg.get('_restMultipartEncoding') or {}
+    mapped_headers = cfg.get('multipartPartHeaders') or {}
+    if not isinstance(mapped_headers, dict) or set(mapped_headers) - set(body):
+        raise ValueError('Multipart part headers must be keyed by mapped form properties')
     parts = []
     size = 0
     for name, values in body.items():
@@ -177,11 +195,43 @@ def multipart_form_bytes(cfg, body, limit):
             size += len(content)
             if size > limit or len(parts) >= 256:
                 raise ValueError('Multipart request exceeds configured limits')
-            parts.append((name, (name if binary else None, content, media)))
+            supplied = mapped_headers.get(name, {})
+            if not isinstance(supplied, dict):
+                raise ValueError('Multipart part headers must be an object')
+            extra_headers = validate_part_headers(settings, supplied, apply_defaults=True)
+            parts.append((name, (name if binary else None, content, media, extra_headers)))
     if not parts:
         raise ValueError('Multipart request must contain at least one part')
     request = httpx.Request('POST', 'http://localhost', files=parts)
     return request.read(), request.headers['content-type']
+
+
+def validate_part_headers(settings, supplied, *, apply_defaults=False):
+    definitions = {name.lower(): (name, definition) for name, definition in (settings.get('headers') or {}).items()}
+    protected = {'content-type', 'content-disposition', 'content-transfer-encoding',
+                 'connection', 'transfer-encoding', 'content-length'}
+    values = {name.lower(): value for name, value in supplied.items()}
+    if apply_defaults and (values.keys() - definitions.keys() or protected & values.keys()):
+        raise ValueError('Map only declared, non-reserved multipart part headers')
+    output = {}
+    for key, (name, definition) in definitions.items():
+        if key in protected:
+            continue
+        schema = definition.get('schema') or {}
+        value = values.get(key, schema.get('default') if apply_defaults else None)
+        if value is None:
+            if definition.get('required'):
+                raise ValueError(f'Multipart part header {name} is required')
+            continue
+        if isinstance(value, list) or not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", name):
+            raise ValueError('Invalid multipart part header')
+        text = 'true' if value is True else 'false' if value is False else str(value)
+        if not text.isascii() or '\r' in text or '\n' in text:
+            raise ValueError('Invalid multipart part header value')
+        if schema_errors(_primitive(text, schema), schema):
+            raise ValueError(f'Multipart part header {name} violates its schema')
+        output[name] = text
+    return output
 
 
 def decode_multipart_form(cfg, message):
@@ -204,6 +254,15 @@ def decode_multipart_form(cfg, message):
         configured = str(encoding.get(name, {}).get('contentType') or '')
         if configured and media_schema({media.strip(): None for media in configured.split(',')}, content_type)[0] is None:
             raise ValueError('Unexpected multipart part content type')
+        definitions = encoding.get(name, {}).get('headers') or {}
+        part_headers = {}
+        for header in definitions:
+            values = part.get_all(header, [])
+            if len(values) > 1:
+                raise ValueError('Duplicate multipart part header')
+            if values:
+                part_headers[header] = str(values[0])
+        validate_part_headers(encoding.get(name, {}), part_headers)
         content = part.get_payload(decode=True) or b''
         if field.get('format') == 'binary':
             value = base64.b64encode(content).decode()
@@ -296,7 +355,7 @@ def security_requirements(requirements, schemes, dereference):
             kind = scheme.get('type')
             if kind == 'http':
                 kind = str(scheme.get('scheme') or '').lower()
-            alternative.append((kind, scopes))
+            alternative.append((name, kind, scopes, scheme))
         alternatives.append(alternative)
     return alternatives
 
@@ -312,28 +371,61 @@ def compatible_security(cfg):
         'mutualTLS': {'certificate'},
     }
     tls = cfg.get('clientAuthentication') == 'required'
+    secrets = cfg.get('openApiApiKeySecrets') or {}
+    if isinstance(secrets, str):
+        try:
+            secrets = json.loads(secrets)
+        except ValueError:
+            raise ValueError('OpenAPI API key secrets must be a JSON object') from None
+    if not isinstance(secrets, dict) or any(not isinstance(value, str) or not value for value in secrets.values()):
+        raise ValueError('OpenAPI API key secrets must map scheme names to nonempty strings')
+    cfg['_restApiKeySecrets'] = secrets
     compatible = []
     for alternative in cfg.get('_restSecurity', []):
-        if not alternative:
-            compatible.append((False, []))
-            continue
-        credentials = [(kind, scopes) for kind, scopes in alternative if kind != 'mutualTLS']
-        certificate = any(kind == 'mutualTLS' for kind, _ in alternative)
+        credentials = [(kind, scopes) for _, kind, scopes, _ in alternative if kind not in ('mutualTLS', 'apiKey')]
+        certificate = any(kind == 'mutualTLS' for _, kind, _, _ in alternative)
         if certificate and not tls:
             continue
-        if any(scopes for kind, scopes in alternative if kind == 'mutualTLS'):
+        if any(scopes for _, kind, scopes, _ in alternative if kind in ('mutualTLS', 'apiKey')):
+            continue
+        keys = [(name, scheme.get('in'), scheme.get('name')) for name, kind, _, scheme in alternative if kind == 'apiKey']
+        if any(name not in secrets or location not in ('header', 'query', 'cookie')
+               or not isinstance(field, str) or not field for name, location, field in keys):
             continue
         if len(credentials) > 1:
             continue
         if not credentials:
-            compatible.append((certificate, []))
+            compatible.append((certificate, [], keys))
             continue
         kind, scopes = credentials[0]
         if mode in supported.get(kind, ()) and (not scopes or mode in ('oauth2', 'jwt')):
-            compatible.append((certificate, scopes))
+            compatible.append((certificate, scopes, keys))
     if cfg.get('_restSecurity') and not compatible:
         raise ValueError('HTTP connection cannot enforce any declared OpenAPI security alternative')
     return compatible
+
+
+def authorize_contract(cfg, headers, query, claims, verified_mtls):
+    import hmac
+    from http.cookies import SimpleCookie
+
+    alternatives = cfg.get('_restSecurityAlternatives') or []
+    if not alternatives:
+        return
+    scope_claim = claims.get('scope', claims.get('scp', ''))
+    granted = scope_claim.split() if isinstance(scope_claim, str) else scope_claim if isinstance(scope_claim, list) and all(isinstance(value, str) for value in scope_claim) else []
+    cookies = SimpleCookie()
+    cookies.load(str(headers.get('cookie') or ''))
+    values = {'header': headers, 'query': query, 'cookie': {name: cookie.value for name, cookie in cookies.items()}}
+    secrets = cfg['_restApiKeySecrets']
+    def matches(name, location, field):
+        value = values[location].get(field.lower() if location == 'header' else field)
+        return isinstance(value, str) and hmac.compare_digest(value.encode(), secrets[name].encode())
+    for certificate, required, keys in alternatives:
+        if (not certificate or verified_mtls) and set(required).issubset(granted) and all(matches(*key) for key in keys):
+            return
+    from .http_transport import HTTPFault
+    raise HTTPFault('OpenAPI security requirements were not met', 'HTTP_SECURITY', 403)
 
 
 def validate_parameters(cfg,parameters,query,headers,body,decoded=None):

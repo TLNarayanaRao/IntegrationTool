@@ -1,11 +1,11 @@
 {
-  "fingerprint": "083e4c419d20238ec6c69db9da99c0ad3101c99b4ecbb6348a33261dfcd0128d",
+  "fingerprint": "0b9987c5e1ec26deb6e4a3c02013bfab82c3bd18b8c492e70e7e861d7a02190e",
   "files": {
-    "documentation-data.json": "c1323fba7d986aec13ea88e7bee42986e135d64a8f376eb133b148de4091edb1",
-    "documentation-data.js": "5da17a466ccfb2a2cbba109a5b9122962cdc38650d11b143856cccdcd8d3d7a9",
-    "MINA-Documentation.pdf": "ee4eb212cfda2f27f91558d6cd2ae3fa0399e441c9551c5a683b5bc641ef43f7",
-    "developer-data.json": "b99e16c83b6153711078caa88e7ca3e7c7425af437777f7520012b72b97852a4",
-    "MINA-Developer-Guide.pdf": "105c60dcb80b48e8ed1231c008802069b301ac7e881963d74f9766b481ca2455",
+    "documentation-data.json": "26e48fb9598df794506ac6491955a87986b011e6647a2652dbe1d1d5bedd58f2",
+    "documentation-data.js": "6953e9461a59ad06829877fb7b5f7733a81b9dda470ed93a43d92498c7bf2b24",
+    "MINA-Documentation.pdf": "71160b7384275d270b6dcad3c3f6ba167d47df3c442fd34702c051e62e0ae574",
+    "developer-data.json": "74358345d8dcd1c8e997c8db2f2b4c9a3bc704d7309a0ee236a227e547f657d5",
+    "MINA-Developer-Guide.pdf": "d0b0276f2d6f645e06c21bf905a3e6fb9f4daaa18b1672b7aa2a4fe2e5801da1",
     "activity-icons/f3a93a6e7102-start-play.png": "b5224c82d6600f4066260aaf7a163411a394b2445fc3ecadf3584c7be0299e6f",
     "activity-icons/8ef29f8110cc-scheduler.svg": "8ef29f8110cc4993a5c1a3a635444a6cb0c957fdf1b8725e50278d30c3edb8a9",
     "activity-icons/8ef29f8110cc-scheduler.svg.png": "7d42664f162d20872a44faa3b07a9ea2f33660a9f2ad3811f955a0f7e71c6df5",
@@ -159,10 +159,10 @@
     "activity-icons/4d59802e85cf-general-shared-set.svg.png": "2ee4f81937d0faa1beddc804a87314f01fa276290a9f47aa8b9b8a7dedeaacd0"
   },
   "counts": {
-    "activities": 101,
+    "activities": 104,
     "groups": 11,
     "functions": 103,
     "connections": 12,
-    "pages": 379
+    "pages": 385
   }
 }
