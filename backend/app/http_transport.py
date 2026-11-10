@@ -3,10 +3,10 @@ from __future__ import annotations
 import atexit, base64, hashlib, hmac, ipaddress, json, math, os, re, ssl, tempfile, threading, time, urllib.parse, uuid
 from pathlib import Path
 import httpx
-from .rest_contract import operation_config, validate_parameters, wire_parameters
+from .rest_contract import encode_reserved_query, multipart_contract, multipart_form_bytes, operation_config, reserved_query_keys, validate_parameters, wire_parameters
 from .http_messages import request_config, mime_body, response_tree, multi_values, object_value as message_object_value
 from .http_contracts import schema_errors, response_schema,request_schema,media_schema,response_content,parse_json
-from .http_policy import circuit_enter, circuit_result, retry_delay, retryable
+from .http_policy import circuit_enter, circuit_result, outbound_trace, retry_delay, retryable
 
 class HTTPFault(ValueError):
     def __init__(self, message, fault_type='HTTP_SECURITY', status=401):
@@ -141,6 +141,13 @@ def validate_authentication(cfg,server=False):
         elif not _jwt_key(cfg,sign=not server):raise HTTPFault('JWT key is required','HTTP_CONFIGURATION',400)
     elif scheme=='oauth2':
         require('oauthClientId','OAuth client ID')
+        client_auth = str(cfg.get('oauthClientAuthentication') or 'basic')
+        if client_auth not in ('basic', 'body', 'private_key_jwt'):
+            raise HTTPFault('Unsupported OAuth client authentication method','HTTP_CONFIGURATION',400)
+        if client_auth == 'private_key_jwt':
+            require('oauthClientPrivateKeyFile', 'OAuth client signing key')
+            if str(cfg.get('oauthClientAssertionAlgorithm') or 'RS256') not in ('RS256', 'RS384', 'RS512', 'ES256', 'ES384', 'ES512'):
+                raise HTTPFault('OAuth client assertions require a supported asymmetric algorithm','HTTP_CONFIGURATION',400)
         secure_url(str(cfg.get('oauthIntrospectionUrl' if server else 'oauthTokenUrl') or ''),{**cfg,'confidentiality':True})
     elif scheme=='ldap':
         require('ldapUrl','LDAP URL')
@@ -216,9 +223,33 @@ def jwt_token(cfg):
     if cfg.get('jwtAudience'):claims['aud']=cfg['jwtAudience']
     return jwt.encode(claims,key,algorithm=algorithm)
 
+def oauth_client_auth(cfg, endpoint, data):
+    client_id = str(cfg.get('oauthClientId') or '')
+    secret = str(cfg.get('oauthClientSecret') or '')
+    method = cfg.get('oauthClientAuthentication') or 'basic'
+    if method == 'basic':
+        return (client_id, secret)
+    if method == 'body':
+        data.update(client_id=client_id, client_secret=secret)
+        return None
+    import jwt
+    now = int(time.time())
+    claims = {'iss':client_id, 'sub':client_id, 'aud':endpoint, 'iat':now, 'exp':now + 60, 'jti':uuid.uuid4().hex}
+    key_id = cfg.get('oauthClientAssertionKeyId')
+    try:
+        assertion = jwt.encode(claims, Path(cfg['oauthClientPrivateKeyFile']).expanduser().read_bytes(),
+                               algorithm=cfg.get('oauthClientAssertionAlgorithm') or 'RS256',
+                               headers={'kid': str(key_id)} if key_id else None)
+    except (OSError, KeyError, ValueError, jwt.PyJWTError):
+        raise HTTPFault('Could not sign the OAuth client assertion','HTTP_CONFIGURATION',400) from None
+    data.update(client_id=client_id, client_assertion=assertion,
+                client_assertion_type='urn:ietf:params:oauth:client-assertion-type:jwt-bearer')
+    return None
+
+
 def _oauth(cfg,client):
     token_url=secure_url(str(cfg.get('oauthTokenUrl') or ''),{**cfg,'confidentiality':True})
-    key=hashlib.sha256((_fingerprint(cfg)+json.dumps({k:cfg.get(k) for k in ('oauthTokenUrl','oauthClientId','oauthClientSecret','oauthScope','oauthGrantType','oauthRefreshToken','oauthAuthorizationCode','oauthRedirectUri')},sort_keys=True)).encode()).hexdigest()
+    key=hashlib.sha256((_fingerprint(cfg)+json.dumps({k:cfg.get(k) for k in ('oauthTokenUrl','oauthClientId','oauthClientSecret','oauthScope','oauthGrantType','oauthRefreshToken','oauthAuthorizationCode','oauthRedirectUri','oauthClientPrivateKeyFile','oauthClientAssertionAlgorithm','oauthClientAssertionKeyId')},sort_keys=True)).encode()).hexdigest()
     # Lock prevents simultaneous refreshes and authorization-code re-use.
     with _SECURITY_LOCK:
         cached=_TOKENS.get(key)
@@ -232,10 +263,9 @@ def _oauth(cfg,client):
         elif grant=='authorization_code':data.update(code=cfg.get('oauthAuthorizationCode'),redirect_uri=cfg.get('oauthRedirectUri'))
         elif grant!='client_credentials':raise HTTPFault('Unsupported OAuth grant','HTTP_CONFIGURATION',400)
         if cfg.get('oauthCodeVerifier'):data['code_verifier']=cfg['oauthCodeVerifier']
-        cid=str(cfg.get('oauthClientId') or '');secret=str(cfg.get('oauthClientSecret') or '')
+        cid=str(cfg.get('oauthClientId') or '')
         if not cid:raise HTTPFault('OAuth client ID is required','HTTP_CONFIGURATION',400)
-        auth=(cid,secret) if str(cfg.get('oauthClientAuthentication') or 'basic')=='basic' else None
-        if not auth:data.update(client_id=cid,client_secret=secret)
+        auth=oauth_client_auth(cfg, token_url, data)
         try:
             response=client.post(token_url,data=data,auth=auth,timeout=number(cfg,'oauthTimeoutSeconds',30,1,300),follow_redirects=False);response.raise_for_status();body=response.json()
             token=body['access_token'];expires=float(body.get('expires_in',60))
@@ -293,6 +323,8 @@ def request(cfg,connection=None):
     secure_url(url,cfg);method=str(cfg.get('method') or 'GET').upper()
     if method not in ('GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','TRACE'):raise HTTPFault('Unsupported HTTP method','HTTP_CONFIGURATION',400)
     headers={str(k).lower():([str(item) for item in v] if isinstance(v,list) else str(v)) for k,v in cfg['headers'].items()}
+    if boolean(cfg.get('propagateTraceContext')) and 'traceparent' not in headers:
+        outbound_trace(headers)
     if any('\r' in k+str(v) or '\n' in k+str(v) for k,v in headers.items()):raise HTTPFault('HTTP headers cannot contain newlines','HTTP_CONFIGURATION',400)
     if cfg.get('accept'):headers.setdefault('accept',str(cfg['accept']))
     if cfg.get('contentType'):headers.setdefault('content-type',str(cfg['contentType']))
@@ -303,6 +335,11 @@ def request(cfg,connection=None):
     if errors:raise HTTPFault('; '.join(errors),'REST_VALIDATION',400)
     headers=wire_parameters(cfg,'header',headers)
     query_parameters = wire_parameters(cfg, 'query', mapped_query)
+    query = httpx.QueryParams(parts.query).merge(query_parameters) if query_parameters else None
+    reserved = reserved_query_keys(cfg, mapped_query)
+    if reserved and query is not None:
+        url = urllib.parse.urlunsplit(parts._replace(path=path, query=encode_reserved_query(query.multi_items(), reserved)))
+        query = None
     request_type=str(headers.get('content-type') or '')
     if body is not None and cfg.get('_restRequestSchemas') and media_schema(cfg['_restRequestSchemas'],request_type)[0] is None:raise HTTPFault('Unsupported request content type','REST_UNSUPPORTED_MEDIA',415)
     schema=request_schema(cfg,request_type)
@@ -321,6 +358,11 @@ def request(cfg,connection=None):
         except (ValueError,TypeError,OSError) as error:raise HTTPFault(str(error),'HTTP_CONFIGURATION',400) from None
         headers={key:value for key,value in headers.items() if key.lower()!='content-type'};headers['content-type']=mime_type
     elif body is None:raw=b''
+    elif multipart_contract(cfg, media_type) and body_type == 'json':
+        try:
+            raw, headers['content-type'] = multipart_form_bytes(cfg, body, int(number(cfg,'maxRequestBodyBytes',64*1024**2,1)))
+        except (ValueError, TypeError) as error:
+            raise HTTPFault(str(error),'REST_VALIDATION',400) from None
     elif body_type=='form':raw=urllib.parse.urlencode(object_value(body,'Form body'),doseq=True).encode();headers.setdefault('content-type','application/x-www-form-urlencoded')
     elif body_type=='file':
         source=Path(str(body))
@@ -369,7 +411,6 @@ def request(cfg,connection=None):
             try:
                 if time.monotonic()>=deadline:raise HTTPFault('HTTP activity timeout','HTTP_TIMEOUT',504)
                 pairs=[(key,item) for key,value in headers.items() for item in (value if isinstance(value,list) else [value])]
-                query=httpx.QueryParams(parts.query).merge(query_parameters) if query_parameters else None
                 from .http_streams import ReplayStream
                 content=ReplayStream(content_factory) if content_factory else raw if body is not None or '_mimeEnvelope' in cfg else None
                 req=client.build_request(method,url,params=query,headers=pairs,content=content,timeout=timeout)
@@ -393,7 +434,9 @@ def request(cfg,connection=None):
                         response.close()
                         if time.monotonic()+delay>=deadline:raise HTTPFault('HTTP retry exceeds activity timeout','HTTP_TIMEOUT',504)
                         time.sleep(delay);continue
-                    destination=cfg.get('responseFile');temporary=None;sink=None
+                    has_body=method!='HEAD' and response.status_code not in (204,205,304)
+                    destination=cfg.get('responseFile') if has_body else None
+                    temporary=None;sink=None
                     if destination:
                         if cfg.get('responseSchema') or cfg.get('_restResponseSchemas'):raise HTTPFault('File download mode cannot bypass configured response schemas','HTTP_CONFIGURATION',400)
                         target=Path(destination).expanduser()
@@ -401,7 +444,7 @@ def request(cfg,connection=None):
                         handle=tempfile.NamedTemporaryFile(prefix='.mina-download-',dir=target.parent,delete=False);temporary=Path(handle.name);sink=handle
                     chunks=[];size=0
                     try:
-                        for chunk in response.iter_bytes(chunk_size=int(number(cfg,'responseBufferSize',65536,1024,1024**2))):
+                        for chunk in response.iter_bytes(chunk_size=int(number(cfg,'responseBufferSize',65536,1024,1024**2))) if has_body else ():
                             size+=len(chunk)
                             if size>maximum:raise HTTPFault('HTTP response body limit exceeded','HTTP_BAD_RESPONSE',502)
                             if time.monotonic()>deadline:raise HTTPFault('HTTP activity timeout','HTTP_TIMEOUT',504)
@@ -423,7 +466,6 @@ def request(cfg,connection=None):
                     valid=str(cfg.get('successStatusCodes') or '200-299')
                     accepted=any(int(part.split('-')[0])<=response.status_code<=int(part.split('-')[-1]) for part in valid.replace(' ','').split(','))
                     schema=response_schema(cfg,response.status_code,response.headers.get('content-type',''))
-                    has_body=method!='HEAD' and response.status_code not in (204,304)
                     if has_body and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and response_content(cfg,response.status_code) and media_schema(response_content(cfg,response.status_code),response_type)[0] is None:raise HTTPFault('Undeclared response content type','REST_VALIDATION',502)
                     if has_body and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and schema is not None and schema_errors(value,schema):raise HTTPFault('Response schema validation failed','REST_VALIDATION',502)
                     if boolean(cfg.get('raiseForStatus'),True) and not accepted:
@@ -538,7 +580,9 @@ def authorize(cfg,method,target,headers,body=b'',peer_verified=False):
         endpoint=secure_url(str(cfg.get('oauthIntrospectionUrl') or ''),{**cfg,'confidentiality':True})
         if not authorization.startswith('Bearer ') or not authorization[7:]:raise HTTPFault('Authentication failed')
         try:
-            response=client_for(cfg).post(endpoint,data={'token':authorization[7:]},auth=(str(cfg.get('oauthClientId') or ''),str(cfg.get('oauthClientSecret') or '')),timeout=number(cfg,'oauthTimeoutSeconds',30,1,300),follow_redirects=False);response.raise_for_status();claims=response.json()
+            data = {'token': authorization[7:]}
+            auth = oauth_client_auth(cfg, endpoint, data)
+            response=client_for(cfg).post(endpoint,data=data,auth=auth,timeout=number(cfg,'oauthTimeoutSeconds',30,1,300),follow_redirects=False);response.raise_for_status();claims=response.json()
             if claims.get('active') is not True or claims.get('exp') is not None and (not math.isfinite(float(claims['exp'])) or float(claims['exp'])<=time.time()):raise ValueError()
             scopes=set(str(claims.get('scope') or '').split())
             if not set(str(cfg.get('oauthRequiredScopes') or '').split()).issubset(scopes):raise ValueError()

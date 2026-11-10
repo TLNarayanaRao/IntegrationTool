@@ -321,6 +321,17 @@ class DebugManager:
         return self.view(state)
 
     async def step(self, state: dict, enter_subtask=False):
+        trace = state.get('_httpTraceContext')
+        if trace is None:
+            return await self._step(state, enter_subtask)
+        from .http_policy import trace_context
+        token = trace_context.set(trace)
+        try:
+            return await self._step(state, enter_subtask)
+        finally:
+            trace_context.reset(token)
+
+    async def _step(self, state: dict, enter_subtask=False):
         if state.get('stopRequested'):
             state['status'] = 'stopped'
             return

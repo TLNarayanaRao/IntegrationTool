@@ -10,6 +10,22 @@ Activity Configuration, Input, Output, Advanced and Errors sections are generate
 
 Only explicitly selected product source files and guides are read. The generator does not inspect project data, environment credentials or user payloads. Existing implementation limitations are documented, not claimed as implemented.
 
+## Project Explorer and task canvas
+
+New projects start with a Sub Task containing Start and End. Use a Starter Task when an external event, such as HTTP, a timer, or a message, starts the workflow. Use **Call Sub Task** to invoke reusable logic. Starter and Sub Task icons distinguish the two in Project Explorer.
+
+Tasks, shared connections, and schemas belong to packages. Right-click their category or an existing package and choose **New Package** to create a top-level or nested folder. Choose the package when creating an item. **Default** is available for each category. Right-click an existing item and choose **Move to Package** to organize it without changing its references. Studio replaces spaces with hyphens in object names.
+
+Package contents appear below their folder. If a name is shortened in a narrow Project Explorer, hover over it to see the full name or drag the pane divider to widen it.
+
+When you first add a protocol activity or shared connection, Studio adds the relevant missing environment properties. Connection setup also offers those properties for binding. Review the generated defaults in the active environment before running the task.
+
+Use **Magnify orchestrator** on the canvas and hover to see a 2× preview. Press Escape to turn it off. Select a transition to set its **Line color** or choose **Reset color** to restore the default. Close task tabs individually or use **Close All** to clear the canvas.
+
+Use the **Theme** selector to choose **Plain Classic**, **Plain Studio**, or another Studio appearance. The theme affects the Studio interface.
+
+The welcome screen shows packets moving along the integration routes. Use **Pause route animation** to stop them or **Play route animation** to start them. Until you choose a setting, the packets follow the Windows or browser reduced-motion preference. Studio remembers your choice.
+
 ## JDBC query and writes
 
 Use `:name` parameters for Query, Update, and Insert, and map each value under **Input → parameters**. To execute multiple records together, enable **Batch update** and map **records**. An empty list writes zero rows. For **Insert if record does not exist**, map an INSERT statement to **InsertStatement** and provide the parameters used by both statements. MINA runs the INSERT only when the UPDATE affects zero rows. If you need an atomic upsert across concurrent executions, use your database's native upsert statement.

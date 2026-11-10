@@ -8,6 +8,10 @@ MINA has three independently distributable components:
 2. **Control Plane** — a Linux or Windows management plane for data planes, capabilities, applications, resources, access, observability, and package deployment.
 3. **Runtime package** — a portable `.mpkg`, `.tar.gz`, or `.ear`-compatible archive produced by Studio for either an on-premises or Kubernetes data plane.
 
+## Windows installation progress
+
+The assisted Windows installers display a checklist during setup. Studio lists the app, local runtime, and background worker. Control Plane lists the desktop app. The installer checks off the bundled components together after extraction, then marks Windows registration and shortcuts complete.
+
 ## Build Studio on Windows
 
 Prerequisites:

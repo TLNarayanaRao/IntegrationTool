@@ -580,7 +580,7 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
         add('HTTP contracts', ['jsonschema','yaml','regex','lxml.etree'], 'python -m pip install jsonschema PyYAML regex lxml')
     if any(kind == 'http_listener' or kind == 'rest' and op == 'receiver' or kind == 'soap' and op == 'service' for kind,op in activity_pairs):
         add('HTTP server', ['uvicorn'], 'python -m pip install uvicorn')
-    if any(str(c.get('authentication','')).lower()=='jwt' for c in http_configs):add('JWT authentication',['jwt'],'python -m pip install PyJWT cryptography')
+    if any(str(c.get('authentication','')).lower()=='jwt' or c.get('oauthClientAuthentication') == 'private_key_jwt' for c in http_configs):add('JWT authentication',['jwt','cryptography'],'python -m pip install PyJWT cryptography')
     if any(str(c.get('authentication','')).lower()=='ldap' for c in http_configs):add('LDAP authentication',['ldap3'],'python -m pip install ldap3')
     if any(str(c.get('authentication','')).lower()=='ntlm' for c in http_configs):add('NTLM authentication',['httpx_ntlm'],'python -m pip install httpx-ntlm')
     if any(str(c.get('httpVersion',''))=='2' for c in http_configs):add('HTTP/2',['h2'],'python -m pip install h2')
@@ -615,7 +615,7 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
             cfg = activity.get('config') or {}
             if activity.get('type') in {'java', 'python'} and cfg.get('artifactPath'):
                 external.append(str(cfg['artifactPath']))
-    certificate_keys = ('trustedCertificateFolder','trustStoreFile','certificateAuthorityFile','identityStoreFile','certificateFile','privateKeyFile','clientCertificateFile','clientKeyFile','crlFile','jwtPrivateKeyFile','jwtPublicKeyFile','ldapCaFile')
+    certificate_keys = ('trustedCertificateFolder','trustStoreFile','certificateAuthorityFile','identityStoreFile','certificateFile','privateKeyFile','clientCertificateFile','clientKeyFile','crlFile','jwtPrivateKeyFile','jwtPublicKeyFile','ldapCaFile','oauthClientPrivateKeyFile')
     configurations = [resource.get('config') or {} for resource in project.get('resources', [])]
     configurations += [activity.get('config') or {} for task in project.get('tasks', []) for activity in task.get('activities', [])]
     for cfg in configurations:

@@ -118,10 +118,13 @@ class HostedDocumentTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_live_debug_request_pauses_then_returns_response_and_rearms(self):
         from app import main
+        from app.http_policy import trace_context
         from app.models import DebugRequest
         from starlette.requests import Request
         with socket.socket() as probe:probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
         project,_=plan_project(port);task=project.tasks[0];response=task.activities[1]
+        project.resources[0].config['propagateTraceContext'] = True
+        trace_id = '0af7651916cd43dd8448eb211c80319c'
         request=Request({'type':'http','scheme':'http','server':('127.0.0.1',8787),'path':'/','headers':[],'root_path':''})
         session=None
         with patch.object(main,'get_project',return_value=project),patch.object(main,'append_project_logs'):
@@ -131,13 +134,21 @@ class HostedDocumentTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(view['status'],'listening');self.assertIn('docsUrl',state['endpoints'][0])
                 async with httpx.AsyncClient(trust_env=False,timeout=10) as client:
                     self.assertEqual((await client.get(f'http://127.0.0.1:{port}/_mina/docs')).status_code,200)
-                    pending=asyncio.create_task(client.get(f'http://127.0.0.1:{port}/orders/42'))
+                    pending=asyncio.create_task(client.get(f'http://127.0.0.1:{port}/orders/42',
+                        headers={'traceparent':f'00-{trace_id}-b7ad6b7169203331-01'}))
                     for _ in range(100):
                         if state['status']=='paused':break
                         await asyncio.sleep(.01)
                     self.assertEqual(state['status'],'paused');self.assertFalse(pending.done())
                     busy=await client.get(f'http://127.0.0.1:{port}/health');self.assertEqual(busy.status_code,503)
-                    await main.debugger.action(session,'continue')
+                    original_step = main.debugger._step
+                    async def check_trace(*args, **kwargs):
+                        self.assertEqual(trace_context.get()[0], trace_id)
+                        return await original_step(*args, **kwargs)
+                    self.assertIsNone(trace_context.get())
+                    with patch.object(main.debugger, '_step', side_effect=check_trace):
+                        await main.debugger.action(session,'continue')
+                    self.assertIsNone(trace_context.get())
                     result=await pending;self.assertEqual(result.status_code,200);self.assertEqual(result.json(),{'id':'${input.secret}'})
                     self.assertEqual(state['status'],'listening')
                     state['breakpoints'].clear()

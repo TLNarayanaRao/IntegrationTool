@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio, ipaddress, json, re, threading, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from .http_transport import HTTPFault, authorize, boolean, number, tls_context, validate_authentication
-from .rest_contract import listener_parameters, operation_config
+from .rest_contract import compatible_security, listener_parameters, operation_config
 from .http_contracts import listener_media_types, media_name, media_schema, schema_for_media
 
 def route_pattern(path):
@@ -64,6 +64,7 @@ def listener_config(connection,activity):
     cfg['methods'] = methods
     try:
         cfg['_restParameters'] = listener_parameters(cfg, route_pattern(path)[1])
+        cfg['_restSecurityAlternatives'] = compatible_security(cfg)
     except (ValueError, KeyError, TypeError) as error:
         raise HTTPFault(str(error), 'HTTP_CONFIGURATION', 400) from None
     minimum=int(number(cfg,'minimumQtpThreads',10,1,10000));maximum=int(number(cfg,'maximumQtpThreads',75,minimum,10000))
@@ -71,6 +72,8 @@ def listener_config(connection,activity):
     if str(cfg.get('httpVersion') or '1.1') not in ('1.1','2'):raise HTTPFault('HTTP listener version must be 1.1 or 2','HTTP_CONFIGURATION',400)
     if str(cfg.get('httpVersion'))=='2' and not server_tls(cfg):raise HTTPFault('Inbound HTTP/2 requires HTTPS','HTTP_CONFIGURATION',400)
     if str(cfg.get('authentication') or '').lower()=='certificate' and (not server_tls(cfg) or cfg.get('clientAuthentication')!='required'):raise HTTPFault('Certificate authentication requires HTTPS and required client certificates','HTTP_CONFIGURATION',400)
+    if cfg.get('clientAuthentication') == 'required' and not server_tls(cfg):
+        raise HTTPFault('Required client certificates need HTTPS','HTTP_CONFIGURATION',400)
     return cfg
 
 def server_tls(cfg):return str(cfg.get('scheme') or '').lower()=='https' or boolean(cfg.get('tlsEnabled')) or boolean(cfg.get('confidentiality')) or boolean(cfg.get('defaultConfidentiality'))

@@ -2,6 +2,7 @@
 from __future__ import annotations
 import asyncio
 from .http_transport import HTTPFault
+from .http_policy import trace_context
 
 def finish_request(state,error=None):
     pending=state.get('httpPending')
@@ -18,6 +19,7 @@ class HTTPDebugBridge:
         if self.busy:raise HTTPFault('A request is already being debugged. Continue or stop that request first.','HTTP_DEBUG_BUSY',503)
         if state.get('stopRequested') or state.get('status')!='listening':raise HTTPFault('HTTP debugger is not listening','HTTP_DEBUG_UNAVAILABLE',503)
         self.busy=True;pending=asyncio.get_running_loop().create_future();state['httpPending']=pending
+        state['_httpTraceContext'] = trace_context.get()
         task_id,activity_id=metadata
         state.update(listenerTaskId=task_id,listenerActivityId=activity_id)
         task=next(item for item in state['project'].tasks if item.id==task_id)
@@ -37,6 +39,7 @@ class HTTPDebugBridge:
             raise
         finally:
             state.pop('httpPending',None)
+            state.pop('_httpTraceContext',None)
             if not pending.done():pending.cancel()
             elif not pending.cancelled():pending.exception()  # Observe an error if trigger_event raised first.
             self.busy=False

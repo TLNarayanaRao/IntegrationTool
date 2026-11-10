@@ -24,7 +24,9 @@ This is MINA's Python equivalent of default TLS confidentiality, using the runti
 
 For HTTP Request and REST Invoke, map the contract, operation ID, reference documents/origins and request/response validation settings under **Input → RestInputRequest.Config**. Existing configuration values are shown as typed mappings. Configuration keeps the display name and shared connection selector. JSON/XSD validation and contract selection can use properties or upstream values; XSD validation uses offline lxml validation with self-contained schemas. Generated archives include the required dependencies. Listener routing stays in startup configuration.
 
-REST Receiver starts a task when its configured method and path match a request. Add an HTTP response activity to control status, headers and body. Run starts a real listener on the shared connection's host and port, and Stop releases the port. Multiple exported receiver tasks can share a port when their transport settings agree and their routes do not conflict.
+Create a **Starter Task** and choose **HTTP Listener** or **REST API Receiver**. In endpoint setup, select the HTTP server shared connection, methods, route, supported request and response content types, and any request or response schema. Use **Create new connection** in the shared connection picker if needed. Studio creates the listener or receiver and an **HTTP Send Response** activity. Schema controls display the selected schema name. Selecting a project schema copies its current definition, so reselect it after editing that definition when the endpoint needs the update.
+
+The receiver starts a task when its configured method and path match a request. Run starts a real listener on the shared connection's host and port, and Stop releases the port. Multiple exported receiver tasks can share a port when their transport settings agree and their routes do not conflict.
 
 Use **HTTP Response** on the same workflow path to reply to a REST Receiver's caller. Studio may name the generated node **HTTP-Send-Response**. Set the status code and map the response body and any headers there.
 
@@ -111,7 +113,7 @@ Configure exact **Allowed browser origins** on a server connection to enable COR
 
 For JWT issuer key rotation, set an explicit HTTPS **JWT verification JWKS URL**, asymmetric signature algorithm, expected issuer and audience. The endpoint comes from configuration, never from token headers. Keys are cached for 300 seconds by default; an unknown `kid` can refresh after a default 10-second cooldown. Discovery is bounded to 1 MiB/128 keys and uses configured TLS trust. Symmetric JWKS algorithms, mismatched algorithms and unsuitable keys are rejected. Missing keys or discovery failures never bypass signature checks.
 
-Set **Requests per client/window** above zero to enable fixed-window throttling. The key uses the actual remote IP and route. Exceeding the limit returns 429 and `Retry-After`. Redis storage shares counts across replicas; memory storage applies within one runtime. Behind a proxy, the actual peer is the proxy: terminate per-user/IP policies there when required. Forwarded headers are not trusted automatically.
+Set **Requests per client/window** above zero to enable fixed-window throttling. The key uses the effective client IP and route. Exceeding the limit returns 429 and `Retry-After`. Redis storage shares counts across replicas. Memory storage applies within one runtime. Set **Trusted proxy IPs / CIDRs** if a trusted proxy supplies client addresses.
 
 ### Retries and circuit breakers
 
@@ -153,7 +155,23 @@ Direct archives can run with `python run.py` after extraction or as a Python zip
 
 ## Reference documentation and scope
 
-The HTTP runtime supports the capabilities listed above. Its OpenAPI support covers the operations and validation rules described in this guide.
+Use the activity's **Documentation** tab for its own Configuration, Input, Output, and Errors reference. In **Help → MINA Documentation**, search for **HTTP and REST activity verification** for the supported test matrix and remaining standards gaps.
+
+### OpenAPI security and multipart forms
+
+Select a server connection that can enforce the imported operation's security. At startup, MINA uses operation-level OpenAPI security, or inherits the top-level declaration if the operation omits it. The listener refuses to start if the connection cannot satisfy any alternative. Supported alternatives include Basic/LDAP, Bearer/JWT/OAuth2 as appropriate to the declared scheme, and required mutual TLS, including mutual TLS combined with one supported credential scheme. Required OAuth scopes must be present in the validated token. The configured connection can require authentication even on operations that permit anonymous callers. API keys and combinations of multiple independent application credentials are outside this configuration model.
+
+For a contract with `multipart/form-data`, map the **RequestBody** object using the form property names. Arrays generate repeated parts. Nested objects are encoded as JSON and fields declared as `format: binary` take base64 data. Supported per-property `encoding.contentType` values set the wire part type. The receiving workflow sees a typed object under `body` and the MIME tree under `mimeEnvelopeElement`. Use explicit MIME mappings for additional per-part headers or streamed attachments. The contract-driven form serializer buffers the request and enforces the configured size limit.
+
+Outbound query parameters with OpenAPI `allowReserved: true` preserve URI-safe reserved characters and valid percent escapes. Delimiters that could create another query parameter or a URL fragment remain escaped.
+
+### Shared HTTP policies
+
+- Set **Listener error response format** to **problem** for RFC 9457 `application/problem+json` errors produced by the listener. Existing connections default to the original JSON error shape. Workflow responses still use the body and content type mapped in HTTP Send Response.
+- Set **Trusted proxy IPs / CIDRs** only for proxies you control that maintain the `X-Forwarded-For` chain. MINA checks the immediate peer and walks the chain from right to left. The effective address appears in `clientIp` and applies to IP allowlists and rate limits. The original peer remains in `remote`.
+- Enable **Propagate HTTP trace context** on the inbound and outbound connections to link version 00 `traceparent` headers across a workflow. The listener exposes `traceId`. This propagates identifiers and does not export trace spans.
+- Enable **Conditional GET and HEAD** and map `ETag` or `Last-Modified` response headers to return 304 when the request validators match. The workflow still runs. The option does not cache responses or enforce write preconditions.
+- For OAuth client assertions, select **private_key_jwt** and set the registered PEM key path, asymmetric algorithm, and optional key ID. The runtime signs a short-lived assertion for the configured HTTPS token or introspection URL. Provide the signing key separately on the runtime host.
 
 ## Deployment qualification
 
@@ -165,7 +183,7 @@ In HTTP Listener and REST Receiver setup or Configuration, check one or more **R
 
 URL-encoded form fields use declared primitive schema types before validation, including repeated primitive arrays. Direct archives also accept the default HTTP Response operation, matching runtime behavior.
 
-When body format is omitted, outbound text/XML content is sent as text and URL-encoded form content is encoded as form data. Explicit body format settings retain precedence. Text responses such as `42` remain strings. Malformed nonempty JSON and NaN/Infinity are rejected; binary response mode retains raw content. HEAD, 204 and 304 responses skip body schema validation because they have no response content. TRACE is supported as an optional API operation; CONNECT proxy tunneling is not offered as an API method.
+When body format is omitted, outbound text/XML content is sent as text and URL-encoded form content is encoded as form data. Explicit body format settings retain precedence. Text responses such as `42` remain strings. Malformed nonempty JSON and NaN/Infinity are rejected; binary response mode retains raw content. HEAD, 204, 205 and 304 responses skip body schema validation because they have no response content. TRACE is supported as an optional API operation; CONNECT proxy tunneling is not offered as an API method.
 
 Studio preview resolves methods and paths from the selected API contract, including HEAD, OPTIONS and 405 behavior. Signed previews use the actual encoded public request target. A connection requiring HTTPS must use an HTTPS endpoint; plain HTTP preview cannot bypass confidentiality.
 

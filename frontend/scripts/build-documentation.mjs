@@ -24,12 +24,12 @@ const readHelpAsset = async (directory, name) => {
 const guides = [
  ['Getting started', 'DOCUMENTATION.md'],
  ['Data', 'PARSE_RENDER_ACTIVITIES.md'],
- ['Mapping', 'TRANSFORMATION_CAPABILITIES.md'], ['Studio', 'DEBUG_TESTING.md'], ['Studio', 'DEBUGGING.md'], ['Studio', 'FILE_UTILITIES.md'],
+ ['Mapping', 'TRANSFORMATION_CAPABILITIES.md'], ['Studio', 'DEBUG_TESTING.md'], ['Studio', 'DEBUGGING.md'], ['Studio', 'execution-analytics.md'], ['Studio', 'FILE_UTILITIES.md'],
  ['Operations', 'RUNTIME_LOGGING.md'], ['Operations', 'LINUX_SETUP.md'],
- ['Deployment', 'PYTHON_EXPORT.md'],
+ ['Deployment', 'PYTHON_EXPORT.md'], ['Deployment', 'BUILDING_AND_DISTRIBUTION.md'],
  ['Deployment', 'VENDOR_DRIVERS.md'], ['Deployment', 'ENVIRONMENT_VARIABLES.md'],
  ['Connectors', 'SAP_INTEGRATION.md'], ['Connectors', 'EMS_RUN_CONNECTION_REUSE.md'],
- ['Connectors', 'KAFKA_PUBLISHING.md'], ['Connectors', 'HTTP_REST_CAPABILITIES.md'], ['Security', 'SECURITY_REVIEW_2026-09-22.md'],
+ ['Connectors', 'KAFKA_PUBLISHING.md'], ['Connectors', 'HTTP_REST_CAPABILITIES.md'], ['Connectors', 'HTTP_REST_ACTIVITY_VERIFICATION.md'], ['Security', 'SECURITY_REVIEW_2026-09-22.md'],
  ['Security', 'WEB_DEPENDENCY_SECURITY.md'],
 ];
 const sourceFiles = [...new Set(['frontend/src/main.tsx', 'frontend/src/studioObjectName.ts', 'frontend/src/taskEntry.ts', 'frontend/src/ActivityEditor.tsx', 'frontend/src/ActivityPicker.tsx', 'frontend/src/mapper-functions.ts', 'frontend/package.json', 'backend/app/runtime.py', 'backend/app/sap.py', 'backend/app/java_bridge.py', 'java-bridge/src/com/mina/bridge/MinaJavaBridge.java', 'frontend/scripts/connector-documentation.mjs', 'frontend/scripts/build-documentation.mjs', 'scripts/build-documentation-pdf.py', 'frontend/public/help/documentation.js', 'frontend/public/help/documentation.css', 'frontend/public/help/index.html', ...developerSources, ...guides.map(([, f]) => `docs/${f}`)])];
@@ -117,7 +117,7 @@ for (const pack of defs.packs) for (const entry of pack.items) {
  const node = { type: entry.type, config: { operation: entry.operation || '' } };
  let contract = defs.activityContract(node);
  if (!contract || !Array.isArray(contract.configuration)) throw new Error(`Missing activity contract: ${entry.type}/${entry.operation}`);
- const doc = defs.activityDocumentation[entry.type];
+ const doc = defs.activityDocumentation[entry.type === 'rest' ? (entry.operation === 'invoke' ? 'rest_invoke' : 'rest_receiver') : entry.type];
  const advanced = defs.advancedDefaults(entry.type, entry.operation);
  const detail = connectorDetails(entry.type, entry.operation, contract);
  if (['kafka','sap','ems'].includes(entry.type) && !detail) throw new Error(`Missing detailed activity guide: ${entry.type}/${entry.operation}`);

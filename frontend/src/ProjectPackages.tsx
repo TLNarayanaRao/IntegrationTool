@@ -47,14 +47,14 @@ export function PackageTree<T extends PackageItem>({ paths, items, indent, isCol
     const expanded = !isCollapsed(path);
     return <div className="explorer-package" key={path}>
       <button type="button" className="tree-row explorer-package-row" aria-expanded={expanded} title={path}
-        style={{paddingInlineStart: indent + depth * 12}}
+        style={{paddingInlineStart: `min(${indent + depth * 12}px, 55%)`}}
         onClick={() => toggle(path)} onContextMenu={event => { event.preventDefault(); onMenu(event, path); }}>
         {expanded ? <ChevronDown/> : <ChevronRight/>}{expanded ? <FolderOpen/> : <Folder/>}
-        <span>{path.slice(path.lastIndexOf("/") + 1)}</span>
+        <span className="explorer-item-name">{path.slice(path.lastIndexOf("/") + 1)}</span>
       </button>
       {expanded && <>
         {render(path, depth + 1)}
-        <div style={{paddingInlineStart: depth * 12 + indent - 12}}>
+        <div className="explorer-package-items" style={{paddingInlineStart: `min(${indent + depth * 12 + 24}px, 60%)`}}>
           {contents.get(path)?.map(renderItem)}
         </div>
       </>}

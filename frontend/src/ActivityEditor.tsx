@@ -550,6 +550,8 @@ export function activityContract(n: any): Contract {
         d("fileName", "Temporary uploaded file"),
         d("size", "Uploaded byte count", "integer"),
         d("headerPairs", "All received header pairs", "array"),
+        d("clientIp", "Client IP", "string"),
+        d("traceId", "HTTP trace ID", "string"),
         d("headers", "Request headers", "object"),
         d("query", "Query parameters", "object"),
         d("pathParameters", "Path parameters", "object"),
@@ -653,6 +655,8 @@ export function activityContract(n: any): Contract {
         d("fileName", "Temporary uploaded file"),
         d("size", "Uploaded byte count", "integer"),
         d("headerPairs", "All received header pairs", "array"),
+        d("clientIp", "Client IP", "string"),
+        d("traceId", "HTTP trace ID", "string"),
         d("headers", "Headers", "object"),
         d("query", "Query parameters", "object"),
         d("pathParameters", "URI parameters", "object"),
@@ -1577,11 +1581,12 @@ function formatInputMappings(config: any, contract: Contract) {
 const activityDocumentation: Record<string, { summary: string; behavior: string }> = {
   http_listener: {
     summary: "Starts a Starter Task when an inbound HTTP request matches its configured method and path.",
-    behavior: "Run or Debug deploys the task and publishes its live Studio endpoint. A selected request schema exposes its fields in Output and downstream mappings. JSON fields appear under body. Parsed XSD fields appear under xmlBody, with the original XML available under body. Headers, query parameters, method, path, and path parameters are also available.",
+    behavior: "Choose the server connection, methods, route, content types, and schema references when creating the task. Setup adds HTTP Send Response for the reply. Run or Debug shows the live endpoint, Swagger link, and Postman download when API documentation is enabled. JSON request fields appear under body. Parsed XSD fields appear under xmlBody, with the original XML under body.",
   },
-  http: { summary: "Sends an outbound HTTP request and exposes the response to downstream activities.", behavior: "The shared HTTP connection supplies base address, security, TLS, proxy, and timeout defaults. Activity values and mapped inputs override defaults at execution time." },
-  http_response: { summary: "Completes the active inbound HTTP exchange.", behavior: "Status, headers, and body are returned to the caller that triggered the listener. Place it on the same execution path as the inbound HTTP, REST, or SOAP event." },
-  rest: { summary: "Hosts or invokes a REST operation, depending on the selected operation.", behavior: "A Receiver starts the task from an inbound request. Its selected request schema exposes JSON fields under body and parsed XSD fields under xmlBody. Invoke performs an outbound call." },
+  http: { summary: "Sends an outbound HTTP request and exposes the response to downstream activities.", behavior: "Select a shared HTTP client connection. In Input → RestInputRequest, map the URI, method, body, and query parameters under Config. Choose CustomHeaders → Add header to map each name/value pair independently, or use For Each for a collection. Set Content-Type and Accept under Headers." },
+  http_response: { summary: "Completes the active inbound HTTP exchange.", behavior: "Place HTTP Send Response on the same execution path as the listener or receiver. In Input, map the status, headers, and body. If the endpoint declares a response schema, its fields are available for body mapping. An explicit Content-Type must be offered by the endpoint and acceptable to the caller." },
+  rest_receiver: { summary: "Starts a task for a matching REST method and route.", behavior: "In Request parameters, declare URI path placeholders, query values, and custom headers. Select a type and mark required entries. Invalid or missing required values return HTTP 400. Output provides pathParameters, query, headers with lowercase names, and body or xmlBody. Use HTTP Send Response to reply. Run or Debug exposes the live endpoint and, when enabled, Swagger and Postman." },
+  rest_invoke: { summary: "Calls a remote REST API through a shared HTTP client connection.", behavior: "In Input → RestInputRequest.Config, map the URI and query parameters, request body, and optional OpenAPI contract and operation ID. Use CustomHeaders → Add header for repeating name/value pairs, or use For Each for a collection. RestOutputResponse exposes the status, headers, and body." },
   soap: { summary: "Hosts a SOAP service or invokes a request/reply web service.", behavior: "Service mode publishes the configured contract and begins the task for a matching SOAP request. Request/reply mode uses the selected HTTP connection and WSDL metadata for outbound invocation." },
   file: { summary: "Performs the selected filesystem operation.", behavior: "File paths and operation-specific values accept constants, property expressions, or mappings from earlier execution-path outputs. Runtime output contains operation-specific metadata and content." },
   ftp: { summary: "Performs the selected FTP operation through a shared FTP connection.", behavior: "Connection defaults come from the resource; paths, names, content, and transfer settings may be mapped dynamically for each invocation." },
@@ -1615,7 +1620,7 @@ function DocumentationStructure({ title, fields }: { title: string; fields: Data
 }
 
 function ActivityDocumentation({ node, contract }: { node: any; contract: Contract }) {
-  const doc = activityDocumentation[node.type] || {
+  const doc = activityDocumentation[node.type === "rest" ? (node.config?.operation === "invoke" ? "rest_invoke" : "rest_receiver") : node.type] || {
     summary: `Executes the ${node.name} activity on the current task path.`,
     behavior: "Configuration supplies design-time defaults. Input mappings, constants, property expressions, outputs, advanced policies, and documented errors are evaluated by the runtime.",
   };

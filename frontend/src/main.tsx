@@ -67,6 +67,7 @@ import ActivityEditor, { activityContract, activityReferenceName, activityMappin
 import HttpEndpointSetup, { HttpEndpointFields, endpointConfig, isHttpEndpoint, newEndpointDraft, type EndpointConfig } from "./HttpEndpointSetup";
 import type { ConnectionKind, CreateConnection, SharedConnection } from "./SharedConnectionSelect";
 import { DEFAULT_PACKAGE, PackageDialog as ObjectPackageDialog, PackageTree, packagePath, packagePaths, type PackageCatalog, type PackageCategory } from "./ProjectPackages";
+import HomeRoutes from "./HomeRoutes";
 import ActivityPicker from "./ActivityPicker";
 import CanvasMagnifier from "./CanvasMagnifier";
 import { activityIconUrl } from "./activityIconUrl";
@@ -3230,7 +3231,7 @@ function App() {
               return (
                 <button
                   key={t.id}
-                  className={`tree-row indent2 explorer-task-row ${mode} ${editorOpen && t.id === task.id ? "active" : ""}`}
+                  className={`tree-row explorer-task-row ${mode} ${editorOpen && t.id === task.id ? "active" : ""}`}
                   onClick={() => selectTask(t.id)}
                   onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setRenameTaskId(t.id); }}
                   onContextMenu={(e) => {
@@ -3239,7 +3240,7 @@ function App() {
                   }}
                 >
                   <TaskEntryIcon mode={mode} />
-                  <span className="explorer-task-name" title={t.name}>{t.name}</span>
+                  <span className="explorer-item-name" title={t.name}>{t.name}</span>
                 </button>
               );
             }}/>}
@@ -3272,7 +3273,7 @@ function App() {
               {open.Connections &&
                 <PackageTree {...packageTreeProps("resources")} items={project.resources} renderItem={r => (
                   <button
-                    className={`tree-row indent3 ${selectedResource === r.id ? "active" : ""}`}
+                    className={`tree-row ${selectedResource === r.id ? "active" : ""}`}
                     key={r.id}
                     onContextMenu={(e) => { e.preventDefault(); setMenu({ type: "resource", id: r.id, path: packagePath(r.package_path), x: e.clientX, y: e.clientY }); }}
                      onClick={() => {
@@ -3285,7 +3286,7 @@ function App() {
                     }}
                   >
                     <ResourceVendorIcon type={r.type}/>
-                    {r.name}
+                    <span className="explorer-item-name" title={r.name}>{r.name}</span>
                     <small>{r.type}</small>
                   </button>
                 )}/>}
@@ -3320,13 +3321,13 @@ function App() {
           {open.Schemas &&
             <PackageTree {...packageTreeProps("schemas")} items={project.schemas} renderItem={s => (
               <button
-                className="tree-row indent2"
+                className="tree-row"
                 key={s.id}
                 onClick={() => setSchemaEditor(s)}
                 onContextMenu={(e) => { e.preventDefault(); setMenu({ type: "schema", id: s.id, path: packagePath(s.package_path), x: e.clientX, y: e.clientY }); }}
               >
                 <CodeXml />
-                {s.name}
+                <span className="explorer-item-name" title={s.name}>{s.name}</span>
               </button>
             )}/>}
           <button
@@ -4881,43 +4882,9 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, im
   return <div className="project-home mina-launch-home">
      <header><IntegrationBrandArtwork className="home-brand-art"/><ThemePicker theme={theme} setTheme={setTheme} plainMode={plainMode} setPlainMode={setPlainMode}/></header>
      <main>
-      <section className="mina-live-map" aria-label="Animated system integration mina">
+      <section className="mina-live-map" aria-label="System integration map">
         <div className="home-grid"/><div className="home-aurora one"/><div className="home-aurora two"/>
-        <svg className="mina-routes" viewBox="0 0 1000 620" preserveAspectRatio="none" aria-hidden="true">
-          <defs><linearGradient id="home-route" x1="0" x2="1"><stop offset="0" stopColor="#38d8ff"/><stop offset=".5" stopColor="#7b75ff"/><stop offset="1" stopColor="#43e6a8"/></linearGradient><filter id="home-glow-filter"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-          <path id="route-api" d="M300 101 C345 110 360 225 414 276"/>
-          <path id="route-sap" d="M300 288.4 C340 288 370 300 410 304"/>
-          <path id="route-manhattan" d="M300 505.1 C355 495 370 395 430 356"/>
-          <path id="route-cloud" d="M700 101 C655 110 640 225 586 276"/>
-          <path id="route-kafka" d="M700 288.4 C660 288 630 300 590 304"/>
-          <path id="route-pubsub" d="M700 505.1 C645 495 630 395 570 356"/>
-          <path id="route-website" d="M500 62.5 C500 130 490 190 500 222"/>
-          <path id="route-rabbit" d="M500 554.5 C500 485 510 430 500 398"/>
-          <path className="motion-only" id="route-api-out" d="M414 276 C360 225 345 110 300 101"/>
-          <path className="motion-only" id="route-sap-out" d="M410 304 C370 300 340 288 300 288.4"/>
-          <path className="motion-only" id="route-manhattan-out" d="M430 356 C370 395 355 495 300 505.1"/>
-          <path className="motion-only" id="route-cloud-out" d="M586 276 C640 225 655 110 700 101"/>
-          <path className="motion-only" id="route-kafka-out" d="M590 304 C630 300 660 288 700 288.4"/>
-          <path className="motion-only" id="route-pubsub-out" d="M570 356 C630 395 645 495 700 505.1"/>
-          <path className="motion-only" id="route-website-out" d="M500 222 C490 190 500 130 500 62.5"/>
-          <path className="motion-only" id="route-rabbit-out" d="M500 398 C510 430 500 485 500 554.5"/>
-          {[
-            { route: "route-api", direction: "in", duration: 3.7, delay: -1.2 },
-            { route: "route-sap", direction: "out", duration: 4.8, delay: -3.1 },
-            { route: "route-manhattan", direction: "in", duration: 5.4, delay: -.6 },
-            { route: "route-cloud", direction: "out", duration: 3.9, delay: -2.4 },
-            { route: "route-kafka", direction: "in", duration: 3.2, delay: -1.7 },
-            { route: "route-kafka", direction: "out", duration: 5.8, delay: -4.6 },
-            { route: "route-pubsub", direction: "out", duration: 4.4, delay: -.9 },
-            { route: "route-website", direction: "in", duration: 4.6, delay: -2.2 },
-            { route: "route-rabbit", direction: "in", duration: 5.1, delay: -3.8 },
-            { route: "route-api", direction: "out", duration: 6.2, delay: -4.9 },
-            { route: "route-manhattan", direction: "out", duration: 6.7, delay: -2.8 },
-            { route: "route-cloud", direction: "in", duration: 5.9, delay: -5.2 },
-            { route: "route-pubsub", direction: "in", duration: 6.4, delay: -3.6 },
-            { route: "route-website", direction: "out", duration: 5.3, delay: -4.1 },
-          ].map((packet, index) => <circle key={`${packet.route}-${packet.direction}-${index}`} r={index % 3 === 0 ? "5.5" : "4.2"} className={`flow-packet ${packet.direction}`}><animate attributeName="opacity" values="0;.95;.95;0" keyTimes="0;.12;.86;1" dur={`${packet.duration}s`} begin={`${packet.delay}s`} repeatCount="indefinite"/><animateMotion dur={`${packet.duration}s`} repeatCount="indefinite" begin={`${packet.delay}s`} calcMode="linear"><mpath href={`#${packet.route}${packet.direction === "out" ? "-out" : ""}`}/></animateMotion></circle>)}
-        </svg>
+        <HomeRoutes/>
         <div className="system-node edge website"><Monitor/><span><b>Website</b><small>Web · Portal · Commerce</small></span></div>
         <div className="system-node source api"><Globe/><span><b>API</b><small>HTTP · REST · SOAP</small></span></div>
         <div className="system-node source sap-system"><img className="vendor-logo sap-logo" src="/vendor-logos/sap.svg" alt=""/><span><b>SAP</b><small>ECC · S/4HANA · IDoc</small></span></div>
@@ -4927,7 +4894,6 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, im
         <div className="system-node target pubsub-system"><img className="vendor-logo pubsub-logo" src="/vendor-logos/gcp-pubsub.png" alt=""/><span><b>GCP Pub/Sub</b><small>Topics · Subscriptions</small></span></div>
         <div className="system-node edge rabbitmq"><img className="vendor-logo rabbitmq-logo" src="/vendor-logos/rabbitmq.svg" alt=""/><span><b>RabbitMQ</b><small>Queues · Exchanges</small></span></div>
         <div className="mina-core"><i/><span><Workflow/><b>MINA</b><strong>STUDIO</strong><small>DESIGN · CONNECT · RUN</small></span></div>
-        <div className="live-indicator"><i/> LIVE MINA</div>
       </section>
       <section className="launch-actions">
         <span className="launch-eyebrow">BUILD THE CONNECTED ENTERPRISE</span>
@@ -5342,12 +5308,19 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "maxRequestBodyBytes", label: "Maximum request body bytes" },
     { key: "maxResponseBodyBytes", label: "Maximum response body bytes" },
     { key: "allowedIps", label: "Allowed client IPs / CIDRs", when: (config: any) => config.connectorMode !== "client" },
+    { key: "trustedProxyCidrs", label: "Trusted proxy IPs / CIDRs", when: (config: any) => config.connectorMode !== "client" },
+    { key: "httpErrorFormat", label: "Listener error response format", options: ["json", "problem"], when: (config: any) => config.connectorMode !== "client" },
+    { key: "conditionalResponses", label: "Conditional GET and HEAD", options: ["false", "true"], when: (config: any) => config.connectorMode !== "client" },
+    { key: "propagateTraceContext", label: "Propagate HTTP trace context", options: ["false", "true"] },
     { key: "activityTimeoutSeconds", label: "Total activity / listener timeout (seconds)" },
     { key: "oauthGrantType", label: "OAuth2 grant", options: ["client_credentials", "authorization_code", "refresh_token"], when: (config: any) => ["OAuth2"].includes(config.authentication) },
     { key: "oauthTokenUrl", label: "OAuth2 token URL", when: (config: any) => ["OAuth2"].includes(config.authentication) },
     { key: "oauthClientId", label: "OAuth2 client ID", when: (config: any) => ["OAuth2"].includes(config.authentication) },
-    { key: "oauthClientSecret", label: "OAuth2 client secret", password: true, when: (config: any) => ["OAuth2"].includes(config.authentication) },
-    { key: "oauthClientAuthentication", label: "OAuth2 client credentials location", options: ["basic", "body"], when: (config: any) => ["OAuth2"].includes(config.authentication) },
+    { key: "oauthClientSecret", label: "OAuth2 client secret", password: true, when: (config: any) => config.authentication === "OAuth2" && config.oauthClientAuthentication !== "private_key_jwt" },
+    { key: "oauthClientAuthentication", label: "OAuth2 client authentication", options: ["basic", "body", "private_key_jwt"], when: (config: any) => config.authentication === "OAuth2" },
+    { key: "oauthClientPrivateKeyFile", label: "OAuth client signing key file", required: true, when: (config: any) => config.authentication === "OAuth2" && config.oauthClientAuthentication === "private_key_jwt" },
+    { key: "oauthClientAssertionAlgorithm", label: "OAuth client assertion algorithm", options: ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"], when: (config: any) => config.authentication === "OAuth2" && config.oauthClientAuthentication === "private_key_jwt" },
+    { key: "oauthClientAssertionKeyId", label: "OAuth client assertion key ID", when: (config: any) => config.authentication === "OAuth2" && config.oauthClientAuthentication === "private_key_jwt" },
     { key: "oauthScope", label: "OAuth2 scopes", when: (config: any) => ["OAuth2"].includes(config.authentication) },
     { key: "oauthAuthorizationCode", label: "OAuth2 authorization code", password: true, when: (config: any) => ["OAuth2"].includes(config.authentication) },
     { key: "oauthRedirectUri", label: "OAuth2 redirect URI", when: (config: any) => ["OAuth2"].includes(config.authentication) },

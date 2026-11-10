@@ -123,13 +123,19 @@ def generate_openapi(routes,base_url='/',title='MINA hosted APIs'):
         return {'$ref':root_prefix}
     for metadata,cfg in routes:
         operation=cfg.get('_restOperation') or {}
-        security,requirement=_security(cfg);spec['components']['securitySchemes'].update(security)
+        security,requirement=_security(cfg)
+        if cfg.get('clientAuthentication') == 'required':
+            security['MINA_Certificate'] = {'type':'mutualTLS','description':'Configure a trusted client certificate in your browser or API client.'}
+            requirement = [{**alternative, 'MINA_Certificate': []} for alternative in requirement or [{}]]
+        spec['components']['securitySchemes'].update(security)
         for method in methods_for(cfg):
             if method not in ('GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','TRACE'):continue
             path=cfg['path'];identity=str(cfg.get('operationId') or method.lower()+'_'+hashlib.sha256(path.encode()).hexdigest()[:10])
             if identity in operation_ids:identity+='_'+hashlib.sha256((path+method+str(metadata)).encode()).hexdigest()[:8]
             operation_ids.add(identity)
             entry={'operationId':identity,'summary':str(operation.get('summary') or method+' '+path),'responses':{},'security':requirement}
+            if any(scopes for _, scopes in cfg.get('_restSecurityAlternatives', ())):
+                entry['x-mina-required-scope-alternatives'] = [scopes for _, scopes in cfg['_restSecurityAlternatives']]
             for key in ('description','tags','deprecated'):
                 if key in operation:entry[key]=copy.deepcopy(operation[key])
             parameters=[]
@@ -158,6 +164,8 @@ def generate_openapi(routes,base_url='/',title='MINA hosted APIs'):
                     original=(request_body.get('content') or {}).get(name,{}) if isinstance(request_body,dict) else {}
                     for key in ('example','examples'):
                         if key in original:definition[key]=copy.deepcopy(original[key])
+                    if name == 'multipart/form-data' and cfg.get('_restMultipartEncoding'):
+                        definition['encoding'] = copy.deepcopy(cfg['_restMultipartEncoding'])
                     if 'example' not in definition and 'examples' not in definition and schema is not None:
                         projected = xsd_description(schema)
                         example = projected[1] if projected else sample(schema)
@@ -176,7 +184,7 @@ def generate_openapi(routes,base_url='/',title='MINA hosted APIs'):
                 formats=hosted_response_content(cfg, code)
                 if not formats and not (selected_response_types and str(code).startswith('2')):
                     formats = {str(cfg.get('responseType') or inferred_media(schema)):schema}
-                if selected_response_types and (str(code) in ('204','205','304') or method == 'HEAD'):
+                if str(code) in ('204','205','304') or method == 'HEAD':
                     formats = {}
                 for name,body_schema in formats.items():
                     original_content=(original.get('content') or {}).get(name) or {}

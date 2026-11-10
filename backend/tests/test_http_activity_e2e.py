@@ -57,10 +57,47 @@ class OutboundContractTests(unittest.TestCase):
         self.assertEqual(seen,[b'hello']);self.assertEqual(result['body'],'42')
 
     def test_head_and_no_content_skip_response_body_validation(self):
-        for status,method in [(200,'HEAD'),(204,'GET'),(304,'GET')]:
+        for status,method in [(200,'HEAD'),(204,'GET'),(205,'GET'),(304,'GET')]:
             with self.subTest(status=status),upstream(lambda request:httpx.Response(status,headers={'Content-Type':'application/json'})):
                 result=transport.request({'url':'http://test','method':method,'validateResponse':True,'responseSchema':SCHEMA,'raiseForStatus':False})
                 self.assertEqual(result['statusCode'],status)
+
+    def test_allow_reserved_query_preserves_url_syntax_without_injecting_parameters(self):
+        spec={'openapi':'3.1.0','paths':{'/search':{'get':{'operationId':'search',
+              'parameters':[{'in':'query','name':'target','allowReserved':True,'schema':{'type':'string'}}],
+              'responses':{'200':{'description':'OK'}}}}}}
+        with upstream(lambda request:httpx.Response(200,text=request.url.query.decode())):
+            result=transport.request({'baseUrl':'http://test','openApiDocument':spec,'operationId':'search',
+                                      'query':{'target':'https://example.test/a?x=a&y=b#c+d%2F','normal':'a/b'}})
+        self.assertEqual(result['body'],'target=https://example.test/a?x%3Da%26y%3Db%23c%2Bd%2F&normal=a%2Fb')
+
+    def test_oauth_private_key_assertion_is_signed_for_the_token_endpoint(self):
+        import jwt
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.hazmat.primitives import serialization
+        from urllib.parse import parse_qs
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        endpoint = 'https://issuer.test/token'
+        def respond(request):
+            if request.url.host != 'issuer.test':
+                self.assertEqual(request.headers['authorization'], 'Bearer granted')
+                return httpx.Response(200, json={'ok':True})
+            data = parse_qs(request.content.decode())
+            self.assertNotIn('client_secret', data)
+            self.assertNotIn('authorization', request.headers)
+            token = data['client_assertion'][0]
+            claims = jwt.decode(token, key.public_key(), algorithms=['RS256'], audience=endpoint, issuer='mina-client')
+            self.assertEqual(claims['sub'], 'mina-client')
+            self.assertEqual(jwt.get_unverified_header(token)['kid'], 'test-key')
+            return httpx.Response(200, json={'access_token':'granted'})
+        with tempfile.TemporaryDirectory() as directory, upstream(respond):
+            pem = Path(directory) / 'key.pem'
+            pem.write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                                              serialization.NoEncryption()))
+            result = transport.request({'url':'https://api.test','authentication':'OAuth2','oauthTokenUrl':endpoint,
+                                        'oauthClientAuthentication':'private_key_jwt','oauthClientId':'mina-client',
+                                        'oauthClientPrivateKeyFile':str(pem),'oauthClientAssertionKeyId':'test-key'})
+        self.assertEqual(result['body'], {'ok':True})
 
     def test_malformed_json_and_undeclared_response_formats_are_rejected(self):
         for headers,body in [({'Content-Type':'application/json'},b'{broken'),({'Content-Type':'text/html'},b'<html/>')]:
@@ -75,6 +112,84 @@ class OutboundContractTests(unittest.TestCase):
         self.assertEqual(set(operation['responses']['200']['content']),set(FORMATS))
 
 class InboundContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_conditional_get_and_child_trace_context(self):
+        cfg = listener_config({'conditionalResponses':True,'propagateTraceContext':True},
+                              {'methods':'GET','path':'/resource'})
+        trace_id = '0af7651916cd43dd8448eb211c80319c'
+        incoming = f'00-{trace_id}-b7ad6b7169203331-01'
+        seen = []
+        def provider(request):
+            seen.append(request.headers['traceparent'])
+            return httpx.Response(200,json={'name':'value'})
+        async def handler(metadata, payload):
+            value = await asyncio.to_thread(transport.request, {'url':'http://upstream.test','propagateTraceContext':True})
+            return {'__httpResponse':True, 'body':value['body'], 'headers':{'ETag':'"v1"'}}
+        app = ListenerApp([(None,cfg)],handler,cfg,warm_workers=False)
+        try:
+            with upstream(provider):
+                async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as client:
+                    cached = await client.get('/resource',headers={'If-None-Match':'W/"v1"','traceparent':incoming})
+                    self.assertEqual((cached.status_code,cached.content,cached.headers['etag']),(304,b'','"v1"'))
+                    fresh = await client.get('/resource',headers={'If-None-Match':'"v2"','traceparent':incoming})
+                    self.assertEqual(fresh.json(),{'name':'value'})
+            self.assertEqual(len(set(seen)),2)
+            for value in seen:
+                self.assertRegex(value, f'^00-{trace_id}-[0-9a-f]{{16}}-01$')
+                self.assertNotEqual(value, incoming)
+        finally:
+            app.executor.shutdown(wait=True)
+
+    async def test_contract_security_205_and_problem_details(self):
+        spec={'openapi':'3.1.0','components':{'securitySchemes':{'bearer':{'type':'http','scheme':'bearer'}}},
+              'security':[{'bearer':[]}],'paths':{'/reset':{'get':{'operationId':'reset','responses':{'205':{'description':'Reset'}}}}}}
+        activity={'openApiDocument':spec,'operationId':'reset','operation':'receiver'}
+        with self.assertRaisesRegex(transport.HTTPFault, 'cannot enforce'):
+            listener_config({}, activity)
+        cfg = listener_config({'authentication':'Bearer','bearerToken':'test-token','httpErrorFormat':'problem'}, activity)
+        async def handler(metadata, payload):
+            return {'statusCode':205,'fileName':'missing-file-is-ignored','body':{'never':'sent'}}
+        app = ListenerApp([(None,cfg)],handler,cfg,warm_workers=False)
+        try:
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as client:
+                denied = await client.get('/reset')
+                self.assertEqual(denied.status_code,401)
+                self.assertEqual(denied.headers['content-type'],'application/problem+json')
+                self.assertEqual(denied.json()['status'],401)
+                self.assertEqual(denied.headers['www-authenticate'],'Bearer')
+                reset = await client.get('/reset',headers={'Authorization':'Bearer test-token'})
+                self.assertEqual((reset.status_code,reset.content,reset.headers['content-length']),(205,b'','0'))
+        finally:
+            app.executor.shutdown(wait=True)
+
+    async def test_multipart_contract_round_trips_typed_fields_and_part_content_types(self):
+        media = 'multipart/form-data'
+        body = {'tags':['one','two'],'options':{'strict':True},'count':7,'file':'AAH/'}
+        schema = {'type':'object','required':list(body),'properties':{
+            'tags':{'type':'array','items':{'type':'string'}},'options':{'type':'object'},
+            'count':{'type':'integer'},'file':{'type':'string','format':'binary'}}}
+        spec={'openapi':'3.1.0','paths':{'/upload':{'post':{'operationId':'upload',
+              'requestBody':{'required':True,'content':{media:{'schema':schema,'encoding':{
+                  'options':{'contentType':'application/vnd.test+json'},'file':{'contentType':'text/plain'}}}}},
+              'responses':{'200':{'description':'OK'}}}}}}
+        def echo(request):
+            return httpx.Response(200,json={'raw':request.content.decode('latin1'),'type':request.headers['content-type']})
+        with upstream(echo):
+            result = transport.request({'baseUrl':'http://test','operationId':'upload','openApiDocument':spec,'body':body})['body']
+        cfg = listener_config({}, {'openApiDocument':spec,'operationId':'upload','operation':'receiver'})
+        async def handler(metadata, payload):
+            return payload['body']
+        app = ListenerApp([(None,cfg)],handler,cfg,warm_workers=False)
+        try:
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://test') as client:
+                raw = result['raw'].encode('latin1')
+                good = await client.post('/upload',content=raw,headers={'Content-Type':result['type']})
+                self.assertEqual(good.status_code,200,good.text)
+                self.assertEqual(good.json(),body)
+                bad = await client.post('/upload',content=raw.replace(b'application/vnd.test+json',b'application/json'),headers={'Content-Type':result['type']})
+                self.assertEqual(bad.status_code,400,bad.text)
+        finally:
+            app.executor.shutdown(wait=True)
+
     async def test_configured_xml_media_types_take_precedence_for_listener_and_receiver(self):
         schema = '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="Message" type="xs:string"/></xs:schema>'
         for operation in ('listen', 'receiver'):
@@ -220,7 +335,8 @@ class StudioPreviewTests(unittest.TestCase):
         def resource(resource_id, bind_port):
             return {'id': resource_id, 'type': 'http', 'name': resource_id, 'config': {
                 'host': '127.0.0.1', 'port': bind_port, 'scheme': 'http', 'tlsEnabled': 'false',
-                'apiPublicBaseUrl': 'https://gateway.example.test', 'minimumQtpThreads': 1, 'maximumQtpThreads': 2}}
+                'apiPublicBaseUrl': 'https://gateway.example.test', 'minimumQtpThreads': 1, 'maximumQtpThreads': 2,
+                'httpErrorFormat': 'problem', 'trustedProxyCidrs': '127.0.0.1/32', 'propagateTraceContext': True}}
         project = Project.model_validate({'id': 'receiver-get-debug', 'name': 'Receiver GET',
             'resources': [resource('one', port), resource('two', other_port)],
             'tasks': [task('get-orders', 'one', 'GET'), task('post-orders', 'two', 'POST')]})
@@ -236,16 +352,21 @@ class StudioPreviewTests(unittest.TestCase):
                 self.assertEqual(endpoint['configuredUrl'], 'https://gateway.example.test/orders/{id}')
                 self.assertFalse(endpoint['tlsEnabled'])
                 with httpx.Client(trust_env=False, timeout=5) as live:
-                    self.assertEqual(live.post(base + '/orders/42').status_code, 405)
+                    rejected = live.post(base + '/orders/42')
+                    self.assertEqual((rejected.status_code,rejected.headers['content-type']),(405,'application/problem+json'))
                     with self.assertRaises(httpx.ConnectError):
                         live.post(f'http://127.0.0.1:{other_port}/orders/42')
                     self.assertEqual(live.get(base + '/orders/42?details=true').status_code, 400)
                     self.assertEqual(live.get(base + '/orders/nope?details=true', headers={'X-Tenant': 'west'}).status_code, 400)
-                    response = live.get(base + '/orders/42?details=true', headers={'X-Tenant': 'west'})
+                    trace_id = '0af7651916cd43dd8448eb211c80319c'
+                    response = live.get(base + '/orders/42?details=true', headers={'X-Tenant': 'west',
+                        'X-Forwarded-For': '198.51.100.2', 'traceparent': f'00-{trace_id}-b7ad6b7169203331-01'})
                     self.assertEqual(response.status_code, 200, response.text)
                     self.assertEqual(response.json()['pathParameters'], {'id': 42})
                     self.assertEqual(response.json()['query'], {'details': True})
                     self.assertEqual(response.json()['headers']['x-tenant'], 'west')
+                    self.assertEqual(response.json()['clientIp'], '198.51.100.2')
+                    self.assertEqual(response.json()['traceId'], trace_id)
                     spec = live.get(base + '/_mina/openapi.json').json()
                     methods = spec['paths']['/orders/{id}']
                     self.assertEqual(set(methods), {'get'})

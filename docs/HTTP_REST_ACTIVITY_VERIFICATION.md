@@ -76,9 +76,29 @@ On Linux use the corresponding environment's Python executable. The sample verif
 
 The checks do not certify a particular external OAuth issuer, LDAP directory, proxy, Redis service, certificate/key rotation process or production load profile. Test those with actual staging infrastructure and representative payloads, concurrency, expiry and outage cases.
 
-This is a request/response API implementation. CONNECT tunnels, dedicated WebSocket/SSE streaming clients, complete vendor engine equivalence and full OpenAPI conformance are not claimed. OpenAPI multipart encoding-rule synthesis, callback/webhook lifecycle scaffolding and automatic inbound multipart-part extraction into a contract object remain outside the implemented subset. MIME envelope parsing and bounded binary/file transfer are implemented separately. Current certificate and authentication settings must still be provided on the execution host when exporting or deploying an application.
+This is a request/response API implementation. The table below identifies the remaining protocol and contract boundaries. Certificate and authentication settings must be available on the execution host when deploying an exported application.
 
-## Standards used for the corrections
+## Remaining standards and interoperability gaps
+
+The activities cover ordinary HTTP/REST request and response integrations. This table separates protocol defects from capabilities needed by particular API contracts or deployment environments.
+
+| Priority | Gap | Current behavior and impact |
+| --- | --- | --- |
+| Security scope | Imported OpenAPI security | Hosting rejects contracts when the selected connection cannot enforce a declared security alternative. It enforces supported credential and mutual TLS combinations and operation scopes. API keys and combinations of multiple independent application credentials are unsupported. |
+| Corrected | HTTP 205 Reset Content | Listeners suppress response content, and clients skip body processing and validation. Generated OpenAPI omits content for 205. |
+| Partial | OpenAPI serialization and multipart | Outbound query values honor `allowReserved` for safe wire characters. Contract-driven multipart handles typed form fields and part content types. Additional per-part headers and streaming still use explicit MIME mappings. |
+| Implemented as a setting | Problem Details | Opt in to RFC 9457 responses for listener-generated errors. Existing connections retain their legacy JSON format. |
+| Implemented as settings | Trace context and proxy trust | Version 00 W3C trace context can follow inbound and outbound activities. Explicit proxy CIDRs enable trusted X-Forwarded-For client attribution. Span export and other forwarded-header formats are outside this feature. |
+| Implemented as a setting | OAuth client authentication | The runtime can sign a private-key JWT assertion for the configured HTTPS endpoint. Real provider registration, credential rotation and interoperation remain staging checks. |
+| Partial | Conditional requests and caching | Conditional GET/HEAD uses workflow-supplied ETag or Last-Modified. Write preconditions and an RFC 9111 cache policy are still open. |
+| Open | Callbacks, streaming protocols and HTTP/3 | OpenAPI callback/webhook lifecycle scaffolding, dedicated SSE or WebSocket activities, and native HTTP/3 remain separate capabilities. |
+
+## Standards references
 
 - [OpenAPI media type matching](https://spec.openapis.org/oas/v3.1.2.html#request-body-object)
-- [HTTP response content and HEAD semantics](https://www.rfc-editor.org/rfc/rfc9110.html#section-6.4.1)
+- [OpenAPI parameter serialization and security requirements](https://spec.openapis.org/oas/v3.1.2.html)
+- [HTTP 205 Reset Content and conditional requests](https://www.rfc-editor.org/rfc/rfc9110.html#section-15.3.6)
+- [HTTP caching](https://www.rfc-editor.org/rfc/rfc9111.html)
+- [Problem Details for HTTP APIs](https://www.rfc-editor.org/rfc/rfc9457.html)
+- [OAuth JWT client authentication](https://www.rfc-editor.org/rfc/rfc7523.html#section-2.2)
+- [W3C Trace Context](https://www.w3.org/TR/trace-context/)

@@ -26,6 +26,10 @@ def operation_config(config):
             if method.lower() in ('get','post','put','patch','delete','head','options','trace') and isinstance(operation,dict) and operation.get('operationId')==selected:matches.append((path,method.upper(),operation,definition))
     if len(matches)!=1:raise ValueError('OpenAPI operation ID must identify exactly one operation')
     path,method,operation,path_item=matches[0];cfg=dict(config)
+    if config.get('operation') == 'receiver':
+        requirements = operation.get('security', supplied.get('security', []))
+        schemes = supplied.get('securityDefinitions') if supplied.get('swagger') == '2.0' else (supplied.get('components') or {}).get('securitySchemes')
+        cfg['_restSecurity'] = security_requirements(requirements, schemes or {}, dereference)
     cfg['_restOperation']=copy.deepcopy(operation)
     cfg['_restOperation']['requestBody']=copy.deepcopy(dereference(operation.get('requestBody') or {}))
     cfg['_restOperation']['responses']={str(code):copy.deepcopy(dereference(value)) for code,value in (operation.get('responses') or {}).items()}
@@ -55,6 +59,7 @@ def operation_config(config):
     preferred=str(preferred).split(';',1)[0].strip().lower()
     content_type,schema=media(request.get('content') or {},preferred)
     cfg['_restRequestSchemas']={name:wrapped(dereference(definition).get('schema',{})) for name,definition in (request.get('content') or {}).items()}
+    cfg['_restMultipartEncoding'] = copy.deepcopy(dereference((request.get('content') or {}).get('multipart/form-data', {})).get('encoding', {}))
     cfg['_explicitRequestSchema']=config.get('_explicitRequestSchema',config.get('requestSchema') not in (None,''))
     # An operation parameter overrides the path-level parameter of the same name/location.
     parameters=list({(p.get('in'),p.get('name')):p for p in (dereference(value) for value in [*(path_item.get('parameters') or []),*(operation.get('parameters') or [])])}.values())
@@ -107,12 +112,10 @@ def _primitive(value, schema):
         return str(value).lower()=='true'
     return value
 
-def typed_form_body(cfg,body,content_type):
-    """Decode primitive form fields using their contract types before validation."""
-    if str(content_type).split(';',1)[0].lower()!='application/x-www-form-urlencoded' or not isinstance(body,dict):return body
+def form_properties(cfg, content_type):
     from .http_contracts import request_schema
     root=request_schema(cfg,content_type)
-    if not isinstance(root,dict):return body
+    if not isinstance(root,dict):return {}
     def resolve(schema):
         seen=set()
         while isinstance(schema,dict) and str(schema.get('$ref','')).startswith('#/'):
@@ -121,15 +124,99 @@ def typed_form_body(cfg,body,content_type):
             seen.add(reference);schema=root
             for part in reference[2:].split('/'):schema=schema[part.replace('~1','/').replace('~0','~')]
         return schema if isinstance(schema,dict) else {}
+    return {name: {**resolve(schema), 'items': resolve(resolve(schema).get('items', {}))}
+            for name, schema in resolve(root).get('properties', {}).items()}
+
+
+def typed_form_body(cfg,body,content_type):
+    """Decode primitive form fields using their contract types before validation."""
+    if str(content_type).split(';',1)[0].lower()!='application/x-www-form-urlencoded' or not isinstance(body,dict):return body
     result=dict(body)
-    for name,schema in resolve(root).get('properties',{}).items():
+    for name,schema in form_properties(cfg, content_type).items():
         if name not in result:continue
-        schema=resolve(schema);value=result[name]
-        if schema.get('type')=='array':result[name]=[_primitive(item,resolve(schema.get('items',{}))) for item in (value if isinstance(value,list) else [value])]
+        value=result[name]
+        if schema.get('type')=='array':result[name]=[_primitive(item,schema['items']) for item in (value if isinstance(value,list) else [value])]
         elif schema.get('type') in ('integer','number','boolean','string'):
             if isinstance(value,list):raise ValueError('Scalar form field is repeated')
             result[name]=_primitive(value,schema)
     return result
+
+
+def multipart_contract(cfg, media):
+    return media == 'multipart/form-data' and media in cfg.get('_restRequestSchemas', {})
+
+
+def multipart_form_bytes(cfg, body, limit):
+    import base64
+    import httpx
+    if not isinstance(body, dict):
+        raise ValueError('Multipart request body must be an object')
+    fields = form_properties(cfg, 'multipart/form-data')
+    encoding = cfg.get('_restMultipartEncoding') or {}
+    parts = []
+    size = 0
+    for name, values in body.items():
+        field = fields.get(name, {})
+        if field.get('type') == 'array' or isinstance(values, list):
+            field, values = field.get('items', {}), values
+        else:
+            values = [values]
+        settings = encoding.get(name, {})
+        for value in values:
+            binary = field.get('format') == 'binary'
+            default = 'application/octet-stream' if binary else 'application/json' if isinstance(value, (dict,list)) else 'text/plain'
+            media = str(settings.get('contentType') or default).split(',', 1)[0].strip()
+            if '\r' in media or '\n' in media:
+                raise ValueError('Invalid multipart part content type')
+            if binary:
+                content = base64.b64decode(value, validate=True)
+            elif media.split(';',1)[0].endswith(('/json','+json')):
+                content = json.dumps(value, ensure_ascii=False, allow_nan=False).encode()
+            else:
+                content = ('true' if value is True else 'false' if value is False else str(value)).encode()
+            size += len(content)
+            if size > limit or len(parts) >= 256:
+                raise ValueError('Multipart request exceeds configured limits')
+            parts.append((name, (name if binary else None, content, media)))
+    if not parts:
+        raise ValueError('Multipart request must contain at least one part')
+    request = httpx.Request('POST', 'http://localhost', files=parts)
+    return request.read(), request.headers['content-type']
+
+
+def decode_multipart_form(cfg, message):
+    import base64
+    from .http_contracts import media_schema, parse_json
+    fields = form_properties(cfg, 'multipart/form-data')
+    encoding = cfg.get('_restMultipartEncoding') or {}
+    output = {}
+    parts = list(message.iter_parts())
+    if not parts:
+        raise ValueError('Multipart request must contain at least one part')
+    for part in parts:
+        name = part.get_param('name', header='content-disposition')
+        if part.get_content_disposition() != 'form-data' or not name or part.is_multipart():
+            raise ValueError('Invalid multipart form part')
+        field = fields.get(name, {})
+        repeated = field.get('type') == 'array'
+        field = field.get('items', {}) if repeated else field
+        content_type = part.get_content_type()
+        configured = str(encoding.get(name, {}).get('contentType') or '')
+        if configured and media_schema({media.strip(): None for media in configured.split(',')}, content_type)[0] is None:
+            raise ValueError('Unexpected multipart part content type')
+        content = part.get_payload(decode=True) or b''
+        if field.get('format') == 'binary':
+            value = base64.b64encode(content).decode()
+        else:
+            value = content.decode(part.get_content_charset() or 'utf-8')
+            value = parse_json(value) if content_type.endswith(('/json','+json')) else _primitive(value, field)
+        if repeated:
+            output.setdefault(name, []).append(value)
+        elif name in output:
+            raise ValueError('Scalar multipart field is repeated')
+        else:
+            output[name] = value
+    return output
 
 def parameter_value(parameter, values):
     name=parameter.get('name');schema=parameter.get('schema') or parameter;kind=schema.get('type');location=parameter.get('in')
@@ -192,6 +279,63 @@ def listener_parameters(cfg, path_names):
     return parameters
 
 
+def security_requirements(requirements, schemes, dereference):
+    if not isinstance(requirements, list):
+        raise ValueError('OpenAPI security must be an array')
+    alternatives = []
+    for requirement in requirements:
+        if not isinstance(requirement, dict):
+            raise ValueError('OpenAPI security entries must be objects')
+        alternative = []
+        for name, scopes in requirement.items():
+            if name not in schemes or not isinstance(scopes, list) or any(not isinstance(scope, str) for scope in scopes):
+                raise ValueError(f'Invalid OpenAPI security requirement: {name}')
+            scheme = dereference(schemes[name])
+            if not isinstance(scheme, dict):
+                raise ValueError(f'Invalid OpenAPI security scheme: {name}')
+            kind = scheme.get('type')
+            if kind == 'http':
+                kind = str(scheme.get('scheme') or '').lower()
+            alternative.append((kind, scopes))
+        alternatives.append(alternative)
+    return alternatives
+
+
+def compatible_security(cfg):
+    """Select alternatives that the configured listener can enforce."""
+    mode = str(cfg.get('authentication') or 'none').lower()
+    supported = {
+        'basic': {'basic', 'ldap'},
+        'bearer': {'bearer', 'jwt', 'oauth2'},
+        'oauth2': {'oauth2', 'jwt'},
+        'openIdConnect': {'oauth2', 'jwt'},
+        'mutualTLS': {'certificate'},
+    }
+    tls = cfg.get('clientAuthentication') == 'required'
+    compatible = []
+    for alternative in cfg.get('_restSecurity', []):
+        if not alternative:
+            compatible.append((False, []))
+            continue
+        credentials = [(kind, scopes) for kind, scopes in alternative if kind != 'mutualTLS']
+        certificate = any(kind == 'mutualTLS' for kind, _ in alternative)
+        if certificate and not tls:
+            continue
+        if any(scopes for kind, scopes in alternative if kind == 'mutualTLS'):
+            continue
+        if len(credentials) > 1:
+            continue
+        if not credentials:
+            compatible.append((certificate, []))
+            continue
+        kind, scopes = credentials[0]
+        if mode in supported.get(kind, ()) and (not scopes or mode in ('oauth2', 'jwt')):
+            compatible.append((certificate, scopes))
+    if cfg.get('_restSecurity') and not compatible:
+        raise ValueError('HTTP connection cannot enforce any declared OpenAPI security alternative')
+    return compatible
+
+
 def validate_parameters(cfg,parameters,query,headers,body,decoded=None):
     """Validate presence and primitive wire types before invoking a workflow/API."""
     from http.cookies import SimpleCookie
@@ -242,3 +386,24 @@ def wire_parameters(cfg,location,values):
         if isinstance(encoded,dict):result.pop(name,None);result.update(encoded)
         else:result[name]=encoded
     return result
+
+
+def reserved_query_keys(cfg, values):
+    keys = set()
+    for parameter in cfg.get('_restParameters', []):
+        name = parameter.get('name')
+        if parameter.get('in') == 'query' and parameter.get('allowReserved') is True and name in values:
+            encoded = serialize_parameter(parameter, values[name])
+            keys.update(encoded if isinstance(encoded, dict) else [name])
+    return keys
+
+
+def encode_reserved_query(pairs, reserved):
+    def encode(value):
+        # Retain valid percent escapes and query-safe reserved characters. Form
+        # separators and the URI fragment delimiter must remain percent-encoded.
+        return ''.join(part if re.fullmatch(r'%[0-9a-fA-F]{2}', part)
+                       else urllib.parse.quote(part, safe=":/?[]@!$'()*,;")
+                       for part in re.split(r'(%[0-9a-fA-F]{2})', value))
+    return '&'.join(f'{urllib.parse.quote_plus(key)}={encode(value) if key in reserved else urllib.parse.quote_plus(value)}'
+                    for key, value in pairs)

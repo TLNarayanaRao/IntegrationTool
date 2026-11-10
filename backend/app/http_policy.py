@@ -1,14 +1,81 @@
 """HTTP resilience, JWT rotation and optional distributed request policies."""
 from __future__ import annotations
-import hashlib, json, math, random, threading, time, urllib.parse
+import hashlib, ipaddress, json, math, random, re, secrets, threading, time, urllib.parse
+from contextvars import ContextVar
 from email.utils import parsedate_to_datetime
 
 _LOCK=threading.RLock();_CIRCUITS={};_RATES={};_JWKS={};_REDIS={}
+trace_context = ContextVar('mina_http_trace', default=None)
+
+
+def trace_headers(headers):
+    parent = headers.get('traceparent')
+    valid = isinstance(parent, str) and re.fullmatch(r'00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}', parent)
+    if valid and int(parent[3:35], 16) and int(parent[36:52], 16):
+        return (parent[3:35], parent[53:], headers.get('tracestate'))
+    return (secrets.token_hex(16), '00', None)
+
+
+def outbound_trace(headers):
+    trace_id, flags, state = trace_context.get() or trace_headers({})
+    headers['traceparent'] = f'00-{trace_id}-{secrets.token_hex(8)}-{flags}'
+    if isinstance(state, str) and len(state) <= 512 and state.isascii():
+        headers.setdefault('tracestate', state)
+
+
+def proxy_networks(cfg):
+    return tuple(ipaddress.ip_network(item) for item in str(cfg.get('trustedProxyCidrs') or '').replace(',', ' ').split())
+
+
+def client_address(cfg, peer, headers):
+    networks = cfg.get('_trustedProxyNetworks') or ()
+    forwarded = headers.get('x-forwarded-for')
+    if not networks or not forwarded or not peer:
+        return peer
+    try:
+        address = ipaddress.ip_address(peer)
+        if not any(address in network for network in networks):
+            return peer
+        if isinstance(forwarded, list):
+            forwarded = ','.join(forwarded)
+        chain = [ipaddress.ip_address(item.strip()) for item in forwarded.split(',')]
+    except ValueError:
+        raise fault('Invalid forwarded client address', 'HTTP_BAD_REQUEST', 400) from None
+    for address in reversed(chain):
+        if not any(address in network for network in networks):
+            break
+    return str(address)
+
+
+def representation_unchanged(request_headers, response_headers):
+    headers = {str(name).lower(): value for name, value in response_headers.items()}
+    condition = request_headers.get('if-none-match')
+    if condition is not None:
+        condition = ','.join(condition) if isinstance(condition, list) else condition
+        if condition.strip() == '*':
+            return True
+        tag = headers.get('etag')
+        if not isinstance(tag, str):
+            return False
+        matches = re.findall(r'(?:W/)?"[\x21\x23-\x7e\x80-\xff]*"', condition)
+        return tag.removeprefix('W/') in [value.removeprefix('W/') for value in matches]
+    try:
+        since = parsedate_to_datetime(request_headers.get('if-modified-since', ''))
+        modified = parsedate_to_datetime(headers.get('last-modified', ''))
+        return modified <= since
+    except (ValueError, TypeError, OverflowError):
+        return False
 
 def validate_listener_policy(cfg):
     from .http_transport import number, boolean
     if str(cfg.get('policyStore') or 'memory') not in ('memory','redis'):raise fault('Policy storage must be memory or redis')
     if str(cfg.get('requestBodyMode') or 'memory') not in ('memory','file'):raise fault('Request body storage must be memory or file')
+    if str(cfg.get('httpErrorFormat') or 'json') not in ('json','problem'):
+        raise fault('HTTP error format must be json or problem')
+    try:
+        cfg['_trustedProxyNetworks'] = proxy_networks(cfg)
+    except ValueError:
+        raise fault('Trusted proxy networks must be valid IP addresses or CIDRs') from None
     origins=str(cfg.get('corsAllowedOrigins') or '').replace(',',' ').split()
     if '*' in origins and boolean(cfg.get('corsAllowCredentials')):raise fault('Credentialed CORS requires explicit origins')
     for origin in origins:

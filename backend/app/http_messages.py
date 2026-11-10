@@ -153,14 +153,20 @@ def mime_body(envelope,limit,body=None,body_type='application/json'):
     if len(raw)>limit:raise ValueError('MIME request body limit exceeded')
     return raw,message['Content-Type']
 
-def response_tree(response,raw):
+def parse_mime_entity(content_type, raw):
+    return BytesParser(policy=policy.default).parsebytes(
+        ('Content-Type: ' + content_type + '\r\nMIME-Version: 1.0\r\n\r\n').encode() + raw
+    )
+
+
+def response_tree(response,raw,*,mime=None):
     headers=response.headers;group={key.lower():headers.get_list(key) if len(headers.get_list(key))>1 else value for key,value in headers.items()}
     for name in ('Allow','Content-Type','Content-Length','Content-Encoding','Date','Location','Set-Cookie','Pragma'):
         if name.lower() in group:group[name]=headers.get_list(name) if name in ('Allow','Set-Cookie') else group[name.lower()]
     group['DynamicHeaders']=[{'name':key,'value':value} for key,value in headers.multi_items()]
     result={'statusLine':{'httpVersion':response.http_version,'statusCode':response.status_code,'reasonPhrase':response.reason_phrase},'Headers':group,'body':None,'asciiContent':raw.decode(response.encoding or 'utf-8',errors='replace'),'binaryContent':base64.b64encode(raw).decode()}
     if 'multipart/' in headers.get('content-type','').lower():
-        message=BytesParser(policy=policy.default).parsebytes(('Content-Type: '+headers['content-type']+'\r\nMIME-Version: 1.0\r\n\r\n').encode()+raw);count=[0]
+        message=mime if mime is not None else parse_mime_entity(headers['content-type'],raw);count=[0]
         def unpack(message,depth=0):
             if depth>8:raise ValueError('MIME response nesting exceeds 8 levels')
             parts=[]

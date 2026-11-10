@@ -2,7 +2,7 @@
 from __future__ import annotations
 import copy, hashlib, json, re, uuid
 from .http_contracts import bundle_document, schema_errors, response_schema
-from .rest_contract import operation_config
+from .rest_contract import compatible_security, operation_config
 
 METHODS={'get','post','put','patch','delete','head','options','trace'}
 
@@ -105,6 +105,16 @@ def blueprint_plan(document,selected,connection,name='',response_mode='stub'):
     tasks=[];warnings=[]
     for index,key in enumerate(selected):
         operation=known[key];example=operation['example'] if response_mode=='example' else None
+        document = validated['document']
+        declaration = document['paths'][operation['path']][operation['method'].lower()]
+        if declaration.get('security', document.get('security')):
+            if any('${' in str(config.get(field, '')) for field in ('authentication', 'clientAuthentication')):
+                warnings.append(f'{key}: OpenAPI security will be checked after connection properties are resolved')
+            else:
+                try:
+                    compatible_security(operation_config({**config, 'operationId':key, 'operation':'receiver'}))
+                except ValueError as error:
+                    raise ValueError(f'{key}: {error}') from None
         if response_mode=='example' and example is None:warnings.append(f'{key}: no declared example; responds with 501 until implemented')
         status=example['statusCode'] if example else 501
         body=example['body'] if example else {'error':'API operation not implemented','operationId':key}

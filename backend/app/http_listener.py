@@ -2,15 +2,24 @@
 from __future__ import annotations
 import asyncio, base64, hashlib, ipaddress, json, tempfile, urllib.parse
 from pathlib import Path
+from http import HTTPStatus
 from xml.etree import ElementTree
 from .http_contracts import (response_schema, schema_errors, request_schema, media_schema, response_content,
                              parse_json, hosted_response_content, media_family, negotiate_media)
 from .http_messages import multi_values
-from .http_policy import cors_headers, rate_limit
-from .rest_contract import validate_parameters,typed_form_body
+from .http_policy import client_address, cors_headers, rate_limit, representation_unchanged, trace_context, trace_headers
+from .rest_contract import decode_multipart_form, multipart_contract, validate_parameters,typed_form_body
 
 class HashedBody:
     def __init__(self,digest):self.sha256=digest
+
+
+def error_response(cfg, status, message):
+    if cfg.get('httpErrorFormat') != 'problem':
+        return json.dumps({'error': message}).encode(), 'application/json'
+    title = HTTPStatus(status).phrase if status in HTTPStatus._value2member_map_ else 'HTTP error'
+    detail = title if status >= 500 else message
+    return json.dumps({'type': 'about:blank', 'title': title, 'status': status, 'detail': detail}).encode(), 'application/problem+json'
 
 
 def mapped_xml_response(value, schema):
@@ -79,13 +88,13 @@ async def _handle_request(app,scope,receive,send,state):
             extra['Allow']=', '.join(sorted(allowed_methods));raise HTTPFault('Method not allowed','HTTP_METHOD_NOT_ALLOWED',405)
         metadata,cfg,parameters,methods=selected or matches[0]
         cors=cors_headers(cfg,headers,allowed_methods,preflight=bool(requested))
+        if sum(len(k)+len(v)+4 for k,v in scope.get('headers',[]))>number(cfg,'maxHeaderBytes',65536,1024):raise HTTPFault('HTTP headers too large','HTTP_BAD_REQUEST',431)
         allowed=str(cfg.get('allowedIps') or '').replace(',',' ').split()
-        remote=(scope.get('client') or ('',0))[0]
+        remote=client_address(cfg,(scope.get('client') or ('',0))[0],headers)
         if allowed:
             try:permitted=any(ipaddress.ip_address(remote) in ipaddress.ip_network(item,strict=False) for item in allowed)
             except ValueError:permitted=False
             if not permitted:raise HTTPFault('Access denied','HTTP_SECURITY',403)
-        if sum(len(k)+len(v)+4 for k,v in scope.get('headers',[]))>number(cfg,'maxHeaderBytes',65536,1024):raise HTTPFault('HTTP headers too large','HTTP_BAD_REQUEST',431)
         rate_limit(cfg,remote)
         if method=='OPTIONS' and (requested or selected is None):
             response_headers={'Allow':', '.join(sorted(allowed_methods)),**cors}
@@ -117,6 +126,12 @@ async def _handle_request(app,scope,receive,send,state):
         if upload:upload.close()
         target=(scope.get('raw_path') or scope['path'].encode()).decode('ascii')+('?' + scope['query_string'].decode('ascii') if scope.get('query_string') else '')
         claims=await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(app.executor,lambda:authorize(cfg,method,target,headers,HashedBody(digest.hexdigest()) if upload else raw,app.verified_mtls)),number(cfg,'activityTimeoutSeconds',180,1))
+        if cfg.get('_restSecurityAlternatives'):
+            scope_claim = claims.get('scope', claims.get('scp', ''))
+            granted = scope_claim.split() if isinstance(scope_claim, str) else scope_claim if isinstance(scope_claim, list) and all(isinstance(value, str) for value in scope_claim) else []
+            if not any((not certificate or app.verified_mtls) and set(required).issubset(granted)
+                       for certificate, required in cfg['_restSecurityAlternatives']):
+                raise HTTPFault('Insufficient scope','HTTP_SECURITY',403)
         content_type=str(headers.get('content-type','')).split(';')[0].strip().lower();expected=str(cfg.get('contentType') or '').split(';')[0].strip().lower()
         formats=cfg.get('_restRequestSchemas') or {}
         if size and (media_schema(formats,content_type)[0] is None if formats else expected and content_type!=expected):raise HTTPFault('Unsupported content type','REST_UNSUPPORTED_MEDIA',415)
@@ -133,6 +148,17 @@ async def _handle_request(app,scope,receive,send,state):
             except ValueError:raise HTTPFault('Invalid JSON body','HTTP_BAD_REQUEST',400)
         elif content_type=='application/x-www-form-urlencoded':body_value=multi_values(urllib.parse.parse_qsl(text,keep_blank_values=True))
         else:body_value=text if textual else raw
+        mime = None
+        if size and content_type.startswith('multipart/') and not upload:
+            import httpx
+            from .http_messages import parse_mime_entity, response_tree
+            try:
+                entity = parse_mime_entity(headers['content-type'], raw)
+                mime = response_tree(httpx.Response(200,headers=pairs),raw,mime=entity)['mimeEnvelopeElement']
+                if multipart_contract(cfg, content_type):
+                    body_value = decode_multipart_form(cfg, entity)
+            except (ValueError, KeyError, TypeError, LookupError):
+                raise HTTPFault('Invalid multipart request body','REST_VALIDATION',400) from None
         try:body_value=typed_form_body(cfg,body_value,content_type)
         except (ValueError,TypeError,KeyError):raise HTTPFault('Form fields violate their declared types','REST_VALIDATION',400) from None
         query=multi_values(urllib.parse.parse_qsl(scope.get('query_string',b'').decode('utf-8'),keep_blank_values=True))
@@ -144,7 +170,7 @@ async def _handle_request(app,scope,receive,send,state):
         if size and validate_request and schema is not None and schema_errors(body_value,schema):raise HTTPFault('Request schema validation failed','REST_VALIDATION',400)
         payload={'body':body_value,'headers':{**headers, **decoded['header']},'headerPairs':[{'name':k,'value':v} for k,v in pairs],
                  'method':method,'path':scope['path'],'pathParameters':{**parameters, **decoded['path']},
-                 'query':{**query, **decoded['query']},'remote':scope.get('client'),'auth':claims}
+                 'query':{**query, **decoded['query']},'remote':scope.get('client'),'clientIp':remote,'auth':claims}
         if size and not upload and (isinstance(schema, str) and schema.lstrip().startswith('<')
                                     or cfg.get('requestContentTypes') and media_family(content_type) == 'xml'):
             from .data_formats import DataFormats
@@ -156,19 +182,30 @@ async def _handle_request(app,scope,receive,send,state):
                     raise HTTPFault('Could not map the XML request body', 'HTTP_BAD_REQUEST', 400) from error
         if not textual and not upload:payload['binaryContent']=base64.b64encode(raw).decode()
         if upload:payload.update(fileName=upload.name,size=size)
-        if content_type.startswith('multipart/') and not upload:
-            import httpx
-            from .http_messages import response_tree
-            payload['mimeEnvelopeElement']=response_tree(httpx.Response(200,headers=pairs),raw).get('mimeEnvelopeElement')
+        if mime is not None:
+            payload['mimeEnvelopeElement'] = mime
         if cfg.get('operation')=='service':payload['envelope']=text
-        output=await asyncio.wait_for(app.handler(metadata,payload),number(cfg,'activityTimeoutSeconds',180,1))
+        trace_token = None
+        if boolean(cfg.get('propagateTraceContext')):
+            trace = trace_headers(headers)
+            trace_token = trace_context.set(trace)
+            payload['traceId'] = trace[0]
+        try:
+            output=await asyncio.wait_for(app.handler(metadata,payload),number(cfg,'activityTimeoutSeconds',180,1))
+        finally:
+            if trace_token is not None:
+                trace_context.reset(trace_token)
         response=output if isinstance(output,dict) and any(key in output for key in ('__httpResponse','statusCode','sent','fileName','binaryContent')) else {'body':output}
         status=int(response.get('statusCode',200));value=response.get('body')
         if not 200<=status<=599:raise HTTPFault('Invalid response status','HTTP_RESPONSE',500)
+        if status == 200 and method in ('GET', 'HEAD') and boolean(cfg.get('conditionalResponses')):
+            if representation_unchanged(headers, response.get('headers') or {}):
+                status = 304
+        bodyless = status in (204, 205, 304)
         explicit_media = next((str(value) for key,value in (response.get('headers') or {}).items() if str(key).lower()=='content-type'), None)
         selected_media = cfg.get('responseContentTypes') or []
         offered = hosted_response_content(cfg, status)
-        negotiated = len(selected_media) > 1 and str(status).startswith('2') and status not in (204, 205)
+        negotiated = len(selected_media) > 1 and str(status).startswith('2') and not bodyless
         if negotiated:
             available = list(offered)
             if not available:
@@ -188,7 +225,7 @@ async def _handle_request(app,scope,receive,send,state):
         if match is None:
             schema = response_schema(cfg,status,response_media)
         rendered_xml = None
-        if status not in (204,304) and method != 'HEAD' and not response.get('fileName') and 'binaryContent' not in response:
+        if not bodyless and method != 'HEAD' and not response.get('fileName') and 'binaryContent' not in response:
             rendered_xml = mapped_xml_response(value, schema)
             if rendered_xml is None and selected_media and media_family(response_media) == 'xml' and value is not None:
                 from .data_formats import DataFormats
@@ -204,8 +241,10 @@ async def _handle_request(app,scope,receive,send,state):
                         raise HTTPFault('Response body is not an XML document','HTTP_RESPONSE',500) from error
             if rendered_xml is not None:
                 value = rendered_xml
-        if status not in (204,304) and method!='HEAD' and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and response_content(cfg,status) and media_schema(response_content(cfg,status),response_media)[0] is None:raise HTTPFault('Undeclared response content type','REST_VALIDATION',500)
-        if response.get('fileName'):
+        if not bodyless and method!='HEAD' and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and response_content(cfg,status) and media_schema(response_content(cfg,status),response_media)[0] is None:raise HTTPFault('Undeclared response content type','REST_VALIDATION',500)
+        if bodyless:
+            size = 0
+        elif response.get('fileName'):
             if schema is not None and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))):raise HTTPFault('File responses cannot bypass configured schema validation','REST_VALIDATION',500)
             stream_path=Path(response['fileName']).expanduser();size=stream_path.stat().st_size
         else:
@@ -216,7 +255,7 @@ async def _handle_request(app,scope,receive,send,state):
             elif isinstance(value,(bytes,bytearray,memoryview)):body=bytes(value)
             elif isinstance(value,(dict,list,bool,int,float)):body=json.dumps(value,ensure_ascii=False,allow_nan=False).encode()
             else:body=('' if value is None else str(value)).encode()
-            if status not in (204,304) and method!='HEAD' and schema is not None and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and schema_errors(value,schema):raise HTTPFault('Response schema validation failed','REST_VALIDATION',500)
+            if method!='HEAD' and schema is not None and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and schema_errors(value,schema):raise HTTPFault('Response schema validation failed','REST_VALIDATION',500)
             size=len(body)
         if size>number(cfg,'maxResponseBodyBytes',64*1024**2,1):raise HTTPFault('Response body too large','HTTP_BAD_RESPONSE',500)
         response_headers={str(k).lower():v for k,v in (response.get('headers') or {}).items() if str(k).lower() not in ('content-length','transfer-encoding','connection')}
@@ -230,17 +269,18 @@ async def _handle_request(app,scope,receive,send,state):
         )
         response_headers.setdefault('content-type',response_media if negotiated else str(cfg.get('responseType') or ('application/xml' if xml_response else 'application/octet-stream' if stream_path or isinstance(value,(bytes,bytearray,memoryview)) else 'application/json' if isinstance(value,(dict,list,bool,int,float)) else 'text/plain; charset=utf-8')))
         if not boolean(cfg.get('usePersistentConnections'),True) and scope.get('http_version')!='2':response_headers['connection']='close'
-        response_headers['content-length']=str(0 if status in (204,304) else size)
-        if method=='HEAD' or status in (204,304):body=b'';stream_path=None
+        response_headers['content-length']=str(size)
+        if method=='HEAD':body=b'';stream_path=None
         encoded_headers(response_headers)  # Validate before committing any response.
     except HTTPFault as error:
-        status=error.status;body=json.dumps({'error':str(error)}).encode();stream_path=None;response_headers={'content-type':'application/json',**extra,**getattr(error,'headers',{})}
+        status=error.status;body,media=error_response(locals().get('cfg') or app.connection,status,str(error));stream_path=None;response_headers={'content-type':media,**extra,**getattr(error,'headers',{})}
         if status==401:response_headers['WWW-Authenticate']='Basic realm="MINA"' if str((locals().get('cfg') or app.connection).get('authentication') or '').lower() in ('basic','ldap') else 'Bearer'
-    except asyncio.TimeoutError:status=504;body=b'{"error":"HTTP execution or read timeout"}';stream_path=None;response_headers={'content-type':'application/json'}
+    except asyncio.TimeoutError:
+        status=504;body,media=error_response(locals().get('cfg') or app.connection,status,'HTTP execution or read timeout');stream_path=None;response_headers={'content-type':media}
     except Exception:
         import logging
         logging.getLogger('mina.http').exception('HTTP listener request failed')
-        status=500;body=b'{"error":"HTTP request failed"}';stream_path=None;response_headers={'content-type':'application/json'}
+        status=500;body,media=error_response(locals().get('cfg') or app.connection,status,'HTTP request failed');stream_path=None;response_headers={'content-type':media}
     if 'Vary' in cors and any(key.lower() == 'vary' for key in response_headers):
         key = next(key for key in response_headers if key.lower() == 'vary')
         response_headers[key] = str(response_headers[key]) + ', ' + cors.pop('Vary')
