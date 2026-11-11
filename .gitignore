@@ -4,7 +4,8 @@ output/mina-overview/
 .codex-finalizer/
 .mina-vp-build/
 
-/frontend/node_modules/
+# Installed Node.js dependencies (including nested packages such as @electron).
+node_modules/
 frontend/dist/
 frontend/release/
 frontend/release-control-plane/

@@ -2,7 +2,7 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; script-src 'self'">
 <title>Starting MINA Studio</title>
 <style>
   html { color-scheme: dark; font: 16px "Segoe UI", sans-serif; }
@@ -12,6 +12,8 @@
   h1 { font-size: 1.4rem; margin: 1rem 0 .45rem; }
   p { color: #a2bfce; margin: 0 0 1.2rem; }
   progress { width: min(100%, 11rem); height: .5rem; accent-color: #39c6e7; }
+  .runtime-status { position: fixed; bottom: 0; right: 0; padding: .6rem .9rem; max-width: calc(100vw - 1.8rem); background: #0d2231; border: 1px solid #315367; }
+  .runtime-status progress { display: block; margin-top: .25rem; }
 </style>
 <main aria-labelledby="title">
   <img src="mina-icon.svg" alt="">
@@ -19,4 +21,9 @@
   <p>The local runtime is getting ready.</p>
   <progress aria-label="Starting the local runtime"></progress>
 </main>
+<aside class="runtime-status" aria-label="Runtime startup">
+  <span id="startup-label" role="status">Starting local runtime</span>
+  <progress id="startup-progress" aria-label="Startup stages" max="3"></progress>
+</aside>
+<script src="startup.js" defer></script>
 </html>

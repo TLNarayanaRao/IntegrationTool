@@ -787,9 +787,9 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     if any(activity.get('type') == 'json' and any(activity.get('config', {}).get(flag) for flag in ('validateInput', 'validateOutput')) for task in project.get('tasks', []) for activity in task.get('activities', [])):
         native_modules.add('mapper.py')
     if 'mapper' in capabilities or any(task.get('groups') or any(edge.get('type') == 'success_condition' for edge in task.get('transitions', [])) for task in project.get('tasks', [])) or any(
-            isinstance(value, dict) and '$rule' in value or isinstance(value, str) and re.match(r'[\w:-]+\(', value.strip())
+            key == '$occurrences' or isinstance(value, dict) and '$rule' in value or isinstance(value, str) and re.match(r'[\w:-]+\(', value.strip())
             for task in project.get('tasks', []) for activity in task.get('activities', [])
-            for value in (activity.get('config', {}).get('inputMappings') or {}).values()):
+            for key, value in (activity.get('config', {}).get('inputMappings') or {}).items()):
         native_modules.add('mapper.py')
     if 'mapper.py' in native_modules:
         native_modules.update({'mapper_xml.py', 'mapper_binding.py', 'mapper_coercions.py'})

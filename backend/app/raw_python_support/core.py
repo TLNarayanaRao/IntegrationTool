@@ -180,12 +180,17 @@ def _next_cron(expression: str, now: datetime) -> datetime:
 
 def mapped(config: dict, ctx: Context) -> dict:
     entries = config.get('inputMappings') or {}
-    if any(isinstance(value, dict) and '$rule' in value or
+    occurrences = entries.get('$occurrences')
+    has_active_copy = isinstance(occurrences, list) and any(
+        isinstance(rule, dict) and rule.get('duplicateOf') and rule.get('enabled', True)
+        and (rule.get('select') or rule.get('source')) for rule in occurrences)
+    if has_active_copy or any(isinstance(value, dict) and '$rule' in value or
            isinstance(value, (str, Template)) and re.match(r'[\w:-]+\(', str(mapping_expression(value)).strip())
            for value in entries.values()):
-        from .native.mapper import execute as execute_mapping
+        from .native.mapper import INPUT_OCCURRENCES, activity_occurrence_rules, execute as execute_mapping
         rules = []
         for path, value in entries.items():
+            if path == INPUT_OCCURRENCES: continue
             if isinstance(value, dict) and '$rule' in value:
                 rule = mapping_expression(value)
                 rule = {**rule, 'operator': rule['$rule']}
@@ -193,13 +198,16 @@ def mapped(config: dict, ctx: Context) -> dict:
                     value.startswith('${') or re.match(r'[\w:-]+\(', value.strip()) or
                     len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'")):
                 rule = {'source': mapping_expression(value)}
+                if has_active_copy and isinstance(value, Template): rule['inputTemplate'] = True
             else:
                 literal, parsed = parse_literal(value)
                 rule = {'constant': literal if parsed else resolve(value, ctx)}
             rules.append({**rule, 'target': path})
+        if has_active_copy: rules.extend(mapping_expression(rule) for rule in activity_occurrence_rules(entries))
         return execute_mapping(mapping_document(ctx), rules, {'validateOutput': False, 'nullPolicy': 'keep', 'inputMappingSemantics': True, 'customFunctions': config.get('customFunctions') or ctx.attributes.get('customFunctions', [])})
     result = {}
     for path, expression in entries.items():
+        if path == '$occurrences': continue
         literal, parsed = parse_literal(expression)
         value = literal if parsed else resolve(expression, ctx)
         assign_path(result, path, value)

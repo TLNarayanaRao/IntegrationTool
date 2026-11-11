@@ -6,7 +6,7 @@ import httpx
 from time import perf_counter
 from concurrent.futures import ThreadPoolExecutor
 from .models import Activity, GroupDefinition, ProcessDefinition, Project, RunResult, find_subtask
-from .mapper import _function_arguments, apply_function, evaluate_condition, get_path, rewrite_references, validate_output, execute as execute_mapping, execute_async as execute_mapping_async
+from .mapper import INPUT_OCCURRENCES, activity_occurrence_rules, _function_arguments, apply_function, evaluate_condition, get_path, rewrite_references, validate_output, execute as execute_mapping, execute_async as execute_mapping_async
 from .dataweave import DataWeaveError, execute as execute_dataweave
 from .sap import sap_adapter
 from .snowflake import snowflake_adapter
@@ -40,6 +40,19 @@ class WorkflowRuntime(DataFormats):
         self._kafka_executor = None
         self._jms_executor = None
         self._jms_scope_id = uuid.uuid4().hex
+        self._active_activity: dict[str, dict] = {}
+        self._active_execution: dict[str, dict] = {}
+
+    def active_activities(self, project_id: str) -> list[dict]:
+        return [dict(activity) for activity in self._active_activity.values() if activity['projectId'] == project_id]
+
+    def execution_snapshot(self, project_id: str) -> dict | None:
+        executions = [value for value in self._active_execution.values() if value['projectId'] == project_id]
+        if not executions: return None
+        logs = [dict(entry) for execution in executions for entry in list(execution['logs'])[-1000:]]
+        logs.sort(key=lambda entry: str(entry.get('time') or ''))
+        return {'status':'running', 'logs':logs[-1000:],
+                'activityOutputs':dict(executions[0]['activities']), 'taskOutputs':dict(executions[0]['tasks'])}
 
     def jms_application_scope(self, project_id: str) -> str:
         """Stable across jobs, isolated across applications and runtime instances."""
@@ -381,8 +394,11 @@ class WorkflowRuntime(DataFormats):
             context['input'] = copy.deepcopy(branch_context['input'])
             context['vars'] = copy.deepcopy(branch_context['vars'])
             context['context'].update(branch_context['context'])
+        if project:
+            self._active_execution[run_id] = {'projectId':project.id,'logs':logs,'activities':activity_outputs,'tasks':task_outputs}
         self.log(logs, 'INFO', f'Job started: {process.name}', kind='lifecycle', correlationId=correlation_id, runId=run_id, startedAt=log_timestamp(started))
         def finish(status: str, output: dict) -> RunResult:
+            self._active_execution.pop(run_id, None)
             if branch_output is not None: branch_output['last'] = context['last']
             ended = datetime.now(timezone.utc); duration = round((ended - started).total_seconds() * 1000, 3)
             self.log(logs, 'INFO' if status == 'completed' else 'ERROR', f'Job {status}: {process.name} in {duration:.3f} ms', kind='lifecycle', correlationId=correlation_id, runId=run_id, endedAt=log_timestamp(ended), durationMs=duration)
@@ -420,6 +436,11 @@ class WorkflowRuntime(DataFormats):
                 context['context']['activityId'] = current.id
                 activity_input = context['last']
                 error = None
+                if project:
+                    self._active_activity[run_id] = {
+                        'projectId': project.id, 'taskId': process.id, 'taskName': process.name,
+                        'activityId': current.id, 'activityName': current.name, 'startedAt': log_timestamp(),
+                    }
                 try:
                     if triggered_event_pending:
                         context['last'] = event_output
@@ -430,6 +451,7 @@ class WorkflowRuntime(DataFormats):
                         context['last'] = await self.execute_with_policy(current, context)
                     self.record_activity_output(current, context['last'], context, activity_input)
                 except Exception as exc: error = exc
+                finally: self._active_activity.pop(run_id, None)
                 activity_duration = round((perf_counter() - activity_started) * 1000, 3)
                 if error:
                     self.log(logs, 'ERROR', f'Activity failed: {process.name} / {current.name} in {activity_duration:.3f} ms: {error}', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation, durationMs=activity_duration)
@@ -508,6 +530,7 @@ class WorkflowRuntime(DataFormats):
             task_state['output'] = final_output
             return finish('completed', final_output)
         except asyncio.CancelledError:
+            self._active_execution.pop(run_id, None)
             # Cancellation must unwind JDBC transaction groups and critical
             # sections just like a failed execution. Without this path a
             # Debug Stop could leave a connection or lock alive on Windows.
@@ -1489,6 +1512,14 @@ class WorkflowRuntime(DataFormats):
 
     def map_input_values(self, mappings: dict, ctx: dict) -> dict:
         mappings = mappings or {}
+        copies = activity_occurrence_rules(mappings)
+        children_by_id = {}
+        roots_by_parent = {}
+        for rule in copies:
+            if rule.get('duplicateOf'):
+                roots_by_parent.setdefault(rule.get('parentOccurrenceId'), []).append(rule)
+            else:
+                children_by_id.setdefault(rule['occurrenceId'], []).append(rule)
         def loop(expression):
             return isinstance(expression, dict) and expression.get('$rule') in ('for-each', 'for-each-group')
 
@@ -1511,14 +1542,14 @@ class WorkflowRuntime(DataFormats):
             current[parts[-1]] = item
             return scoped
 
-        def evaluate(entries, context):
+        def evaluate(entries, context, prefix='', owner=None):
             result = {}
             parents = [path for path, expression in entries.items() if structure(expression)]
             roots = [path for path in parents if not any(path.startswith(parent + '.') for parent in parents if parent != path)]
-            for path, expression in entries.items():
-                if any(path.startswith(parent + '.') for parent in roots): continue
-                children = {key[len(path) + 1:]: value for key, value in entries.items() if key.startswith(path + '.')}
-                if loop(expression) and (children or expression.get('mapChildren')):
+            def render(path, expression, children, scope):
+                full = prefix + path + '.'
+                if loop(expression) and (children or expression.get('mapChildren') or any(
+                        rule['target'].startswith(full) for rule in roots_by_parent.get(scope, ()))):
                     source = expression.get('select') or expression.get('source')
                     values = self.resolve(source, context)
                     values = values if isinstance(values, list) else ([] if values in (None, '') else [values])
@@ -1531,12 +1562,30 @@ class WorkflowRuntime(DataFormats):
                                 if part: key = key.get(part) if isinstance(key, dict) else None
                             grouped.setdefault(json.dumps(key, sort_keys=True, default=str), []).append(item)
                         groups = list(grouped.values())
-                    self.assign_path(result, path, [evaluate(children, scope_context(context, source, group[0], group)) for group in groups])
-                else:
-                    include, value = self.evaluate_mapping(expression, context)
-                    if include: self.assign_path(result, path, copy.deepcopy(value))
+                    return True, [evaluate(children, scope_context(context, source, group[0], group), full, scope) for group in groups]
+                return self.evaluate_mapping(expression, context)
+
+            for path, expression in entries.items():
+                if any(path.startswith(parent + '.') for parent in roots): continue
+                children = {key[len(path) + 1:]: value for key, value in entries.items() if key.startswith(path + '.')} if loop(expression) else {}
+                include, value = render(path, expression, children, owner)
+                if include: self.assign_path(result, path, copy.deepcopy(value))
+            for rule in roots_by_parent.get(owner, ()):
+                if not rule.get('enabled', True) or not rule['target'].startswith(prefix) or not (rule.get('select') or rule.get('source')): continue
+                path = rule['target'][len(prefix):]
+                if not path or any(path.startswith(parent + '.') for parent in roots): continue
+                full = rule['target'] + '.'
+                children = {child['target'][len(full):]: {**child, '$rule':child.get('operator') or 'direct'}
+                            for child in children_by_id.get(rule['occurrenceId'], ()) if child['target'].startswith(full) and child.get('enabled', True)}
+                include, values = render(path, {**rule, '$rule':rule.get('operator') or 'for-each'}, children, rule['occurrenceId'])
+                if not include or not values: continue
+                previous = get_path(result, path)
+                if isinstance(previous, dict) and previous and all(str(key).isdigit() for key in previous):
+                    previous = [previous[key] for key in sorted(previous, key=int)]
+                if not isinstance(previous, list): previous = [] if previous is None else [previous]
+                self.assign_path(result, path, [*previous, *copy.deepcopy(values if isinstance(values, list) else [values])])
             return result
-        return evaluate(mappings, ctx)
+        return evaluate({path: value for path, value in mappings.items() if path != INPUT_OCCURRENCES}, ctx)
 
     def mapping_value(self, expression, ctx):
         literal, parsed = parse_literal(expression)

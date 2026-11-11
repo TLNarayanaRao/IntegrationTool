@@ -2,22 +2,27 @@ export type MappingTreeField = { path: string; name: string; depth: number; type
 export type MappingTreeRow = { kind: "loop" | "grouping" | "field"; key: string; field: MappingTreeField; rule: any; depth: number; ancestors: string[]; occurrenceId?: string; loopKey?: string; hasChildren: boolean; duplicateRoot?: boolean };
 
 /** Statements wrap target nodes; duplicate occurrences include their whole subtree. */
-export function mappingTreeRows(fields: MappingTreeField[], mappings: any[] | Record<string, any>): MappingTreeRow[] {
+export function mappingTreeRows(fields: MappingTreeField[], mappings: any[] | Record<string, any>, duplicateFields = fields): MappingTreeRow[] {
   const rules = Array.isArray(mappings) ? mappings : Object.entries(mappings || {}).map(([target, value]) => ({ target, ...(value && typeof value === "object" && "$rule" in value ? value : { source: value }) }));
   const result: MappingTreeRow[] = [];
-  const fieldIndex = new Map(fields.map(field => [field.path, field]));
-  const childIndex = new Map<string, MappingTreeField[]>();
-  const roots: MappingTreeField[] = [];
-  for (const field of fields) {
-    let prefix = field.path, parent: MappingTreeField | undefined;
-    while (prefix.includes('.')) {
-      prefix = prefix.slice(0, prefix.lastIndexOf('.'));
-      const candidate = fieldIndex.get(prefix);
-      if (candidate?.depth === field.depth - 1) { parent = candidate; break; }
+  const indexFields = (schema: MappingTreeField[]) => {
+    const fieldIndex = new Map(schema.map(field => [field.path, field]));
+    const children = new Map<string, MappingTreeField[]>();
+    const roots: MappingTreeField[] = [];
+    for (const field of schema) {
+      let prefix = field.path, parent: MappingTreeField | undefined;
+      while (prefix.includes('.')) {
+        prefix = prefix.slice(0, prefix.lastIndexOf('.'));
+        const candidate = fieldIndex.get(prefix);
+        if (candidate?.depth === field.depth - 1) { parent = candidate; break; }
+      }
+      if (parent) { const entries = children.get(parent.path) || []; entries.push(field); children.set(parent.path, entries); }
+      else roots.push(field);
     }
-    if (parent) { const children = childIndex.get(parent.path) || []; children.push(field); childIndex.set(parent.path, children); }
-    else roots.push(field);
-  }
+    return {children,roots};
+  };
+  const {children:childIndex,roots} = indexFields(fields);
+  const duplicateChildIndex = duplicateFields === fields ? childIndex : indexFields(duplicateFields).children;
   const ruleIndex = new Map<string, Map<string | undefined, any>>();
   const duplicates = new Map<string, any[]>();
   for (const rule of rules) {
@@ -32,7 +37,7 @@ export function mappingTreeRows(fields: MappingTreeField[], mappings: any[] | Re
     const rule = ruleIndex.get(field.path)?.get(occurrenceId);
     const key = `${occurrenceId || "primary"}:${field.path}`, loopKey = `${key}:loop`;
     const loop = ["for-each", "for-each-group"].includes(rule?.operator || rule?.$rule);
-    const descendants = childIndex.get(field.path) || [];
+    const descendants = (occurrenceId ? duplicateChildIndex : childIndex).get(field.path) || [];
     const copy = (rule?.operator || rule?.$rule) === "copy-of" && rule.enabled !== false;
     if (loop && !duplicateRoot) {
       result.push({ kind: "loop", key: loopKey, field, rule, depth, ancestors, occurrenceId, loopKey, hasChildren: true });

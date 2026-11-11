@@ -1,0 +1,26 @@
+.app > main > .execution-console { display:flex !important; grid-row:5 !important; grid-column:1/-1 !important; min-width:0; min-height:0; width:100%; overflow:hidden; }
+.app > main:has(> .orchestrator-empty):has(> .execution-console) { grid-template-rows:34px minmax(0,1fr) minmax(0,min(var(--config-height,285px),65%)); }
+.app > main:has(> .execution-console) > .orchestrator-empty { grid-row:2; }
+.app > main:has(> .orchestrator-empty) > .execution-console { grid-row:3 !important; }
+.execution-console { flex-direction:column; color:var(--text); background:var(--panel); border-top:1px solid var(--line); outline:none; }
+.execution-console:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.execution-console > .pane-title { flex-shrink:0; min-height:34px; padding:5px 10px; gap:8px; }
+.execution-console .monitor-actions { flex-wrap:wrap; }
+.execution-console .monitor-actions button { min-width:26px; min-height:26px; }
+.execution-console > .run-state { flex-shrink:0; padding:5px 10px; color:var(--muted); border-bottom:1px solid var(--line); }
+.execution-console-content { display:grid; grid-template-columns:minmax(180px,32%) minmax(0,1fr); flex:1; min-height:0; overflow:hidden; }
+.execution-console-content:has(> .execution-summary:empty) { grid-template-columns:minmax(0,1fr); }
+.execution-summary { min-width:0; overflow:auto; border-right:1px solid var(--line); }
+.execution-summary:empty { display:none; }
+.execution-log-list { min-width:0; min-height:0; overflow:auto; padding:5px 10px; }
+.execution-log-list > .log { border-bottom:1px solid var(--line); padding:5px 2px; overflow-wrap:anywhere; }
+.execution-log-list > .log small { color:var(--muted); }
+.execution-log-list > .log p { margin:3px 0; font-size:11px; line-height:1.4; }
+.execution-log-list > .log.error { color:#df7181; }
+.execution-log-list > .log.warn { color:#d9af68; }
+.execution-log-list pre { margin:4px 0; max-height:180px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; }
+.execution-log-empty { color:var(--muted); font-size:12px; }
+.execution-dock-layer > .execution-console-expanded { width:min(1100px,96vw); height:min(680px,92dvh); }
+.execution-dock-layer > .execution-console-fullscreen { width:calc(100vw - 24px); height:calc(100dvh - 24px); }
+.execution-dock-layer > .execution-console { display:flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+@media(max-width:800px) { .execution-console-content { grid-template-columns:minmax(140px,35%) minmax(0,1fr); } }

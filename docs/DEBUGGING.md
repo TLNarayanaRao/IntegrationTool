@@ -2,6 +2,16 @@
 
 MINA Studio supports interactive debugging for ordinary tasks and continuous event starters.
 
+## Execution and logs pane
+
+Click **Run** or **Debug** to open **Execution / Debug** automatically in the lower pane, replacing the activity Configuration and Input tabs. The canvas remains visible above it. Run logs update while the task executes; debug logs update as you step or continue. Listener endpoints and generated outputs appear beside the logs.
+
+The pane stays open while Debug is paused or a receiver is listening. It closes when execution completes, fails, or is stopped, restoring the selected activity tab. Its splitter resizes the lower pane; the expand and full-screen controls provide more space. To inspect retained logs after a session ends, choose **Window → Execution & Debug**.
+
+Click an activity on the canvas to replace the execution pane with that activity's **Configuration** tab. Its **Input** and **Output** tabs remain available for inspecting the mappings and schemas. Debugging continues in its current running or paused state; activity selection does not stop or restart the session. Use **Execution Logs** on the debug ribbon, or **Window → Execution & Debug**, to return to the live logs.
+
+When running Studio in a browser from a source checkout, the runtime serves `frontend/dist`. After updating the source, run `npm.cmd run build` from the `frontend` directory, then reload Studio in the browser (Ctrl+Shift+R in Firefox). A build written to a separate test output directory does not update the browser-served Studio. Short tasks can finish and close the pane immediately; use **Window → Execution & Debug** to review their retained logs, or set a breakpoint before debugging to keep the session paused.
+
 ## Execution controls
 
 - **Continue** runs until completion, an enabled breakpoint, a handled exception when pause-on-error is enabled, or a manual pause.

@@ -34,9 +34,12 @@ test('shared icon loader chooses bundled artwork and preserves legacy PNGs', asy
   assert.equal(context.activityIconUrl('FileRead'), '/activity-icons/FileRead.png');
 });
 
-test('canvas, palette and picker use the same icon loader', async () => {
+test('canvas, palette and picker use the same icon renderer', async () => {
   for (const name of ['main.tsx', 'ActivityPicker.tsx']) {
     const source = await readFile(new URL('../src/' + name, import.meta.url), 'utf8');
-    assert.match(source, /src=\{activityIconUrl\(asset\)\}/, name);
+    assert.match(source, /import ActivityIcon from "\.\/ActivityIcon"/, name);
+    assert.match(source, /<ActivityIcon asset=\{asset\}/, name);
   }
+  const renderer = await readFile(new URL('../src/ActivityIcon.tsx', import.meta.url), 'utf8');
+  assert.match(renderer, /src=\{activityIconUrl\(asset\)\}/);
 });

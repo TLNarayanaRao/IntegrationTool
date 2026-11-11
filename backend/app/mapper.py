@@ -809,6 +809,16 @@ def evaluate_condition(expression: Any, resolve) -> bool:
     return bool(resolve(text))
 
 
+INPUT_OCCURRENCES = '$occurrences'
+
+
+def activity_occurrence_rules(mappings: dict) -> list[dict]:
+    values = mappings.get(INPUT_OCCURRENCES)
+    if not isinstance(values, list): return []
+    return [rule for rule in values if isinstance(rule, dict) and isinstance(rule.get('target'), str)
+            and rule.get('target') and isinstance(rule.get('occurrenceId'), str) and rule.get('occurrenceId')]
+
+
 def validate_mapping_rules(mappings: Any, schema: Any = None, input_types: dict | None = None, custom_functions: list | None = None) -> list[str]:
     """Reject invalid literal mappings before compiling a deployable archive.
 
@@ -818,7 +828,7 @@ def validate_mapping_rules(mappings: Any, schema: Any = None, input_types: dict 
     types = {field['path']: field['type'] for field in flatten_schema(schema)} if schema else {}
     types.update(input_types or {})
     rules = [{'target': key, **(value if isinstance(value, dict) and '$rule' in value else {'source': value})}
-             for key, value in mappings.items()] if isinstance(mappings, dict) else mappings or []
+             for key, value in mappings.items() if key != INPUT_OCCURRENCES] + activity_occurrence_rules(mappings) if isinstance(mappings, dict) else mappings or []
     if not rules: return []
     errors = []
     string_types = {'string', 'binary', 'normalizedstring', 'token', 'date', 'datetime', 'time', 'anyuri', 'language', 'name', 'ncname', 'id', 'idref', 'hexbinary', 'base64binary'}
@@ -1073,6 +1083,8 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
     def merge_loop(output, target, generated, loop):
         if loop.get('duplicateOf') and not generated: return
         existing = get_path(output, target)
+        if options.get('inputMappingSemantics') and isinstance(existing, dict) and existing and all(str(key).isdigit() for key in existing):
+            existing = [existing[key] for key in sorted(existing, key=int)]
         previous = existing if isinstance(existing, list) else [existing] if existing is not None else []
         set_path(output, target, [*previous, *generated])
 
@@ -1125,12 +1137,14 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
                 return get_path(group if group is not None else [current], source_path[len('vars.currentGroup'):].lstrip('.'))
             if loop_contexts and (source_path == 'vars.current' or source_path.startswith('vars.current.')):
                 return get_path(loop_contexts[-1][0], source_path[len('vars.current'):].lstrip('.'))
+            if rule.get('inputTemplate') and not re.fullmatch(r'\$\{[^}]+\}', text):
+                return re.sub(r'\$\{[^}]+\}', lambda match: str(evaluate_source(match[0], bindings, depth + 1)), text)
             relative = _relative_path(source_path, scope_source) if scope is not None else None
             if relative is not None:
                 return typed_source(source_path, get_path(scope, relative))
             if source_path.startswith('coerced.'):
                 return typed_source(source_path, coercion_value(source_path))
-            return typed_source(source_path, get_path(document, source_path))
+            return typed_source(source_path, xml_path(source_path) if options.get('inputMappingSemantics') else get_path(document, source_path))
         return evaluate_source(rule.get('select') or rule.get('source', ''))
 
     def condition_passes(rule: dict, scope: Any = None, scope_source: str = '') -> bool:
@@ -1159,7 +1173,7 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
     def mapped_value(rule: dict, value: Any):
         try:
             value = transform_value(value, rule.get('functions', []), options.get('lookupTables', {}))
-            if options.get('inputMappingSemantics') and rule.get('operator') == 'copy-of' and not isinstance(value, list):
+            if options.get('inputMappingSemantics') and rule.get('operator') == 'copy-of' and not rule.get('duplicateOf') and not isinstance(value, list):
                 value = [] if value in (None, '') else [value]
             if value is None:
                 if options.get('copyNil') is False: return _OMIT
@@ -1207,13 +1221,13 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
             loop_plans[id(loop)] = (descendants, nested_loops, direct)
         descendants, nested_loops, direct = loop_plans[id(loop)]
         output: list[Any] = []
-        if options.get('inputMappingSemantics') and not descendants and not loop.get('mapChildren'):
+        if options.get('inputMappingSemantics') and not descendants and not nested_loops and not loop.get('mapChildren'):
             if operator == 'for-each-group':
                 return [{'key': str(get_path(current, group_by) if group_by else current), 'items': group} for current, group in iterations]
             return values
         for current, current_group in iterations:
             tick()
-            if loop.get('duplicateOf') and not descendants and not nested_loops:
+            if loop.get('duplicateOf') and not descendants and not nested_loops and not loop.get('mapChildren'):
                 item = mapped_value(loop, current)
                 if item is not _OMIT: output.append(item)
                 continue

@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import MapperStudio from "./MapperStudio";
 import MappingExpressionInput from "./MappingExpressionInput";
-import {autoMapLoopChildren, emptyRepeatOccurrence, mapActivityRepeatingDrop, mapRepeatingDrop, relativeLoopExpression, expandLoopExpression, removeRepeatOccurrence, type RepeatingDropMode} from "./mapperLoopMappings";
+import {activityMappingRules, activityMappingsFromRules, autoMapLoopChildren, emptyRepeatOccurrence, mapActivityRepeatingDrop, mapRepeatingDrop, relativeLoopExpression, expandLoopExpression, removeRepeatOccurrence, type RepeatingDropMode} from "./mapperLoopMappings";
 import { activityGuidance } from "./activityGuidance";
 import { mappingTreeRows, MappingTreeRow } from "./mappingTree";
 import { validateMapping } from "./mappingValidation";
@@ -230,13 +230,13 @@ function MappingContextMenu({ menu, value, close, change, remove, duplicate, can
     <header><DataNodeIcon/><span><b>{menu.label}</b></span></header>
     <button onClick={() => apply({...(value && typeof value === 'object' ? value : {}), $rule:'for-each', operator:'for-each', source:mappingSource(value) || menu.defaultLoopSource || '', select:undefined, constant:undefined})}>For Each…</button>
     <button onClick={() => apply({...(value && typeof value === 'object' ? value : {}), $rule:'for-each-group', operator:'for-each-group', source:mappingSource(value) ?? '', select:undefined, constant:undefined, groupBy:value?.groupBy || ''})}>For Each Group…</button>
-    <button disabled={menu.required} title={menu.required ? "Required target fields cannot be wrapped in If" : undefined} onClick={() => {
+    <button disabled={menu.required || menu.duplicateRoot} title={menu.duplicateRoot ? "Apply conditions to child mappings within a duplicate" : menu.required ? "Required target fields cannot be wrapped in If" : undefined} onClick={() => {
       const previous = value && typeof value === 'object' ? value : {};
       const mappedValue = previous.constant !== undefined ? JSON.stringify(previous.constant) : mappingSource(value) ?? '';
       apply({...previous, $rule:'if', operator:'if', source:mappedValue, select:undefined, constant:undefined,
         condition:(previous.$rule || previous.operator) === 'if' ? previous.condition || '' : ''});
     }}>If…</button>
-    <button onClick={() => setWhenCount(String(value?.whens?.length || 1))}>When / Otherwise…</button>
+    <button disabled={menu.duplicateRoot} onClick={() => setWhenCount(String(value?.whens?.length || 1))}>When / Otherwise…</button>
     {whenCount !== null && <section className="mapping-rule-editor">
       <label>How many When conditions?<input autoFocus type="number" min="1" max="100" step="1" value={whenCount} onChange={event => setWhenCount(event.target.value)}/></label>
 
@@ -1684,7 +1684,7 @@ export function activityMappingIssues(node:any, task:any, tasks:any[], schemas:a
     const error = validateMapping(expression, types[path] || 'any', paths);
     if (error) issues.push({path,error});
   };
-  const rules = mapper ? config.mappings || [] : Object.entries(config.inputMappings || {}).map(([target,value]:any) => ({target,...(value && typeof value === 'object' && value.$rule ? value : {source:value})}));
+  const rules = mapper ? config.mappings || [] : activityMappingRules(config.inputMappings || {});
   for (const rule of rules) {
     if (rule.enabled === false) continue;
     const operator = rule.operator || rule.$rule;
@@ -2760,9 +2760,11 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
   const rows = useMemo(() => requestTree ? buildRows(httpRequestOccurrences(fields,mappings)) : schemaRows, [requestTree,fields,mappings,schemaRows]), firstTarget = rows.find((row) => row.explicit)?.path || "";
   const resize = useSourcePaneWidth(expanded ? 350 : undefined), tree = useTreeCollapse(), root = useRef<HTMLDivElement>(null), [selected, setSelected] = useState(firstTarget), [contextMenu, setContextMenu] = useState<any>(null), [dialogOpen, setDialogOpen] = useState(false), [draftMappings, setDraftMappings] = useState<any>({});
   const [repeatingDrop, setRepeatingDrop] = useState<RepeatingDrop | null>(null);
-  const displayRows = useMemo(() => mappingTreeRows(rows, mappings), [rows,mappings]);
-  const rowIndex = new Map(displayRows.filter(row => row.kind === "loop").map(row => [row.field.path, row.key]));
-  const connectionMappings = Object.fromEntries(Object.entries(mappings).map(([path,value]) => [rowIndex.has(path) ? rowIndex.get(path) + ":source" : path, mappingSource(value)]));
+  const rules = useMemo(() => activityMappingRules(mappings), [mappings]);
+  const ruleIndex = useMemo(() => new Map(rules.map(rule => [`${rule.occurrenceId || "primary"}:${rule.target}`,rule])), [rules]);
+  const displayRows = useMemo(() => mappingTreeRows(rows, rules, schemaRows), [rows,rules,schemaRows]);
+  const connectionMappings = useMemo(() => Object.fromEntries(displayRows.filter(row => row.rule && (row.kind === "loop" || row.kind === "field" && !row.loopKey))
+    .map(row => [row.kind === "loop" ? row.key + ":source" : row.occurrenceId ? row.key : row.field.path, mappingSource(row.rule)])), [displayRows]);
   const mappingSources = useMemo(() => [...runtimeVariables.filter((variable:any) => variable.fields?.length)
     .map((variable:any) => ({prefix:"vars." + variable.name, fields:variable.fields})),
     ...sources.map((entry:any) => ({...entry, reference:activityReferenceName(entry.activity.name)}))], [sources,runtimeVariables]);
@@ -2779,26 +2781,46 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
   const finishDrop = (mode:RepeatingDropMode) => {
     if (!repeatingDrop) return;
     const {row,source} = repeatingDrop;
-    set(mapActivityRepeatingDrop(schemaRows,mappings,row.field.path,source,mappingSources,mode));
-    if (mode !== "copy-of") for (const key of [`primary:${row.field.path}`,`primary:${row.field.path}:loop`]) {
+    set(mapActivityRepeatingDrop(schemaRows,mappings,row.field.path,source,mappingSources,mode,row.occurrenceId));
+    const keyPrefix = `${row.occurrenceId || "primary"}:${row.field.path}`;
+    if (mode !== "copy-of") for (const key of [keyPrefix,keyPrefix + ":loop"]) {
       if (tree.collapsed.has(key)) tree.toggle(key);
     }
     setRepeatingDrop(null);
   };
-  const patchLoop = (path:string, patch:any) => {
-    const previous = mappings[path];
-    if (previous?.mapChildren && ("source" in patch || "select" in patch)) {
-      set(mapActivityRepeatingDrop(schemaRows,mappings,path,patch.select || patch.source || "",mappingSources,previous.smartMatch ? "smart-map" : "for-each"));
-    } else setValue(path,{...previous,...patch});
+  const setRowValue = (path:string, value:any, occurrenceId?:string) => {
+    if (!occurrenceId) {setValue(path,value);return;}
+    const previous = ruleIndex.get(`${occurrenceId}:${path}`);
+    const rule = value && typeof value === "object" && value.$rule
+      ? {...value,operator:value.$rule} : {source:value,operator:"direct",select:undefined,autoGenerated:undefined};
+    const next = {...previous,...rule,target:path,occurrenceId};
+    if (next.operator !== "for-each" && next.operator !== "for-each-group") {delete next.mapChildren; delete next.smartMatch;}
+    if (next.operator === "copy-of") delete next.select;
+    set(activityMappingsFromRules(previous ? rules.map(item => item === previous ? next : item) : [...rules,next]));
   };
-  const clearCopy = (path:string) => {
-    const next = {...mappings}; delete next[path]; set(next);
+  const patchLoop = (row:MappingTreeRow, patch:any) => {
+    const path = row.field.path, previous = row.rule;
+    if ((previous?.mapChildren || row.duplicateRoot) && previous?.operator !== "for-each-group" && ("source" in patch || "select" in patch)) {
+      set(mapActivityRepeatingDrop(schemaRows,mappings,path,patch.select || patch.source || "",mappingSources,previous.smartMatch ? "smart-map" : "for-each",row.occurrenceId));
+    } else setRowValue(path,{...(row.occurrenceId ? previous : mappings[path]),$rule:previous.operator,...patch},row.occurrenceId);
   };
-  const sourceScope = (path:string) => {
+  const deleteRule = (path:string, occurrenceId?:string, duplicateRoot?:boolean) => {
+    set(activityMappingsFromRules(duplicateRoot && occurrenceId ? removeRepeatOccurrence(rules,occurrenceId)
+      : rules.filter(rule => rule.target !== path || rule.occurrenceId !== occurrenceId)));
+  };
+  const duplicateRow = (path:string, occurrenceId?:string) => {
+    const field = schemaRows.find(item => item.path === path);
+    if (!field?.repeating) return;
+    set(activityMappingsFromRules([...rules,emptyRepeatOccurrence(path,field.type,`occurrence-${crypto.randomUUID()}`,occurrenceId,
+      ruleIndex.get(`${occurrenceId || "primary"}:${path}`))]));
+  };
+  const sourceScope = (row:MappingTreeRow) => {
+    let path = row.field.path;
+    const owner = row.duplicateRoot ? row.rule?.parentOccurrenceId : row.occurrenceId;
     while (path.includes(".")) {
       path = path.slice(0,path.lastIndexOf("."));
-      const rule = mappings[path];
-      if (["for-each","for-each-group"].includes(rule?.$rule)) return mappingSource(rule);
+      const rule = ruleIndex.get(`${owner || "primary"}:${path}`);
+      if (["for-each","for-each-group"].includes(rule?.operator)) return mappingSource(rule);
     }
   };
   const contentTypePicker = (path: string, label: string) => {
@@ -2845,34 +2867,48 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
           : requestTree && field.path === "RestInputRequest.Headers.accept"
             ? "Accept response type"
             : node.type === "http_response" && field.path === "contentType" ? "Response content type" : "";
-        if (row.kind !== "field") return <LoopMappingRow key={row.key} row={row} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle} sources={sources} onLoopDrop={event => offerDrop(row,event)} patch={patch => patchLoop(field.path,patch)} remove={() => setValue(field.path, mappingSource(mappings[field.path]))}/>;
+        const showMenu = (event: React.MouseEvent) => { event.preventDefault(); setSelected(field.path); setContextMenu({x:event.clientX, y:event.clientY, path:field.path, label:field.label || field.name,
+          occurrenceId:row.occurrenceId,duplicateRoot:row.duplicateRoot,required:field.required, defaultLoopSource:defaultGroupedLoopSource(row, displayRows)}); };
+        if (row.kind !== "field") return <LoopMappingRow key={row.key} row={row} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle} sources={sources}
+          onLoopDrop={event => offerDrop(row,event)} onContextMenu={showMenu} duplicate={field.repeating ? () => duplicateRow(field.path,row.occurrenceId) : undefined}
+          patch={patch => patchLoop(row,patch)} remove={() => setRowValue(field.path,mappingSource(row.rule),row.occurrenceId)}/>;
         const structural = field.group || isComplexSchemaType(field.validationType || field.type || ''), canMapStructure = structural && (field.group || field.repeating);
         const isCustomHeaders = field.path === "RestInputRequest.CustomHeaders";
         const addLabel = isCustomHeaders ? "Add header" : `Add ${field.name}`;
-        const copy = mappings[field.path]?.$rule === "copy-of";
-        const binding = <MappingBinding structural={structural} sourceScope={sourceScope(field.path)} expression={copy ? mappingSource(mappings[field.path]) : mappings[field.path] ?? ""}
+        const copy = row.rule?.operator === "copy-of";
+        const rowValue = row.occurrenceId ? row.rule : mappings[field.path];
+        const change = (value:any) => {
+          if (row.duplicateRoot && !value) {
+            patchLoop(row,{source:"",select:undefined});
+          } else if (row.duplicateRoot && ["for-each","for-each-group"].includes(row.rule?.operator)) patchLoop(row,{source:value,select:value});
+          else if (copy && value === "") deleteRule(field.path,row.occurrenceId);
+          else setRowValue(field.path,copy && value ? {$rule:"copy-of",source:value} : value,row.occurrenceId);
+        };
+        const binding = <MappingBinding structural={structural} sourceScope={sourceScope(row)} expression={copy || row.occurrenceId && !["if","choose","when-otherwise"].includes(row.rule?.operator) ? mappingSource(rowValue) : rowValue ?? ""}
           fieldType={field.type} fieldLabel={`${field.label || field.name}${cardinalitySymbol(field)}`}
-          validationType={field.validationType || field.type} sources={sources} onChange={(value: any) => { if (copy && value === "") clearCopy(field.path); else setValue(field.path,copy && value ? {$rule:"copy-of",source:value} : value); }}/>;
-        const showMenu = (event: React.MouseEvent) => { event.preventDefault(); setSelected(field.path); setContextMenu({x:event.clientX, y:event.clientY, path:field.path, label:field.label || field.name,
-          required:field.required, defaultLoopSource:defaultGroupedLoopSource(row, displayRows)}); };
-        return <div key={row.key} data-target={row.loopKey || (structural && !canMapStructure) ? undefined : field.path} className={`input-tree-row ${structural ? "structural-row" : ""} ${selected === field.path ? "selected" : ""}`} style={{"--target-depth":row.depth + 1} as React.CSSProperties} onClick={() => setSelected(field.path)} onContextMenu={showMenu} onDragOver={event => {event.preventDefault();event.dataTransfer.dropEffect="copy";}} onDrop={event => {
+          validationType={field.validationType || field.type} sources={sources} onChange={change}/>;
+        return <div key={row.key} data-target={row.loopKey || (structural && !canMapStructure) ? undefined : row.occurrenceId ? row.key : field.path} className={`input-tree-row ${row.occurrenceId ? "mapping-duplicate-row" : ""} ${row.duplicateRoot ? "mapping-duplicate-root" : ""} ${structural ? "structural-row" : ""} ${selected === field.path ? "selected" : ""}`} style={{"--target-depth":row.depth + 1} as React.CSSProperties} onClick={() => setSelected(field.path)} onContextMenu={showMenu} onDragOver={event => {event.preventDefault();event.dataTransfer.dropEffect="copy";}} onDrop={event => {
           event.preventDefault();const value=event.dataTransfer.getData("expression");if(!value)return;
           if (offerDrop(row,event)) return;
-          if(row.loopKey) patchLoop(field.path,{source:value,select:value});
-          else if(canMapStructure && event.dataTransfer.getData("sourceRepeating")==="true") setValue(field.path,{$rule:"for-each",source:value,select:value});
-          else setValue(field.path,value);
+          if(row.loopKey || row.duplicateRoot && row.rule?.operator !== "copy-of") patchLoop(row,{source:value,select:value});
+          else if(!row.occurrenceId && canMapStructure && event.dataTransfer.getData("sourceRepeating")==="true") setValue(field.path,{$rule:"for-each",source:value,select:value});
+          else change(value);
         }}>
           {row.hasChildren ? <TreeToggle path={row.key} label={field.name} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle}/> : <i className="tree-elbow"/>}
-          <span className="target-tree-field"><b>{row.loopKey ? field.name : field.label || field.name}{copy ? " - [Copy-Of]" : <sup className="cardinality-symbol">{cardinalitySymbol(field)}</sup>}</b><small>{field.type}</small>
-          {requestTree && (isCustomHeaders || field.path === "RestInputRequest.mimeEnvelopeElement.mimePart") && !mappings[field.path] && <button type="button" className={isCustomHeaders ? "add-custom-header" : undefined} aria-label={addLabel} title={addLabel} onClick={event=>{event.stopPropagation();addOccurrence(field.path);}}><Plus/>{isCustomHeaders && addLabel}</button>}
+          <span className="target-tree-field"><b>{row.loopKey ? field.name : field.label || field.name}{copy ? " - [Copy-Of]" : <sup className="cardinality-symbol">{cardinalitySymbol(field)}</sup>}</b><small>{field.type}</small>{row.duplicateRoot && <button type="button" className="remove-duplicate-mapping" aria-label={`Delete duplicate ${field.name}`} onClick={event => {event.stopPropagation(); deleteRule(field.path,row.occurrenceId,true);}}>×</button>}
+          {!row.occurrenceId && requestTree && (isCustomHeaders || field.path === "RestInputRequest.mimeEnvelopeElement.mimePart") && !mappings[field.path] && <button type="button" className={isCustomHeaders ? "add-custom-header" : undefined} aria-label={addLabel} title={addLabel} onClick={event=>{event.stopPropagation();addOccurrence(field.path);}}><Plus/>{isCustomHeaders && addLabel}</button>}
           {requestTree && /\.(?:CustomHeaders|mimePart)\.\d+$/.test(field.path) && <button type="button" aria-label={`Remove ${field.label}`} title={`Remove ${field.label}`} onClick={event=>{event.stopPropagation();removeOccurrence(field.path);}}><X/></button>}
           </span>
-          {row.loopKey || (requestTree && /\.(?:CustomHeaders|mimePart)\.\d+$/.test(field.path)) || (row.hasChildren && !mappings[field.path]) ? <span/> : mediaLabel
+          {row.loopKey || (requestTree && /\.(?:CustomHeaders|mimePart)\.\d+$/.test(field.path)) || (row.hasChildren && !rowValue) ? <span/> : mediaLabel
             ? <div className="input-media-type-controls">{contentTypePicker(field.path, mediaLabel)}{binding}</div>
             : binding}
         </div>;
       })}</div>{!fields.length && <div className="contract-empty">No configurable input.</div>}
-    </section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextMenu ? mappings[contextMenu.path] : null} close={() => setContextMenu(null)} change={(value: any) => contextMenu && setValue(contextMenu.path,value)} remove={() => {if(!contextMenu)return;const next={...mappings};delete next[contextMenu.path];set(next);}}/>
+    </section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextMenu ? (contextMenu.occurrenceId ? ruleIndex.get(`${contextMenu.occurrenceId}:${contextMenu.path}`) : mappings[contextMenu.path]) : null}
+      canDuplicate={!!contextMenu && schemaRows.some(row => row.path === contextMenu.path && row.repeating)}
+      duplicate={() => contextMenu && duplicateRow(contextMenu.path,contextMenu.occurrenceId)}
+      close={() => setContextMenu(null)} change={(value: any) => contextMenu && setRowValue(contextMenu.path,value,contextMenu.occurrenceId)}
+      remove={() => contextMenu && deleteRule(contextMenu.path,contextMenu.occurrenceId,contextMenu.duplicateRoot)}/>
   </div>{repeatingDrop && <RepeatingDropDialog drop={repeatingDrop} close={() => setRepeatingDrop(null)} finish={finishDrop}/>}{dialogOpen && <ExpandedInputMappingDialog title={`${node.name} · Input Mapper`} mappingCount={Object.keys(draftMappings).length} onClose={() => setDialogOpen(false)} onApply={() => {set(draftMappings);setDialogOpen(false);}}><InputEditor node={node} fields={fields} mappings={draftMappings} set={setDraftMappings} properties={properties} sources={sources} runtimeVariables={runtimeVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} before={before} expanded/></ExpandedInputMappingDialog>}</>;
 }
 

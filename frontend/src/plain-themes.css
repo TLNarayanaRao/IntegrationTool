@@ -50,7 +50,7 @@ body[data-theme="plain-system"] {
   --accent2: #286b43;
   --selection: #d4e6fa;
 }
-body:is([data-theme="plain-classic"], [data-theme="plain-studio"], [data-theme="plain-system"]) {
+body:is([data-theme="plain-classic"], [data-theme="plain-studio"], [data-theme="plain-system"], [data-theme="plain-reading-room"]) {
   --glow: transparent;
   --plain-scheme: light;
   --plain-grid: #c8cdd1;
@@ -428,7 +428,7 @@ body[data-theme="plain-studio"] .task-editor-tab {
 }
 
 /* Appearance is independent of the Classic/Studio corner geometry. */
-body[data-theme^="plain-"][data-plain-mode="dark"] {
+body[data-theme^="plain-"][data-plain-mode="dark"]:where(:not([data-theme="plain-reading-room"])) {
   --plain-scheme: dark;
   --shell: #171c22;
   --panel: #242b33;

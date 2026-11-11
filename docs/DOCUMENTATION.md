@@ -14,6 +14,10 @@ Only explicitly selected product source files and guides are read. The generator
 
 New projects start with a Sub Task containing Start and End. Use a Starter Task when an external event, such as HTTP, a timer, or a message, starts the workflow. Use **Call Sub Task** to invoke reusable logic. Starter and Sub Task icons distinguish the two in Project Explorer.
 
+Subtasks and **Call Sub Task** use the same process-network-and-bent-arrow symbol in Project Explorer, task tabs, creation menus, the activity picker, and the canvas. Starter tasks use the process network with a play symbol.
+
+The canvas, activity palette, and activity picker share one activity icon catalog. Shared connections use the same protocol or vendor artwork in Project Explorer and connection creation menus. Imported legacy Mapper activities retain the Mapper symbol; an unrecognized activity uses a neutral process symbol instead of a Start or End icon.
+
 Tasks, shared connections, and schemas belong to packages. Right-click their category or an existing package and choose **New Package** to create a top-level or nested folder. Choose the package when creating an item. **Default** is available for each category. Right-click an existing item and choose **Move to Package** to organize it without changing its references. Studio replaces spaces with hyphens in object names.
 
 To rename a package, right-click the folder under **Tasks**, **Resources → Connections**, or **Schemas** and choose **Rename Package**. Its nested folders and items move with it, keeping task, connection, and schema references intact. Under **Packaging**, right-click the deployment artifact and choose **Rename Package** to update its name for future exports while keeping its version and settings. Save the project to keep these changes.
@@ -26,7 +30,11 @@ When you first add a protocol activity or shared connection, Studio adds the rel
 
 Use **Magnify orchestrator** on the canvas and hover to see a 2× preview. Press Escape to turn it off. Select a transition to set its **Line color** or choose **Reset color** to restore the default. Close task tabs individually or use **Close All** to clear the canvas.
 
-Use the **Theme** selector to choose **Plain Classic**, **Plain Studio**, or another Studio appearance. The theme affects the Studio interface.
+Use the **Theme** selector to change how Studio looks and feels. **Compact Workbench** uses a shorter ribbon and denser explorer rows. **Blueprint Board** uses a drafting grid and framed canvas activities. **Reading Room** uses larger labels, wider spacing, and a paper-like canvas. Existing themes are still available, and Studio remembers your choice.
+
+The bottom-right **Runtime status** shows startup stages, current Studio operations, and the activities running in the active project. Click it for the designer and runtime details, including parallel activities and the latest detected slow UI operation on supported browsers. Startup progress counts completed stages; an animated bar means the operation has no reliable percentage. The Windows startup screen also shows the current stage before the designer is ready.
+
+The footer and details use the same live runtime health check. If an older runtime does not provide activity-progress details, Studio reports that limitation separately. It does not mark a healthy runtime as unavailable.
 
 The welcome screen shows packets moving along the integration routes. Use **Pause route animation** to stop them or **Play route animation** to start them. Until you choose a setting, the packets follow the Windows or browser reduced-motion preference. Studio remembers your choice.
 

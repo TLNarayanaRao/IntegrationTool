@@ -617,6 +617,13 @@ def _start_continuous_listener(item: Project, task, activity, environment: str, 
 @app.get('/api/health')
 def health(): return {'status': 'ok', 'runtime': 'python'}
 
+@app.get('/api/projects/{project_id}/runtime-progress')
+async def runtime_progress(project_id: str):
+    activities = runtime.active_activities(project_id)
+    previous = runtime_states.get(project_id, {}).get('status', 'idle')
+    status = 'running' if activities or (project_id in active_runs and previous != 'listening') else previous
+    return {'status': status, 'activities': activities}
+
 @app.get('/api/ai/status')
 def ai_status():
     return {'available': True, 'provider': 'openai' if os.getenv('OPENAI_API_KEY') else 'local-blueprint', 'model': os.getenv('MINA_AI_MODEL', 'gpt-5') if os.getenv('OPENAI_API_KEY') else None, 'credentialsStoredInProject': False}
@@ -637,9 +644,11 @@ def project(project_id: str):
     return item
 
 @app.get('/api/projects/{project_id}/runtime-state')
-def runtime_state(project_id: str):
-    if not get_project(project_id): raise HTTPException(404, 'Project not found')
-    return runtime_states.get(project_id, {'status': 'stopped', 'logs': [], 'endpoints': [], 'activityOutputs': {}, 'taskOutputs': {}, 'lastExecution': None, 'executions': []})
+async def runtime_state(project_id: str):
+    if not await asyncio.to_thread(get_project, project_id): raise HTTPException(404, 'Project not found')
+    state = runtime_states.get(project_id, {'status': 'stopped', 'logs': [], 'endpoints': [], 'activityOutputs': {}, 'taskOutputs': {}, 'lastExecution': None, 'executions': []})
+    snapshot = runtime.execution_snapshot(project_id)
+    return {**state, **snapshot} if snapshot else state
 
 @app.get('/api/projects/{project_id}/logs')
 def project_logs(project_id: str, limit: int = 1000, environment: str = 'local'):

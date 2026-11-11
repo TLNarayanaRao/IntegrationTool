@@ -1,8 +1,12 @@
+import ExecutionDock from "./ExecutionDock";
+import RuntimeStatus from "./RuntimeStatus";
 import ModalLayer from "./ModalLayer";
 import ApiBlueprint from "./ApiBlueprint";
 import { closeTaskEditors, type CloseEditorsMode } from "./taskEditors";
 import { isEventActivity, taskEntryLabels, taskEntryMode } from "./taskEntry";
 import TaskEntryIcon from "./TaskEntryIcon";
+import ActivityIcon from "./ActivityIcon";
+import { activityIconAsset, connectionIconUrl } from "./studioIcons";
 import { resolveWorkspaceSubtask, schemaObjectName, studioNameKey, studioObjectName, workspaceNameConflict } from "./studioObjectName";
 import ExecutionAnalytics from "./ExecutionAnalytics";
 import { transitionLanes } from "./transitionIndex";
@@ -70,7 +74,6 @@ import { DEFAULT_PACKAGE, PackageDialog as ObjectPackageDialog, PackageTree, art
 import HomeRoutes from "./HomeRoutes";
 import ActivityPicker from "./ActivityPicker";
 import CanvasMagnifier from "./CanvasMagnifier";
-import { activityIconUrl } from "./activityIconUrl";
 import DataNodeIcon from "./DataNodeIcon";
 import DebugActivityTree from "./DebugActivityTree";
 import DebugJobData from "./DebugJobData";
@@ -101,6 +104,7 @@ import "./packaging-target.css";
 import "./home-screen.css";
 import "./groups.css";
 import "./plain-themes.css";
+import "./workspace-themes.css";
 import "./configuration-layout.css";
 const Braces = DataNodeIcon;
 const EDITABLE_CONTROL_SELECTOR =
@@ -292,6 +296,9 @@ type ValidationIssue = {
   activityId?: string;
 };
 const themeOptions = [
+  { value: "compact-workbench", label: "Compact Workbench", detail: "Tight explorer rows, a slimmer ribbon, and small square controls" },
+  { value: "blueprint-board", label: "Blueprint Board", detail: "Ruled canvas, framed activities, and drafting-style labels" },
+  { value: "plain-reading-room", label: "Reading Room", detail: "Larger labels, spaced controls, and a paper-like workspace" },
   { value: "plain-system", label: "System Desktop", detail: "Plain desktop that follows your system appearance" },
   { value: "plain-classic", label: "Plain Classic", detail: "Light grey desktop panels, white editors, and blue selections" },
   { value: "plain-studio", label: "Plain Studio", detail: "Soft rounded panels and controls with teal selections" },
@@ -331,7 +338,7 @@ const normalizeTaskKinds = (tasks: Task[]): Task[] => {
     ? { ...task, kind: "subtask" } : task);
 };
 const ai = (asset: string) => (
-  <img src={activityIconUrl(asset)} alt="" />
+  <ActivityIcon asset={asset} />
 );
 function IntegrationApplicationIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -345,8 +352,10 @@ function IntegrationApplicationIcon(props: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
-const resourceIconSources: Record<string, string> = { http_client:"/activity-icons/http.png", http_server:"/activity-icons/http.png", http: "/activity-icons/http.png", ftp: "/activity-icons/ftp.png", sftp: "/activity-icons/sftp.png", ems: "/activity-icons/ems.png", jms: "/activity-icons/jms-connection.svg", kafka: "/vendor-logos/apache-kafka.svg", pubsub: "/vendor-logos/gcp-pubsub.png", jdbc: "/activity-icons/JDBC-Query.png", snowflake: "/activity-icons/snowflake.svg", amqp: "/vendor-logos/rabbitmq.svg", sap: "/vendor-logos/sap.svg", sap_tid: "/vendor-logos/sap.svg" };
-const ResourceVendorIcon = ({ type }: { type: string }) => resourceIconSources[type] ? <img className={`resource-vendor-icon resource-${type}`} src={resourceIconSources[type]} alt=""/> : <Database/>;
+const ResourceVendorIcon = ({ type }: { type: string }) => {
+  const src = connectionIconUrl(type);
+  return src ? <img className={`resource-vendor-icon resource-${type}`} src={src} alt=""/> : <Database/>;
+};
 const packs: { name: string; icon: any; items: Def[] }[] = [
   {
     name: "Starters & Tasks",
@@ -1512,7 +1521,7 @@ function App() {
     [debugWatches, setDebugWatches] = useState<string[]>([]),
     [pauseOnDebugError, setPauseOnDebugError] = useState(true),
     [busy, setBusy] = useState(false),
-    [workStatus, setWorkStatus] = useState("Loading project workspace…"),
+    [workStatus, setWorkStatus] = useState(""),
     [zoom, setZoom] = useState(1),
     [validation, setValidation] = useState<{ title: string; issues: ValidationIssue[] } | null>(null),
     [connectionDraft, setConnectionDraft] = useState<{ source: string; x: number; y: number } | null>(null),
@@ -1524,6 +1533,8 @@ function App() {
     [taskTabMenu, setTaskTabMenu] = useState<{ taskId: string; x: number; y: number } | null>(null);
   const [utilityMode, setUtilityMode] = useState<UtilityMode | null>(null);
   const [executionPanelOpen, setExecutionPanelOpen] = useState(false);
+  const [autoExecutionPanel, setAutoExecutionPanel] = useState(false);
+  const executionAttempt = useRef(0);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [monitorMode, setMonitorMode] = useState<"normal" | "expanded" | "fullscreen">("normal");
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -1640,10 +1651,6 @@ function App() {
     mutateTask((current) => ({ ...current, groups: [...(current.groups || []).map((group) => childIds.includes(group.id) ? { ...group, parent_group_id: id } : group), { id, type: "scope", name: `Group ${(current.groups || []).length + 1}`, member_activity_ids: directMembers, config: {}, position: { x: 100, y: 100 }, size: { width: 420, height: 220 }, parent_group_id: null }] }));
     setGroupEditor(id);
   };
-  useEffect(() => {
-    const ready = window.setTimeout(() => setWorkStatus(""), 900);
-    return () => window.clearTimeout(ready);
-  }, []);
   const [closed, setClosed] = useState(true),
     [theme, setTheme] = useState(
       () => {
@@ -1843,7 +1850,7 @@ function App() {
     [],
   );
   useEffect(() => {
-    if (!endpoints.length && !debugState?.sessionId) return;
+    if (!busy && !endpoints.length && !debugState?.sessionId) return;
     let cancelled = false;
     let refreshing = false;
     const refreshRuntime = async () => {
@@ -1856,6 +1863,7 @@ function App() {
           // Uvicorn restarts clear in-memory debugger sessions. The browser
           // may still have the old session id and must not poll it forever.
           if (debugState?.sessionId && response.status === 404) {
+            setExecutionPanelOpen(false); setAutoExecutionPanel(false); setMonitorMode("normal");
             setDebugState(null);
             setEndpoints([]);
             setExecutionOutputs({});
@@ -1866,18 +1874,19 @@ function App() {
         }
         const state = await response.json();
         if (cancelled) return;
+        if (!debugState?.sessionId && busy && !["running","listening"].includes(state.status)) return;
         if (debugState?.sessionId) setDebugState(state);
         else setRuntimeState(state);
         setExecutionOutputs(state.activityOutputs || {});
         setLogs(state.logs || []);
-        if (state.endpoints?.length) setEndpoints(state.endpoints);
+        setEndpoints(state.endpoints || []);
       } catch { /* The sidecar can briefly restart during development. */ }
       finally { refreshing = false; }
     };
     void refreshRuntime();
     const timer = window.setInterval(refreshRuntime, 750);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [project.id, endpoints.length, debugState?.sessionId]);
+  }, [project.id, busy, endpoints.length, debugState?.sessionId]);
   useEffect(() => {
     let frame = 0;
     let preview: typeof dragPreview = null;
@@ -2455,10 +2464,24 @@ function App() {
     setOpenTaskIds(current=>[...new Set([...current,plan.tasks[0].id])]);setSelected(first);setSelectedIds(first?[first]:[]);setSelectedEdge(null);setSelectedResource(null);
   };
   const hostApiBlueprint = async (taskId:string) => {
-    const response=await fetch(`/api/projects/${project.id}/run`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({task_id:taskId,environment:project.active_environment,input:{}})});
-    const output=await response.json();
-    if(!response.ok)throw new Error(typeof output.detail==="string"?output.detail:JSON.stringify(output.detail||"API hosting failed"));
-    setLogs(output.logs||[]);setEndpoints(output.endpoints||[]);setExecutionOutputs(output.activity_outputs||{});setRuntimeState(output);setExecutionPanelOpen(true);return output;
+    const attempt = ++executionAttempt.current;
+    selectTask(taskId); setAutoExecutionPanel(true); setExecutionPanelOpen(true); setMonitorMode("normal");
+    setDebugState(null); setRuntimeState({status:"starting"}); setBusy(true);
+    setLogs([{level:"INFO",kind:"runtime",message:"Starting API host…"}]);setEndpoints([]);setExecutionOutputs({});
+    try {
+      const response=await fetch(`/api/projects/${project.id}/run`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({task_id:taskId,environment:project.active_environment,input:{}})});
+      const output=await response.json();
+      if (attempt !== executionAttempt.current) return output;
+      if(!response.ok)throw new Error(typeof output.detail==="string"?output.detail:JSON.stringify(output.detail||"API hosting failed"));
+      setLogs(output.logs||[]);setEndpoints(output.endpoints||[]);setExecutionOutputs(output.activity_outputs||{});setRuntimeState(output);
+      return output;
+    } catch(error) {
+      if (attempt === executionAttempt.current) {
+        const entries=[{level:"ERROR",kind:"runtime",message:String(error)}];
+        setLogs(entries);setRuntimeState({status:"failed",logs:entries});
+      }
+      throw error;
+    } finally {if (attempt === executionAttempt.current) setBusy(false);}
   };
   const persistProject = async () => {
     if (autosaveTimer.current !== null) {
@@ -2648,9 +2671,16 @@ function App() {
         setLogs([{ level: "INFO", message: "Run a Starter Task to invoke this Subtask, or use Debug to test it directly." }]);
         return;
       }
+      const attempt = ++executionAttempt.current;
+      if (!editorOpen || project.active_task_id !== taskId) selectTask(taskId);
+      setAutoExecutionPanel(true); setExecutionPanelOpen(true); setMonitorMode("normal");
+      setDebugState(null); setEndpoints([]); setExecutionOutputs({});
+      const startingLogs = [{level:"INFO",kind:"runtime",message:`Starting ${target?.name || taskId}…`}];
+      setLogs(startingLogs); setRuntimeState({status:"starting",logs:startingLogs});
       setBusy(true);
       try {
         await persistProject();
+        if (attempt !== executionAttempt.current) return;
         const r = await fetch(`/api/projects/${project.id}/run`, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -2661,28 +2691,40 @@ function App() {
           }),
         }),
           out = await r.json();
+        if (attempt !== executionAttempt.current) return;
+        if (!r.ok) throw new Error(typeof out.detail === "string" ? out.detail : "Run startup failed");
         setLogs(out.logs || [{ level: "ERROR", message: out.detail }]);
         setExecutionOutputs(out.activity_outputs || {});
         setEndpoints(out.endpoints || []);
         setRuntimeState(out);
       } catch (error: any) {
-        setLogs([{ level: "ERROR", message: error?.message || "Run failed" }]);
-      } finally { setBusy(false); }
+        if (attempt !== executionAttempt.current) return;
+        const entries = [{level:"ERROR",kind:"runtime",message:error?.message || "Run failed"}];
+        setLogs(entries); setRuntimeState({status:"failed",logs:entries});
+      } finally { if (attempt === executionAttempt.current) setBusy(false); }
     },
     debug = async (requestedTaskId?: unknown, testMode = false) => {
       if (!editorOpen && typeof requestedTaskId !== "string") { setLogs([{level: "INFO", message: "Open a task from Project Explorer before debugging it."}]); return; }
+      const attempt = ++executionAttempt.current;
+      const taskId = typeof requestedTaskId === "string" ? requestedTaskId : task.id;
+      if (!editorOpen || project.active_task_id !== taskId) selectTask(taskId);
+      setAutoExecutionPanel(true); setExecutionPanelOpen(true); setMonitorMode("normal");
+      setDebugState(null); setExecutionOutputs({});
+      const startingLogs = [{level:"INFO",kind:"debug",message:"Starting debugger…"}];
+      setLogs(startingLogs); setRuntimeState({status:"starting",logs:startingLogs});
       setBusy(true);
       setEndpoints([]);
       setWorkStatus("Starting debugger…");
       try {
         await persistProject();
+        if (attempt !== executionAttempt.current) return;
         const r = await fetch(`/api/projects/${project.id}/debug`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             input: {},
             environment: project.active_environment,
-            task_id: typeof requestedTaskId === "string" ? requestedTaskId : task.id,
+            task_id: taskId,
             breakpoints,
             breakpoint_conditions: breakpointConditions,
             test_mode: testMode,
@@ -2691,6 +2733,7 @@ function App() {
           }),
         }),
           out = await r.json();
+        if (attempt !== executionAttempt.current) return;
         if (!r.ok) {
           const message = out?.detail || out?.message || `Debug startup failed (HTTP ${r.status})`;
           setDebugState(null);
@@ -2699,6 +2742,7 @@ function App() {
           return;
         }
         if (out.status === "stopped") {
+          setExecutionPanelOpen(false); setAutoExecutionPanel(false); setMonitorMode("normal");
           setDebugState(null);
           setExecutionOutputs({});
           setEndpoints([]);
@@ -2713,29 +2757,32 @@ function App() {
         setEndpoints(out.endpoints || []);
         setRuntimeState(out);
       } catch (error: any) {
+        if (attempt !== executionAttempt.current) return;
         const message = error?.message || "Debug startup failed";
         setDebugState(null);
         setLogs([{ level: "ERROR", kind: "debug", message }]);
         setRuntimeState({ status: "failed", error: message });
       } finally {
-        setBusy(false);
-        setWorkStatus("");
+        if (attempt === executionAttempt.current) {setBusy(false); setWorkStatus("");}
       }
     },
     debugAction = async (action: string, options: Record<string, any> = {}) => {
       if (!debugState) return;
+      const attempt = executionAttempt.current;
       const r = await fetch(`/api/debug/${debugState.sessionId}/action`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ action, ...options }),
         }),
         out = await r.json();
+      if (attempt !== executionAttempt.current) return null;
       if (!r.ok) {
         const message = out?.detail || `Debugger action failed (HTTP ${r.status})`;
         setLogs((current) => [...current, { level: "ERROR", kind: "debug", message }]);
         return null;
       }
       if (out.status === "stopped") {
+        setExecutionPanelOpen(false); setAutoExecutionPanel(false); setMonitorMode("normal");
         setDebugState(null); setExecutionOutputs({}); setEndpoints([]); setRuntimeState(null); setLogs(out.logs || []);
         return out;
       }
@@ -2772,7 +2819,23 @@ function App() {
       setLogs((current) => [...current, { level: "ERROR", message: error?.message || "Unable to download saved logs" }]);
     }
   };
-  const executionActive = busy || (!!debugState && !["completed", "failed", "stopped"].includes(debugState.status)) || endpoints.length > 0 || ["running", "listening", "paused"].includes(runtimeState?.status);
+  const executionActive = busy || (debugState
+    ? !["completed", "failed", "stopped"].includes(debugState.status)
+    : endpoints.length > 0 || ["running", "listening", "paused"].includes(runtimeState?.status));
+  useEffect(() => {
+    if (autoExecutionPanel && !busy && ["completed","failed","stopped"].includes(debugState?.status || runtimeState?.status)) {
+      setExecutionPanelOpen(false); setAutoExecutionPanel(false); setMonitorMode("normal");
+    }
+  }, [autoExecutionPanel,busy,debugState?.status,runtimeState?.status]);
+  useEffect(() => {
+    executionAttempt.current++;
+    setExecutionPanelOpen(false); setAutoExecutionPanel(false); setMonitorMode("normal");
+    setBusy(false); setDebugState(null); setRuntimeState(null); setEndpoints([]); setExecutionOutputs({});
+  }, [project.id]);
+  const inspectActivity = (id: string, ids: string[] = [id]) => {
+    setSelected(id); setSelectedIds(ids); setSelectedEdge(null); setSelectedResource(null);
+    setExecutionPanelOpen(false); setMonitorMode("normal"); setActiveTab("configuration");
+  };
   // General Studio notices (open, save, copy, etc.) belong in the status area,
   // not in the execution console. The console is reserved for runtime work.
   const executionLogEntries: any[] = debugState?.logs || runtimeState?.logs || logs.filter((entry) =>
@@ -2781,8 +2844,12 @@ function App() {
   const executedTransitionIds = new Set(executionLogEntries.filter((entry: any) => entry?.transitionId).map((entry: any) => String(entry.transitionId)));
   const currentActivityIds = new Set<string>([debugState?.currentActivityId, ...(debugState?.currentActivityIds || [])].filter(Boolean));
   const currentTransitionIds = new Set(edges.filter((transition) => currentActivityIds.has(transition.target) && executedTransitionIds.has(String(transition.id))).map((transition) => String(transition.id)));
-  const visibleWorkStatus = workStatus || (busy ? "Starting and running task…" : debugState?.status === "paused" ? "Debugger paused" : debugState ? `Debugger ${debugState.status || "working"}…` : runtimeState?.status === "listening" ? "Application is listening" : "");
+  const designerWork = workStatus || (busy ? "Preparing or running task" : "");
+  const debugActivityNames = (debugState?.currentActivityIds || (debugState?.currentActivityId ? [debugState.currentActivityId] : []))
+    .map((id:string) => (project.tasks.find(item => item.id === debugState?.currentTaskId) || task).activities.find(item => item.id === id)?.name || id);
   const stopExecution = async () => {
+    const attempt = ++executionAttempt.current;
+    setExecutionPanelOpen(false); setAutoExecutionPanel(false); setMonitorMode("normal");
     const sessionId = debugState?.sessionId;
     // Stop is optimistic in the UI so a busy connector cannot leave the
     // Windows renderer looking active while backend cleanup is in progress.
@@ -2801,11 +2868,13 @@ function App() {
       const projectResult = results[projectStopIndex];
       const response = projectResult.status === "fulfilled" ? projectResult.value : null;
       const stopped = response?.ok ? await response.json() : { status: "stopped", logs: [...logs, { level: "INFO", message: `Application ${project.name} stopped by user` }] };
+      if (attempt !== executionAttempt.current) return;
       setDebugState(null); setBusy(false); setEndpoints([]); setExecutionOutputs({}); setRuntimeState(null); setLogs(stopped.logs || []);
     } catch (error: any) {
+      if (attempt !== executionAttempt.current) return;
       setBusy(false); setDebugState(null); setEndpoints([]); setExecutionOutputs({}); setRuntimeState(null);
       setLogs((current) => [...current, { level: "ERROR", message: error?.message || "Unable to stop execution" }]);
-    } finally { setWorkStatus(""); }
+    } finally { if (attempt === executionAttempt.current) setWorkStatus(""); }
   };
   const importProject = async (file: File) => {
     setWorkStatus(`Loading project ${file.name}…`);
@@ -3119,9 +3188,69 @@ function App() {
     window.addEventListener("keydown", projectFileShortcuts);
     return () => window.removeEventListener("keydown", projectFileShortcuts);
   }, [project]);
+  const executionConsole = executionPanelOpen ? <ExecutionDock mode={monitorMode}>
+        <div className="pane-title"><span>EXECUTION / DEBUG</span><span className="monitor-actions">
+          <button title="Execution analytics" aria-label="Execution analytics" onClick={() => setAnalyticsOpen(true)}><Activity/></button>
+          <button title="Stop execution" aria-label="Stop execution" disabled={!executionActive} onClick={stopExecution}><Square/></button>
+          <button title="Close execution panel" onClick={() => { setExecutionPanelOpen(false); setMonitorMode("normal"); }}>×</button>
+          <button title="Load saved project logs" onClick={loadSystemLogs}><HardDrive/></button>
+          <button title="Download saved project logs" onClick={downloadSystemLogs}><Download/></button>
+          <button title={monitorMode === "expanded" ? "Restore execution panel" : "Expand execution panel"} onClick={() => setMonitorMode((mode) => mode === "expanded" ? "normal" : "expanded")}><Maximize2/></button>
+          <button title={monitorMode === "fullscreen" ? "Exit full screen" : "Open execution panel full screen"} onClick={() => setMonitorMode((mode) => mode === "fullscreen" ? "normal" : "fullscreen")}>{monitorMode === "fullscreen" ? <Minimize2/> : <Square/>}</button>
+        </span></div>
+        <div className="run-state">
+          <span />{" "}
+          {debugState
+            ? `${debugState.status} · stack ${debugState.callStack?.length || 0}`
+            : `${runtimeState?.status || (busy ? "starting" : "Runtime")} · ${project.active_environment}`}
+        </div>
+        <div className="execution-console-content"><div className="execution-summary">
+        {systemLogInfo && <div className="system-log-info"><b>SYSTEM LOG · {String(systemLogInfo.environment || project.active_environment).toUpperCase()}</b><span title={systemLogInfo.path}>{systemLogInfo.path}</span><small>{systemLogInfo.configuredDirectory ? "Configured by runtime.logDirectory" : "Default Studio data directory"} · {(Number(systemLogInfo.maxBytes || 0) / 1024 / 1024).toFixed(0)} MB · {systemLogInfo.backupCount} rolling archives</small></div>}
+        {runtimeState?.lastExecution && <section className="runtime-job-summary">
+          <header><b>LAST EXECUTION</b><button title="Copy correlation ID" onClick={() => navigator.clipboard.writeText(runtimeState.lastExecution.correlationId)}><ClipboardCopy/></button></header>
+          <dl><div><dt>Correlation ID</dt><dd>{runtimeState.lastExecution.correlationId}</dd></div><div><dt>Started</dt><dd>{runtimeState.lastExecution.startedAt || "—"}</dd></div><div><dt>Ended</dt><dd>{runtimeState.lastExecution.endedAt || "—"}</dd></div><div><dt>Duration</dt><dd>{Number(runtimeState.lastExecution.durationMs || 0).toFixed(1)} ms</dd></div></dl>
+        </section>}
+        {!!endpoints.length && <section className="runtime-endpoints">
+          <strong>{endpoints.some((endpoint: any) => endpoint.kind === "subscription") ? "LIVE EVENT RECEIVERS" : "LIVE ENDPOINTS"}</strong>
+          {endpoints.map((endpoint: any) => <article key={`${endpoint.taskId}:${endpoint.activityId}`}>
+            <span>{endpoint.kind === "subscription" ? `${String(endpoint.status || "ready").toUpperCase()} · ${endpoint.name}` : `${endpoint.methods?.join(", ")} · ${endpoint.name}`}</span>
+            <code>{endpoint.url}</code>
+            {endpoint.kind !== "subscription" && <button title="Copy endpoint URL" onClick={() => navigator.clipboard.writeText(endpoint.url)}><ClipboardCopy/> Copy</button>}
+            {endpoint.docsUrl && <><a href={endpoint.docsUrl} target="_blank" rel="noopener noreferrer">Open Swagger · {endpoint.docsUrl}</a><button onClick={async () => {
+              try {
+                const response = await fetch(endpoint.collectionDownloadUrl);
+                if (!response.ok) throw new Error(await response.text());
+                browserDownload(await response.blob(), "MINA-API.postman_collection.json");
+              } catch (error) { alert(`Unable to download Postman collection: ${String(error)}`); }
+            }}>Download Postman collection</button></>}
+            {endpoint.kind === "subscription" && <small>Waiting continuously for events on {endpoint.destination}</small>}
+            {endpoint.configuredUrl && endpoint.configuredUrl !== endpoint.url && <small>Configured public URL: {endpoint.configuredUrl}</small>}
+          </article>)}
+        </section>}
+        {(() => {
+          const visible = Object.values(executionOutputs).filter((record: any) => !["start", "end", "log"].includes(record.type));
+          return !!visible.length && <details className="runtime-outputs" open>
+          <summary>EXECUTED PATH OUTPUTS <b>{visible.length}</b></summary>
+          {visible.map((record: any) => <details key={record.activityId}>
+            <summary><span>{record.name}</span><small>{record.type}</small></summary>
+            <pre>{formatRuntimeOutput(record)}</pre>
+          </details>)}
+        </details>})()}
+        </div><div className="execution-log-list" role="log" aria-label="Execution logs" aria-live="polite">
+        {!executionLogEntries.length && <p className="execution-log-empty">{executionActive ? "Waiting for execution logs…" : "No runtime logs recorded."}</p>}
+        {executionLogEntries.map((l, i) => (
+          <div className={`log ${(l.level || "info").toLowerCase()}`} key={i}>
+            <small>{l.time ? new Date(l.time).toLocaleTimeString() : ""} {l.level}{l.correlationId ? ` · ${l.correlationId}` : ""}</small>
+            <p>{l.message}</p>
+            {l.payload !== undefined && l.payload !== "" && l.payload !== null && <pre>{JSON.stringify(l.payload, null, 2)}</pre>}
+          </div>
+        ))}
+        </div></div>
+  </ExecutionDock> : null;
+
   if (closed)
     return (
-      <ProjectWelcome
+      <><ProjectWelcome
         createProject={newProject}
         importProject={importProject}
         importFromFileSystem={importFromFileSystem}
@@ -3130,10 +3259,10 @@ function App() {
         setTheme={setTheme}
         plainMode={plainMode}
         setPlainMode={setPlainMode}
-      />
+      /><div className="welcome-runtime-status"><RuntimeStatus work={workStatus}/></div></>
     );
   return (
-    <div className={`app ${executionPanelOpen ? "" : "monitor-hidden"}`} style={{ "--explorer-width": `${explorerWidth}px` } as React.CSSProperties} onClick={() => setMenu(null)}>
+    <div className="app monitor-hidden" style={{ "--explorer-width": `${explorerWidth}px` } as React.CSSProperties} onClick={() => setMenu(null)}>
       <nav className="menu-bar">
         <div className="menu-mark">
           <Workflow /> MINA
@@ -3214,7 +3343,7 @@ function App() {
         moveUp={() => moveSelection(-24)}
         moveDown={() => moveSelection(24)}
       />
-      {debugState && !["completed", "failed", "stopped"].includes(debugState.status) && <DebugRibbon state={debugState} act={debugAction} stop={stopExecution} openJobData={() => setJobDataOpen(true)} openTools={(section: number) => { setDebugToolsSection(section); setDebugToolsOpen(true); }} runToSelected={() => selected && debugAction("run_to", { activity_id: selected })} canRunTo={!!selected} />}
+      {debugState && !["completed", "failed", "stopped"].includes(debugState.status) && <DebugRibbon state={debugState} act={debugAction} stop={stopExecution} openLogs={() => { setExecutionPanelOpen(true); setMonitorMode("normal"); }} openJobData={() => setJobDataOpen(true)} openTools={(section: number) => { setDebugToolsSection(section); setDebugToolsOpen(true); }} runToSelected={() => selected && debugAction("run_to", { activity_id: selected })} canRunTo={!!selected} />}
       </div>
        <header>
          <IntegrationBrandArtwork className="studio-brand-art" />
@@ -3630,8 +3759,6 @@ function App() {
             </svg>
             {selectionBox && <div className="canvas-selection-box" style={{ left: Math.min(selectionBox.startX, selectionBox.x), top: Math.min(selectionBox.startY, selectionBox.y), width: Math.abs(selectionBox.x - selectionBox.startX), height: Math.abs(selectionBox.y - selectionBox.startY) }} />}
             {nodes.map((n) => {
-              const definitions = canvasDefinitions.get(n.type);
-              const def = definitions?.find(d => !d.operation || d.operation === n.config.operation) || definitions?.[0];
               return (
                 <button
                   key={n.id}
@@ -3654,16 +3781,13 @@ function App() {
                       captureTarget: e.currentTarget,
                     };
                     e.currentTarget.setPointerCapture(e.pointerId);
-                    setSelected(n.id);
-                    setSelectedIds(nextIds);
-                    setSelectedEdge(null);
-                    setSelectedResource(null);
-                    setActiveTab("configuration");
+                    inspectActivity(n.id, nextIds);
                   }}
+                  onClick={(event) => { if (event.detail === 0) inspectActivity(n.id); }}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    setSelected(n.id); setSelectedIds([n.id]); setSelectedEdge(null); setSelectedResource(null); setActiveTab("configuration");
+                    inspectActivity(n.id);
                     setMenu({ type: "activity", id: n.id, x: e.clientX, y: e.clientY });
                   }}
                   onDoubleClick={() => {
@@ -3675,17 +3799,7 @@ function App() {
                   }}
                 >
                   <span className="node-icon">
-                    {ai(
-                      n.type === "start"
-                        ? "start-play"
-                        : n.type === "end"
-                          ? "end-stop.svg"
-                          : ["mapper", "transform", "ai_transform"].includes(n.type)
-                            ? "mapper-symbol.svg"
-                            : n.type === "dataweave"
-                              ? "dataweave-transform.svg"
-                              : def?.asset || "start-end",
-                    )}
+                    {ai(activityIconAsset(n, canvasDefinitions))}
                   </span>
                   {breakpoints.includes(n.id) && <i className="breakpoint" />}
                   {executionOutputs[n.id] && <i className="runtime-complete-dot" aria-label="Activity executed" />}
@@ -3724,13 +3838,13 @@ function App() {
         </div>
         <div
           className="config-splitter"
-          title="Drag up or down to resize configuration"
+          title={executionPanelOpen ? "Drag to resize execution and logs" : "Drag up or down to resize configuration"}
           onPointerDown={(event) => {
             event.preventDefault();
             configSplit.current = { y: event.clientY, height: configHeight };
           }}
         ><span /></div>
-        <section className="config" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+        {executionPanelOpen ? executionConsole : <section className="config" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
           <div className="tabs">
             <b>
               <Settings2 /> {edge ? "Transition" : resource ? "Connection" : "Activity"}
@@ -3812,62 +3926,8 @@ function App() {
               Select an activity, transition, or shared connection.
             </div>
           )}
-        </section></> : <div className="orchestrator-empty" role="status"><Workflow/><b>No task editors open</b><span>Select a task in Project Explorer to open it.</span></div>}
+        </section>}</> : <><div className="orchestrator-empty" role="status"><Workflow/><b>No task editors open</b><span>Select a task in Project Explorer to open it.</span></div>{executionConsole}</>}
       </main>
-      {executionPanelOpen && <aside className={`monitor monitor-${monitorMode}`}>
-        <div className="pane-title"><span>EXECUTION / DEBUG</span><span className="monitor-actions">
-          <button title="Execution analytics" aria-label="Execution analytics" onClick={() => setAnalyticsOpen(true)}><Activity/></button>
-          <button title="Close execution panel" onClick={() => { setExecutionPanelOpen(false); setMonitorMode("normal"); }}>×</button>
-          <button title="Load saved project logs" onClick={loadSystemLogs}><HardDrive/></button>
-          <button title="Download saved project logs" onClick={downloadSystemLogs}><Download/></button>
-          <button title={monitorMode === "expanded" ? "Restore execution panel" : "Expand execution panel"} onClick={() => setMonitorMode((mode) => mode === "expanded" ? "normal" : "expanded")}><Maximize2/></button>
-          <button title={monitorMode === "fullscreen" ? "Exit full screen" : "Open execution panel full screen"} onClick={() => setMonitorMode((mode) => mode === "fullscreen" ? "normal" : "fullscreen")}>{monitorMode === "fullscreen" ? <Minimize2/> : <Square/>}</button>
-        </span></div>
-        <div className="run-state">
-          <span />{" "}
-          {debugState
-            ? `${debugState.status} · stack ${debugState.callStack?.length || 0}`
-            : `${runtimeState?.status || "Runtime"} · ${project.active_environment}`}
-        </div>
-        {systemLogInfo && <div className="system-log-info"><b>SYSTEM LOG · {String(systemLogInfo.environment || project.active_environment).toUpperCase()}</b><span title={systemLogInfo.path}>{systemLogInfo.path}</span><small>{systemLogInfo.configuredDirectory ? "Configured by runtime.logDirectory" : "Default Studio data directory"} · {(Number(systemLogInfo.maxBytes || 0) / 1024 / 1024).toFixed(0)} MB · {systemLogInfo.backupCount} rolling archives</small></div>}
-        {runtimeState?.lastExecution && <section className="runtime-job-summary">
-          <header><b>LAST EXECUTION</b><button title="Copy correlation ID" onClick={() => navigator.clipboard.writeText(runtimeState.lastExecution.correlationId)}><ClipboardCopy/></button></header>
-          <dl><div><dt>Correlation ID</dt><dd>{runtimeState.lastExecution.correlationId}</dd></div><div><dt>Started</dt><dd>{runtimeState.lastExecution.startedAt || "—"}</dd></div><div><dt>Ended</dt><dd>{runtimeState.lastExecution.endedAt || "—"}</dd></div><div><dt>Duration</dt><dd>{Number(runtimeState.lastExecution.durationMs || 0).toFixed(1)} ms</dd></div></dl>
-        </section>}
-        {!!endpoints.length && <section className="runtime-endpoints">
-          <strong>{endpoints.some((endpoint: any) => endpoint.kind === "subscription") ? "LIVE EVENT RECEIVERS" : "LIVE ENDPOINTS"}</strong>
-          {endpoints.map((endpoint: any) => <article key={`${endpoint.taskId}:${endpoint.activityId}`}>
-            <span>{endpoint.kind === "subscription" ? `${String(endpoint.status || "ready").toUpperCase()} · ${endpoint.name}` : `${endpoint.methods?.join(", ")} · ${endpoint.name}`}</span>
-            <code>{endpoint.url}</code>
-            {endpoint.kind !== "subscription" && <button title="Copy endpoint URL" onClick={() => navigator.clipboard.writeText(endpoint.url)}><ClipboardCopy/> Copy</button>}
-            {endpoint.docsUrl && <><a href={endpoint.docsUrl} target="_blank" rel="noopener noreferrer">Open Swagger · {endpoint.docsUrl}</a><button onClick={async () => {
-              try {
-                const response = await fetch(endpoint.collectionDownloadUrl);
-                if (!response.ok) throw new Error(await response.text());
-                browserDownload(await response.blob(), "MINA-API.postman_collection.json");
-              } catch (error) { alert(`Unable to download Postman collection: ${String(error)}`); }
-            }}>Download Postman collection</button></>}
-            {endpoint.kind === "subscription" && <small>Waiting continuously for events on {endpoint.destination}</small>}
-            {endpoint.configuredUrl && endpoint.configuredUrl !== endpoint.url && <small>Configured public URL: {endpoint.configuredUrl}</small>}
-          </article>)}
-        </section>}
-        {(() => {
-          const visible = Object.values(executionOutputs).filter((record: any) => !["start", "end", "log"].includes(record.type));
-          return !!visible.length && <details className="runtime-outputs" open>
-          <summary>EXECUTED PATH OUTPUTS <b>{visible.length}</b></summary>
-          {visible.map((record: any) => <details key={record.activityId}>
-            <summary><span>{record.name}</span><small>{record.type}</small></summary>
-            <pre>{formatRuntimeOutput(record)}</pre>
-          </details>)}
-        </details>})()}
-        {executionLogEntries.map((l, i) => (
-          <div className={`log ${(l.level || "info").toLowerCase()}`} key={i}>
-            <small>{l.time ? new Date(l.time).toLocaleTimeString() : ""} {l.level}{l.correlationId ? ` · ${l.correlationId}` : ""}</small>
-            <p>{l.message}</p>
-            {l.payload !== undefined && l.payload !== "" && l.payload !== null && <pre>{JSON.stringify(l.payload, null, 2)}</pre>}
-          </div>
-        ))}
-      </aside>}
       {analyticsOpen && <ExecutionAnalytics key={project.id} projectId={project.id} projectName={project.name} tasks={project.tasks} logs={logs} runtimeState={runtimeState} debugState={debugState} onClose={() => setAnalyticsOpen(false)} onInspect={(taskId: string, activityId: string) => { const target = project.tasks.find(item => item.id === taskId && item.activities.some(activity => activity.id === activityId)) || project.tasks.find(item => item.activities.some(activity => activity.id === activityId)); if (target) { selectTask(target.id); setSelected(activityId); setActiveTab("configuration"); setAnalyticsOpen(false); } }}/>}
       {utilityMode && <FileUtilities initialMode={utilityMode} onClose={() => setUtilityMode(null)}/>}
       <footer className="studio-status-bar">
@@ -3875,9 +3935,8 @@ function App() {
         <span className="status-context">{project.name}{editorOpen ? ` · ${task.name}` : ""}</span>
         <span className="status-spacer"/>
         <span className="status-environment">{project.active_environment.toUpperCase()}</span>
-        <span className={visibleWorkStatus ? "status-progress working" : "status-progress ready"}>{visibleWorkStatus ? <LoaderCircle/> : <CheckCircle2/>}<b>{visibleWorkStatus || "Ready"}</b></span>
+        <RuntimeStatus work={designerWork} projectId={project.id} watching={executionActive} debugStatus={debugState?.status} debugActivities={debugActivityNames}/>
       </footer>
-      {visibleWorkStatus && <div className="studio-progress-toast" role="status" aria-live="polite"><LoaderCircle/><span><b>Studio is working</b><small>{visibleWorkStatus}</small></span></div>}
       <input
         hidden
         ref={fileInput}
@@ -5015,12 +5074,6 @@ function Context({
     sap: { label: "SAP ECC Connection", description: "RFC, BAPI and IDoc metadata" },
     sap_tid: { label: "SAP TID Manager", description: "Transactional RFC state" },
   };
-  const connectionIcons: Record<string, string> = {
-    http: "/activity-icons/http.png", ftp: "/activity-icons/ftp.png", sftp: "/activity-icons/sftp.png",
-    ems: "/activity-icons/ems.png", jms: "/activity-icons/jms-connection.svg", kafka: "/vendor-logos/apache-kafka.svg", pubsub: "/vendor-logos/gcp-pubsub.png",
-    jdbc: "/activity-icons/JDBC-Query.png", snowflake: "/activity-icons/snowflake.svg", amqp: "/vendor-logos/rabbitmq.svg",
-    sap: "/vendor-logos/sap.svg", sap_tid: "/vendor-logos/sap.svg",
-  };
     if (menu.type === "canvas")
     return (
           <ActivityPicker
@@ -5132,7 +5185,7 @@ function Context({
                 close();
               }}
             >
-              <span className={`connection-menu-icon connector-${t}`}><img src={connectionIcons[t]} alt="" /></span><span><b>{connectionChoices[t].label}</b><small>{connectionChoices[t].description}</small></span><ChevronRight/>
+              <span className={`connection-menu-icon connector-${t}`}><img src={connectionIconUrl(t)} alt="" /></span><span><b>{connectionChoices[t].label}</b><small>{connectionChoices[t].description}</small></span><ChevronRight/>
             </button>
           ))}
         </>
@@ -6579,7 +6632,7 @@ function DebugToolsDialog({ state, tasks, activities, breakpoints, conditions, w
   </div></ModalLayer>;
 }
 
-function DebugRibbon({ state, act, stop, openJobData, openTools, runToSelected, canRunTo }: any) {
+function DebugRibbon({ state, act, stop, openLogs, openJobData, openTools, runToSelected, canRunTo }: any) {
   const paused = state.status === "paused";
   const stopping = state.status === "stopping";
   const command = (label: string, Icon: any, action: () => void, disabled = false, title = label) =>
@@ -6600,6 +6653,7 @@ function DebugRibbon({ state, act, stop, openJobData, openTools, runToSelected, 
       {command("Run to Selected", CirclePlay, runToSelected, !paused || !canRunTo)}
     </div></div>
     <div className="ribbon-group"><b>INSPECT & CONFIGURE</b><div>
+      {command("Execution Logs", BookOpen, openLogs)}
       {command("Breakpoints", Bug, () => openTools(0), stopping)}
       {command("Watches", Search, () => openTools(1), stopping)}
       {command("Variables", Database, () => openTools(2), stopping)}

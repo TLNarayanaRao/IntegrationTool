@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import ts from 'typescript';
 const source=await readFile(new URL('../src/mapperLoopMappings.ts',import.meta.url),'utf8');
-const {autoMapLoopChildren,emptyRepeatOccurrence,mapActivityRepeatingDrop,mapRepeatingDrop,relativeLoopExpression,expandLoopExpression,removeRepeatOccurrence}=await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText).toString('base64')}`);
+const {activityMappingRules,activityMappingsFromRules,autoMapLoopChildren,emptyRepeatOccurrence,mapActivityRepeatingDrop,mapRepeatingDrop,relativeLoopExpression,expandLoopExpression,removeRepeatOccurrence}=await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText).toString('base64')}`);
 const fields=[{path:'Record',type:'object[]',repeating:true},{path:'Record.Name',type:'string'},{path:'Record.Address',type:'object'},{path:'Record.Address.City',type:'string'},{path:'Record.Marks',type:'number'}];
 const sources=[{activity:{id:'s',type:'start',name:'Read'},reference:'Read',distance:1,fields:[{key:'rows.name'},{key:'rows.address.city'},{key:'rows.MARKS'}]}];
 
@@ -109,4 +109,16 @@ test('activity drop rules preserve unrelated mappings and replace fixed rows wit
   assert.equal(smart['Record.FirstName'].source,'${vars.orders.first_name}');
   assert.equal(smart.Record.mapChildren,true);
   assert.equal(map('smart-map',smart,'')['Record.FirstName'],undefined);
+});
+
+test('activity duplicate scopes survive reload, remapping and deletion without touching the original',()=>{
+  const original={Record:{$rule:'copy-of',source:'${input.first}'},'Record.0.Name':'"fixed"'};
+  const blank=activityMappingsFromRules([...activityMappingRules(original),emptyRepeatOccurrence('Record','object[]','second')]);
+  const loaded=JSON.parse(JSON.stringify(blank));
+  assert.equal(loaded.$occurrences[0].source,'');
+  const mapped=mapActivityRepeatingDrop(fields,loaded,'Record','${Read.rows}',sources,'for-each','second');
+  assert.deepEqual(mapped.Record,original.Record);
+  assert.equal(mapped['Record.0.Name'],original['Record.0.Name']);
+  assert.equal(mapped.$occurrences.find(rule=>rule.target==='Record.Name').source,'${Read.rows.name}');
+  assert.deepEqual(activityMappingsFromRules(removeRepeatOccurrence(activityMappingRules(mapped),'second')),original);
 });

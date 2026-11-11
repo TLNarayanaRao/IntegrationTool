@@ -932,6 +932,35 @@ class PythonMapperParityTests(unittest.TestCase):
         self.assert_studio(project, payload, expected)
         self.assert_exports(project, payload, expected)
 
+    def test_shared_input_duplicates_keep_separate_nested_bindings_and_ignore_blanks(self):
+        payload = {'original': [{'name':'Ada','items':[{'value':'A'}]}],
+                   'replacement': [{'name':'Lin','items':[{'value':'B'}]}], 'tail':[{'name':'Jo'}]}
+        entries = {
+            'result.rows': {'$rule':'for-each','source':'${input.original}','mapChildren':True},
+            'result.rows.name': '${input.original.name}',
+            'result.rows.items': {'$rule':'copy-of','source':'${input.original.items}'},
+            '$occurrences': [
+                dict(target='result.rows',operator='for-each',occurrenceId='blank',duplicateOf='primary',source=''),
+                dict(target='result.rows',operator='for-each',occurrenceId='second',duplicateOf='primary',source='${input.replacement}',mapChildren=True),
+                dict(target='result.rows.name',operator='direct',occurrenceId='second',source='${input.replacement.name}'),
+                dict(target='result.rows.items',operator='copy-of',occurrenceId='inner',parentOccurrenceId='second',duplicateOf='second',source='${input.replacement.items}'),
+                dict(target='result.rows',operator='copy-of',occurrenceId='tail',duplicateOf='primary',source='${input.tail}'),
+                dict(target='result.extra',operator='copy-of',occurrenceId='extra',duplicateOf='primary',source='${input.tail}'),
+            ]}
+        expected = {'rows': payload['original'] + payload['replacement'] + payload['tail'], 'extra':payload['tail']}
+        project = self.project(input_mappings=entries)
+        self.assert_studio(project, payload, expected)
+        self.assert_exports(project, payload, expected)
+
+    def test_blank_input_duplicate_does_not_change_direct_python_templates(self):
+        entries = {'result.text':'prefix-${input.value}', '$occurrences':[
+            dict(target='result.rows',operator='for-each',occurrenceId='blank',duplicateOf='primary',source='')]}
+        self.assertEqual(self.exported_result(raw_python_files, self.project(input_mappings=entries), {'value':'one'}),
+                         {'text':'prefix-one'})
+        entries['$occurrences'][0].update(source='${input.rows}',operator='copy-of')
+        self.assertEqual(self.exported_result(raw_python_files, self.project(input_mappings=entries), {'value':'one','rows':['two']}),
+                         {'text':'prefix-one','rows':['two']})
+
     def test_plain_input_quotes_are_editor_syntax_not_output_characters(self):
         self.assert_exports(self.project(input_mappings={'result.text': "'test'"}), {}, {'text': 'test'})
         self.assert_exports(self.project([dict(target='literal',constant='${input.missing}',targetType='string')]), {}, {'literal': '${input.missing}'})

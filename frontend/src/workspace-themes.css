@@ -1,0 +1,77 @@
+.runtime-status-button {
+  display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px;
+  min-width: 0; max-width: min(380px, 44vw); min-height: 21px; padding: 1px 7px;
+  border: 1px solid var(--line); border-radius: 4px; background: var(--surface);
+  color: var(--text); font: inherit; cursor: pointer;
+}
+.runtime-status-button > svg { flex: 0 0 13px; width: 13px; height: 13px; color: var(--accent2); }
+.runtime-status-button.busy > svg { color: var(--accent); animation: studio-spin 1s linear infinite; }
+.runtime-status-button.failed > svg { color: #d44256; }
+.runtime-status-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.runtime-status-button .runtime-status-text { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.runtime-status-button progress { width: clamp(25px, 6vw, 72px); height: 7px; flex-shrink: 0; accent-color: var(--accent); }
+.welcome-runtime-status { position: fixed; bottom: 10px; right: 10px; z-index: 25; font-size: .85rem; }
+.runtime-status-modal > main { display: block; }
+.runtime-status-modal > main :is(p,li) { overflow-wrap: anywhere; color: var(--text); }
+.runtime-status-modal > main ul { padding-inline-start: 1.3rem; }
+.input-tree-row.mapping-duplicate-row { background: color-mix(in srgb, var(--panel) 86%, var(--accent) 14%); }
+.input-tree-row.mapping-duplicate-row .target-tree-field > b { font-style: italic; }
+.input-tree-row.mapping-duplicate-root .remove-duplicate-mapping { align-self: flex-start; }
+/* Both menus are portals; the explicit right-click menu wins over suggestions. */
+body > .mapping-context-menu { z-index: 100001; }
+@media (prefers-reduced-motion: reduce) {
+  .runtime-status-button.busy > svg { animation: none; }
+}
+
+/* Workbench keeps command surfaces shallow, leaving more height for the task. */
+body[data-theme="compact-workbench"] {
+  --shell:#20252a; --panel:#282f35; --panel2:#303940; --surface:#1d2328;
+  --text:#e6eef2; --muted:#a7b9c4; --line:#4b5b65; --accent:#9bcfff; --accent2:#9bd5b7; --glow:transparent;
+}
+body[data-theme="compact-workbench"] .app:not(:has(.debug-ribbon)) {
+  grid-template-rows: 30px 58px 54px minmax(0,1fr) 25px !important;
+}
+body[data-theme="compact-workbench"] .studio-ribbon :is(.ribbon-group, .ribbon-group button) { padding-block: 2px; }
+body[data-theme="compact-workbench"] .studio-ribbon .ribbon-group button { min-height: 32px; gap: 1px; }
+body[data-theme="compact-workbench"] .studio-ribbon .ribbon-group button svg { width: 16px; height: 16px; }
+body[data-theme="compact-workbench"] .project-tree .tree-row { min-height: 23px; padding-block: 1px; }
+body[data-theme="compact-workbench"] :is(.ribbon-group button,.task-tab,.tree-row,.mapping-binding,.runtime-modal) { border-radius: 3px; box-shadow: none; }
+
+/* Blueprint changes the canvas grid and frames the nodes like a drawing. */
+body[data-theme="blueprint-board"] {
+  --shell:#0d2944; --panel:#122f4d; --panel2:#173c60; --surface:#0b233b;
+  --text:#f1f8ff; --muted:#b5cfe6; --line:#527595; --accent:#b9e4ff; --accent2:#9de5d8; --glow:transparent;
+}
+body[data-theme="blueprint-board"] .canvas {
+  background-color: #102d48;
+  background-image: linear-gradient(#78a6cc35 1px, transparent 1px), linear-gradient(90deg,#78a6cc35 1px,transparent 1px),
+    linear-gradient(#8abde028 1px,transparent 1px),linear-gradient(90deg,#8abde028 1px,transparent 1px) !important;
+  background-size: 80px 80px,80px 80px,16px 16px,16px 16px !important;
+}
+body[data-theme="blueprint-board"] .canvas .node { border-radius: 4px; outline: 1px dashed #8abde0a0; outline-offset: 4px; }
+body[data-theme="blueprint-board"] .canvas .node:is(.selected,.debug-current) { outline: 2px solid var(--accent); }
+body[data-theme="blueprint-board"] :is(.pane-title,.task-tab,.status-product,.canvas .node) { font-family: "Cascadia Mono",Consolas,monospace; }
+
+/* Reading Room uses space and typography to make structure easier to scan. */
+body[data-theme="plain-reading-room"] {
+  --shell:#e8e1d5; --panel:#f5f0e7; --panel2:#fffaf0; --surface:#fffcf6;
+  --text:#273044; --muted:#475471; --line:#ada393; --accent:#2d527c; --accent2:#2d6955;
+  --field:#fffdf8; --selection:#dfebf3; --plain-grid:#9b907b70;
+  --plain-panel-radius:9px; --plain-control-radius:7px; --plain-card-radius:8px; --plain-badge-radius:6px;
+}
+body[data-theme="plain-reading-room"] :is(.studio-ribbon,.menu-bar,.explorer,.studio-status-bar,.config-panel,.runtime-modal) {
+  color: var(--text); background: var(--panel); border-color: var(--line);
+}
+body[data-theme="plain-reading-room"] :is(.tree-row,.menu-root > button,.ribbon-group button,.status-context,.task-tab,.status-product,.status-environment) { color: var(--text); }
+body[data-theme="plain-reading-room"] .project-tree .tree-row { min-height: 34px; font-size: max(13px, 1em); gap: 9px; }
+body[data-theme="plain-reading-room"] .input-contract-tree .input-tree-row { background: var(--surface) !important; }
+body[data-theme="plain-reading-room"] .input-contract-tree .input-tree-row.selected { background: var(--selection) !important; }
+body[data-theme="plain-reading-room"] .input-contract-tree .input-tree-row.mapping-duplicate-row { background: #e5f2eb !important; }
+body[data-theme="plain-reading-room"] .ribbon-group button { font-size: max(11px, 1em); border-radius: 9px; }
+body[data-theme="plain-reading-room"] :is(.pane-title,.config-heading,.contract-heading,.canvas .node-name) { font-family: Georgia,serif; font-weight: 700; }
+body[data-theme="plain-reading-room"] .canvas {
+  background-color:#f3eddf !important;
+  background-image:radial-gradient(#9b907b70 1px,transparent 1px) !important;
+  background-size:26px 26px !important;
+}
+body[data-theme="plain-reading-room"] .canvas :is(.node-name,.node-label) { color: #273044; text-shadow: none; }

@@ -28,7 +28,7 @@ On Mapper **Input**, drag a repeating complex source onto a repeating complex ta
 
 The same three choices are available on other activity **Input** tabs and in **Edit mappings** when both structures expose repeating records. This includes **Call Sub Task** inputs and **End** return mappings when the task has a schema. Drops onto simple fields still map the value directly.
 
-To add another source for the same repeating target, right-click its **[Copy-Of]** or **[For-Each]** row and choose **Duplicate mapping**. The new occurrence starts with empty bindings. Drop a different collection onto that occurrence and choose its mapping mode. The original keeps its source and child bindings. At runtime the original items come first, followed by items from the duplicates in order. An occurrence with no source adds no items.
+To add another source for a repeating target, right-click the row and choose **Duplicate mapping**. This works in Mapper and other activity Input editors, including **Call Sub Task** and **End**. You can duplicate an unmapped repeating field too. The new occurrence starts with empty bindings. Drop a different collection onto it and choose a mapping mode for complex records. The original keeps its source and child bindings. At runtime the original items come first, followed by the configured duplicates in order. An occurrence with no source adds no items.
 
 Use **Map & Test** to check the generated result before running or exporting the flow.
 

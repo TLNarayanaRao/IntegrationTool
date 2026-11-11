@@ -12,6 +12,21 @@ let mainWindow;
 let rendererReady = false;
 let runtimeReady = false;
 const startup = new AbortController();
+const startupStages = ['Starting local runtime', 'Waiting for runtime health check', 'Loading Studio designer', 'Studio and runtime ready'];
+let startupStatus = { step: 0, total: startupStages.length - 1, label: startupStages[0], elapsedMs: 0, failed: false, timings: [] };
+function publishStartup(step, failed = false, label = startupStages[step]) {
+  const elapsedMs = Math.round(performance.now()-desktopStarted);
+  const timings = step > startupStatus.step
+    ? [...startupStatus.timings, {label:startupStages[startupStatus.step], durationMs:elapsedMs-startupStatus.elapsedMs}]
+    : startupStatus.timings;
+  startupStatus = {step,total:startupStages.length-1,label,elapsedMs,failed,timings};
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mina:startup-status', startupStatus);
+}
+ipcMain.handle('mina:get-startup-status', event => {
+  if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame)
+    throw new Error('Untrusted startup status request');
+  return startupStatus;
+});
 ipcMain.handle('mina:app-info', (event) => {
   if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error('Untrusted application information request');
   return { version: app.getVersion(), platform: process.platform, packaged: app.isPackaged };
@@ -143,7 +158,10 @@ function startRuntime(port) {
   });
   runtimeProcess.on('exit', (code) => {
     fs.appendFileSync(runtimeLogPath, `[${new Date().toISOString()}] [exit] Runtime exited with code ${code}\n`);
-    if (runtimeReady && !app.isQuitting && mainWindow && !mainWindow.isDestroyed()) dialog.showErrorBox('MINA Runtime', `The local runtime stopped unexpectedly (exit code ${code}).`);
+    if (runtimeReady && !app.isQuitting && mainWindow && !mainWindow.isDestroyed()) {
+      publishStartup(startupStatus.step, true, 'Local runtime stopped unexpectedly');
+      dialog.showErrorBox('MINA Runtime', `The local runtime stopped unexpectedly (exit code ${code}).`);
+    }
   });
   return executable;
 }
@@ -155,6 +173,7 @@ async function createWindow() {
   // on a busy machine. Only the Studio navigation waits for its health check.
   const executable = startRuntime(runtimePort);
   recordStartup('Runtime process started');
+  publishStartup(1);
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 1000,
@@ -187,6 +206,7 @@ async function createWindow() {
   if (mainWindow.isDestroyed()) return;
   runtimeReady = true;
   recordStartup('Runtime ready');
+  publishStartup(2);
   // This navigation may replace an unfinished splash on a fast launch.
   await mainWindow.loadURL(process.env.MINA_DEV_URL || `http://127.0.0.1:${runtimePort}`);
   if (mainWindow.isDestroyed()) return;
@@ -194,6 +214,7 @@ async function createWindow() {
   await splash;
   if (splashLoadedAt !== undefined) recordStartup('Startup page loaded', splashLoadedAt);
   recordStartup('Studio page loaded');
+  if (!startupStatus.failed) publishStartup(3);
 }
 
 ipcMain.handle('mina:save-file', async (_event, options) => {
@@ -511,7 +532,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     mainWindow.focus();
   });
   app.whenReady().then(createWindow).catch((error) => {
-    if (!startup.signal.aborted) dialog.showErrorBox('MINA Studio', error.stack || String(error));
+    if (!startup.signal.aborted) {
+      publishStartup(startupStatus.step, true, 'Studio startup failed');
+      dialog.showErrorBox('MINA Studio', error.stack || String(error));
+    }
     app.quit();
   });
 }

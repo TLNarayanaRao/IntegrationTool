@@ -7,9 +7,11 @@ const source=await readFile(new URL('../src/ActivityEditor.tsx',import.meta.url)
 const ast=ts.createSourceFile('editor.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 const validation=await readFile(new URL('../src/mappingValidation.ts',import.meta.url),'utf8');
 const {validateMapping}=await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(validation,{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText).toString('base64')}`);
+const repeatBindings=await readFile(new URL('../src/mapperLoopMappings.ts',import.meta.url),'utf8');
+const {activityMappingRules}=await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(repeatBindings,{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText).toString('base64')}`);
 const names=['activityMappingIssues','activityInputMappingTypes'];
 const code=ts.transpileModule(ast.statements.filter(s=>names.includes(s.name?.text)).map(s=>s.getText(ast).replace('export ','')).join('\n'),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
-const context=vm.createContext({validateMapping,isMapperActivity:type=>type==='mapper',transformSchemaFields:config=>config.fields,
+const context=vm.createContext({validateMapping,activityMappingRules,isMapperActivity:type=>type==='mapper',transformSchemaFields:config=>config.fields,
   runtimeMappableInputs:(node,contract)=>contract.input,resolvedActivityContract:node=>({input:node.fields||[]}),dataTreeRows:fields=>fields,
   mappingCompletionPaths:()=>['input','last'],upstreamActivitySources:()=>[]});
 vm.runInContext(code,context);

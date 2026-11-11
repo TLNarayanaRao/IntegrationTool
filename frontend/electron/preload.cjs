@@ -3,6 +3,12 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('minaDesktop', {
   isDesktop: true,
   getAppInfo: () => ipcRenderer.invoke('mina:app-info'),
+  getStartupStatus: () => ipcRenderer.invoke('mina:get-startup-status'),
+  onStartupStatus: (listener) => {
+    const callback = (_event, status) => listener(status);
+    ipcRenderer.on('mina:startup-status', callback);
+    return () => ipcRenderer.removeListener('mina:startup-status', callback);
+  },
   saveFile: (options) => ipcRenderer.invoke('mina:save-file', options),
   selectArchiveOutput: (options) => ipcRenderer.invoke('mina:select-archive-output', options),
   saveProjectFolder: (options) => ipcRenderer.invoke('mina:save-project-folder', options),
