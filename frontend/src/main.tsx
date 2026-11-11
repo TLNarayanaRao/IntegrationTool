@@ -3,7 +3,7 @@ import ApiBlueprint from "./ApiBlueprint";
 import { closeTaskEditors, type CloseEditorsMode } from "./taskEditors";
 import { isEventActivity, taskEntryLabels, taskEntryMode } from "./taskEntry";
 import TaskEntryIcon from "./TaskEntryIcon";
-import { studioObjectName } from "./studioObjectName";
+import { resolveWorkspaceSubtask, schemaObjectName, studioNameKey, studioObjectName, workspaceNameConflict } from "./studioObjectName";
 import ExecutionAnalytics from "./ExecutionAnalytics";
 import { transitionLanes } from "./transitionIndex";
 import React, { Component, ErrorInfo, useEffect, useMemo, useRef, useState } from "react";
@@ -1199,16 +1199,6 @@ const normalizeObjectNames = (project: Project, previous?: Project): Project => 
     return updated.every((item, index) => item === items[index]) ? items : updated;
   };
   const taskIds = new Set(project.tasks.map(task => task.id));
-  const taskNames = new Map<string, string>();
-  const remember = (tasks: Task[]) => {
-    for (const task of tasks) {
-      if (task.kind !== "subtask" || !taskIds.has(task.id)) continue;
-      const name = task.name.trim().toLowerCase();
-      if (!taskNames.has(name)) taskNames.set(name, task.id);
-    }
-  };
-  remember(project.tasks);
-  if (previous?.id === project.id) remember(previous.tasks);
 
   const tasks = project.tasks.map(task => {
     const updated = named(task);
@@ -1221,7 +1211,11 @@ const normalizeObjectNames = (project: Project, previous?: Project): Project => 
       for (const key of ["taskId", "dynamicTaskId"]) {
         const value = config[key];
         if (typeof value !== "string" || taskIds.has(value) || value.includes("${")) continue;
-        const id = taskNames.get(value.trim().toLowerCase());
+        const matched = resolveWorkspaceSubtask(project.tasks,value);
+        const former = !matched && previous?.id === project.id ? resolveWorkspaceSubtask(previous.tasks,value) : undefined;
+        const renamed = former && project.tasks.find(task => task.id === former.id &&
+          (studioNameKey(task.name) !== studioNameKey(former.name) || task.package_path !== former.package_path));
+        const id = (matched || renamed)?.id;
         if (id && value !== id) {
           config[key] = id;
           changed = true;
@@ -1444,6 +1438,11 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
 };
 const validateProjectDefinition = (project: Project) => {
   const issues = project.tasks.flatMap((task) => validateTaskDefinition(project, task));
+  for (const category of ["tasks","resources","schemas"] as const) for (const item of project[category]) {
+    const message = workspaceNameConflict(project,item.name,packagePath(item.package_path),{category,id:item.id});
+    if (message) issues.push({id:`duplicate-name-${category}-${item.id}`,severity:"error",category:"Project Explorer",message,
+      remedy:"Rename the object or move it to a different package.", ...(category === "tasks" ? {taskId:item.id} : {})});
+  }
   const sapRegistrations = new Map<string, { taskId: string; activityId: string; name: string }>();
   project.tasks.forEach((task) => task.activities.filter((activity) => activity.type === "sap" && activity.config.operation === "rfc_bapi_listener").forEach((activity) => {
     const key = `${activity.config.resourceId || ""}|${String(activity.config.functionName || "").trim().toUpperCase()}`;
@@ -1673,7 +1672,7 @@ function App() {
     >("configuration"),
     [propertyEditor, setPropertyEditor] = useState<string | null>(null),
     [renameOpen, setRenameOpen] = useState(false),
-    [renameTaskId, setRenameTaskId] = useState<string | null>(null),
+    [renameExplorerItem, setRenameExplorerItem] = useState<{type:"task"|"resource"|"schema"|"property";id:string} | null>(null),
     [sampleGalleryOpen, setSampleGalleryOpen] = useState(false),
     [helpDialog, setHelpDialog] = useState<"about" | "shortcuts" | null>(null),
     [treeHeight, setTreeHeight] = useState(305),
@@ -2263,7 +2262,7 @@ function App() {
   const addGroup = (groupType: GroupDefinition["type"], pos?: { x: number; y: number }) => {
     const labels: Record<GroupDefinition["type"], string> = { if: "If", while: "While", for_each: "For Each", iterate: "Iterate", repeat: "Repeat", repeat_on_error: "Repeat on Error", scope: "Scope", none: "None", critical_section: "Critical Section", transaction_jdbc: "Transaction (JDBC)", pick_first: "Pick First" };
     const memberIds = selectedIds.filter((id) => nodes.some((node) => node.id === id));
-    const group: GroupDefinition = { id: `group-${Date.now()}`, type: groupType, name: `${labels[groupType]} Group`, member_activity_ids: memberIds, config: {}, position: pos || { x: 100, y: 100 } };
+    const group: GroupDefinition = { id: `group-${Date.now()}`, type: groupType, name: uniqueActivityName(studioObjectName(`${labels[groupType]} Group`), new Set((task.groups || []).map(group => studioNameKey(group.name)))), member_activity_ids: memberIds, config: {}, position: pos || { x: 100, y: 100 } };
     mutateTask((current) => ({ ...current, groups: [...(current.groups || []), group] }));
     setLogs([{ level: "INFO", message: `${group.name} created${memberIds.length ? ` around ${memberIds.length} selected activit${memberIds.length === 1 ? "y" : "ies"}` : "; select activities and edit membership in its configuration"}.` }]);
   };
@@ -2975,14 +2974,29 @@ function App() {
   const explorerPaste = (target: string, path?: string) => {
     const copied = explorerClipboard.current;
     if (!copied) { setLogs([{ level: "WARN", message: "Project Explorer clipboard is empty." }]); return; }
-    const stamp = Date.now();
-    if (target === "tasks" && copied.type === "task") {
-      const item = copyTask(repairCopiedTask(copied.value), `task-${crypto.randomUUID()}`, `${copied.value.name} Copy`);
-      setProject((current) => ({ ...current, tasks: [...current.tasks, { ...item, package_path: packagePath(path || item.package_path) }] }));
-    } else if (target === "resources" && copied.type === "resource") setProject((current) => ({ ...current, resources: [...current.resources, { ...structuredClone(copied.value), package_path: packagePath(path || copied.value.package_path), id: `resource-${stamp}`, name: `${copied.value.name} Copy` }] }));
-    else if (target === "schemas" && copied.type === "schema") setProject((current) => ({ ...current, schemas: [...current.schemas, { ...structuredClone(copied.value), package_path: packagePath(path || copied.value.package_path), source_path: "", id: `schema-${stamp}`, name: copied.value.name.replace(/(\.[^.\/]+)$/, "-copy$1") }] }));
-    else if (target === "properties" && copied.type === "property") { const name = `${copied.value.name}-copy`; setProject((current) => ({ ...current, properties: { ...current.properties, [name]: structuredClone(copied.value.values) } })); }
-    else { setLogs([{ level: "WARN", message: `A ${copied.type} cannot be pasted into ${target}.` }]); return; }
+    const category = target === "tasks" && copied.type === "task" ? "tasks"
+      : (target === "resources" || target === "resources-root") && copied.type === "resource" ? "resources"
+      : target === "schemas" && copied.type === "schema" ? "schemas" : null;
+    if (category) {
+      const folder = packagePath(path || copied.value.package_path);
+      const original = studioObjectName(copied.value.name), extension = category === "schemas" ? original.match(/\.[^./]+$/)?.[0] || "" : "";
+      const base = original.slice(0, original.length - extension.length) + "-Copy";
+      setProject(current => {
+        let name = base + extension, suffix = 2;
+        while (workspaceNameConflict(current, name, folder)) name = `${base}-${suffix++}${extension}`;
+        const id = `${copied.type}-${crypto.randomUUID()}`;
+        const item = category === "tasks" ? copyTask(repairCopiedTask(copied.value), id, name)
+          : {...structuredClone(copied.value), id, name, ...(category === "schemas" ? {source_path:""} : {})};
+        return {...current, [category]:[...current[category], {...item, package_path:folder}]};
+      });
+    } else if (target === "properties" && copied.type === "property") {
+      setProject(current => {
+        const keys = new Set(Object.keys(current.properties).map(studioNameKey)), base = copied.value.name + "-copy";
+        let name = base, suffix = 2;
+        while (keys.has(studioNameKey(name))) name = `${base}-${suffix++}`;
+        return {...current, properties:{...current.properties,[name]:structuredClone(copied.value.values)}};
+      });
+    } else { setLogs([{ level: "WARN", message: `A ${copied.type} cannot be pasted into ${target}.` }]); return; }
     setLogs([{ level: "INFO", message: `Pasted ${copied.type} into ${target}.` }]);
   };
   const importBwDataFormat = async (file: File, path: string) => {
@@ -2993,11 +3007,22 @@ function App() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || "Import failed.");
       const assets = (result.schemas as SchemaDoc[]).map(asset => ({...asset, package_path:path}));
-      const duplicate = assets.find(asset => project.schemas.some(existing => existing.name === asset.name));
-      if (duplicate) throw new Error(`A project schema already uses ${duplicate.name}. Rename or remove it before importing this format.`);
+      const conflict = (current: Project) => {
+        const names = new Set<string>();
+        for (const asset of assets) {
+          const name = studioNameKey(asset.name);
+          const error = workspaceNameConflict(current, asset.name, path);
+          if (error) return error;
+          if (names.has(name) || current.schemas.some(existing => existing.id === asset.id)) return `The import contains a duplicate schema: ${asset.name}.`;
+          names.add(name);
+        }
+        return "";
+      };
+      const message = conflict(project);
+      if (message) throw new Error(message);
       const projectId = project.id;
       setProject(current => {
-        if (current.id !== projectId || assets.some(asset => current.schemas.some(existing => existing.name === asset.name))) return current;
+        if (current.id !== projectId || conflict(current)) return current;
         const properties = { ...current.properties };
         for (const [environment, entries] of Object.entries(result.properties || {}) as [string, Property[]][]) {
           const existing = properties[environment] || [];
@@ -3013,22 +3038,10 @@ function App() {
   };
   const explorerRename = (type: string, id?: string) => {
     if (type === "application") { setRenameOpen(true); return; }
-    // Use a React modal for desktop task renames. window.prompt() is
-    // unreliable in the packaged Electron renderer and made this command
-    // appear to do nothing even though it worked in browser mode.
-    if (type === "task") { setRenameTaskId(id || null); return; }
-    const currentName = type === "task" ? project.tasks.find((item) => item.id === id)?.name : type === "resource" ? project.resources.find((item) => item.id === id)?.name : type === "schema" ? project.schemas.find((item) => item.id === id)?.name : id;
-    const name = studioObjectName(prompt(`Rename ${type}`, currentName || "") ?? ""); if (!name || name === currentName) return;
-    if (type === "task") setProject((current) => ({ ...current, tasks: current.tasks.map((item) => item.id === id ? { ...item, name } : item) }));
-    if (type === "resource") setProject((current) => ({ ...current, resources: current.resources.map((item) => item.id === id ? { ...item, name } : item) }));
-    if (type === "schema") setProject((current) => ({ ...current, schemas: current.schemas.map((item) => item.id === id ? { ...item, name: name.toLowerCase().endsWith(".xsd") ? name : `${name}.xsd` } : item) }));
-    if (type === "property" && id) setProject((current) => {
-      if (Object.prototype.hasOwnProperty.call(current.properties, name)) return current;
-      const properties = { ...current.properties, [name]: current.properties[id] };
-      delete properties[id];
-      return { ...current, properties, active_environment: current.active_environment === id ? name : current.active_environment };
-    });
+    if (id && (type === "task" || type === "resource" || type === "schema" || type === "property")) setRenameExplorerItem({type,id});
   };
+  const renamedCategory = renameExplorerItem?.type === "task" ? "tasks" : renameExplorerItem?.type === "resource" ? "resources" : renameExplorerItem?.type === "schema" ? "schemas" : null;
+  const renamedObject = renamedCategory ? project[renamedCategory].find(item => item.id === renameExplorerItem?.id) : null;
   const explorerRemove = (type: string, id?: string) => {
     if (type === "application") { void deleteCurrent(); return; }
     if (!confirm(`Remove this ${type} from ${project.name}?`)) return;
@@ -3053,8 +3066,20 @@ function App() {
     },
     onMenu: (event: React.MouseEvent, path: string) => setMenu({type: category, path, x: event.clientX, y: event.clientY}),
   });
+  const packageDestinationConflict = (path: string) => {
+    if (!objectPackageDialog) return "";
+    const {category, itemId, renaming} = objectPackageDialog;
+    for (const item of project[category]) {
+      const previous = packagePath(item.package_path);
+      const destination = item.id === itemId ? path : renaming ? renamedPackagePath(previous,renaming,path) : previous;
+      if (studioNameKey(previous) === studioNameKey(destination)) continue;
+      const error = workspaceNameConflict(project,item.name,destination,{category,id:item.id});
+      if (error) return error;
+    }
+    return "";
+  };
   const saveObjectPackage = (path: string) => {
-    if (!objectPackageDialog) return;
+    if (!objectPackageDialog || packageDestinationConflict(path)) return;
     const {category, itemId, renaming} = objectPackageDialog;
     setProject(current => {
       const rewrite = (value: string) => renaming ? renamedPackagePath(value, renaming, path) : value;
@@ -3255,7 +3280,7 @@ function App() {
                   key={t.id}
                   className={`tree-row explorer-task-row ${mode} ${editorOpen && t.id === task.id ? "active" : ""}`}
                   onClick={() => selectTask(t.id)}
-                  onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setRenameTaskId(t.id); }}
+                  onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setRenameExplorerItem({type:"task",id:t.id}); }}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setMenu({ type: "task", id: t.id, path: packagePath(t.package_path), x: e.clientX, y: e.clientY });
@@ -3906,7 +3931,7 @@ function App() {
         />
       )}{" "}
       {objectPackageDialog && <ObjectPackageDialog paths={objectPackageDialog.moving ? explorerPackagePaths(objectPackageDialog.category) : visiblePackagePaths(objectPackageDialog.category)}
-        parent={objectPackageDialog.parent} moving={objectPackageDialog.moving} renaming={objectPackageDialog.renaming}
+        parent={objectPackageDialog.parent} moving={objectPackageDialog.moving} renaming={objectPackageDialog.renaming} validateDestination={packageDestinationConflict}
         onClose={() => setObjectPackageDialog(null)} onSave={saveObjectPackage}/>}
       {renameArtifactOpen && <ObjectPackageDialog paths={[]} artifact renaming={project.packaging?.artifact_name || project.id}
         onClose={() => setRenameArtifactOpen(false)} onSave={name => {
@@ -3918,6 +3943,7 @@ function App() {
           kind={taskDialog.kind}
           packages={explorerPackagePaths("tasks")}
           initialPackage={packagePath(taskDialog.path)}
+          validateName={(name, path) => workspaceNameConflict(project, name, path)}
           resources={project.resources}
           schemas={project.schemas}
           createConnection={createConnectionForField}
@@ -4002,6 +4028,7 @@ function App() {
           type={["http_client", "http_server"].includes(connectionDialog.kind) ? "http" : connectionDialog.kind}
           initialRole={connectionDialog.kind === "http_client" ? "client" : connectionDialog.kind === "http_server" ? "server" : undefined}
           requireInitialRole={!!connectionDialog.select}
+          validateName={(name: string) => workspaceNameConflict(project, name, packagePath(connectionDialog.path))}
           properties={project.properties[project.active_environment] || []}
           onSapSchemaFetched={(idoc: any) => upsertSapIdocSchema(idoc)}
           onClose={() => setConnectionDialog(null)}
@@ -4018,6 +4045,7 @@ function App() {
         <SharedConnectionDialog
           type={editingConnection.type}
           initial={editingConnection}
+          validateName={(name: string) => workspaceNameConflict(project, name, packagePath(editingConnection.package_path), {category:"resources",id:editingConnection.id})}
           properties={project.properties[project.active_environment] || []}
           onSapSchemaFetched={(idoc: any) => upsertSapIdocSchema(idoc)}
           onClose={() => setEditingConnection(null)}
@@ -4032,6 +4060,8 @@ function App() {
         <SchemaStudio
           schema={schemaEditor === "new" ? undefined : schemaEditor}
           initialTab={schemaEditor === "new" ? "design" : "source"}
+          validateName={name => workspaceNameConflict(project, name, schemaEditor === "new" ? schemaPackage : packagePath(schemaEditor.package_path),
+            schemaEditor === "new" ? undefined : {category:"schemas",id:schemaEditor.id})}
           onClose={() => setSchemaEditor(null)}
           onSave={(s) => {
             setProject((p) => ({
@@ -4107,17 +4137,25 @@ function App() {
           }}
         />
       )}
-      {renameTaskId && (
+      {renameExplorerItem && (
         <RenameApplication
-          entity="task"
-          name={project.tasks.find((item) => item.id === renameTaskId)?.name || ""}
-          onClose={() => setRenameTaskId(null)}
+          entity={renameExplorerItem.type === "resource" ? "connection" : renameExplorerItem.type === "property" ? "environment" : renameExplorerItem.type}
+          name={renamedObject?.name || renameExplorerItem.id}
+          normalizeName={renamedCategory === "schemas" ? (value: string) => schemaObjectName(value, renamedObject?.name) : studioObjectName}
+          validateName={(name: string) => renamedCategory && renamedObject
+            ? workspaceNameConflict(project, name, packagePath(renamedObject.package_path), {category:renamedCategory,id:renamedObject.id})
+            : Object.keys(project.properties).some(key => key !== renameExplorerItem.id && studioNameKey(key) === studioNameKey(name)) ? "An environment with this name already exists." : ""}
+          onClose={() => setRenameExplorerItem(null)}
           onSave={(name: string) => {
-            setProject((current) => ({
-              ...current,
-              tasks: current.tasks.map((item) => item.id === renameTaskId ? { ...item, name } : item),
-            }));
-            setRenameTaskId(null);
+            const id = renameExplorerItem.id;
+            setProject(current => {
+              if (renamedCategory) return {...current, [renamedCategory]:current[renamedCategory].map(item => item.id === id ? {...item,name} : item)};
+              const properties = {...current.properties};
+              if (name === id || !properties[id]) return current;
+              properties[name] = properties[id]; delete properties[id];
+              return {...current, properties, active_environment:current.active_environment === id ? name : current.active_environment};
+            });
+            setRenameExplorerItem(null);
           }}
         />
       )}
@@ -4147,6 +4185,7 @@ function groupConfigDefaults(type: GroupDefinition["type"]) {
 
 function GroupEditor({ group, groups, resources, activities, task, tasks, schemas, properties, customFunctions, onClose, onSave, onDelete }: any) {
   const [draft, setDraft] = useState<GroupDefinition>(() => { const initial = structuredClone(group || { id: `group-${Date.now()}`, type: "scope", name: "Execution Group", member_activity_ids: [], config: {}, position: { x: 100, y: 100 }, size: { width: 420, height: 220 }, parent_group_id: null }); return { ...initial, config: { ...groupConfigDefaults(initial.type), ...(initial.config || {}) } }; });
+  const nameConflict = groups.some((item: GroupDefinition) => item.id !== draft.id && studioNameKey(item.name) === studioNameKey(draft.name));
   const owners = new Map<string, string>(); groups.forEach((item: GroupDefinition) => item.member_activity_ids.forEach((id) => owners.set(id, item.id)));
   const patchConfig = (key: string, value: any) => setDraft((current) => ({ ...current, config: { ...current.config, [key]: value } }));
   const toggleMember = (id: string) => setDraft((current) => ({ ...current, member_activity_ids: current.member_activity_ids.includes(id) ? current.member_activity_ids.filter((item) => item !== id) : [...current.member_activity_ids, id] }));
@@ -4162,7 +4201,7 @@ function GroupEditor({ group, groups, resources, activities, task, tasks, schema
   const sourceIds = new Set(upstream.map((source: any) => source.activity.id));
   const dataSources = [...upstream, ...memberSources.filter((source: any) => !sourceIds.has(source.activity.id))];
   return <ModalLayer className="modal-backdrop"><div className="runtime-modal group-editor-dialog"><header><span><Workflow/><span><b>Executable Group</b><small>Nested canvas and runtime execution boundary</small></span></span><button onClick={onClose}>×</button></header><main>
-    <label>Group name<input autoFocus value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>
+    <label>Group name<input autoFocus value={draft.name} aria-invalid={nameConflict} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/>{nameConflict && <small className="endpoint-setup-error" role="alert">A group with this name already exists in this task.</small>}</label>
     <label>Execution semantics<select value={draft.type} onChange={(event) => { const type = event.target.value as GroupDefinition["type"]; setDraft({ ...draft, type, config: groupConfigDefaults(type) }); }}><option value="scope">None / Scope (once)</option><option value="if">If</option><option value="while">While True</option><option value="iterate">Iterate collection</option><option value="for_each">For each</option><option value="repeat">Repeat Until True</option><option value="repeat_on_error">Repeat on Error Until True</option><option value="critical_section">Critical Section</option><option value="transaction_jdbc">JDBC transaction</option><option value="pick_first">Pick First (first eligible branch)</option></select></label>
     <label>Parent group<select value={draft.parent_group_id || ""} onChange={(event) => setDraft({ ...draft, parent_group_id: event.target.value || null })}><option value="">Top level</option>{groups.filter((item: GroupDefinition) => item.id !== draft.id && item.parent_group_id !== draft.id).map((item: GroupDefinition) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
     {draft.type === "for_each" && <label>For Each source<select value={draft.config.iterationMode || "collection"} onChange={(event) => setDraft((current) => { const config: Record<string, any> = { ...current.config, iterationMode: event.target.value }; if (event.target.value === "range") { delete config.source; delete config.collection; } else { delete config.start; delete config.end; delete config.increment; } return { ...current, config }; })}><option value="collection">Collection elements</option><option value="range">Counter range</option></select></label>}
@@ -4181,7 +4220,7 @@ function GroupEditor({ group, groups, resources, activities, task, tasks, schema
     {draft.type === "transaction_jdbc" && <label className="wide">JDBC shared connection<select value={draft.config.resourceId || ""} onChange={(event) => patchConfig("resourceId", event.target.value)}><option value="">Select connection…</option>{resources.filter((item: Resource) => item.type === "jdbc").map((item: Resource) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
     <section className="group-members"><b>DIRECT ACTIVITY MEMBERS</b><small>Use Parent group for nesting. An activity has one direct owner. Start/event, End, and Catch are Task boundaries.</small>{activities.map((item: Node) => { const owner = owners.get(item.id), boundary = isEventActivity(item) || ["end", "catch"].includes(item.type), disabled = boundary || (!!owner && owner !== draft.id); return <label key={item.id} className={disabled ? "disabled" : ""}><input type="checkbox" disabled={disabled} checked={draft.member_activity_ids.includes(item.id)} onChange={() => toggleMember(item.id)}/><span>{item.name}<small>{boundary ? "Task boundary" : disabled ? `Owned by ${groups.find((candidate: GroupDefinition) => candidate.id === owner)?.name}` : item.type}</small></span></label>; })}</section>
     <aside className="group-runtime-status"><CheckCircle2/><span><b>Runtime-backed semantics</b><small>Conditions, loops, Pick First branch selection, whole-group retry, exception propagation, native and Java-driver JDBC commit/rollback, validation, archive persistence, and debugger iteration state are active.</small></span></aside>
-  </main><footer>{group && <button className="danger" onClick={() => onDelete(draft.id)}><Trash2/> Delete group</button>}<span/><button onClick={onClose}>Cancel</button><button className="primary" disabled={!draft.name.trim() || (!draft.member_activity_ids.length && !groups.some((item: GroupDefinition) => item.parent_group_id === draft.id))} onClick={() => onSave(draft)}><Save/> Save group</button></footer></div></ModalLayer>;
+  </main><footer>{group && <button className="danger" onClick={() => onDelete(draft.id)}><Trash2/> Delete group</button>}<span/><button onClick={onClose}>Cancel</button><button className="primary" disabled={nameConflict || !draft.name.trim() || (!draft.member_activity_ids.length && !groups.some((item: GroupDefinition) => item.parent_group_id === draft.id))} onClick={() => onSave({...draft,name:studioObjectName(draft.name)})}><Save/> Save group</button></footer></div></ModalLayer>;
 }
 
 function CatchAIDialog({ options, onClose, onApply }: any) {
@@ -4433,9 +4472,11 @@ function ValidationDialog({ result, onClose, onOpen }: any) {
   const filtered = filter === "all" ? result.issues : result.issues.filter((issue: ValidationIssue) => issue.severity === filter);
   return <ModalLayer className="modal-backdrop"><div className="runtime-modal validation-dialog"><header><span><ShieldCheck/><b>{result.title}</b></span><button aria-label="Close validation" onClick={onClose}>×</button></header><div className="validation-summary"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>{result.issues.length} all</button><button className={filter === "error" ? "active error" : "error"} onClick={() => setFilter("error")}>{counts.error || 0} errors</button><button className={filter === "warning" ? "active warning" : "warning"} onClick={() => setFilter("warning")}>{counts.warning || 0} warnings</button><button className={filter === "mapping" ? "active mapping" : "mapping"} onClick={() => setFilter("mapping")}>{counts.mapping || 0} mappings</button></div><main>{!result.issues.length ? <div className="validation-clean"><CheckCircle2/><h2>Validation successful</h2><p>No errors or missing mappings were found.</p></div> : !filtered.length ? <div className="validation-clean"><CheckCircle2/><h2>No findings in this category</h2><p>Select another validation filter.</p></div> : filtered.map((issue: ValidationIssue) => <button key={issue.id} className={`validation-issue ${issue.severity}`} onClick={() => onOpen(issue)}><span>{issue.severity === "error" ? "ERROR" : issue.severity === "mapping" ? "MAPPING" : "WARNING"}</span><div><b>{issue.category}</b><p>{issue.message}</p><small>{issue.remedy}</small></div>{(issue.taskId || issue.activityId) && <ChevronRight/>}</button>)}</main><footer><span>Click a finding to open its task and activity configuration.</span><button className="primary" onClick={onClose}>Close</button></footer></div></ModalLayer>;
 }
-function RenameApplication({ name, onClose, onSave, entity = "application" }: any) {
+function RenameApplication({ name, onClose, onSave, entity = "application", normalizeName = studioObjectName, validateName }: any) {
   const [value, setValue] = useState(name);
-  const label = entity === "task" ? "Task name" : "Application name";
+  const label = entity[0].toUpperCase() + entity.slice(1) + " name";
+  const candidate = normalizeName(value), error = candidate ? validateName?.(candidate) : "";
+  const save = () => { if (candidate && !error) onSave(candidate); };
   return (
     <ModalLayer className="modal-backdrop">
       <div className="runtime-modal rename-modal">
@@ -4451,22 +4492,23 @@ function RenameApplication({ name, onClose, onSave, entity = "application" }: an
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && value.trim()) onSave(value.trim());
+                if (e.key === "Enter") save();
               }}
             />
           </label>
+          {error && <p className="endpoint-setup-error" role="alert">{error}</p>}
           <p>
             {entity === "task"
               ? "This name appears in Project Explorer, task tabs, and runtime/debug output."
-              : "This name appears at the root of Project Explorer and in exported project metadata."}
+              : "This name appears in Project Explorer and in exported project metadata."}
           </p>
         </main>
         <footer>
           <button onClick={onClose}>Cancel</button>
           <button
             className="primary"
-            disabled={!value.trim()}
-            onClick={() => onSave(value.trim())}
+            disabled={!candidate || !!error}
+            onClick={save}
           >
             Rename
           </button>
@@ -5099,10 +5141,11 @@ function Context({
     </div>
   );
 }
-function TaskDialog({ kind, packages, initialPackage, resources, schemas, createConnection, connectionOpen, onClose, onCreate }: {
+function TaskDialog({ kind, packages, initialPackage, validateName, resources, schemas, createConnection, connectionOpen, onClose, onCreate }: {
   kind: "starter" | "subtask";
   packages: string[];
   initialPackage: string;
+  validateName: (name:string, path:string) => string;
   resources: Resource[];
   schemas: SchemaDoc[];
   createConnection: CreateConnection;
@@ -5117,13 +5160,15 @@ function TaskDialog({ kind, packages, initialPackage, resources, schemas, create
   const [endpoint, setEndpoint] = useState(newEndpointDraft);
   const [taskPackage, setTaskPackage] = useState(initialPackage);
   const [error, setError] = useState("");
+  const nameError = validateName(name, taskPackage);
   const needsEndpoint = kind === "starter" && isHttpEndpoint(event, event === "rest" ? "receiver" : undefined);
   const create = () => {
+    if (nameError) return;
     if (!packages.includes(taskPackage)) { setError("Select a task package."); return; }
     let config;
     try { if (needsEndpoint) config = endpointConfig(endpoint, { resources, schemas }); }
     catch (error) { setError((error as Error).message); return; }
-    onCreate(name, kind, event, taskPackage, config);
+    onCreate(studioObjectName(name), kind, event, taskPackage, config);
   };
   return (
     <ModalLayer className="modal-backdrop">
@@ -5135,7 +5180,7 @@ function TaskDialog({ kind, packages, initialPackage, resources, schemas, create
         <main>
           <label>
             Task name
-            <input value={name} onChange={(e) => setName(e.target.value)} />
+            <input value={name} aria-invalid={!!nameError} aria-describedby={nameError ? "task-name-error" : undefined} onChange={(e) => setName(e.target.value)} />
           </label>
           <label>Task package<select value={taskPackage} required onChange={event => setTaskPackage(event.target.value)}>
             {packages.map(path => <option key={path}>{path}</option>)}
@@ -5158,6 +5203,7 @@ function TaskDialog({ kind, packages, initialPackage, resources, schemas, create
           )}
           {needsEndpoint && <HttpEndpointFields resources={resources} schemas={schemas} createConnection={createConnection}
             draft={endpoint} onChange={value => { setEndpoint(value); setError(""); }}/>}
+          {nameError && <p id="task-name-error" className="endpoint-setup-error" role="alert">{nameError}</p>}
           {error && <p className="endpoint-setup-error" role="alert">{error}</p>}
           <p>
             {kind === "subtask"
@@ -5170,6 +5216,7 @@ function TaskDialog({ kind, packages, initialPackage, resources, schemas, create
           <button
             className="primary"
             onClick={create}
+            disabled={!!nameError}
           >
             Create
           </button>
@@ -5523,7 +5570,7 @@ function connectionDefaults(type: string) {
   if (type === "pubsub") Object.assign(values, { authenticationType: "Service Account JSON", projectId: "", serviceAccountJson: "", batchMaxMessages: 100, batchMaxBytes: 1048576, batchDelayThresholdMilliseconds: 10, flowControlMaxMessages: 1000, flowControlMaxBytes: 10485760 });
   return values;
 }
-function SharedConnectionDialog({ type, initial, initialRole, requireInitialRole, properties, onClose, onCreate, onSapSchemaFetched }: any) {
+function SharedConnectionDialog({ type, initial, initialRole, requireInitialRole, validateName, properties, onClose, onCreate, onSapSchemaFetched }: any) {
   const fields = connectionFieldSets[type] || [];
   const testOutputRef = useRef<HTMLDivElement>(null);
   const idocBrowserRef = useRef<HTMLElement>(null);
@@ -5700,7 +5747,9 @@ function SharedConnectionDialog({ type, initial, initialRole, requireInitialRole
     if (missing.length) { setStatus(`Required connection values are missing: ${missing.join(", ")}`); setStatusOk(false); return; }
     const invalid = configurationError(resource);
     if (invalid) { setStatus(invalid); setStatusOk(false); return; }
-    onCreate(draft);
+    const name = studioObjectName(draft.name || ""), conflict = validateName?.(name);
+    if (conflict) { setStatus(conflict); setStatusOk(false); return; }
+    onCreate({...draft,name});
   };
   const copyStatus = () => {
     setCopied(true);
@@ -5714,10 +5763,11 @@ function SharedConnectionDialog({ type, initial, initialRole, requireInitialRole
     return () => cancelAnimationFrame(frame);
   }, [status, statusOk]);
   const resolvedConfig = runtimeResource().config;
+  const nameError = validateName?.(draft.name || "");
   return <ModalLayer className="modal-backdrop"><div className="runtime-modal connection-dialog" role="dialog" aria-modal="true">
     <header><span className="connection-dialog-title"><Cable/><span><b>{initial ? "Edit" : "Create"} {type === "sap" ? "SAP ECC" : type === "snowflake" ? "Snowflake JDBC" : type.toUpperCase()} shared connection</b><small>{initial ? "Update the reusable project connection" : "Reusable across every task in this project"}</small></span></span><span className="connection-header-actions">{type === "sap" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button>}{type === "snowflake" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchSnowflakeEntities} disabled={snowflakeLoading}><Download/> {snowflakeLoading ? "Retrieving…" : "Retrieve entities"}</button>}<button aria-label="Close" onClick={onClose}>×</button></span></header>
     <main>
-      <label>Name<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/></label>
+      <label>Name<input value={draft.name} aria-invalid={!!nameError} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/>{nameError && <small className="endpoint-setup-error" role="alert">{nameError}</small>}</label>
       {target && <section className="connection-property-picker">
         <header><span><b>SELECT PROPERTY</b><small>Map to {fields.find((field: any) => field.key === target)?.label}</small></span><button aria-label="Close property picker" onClick={() => setTarget(null)}>×</button></header>
         <div className="property-picker-search"><Search/><input autoFocus aria-label="Find connection property" value={propertySearch} onChange={(event) => setPropertySearch(event.target.value)} placeholder="Search connector properties…"/></div>
@@ -5735,7 +5785,7 @@ function SharedConnectionDialog({ type, initial, initialRole, requireInitialRole
       {status && <div ref={testOutputRef} role="status" aria-live="polite" className={`connection-test-output ${statusOk === true ? "success" : statusOk === false ? "failure" : "pending"}`}><header><span><b>{statusOk === true ? "CONNECTION SUCCEEDED" : statusOk === false ? "CONNECTION FAILED" : "CONNECTION TEST"}</b><small>Selectable test response</small></span><button onClick={copyStatus}><ClipboardCopy/> {copied ? "Copied" : "Copy output"}</button></header><textarea aria-label="Connection test output" readOnly value={status} onFocus={(event) => event.currentTarget.select()}/></div>}
       {type === "sap" && idocPickerOpen && <ModalLayer className="sap-idoc-picker" role="dialog" aria-modal="true" aria-label="Select SAP IDoc type" onMouseDown={(event) => { if (event.target === event.currentTarget) setIdocPickerOpen(false); }}><div className="sap-idoc-picker-card"><header><span><b>SELECT SAP IDOC TYPE</b><small>Search SAP and select one type to retrieve its structure and schema.</small></span><button type="button" aria-label="Close IDoc picker" onClick={() => setIdocPickerOpen(false)}>×</button></header><div className="sap-idoc-picker-search"><Search/><input autoFocus value={idocSearch} onChange={(event) => setIdocSearch(event.target.value)} onKeyDown={(event) => event.key === "Enter" && fetchIdocs()} placeholder="Search IDoc types, for example ORDERS…"/><button type="button" onClick={fetchIdocs} disabled={idocLoading}>{idocLoading ? "Searching…" : "Search"}</button></div>{idocError && <p className="sap-idoc-error">{idocError}</p>}<div className="sap-idoc-picker-list">{idocs.map((item) => { const selected = draft.config.selectedIdoc?.idocType === item.idocType; return <button type="button" className={selected ? "selected" : ""} key={`${item.idocType}-${item.release}`} onClick={() => selectIdoc(item)} disabled={idocLoading}><span><b>{item.idocType}</b><small>{item.description || "SAP IDoc"}</small></span><code>{item.extensionType || "basic"} · {item.release || "current"}</code>{selected && <i>Schema fetched</i>}</button>; })}{!idocs.length && !idocLoading && <p>No IDoc types found. Adjust the search and try again.</p>}</div><footer><small>{idocs.length} IDoc type(s) found · Select one to retrieve metadata</small></footer></div></ModalLayer>}
     </main>
-    <footer><button onClick={test} disabled={testing}>{testing ? "Testing…" : "Test Connection"}</button><button onClick={onClose}>Cancel</button><button className="primary" onClick={save}>{initial ? "Save changes" : "Create connection"}</button></footer>
+    <footer><button onClick={test} disabled={testing}>{testing ? "Testing…" : "Test Connection"}</button><button onClick={onClose}>Cancel</button><button className="primary" disabled={!!nameError} onClick={save}>{initial ? "Save changes" : "Create connection"}</button></footer>
   </div></ModalLayer>;
 }
 function ConnectionDialog({ type, onClose, onCreate }: any) {

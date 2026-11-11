@@ -1,4 +1,5 @@
 from __future__ import annotations
+from unicodedata import normalize
 from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
@@ -169,12 +170,9 @@ def find_subtask(tasks: list[TaskDefinition], reference: str) -> TaskDefinition 
     exact = next((task for task in subtasks if task.id == reference), None)
     if exact:
         return exact
-    exact = next((task for task in subtasks if task.name.casefold() == reference.casefold()), None)
-    if exact:
-        return exact
-    # Existing dynamic inputs may still contain spaces from before Studio normalized display names.
-    key = '-'.join(reference.split()).casefold()
-    matches = [task for task in subtasks if '-'.join(task.name.split()).casefold() == key]
+    key = lambda value: '/'.join(normalize('NFKC', '-'.join(part.split())).lower() for part in value.split('/'))
+    qualified = '/' in reference
+    matches = [task for task in subtasks if key(f'{task.package_path}/{task.name}' if qualified else task.name) == key(reference)]
     return matches[0] if len(matches) == 1 else None
 
 class CustomFunction(BaseModel):

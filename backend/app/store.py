@@ -1,4 +1,5 @@
 import json, os, re, shutil, sqlite3, threading
+from unicodedata import normalize
 from contextlib import closing
 from functools import wraps
 from pathlib import Path
@@ -51,8 +52,26 @@ def clean_activity_policies(project: Project) -> None:
             for key in list(advanced):
                 if key.startswith('retry'): advanced.pop(key)
 
+def _object_names(project: Project | None) -> dict:
+    if project is None: return {}
+    names = {}
+    key = lambda value: normalize('NFKC', '-'.join(value.split())).lower()
+    for category in ('tasks', 'resources', 'schemas'):
+        for item in getattr(project, category):
+            scope = key(item.package_path), key(item.name)
+            names.setdefault(scope, {})[category, item.id] = item
+    return names
+
+
 @synchronized
-def save_project(project: Project) -> Project:
+def save_project(project: Project, *, enforce_names: bool = False) -> Project:
+    if enforce_names:
+        conflicts = {scope: entries for scope, entries in _object_names(project).items() if len(entries) > 1}
+        previous = _object_names(get_project(project.id)) if conflicts else {}
+        for scope, entries in conflicts.items():
+            if not entries.keys() <= previous.get(scope, {}).keys():
+                item = next(iter(entries.values()))
+                raise ValueError(f'An object named “{item.name}” already exists in package “{item.package_path}”.')
     # Reject malformed child identifiers before changing any saved files.
     safe_component(project.id)
     for item in [*project.tasks, *project.resources]: safe_component(item.id)

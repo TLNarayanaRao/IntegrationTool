@@ -60,3 +60,14 @@ test('an unmapped repeat can have an empty copy and nested copies stay in their 
   assert.ok(inner.ancestors.includes(outer.key));
   assert.equal(inner.rule.source, '');
 });
+
+test('Copy-Of hides its own children without hiding a sibling duplicate tree', () => {
+  const rules = [
+    {target:'Orders.Order',operator:'copy-of',source:'${input.first}'},
+    {target:'Orders.Order',operator:'for-each',source:'',occurrenceId:'blank',duplicateOf:'primary'},
+    {target:'Orders.Order',operator:'copy-of',source:'${input.third}',occurrenceId:'third',duplicateOf:'primary'},
+  ];
+  const rows = mappingTreeRows(fields,rules);
+  assert.deepEqual(rows.filter(row=>row.duplicateRoot).map(row=>row.occurrenceId),['blank','third']);
+  assert.deepEqual(rows.filter(row=>row.field.path.endsWith('.Price')).map(row=>[row.occurrenceId,row.rule]),[['blank',undefined]]);
+});

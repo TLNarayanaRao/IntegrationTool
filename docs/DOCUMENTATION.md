@@ -18,6 +18,8 @@ Tasks, shared connections, and schemas belong to packages. Right-click their cat
 
 To rename a package, right-click the folder under **Tasks**, **Resources → Connections**, or **Schemas** and choose **Rename Package**. Its nested folders and items move with it, keeping task, connection, and schema references intact. Under **Packaging**, right-click the deployment artifact and choose **Rename Package** to update its name for future exports while keeping its version and settings. Save the project to keep these changes.
 
+Task, connection, and schema names must be unique within the same package. Studio ignores case and treats spaces as hyphens when checking a name. You can reuse a name in a different package. For dynamic **Call Sub Task** routing, use the task ID or the qualified name (for example, `Orders/Validate`) if more than one subtask has the same name. **Validate Project** reports conflicts already present in older projects.
+
 Package contents appear below their folder. If a name is shortened in a narrow Project Explorer, hover over it to see the full name or drag the pane divider to widen it.
 
 When you first add a protocol activity or shared connection, Studio adds the relevant missing environment properties. Connection setup also offers those properties for binding. Review the generated defaults in the active environment before running the task.

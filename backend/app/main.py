@@ -651,7 +651,7 @@ def project_logs(project_id: str, limit: int = 1000, environment: str = 'local')
 
 @app.post('/api/projects', response_model=Project)
 def create_project(item: Project):
-    try: return save_project(item)
+    try: return save_project(item, enforce_names=True)
     except ValueError as error: raise HTTPException(400, str(error)) from error
 
 class APIBlueprintRequest(BaseModel):
@@ -676,7 +676,7 @@ def plan_api_blueprint(request: APIBlueprintRequest):
 @app.put('/api/projects/{project_id}', response_model=Project)
 def update_project(project_id: str, item: Project):
     if project_id != item.id: raise HTTPException(400, 'Project id mismatch')
-    try: return save_project(item)
+    try: return save_project(item, enforce_names=True)
     except ValueError as error: raise HTTPException(400, str(error)) from error
 
 @app.delete('/api/projects/{project_id}')

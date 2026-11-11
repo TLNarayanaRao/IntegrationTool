@@ -11,7 +11,7 @@ const declaration = ast.statements.find(statement => ts.isVariableStatement(stat
 const code = ts.transpileModule(`${naming}\n${declaration.getText(ast)}\nexport { normalizeObjectNames };`, {
   compilerOptions: { module: ts.ModuleKind.ESNext },
 }).outputText;
-const { normalizeObjectNames } = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
+const { normalizeObjectNames, workspaceNameConflict, resolveWorkspaceSubtask } = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
 
 test("Studio hyphenates object names and keeps existing named calls bound to the task ID", () => {
   const project = {
@@ -37,4 +37,16 @@ test("Studio hyphenates object names and keeps existing named calls bound to the
   assert.deepEqual(normalized.resources[0], { id: "db", name: "Local-Database" });
   assert.equal(normalized.schemas[0].name, "Order-Details.xsd");
   assert.equal(normalized.custom_functions[0].name, "Normalize-Value");
+});
+
+test("names collide across object categories only within the same package", () => {
+  const tasks = [{id:"one",name:"Read-Orders",package_path:"Default",kind:"subtask"},
+    {id:"two",name:"Read-Orders",package_path:"Operations",kind:"subtask"}];
+  const project = {tasks,resources:[{id:"db",name:"Warehouse",package_path:"Default"}],schemas:[]};
+  assert.match(workspaceNameConflict(project,"read orders","default"), /Read-Orders.*default/);
+  assert.match(workspaceNameConflict(project,"warehouse","Default"), /connection.*Warehouse/);
+  assert.equal(workspaceNameConflict(project,"Warehouse","Operations"), "");
+  assert.equal(workspaceNameConflict(project,"read orders","Operations",{category:"tasks",id:"two"}), "");
+  assert.equal(resolveWorkspaceSubtask(tasks,"Read Orders"), undefined);
+  assert.equal(resolveWorkspaceSubtask(tasks,"Operations/Read Orders"),tasks[1]);
 });

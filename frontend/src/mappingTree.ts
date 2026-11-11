@@ -24,7 +24,7 @@ export function mappingTreeRows(fields: MappingTreeField[], mappings: any[] | Re
     const occurrences = ruleIndex.get(rule.target) || new Map<string | undefined, any>();
     if (!occurrences.has(rule.occurrenceId)) occurrences.set(rule.occurrenceId, rule);
     ruleIndex.set(rule.target, occurrences);
-    if (rule.occurrenceId && ['for-each', 'for-each-group'].includes(rule.operator || rule.$rule)) {
+    if (rule.occurrenceId && (rule.duplicateOf || ['for-each', 'for-each-group'].includes(rule.operator || rule.$rule))) {
       const copies = duplicates.get(rule.target) || []; copies.push(rule); duplicates.set(rule.target, copies);
     }
   }
@@ -33,7 +33,7 @@ export function mappingTreeRows(fields: MappingTreeField[], mappings: any[] | Re
     const key = `${occurrenceId || "primary"}:${field.path}`, loopKey = `${key}:loop`;
     const loop = ["for-each", "for-each-group"].includes(rule?.operator || rule?.$rule);
     const descendants = childIndex.get(field.path) || [];
-    const copy = rule?.operator === "copy-of" && rule.enabled !== false;
+    const copy = (rule?.operator || rule?.$rule) === "copy-of" && rule.enabled !== false;
     if (loop && !duplicateRoot) {
       result.push({ kind: "loop", key: loopKey, field, rule, depth, ancestors, occurrenceId, loopKey, hasChildren: true });
       ancestors = [...ancestors, loopKey]; depth++;

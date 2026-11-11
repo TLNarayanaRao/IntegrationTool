@@ -5,8 +5,13 @@ const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { performance } = require('node:perf_hooks');
 
+const desktopStarted = performance.now();
 let mainWindow;
+let rendererReady = false;
+let runtimeReady = false;
+const startup = new AbortController();
 ipcMain.handle('mina:app-info', (event) => {
   if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error('Untrusted application information request');
   return { version: app.getVersion(), platform: process.platform, packaged: app.isPackaged };
@@ -36,13 +41,20 @@ const logTail = (filePath, maximum = 12000) => {
   }
 };
 
-const healthReady = (port, executable, timeoutMs = 60000) => new Promise((resolve, reject) => {
-  const deadline = Date.now() + timeoutMs;
+const healthReady = (port, executable, signal, timeoutMs = 60000) => new Promise((resolve, reject) => {
+  const deadline = performance.now() + timeoutMs;
+  const fastPollUntil = performance.now() + 2000;
   let complete = false;
+  let timer, pendingRequest;
+  const abort = () => finish(signal.reason);
   const finish = (error) => {
     if (complete) return;
     complete = true;
+    clearTimeout(timer);
+    pendingRequest?.destroy();
+    signal.removeEventListener('abort', abort);
     if (!error) return resolve();
+    if (signal.aborted) return reject(signal.reason);
     const details = logTail(runtimeLogPath);
     const message = [
       error,
@@ -56,8 +68,8 @@ const healthReady = (port, executable, timeoutMs = 60000) => new Promise((resolv
     if (complete) return;
     if (runtimeStartupError) return finish(`The MINA runtime could not start: ${runtimeStartupError.message}`);
     if (runtimeProcess && runtimeProcess.exitCode !== null) return finish(`The MINA runtime exited during startup with code ${runtimeProcess.exitCode}.`);
-    if (Date.now() >= deadline) return finish(`The MINA runtime did not become ready on 127.0.0.1:${port} within ${Math.round(timeoutMs / 1000)} seconds.`);
-    setTimeout(probe, 250);
+    if (performance.now() >= deadline) return finish(`The MINA runtime did not become ready on 127.0.0.1:${port} within ${Math.round(timeoutMs / 1000)} seconds.`);
+    timer = setTimeout(probe, performance.now() < fastPollUntil ? 100 : 250);
   };
   const probe = () => {
     if (complete) return;
@@ -67,16 +79,25 @@ const healthReady = (port, executable, timeoutMs = 60000) => new Promise((resolv
       retried = true;
       retry();
     };
-    const request = http.get(`http://127.0.0.1:${port}/api/health`, (response) => {
+    const request = pendingRequest = http.get(`http://127.0.0.1:${port}/api/health`, (response) => {
       response.resume();
-      if (response.statusCode === 200) finish();
+      if (response.statusCode === 200) response.once('end', () => finish());
       else retryOnce();
     });
     request.on('error', retryOnce);
     request.setTimeout(1000, () => request.destroy(new Error('Runtime health probe timed out')));
   };
-  probe();
+  if (signal.aborted) abort();
+  else { signal.addEventListener('abort', abort, {once:true}); probe(); }
 });
+
+function recordStartup(stage, at = performance.now()) {
+  if (!runtimeLogPath) return;
+  const elapsed = Math.round(at - desktopStarted);
+  try {
+    fs.appendFileSync(runtimeLogPath, `[${new Date().toISOString()}] [startup] ${stage}: +${elapsed} ms\n`);
+  } catch { /* Timing diagnostics must not block launch. */ }
+}
 
 function startRuntime(port) {
   runtimeStartupError = undefined;
@@ -122,16 +143,18 @@ function startRuntime(port) {
   });
   runtimeProcess.on('exit', (code) => {
     fs.appendFileSync(runtimeLogPath, `[${new Date().toISOString()}] [exit] Runtime exited with code ${code}\n`);
-    if (!app.isQuitting && mainWindow) dialog.showErrorBox('MINA Runtime', `The local runtime stopped unexpectedly (exit code ${code}).`);
+    if (runtimeReady && !app.isQuitting && mainWindow && !mainWindow.isDestroyed()) dialog.showErrorBox('MINA Runtime', `The local runtime stopped unexpectedly (exit code ${code}).`);
   });
   return executable;
 }
 
 async function createWindow() {
-  const port = await availablePort();
-  const runtimePort = app.isPackaged ? port : 8787;
+  const runtimePort = app.isPackaged ? await availablePort() : 8787;
+  if (startup.signal.aborted) return;
+  // Start the sidecar before constructing the window, which can take time
+  // on a busy machine. Only the Studio navigation waits for its health check.
   const executable = startRuntime(runtimePort);
-  await healthReady(runtimePort, executable);
+  recordStartup('Runtime process started');
   mainWindow = new BrowserWindow({
     width: 1600,
     height: 1000,
@@ -147,16 +170,30 @@ async function createWindow() {
       sandbox: true,
     },
   });
+  let splashLoadedAt;
+  const splash = mainWindow.loadFile(path.join(__dirname, 'startup.html')).then(() => {
+    splashLoadedAt = performance.now();
+  }, () => {});
   mainWindow.removeMenu();
   mainWindow.on('close', (event) => {
     // BrowserWindow's native close button bypasses the renderer's project
     // close modal. Ask the renderer to resolve unsaved work first; it invokes
     // mina:complete-window-close only after Save or Discard.
-    if (windowCloseApproved || app.isQuitting) return;
+    if (!rendererReady || windowCloseApproved || app.isQuitting) return;
     event.preventDefault();
     mainWindow.webContents.send('mina:request-window-close');
   });
+  await healthReady(runtimePort, executable, startup.signal);
+  if (mainWindow.isDestroyed()) return;
+  runtimeReady = true;
+  recordStartup('Runtime ready');
+  // This navigation may replace an unfinished splash on a fast launch.
   await mainWindow.loadURL(process.env.MINA_DEV_URL || `http://127.0.0.1:${runtimePort}`);
+  if (mainWindow.isDestroyed()) return;
+  rendererReady = true;
+  await splash;
+  if (splashLoadedAt !== undefined) recordStartup('Startup page loaded', splashLoadedAt);
+  recordStartup('Studio page loaded');
 }
 
 ipcMain.handle('mina:save-file', async (_event, options) => {
@@ -465,17 +502,27 @@ ipcMain.handle('mina:select-code-artifact', async (_event, kind) => {
   return { path: filePath, name: path.basename(filePath), kind };
 });
 
-app.whenReady().then(createWindow).catch((error) => {
-  dialog.showErrorBox('MINA Studio', error.stack || String(error));
+if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.quit();
-});
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  });
+  app.whenReady().then(createWindow).catch((error) => {
+    if (!startup.signal.aborted) dialog.showErrorBox('MINA Studio', error.stack || String(error));
+    app.quit();
+  });
+}
 app.on('window-all-closed', () => app.quit());
 app.on('before-quit', (event) => {
-  if (!windowCloseApproved && mainWindow && !mainWindow.isDestroyed()) {
+  if (rendererReady && !windowCloseApproved && mainWindow && !mainWindow.isDestroyed()) {
     event.preventDefault();
     mainWindow.webContents.send('mina:request-window-close');
     return;
   }
   app.isQuitting = true;
+  startup.abort();
   if (runtimeProcess && !runtimeProcess.killed) runtimeProcess.kill();
 });

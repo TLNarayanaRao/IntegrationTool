@@ -69,12 +69,13 @@ export function PackageTree<T extends PackageItem>({ paths, items, indent, isCol
   return <>{render("", 0)}</>;
 }
 
-export function PackageDialog({ paths, parent, moving, renaming, artifact = false, onClose, onSave }: {
+export function PackageDialog({ paths, parent, moving, renaming, artifact = false, validateDestination, onClose, onSave }: {
   paths: string[];
   parent?: string;
   moving?: string;
   renaming?: string;
   artifact?: boolean;
+  validateDestination?: (path:string) => string;
   onClose: () => void;
   onSave: (path: string) => void;
 }) {
@@ -84,7 +85,7 @@ export function PackageDialog({ paths, parent, moving, renaming, artifact = fals
   const candidate = parent ? `${parent}/${segment}` : segment;
   const renamedPaths = renaming ? paths.filter(path => path === renaming || path.startsWith(renaming + "/")) : [];
   const unaffected = new Set(paths.filter(path => !renamedPaths.includes(path)).map(path => path.toLowerCase()));
-  const valid = moving ? destination !== moving && paths.includes(destination) : artifact ?
+  const validPath = moving ? destination !== moving && paths.includes(destination) : artifact ?
     artifactNamePattern.test(segment) && !windowsDevice.test(segment.split(".")[0]) && segment !== renaming :
     !!segment && !segment.includes("/") && !windowsDevice.test(segment) && candidate.length <= 1024 && packagePattern.test(candidate) &&
     (renaming ? candidate !== renaming && renamedPaths.every(path => {
@@ -92,6 +93,8 @@ export function PackageDialog({ paths, parent, moving, renaming, artifact = fals
       return next.length <= 1024 && !unaffected.has(next.toLowerCase());
     }) :
       !paths.some(path => path.toLowerCase() === candidate.toLowerCase()));
+  const conflict = validPath ? validateDestination?.(moving ? destination : candidate) : "";
+  const valid = validPath && !conflict;
   const title = moving ? "Move to package" : artifact ? "Rename deployment package" : renaming ? "Rename package" : "Create package";
   return <ModalLayer className="modal-backdrop">
     <form className="runtime-modal rename-modal" role="dialog" aria-modal="true" aria-labelledby="object-package-title"
@@ -105,8 +108,8 @@ export function PackageDialog({ paths, parent, moving, renaming, artifact = fals
         {parent && <small>Parent package · {parent}</small>}
         <label>{artifact ? "Artifact name" : "Package name"}<input autoFocus onFocus={event => event.target.select()} value={name} onChange={event => setName(event.target.value)} maxLength={artifact ? undefined : 64} required/></label>
         <small>{artifact ? "This changes the name of future exports. The version and other settings are kept." : "Use letters, numbers, underscores, or hyphens. Spaces become hyphens."}</small>
-        {segment && segment !== renaming?.split("/").pop() && !valid && <small role="alert">{artifact ? "Use a valid artifact name: letters, numbers, dots, underscores, or hyphens." : "Enter a valid package name that is unique in this folder."}</small>}
-      </>}</main>
+        {segment && segment !== renaming?.split("/").pop() && !validPath && <small role="alert">{artifact ? "Use a valid artifact name: letters, numbers, dots, underscores, or hyphens." : "Enter a valid package name that is unique in this folder."}</small>}
+      </>}{conflict && <small role="alert">{conflict}</small>}</main>
       <footer><button type="button" onClick={onClose}>Cancel</button>
         <button type="submit" className="primary" disabled={!valid}>{moving ? "Move" : renaming ? "Rename" : "Create package"}</button></footer>
     </form>

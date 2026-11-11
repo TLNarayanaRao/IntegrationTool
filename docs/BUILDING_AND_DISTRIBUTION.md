@@ -91,6 +91,8 @@ Ensure the SDK's native library directory is on `PATH` before starting Studio. F
 
 After PyInstaller finishes, the build launches that exact packaged runtime on an isolated loopback port and requires a successful `/api/health` response before Electron Builder is allowed to create an installer. Installed Studio startup writes the runtime path, port, stdout, stderr, spawn errors, and exit status to `%APPDATA%\MINA Studio\logs\runtime-startup.log`. Startup errors include the log path and its latest output instead of only showing a generic readiness timeout.
 
+The Windows Studio window opens while the local runtime starts and switches to the welcome screen after the runtime passes its health check. Launching Studio again in the same Windows profile brings the existing window forward. If startup is slow, the same log records elapsed time for the startup page, runtime readiness, and Studio page load.
+
 The build compiles the complete backend with Python 3.11 before freezing it. PyInstaller then explicitly collects every module under the backend `app` package and verifies `app.main` both before and after freezing. This catches incompatible Python syntax early and avoids environment-dependent namespace/package discovery producing an executable that fails with `ModuleNotFoundError: app.main`.
 
 The unpacked executable is:

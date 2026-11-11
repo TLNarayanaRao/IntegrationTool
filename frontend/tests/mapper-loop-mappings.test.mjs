@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import ts from 'typescript';
 const source=await readFile(new URL('../src/mapperLoopMappings.ts',import.meta.url),'utf8');
-const {autoMapLoopChildren,mapRepeatingDrop,relativeLoopExpression,expandLoopExpression}=await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText).toString('base64')}`);
+const {autoMapLoopChildren,emptyRepeatOccurrence,mapActivityRepeatingDrop,mapRepeatingDrop,relativeLoopExpression,expandLoopExpression,removeRepeatOccurrence}=await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText).toString('base64')}`);
 const fields=[{path:'Record',type:'object[]',repeating:true},{path:'Record.Name',type:'string'},{path:'Record.Address',type:'object'},{path:'Record.Address.City',type:'string'},{path:'Record.Marks',type:'number'}];
 const sources=[{activity:{id:'s',type:'start',name:'Read'},reference:'Read',distance:1,fields:[{key:'rows.name'},{key:'rows.address.city'},{key:'rows.MARKS'}]}];
 
@@ -72,4 +72,41 @@ test('SmartMap matches normalized paths within the dropped collection and skips 
   assert.deepEqual(map('for-each').map(r=>r.target),['Record','Record.Name']);
   assert.deepEqual(map('smart-map').map(r=>r.target),['Record','Record.Name','Record.FirstName']);
   assert.equal(map('smart-map').at(-1).source,'${coerced.orders.rows.first_name}');
+});
+
+test('duplicating a copy or loop starts empty and replacing it keeps its identity and the primary bindings',()=>{
+  const source = [...sources,{prefix:'coerced.other',fields:[{key:'rows.Name'}]}];
+  for (const operator of ['copy-of','for-each']) {
+    const primary = {target:'Record',operator,source:'${Read.rows}'};
+    const originals = operator === 'for-each' ? [primary,{target:'Record.Name',source:'${Read.rows.name}'}] : [primary];
+    const blank = emptyRepeatOccurrence('Record','object[]','second',undefined,primary);
+    assert.equal(blank.source,'');
+    assert.equal(blank.duplicateOf,'primary');
+    const rules = [...originals, blank, emptyRepeatOccurrence('Record','object[]','third')];
+    for (const mode of ['copy-of','for-each']) {
+      const updated = mapRepeatingDrop(fields,rules,'Record','${coerced.other.rows}',source,mode,'second');
+      assert.deepEqual(updated.slice(0,originals.length),originals);
+      assert.equal(updated[originals.length].duplicateOf,'primary');
+      assert.equal(updated[originals.length].source,'${coerced.other.rows}');
+      assert.equal(updated.find(r=>r.target==='Record.Name' && r.occurrenceId==='second')?.source,
+        mode === 'for-each' ? '${coerced.other.rows.Name}' : undefined);
+      assert.deepEqual(removeRepeatOccurrence(updated,'second'),[...originals,rules.at(-1)]);
+    }
+  }
+});
+
+test('activity drop rules preserve unrelated mappings and replace fixed rows with dynamic bindings',()=>{
+  const initial={status:'"ok"','Record.0.Name':'"old"'};
+  const target=[...fields,{path:'Record.FirstName',type:'string'}];
+  const upstream=[{prefix:'vars.orders',fields:[{key:'Name'},{key:'first_name'}]}];
+  const map=(mode,mappings=initial,source='${vars.orders}')=>mapActivityRepeatingDrop(target,mappings,'Record',source,upstream,mode);
+  const copied=map('copy-of');
+  assert.deepEqual(copied,{status:'"ok"',Record:{$rule:'copy-of',source:'${vars.orders}'}});
+  const loop=map('for-each',copied);
+  assert.equal(loop['Record.Name'].source,'${vars.orders.Name}');
+  assert.equal(loop['Record.FirstName'],undefined);
+  const smart=map('smart-map',loop);
+  assert.equal(smart['Record.FirstName'].source,'${vars.orders.first_name}');
+  assert.equal(smart.Record.mapChildren,true);
+  assert.equal(map('smart-map',smart,'')['Record.FirstName'],undefined);
 });

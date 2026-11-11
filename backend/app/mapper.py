@@ -1051,7 +1051,8 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
     result: dict[str, Any] = {}
     raw_rules = [{'target': key, 'source': value} for key, value in mappings.items()] if isinstance(mappings, dict) else mappings or []
     rules = [dict(rule) for rule in raw_rules if rule.get('enabled', True) and rule.get('target')]
-    loops = [rule for rule in rules if str(rule.get('operator', '')).lower() in ('for-each', 'for-each-group')]
+    loops = [rule for rule in rules if str(rule.get('operator', '')).lower() in ('for-each', 'for-each-group')
+             or rule.get('duplicateOf') and str(rule.get('operator', '')).lower() == 'copy-of']
     loop_ids = {id(rule) for rule in loops}
     loop_plans = {}
 
@@ -1158,6 +1159,8 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
     def mapped_value(rule: dict, value: Any):
         try:
             value = transform_value(value, rule.get('functions', []), options.get('lookupTables', {}))
+            if options.get('inputMappingSemantics') and rule.get('operator') == 'copy-of' and not isinstance(value, list):
+                value = [] if value in (None, '') else [value]
             if value is None:
                 if options.get('copyNil') is False: return _OMIT
                 policy = str(rule.get('nullPolicy') or options.get('nullPolicy') or 'omit').lower()
@@ -1178,6 +1181,13 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
         if loop_source == 'current-group()': loop_source = scope_source
         values = value if isinstance(value, list) else ([] if value in (None, '') else [value])
         operator = str(loop.get('operator', '')).lower()
+        if operator == 'copy-of':
+            copied = []
+            for item in values:
+                tick()
+                value = mapped_value(loop, item)
+                if value is not _OMIT: copied.append(value)
+            return copied
         iterations: list[tuple[Any, list[Any] | None]] = [(item, None) for item in values]
         if operator == 'for-each-group':
             grouped: dict[str, list[Any]] = {}
@@ -1197,7 +1207,7 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
             loop_plans[id(loop)] = (descendants, nested_loops, direct)
         descendants, nested_loops, direct = loop_plans[id(loop)]
         output: list[Any] = []
-        if options.get('inputMappingSemantics') and not descendants:
+        if options.get('inputMappingSemantics') and not descendants and not loop.get('mapChildren'):
             if operator == 'for-each-group':
                 return [{'key': str(get_path(current, group_by) if group_by else current), 'items': group} for current, group in iterations]
             return values

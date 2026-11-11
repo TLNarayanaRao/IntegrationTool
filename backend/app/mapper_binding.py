@@ -12,7 +12,6 @@ META = 'urn:mina:mapper:binding:1'
 XSD = '{http://www.w3.org/2001/XMLSchema}'
 NAME = re.compile(r'[A-Za-z_][A-Za-z0-9_-]*')
 LOOP = object()
-COPY = object()
 FUNCTIONS = {'trim': r'replace(string({}), "^\s+|\s+$", "")',
              'normalizeSpace': 'normalize-space({})',
              'upperCase': 'upper-case({})', 'lowerCase': 'lower-case({})'}
@@ -154,6 +153,20 @@ def generate_binding(mappings, schema='', source_schema='', *, preferences=None,
             raise ValueError('Expected a mapping object')
         if rule.get('enabled') is not False and not rule.get('pending'):
             active.append(rule)
+    empty = {rule['occurrenceId'] for rule in active if rule.get('duplicateOf') and rule.get('occurrenceId')
+             and not str(rule.get('select') or rule.get('source') or '').strip()}
+    if empty:
+        parents = {}
+        for rule in active:
+            if rule.get('parentOccurrenceId') and rule.get('occurrenceId'):
+                parents.setdefault(rule['parentOccurrenceId'], []).append(rule['occurrenceId'])
+        pending = list(empty)
+        for occurrence in pending:
+            for child in parents.get(occurrence, []):
+                if child not in empty:
+                    empty.add(child)
+                    pending.append(child)
+        active = [rule for rule in active if rule.get('occurrenceId') not in empty]
 
     def source_path(path):
         if isinstance(path, str) and path.startswith('${') and path.endswith('}'):
@@ -193,18 +206,19 @@ def generate_binding(mappings, schema='', source_schema='', *, preferences=None,
                 return target, loops[target, occurrence]
         return '', None
 
-    loop_rules = sorted((rule for rule in active if rule.get('operator') in {'for-each', 'for-each-group'}),
-                        key=lambda rule: str(rule.get('target', '')).count('.'))
+    loop_rules = sorted((rule for rule in active if rule.get('operator') in {'for-each', 'for-each-group', 'copy-of'}),
+                        key=lambda rule: (str(rule.get('target', '')).count('.'), bool(rule.get('duplicateOf'))))
     for rule in loop_rules:
         target = rule.get('target')
         target_parts = _segments(target)
         occurrence = rule.get('occurrenceId')
-        if len(target_parts) < 2 or (target, occurrence) in loops or rule.get('functions'):
+        copy = rule['operator'] == 'copy-of'
+        if len(target_parts) < 2 or (target, occurrence) in loops or rule.get('functions') or copy and 'constant' in rule:
             raise ValueError(f'{target}: loop generation requires a unique repeating child element')
         if fields and not any(field.get('repeating') and field['path'].startswith(target + '.') for field in fields.values()):
             raise ValueError(f'{target}: select a repeating element from the target XSD')
         parent_target, parent = enclosing(target_parts, rule.get('parentOccurrenceId') if rule.get('duplicateOf') else occurrence)
-        raw_path = rule.get('select') or rule.get('source')
+        raw_path = rule.get('source') if copy else rule.get('select') or rule.get('source')
         if raw_path == 'current-group()':
             if not parent or not parent[2]:
                 raise ValueError(f'{target}: current-group() needs a grouped parent')
@@ -223,7 +237,8 @@ def generate_binding(mappings, schema='', source_schema='', *, preferences=None,
             raise ValueError(f'{target}: select a repeating source XML element')
         grouped = rule['operator'] == 'for-each-group'
         variant = {}
-        loops[target, occurrence] = (path, variant, grouped)
+        if not copy:
+            loops[target, occurrence] = (path, variant, grouped)
         grouping = None
         if grouped:
             key = source_path(rule['groupBy']) if rule.get('groupBy') else []
@@ -232,34 +247,15 @@ def generate_binding(mappings, schema='', source_schema='', *, preferences=None,
         variants = subtree(relative_target, parent[1] if parent else tree).setdefault(LOOP, [])
         if variants and not rule.get('duplicateOf'):
             raise ValueError(f'{target}: repeated mapping occurrences require an explicit duplicate')
-        variants.append((selection, grouping, variant))
+        variants.append((selection, grouping, None if copy else variant))
 
     for rule in active:
-        if rule.get('operator') in {'for-each', 'for-each-group'}:
+        if rule.get('operator') in {'for-each', 'for-each-group', 'copy-of'}:
             continue
         target = rule.get('target', '')
         target_parts = _segments(target)
         loop_target, loop = enclosing(target_parts, rule.get('occurrenceId'))
         operator = rule.get('operator') or ''
-        if operator == 'copy-of':
-            if len(target_parts) < 2 or rule.get('functions') or 'constant' in rule or rule.get('duplicateOf') or rule.get('occurrenceId') and not loop:
-                raise ValueError(f'{target}: Copy-Of requires a repeating child and a source XML path')
-            if fields and not any(field.get('repeating') and path.startswith(target + '.') for path, field in fields.items()):
-                raise ValueError(f'{target}: Copy-Of requires a repeating complex target')
-            parts, alias = unwrap_source(source_path(rule.get('source')))
-            if loop and parts[:len(loop[0])] != loop[0] and not alias:
-                parts = loop[0] + parts
-            start = len(loop[0]) if loop and parts[:len(loop[0])] == loop[0] else 0
-            source_prefix = '.'.join(parts) + '.'
-            if len(parts) <= start or source_fields and not any(
-                    field.get('repeating') and path.startswith(source_prefix) for path, field in source_fields.items()):
-                raise ValueError(f'{target}: Copy-Of requires a repeating complex source')
-            relative_target = target_parts[len(loop_target.split('.')):] if loop else target_parts
-            destination = subtree(relative_target, loop[1] if loop else tree)
-            if any(key is not LOOP for key in destination):
-                raise ValueError(f'{target}: target overlaps another mapping')
-            destination[COPY] = selector(parts, start, alias)
-            continue
         if (operator not in {'', 'if', 'when-otherwise', 'choose'} or rule.get('duplicateOf')
                 or rule.get('occurrenceId') and not loop):
             raise ValueError(f'{target}: this mapping statement needs handwritten XSLT')
@@ -349,14 +345,6 @@ def generate_binding(mappings, schema='', source_schema='', *, preferences=None,
         for name in ordered:
             branch = children[name]
             uri = namespace if qualified or not prefix else ''
-            if COPY in branch:
-                if any(key not in (COPY, LOOP) for key in branch):
-                    raise ValueError(f'{prefix}{name}: Copy-Of overlaps a child mapping')
-                container = etree.SubElement(parent, XSL + 'for-each', select=branch[COPY])
-                node = etree.SubElement(container, f'{{{uri}}}{name}' if uri else name)
-                etree.SubElement(node, XSL + 'copy-of', select='@* | node()')
-                if LOOP not in branch:
-                    continue
             if None in branch:
                 expression, guard, raw_expression, operator = branch[None]
                 nil_test = None
@@ -389,17 +377,20 @@ def generate_binding(mappings, schema='', source_schema='', *, preferences=None,
                 etree.SubElement(node, XSL + 'value-of', select=expression)
             else:
                 if LOOP in branch:
-                    if any(key not in (COPY, LOOP) for key in branch):
+                    if len(branch) != 1:
                         raise ValueError(f'{prefix}{name}: loop child mappings must belong to an occurrence')
                     for selection, grouping, variant in branch[LOOP]:
-                        if not variant:
+                        if variant == {}:
                             raise ValueError(f'{prefix}{name}: map at least one child of the loop')
                         if grouping:
                             container = etree.SubElement(parent, XSL + 'for-each-group', select=selection, attrib={'group-by': grouping})
                         else:
                             container = etree.SubElement(parent, XSL + 'for-each', select=selection)
                         node = etree.SubElement(container, f'{{{uri}}}{name}' if uri else name)
-                        append(node, variant, prefix + name + '.')
+                        if variant is None:
+                            etree.SubElement(node, XSL + 'copy-of', select='@* | node()')
+                        else:
+                            append(node, variant, prefix + name + '.')
                 else:
                     node = etree.SubElement(parent, f'{{{uri}}}{name}' if uri else name)
                     append(node, branch, prefix + name + '.')

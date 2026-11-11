@@ -1492,6 +1492,9 @@ class WorkflowRuntime(DataFormats):
         def loop(expression):
             return isinstance(expression, dict) and expression.get('$rule') in ('for-each', 'for-each-group')
 
+        def structure(expression):
+            return loop(expression) or isinstance(expression, dict) and expression.get('$rule') == 'copy-of'
+
         def scope_context(context, source, item, group):
             scoped = {**context, 'vars': {**context.get('vars', {}), 'current': item, 'currentGroup': group}}
             match = re.fullmatch(r'\$\{([^}]+)\}', str(source or ''))
@@ -1510,12 +1513,12 @@ class WorkflowRuntime(DataFormats):
 
         def evaluate(entries, context):
             result = {}
-            parents = [path for path, expression in entries.items() if loop(expression)]
+            parents = [path for path, expression in entries.items() if structure(expression)]
             roots = [path for path in parents if not any(path.startswith(parent + '.') for parent in parents if parent != path)]
             for path, expression in entries.items():
                 if any(path.startswith(parent + '.') for parent in roots): continue
                 children = {key[len(path) + 1:]: value for key, value in entries.items() if key.startswith(path + '.')}
-                if loop(expression) and children:
+                if loop(expression) and (children or expression.get('mapChildren')):
                     source = expression.get('select') or expression.get('source')
                     values = self.resolve(source, context)
                     values = values if isinstance(values, list) else ([] if values in (None, '') else [values])
@@ -1562,7 +1565,7 @@ class WorkflowRuntime(DataFormats):
                 if self.condition(branch.get('condition', ''), ctx): return True, self.mapping_value(branch.get('source'), ctx)
             return True, self.mapping_value(expression.get('otherwise'), ctx)
         source = self.mapping_value(source_expression, ctx)
-        if rule == 'for-each':
+        if rule in ('for-each', 'copy-of'):
             values = source if isinstance(source, list) else ([] if source in (None, '') else [source])
             return True, values
         if rule == 'for-each-group':

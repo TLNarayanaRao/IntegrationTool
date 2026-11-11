@@ -26,6 +26,10 @@ On Mapper **Input**, drag a repeating complex source onto a repeating complex ta
 - **For each** adds a **[For-Each]** row for the collection and keeps the item and its children visible. Matching paths are filled in without regard to case. Children display expressions relative to the current item, such as `Name` or `Address.City`, and remain editable.
 - **SmartMap** builds an editable loop and also matches child paths that differ by underscores or hyphens. Ambiguous matches are left unmapped.
 
+The same three choices are available on other activity **Input** tabs and in **Edit mappings** when both structures expose repeating records. This includes **Call Sub Task** inputs and **End** return mappings when the task has a schema. Drops onto simple fields still map the value directly.
+
+To add another source for the same repeating target, right-click its **[Copy-Of]** or **[For-Each]** row and choose **Duplicate mapping**. The new occurrence starts with empty bindings. Drop a different collection onto that occurrence and choose its mapping mode. The original keeps its source and child bindings. At runtime the original items come first, followed by items from the duplicates in order. An occurrence with no source adds no items.
+
 Use **Map & Test** to check the generated result before running or exporting the flow.
 
 ### XML expressions and bindings
