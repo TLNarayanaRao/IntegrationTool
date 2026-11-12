@@ -11,6 +11,9 @@ applications. This directory is not a legal-clearance certificate.
   source distributions for LGPL/MPL libraries using PyPI SHA-256 verification.
 - Each standalone runtime has `legal/THIRD_PARTY_NOTICES.txt`, license texts,
   source archives, a build-environment CycloneDX SBOM, and an artifact file SBOM.
+  Python notice files use short deterministic names to avoid Windows path limits
+  in deeply nested workspaces. `COMPONENTS.json` maps installed notices to their
+  generated paths and checksums; license text is preserved intact.
 - Studio completes resource edits and any configured signing, embeds the software
   inventory, and compiles NSIS. It then generates a complete payload hash SBOM
   alongside the installer, including NSIS's added elevation helper. Verification checks file hashes

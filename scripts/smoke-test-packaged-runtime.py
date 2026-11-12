@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -16,6 +17,23 @@ def free_port() -> int:
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         return int(listener.getsockname()[1])
+
+
+def verify_designer(base_url: str) -> int:
+    """Fetch the packaged designer, not just a healthy backend with missing assets."""
+    with urllib.request.urlopen(base_url+'/',timeout=5) as response:
+        html=response.read().decode('utf-8')
+    assets=set(re.findall(r'(?:src|href)="(/assets/[^"<>]+)"',html))
+    if not assets:raise RuntimeError('Packaged designer has no generated asset references')
+    for asset in assets:
+        with urllib.request.urlopen(base_url+asset,timeout=10) as response:
+            content_type=response.headers.get_content_type()
+            if not response.read():raise RuntimeError('Empty designer asset: '+asset)
+        if asset.endswith('.js') and content_type not in ('text/javascript','application/javascript'):
+            raise RuntimeError('Designer JavaScript is missing or served with the wrong content type: '+asset)
+        if asset.endswith('.css') and content_type!='text/css':
+            raise RuntimeError('Designer CSS is missing or served with the wrong content type: '+asset)
+    return len(assets)
 
 
 def main() -> int:
@@ -45,11 +63,12 @@ def main() -> int:
                     with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1) as response:
                         payload = json.loads(response.read())
                     if response.status == 200 and payload.get("status") == "ok":
+                        asset_count=verify_designer(f'http://127.0.0.1:{port}')
                         with urllib.request.urlopen(f"http://127.0.0.1:{port}/legal/THIRD_PARTY_NOTICES.txt", timeout=5) as legal:
                             if b'THIRD-PARTY NOTICES' not in legal.read():raise RuntimeError('Renderer license notices are not served')
                         with urllib.request.urlopen(f"http://127.0.0.1:{port}/legal/SBOM.cdx.json", timeout=5) as legal:
                             if json.loads(legal.read()).get('bomFormat')!='CycloneDX':raise RuntimeError('Renderer SBOM is not served')
-                        print(f"Packaged runtime health check passed on port {port}")
+                        print(f"Packaged runtime health, designer ({asset_count} assets) and legal routes passed on port {port}")
                         return 0
                 except Exception as exc:
                     last_error = str(exc)

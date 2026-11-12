@@ -41,6 +41,10 @@ def main():
                     raise ValueError('Bundled Python component has no license directory: '+component['name'])
             if not list((legal/'sources').glob('*')):raise ValueError('Missing corresponding-source archives')
             if not (legal/'java/library-sources.zip').is_file():raise ValueError('Missing Java library source material')
+            bridge=runtime/'java-bridge/classes/com/mina/bridge/MinaJavaBridge.class'
+            java=runtime/'java-bridge/runtime/bin/java.exe'
+            if not bridge.is_file() or not java.is_file():raise ValueError('Missing bundled Java bridge/runtime: '+name)
+            run(java,'-version',timeout=30)
             replacement=folder/'replacement';(replacement/'paramiko').mkdir(parents=True,exist_ok=True)
             (replacement/'paramiko/__init__.py').write_text('RECIPIENT_REPLACEMENT=True\n')
             resolved=json.loads(run(runtime/(name+'.exe'),'--mina-library-info',env={**os.environ,'MINA_LIBRARY_PATH':str(replacement)},timeout=30))
@@ -48,7 +52,7 @@ def main():
                 raise ValueError('Frozen runtime did not honor the library replacement directory')
         runtime=target/'resources/runtime/MINARuntime/MINARuntime.exe'
         print(run(sys.executable,ROOT/'scripts/smoke-test-packaged-runtime.py',runtime,timeout=90).strip())
-        print('Installer payload: hashes, notices, sources, replacement-library resolution and runtime HTTP health passed.')
+        print('Installer payload: hashes, notices, sources, bundled Java, replacement-library resolution and designer/runtime HTTP checks passed.')
 
 
 if __name__=='__main__':main()

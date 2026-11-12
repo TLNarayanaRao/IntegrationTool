@@ -31,6 +31,32 @@ def fixture(folder,vendor='Eclipse Adoptium',license=True):
 
 
 class JdkBuildComplianceTests(unittest.TestCase):
+    def test_license_paths_stay_short_and_keep_every_original_notice(self):
+        builder=script('build-compliance')
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);site=root/'site';output=root/'output'
+            origins=['opentelemetry_exporter_http_transport-0.66b2.dist-info/licenses/LICENSE',
+                     'opentelemetry/exporter/http/transport/licenses/LICENSE']
+            for index,origin in enumerate(origins):
+                path=site/origin;path.parent.mkdir(parents=True,exist_ok=True);path.write_text('notice '+str(index))
+            stale=output/'licenses/python/opentelemetry-exporter-http-transport/old.dist-info/licenses/LICENSE'
+            stale.parent.mkdir(parents=True);stale.write_text('obsolete generated copy')
+            class Distribution:
+                metadata={'Name':'opentelemetry-exporter-http-transport','License':'Apache-2.0'}
+                version='0.66b2';files=origins
+                def locate_file(self,file):return site/file
+            with patch.object(builder.metadata,'distributions',return_value=[Distribution()]):
+                _,records,errors=builder.python_components(output,root/'cache',False)
+            self.assertEqual(errors,[])
+            self.assertFalse(stale.exists())
+            notices=records[0]['notices'];self.assertEqual(len(notices),2)
+            self.assertEqual({item['originalFile'] for item in notices},set(origins))
+            self.assertEqual(len({item['path'] for item in notices}),2)
+            for index,notice in enumerate(notices):
+                path=Path(notice['path']);self.assertEqual(len(path.parts),4)
+                self.assertLessEqual(len(path.name),24)
+                self.assertEqual((output/path).read_text(),'notice '+str(index))
+
     def test_openjdk_vendors_are_recorded_without_an_openlogic_only_gate(self):
         builder=script('build-compliance')
         for vendor in ('OpenLogic','Eclipse Adoptium','Microsoft','Amazon.com Inc.','Custom OpenJDK Builder'):

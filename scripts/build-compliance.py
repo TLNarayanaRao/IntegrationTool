@@ -57,6 +57,17 @@ def python_components(output,cache,fetch):
     components=[];records=[];errors=[]
     for dist in sorted(metadata.distributions(),key=lambda item:item.metadata['Name'].lower()):
         name=normalized(dist.metadata['Name'])
+        # This component directory is generated output. Remove obsolete notice
+        # layouts on retries so an earlier long-path bundle cannot leak back in.
+        notice_root=(output/'licenses/python').resolve()
+        notice_dir=output/'licenses/python'/name
+        checked=notice_dir.resolve()
+        if not checked.is_relative_to(notice_root) or checked==notice_root or notice_dir.is_symlink():
+            raise ValueError('Unsafe generated license directory: '+str(notice_dir))
+        if notice_dir.exists():
+            deletion=str(checked)
+            if os.name=='nt' and not deletion.startswith('\\\\?\\'):deletion='\\\\?\\'+deletion
+            shutil.rmtree(deletion)
         identifier='pkg:pypi/'+name+'@'+dist.version
         license=dist.metadata.get('License-Expression') or dist.metadata.get('License') or ''
         license_files=[];base=Path(dist.locate_file('')).resolve()
@@ -65,8 +76,12 @@ def python_components(output,cache,fetch):
             path=Path(dist.locate_file(file)).resolve()
             if not path.is_relative_to(base) or not path.is_file():continue
             if path.suffix.lower() in ('.py','.pyc','.pyd','.dll','.lic'):continue
-            target='licenses/python/'+name+'/'+str(file).replace('\\','/')
-            license_files.append(save(output,target,path.read_bytes()))
+            # Repeating the full .dist-info/package tree can exceed MAX_PATH
+            # after Electron stages the legal bundle inside both runtimes.
+            origin=str(file).replace('\\','/')
+            filename='notice-'+hashlib.sha256(origin.encode()).hexdigest()[:12]+'.txt'
+            target='licenses/python/'+name+'/'+filename
+            license_files.append({**save(output,target,path.read_bytes()),'originalFile':origin})
         if name=='saxonche' and not license_files:
             # Upstream wheel omits license metadata; retain the publisher's MPL
             # terms and explicit source location rather than inventing a grant.
