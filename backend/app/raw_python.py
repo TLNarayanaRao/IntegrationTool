@@ -771,6 +771,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     files['run.py'] = launcher
     files['__main__.py'] = launcher
     native_modules = set()
+    if 'http_response' in capabilities:native_modules.add('http_messages.py')
     if capabilities & {'http_client','inbound_http'}: native_modules.update({'http_transport.py','http3_client.py','http_messages.py','rest_contract.py','mapper.py','http_contracts.py','schema_validation.py','data_formats.py','faults.py','http_policy.py','http_listener.py','http_streams.py','xsd_catalog.py'})
     if 'inbound_http' in capabilities: native_modules.update({'http_server.py','http2_server.py','mapper.py','api_docs.py','api_docs_ui.py','swagger_assets.py','xsd_openapi.py'})
     if 'data_formats' in capabilities:native_modules.update({'data_formats.py','faults.py','mapper.py','schema_validation.py','xsd_openapi.py','xsd_catalog.py'})

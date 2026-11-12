@@ -261,6 +261,7 @@ async def _handle_request(app,scope,receive,send,state):
                 except Exception:raise HTTPFault('Invalid base64 response content','HTTP_RESPONSE',500) from None
                 value=body
             elif isinstance(value,(bytes,bytearray,memoryview)):body=bytes(value)
+            elif media_family(response_media)=='json' and boolean(response.get('jsonValue')):body=json.dumps(value,ensure_ascii=False,allow_nan=False).encode()
             elif isinstance(value,(dict,list,bool,int,float)):body=json.dumps(value,ensure_ascii=False,allow_nan=False).encode()
             else:body=('' if value is None else str(value)).encode()
             if method!='HEAD' and schema is not None and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and schema_errors(value,schema):raise HTTPFault('Response schema validation failed','REST_VALIDATION',500)

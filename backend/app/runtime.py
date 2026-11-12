@@ -871,10 +871,8 @@ class WorkflowRuntime(DataFormats):
         if activity.type == 'http_response':
             # Configuration and Input mappings are already resolved. Literal API
             # examples may contain ${...} text and must not be evaluated twice.
-            body = cfg.get('body', ctx.get('last'))
-            headers=cfg.get('headers', {})
-            if cfg.get('contentType'):headers={**headers,'content-type':cfg['contentType']}
-            return {'__httpResponse': True, 'statusCode': int(cfg.get('statusCode', 200)), 'headers': headers, 'body': body, **{key:cfg[key] for key in ('fileName','binaryContent') if cfg.get(key) is not None}}
+            from .http_messages import response_message
+            return {'__httpResponse': True, **response_message(cfg,ctx.get('last'))}
         if activity.type == 'log':
             level = str(cfg.get('level') or 'INFO').upper()
             if level not in ('DEBUG', 'INFO', 'WARN', 'ERROR'): level = 'INFO'

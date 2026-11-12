@@ -1550,12 +1550,13 @@ function App() {
   latestProject.current = project;
   const autosaveTimer = useRef<number | null>(null);
   const projectWrites = useRef<Promise<unknown>>(Promise.resolve());
+  const lastRuntimeWrite = useRef<{id:string;body:string}|null>(null);
   const writeProject = (id: string, body: string, autosave = false) => {
     const write = projectWrites.current.then(() => fetch(`/api/projects/${id}`, {
       method: "PUT",
       headers: { "content-type": "application/json", ...(autosave ? {"x-mina-autosave": "true"} : {}) },
       body,
-    }));
+    })).then(response=>{if(response.ok)lastRuntimeWrite.current={id,body};return response;});
     projectWrites.current = write.catch(() => {});
     return write;
   };
@@ -1689,6 +1690,7 @@ function App() {
   useEffect(() => {
     if (closed) return;
     if (autosaveTimer.current !== null) window.clearTimeout(autosaveTimer.current);
+    if(lastRuntimeWrite.current?.id===project.id&&lastRuntimeWrite.current.body===projectSnapshot)return;
     // Project updates replace state; retain this immutable version until the debounce fires.
     const snapshot = project;
     autosaveTimer.current = window.setTimeout(() => {
@@ -2455,11 +2457,15 @@ function App() {
   }, [project, selectedIds]);
   const projectFilename = (extension: string) => `${project.name.replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-|-$/g, "") || project.id}.${extension}`;
   const applyApiBlueprint = async (plan: any) => {
-    const next=seedAddedProtocols(project, normalizeProject({...project,resources:[...project.resources,plan.resource],tasks:[...project.tasks,...plan.tasks],active_task_id:plan.tasks[0].id}));
+    const folder=packagePath(plan.packagePath);
+    const object_packages={...project.object_packages,
+      tasks:[...new Set([...(project.object_packages?.tasks||[]),folder])],
+      resources:[...new Set([...(project.object_packages?.resources||[]),folder])]};
+    const next=seedAddedProtocols(project, normalizeProject({...project,object_packages,resources:[...project.resources,plan.resource],tasks:[...project.tasks,...plan.tasks],active_task_id:plan.tasks[0].id}));
     const response=await fetch(`/api/projects/${project.id}`,{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify(next)});
     const output=await response.json();
     if(!response.ok)throw new Error(typeof output.detail==="string"?output.detail:JSON.stringify(output.detail||"Unable to save API tasks"));
-    const saved=normalizeProject(output);savedProjectSnapshot.current=JSON.stringify(saved);setProject(saved);
+    const saved=normalizeProject(output);savedProjectSnapshot.current=JSON.stringify(saved);lastRuntimeWrite.current={id:saved.id,body:JSON.stringify(saved)};setProject(saved);
     const first=saved.tasks.find(item=>item.id===plan.tasks[0].id)?.activities[0]?.id||"";
     setOpenTaskIds(current=>[...new Set([...current,plan.tasks[0].id])]);setSelected(first);setSelectedIds(first?[first]:[]);setSelectedEdge(null);setSelectedResource(null);
   };
@@ -2495,6 +2501,7 @@ function App() {
     if (!response.ok) throw new Error(output.detail || "Project save failed");
     const normalized = normalizeProject(output);
     savedProjectSnapshot.current = JSON.stringify(normalized);
+    lastRuntimeWrite.current={id:normalized.id,body:JSON.stringify(normalized)};
     setProject(current => current === project ? normalized : current);
     return output;
   };
@@ -4156,7 +4163,7 @@ function App() {
         onClose={() => setSampleGalleryOpen(false)}
         onImport={async (file) => { const imported = await importProject(file); if (imported) setSampleGalleryOpen(false); return imported; }}
       />}
-      {apiBlueprintOpen && <ApiBlueprint resources={project.resources} onClose={() => setApiBlueprintOpen(false)} onApply={applyApiBlueprint} onHost={hostApiBlueprint}/>}
+      {apiBlueprintOpen && <ApiBlueprint resources={project.resources} packages={explorerPackagePaths("tasks")} projectId={project.id} onPrepareUpdate={persistProject} onUpdated={updated=>{const saved=normalizeProject(updated);savedProjectSnapshot.current=JSON.stringify(saved);lastRuntimeWrite.current={id:saved.id,body:JSON.stringify(saved)};setProject(saved);}} onClose={() => setApiBlueprintOpen(false)} onApply={applyApiBlueprint} onHost={hostApiBlueprint}/>}
       {aiBuilderOpen && <AIBuilderDialog currentTask={task} onClose={() => setAiBuilderOpen(false)} onApply={(proposal: any) => {
         const generated = proposal.project, scope = proposal.scope;
         setOpenTaskIds(scope === "task" ? [...new Set([...openTaskIds, project.active_task_id])] : generated.tasks?.[0] ? [generated.tasks[0].id] : []);

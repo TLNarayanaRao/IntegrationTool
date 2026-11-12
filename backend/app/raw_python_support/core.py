@@ -454,10 +454,8 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
     # CAPABILITY http_client END
     # CAPABILITY http_response START
     if kind == 'http_response':
-        headers=cfg.get('headers') or {}
-        if cfg.get('contentType'):headers={**headers,'content-type':cfg['contentType']}
-        return {'statusCode': int(cfg.get('statusCode') or 200), 'headers': headers,
-                'body': cfg.get('body', ctx.last), 'sent': True, **{key:cfg[key] for key in ('fileName','binaryContent') if cfg.get(key) is not None}}
+        from .native.http_messages import response_message
+        return {'sent': True, **response_message(cfg,ctx.last)}
     # CAPABILITY http_response END
     # CAPABILITY dataweave START
     if kind == 'dataweave':

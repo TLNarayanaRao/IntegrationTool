@@ -152,7 +152,8 @@ def generate_openapi(routes,base_url='/',title='MINA hosted APIs'):
             parameters=[]
             for parameter in cfg.get('_restParameters') or []:
                 if parameter.get('in')=='formData':continue
-                fields={key:copy.deepcopy(parameter[key]) for key in ('name','in','required','description','style','explode','example','examples','allowReserved') if key in parameter}
+                fields={key:copy.deepcopy(parameter[key]) for key in ('name','in','required','description','style','explode','allowReserved') if key in parameter}
+                fields.update(example_fields(parameter,cfg))
                 fields['schema']=embed(parameter.get('schema') or {});parameters.append(fields)
             declared={(p['in'],p['name']) for p in parameters}
             for name in re.findall(r'\{([^}]+)\}',path):
@@ -173,8 +174,7 @@ def generate_openapi(routes,base_url='/',title='MINA hosted APIs'):
                     if cfg.get('_explicitRequestSchema') and not selected_request_types:schema=request_schema
                     definition={'schema':embed(schema) if schema is not None else {}}
                     original=(request_body.get('content') or {}).get(name,{}) if isinstance(request_body,dict) else {}
-                    for key in ('example','examples'):
-                        if key in original:definition[key]=copy.deepcopy(original[key])
+                    definition.update(example_fields(original,cfg))
                     if name == 'multipart/form-data' and cfg.get('_restMultipartEncoding'):
                         definition['encoding'] = copy.deepcopy(cfg['_restMultipartEncoding'])
                     if 'example' not in definition and 'examples' not in definition and schema is not None:
@@ -191,6 +191,20 @@ def generate_openapi(routes,base_url='/',title='MINA hosted APIs'):
                 fallback_schema = cfg.get('responseSchema') if str(code).startswith('2') else None
                 schema = response_schemas.get(str(code), fallback_schema)
                 response={'description':str(original.get('description') or ('Successful response' if str(code).startswith('2') else 'API response'))}
+                if original.get('headers'):
+                    root=cfg.get('openApiDocument') or {}
+                    if not isinstance(root,dict):root=load_document(root)
+                    response['headers']={}
+                    for header_name,raw_header in original['headers'].items():
+                        header=copy.deepcopy(_resolve_schema(raw_header,root))
+                        if isinstance(header,dict):
+                            schema=header.pop('schema',None)
+                            if schema is None:
+                                legacy={key:header.pop(key) for key in ('type','format','items','enum','default','minimum','maximum','pattern') if key in header}
+                                schema=legacy or None
+                            if schema is not None:header['schema']=embed({**schema,**{key:root[key] for key in ('components','definitions','x-mina-refs') if key in root}} if isinstance(schema,dict) else schema)
+                            header.update(example_fields(header,cfg))
+                            response['headers'][header_name]=header
                 content={}
                 formats=hosted_response_content(cfg, code)
                 if not formats and not (selected_response_types and str(code).startswith('2')):
@@ -199,7 +213,7 @@ def generate_openapi(routes,base_url='/',title='MINA hosted APIs'):
                     formats = {}
                 for name,body_schema in formats.items():
                     original_content=(original.get('content') or {}).get(name) or {}
-                    definition={key:copy.deepcopy(original_content[key]) for key in ('example','examples') if key in original_content}
+                    definition=example_fields(original_content,cfg)
                     if body_schema is not None:definition['schema']=embed(body_schema)
                     if 'example' not in definition and 'examples' not in definition:
                         projected = xsd_description(body_schema)
@@ -220,6 +234,16 @@ def generate_openapi(routes,base_url='/',title='MINA hosted APIs'):
             spec['paths'].setdefault(path,{})[method.lower()]=entry
     return spec
 
+def example_fields(definition,cfg):
+    result={}
+    if 'example' in definition:result['example']=copy.deepcopy(definition['example'])
+    if isinstance(definition.get('examples'),dict):
+        root=cfg.get('openApiDocument') or {}
+        if not isinstance(root,dict):root=load_document(root)
+        result['examples']={name:copy.deepcopy(_resolve_schema(value,root)) for name,value in definition['examples'].items()}
+    return result
+
+
 def _resolve_schema(schema,spec):
     seen=set()
     while isinstance(schema,dict) and '$ref' in schema:
@@ -231,11 +255,11 @@ def _resolve_schema(schema,spec):
 
 def _postman_body(request, media, body, spec):
     schema=body.get('schema') or {}
-    value=body.get('example')
-    if value is None:
-        examples=body.get('examples') or {};value=next((v['value'] for v in examples.values() if isinstance(v,dict) and 'value' in v),None)
+    missing=object();value=body.get('example',missing)
+    if value is missing:
+        examples=body.get('examples') or {};value=next((v['value'] for v in examples.values() if isinstance(v,dict) and 'value' in v),missing)
     family = media_family(media)
-    if value is None:
+    if value is missing:
         value = '<root/>' if family == 'xml' and not schema else sample(_resolve_schema(schema,spec),spec)
     if media != 'multipart/form-data': # Postman supplies the multipart boundary.
         request['header'].append({'key':'Content-Type','value':media})

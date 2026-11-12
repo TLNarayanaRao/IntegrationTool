@@ -181,10 +181,10 @@ function httpInputMappings(config: any): any {
 
 function httpRequestOccurrences(fields: DataField[], mappings: any): DataField[] {
   let result=fields;
-  for (const root of ["RestInputRequest.CustomHeaders","RestInputRequest.mimeEnvelopeElement.mimePart"]) {
+  for (const root of ["RestInputRequest.CustomHeaders","RestInputRequest.mimeEnvelopeElement.mimePart","DynamicHTTPHeaders.Headers"]) {
     const indices=[...new Set(Object.keys(mappings || {}).filter(key => key.startsWith(`${root}.`)).map(key => key.slice(root.length+1).split('.')[0]).filter(key => /^\d+$/.test(key)))].sort((a,b)=>Number(a)-Number(b));
     if (!indices.length) continue;
-    const children=httpRequestFields().filter(field => field.key.startsWith(`${root}.`));
+    const children=(root === "DynamicHTTPHeaders.Headers" ? activityContract({type:"http_response",config:{}}).input : httpRequestFields()).filter(field => field.key.startsWith(`${root}.`));
     result=result.filter(field => !field.key.startsWith(`${root}.`));
     const index=result.findIndex(field => field.key===root)+1;
     result=[...result.slice(0,index),...indices.flatMap(number => [{...d(`${root}.${number}`,`${root.split('.').slice(-1)[0]} [${Number(number)+1}]`,"object"),minOccurs:"1",maxOccurs:"1"},...children.map(field => ({...field,key:`${root}.${number}${field.key.slice(root.length)}`}))]),...result.slice(index)];
@@ -621,6 +621,14 @@ export function activityContract(n: any): Contract {
         f("contentType", "Response content type", "mediaType", "Choose a common media type, enter a custom value, or use Automatic to use the listener default."),
       ],
       input: [
+        d("HTTPHeaders", "HTTPHeaders", "object", false, "Optional standard response headers and status. Unmapped fields keep the existing response defaults."),
+        d("HTTPHeaders.Content-Type", "Content-Type", "string", false, "Response media type. Overrides the legacy contentType mapping when supplied."),
+        d("HTTPHeaders.StatusLine", "StatusLine", "string", false, "Status such as HTTP/1.1 201 Created or 201 Created. Sets the numeric response status; the HTTP server controls the wire protocol and reason phrase."),
+        {...d("HTTPHeaders.Cookies", "Cookies", "string[]", false, "One or more complete Set-Cookie values, such as session=abc; Path=/; HttpOnly. Each value is sent as its own Set-Cookie header."), minOccurs:"0", maxOccurs:"unbounded", repeating:true},
+        d("DynamicHTTPHeaders", "DynamicHTTPHeaders", "object", false, "Optional custom response headers. Repeat Headers for each headerName/headerValue pair."),
+        {...d("DynamicHTTPHeaders.Headers", "Headers", "object[]", false, "Add or duplicate a header entry, map a collection, or use For Each. Dynamic values override standard/legacy headers; repeated names emit separate header lines. Set-Cookie appends to Cookies."), minOccurs:"0", maxOccurs:"unbounded", repeating:true},
+        d("DynamicHTTPHeaders.Headers.headerName", "headerName", "string", false, "HTTP header name, for example X-Correlation-ID. Required when the entry has a value."),
+        d("DynamicHTTPHeaders.Headers.headerValue", "headerValue", "string", false, "HTTP header value. Empty strings are allowed; line breaks and control characters are rejected."),
         d("headers", "Response headers", "object"),
         d("body", "Response body", "any"),
         d("binaryContent", "Base64 response bytes", "base64"),
@@ -1600,7 +1608,7 @@ const activityDocumentation: Record<string, { summary: string; behavior: string 
   sse_read: { summary: "Reads a bounded batch from a Server-Sent Events endpoint.", behavior: "Map an HTTP or HTTPS URL, maximum events and optional Last-Event-ID. The activity sends Accept: text/event-stream and closes after the requested event count, end of stream or timeout." },
   websocket_exchange: { summary: "Exchanges messages with a WebSocket server.", behavior: "Map a ws or wss URL, an optional outbound message and the maximum replies. Received binary messages are base64. The activity closes its connection when it finishes." },
   write_precondition: { summary: "Evaluates request validators before a write.", behavior: "Map inbound request headers and the current ETag, Last-Modified and existence. Branch on allowed, send 412 or 428 on rejection, and guard the actual write atomically in the datastore." },
-  http_response: { summary: "Completes the active inbound HTTP exchange.", behavior: "Place HTTP Send Response on the same execution path as the listener or receiver. In Input, map the status, headers, and body. If the endpoint declares a response schema, its fields are available for body mapping. An explicit Content-Type must be offered by the endpoint and acceptable to the caller." },
+  http_response: { summary: "Completes the active inbound HTTP exchange.", behavior: "Place HTTP Send Response on the same execution path as the listener or receiver. In Input, optional HTTPHeaders contains Content-Type, StatusLine and repeating Cookies. DynamicHTTPHeaders contains repeating Headers with headerName and headerValue. Dynamic headers override standard/legacy headers; duplicate names remain separate header lines, including Set-Cookie. StatusLine sets the numeric status; the server controls the wire protocol/reason phrase. Legacy statusCode, contentType and headers mappings still work. If the endpoint declares a response schema, its fields are available for body mapping. An explicit Content-Type must be offered by the endpoint and acceptable to the caller." },
   rest_receiver: { summary: "Starts a task for a matching REST method and route.", behavior: "In Request parameters, declare URI path placeholders, query values, and custom headers. Select a type and mark required entries. Invalid or missing required values return HTTP 400. Output provides pathParameters, query, headers with lowercase names, and body or xmlBody. Use HTTP Send Response to reply. Run or Debug exposes the live endpoint and, when enabled, Swagger and Postman." },
   rest_invoke: { summary: "Calls a remote REST API through a shared HTTP client connection.", behavior: "In Input → RestInputRequest.Config, map the URI and query parameters, request body, and optional OpenAPI contract and operation ID. Use CustomHeaders → Add header for repeating name/value pairs, or use For Each for a collection. RestOutputResponse exposes the status, headers, and body." },
   soap: { summary: "Hosts a SOAP service or invokes a request/reply web service.", behavior: "Service mode publishes the configured contract and begins the task for a matching SOAP request. Request/reply mode uses the selected HTTP connection and WSDL metadata for outbound invocation." },
@@ -2753,7 +2761,7 @@ function LoopMappingRow({ row, collapsed, toggle, patch, remove, duplicate, sour
 
 function InputEditor({ node, fields, mappings, set, properties, sources, runtimeVariables = [], customFunctions, updateCustomFunctions, before, expanded = false }: any) {
   properties = useMemo(() => Object.assign([...(properties || [])], { customFunctions, updateCustomFunctions }), [properties, customFunctions, updateCustomFunctions]);
-  const requestTree = node.type === "http" || (node.type === "rest" && node.config?.operation === "invoke");
+  const requestTree = node.type === "http" || node.type === "http_response" || (node.type === "rest" && node.config?.operation === "invoke");
   const buildRows = (values:DataField[]) => dataTreeRows(values).map(field => ({...field,
     repeating:field.repeating ?? (/array|\[\]/i.test(field.type) || Number(field.maxOccurs) > 1 || field.maxOccurs === "unbounded")}));
   const schemaRows = useMemo(() => buildRows(fields), [fields]);
@@ -2866,14 +2874,15 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
           ? "Request content type"
           : requestTree && field.path === "RestInputRequest.Headers.accept"
             ? "Accept response type"
-            : node.type === "http_response" && field.path === "contentType" ? "Response content type" : "";
+            : node.type === "http_response" && ["contentType","HTTPHeaders.Content-Type"].includes(field.path) ? "Response content type" : "";
         const showMenu = (event: React.MouseEvent) => { event.preventDefault(); setSelected(field.path); setContextMenu({x:event.clientX, y:event.clientY, path:field.path, label:field.label || field.name,
           occurrenceId:row.occurrenceId,duplicateRoot:row.duplicateRoot,required:field.required, defaultLoopSource:defaultGroupedLoopSource(row, displayRows)}); };
         if (row.kind !== "field") return <LoopMappingRow key={row.key} row={row} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle} sources={sources}
           onLoopDrop={event => offerDrop(row,event)} onContextMenu={showMenu} duplicate={field.repeating ? () => duplicateRow(field.path,row.occurrenceId) : undefined}
           patch={patch => patchLoop(row,patch)} remove={() => setRowValue(field.path,mappingSource(row.rule),row.occurrenceId)}/>;
         const structural = field.group || isComplexSchemaType(field.validationType || field.type || ''), canMapStructure = structural && (field.group || field.repeating);
-        const isCustomHeaders = field.path === "RestInputRequest.CustomHeaders";
+        const isCustomHeaders = ["RestInputRequest.CustomHeaders","DynamicHTTPHeaders.Headers"].includes(field.path);
+        const isHeaderOccurrence = /^(?:RestInputRequest\.(?:CustomHeaders|mimeEnvelopeElement\.mimePart)|DynamicHTTPHeaders\.Headers)\.\d+$/.test(field.path);
         const addLabel = isCustomHeaders ? "Add header" : `Add ${field.name}`;
         const copy = row.rule?.operator === "copy-of";
         const rowValue = row.occurrenceId ? row.rule : mappings[field.path];
@@ -2897,9 +2906,9 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
           {row.hasChildren ? <TreeToggle path={row.key} label={field.name} collapsed={tree.collapsed.has(row.key)} toggle={tree.toggle}/> : <i className="tree-elbow"/>}
           <span className="target-tree-field"><b>{row.loopKey ? field.name : field.label || field.name}{copy ? " - [Copy-Of]" : <sup className="cardinality-symbol">{cardinalitySymbol(field)}</sup>}</b><small>{field.type}</small>{row.duplicateRoot && <button type="button" className="remove-duplicate-mapping" aria-label={`Delete duplicate ${field.name}`} onClick={event => {event.stopPropagation(); deleteRule(field.path,row.occurrenceId,true);}}>×</button>}
           {!row.occurrenceId && requestTree && (isCustomHeaders || field.path === "RestInputRequest.mimeEnvelopeElement.mimePart") && !mappings[field.path] && <button type="button" className={isCustomHeaders ? "add-custom-header" : undefined} aria-label={addLabel} title={addLabel} onClick={event=>{event.stopPropagation();addOccurrence(field.path);}}><Plus/>{isCustomHeaders && addLabel}</button>}
-          {requestTree && /\.(?:CustomHeaders|mimePart)\.\d+$/.test(field.path) && <button type="button" aria-label={`Remove ${field.label}`} title={`Remove ${field.label}`} onClick={event=>{event.stopPropagation();removeOccurrence(field.path);}}><X/></button>}
+          {requestTree && isHeaderOccurrence && <button type="button" aria-label={`Remove ${field.label}`} title={`Remove ${field.label}`} onClick={event=>{event.stopPropagation();removeOccurrence(field.path);}}><X/></button>}
           </span>
-          {row.loopKey || (requestTree && /\.(?:CustomHeaders|mimePart)\.\d+$/.test(field.path)) || (row.hasChildren && !rowValue) ? <span/> : mediaLabel
+          {row.loopKey || (requestTree && isHeaderOccurrence) || (row.hasChildren && !rowValue) ? <span/> : mediaLabel
             ? <div className="input-media-type-controls">{contentTypePicker(field.path, mediaLabel)}{binding}</div>
             : binding}
         </div>;

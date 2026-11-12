@@ -8,6 +8,57 @@ from pathlib import Path
 
 STANDARD_HEADERS={'accept','content-type','accept-charset','accept-encoding','cookie','pragma'}
 
+
+def response_message(config, default_body=None):
+    """Normalize legacy and optional structured HTTP Send Response mappings."""
+    headers={}
+    def header(name,value):
+        if not isinstance(name,str) or not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+",name):
+            raise ValueError('Invalid response header name')
+        values=value if isinstance(value,list) else [value]
+        if name.lower()=='content-type':
+            if len(values)!=1:raise ValueError('Content-Type is a non-repeating response header')
+            value=values[0]
+        for item in values:
+            if not isinstance(item,(str,int,float,bool)):raise ValueError('Response header values must be scalars')
+            text=str(item)
+            if any(ord(char)<32 and char!='\t' or ord(char)==127 for char in text):raise ValueError('Invalid response header value')
+            try:text.encode('latin1')
+            except UnicodeEncodeError:raise ValueError('Response header values must use HTTP Latin-1 encoding') from None
+        headers[name.lower()]=[str(item) for item in values] if isinstance(value,list) else str(value)
+    for name,value in object_value(config.get('headers'),'Response headers').items():header(name,value)
+    if config.get('contentType'):header('content-type',config['contentType'])
+    standard=object_value(config.get('HTTPHeaders'),'HTTPHeaders')
+    if standard.get('Content-Type'):header('content-type',standard['Content-Type'])
+    cookies=repeating(standard.get('Cookies'))
+    if cookies not in (None,'',[]):header('set-cookie',cookies)
+    status=config.get('statusCode',200)
+    line=standard.get('StatusLine')
+    if line not in (None,''):
+        if not isinstance(line,str) or not re.fullmatch(r'(?:HTTP/(?:1\.[01]|2(?:\.0)?|3(?:\.0)?) )?[1-5][0-9]{2}(?: [\x20-\x7e\x80-\xff]*)?',line):
+            raise ValueError('StatusLine must be a status such as HTTP/1.1 201 Created or 201 Created')
+        status=line.split()[1 if line.startswith('HTTP/') else 0]
+    if isinstance(status,bool) or not re.fullmatch(r'[1-5][0-9]{2}',str(status)):
+        raise ValueError('HTTP response status must be an integer from 100 to 599')
+    dynamic=object_value(config.get('DynamicHTTPHeaders'),'DynamicHTTPHeaders')
+    entries=repeating(dynamic.get('Headers')) or []
+    if isinstance(entries,dict):entries=[entries]
+    if not isinstance(entries,list):raise ValueError('DynamicHTTPHeaders.Headers must be repeating headerName/headerValue entries')
+    seen=set()
+    for entry in entries:
+        if not isinstance(entry,dict):raise ValueError('Each response header must contain headerName and headerValue')
+        name=entry.get('headerName');value=entry.get('headerValue')
+        if name in (None,'') and value in (None,''):continue
+        key=name.lower() if isinstance(name,str) else ''
+        if key=='content-type' and key in seen:raise ValueError('Content-Type is a non-repeating response header')
+        previous=headers.get(key)
+        header(name,value)
+        if key in seen or key=='set-cookie' and previous is not None:
+            headers[key]=(previous if isinstance(previous,list) else [previous])+(headers[key] if isinstance(headers[key],list) else [headers[key]])
+        seen.add(key)
+    return {'statusCode':int(status),'headers':headers,'body':config.get('body',default_body),
+            **{key:config[key] for key in ('fileName','binaryContent','jsonValue') if config.get(key) is not None}}
+
 def multi_values(pairs):
     result={}
     for key,value in pairs:

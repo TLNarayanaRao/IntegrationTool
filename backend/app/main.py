@@ -12,7 +12,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from .models import AIBuildRequest, DebugAction, DebugRequest, Project, RunRequest, SharedResource, effective_event_activities
+from .models import AIBuildRequest, DebugAction, DebugRequest, Project, RunRequest, SharedResource, PackagePath, effective_event_activities
 from .store import delete_project, get_project, list_projects, project_dir, save_project, safe_component
 from .project_import import MAX_IMPORT_BYTES, project_payload
 from .runtime import WorkflowRuntime
@@ -669,18 +669,54 @@ class APIBlueprintRequest(BaseModel):
     connection: dict = Field(default_factory=dict)
     name: str = Field(default='',max_length=128)
     responseMode: str = 'stub'
+    packagePath: PackagePath = 'Default'
+    referenceDocuments: dict[str, str | dict] = Field(default_factory=dict,max_length=15)
+    documentPath: str = Field(default='',max_length=1024)
 
 @app.post('/api/api-blueprint/validate')
 def validate_api_blueprint(request: APIBlueprintRequest):
     from .api_blueprint import validate_blueprint
-    try:return validate_blueprint(request.document)
+    try:return validate_blueprint(request.document,reference_documents=request.referenceDocuments,document_path=request.documentPath)
     except (ValueError,KeyError,TypeError,RecursionError) as error:raise HTTPException(400,str(error)) from None
 
 @app.post('/api/api-blueprint/plan')
 def plan_api_blueprint(request: APIBlueprintRequest):
     from .api_blueprint import blueprint_plan
-    try:return blueprint_plan(request.document,request.operationIds,request.connection,request.name,request.responseMode)
+    try:return blueprint_plan(request.document,request.operationIds,request.connection,request.name,request.responseMode,request.packagePath,reference_documents=request.referenceDocuments,document_path=request.documentPath)
     except (ValueError,KeyError,TypeError,RecursionError) as error:raise HTTPException(400,str(error)) from None
+
+class APIBlueprintUpdateRequest(APIBlueprintRequest):
+    resourceId: str = Field(min_length=1,max_length=256)
+    expectedRevision: str = Field(default='',max_length=64)
+    previewToken: str = Field(default='',max_length=64)
+    reviewed: bool = False
+
+@app.post('/api/projects/{project_id}/api-blueprint/preview')
+def preview_api_blueprint_update(project_id: str, request: APIBlueprintUpdateRequest):
+    from .blueprint_update import update_plan
+    item=get_project(project_id)
+    if not item:raise HTTPException(404,'Project not found')
+    try:
+        _,report=update_plan(item,request.resourceId,request.document,request.operationIds,
+            reference_documents=request.referenceDocuments,document_path=request.documentPath,response_mode=request.responseMode)
+        return report
+    except (ValueError,KeyError,TypeError,RecursionError) as error:raise HTTPException(400,str(error)) from None
+
+@app.post('/api/projects/{project_id}/api-blueprint/apply')
+def apply_api_blueprint_update(project_id: str, request: APIBlueprintUpdateRequest):
+    from .blueprint_update import apply_update, UpdateConflict
+    running=active_runs.get(project_id)
+    if (running is not None and not running.done()) or any(
+        state['project'].id==project_id and state.get('status') not in ('completed','failed','stopped') for state in list(debugger.sessions.values())):
+        raise HTTPException(409,'Stop Run and Debug before updating this API contract.')
+    if not get_project(project_id):raise HTTPException(404,'Project not found')
+    try:
+        project,report=apply_update(project_id,request.resourceId,request.document,request.operationIds,request.expectedRevision,
+            request.reviewed,request.previewToken,reference_documents=request.referenceDocuments,document_path=request.documentPath,response_mode=request.responseMode)
+        return {'project':project,'changes':report}
+    except UpdateConflict as error:raise HTTPException(409,str(error)) from None
+    except (ValueError,KeyError,TypeError,RecursionError) as error:raise HTTPException(400,str(error)) from None
+    except (OSError,RuntimeError) as error:raise HTTPException(500,'API update could not be saved safely. '+str(error)) from None
 
 @app.put('/api/projects/{project_id}', response_model=Project)
 def update_project(project_id: str, item: Project):

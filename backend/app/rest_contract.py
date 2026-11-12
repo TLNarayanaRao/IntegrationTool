@@ -3,10 +3,10 @@ from __future__ import annotations
 import copy, json, re, urllib.parse
 from .http_contracts import bundle_document, schema_errors
 
-def operation_config(config):
+def operation_config(config, *, document=None):
     supplied=config.get('openApiDocument')
     if not supplied:return dict(config)
-    supplied=bundle_document(supplied,config)
+    supplied=document if document is not None else bundle_document(supplied,config)
     if not isinstance(supplied,dict) or not (str(supplied.get('openapi','')).startswith('3.') or supplied.get('swagger')=='2.0'):raise ValueError('Provide an OpenAPI 3 or Swagger 2 JSON document')
     selected=str(config.get('operationId') or '')
     if not selected:raise ValueError('OpenAPI operation ID is required')

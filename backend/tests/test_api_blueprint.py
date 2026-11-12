@@ -34,9 +34,17 @@ paths:
 
 def connection(port=8080):return {'type':'http','config':{'connectorMode':'server','host':'127.0.0.1','port':port,'minimumQtpThreads':1,'maximumQtpThreads':2}}
 
-def plan_project(port=8080,mode='example',secured=False):
+def plan_project(port=8080,mode='example',secured=False,robust=False):
     validated=validate_blueprint(DOCUMENT)
     document = validated['document']
+    if robust:
+        order=document['paths'].pop('/orders/{id}')
+        order['get']['parameters'][0]['name']='order-id'
+        document['paths']['/orders/{order-id}']=order
+        order['get']['responses']['200']['content']['application/json']['schema']={'$ref':'models/order.yaml'}
+        order['get']['responses']['200']['headers']={'X-API-Version':{'schema':{'type':'string','default':'v1'}}}
+        for path,operation_id,schema,example in [('/literal','literal',{'type':'string'},'ready'),('/nothing','nothing',{'type':['object','null']},None)]:
+            document['paths'][path]={'get':{'operationId':operation_id,'responses':{'200':{'description':'Scalar JSON','content':{'application/json':{'schema':schema,'example':example}}}}}}
     server = connection(port)
     if secured:
         document['components'] = {'securitySchemes': {'access': {'type':'http','scheme':'bearer'}}}
@@ -44,13 +52,37 @@ def plan_project(port=8080,mode='example',secured=False):
                                               'responses': {'205': {'description':'Reset'}}}}
         server['config'].update(authentication='Bearer', bearerToken='audit-token', httpErrorFormat='problem')
     operations = [operation['operationId'] for operation in validated['operations']]
-    plan=blueprint_plan(document,operations + (['reset'] if secured else []),server,response_mode=mode)
+    plan=blueprint_plan(document,operations + (['literal','nothing'] if robust else []) + (['reset'] if secured else []),server,response_mode=mode,package_path='APIs/Orders',
+                        reference_documents={'models/order.yaml':{'type':'object','properties':{'id':{'type':'string'}}}},document_path='openapi.yaml')
     if secured:
         plan['tasks'][-1]['activities'][1]['config']['statusCode'] = 205
     project=Project.model_validate({'id':'blueprint-test','name':'Blueprint Test','properties':{'local':[]},'resources':[plan['resource']],'tasks':plan['tasks'],'active_task_id':plan['tasks'][0]['id']})
     return project,plan
 
 class BlueprintValidationTests(unittest.TestCase):
+    def test_package_applies_to_all_generated_tasks_connection_and_saved_project(self):
+        document=validate_blueprint(DOCUMENT)['document']
+        document['paths']['/orders/{id}']['get']['callbacks']={'onDone':{
+            '{$request.query.callbackUrl}':{'post':{'responses':{'200':{'description':'Acknowledged'}}}}}}
+        original=connection()
+        plan=blueprint_plan(
+            document,[operation['operationId'] for operation in validate_blueprint(document)['operations']],original,package_path='Services/Orders')
+        self.assertTrue(any(task['kind']=='subtask' for task in plan['tasks']))
+        self.assertEqual({task['package_path'] for task in plan['tasks']},{'Services/Orders'})
+        self.assertEqual(plan['resource']['package_path'],'Services/Orders')
+        self.assertNotIn('package_path',original)
+        project=Project.model_validate({'id':'package-api','name':'Package-API','tasks':plan['tasks'],'resources':[plan['resource']]})
+        restored=Project.model_validate_json(project.model_dump_json())
+        self.assertTrue(all(task.package_path=='Services/Orders' for task in restored.tasks))
+        self.assertEqual(restored.resources[0].package_path,'Services/Orders')
+
+    def test_invalid_package_is_rejected_and_omitted_package_keeps_default(self):
+        operations=[operation['operationId'] for operation in validate_blueprint(DOCUMENT)['operations']]
+        self.assertEqual(blueprint_plan(DOCUMENT,operations,connection())['resource']['package_path'],'Default')
+        for folder in ('','../outside','Services//Orders','Services/../Orders','/absolute'):
+            with self.subTest(folder=folder),self.assertRaises(ValueError):
+                blueprint_plan(DOCUMENT,operations,connection(),package_path=folder)
+
     def test_secured_operation_requires_compatible_connection_before_hosting(self):
         document = validate_blueprint(DOCUMENT)['document']
         document['components'] = {'securitySchemes': {'access': {'type':'http','scheme':'bearer'}}}
@@ -130,13 +162,16 @@ class BlueprintHostingTests(unittest.IsolatedAsyncioTestCase):
     async def test_studio_run_hosts_all_blueprint_routes_and_stops(self):
         from app import main
         with socket.socket() as probe:probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
-        project,plan=plan_project(port,secured=True);task=project.tasks[0];event=task.activities[0]
+        project,plan=plan_project(port,secured=True,robust=True);task=project.tasks[0];event=task.activities[0]
         with patch.object(main,'append_project_logs'):
             try:
                 await main._start_http_listener(project,task,event,'local')
                 async with httpx.AsyncClient(trust_env=False,headers={'Authorization':'Bearer audit-token'}) as client:
                     order=await client.get(f'http://127.0.0.1:{port}/orders/42');self.assertEqual(order.status_code,200);self.assertEqual(order.json(),{'id':'${input.secret}'})
                     health=await client.get(f'http://127.0.0.1:{port}/health');self.assertEqual(health.json(),{'status':'ok'})
+                    self.assertEqual(order.headers['x-api-version'],'v1')
+                    self.assertEqual((await client.get(f'http://127.0.0.1:{port}/literal')).json(),'ready')
+                    self.assertEqual((await client.get(f'http://127.0.0.1:{port}/nothing')).content,b'null')
                     reset=await client.get(f'http://127.0.0.1:{port}/reset')
                     self.assertEqual((reset.status_code,reset.content),(205,b''))
                     denied=await client.get(f'http://127.0.0.1:{port}/reset',headers={'Authorization':'Bearer invalid'})
@@ -153,7 +188,7 @@ class BlueprintExportTests(unittest.TestCase):
         for compiler in (raw_python_files,engine_python_files):
             with self.subTest(compiler=compiler.__name__),tempfile.TemporaryDirectory() as folder:
                 with socket.socket() as probe:probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
-                project,_=plan_project(port,secured=True)
+                project,_=plan_project(port,secured=True,robust=True)
                 for name,data in compiler(project.model_dump(),{'local':[]}).items():
                     target=Path(folder)/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(data)
                 script=f'''import asyncio, httpx, os
@@ -173,6 +208,11 @@ async def main():
             assert response.json()=={{'status':'ok'}},response.text
             order=await client.get('http://127.0.0.1:{port}/orders/42')
             assert order.json()=={{'id':'${{input.secret}}'}},order.text
+            assert order.headers['x-api-version']=='v1',order.headers
+            literal=await client.get('http://127.0.0.1:{port}/literal')
+            assert literal.json()=='ready',literal.text
+            nothing=await client.get('http://127.0.0.1:{port}/nothing')
+            assert nothing.content==b'null',nothing.text
             reset=await client.get('http://127.0.0.1:{port}/reset')
             assert reset.status_code==205 and not reset.content, reset.text
             denied=await client.get('http://127.0.0.1:{port}/reset',headers={{'Authorization':'Bearer invalid'}})
@@ -182,9 +222,9 @@ async def main():
             asset=await client.get('http://127.0.0.1:{port}/_mina/assets/swagger-ui-bundle.js')
             assert asset.status_code==200 and 'SwaggerUIBundle' in asset.text
             spec=await client.get('http://127.0.0.1:{port}/_mina/openapi.json')
-            assert set(spec.json()['paths'])=={{'/orders/{{id}}','/health','/reset'}},spec.text
+            assert set(spec.json()['paths'])=={{'/orders/{{order-id}}','/health','/literal','/nothing','/reset'}},spec.text
             collection=await client.get('http://127.0.0.1:{port}/_mina/postman.json')
-            assert len(collection.json()['item'])==3,collection.text
+            assert len(collection.json()['item'])==5,collection.text
     finally:
         job.cancel()
         try:await job

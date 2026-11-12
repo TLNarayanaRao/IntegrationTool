@@ -8,7 +8,7 @@ from .http_contracts import listener_media_types, media_name, media_schema, sche
 
 def route_pattern(path):
     names=[];parts=[];start=0
-    for match in re.finditer(r'\{([A-Za-z_][A-Za-z0-9_]*)\}',path):
+    for match in re.finditer(r'\{([^\s/{}]+)\}',path):
         parts.append(re.escape(path[start:match.start()]));parts.append('([^/]+)');names.append(match[1]);start=match.end()
     parts.append(re.escape(path[start:]));return re.compile('^'+''.join(parts).rstrip('/')+'/?$'),names
 
