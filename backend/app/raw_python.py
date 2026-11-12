@@ -658,11 +658,11 @@ def validate_export_mappings(project: dict) -> None:
         for activity in task.get('activities', []):
             config = activity.get('config') or {}
             if activity.get('type') in ('mapper', 'transform', 'ai_transform'):
-                schema = schemas.get(config.get('targetSchemaId')) or config.get('targetSchemaText') or config.get('targetSchema')
+                schema = _selected_asset_schema(schemas.get(config.get('targetSchemaId')),config.get('targetSchemaText')) if schemas.get(config.get('targetSchemaId')) else config.get('targetSchemaText') or config.get('targetSchema')
                 errors = [] if config.get('xmlStylesheet') or config.get('generatedXmlBinding') else validator.validate_mapping_rules(config.get('mappings') or [], schema, custom_functions=[*config.get('customFunctions', []), *project.get('custom_functions', [])])
             else:
                 schema = task.get('input_schema') if activity.get('type') == 'start' else task.get('output_schema') if activity.get('type') == 'end' else None
-                schema = schemas.get(config.get('interfaceSchemaId')) or config.get('interfaceSchemaText') or schema
+                schema = _selected_asset_schema(schemas.get(config.get('interfaceSchemaId')),config.get('interfaceSchemaText')) if schemas.get(config.get('interfaceSchemaId')) else config.get('interfaceSchemaText') or schema
                 errors = validator.validate_mapping_rules(config.get('inputMappings') or {}, schema, config.get('inputMappingTypes'), project.get('custom_functions'))
             failures.extend(f'{task.get("name", task.get("id"))} / {activity.get("name", activity.get("id"))}: {error}' for error in errors)
     if failures: raise ValueError('Invalid input mappings:\n' + '\n'.join(failures))
@@ -802,7 +802,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         native_modules.add('mapper.py')
     if 'mapper.py' in native_modules:
         native_modules.update({'mapper_xml.py', 'mapper_binding.py', 'mapper_coercions.py'})
-    if _has_mapper_binding(project):
+    if _has_mapper_binding(project) or _has_selected_source_schema(project):
         native_modules.update({'data_formats.py', 'faults.py', 'xsd_openapi.py', 'xsd_catalog.py', 'schema_validation.py'})
     if native_modules:
         files['application/native/__init__.py'] = b'"""Capability-selected native adapters; vendor binaries remain external."""\n'
@@ -1030,8 +1030,8 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
                         pass
             if activity.get('type') in ('xml', 'json', 'flat') and config.get('schemaId'):
                 selected = next((schema for schema in project.get('schemas', []) if schema.get('id') == config['schemaId'] or schema.get('name') == config['schemaId']), None)
-                if selected and not config.get('schemaText'):
-                    config['schemaText'] = selected['content']
+                if selected:
+                    config['schemaText'] = _selected_asset_schema(selected['content'],config.get('schemaText'))
                     config['_formatSchemaPath'] = selected.get('source_path') or selected['name']
             if activity.get('type') in ('mapper', 'transform', 'ai_transform'):
                 _mapper_schema_config(config, project.get('schemas', []), activity.get('name'))
@@ -1249,6 +1249,12 @@ def _engine_lazy_imports(source: str, modules: set[str], package: str) -> str:
     return ast.unparse(ast.fix_missing_locations(tree)) + '\n'
 
 
+def _has_selected_source_schema(project):
+    return any(isinstance(view.get('schema'),str) and 'urn:mina:schema-selection' in view['schema']
+        for task in project.get('tasks',[]) for activity in task.get('activities',[])
+        for view in (activity.get('config',{}).get('sourceCoercions') or {}).values() if isinstance(view,dict))
+
+
 def _has_mapper_binding(project):
     return any(a['type'] in ('mapper', 'transform', 'ai_transform') and
                (a.get('config', {}).get('xmlStylesheet') or a.get('config', {}).get('generatedXmlBinding'))
@@ -1264,7 +1270,7 @@ def _engine_module_files(project: dict, source_root: Path) -> dict[str, bytes]:
     optional = set(ENGINE_CAPABILITY_MODULES.values())
     pending = {'runtime', 'models', 'mapper', 'time_utils'}
     pending.update(module for kind, module in ENGINE_CAPABILITY_MODULES.items() if kind in kinds)
-    xsd_projection = bool(kinds & {'xml', 'json', 'flat'}) or _has_mapper_binding(project)
+    xsd_projection = bool(kinds & {'xml', 'json', 'flat'}) or _has_mapper_binding(project) or _has_selected_source_schema(project)
     if any(a['type']=='http_listener' or a['type']=='rest' and a.get('config',{}).get('operation')=='receiver' or a['type']=='soap' and a.get('config',{}).get('operation')=='service' for t in project.get('tasks',[]) for a in t.get('activities',[])):pending.add('http_server')
     files = {}
     while pending:
@@ -1314,12 +1320,20 @@ def _python_call(name: str, values: dict, fields: tuple[str, ...], indent: int =
 
 
 
+def _selected_asset_schema(source, snapshot):
+    if not isinstance(snapshot,str) or 'urn:mina:schema-selection' not in snapshot:return source
+    import importlib.util
+    spec=importlib.util.spec_from_file_location('_export_xsd_selection',Path(__file__).with_name('xsd_catalog.py'))
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    return module.inherit_schema_selection(source,snapshot)
+
+
 def _mapper_schema_config(config, schemas, activity_name):
     if config.get('targetSchemaId'):
         schema_id = config['targetSchemaId']
         selected = next((asset for asset in schemas if schema_id in (asset.get('id'), asset.get('name'))), None)
         if not selected: raise ValueError(f'{activity_name}: selected Mapper target schema was not found')
-        config.update(targetSchema={}, targetSchemaText=selected['content'],
+        config.update(targetSchema={}, targetSchemaText=_selected_asset_schema(selected['content'],config.get('targetSchemaText')),
                       xmlTargetSchemaPath=selected.get('source_path') or selected['name'])
     if config.get('xmlStylesheet') or config.get('generatedXmlBinding') or config.get('sourceCoercions'):
         config['xmlSchemaDocuments'] = {**(config.get('xmlSchemaDocuments') or {}),

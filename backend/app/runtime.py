@@ -719,7 +719,8 @@ class WorkflowRuntime(DataFormats):
             schema_id = cfg['targetSchemaId']
             asset = next((item for item in getattr(ctx.get('project'), 'schemas', ()) if schema_id in (item.id, item.name)), None)
             if not asset or not asset.content: raise MinaFault('Selected Mapper target schema was not found', fault_type='ValidationException')
-            cfg.update(targetSchema={}, targetSchemaText=asset.content, xmlTargetSchemaPath=asset.source_path or asset.name)
+            from .xsd_catalog import inherit_schema_selection
+            cfg.update(targetSchema={}, targetSchemaText=inherit_schema_selection(asset.content,cfg.get("targetSchemaText")), xmlTargetSchemaPath=asset.source_path or asset.name)
         mapped_input = {}
         execution_scope = str(ctx.get('context', {}).get('executionId') or ctx.get('context', {}).get('debugSessionId') or '')
         if execution_scope: cfg['_executionScope'] = execution_scope

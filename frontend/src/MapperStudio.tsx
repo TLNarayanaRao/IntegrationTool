@@ -1,3 +1,5 @@
+import XsdStructurePicker from "./XsdStructurePicker";
+import {selectXsdStructure, selectedSchemaText} from "./xsdSelection";
 import ModalLayer from "./ModalLayer";
 import TransformationTools from "./TransformationTools";
 import { transformSchemaFields, AIMappingAssistance, mapperXmlSchemaDocuments } from "./ActivityEditor";
@@ -58,8 +60,8 @@ export default function MapperStudio({ config, schemas = [], sources: upstreamSo
   const selectedSource = schemas.find((schema: any) => schema.id === config.sourceSchemaId);
   const selectedTarget = schemas.find((schema: any) => schema.id === config.targetSchemaId);
   const [sourceId, setSourceId] = useState(config.sourceSchemaId || "inline"), [targetId, setTargetId] = useState(config.targetSchemaId || "inline");
-  const [sourceText, setSourceText] = useState(selectedSource?.content || config.sourceSchemaText || schemaText(config.sourceSchema));
-  const [targetText, setTargetText] = useState(selectedTarget?.content || config.targetSchemaText || schemaText(config.targetSchema || {}));
+  const [sourceText, setSourceText] = useState((selectedSource ? selectedSchemaText(selectedSource.content,config.sourceSchemaText) : "") || config.sourceSchemaText || schemaText(config.sourceSchema));
+  const [targetText, setTargetText] = useState((selectedTarget ? selectedSchemaText(selectedTarget.content,config.targetSchemaText) : "") || config.targetSchemaText || schemaText(config.targetSchema || {}));
   const [inputText, setInputText] = useState(() => {
     const sample = config.sampleInput ?? upstreamSources[0]?.activity?.config?.lastTestOutput ?? {};
     return typeof sample === "string" && sample.trimStart().startsWith("<") ? sample : JSON.stringify(sample, null, 2);
@@ -84,8 +86,8 @@ export default function MapperStudio({ config, schemas = [], sources: upstreamSo
   const mappedTargets = useMemo(() => new Map(rules.map(rule => [rule.target, rule])), [rules]);
   const chooseSchema = (side: "source" | "target", id: string) => {
     const schema = schemas.find((item: any) => item.id === id);
-    if (side === "source") { setSourceId(id); if (schema) setSourceText(schema.content); }
-    else { setTargetId(id); if (schema) setTargetText(schema.content); }
+    if (side === "source") { setSourceId(id); if (schema) setSourceText(selectXsdStructure(schema.content)); }
+    else { setTargetId(id); if (schema) setTargetText(selectXsdStructure(schema.content)); }
   };
   const sourceSchemaForLearning = () => sourceFields.length ? schemaObject(sourceText) : parseMapperSample(inputText);
   const matchingSchemas = () => ({sourceSchema: sourceSchemaForLearning(), targetSchema: schemaObject(targetText), sourceSchemaPath, targetSchemaPath,
@@ -230,7 +232,7 @@ export default function MapperStudio({ config, schemas = [], sources: upstreamSo
   const schemaPane = (side: "source" | "target", title: string, id: string, text: string, setText: (value: string) => void, fieldPaths: string[]) => <section className="schema-pane">
     <div className="mapper-schema-title"><span><h3>{side === "source" ? "SOURCE DATA" : "GENERATED TARGET OUTPUT"}</h3><small>{side === "source" ? `${fieldPaths.length} source fields` : schemas.find((item: any) => item.id === id)?.name || "Inline target schema"}</small></span></div>
     {side === "source" ? <><textarea aria-label="Mapper test input" value={inputText} onChange={event => setInputText(event.target.value)} spellCheck={false}/><div className="path-list">{fieldPaths.map(path => <code key={path}>{path}</code>)}</div></> : <pre aria-label="Visual mapper generated output" role="status" aria-live="polite" className={testValid === false ? "invalid" : testValid ? "valid" : ""}>{result || "Run mapping test to generate output from the current mappings."}</pre>}
-    <details className="mapper-schema-details"><summary>{title} schema</summary><select aria-label={`${title} project schema`} value={id} onChange={event => chooseSchema(side, event.target.value)}><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select><textarea aria-label={`${title} schema editor`} value={text} onChange={event => {setText(event.target.value);side === "source" ? setSourceId("inline") : setTargetId("inline");}} spellCheck={false}/></details>
+    <details className="mapper-schema-details"><summary>{title} schema</summary><select aria-label={`${title} project schema`} value={id} onChange={event => chooseSchema(side, event.target.value)}><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select><XsdStructurePicker label={`${title} structure`} text={text} onChange={setText}/>{id === "inline" && <textarea aria-label={`${title} schema editor`} value={text} onChange={event => {setText(event.target.value);side === "source" ? setSourceId("inline") : setTargetId("inline");}} spellCheck={false}/>}</details>
   </section>;
   const updateToolkit = (patch:any) => {
     setToolkitConfig((previous:any)=>({...previous,...patch}));

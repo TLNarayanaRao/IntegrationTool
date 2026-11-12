@@ -46,7 +46,14 @@ def source_view(value, rule, name, check, documents=None):
     if xml:
         from .mapper_xml import element_value, etree, parse_xml
         schema = parse_xml(contract, documents)
-        validator = etree.XMLSchema(schema)
+        selected_root=''
+        if 'urn:mina:schema-selection' in contract and not rule.get('type'):
+            from .xsd_catalog import schema_selection
+            from .data_formats import compiled_xsd
+            selected_root=schema_selection(contract)[1]
+            bundle=(rule.get('schemaPath') or '',tuple((documents or {}).items())) if documents else ()
+            validator,_=compiled_xsd(contract,bundle)
+        else:validator = etree.XMLSchema(schema)
         namespace, type_name = schema.get('targetNamespace'), rule.get('type')
         if type_name and not any(node.get('name') == type_name for node in schema.findall('{http://www.w3.org/2001/XMLSchema}complexType')):
             raise ValueError(f'Mapper source coercion {name!r}: unknown XSD complex type {type_name!r}')
@@ -68,7 +75,8 @@ def source_view(value, rule, name, check, documents=None):
                 candidate.extend(deepcopy(child) for child in root)
                 candidate.set('{http://www.w3.org/2001/XMLSchema-instance}type',
                               f'{prefix}:{type_name}' if namespace else type_name)
-            errors = [] if validator.validate(candidate) else [error.message for error in list(validator.error_log)[:5]]
+            errors = (['Expected selected XSD root '+selected_root] if selected_root and root.tag!=(selected_root[2:] if selected_root.startswith('{}') else selected_root)
+                      else [] if validator.validate(candidate) else [error.message for error in list(validator.error_log)[:5]])
             item = element_value(root, local_names=True)
         else:
             errors = validate_output(item, contract, check) if contract else []

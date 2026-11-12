@@ -1,3 +1,5 @@
+import XsdStructurePicker from "./XsdStructurePicker";
+import {selectXsdStructure, selectedSchemaText} from "./xsdSelection";
 import { useEffect, useRef, useState } from "react";
 import type { SchemaDoc } from "./SchemaStudio";
 import "./http-endpoint-setup.css";
@@ -6,9 +8,10 @@ export type SchemaChoice = { source: string; text: string; name?: string };
 
 export function schemaText(choice: SchemaChoice, schemas: SchemaDoc[], label: string) {
   if (!choice.source) return undefined;
-  const content = (choice.source.startsWith("@") ? choice.text : schemas.find(schema => schema.id === choice.source)?.content)?.trim();
+  const raw = (choice.source.startsWith("@") ? choice.text : schemas.find(schema => schema.id === choice.source)?.content)?.trim();
+  const content = raw ? selectedSchemaText(raw,choice.text) : raw;
   if (!content) throw new Error(`Provide a ${label.toLowerCase()} schema or select No schema.`);
-  if (content.startsWith("<") && choice.source !== "@inline") {
+  if (content.startsWith("<")) {
     const doc = new DOMParser().parseFromString(content, "application/xml");
     if (doc.querySelector("parsererror") || doc.documentElement.localName !== "schema" ||
         doc.documentElement.namespaceURI !== "http://www.w3.org/2001/XMLSchema") {
@@ -20,16 +23,16 @@ export function schemaText(choice: SchemaChoice, schemas: SchemaDoc[], label: st
       if (typeof parsed !== "boolean" && (!parsed || typeof parsed !== "object" || Array.isArray(parsed))) throw new Error();
     } catch {
       throw new Error(choice.source === "@inline"
-        ? "Enter a valid JSON Schema. Use Browse for XSD files."
+        ? "Enter a valid JSON Schema or XSD."
         : `${label} schema must be a JSON Schema object, boolean, or XSD document.`);
     }
   }
-  return content;
+  return content.startsWith("<") ? selectXsdStructure(content) : content;
 }
 
 export function schemaChoiceName(choice: SchemaChoice, schemas: SchemaDoc[]) {
   return choice.name || schemas.find(schema => schema.id === choice.source)?.name
-    || (choice.source === "@inline" ? "Inline JSON Schema" : undefined);
+    || (choice.source === "@inline" ? "Inline schema" : undefined);
 }
 
 export function savedSchemaChoice(value: unknown, name: string | undefined, schemas: SchemaDoc[]): SchemaChoice {
@@ -67,7 +70,7 @@ export default function EndpointSchemaPicker({ label, value, schemas, onChange }
       return;
     }
     if (source === "@inline") {
-      setJsonDraft(value.text.trimStart().startsWith("<") ? "" : value.text);
+      setJsonDraft(value.text);
       return;
     }
     commit(source === value.source ? value : { source, text: "" });
@@ -84,6 +87,8 @@ export default function EndpointSchemaPicker({ label, value, schemas, onChange }
       if (read === pendingRead.current) setError((error as Error).message);
     }
   };
+  const asset=schemas.find(schema=>schema.id===value.source);
+  const structureText=asset ? selectedSchemaText(asset.content,value.text) : value.text;
   const selected = value.source.startsWith("@") ? "@selected" : value.source;
   return (
     <div className="endpoint-schema-choice">
@@ -103,13 +108,14 @@ export default function EndpointSchemaPicker({ label, value, schemas, onChange }
           if (file) void browse(file);
         }}/>
       </label>
+      {jsonDraft === null && value.source && <XsdStructurePicker label={`${label} structure`} text={structureText || ""} onChange={text=>commit({...value,text})}/>}
       {jsonDraft !== null && <>
-        <label>Inline {label.toLowerCase()} JSON Schema
+        <label>Inline {label.toLowerCase()} schema
           <textarea rows={5} spellCheck={false} value={jsonDraft} onChange={event => setJsonDraft(event.target.value)}/>
         </label>
         <div className="endpoint-schema-actions">
           <button type="button" onClick={() => { setJsonDraft(null); setError(""); }}>Cancel</button>
-          <button type="button" onClick={() => commit({ source: "@inline", text: jsonDraft })}>Use JSON schema</button>
+          <button type="button" onClick={() => commit({ source: "@inline", text: jsonDraft })}>Use schema</button>
         </div>
       </>}
       {error && <small role="alert" className="endpoint-setup-error">{error}</small>}

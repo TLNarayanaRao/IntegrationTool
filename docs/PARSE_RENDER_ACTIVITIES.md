@@ -81,3 +81,12 @@ python -m unittest tests.test_format_activities tests.test_http_dynamic_contract
 ```
 
 References: [Python CSV newline handling](https://docs.python.org/3/library/csv.html) and [lxml parsing and validation](https://lxml.de/apidoc/lxml.etree.html).
+## Selecting the XSD entry structure
+
+When an XSD contains several global elements or named complex types, choose the
+required **Structure** beside the schema selector. This choice controls the
+activity's Input/Output tree, XML root, schema-derived record fields and runtime
+validation. Other declarations stay available as dependencies and as choices;
+they are not shown as additional mapping roots. The selected entry is retained
+in Run, Debug and both Python export formats. Imported schema text is hidden;
+inline source editing is available explicitly through **Edit inline schema**.

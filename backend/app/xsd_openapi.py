@@ -34,6 +34,8 @@ def describe_xsd(source):
 
 class XsdProjection:
     def __init__(self, document, graph=None):
+        from .xsd_catalog import SELECTION
+        selected=document.get(SELECTION+'element')
         self.scopes = {}
         self.globals = {}
         self.roots = []
@@ -47,6 +49,8 @@ class XsdProjection:
                 kind = etree.QName(node).localname
                 self.globals.setdefault((namespace, kind, node.get('name')), node)
                 if kind == 'element' and (not graph or scope in graph.roots): self.roots.append(node)
+        if selected:
+            self.roots=[node for node in self.roots if '{'+(self.scopes[node.getroottree().getroot()] or '')+'}'+node.get('name')==selected]
         self.nodes_left = 16000
         self.examples_left = 512
 

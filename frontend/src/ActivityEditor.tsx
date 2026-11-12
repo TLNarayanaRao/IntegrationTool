@@ -1,3 +1,5 @@
+import XsdStructurePicker from "./XsdStructurePicker";
+import {selectXsdStructure, selectedSchemaText} from "./xsdSelection";
 import ModalLayer from "./ModalLayer";
 import { editMapperXsd } from "./mapperXsd";
 import EndpointSchemaPicker, { savedSchemaChoice, schemaChoiceName } from "./EndpointSchemaPicker";
@@ -1400,8 +1402,8 @@ function activitySchemaAsset(node: any, schemas: any[]) {
 
 function activitySchemaText(node: any, schemas: any[]): string {
   const configured = node.config?.schemaText;
-  if (configured) return configured;
-  return activitySchemaAsset(node, schemas)?.content || "";
+  const asset=activitySchemaAsset(node,schemas);
+  return asset ? selectedSchemaText(asset.content,configured) : configured || "";
 }
 
 function sharedDataFormat(id: string, schemas: any[]) {
@@ -1427,7 +1429,7 @@ function boundaryFields(task: any, boundaryType: "start" | "end", schemas: any[]
   const config = boundary?.config || {};
   const schemaId = config.interfaceSchemaId;
   const selected = schemaId ? schemas.find((schema: any) => schema.id === schemaId) : null;
-  const configured = config.interfaceSchemaText || selected?.content;
+  const configured = selected ? selectedSchemaText(selected.content,config.interfaceSchemaText) : config.interfaceSchemaText;
   const modelSchema = boundaryType === "start" ? task.input_schema : task.output_schema;
   return schemaDataFields(configured || modelSchema);
 }
@@ -2132,10 +2134,10 @@ function TransformSchemaEditor({ config, schemas, setConfig }: any) {
       return;
     }
     const schema = schemas.find((item: any) => item.id === id);
-    if (schema) setConfig({ targetSchemaId: schema.id, targetSchema: {}, targetSchemaText: schema.content });
+    if (schema) setConfig({ targetSchemaId: schema.id, targetSchema: {}, targetSchemaText: selectXsdStructure(schema.content) });
   };
   const id = config.targetSchemaId || "inline", text = id === "inline" ? config.targetSchemaText || JSON.stringify(config.targetSchema || {}, null, 2) : "";
-  return <div className="transform-schema-editor"><div className="transform-schema-heading"><Braces/><span><b>TARGET TRANSFORMATION CONTRACT</b></span></div><div className="transform-schema-columns single"><section><header><span><b>Target schema</b></span><select aria-label="Target schema" value={id} onChange={(event) => choose(event.target.value)}><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header>{id === "inline" && <><InlineMapperFields text={text} save={targetSchemaText => setConfig({targetSchemaId:"", targetSchemaText})}/><textarea aria-label="Target inline schema" value={text} onChange={(event) => setConfig({ targetSchemaId: "", targetSchemaText: event.target.value })} placeholder="Paste target JSON Schema or XSD here…" spellCheck={false}/><SchemaHierarchyPreview text={text}/></>}</section></div></div>;
+  return <div className="transform-schema-editor"><div className="transform-schema-heading"><Braces/><span><b>TARGET TRANSFORMATION CONTRACT</b></span></div><div className="transform-schema-columns single"><section><header><span><b>Target schema</b></span><select aria-label="Target schema" value={id} onChange={(event) => choose(event.target.value)}><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header><XsdStructurePicker label="Target structure" text={schemas.find((schema:any)=>schema.id===config.targetSchemaId)?.content ? selectedSchemaText(schemas.find((schema:any)=>schema.id===config.targetSchemaId).content,config.targetSchemaText) : text} onChange={targetSchemaText=>setConfig({targetSchemaText})}/>{id === "inline" && <><InlineMapperFields text={text} save={targetSchemaText => setConfig({targetSchemaId:"", targetSchemaText})}/><details><summary>Edit inline schema</summary><textarea aria-label="Target inline schema" value={text} onChange={(event) => setConfig({ targetSchemaId: "", targetSchemaText: event.target.value })} placeholder="Paste target JSON Schema or XSD here…" spellCheck={false}/></details><SchemaHierarchyPreview text={text}/></>}</section></div></div>;
 }
 
 const mapperSourceTypes = ["string", "int", "integer", "long", "short", "byte", "number", "decimal", "double", "float", "boolean", "date", "datetime", "time"];
@@ -2255,16 +2257,16 @@ function TaskBoundarySchemaEditor({ node, config, schemas, setConfig }: any) {
       return;
     }
     const schema = schemas.find((item: any) => item.id === id);
-    if (schema) setConfig({ interfaceSchemaId: schema.id, interfaceSchemaText: schema.content });
+    if (schema) setConfig({ interfaceSchemaId: schema.id, interfaceSchemaText: selectXsdStructure(schema.content) });
   };
   const selected = config.interfaceSchemaId || (config.interfaceSchemaText ? "inline" : ""), start = node.type === "start";
-  return <div className="transform-schema-editor task-interface-editor"><div className="transform-schema-heading"><Braces/><span><b>{start ? "TASK INPUT INTERFACE" : "TASK RETURN INTERFACE"}</b></span></div><div className="transform-schema-columns single"><section><header><span><b>{start ? "Input schema" : "Output schema"}</b></span><select aria-label={start ? "Task input schema" : "Task output schema"} value={selected} onChange={(event) => choose(event.target.value)}><option value="">Generic object</option><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header>{selected && <><textarea aria-label={start ? "Task input inline schema" : "Task output inline schema"} value={config.interfaceSchemaText || ""} onChange={(event) => setConfig({ interfaceSchemaId: "", interfaceSchemaText: event.target.value })} placeholder="Paste JSON Schema or XSD here…" spellCheck={false}/><SchemaHierarchyPreview text={config.interfaceSchemaText || ""}/></>}</section></div></div>;
+  return <div className="transform-schema-editor task-interface-editor"><div className="transform-schema-heading"><Braces/><span><b>{start ? "TASK INPUT INTERFACE" : "TASK RETURN INTERFACE"}</b></span></div><div className="transform-schema-columns single"><section><header><span><b>{start ? "Input schema" : "Output schema"}</b></span><select aria-label={start ? "Task input schema" : "Task output schema"} value={selected} onChange={(event) => choose(event.target.value)}><option value="">Generic object</option><option value="inline">Inline schema…</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header><XsdStructurePicker label={start ? "Task input structure" : "Task output structure"} text={schemas.find((schema:any)=>schema.id===selected)?.content ? selectedSchemaText(schemas.find((schema:any)=>schema.id===selected).content,config.interfaceSchemaText) : config.interfaceSchemaText || ""} onChange={interfaceSchemaText=>setConfig({interfaceSchemaText})}/>{selected === "inline" && <><details><summary>Edit inline schema</summary><textarea aria-label={start ? "Task input inline schema" : "Task output inline schema"} value={config.interfaceSchemaText || ""} onChange={(event) => setConfig({ interfaceSchemaId: "", interfaceSchemaText: event.target.value })} placeholder="Paste JSON Schema or XSD here…" spellCheck={false}/></details><SchemaHierarchyPreview text={config.interfaceSchemaText || ""}/></>}</section></div></div>;
 }
 
 function DataContractSchemaEditor({ node, config, schemas, direction, setConfig }: any) {
   const selected = config.schemaId || (config.schemaText ? "inline" : "");
   const projectSchema = activitySchemaAsset(node, schemas);
-  const text = config.schemaText || projectSchema?.content || "";
+  const text = activitySchemaText(node,schemas);
   const format = node.type === "flat" ? "data record" : node.type.toUpperCase();
   const choose = (id: string) => {
     if (!id) { setConfig({ schemaId: "", schemaText: "" }); return; }
@@ -2272,9 +2274,10 @@ function DataContractSchemaEditor({ node, config, schemas, direction, setConfig 
       setConfig({ schemaId: "", schemaText: config.schemaText || "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">\n  <xs:element name=\"root\" type=\"xs:string\"/>\n</xs:schema>" });
       return;
     }
-    setConfig({ schemaId: id, schemaText: "" });
+    const asset=schemas.find((schema:any)=>schema.id===id);
+    setConfig({ schemaId: id, schemaText: selectXsdStructure(asset?.content || "") });
   };
-  return <div className="transform-schema-editor data-contract-editor"><div className="transform-schema-heading"><Braces/><span><b>{direction === "input" ? "INPUT EDITOR" : "OUTPUT EDITOR"} · {format} CONTRACT</b></span></div><div className="transform-schema-columns single"><section><header><span><b>Structure schema</b></span><select aria-label={`${direction} structure schema`} value={selected} onChange={(event) => choose(event.target.value)}><option value="">{!selected && projectSchema ? `From shared Data Format: ${projectSchema.name}` : "Select schema…"}</option><option value="inline">Inline schema…</option>{schemas.filter((schema:any) => !sharedDataFormat(schema.id, [schema])).map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header>{selected === "inline" && <textarea aria-label={`Inline ${direction} schema`} value={config.schemaText || ""} onChange={(event) => setConfig({ schemaId: "", schemaText: event.target.value })} placeholder="Paste an inline XSD or JSON Schema here…" spellCheck={false}/>}<SchemaHierarchyPreview text={text} schemaPath={projectSchema?.source_path || projectSchema?.name} schemaDocuments={schemas}/></section></div></div>;
+  return <div className="transform-schema-editor data-contract-editor"><div className="transform-schema-heading"><Braces/><span><b>{direction === "input" ? "INPUT EDITOR" : "OUTPUT EDITOR"} · {format} CONTRACT</b></span></div><div className="transform-schema-columns single"><section><header><span><b>Structure schema</b></span><select aria-label={`${direction} structure schema`} value={selected} onChange={(event) => choose(event.target.value)}><option value="">{!selected && projectSchema ? `From shared Data Format: ${projectSchema.name}` : "Select schema…"}</option><option value="inline">Inline schema…</option>{schemas.filter((schema:any) => !sharedDataFormat(schema.id, [schema])).map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></header><XsdStructurePicker label={`${direction} structure`} text={text} onChange={schemaText=>setConfig({schemaText})}/>{selected === "inline" && <details><summary>Edit inline schema</summary><textarea aria-label={`Inline ${direction} schema`} value={config.schemaText || ""} onChange={(event) => setConfig({ schemaId: "", schemaText: event.target.value })} placeholder="Paste an inline XSD or JSON Schema here…" spellCheck={false}/></details>}<SchemaHierarchyPreview text={text} schemaPath={projectSchema?.source_path || projectSchema?.name} schemaDocuments={schemas}/></section></div></div>;
 }
 
 function SchemaHierarchyPreview({ text, schemaPath, schemaDocuments }: { text: string; schemaPath?: string; schemaDocuments?: any[] }) {
@@ -3069,7 +3072,9 @@ function transformSchemaFields(config: any): SchemaTreeField[] {
         declarations(container, "attribute").forEach((attribute) => { const attributeName = attribute.getAttribute("name") || attribute.getAttribute("ref")?.split(":").pop() || "attribute", required = attribute.getAttribute("use") === "required"; fields.push({ path: `${path}.@${attributeName}`, name: `@${attributeName}`, type: (attribute.getAttribute("type") || "string").split(":").pop() || "string", depth: depth + 1, repeating: false, required, minOccurs: required ? "1" : "0", maxOccurs: "1" }); });
         directElements(container).forEach((child) => walkElement(child, path, depth + 1, [...active, container]));
       };
-      roots.forEach((element) => walkElement(element));
+      const selected = document.documentElement.getAttributeNS("urn:mina:schema-selection","element");
+      const entries = selected ? roots.filter(element => `{${scope.get(element.ownerDocument) || ""}}${element.getAttribute("name")}` === selected) : roots.slice(0,1);
+      entries.forEach((element) => walkElement(element));
       return fields;
     } catch { return []; }
   }
@@ -3146,8 +3151,9 @@ function MapperCoercionEditor({ values, schemas, update }: {values:any; schemas:
       <option value="*">Repeating (0..unbounded)</option><option value="+">At least one (1..unbounded)</option>
     </select></label>
     <label>Coercion schema<select value={schemaId} onChange={event=>{
-      const id = event.target.value;setSchemaId(id);setSchema(schemas.find(asset=>asset.id===id)?.content || "");setType("");
+      const id = event.target.value;setSchemaId(id);setSchema(selectXsdStructure(schemas.find(asset=>asset.id===id)?.content || ""));setType("");
     }}><option value="">Inline or cardinality only</option>{schemas.map(asset=><option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>
+    <XsdStructurePicker label="Source view structure" text={schema} onChange={value=>{setSchema(value);setType("");}}/>
     {!schemaId && <label>Inline coercion contract<textarea value={schema} onChange={event=>{setSchema(event.target.value);setType("");}} spellCheck={false}/></label>}
     {!!types.length && <label>XSD complex type<select value={type} onChange={event=>setType(event.target.value)}>
       <option value="">Declared element type</option>{types.map(item=><option key={item}>{item}</option>)}
@@ -3475,7 +3481,7 @@ function TransformInputEditor({ config, properties, sources, schemas = [], setSo
 }
 function mapperSchemaFields(config: any, schemas: any[]) {
   const asset = schemas.find(schema => schema.id === config.targetSchemaId);
-  return transformSchemaFields(asset ? {...config, targetSchemaText: asset.content, schemaPath: asset.source_path || asset.name,
+  return transformSchemaFields(asset ? {...config, targetSchemaText: selectedSchemaText(asset.content,config.targetSchemaText), schemaPath: asset.source_path || asset.name,
     schemaDocuments: schemas} : config);
 }
 
@@ -3500,7 +3506,7 @@ export function mapperXmlSchemaDocuments(schemas: any[]) {
 
 function TransformMapTestEditor({ node: _node, config, schemas = [], customFunctions = [], setConfig }: any) {
   const selectedTarget = schemas.find((schema: any) => schema.id === config.targetSchemaId || schema.name === config.targetSchemaId);
-  const targetSchemaText = selectedTarget?.content || config.targetSchemaText || "";
+  const targetSchemaText = selectedTarget ? selectedSchemaText(selectedTarget.content,config.targetSchemaText) : config.targetSchemaText || "";
   const initialInput = config.sampleInput ?? {};
   const [inputText, setInputText] = useState(() => typeof initialInput === "string" && initialInput.trimStart().startsWith("<") ? initialInput : JSON.stringify(initialInput, null, 2));
   const [outputText, setOutputText] = useState(() => config.lastTestOutputText ?? (config.lastTestOutput !== undefined ? JSON.stringify(config.lastTestOutput, null, 2) : ""));

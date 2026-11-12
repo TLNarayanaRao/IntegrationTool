@@ -113,7 +113,8 @@ def flatten_schema(schema: Any, path: str = '', repeating: bool = False, repeat_
                         normalized = {'decimal':'number','double':'number','float':'number','int':'integer','long':'integer','dateTime':'string'}.get(xsd_type, xsd_type)
                         rows.append({'path': current, 'name': ('@' if local(element) == 'attribute' else '') + name, 'type': normalized, 'required': element.attrib.get('use') == 'required' if local(element) == 'attribute' else element.attrib.get('minOccurs', '1') != '0', 'nillable': declaration.get('nillable') in ('true', '1'), 'repeating': repeated, 'repeatPath': current_repeat})
                     return rows
-                top = next((child for child in root if local(child) == 'element'), None)
+                selected=root.get('{urn:mina:schema-selection}element')
+                top = next((child for child in root if local(child) == 'element' and (not selected or child.get('name')==selected.rsplit('}',1)[-1])), None)
                 return walk(top, path, repeating, repeat_path) if top is not None else []
             except ElementTree.ParseError: return []
     if _root is None: _root = schema
@@ -571,7 +572,8 @@ def validate_xsd_output(document: Any, schema: str, _budget=None) -> list[str]:
                         if 'fractionDigits' in facets and max(0, -digits.exponent) > int(facets['fractionDigits'][0]): errors.append(f'{item_path}: violates fractionDigits')
                         if 'totalDigits' in facets and len(digits.digits) + max(0, digits.exponent) > int(facets['totalDigits'][0]): errors.append(f'{item_path}: violates totalDigits')
 
-    top = next((node for node in root if local(node) == 'element'), None)
+    selected=root.get('{urn:mina:schema-selection}element')
+    top = next((node for node in root if local(node) == 'element' and (not selected or node.get('name')==selected.rsplit('}',1)[-1])), None)
     if top is not None: field(top, document, '')
     return errors
 

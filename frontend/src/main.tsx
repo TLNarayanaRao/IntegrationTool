@@ -4126,7 +4126,7 @@ function App() {
       {schemaEditor && (
         <SchemaStudio
           schema={schemaEditor === "new" ? undefined : schemaEditor}
-          initialTab={schemaEditor === "new" ? "design" : "source"}
+          initialTab={schemaEditor === "new" ? "design" : "overview"}
           validateName={name => workspaceNameConflict(project, name, schemaEditor === "new" ? schemaPackage : packagePath(schemaEditor.package_path),
             schemaEditor === "new" ? undefined : {category:"schemas",id:schemaEditor.id})}
           onClose={() => setSchemaEditor(null)}

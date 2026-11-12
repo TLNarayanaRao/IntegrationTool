@@ -20,6 +20,7 @@ for (const [file, names] of [
     .map(statement => statement.getText(ast).replace(/^export /, "")));
 }
 const helpers = vm.createContext({
+  selectedSchemaText:value=>value,selectXsdStructure:value=>value,
   HTTP_METHODS: ["GET", "POST", "PUT"], activityReferenceName: value => value, advancedDefaults: () => ({}),
 });
 vm.runInContext(ts.transpileModule(functions.join("\n"), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText, helpers);
@@ -67,7 +68,7 @@ test("setup saves the runtime route and schema fields with validation enabled", 
   assert.deepEqual(JSON.parse(JSON.stringify(config)), {
     resourceId: "server", path: "/orders/{id}", methods: "POST,PUT", requestContentTypes: ["application/json", "application/xml"],
     requestSchema: '{"type":"object"}', requestSchemaName: "payload.schema.json", validateRequest: true,
-    responseSchema: '{"type":"string"}', responseSchemaName: "Inline JSON Schema", validateResponse: true,
+    responseSchema: '{"type":"string"}', responseSchemaName: "Inline schema", validateResponse: true,
   });
 });
 

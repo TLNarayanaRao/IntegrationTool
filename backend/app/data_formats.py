@@ -247,10 +247,14 @@ class DataFormats:
     @staticmethod
     def validate_xml_document(value,schema,bundle=()):
         from lxml import etree
+        from .xsd_catalog import schema_selection
         try:
             validator,lock=compiled_xsd(schema,bundle)
             parser=etree.XMLParser(resolve_entities=False,load_dtd=False,no_network=True,huge_tree=False)
             document=etree.fromstring(DataFormats.safe_xml(value),parser)
+            _,selected=schema_selection(schema)
+            if selected and document.tag!=(selected[2:] if selected.startswith('{}') else selected):
+                raise ValueError('Expected selected XSD root '+selected+'; found '+document.tag)
             with lock:
                 if not validator.validate(document):raise ValueError('; '.join(str(error.message) for error in list(validator.error_log)[:10]))
         except (ValueError,etree.Error) as error:raise MinaFault('XSD validation failed: '+str(error),fault_type='ValidationException') from error
@@ -289,7 +293,11 @@ class DataFormats:
         return schema.content if schema else ''
 
     def configured_schema(self, cfg, ctx):
-        schema = cfg.get('schemaText') or self.schema_content(cfg.get('schemaId'), ctx)
+        source = self.schema_content(cfg.get('schemaId'),ctx)
+        if source:
+            from .xsd_catalog import inherit_schema_selection
+            schema=inherit_schema_selection(source,cfg.get('schemaText'))
+        else:schema=cfg.get('schemaText') or ''
         if cfg.get('schemaId') and not schema:
             raise MinaFault('Selected project schema was not found', fault_type='ValidationException')
         return schema
@@ -310,6 +318,10 @@ class DataFormats:
     @staticmethod
     def schema_root_name(schema, bundle=()):
         if not schema: return ''
+        if isinstance(schema,str) and schema.lstrip().startswith('<'):
+            from .xsd_catalog import schema_selection
+            _,selected=schema_selection(schema)
+            if selected:return selected.rsplit('}',1)[-1]
         try:
             document = schema if isinstance(schema,dict) else json.loads(schema)
             return document.get('title') or next(iter((document.get('properties') or {}).keys()), '')

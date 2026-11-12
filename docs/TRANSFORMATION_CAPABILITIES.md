@@ -5,6 +5,30 @@ durable message composition and recovery without reintroducing Mediation.
 
 ## Mapper schemas and suggestions
 
+### Select one XSD structure
+
+After choosing a project XSD, use **Target structure** to select one global
+element or named complex type. The Input and Output trees show only that entry
+and its descendants. A named complex type receives a document wrapper named
+after the type; choose an existing global element when its published XML root
+name is required. Source schemas and named source views have the same selection.
+
+This selection is also available for task input/return interfaces (including
+Call Sub Task), Parse/Render XML, JSON and Data contracts, and HTTP/REST request
+and response schemas. Each activity retains its own choice when saved,
+reopened, run, debugged or exported as either Python archive format.
+
+Selected project schemas display their filename and structure controls instead
+of a populated XSD textbox. **Edit inline schema** explicitly opens inline
+content editing. Opening an existing schema resource starts on **Schema
+Structure**; **XSD Source** remains available for deliberate source editing.
+
+MINA retains the original declarations for changing selections and resolving
+references. Its selection metadata is a namespaced XSD annotation attribute;
+validation compiles the selected declaration and its dependencies. Unselected
+entry roots are excluded from the mapping tree and generated API schema.
+Missing types used by the selected structure remain validation errors.
+
 The Mapper supports multiple named views of one source, each with its own
 schema, optional XSD complex type, and occurrence range. Keep schema files
 at their project-relative paths when importing or editing the contract.

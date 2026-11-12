@@ -11,13 +11,35 @@ function all(node) {return node && typeof node==='object' ? [node,...(node.child
 
 test('selected project schema renders only its selector; inline schema remains editable',()=>{
   const fn=ast.statements.find(s=>s.name?.text==='TransformSchemaEditor');
-  const context=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children:children.flat(Infinity)})},Braces:'icon',SchemaHierarchyPreview:'preview',InlineMapperFields:'fields'});
+  const context=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children:children.flat(Infinity)})},Braces:'icon',SchemaHierarchyPreview:'preview',InlineMapperFields:'fields',XsdStructurePicker:'structure-picker',selectedSchemaText:(value,snapshot)=>snapshot||value,selectXsdStructure:value=>value});
   vm.runInContext(compile(fn.getText(ast)),context);
   const render=config=>context.TransformSchemaEditor({config,schemas:[{id:'schema',name:'Order.xsd',content:'<schema/>'}],setConfig() {}});
   const selected=all(render({targetSchemaId:'schema',targetSchemaText:'<schema/>'}));
   assert.equal(selected.filter(n=>n.type==='textarea'||n.type==='preview').length,0);
   assert.equal(selected.find(n=>n.type==='select').props.value,'schema');
   assert.equal(all(render({targetSchemaText:'<schema/>'})).find(n=>n.type==='textarea').props.value,'<schema/>');
+});
+
+test('Start, End and Parse/Render imported schema cards hide the raw schema and preserve structure choices',()=>{
+  const context=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children:children.flat(Infinity)})},
+    Braces:'icon',XsdStructurePicker:'structure-picker',SchemaHierarchyPreview:'preview',
+    selectedSchemaText:(value,snapshot)=>snapshot||value,selectXsdStructure:value=>value,sharedDataFormat:()=>undefined,
+    activitySchemaAsset:(node,schemas)=>schemas.find(schema=>schema.id===node.config.schemaId),activitySchemaText:node=>node.config.schemaText});
+  for(const name of ['TaskBoundarySchemaEditor','DataContractSchemaEditor']){
+    vm.runInContext(compile(ast.statements.find(s=>s.name?.text===name).getText(ast)),context);
+  }
+  const schemas=[{id:'schema',name:'MultiRoot.xsd',content:'<schema/>'}];
+  for(const type of ['start','end','xml','json','flat']){
+    let patch;
+    const boundary=['start','end'].includes(type),config=boundary?{interfaceSchemaId:'schema',interfaceSchemaText:'<selected/>'}:{schemaId:'schema',schemaText:'<selected/>'};
+    const props={node:{type,config},config,schemas,direction:'input',setConfig:value=>patch=value};
+    const tree=all(boundary?context.TaskBoundarySchemaEditor(props):context.DataContractSchemaEditor(props));
+    assert.equal(tree.filter(node=>node.type==='textarea').length,0,type);
+    const picker=tree.find(node=>node.type==='structure-picker');assert.equal(picker.props.text,'<selected/>');
+    picker.props.onChange('<another-structure/>');
+    assert.equal(patch[boundary?'interfaceSchemaText':'schemaText'],'<another-structure/>');
+    assert.equal(Object.keys(patch).length,1,'Changing structure retains the selected schema ID');
+  }
 });
 
 test('inline Mapper field controls edit children of a repeating object and update requiredness',()=>{

@@ -2,6 +2,8 @@
 .endpoint-setup-fields { display: grid; gap: 12px; grid-column: 1 / -1; min-width: 0; }
 .endpoint-setup-fields label, .endpoint-schema-choice { display: grid; gap: 6px; min-width: 0; }
 .endpoint-schema-choice { align-content: start; }
+.xsd-structure-picker { display: grid; gap: 6px; min-width: 0; margin: 8px 0; }
+.xsd-structure-picker select { width: 100%; min-width: 0; max-width: 100%; }
 .endpoint-schema-choice .endpoint-schema-browse {
   position: relative;
   justify-self: start;

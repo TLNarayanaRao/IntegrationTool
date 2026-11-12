@@ -42,8 +42,11 @@ def _contract(schema, side):
     if document.tag != XSD + 'schema' or any(document.findall(XSD + name) for name in ('include', 'import', 'redefine')):
         raise ValueError(f'Select a standalone {side} XSD for binding generation')
     fields = {field['path']: field for field in flatten_schema(schema)}
-    if (len(document.findall(XSD + 'element')) != 1 or not fields
-            or any(node.get('form') or node.get('ref') for node in document.iter(XSD + 'element'))):
+    selected=document.get('{urn:mina:schema-selection}element')
+    roots=[node for node in document.findall(XSD+'element') if not selected or node.get('name')==selected.rsplit('}',1)[-1]]
+    qualified=document.get('elementFormDefault')=='qualified'
+    if (len(roots) != 1 or not fields
+            or any(node.get('form') or node.get('ref') and not qualified for node in document.iter(XSD + 'element'))):
         raise ValueError(f'The {side} XSD needs one root and uniform element qualification')
     return fields, document.get('targetNamespace', ''), document.get('elementFormDefault') == 'qualified'
 
