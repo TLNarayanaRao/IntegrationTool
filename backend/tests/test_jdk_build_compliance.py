@@ -93,6 +93,27 @@ class JdkBuildComplianceTests(unittest.TestCase):
             self.assertEqual(components[0]['name'],'Microsoft OpenJDK')
 
     @unittest.skipUnless(sys.platform=='win32','Windows packaging toolchain selection')
+    def test_powershell_51_passes_quoted_and_trailing_slash_jdk_paths_to_python(self):
+        builder=script('build-compliance')
+        with tempfile.TemporaryDirectory(prefix='jdk argument ') as folder:
+            home=fixture(folder,'Microsoft')
+            command=('. ./scripts/resolve-java-home.ps1; $jdkHome=Resolve-MinaJavaHome; '
+                     '& $env:MINA_TEST_PYTHON -c "import json,sys;print(json.dumps(sys.argv[1:]))" --java-home $jdkHome')
+            for variable in ('MINA_JAVA_HOME','JAVA_HOME'):
+                for value in (str(home),str(home)+'\\','"'+str(home)+'\\"',str(home)+'/'):
+                    with self.subTest(variable=variable,value=value):
+                        environment={**os.environ,'MINA_JAVA_HOME':'','JAVA_HOME':'','MINA_TEST_PYTHON':sys.executable,variable:value}
+                        result=subprocess.run(['powershell','-NoProfile','-ExecutionPolicy','Bypass','-Command',command],
+                            cwd=ROOT,env=environment,capture_output=True,text=True,timeout=30)
+                        self.assertEqual(result.returncode,0,result.stderr)
+                        received=json.loads(result.stdout)
+                        self.assertEqual(received,['--java-home',str(home.resolve())])
+                        self.assertEqual(builder.java_components(Path(folder)/'output',received[1])['name'],'Microsoft OpenJDK')
+            # Also recover a path mangled by an older caller, without bypassing
+            # any license, metadata or source checks.
+            self.assertEqual(builder.java_components(Path(folder)/'output',str(home)+'"')['name'],'Microsoft OpenJDK')
+
+    @unittest.skipUnless(sys.platform=='win32','Windows packaging toolchain selection')
     def test_explicit_jdk_selection_handles_spaces_and_overrides_java_home(self):
         with tempfile.TemporaryDirectory() as folder:
             home=fixture(folder)

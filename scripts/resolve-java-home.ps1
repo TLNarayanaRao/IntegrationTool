@@ -20,10 +20,18 @@ function Resolve-MinaJavaHome {
         }
     }
     $selected = [System.IO.Path]::GetFullPath($selected.Trim().Trim('"'))
-    foreach ($relative in @('release', 'bin\java.exe', 'bin\javac.exe', 'bin\jlink.exe')) {
+    # Windows PowerShell 5.1's native argv quoting turns a final backslash
+    # before the closing quote into a literal quote for paths containing spaces.
+    # Keep a volume root intact, but never return a trailing JDK separator.
+    $volumeRoot = [System.IO.Path]::GetPathRoot($selected)
+    if ($selected.Length -gt $volumeRoot.Length) { $selected = $selected.TrimEnd([char[]]'\/') }
+    foreach ($relative in @('release', 'bin\java.exe', 'bin\javac.exe', 'bin\jlink.exe', 'lib\src.zip')) {
         if (!(Test-Path -LiteralPath (Join-Path $selected $relative) -PathType Leaf)) {
             throw "Incomplete JDK at '$selected' (missing $relative). Set MINA_JAVA_HOME to a complete OpenJDK 17+."
         }
+    }
+    if (!(Test-Path -LiteralPath (Join-Path $selected 'legal') -PathType Container)) {
+        throw "Incomplete JDK at '$selected' (missing legal directory). Set MINA_JAVA_HOME to a complete OpenJDK 17+."
     }
     $release = Get-Content -LiteralPath (Join-Path $selected 'release') -Raw
     $major = [regex]::Match($release, '(?m)^JAVA_VERSION="(\d+)')

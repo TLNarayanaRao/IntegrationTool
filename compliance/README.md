@@ -116,3 +116,19 @@ records its provenance without claiming legal clearance. Proprietary JDKs,
 missing license texts and missing source material still fail with an actionable
 message. Public-release review of full corresponding-source access remains
 required for every distributor.
+
+If a failure prints a JDK path ending in a stray `"`, an older Windows
+PowerShell 5.1 native-argument handoff may have converted a trailing backslash
+into that quote. The resolver now removes trailing JDK separators before
+calling Python, and the compliance collector defensively normalizes Windows
+path quotes. Set environment values without literal enclosing quotes or a
+trailing separator, for example:
+
+```powershell
+$env:MINA_JAVA_HOME = 'C:\Program Files\Microsoft\jdk-21.0.11.10-hotspot'
+```
+
+The PowerShell string delimiters above are not stored as part of the value.
+The resolver checks `release`, `legal`, `lib/src.zip`, `java`, `javac` and
+`jlink` before the build starts. Missing JDK files remain errors rather than
+being bypassed.

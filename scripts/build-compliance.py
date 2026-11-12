@@ -142,7 +142,11 @@ def bundled_assets(output):
 
 
 def java_components(output,home):
-    home=Path(home).resolve();release=home/'release';legal=home/'legal'
+    # Defensive normalization for direct CLI callers and legacy PowerShell
+    # native argument quoting. Double quotes cannot be Windows path characters.
+    raw_home=os.fspath(home).strip()
+    if os.name=='nt':raw_home=raw_home.strip('"')
+    home=Path(raw_home).resolve();release=home/'release';legal=home/'legal'
     if not release.is_file() or not legal.is_dir():
         raise ValueError(f'JDK release metadata/legal directory missing under {home}; select a complete OpenJDK with MINA_JAVA_HOME')
     text=release.read_text(encoding='utf-8')
