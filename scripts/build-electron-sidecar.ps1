@@ -1,5 +1,8 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'resolve-java-home.ps1')
+$javaHome = Resolve-MinaJavaHome
+Write-Host "Using JDK: $javaHome"
 
 function Assert-CommandSucceeded([string]$Step, [int]$ExitCode) {
     if ($ExitCode -ne 0) {
@@ -107,7 +110,6 @@ try {
     & $buildPython "$root\scripts\verify-runtime-dependencies.py"
     Assert-CommandSucceeded 'Runtime connector dependency verification' $LASTEXITCODE
     $compliance = Join-Path $root 'compliance\generated\runtime'
-    $javaHome = Split-Path (Split-Path (Get-Command javac).Source -Parent) -Parent
     & $buildPython "$root\scripts\build-compliance.py" --output $compliance --python --fetch-sources --java-home $javaHome
     Assert-CommandSucceeded 'Runtime licenses, sources and SBOM generation' $LASTEXITCODE
     & $buildPython -m compileall -q app run_sidecar.py

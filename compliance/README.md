@@ -54,7 +54,8 @@ They cannot grant absent permissions or certify patent/trademark clearance.
 `RELEASE_REVIEW.json` records remaining rights/provenance checks. In particular,
 verify exact SaxonC native-runtime notices/source access and full corresponding
 JDK native/build source access: a JDK's `lib/src.zip` alone is not the full JDK
-build source. The included OpenLogic version record identifies the build used.
+build source. The included `java/PROVENANCE.json` and `java/release` identify
+the actual distributor and build used.
 These checks require a distribution-specific legal/source-access review before
 public release. Do not represent a passing technical build as legal approval.
 
@@ -82,3 +83,33 @@ review record, supply real reviewer/evidence details, and use:
 
 The example deliberately does not approve any item. Do not mark an item approved
 without retaining the corresponding permissions, notices, or source-access evidence.
+
+## Building in another Windows workspace
+
+The JDK is a machine prerequisite, not a file to copy from another workspace.
+Install a complete OpenJDK 17+ with its `release` metadata, `legal` directory,
+`lib/src.zip`, compiler and `jlink`. The build selects `MINA_JAVA_HOME` first,
+then `JAVA_HOME`, then the JDK behind `javac` on PATH. Compiler shims on PATH
+are resolved through the compiler's `java.home` property. Compilation,
+runtime creation and license collection all use the same selected JDK.
+
+If necessary, set an explicit installation directory in the build terminal:
+
+```powershell
+$env:MINA_JAVA_HOME = 'C:\Path\To\Your\OpenJDK-17'
+Set-Location frontend
+npm.cmd run desktop:installer
+```
+
+Replace the example JDK path with the actual installation. Neither the machine
+path nor its JDK binaries belong in Git. Pull the updated build scripts and
+compliance files together before rebuilding; keep `node_modules` and build
+environments local to each workspace.
+
+An earlier check incorrectly accepted only `IMPLEMENTOR="OpenLogic"`, producing
+`Unreviewed JDK distributor` for other JDKs. The build now checks the installed
+GPLv2/Classpath license text, retains the actual distributor's notices and
+records its provenance without claiming legal clearance. Proprietary JDKs,
+missing license texts and missing source material still fail with an actionable
+message. Public-release review of full corresponding-source access remains
+required for every distributor.

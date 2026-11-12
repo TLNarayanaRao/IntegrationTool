@@ -42,10 +42,12 @@ def bundled_components(root):
                          'bom-ref':'runtime:cpython','licenses':[{'license':{'id':'PSF-2.0'}}]}
     for release in root.glob('**/legal/java/release'):
         text=release.read_text(encoding='utf-8')
-        version=re.search(r'JAVA_RUNTIME_VERSION="([^"]+)"',text)
+        version=re.search(r'^JAVA_RUNTIME_VERSION="([^"]+)"',text,re.M) or re.search(r'^JAVA_VERSION="([^"]+)"',text,re.M)
         if version:
             value=version.group(1)
-            found['openjdk:'+value]={'type':'application','name':'OpenLogic OpenJDK','version':value,
+            vendor=re.search(r'^IMPLEMENTOR="([^"\r\n]+)"',text,re.M)
+            name=(vendor.group(1) if vendor else 'Unknown distributor')+' OpenJDK'
+            found['openjdk:'+value]={'type':'application','name':name,'version':value,
                 'bom-ref':'runtime:openjdk:'+value,
                 'licenses':[{'expression':'GPL-2.0-only WITH Classpath-exception-2.0'}]}
     return sorted(found.values(),key=lambda item:item['bom-ref'])

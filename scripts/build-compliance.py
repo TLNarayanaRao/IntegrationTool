@@ -126,6 +126,41 @@ def bundled_assets(output):
     return result
 
 
+def java_components(output,home):
+    home=Path(home).resolve();release=home/'release';legal=home/'legal'
+    if not release.is_file() or not legal.is_dir():
+        raise ValueError(f'JDK release metadata/legal directory missing under {home}; select a complete OpenJDK with MINA_JAVA_HOME')
+    text=release.read_text(encoding='utf-8')
+    details=dict(re.findall(r'^([A-Z0-9_]+)="([^"\r\n]*)"',text,re.M))
+    vendor=details.get('IMPLEMENTOR','').strip()
+    version=details.get('JAVA_RUNTIME_VERSION') or details.get('JAVA_VERSION','')
+    if not vendor or not version:raise ValueError('JDK release metadata must identify IMPLEMENTOR and JAVA_VERSION')
+    license_paths=[path for path in (legal/'java.base/LICENSE',home/'LICENSE',home/'LICENSE.txt') if path.is_file()]
+    license_text='\n'.join(path.read_text(encoding='utf-8',errors='replace') for path in license_paths)
+    if not (re.search(r'GNU\s+General\s+Public\s+License',license_text,re.I) and
+            re.search(r'Version\s+2\b',license_text,re.I) and
+            re.search(r'classpath[^\n]{0,100}exception',license_text,re.I)):
+        raise ValueError(f'JDK {vendor} {version} at {home} does not provide the expected GPLv2/Classpath license text. '
+                         'Set MINA_JAVA_HOME to a complete GPLv2-with-Classpath OpenJDK; proprietary JDK redistribution is not automatically approved.')
+    source=home/'lib/src.zip'
+    if not source.is_file():raise ValueError(f'JDK library sources missing: {source}; install a complete OpenJDK including sources')
+    save(output,'java/release',release.read_bytes())
+    for file in legal.rglob('*'):
+        if file.is_file():save(output,'java/legal/'+file.relative_to(legal).as_posix(),file.read_bytes())
+    for file in license_paths:
+        if not file.is_relative_to(legal):save(output,'java/'+file.name,file.read_bytes())
+    save(output,'java/library-sources.zip',source.read_bytes())
+    record={'implementor':vendor,'version':version,'releaseMetadata':details,
+            'license':'GPL-2.0-only WITH Classpath-exception-2.0','sourceAccessStatus':'review-required'}
+    save(output,'java/PROVENANCE.json',json.dumps(record,indent=2).encode())
+    save(output,'java/SOURCE_ACCESS.txt',(f'Bundled {vendor} OpenJDK {version}: see java/release and PROVENANCE.json for the actual build.\n'
+        'Obtain matching native/JDK build sources and source-access evidence from this distributor before public redistribution.\n'
+        'The included library-sources.zip contains Java library sources, not the full native JDK build source.\n'
+        'License-text detection is a technical check, not distribution-specific legal approval.\n').encode())
+    return {'type':'application','name':vendor+' OpenJDK','version':version,'bom-ref':'runtime:openjdk:'+version,
+            'licenses':[{'expression':record['license']}],'properties':[{'name':'mina:source-access','value':'review-required'}]}
+
+
 def generate(args):
     output=Path(args.output).resolve();output.mkdir(parents=True,exist_ok=True)
     components,records=node_components(output);errors=[]
@@ -138,16 +173,8 @@ def generate(args):
         else:errors.append('Python interpreter LICENSE.txt not found at '+str(license))
     assets=bundled_assets(output)
     if args.java_home:
-        home=Path(args.java_home).resolve();release=home/'release';legal=home/'legal'
-        if not release.is_file() or not legal.is_dir():raise ValueError('JDK release metadata/legal directory missing')
-        text=release.read_text(encoding='utf-8')
-        if 'IMPLEMENTOR="OpenLogic"' not in text:errors.append('Unreviewed JDK distributor; configure a reviewed JDK source/provenance record')
-        save(output,'java/release',release.read_bytes())
-        for file in legal.rglob('*'):
-            if file.is_file():save(output,'java/legal/'+file.relative_to(legal).as_posix(),file.read_bytes())
-        source=home/'lib/src.zip'
-        if source.is_file():save(output,'java/library-sources.zip',source.read_bytes())
-        save(output,'java/SOURCE_ACCESS.txt',b'Bundled OpenLogic OpenJDK: see java/release for exact version/build.\nFull corresponding native/JDK build source must accompany a release or be provided through a verified distributor source-access arrangement.\nhttps://www.openlogic.com/openjdk-downloads\nThe included library-sources.zip contains Java library sources, not the full native JDK build source.\n')
+        try:components.append(java_components(output,args.java_home))
+        except ValueError as error:errors.append(str(error))
     notices=['MINA THIRD-PARTY NOTICES',
         'This document does not relicense MINA or customer application source.',
         'The licenses and copyright notices below apply to the identified third-party components.',
