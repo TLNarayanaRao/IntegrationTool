@@ -1,5 +1,10 @@
 import os
 import sys
+from app.library_overrides import activate, diagnostic
+activate()
+if __name__ == '__main__' and sys.argv[1:] == ['--mina-library-info']:
+    diagnostic()
+    raise SystemExit(0)
 
 if __name__ == '__main__' and sys.argv[1:] == ['--mina-xslt-worker']:
     from app.mapper_xml import xslt_worker

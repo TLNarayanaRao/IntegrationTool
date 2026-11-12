@@ -3314,6 +3314,7 @@ function App() {
           { label: "MINA Documentation", detail: "Searchable product reference, activity tabs and downloadable PDF", icon: BookOpen, action: () => window.open("/help/index.html", "_blank", "noopener") },
           { label: "Keyboard Shortcuts", detail: "Designer and runtime commands", icon: Settings2, action: () => setHelpDialog("shortcuts") },
           { label: "About MINA", detail: "Product and project information", icon: Workflow, action: () => setHelpDialog("about") },
+          { label: "Third-party licenses", detail: "Licenses, notices and software inventory", icon: BookOpen, action: () => window.open("/legal/index.html", "_blank", "noopener,noreferrer") },
         ]}/>
         <span className="menu-spacer" />
         <FontControl scope="Screen" value={screenFont} onChange={setScreenFont} />

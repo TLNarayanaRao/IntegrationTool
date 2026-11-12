@@ -74,7 +74,8 @@ class RawPythonTests(unittest.TestCase):
 
     def test_generated_python_runs_without_mina_runtime_or_json_descriptors(self):
         files = compiler.raw_python_files(self.project(), {'dev': [{'key': 'x', 'value': 1, 'data_type': 'integer'}, {'key': 'kafka.servers', 'value': 'localhost:9092', 'data_type': 'string'}]})
-        self.assertTrue(all(name.endswith('.py') for name in files))
+        self.assertTrue(all(name.endswith('.py') for name in files if not name.startswith('legal/')))
+        self.assertIn('legal/SBOM.cdx.json',files)
         self.assertNotIn('mina_dsl.py', '\n'.join(files))
         self.assertNotIn(b'${', files['application/config.py'])
         self.assertNotIn(b'${', files['application/tasks/task_0_main.py'])

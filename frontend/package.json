@@ -10,7 +10,7 @@
     "swagger:assets": "node scripts/sync-swagger-assets.mjs",
     "docs:build": "node scripts/build-documentation.mjs",
     "docs:check": "node scripts/build-documentation.mjs --check",
-    "prebuild": "npm run docs:check",
+    "prebuild": "npm run docs:check && npm run licenses:build",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
@@ -23,15 +23,13 @@
     "control-plane:desktop": "electron control-plane-desktop",
     "control-plane:installer": "powershell -ExecutionPolicy Bypass -File ../scripts/build-control-plane-desktop.ps1",
     "control-plane:unpacked": "powershell -ExecutionPolicy Bypass -File ../scripts/build-control-plane-desktop.ps1 -Target dir",
-    "control-plane:test": "node --test control-plane-desktop/*.test.cjs"
+    "control-plane:test": "node --test control-plane-desktop/*.test.cjs",
+    "licenses:build": "node scripts/build-renderer-licenses.mjs"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
     "lucide-react": "latest",
     "react": "latest",
-    "react-dom": "latest",
-    "typescript": "latest",
-    "vite": "^8.3.7"
+    "react-dom": "latest"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -48,7 +46,10 @@
     "globals": "^17.11.0",
     "swagger-ui-dist": "5.34.1",
     "typescript-eslint": "^8.68.0",
-    "wait-on": "latest"
+    "wait-on": "latest",
+    "@vitejs/plugin-react": "latest",
+    "typescript": "latest",
+    "vite": "^8.3.7"
   },
   "build": {
     "appId": "io.mina.studio",
@@ -70,6 +71,10 @@
       {
         "from": "../backend/dist/MINAWorker",
         "to": "runtime/MINAWorker"
+      },
+      {
+        "from": "public/legal",
+        "to": "legal"
       }
     ],
     "win": {

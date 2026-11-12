@@ -52,7 +52,9 @@ Assert-CommandSucceeded 'Java connector bridge build' $LASTEXITCODE
 
 Push-Location "$root\backend"
 try {
-    $venvPath = "$root\backend\.venv"
+    # Packaging must not upgrade or replace packages in a running Studio's
+    # development environment.
+    $venvPath = "$root\backend\build\.venv311"
     $buildPython = Join-Path $venvPath 'Scripts\python.exe'
     if (Test-Path $buildPython) {
         $existingVersion = & $buildPython -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
@@ -104,6 +106,10 @@ try {
     Assert-CommandSucceeded 'Web dependency security version verification' $LASTEXITCODE
     & $buildPython "$root\scripts\verify-runtime-dependencies.py"
     Assert-CommandSucceeded 'Runtime connector dependency verification' $LASTEXITCODE
+    $compliance = Join-Path $root 'compliance\generated\runtime'
+    $javaHome = Split-Path (Split-Path (Get-Command javac).Source -Parent) -Parent
+    & $buildPython "$root\scripts\build-compliance.py" --output $compliance --python --fetch-sources --java-home $javaHome
+    Assert-CommandSucceeded 'Runtime licenses, sources and SBOM generation' $LASTEXITCODE
     & $buildPython -m compileall -q app run_sidecar.py
     Assert-CommandSucceeded 'Python 3.11 backend syntax verification' $LASTEXITCODE
     & $buildPython -c "import app.main; print('Backend application package import passed')"
@@ -127,6 +133,14 @@ if (!(Test-Path "$root\backend\dist\MINAWorker\MINAWorker.exe")) {
 }
 Copy-Item -Recurse -Force "$root\java-bridge\build" "$root\backend\dist\MINARuntime\java-bridge"
 Copy-Item -Recurse -Force "$root\java-bridge\build" "$root\backend\dist\MINAWorker\java-bridge"
+foreach ($runtimeName in @('MINARuntime','MINAWorker')) {
+    $runtimePath = Join-Path $root "backend\dist\$runtimeName"
+    $legalPath = Join-Path $runtimePath 'legal'
+    New-Item -ItemType Directory -Force -Path $legalPath | Out-Null
+    Copy-Item -Recurse -Force (Join-Path $compliance '*') $legalPath
+    & $buildPython "$root\scripts\artifact-sbom.py" $runtimePath --output (Join-Path $runtimePath 'legal\SBOM.artifact.cdx.json')
+    Assert-CommandSucceeded 'Runtime artifact license/binary inventory verification' $LASTEXITCODE
+}
 & $buildPython "$root\scripts\smoke-test-packaged-runtime.py" "$root\backend\dist\MINARuntime\MINARuntime.exe"
 Assert-CommandSucceeded 'Packaged runtime health check' $LASTEXITCODE
 Write-Host "Electron sidecar ready: $root\backend\dist\MINARuntime"

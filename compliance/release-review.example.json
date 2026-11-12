@@ -1,0 +1,10 @@
+{
+  "reviewer": "",
+  "reviewedAt": "",
+  "decisions": [
+    {"id": "jdk-corresponding-source", "approved": false, "evidence": ""},
+    {"id": "saxon-native-source-notices", "approved": false, "evidence": ""},
+    {"id": "artwork-permissions", "approved": false, "evidence": ""},
+    {"id": "native-client-redistribution", "approved": false, "evidence": ""}
+  ]
+}

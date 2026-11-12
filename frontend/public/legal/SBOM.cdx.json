@@ -1,0 +1,82 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "MINA Studio renderer",
+      "version": "1.0.3",
+      "bom-ref": "mina:renderer"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "lucide-react",
+      "version": "1.34.0",
+      "bom-ref": "pkg:npm/lucide-react@1.34.0",
+      "purl": "pkg:npm/lucide-react@1.34.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "ISC"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "scheduler",
+      "version": "0.27.0",
+      "bom-ref": "pkg:npm/scheduler@0.27.0",
+      "purl": "pkg:npm/scheduler@0.27.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "react-dom",
+      "version": "19.2.8",
+      "bom-ref": "pkg:npm/react-dom@19.2.8",
+      "purl": "pkg:npm/react-dom@19.2.8",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "react",
+      "version": "19.2.8",
+      "bom-ref": "pkg:npm/react@19.2.8",
+      "purl": "pkg:npm/react@19.2.8",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT"
+          }
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "mina:renderer",
+      "dependsOn": [
+        "pkg:npm/lucide-react@1.34.0",
+        "pkg:npm/scheduler@0.27.0",
+        "pkg:npm/react-dom@19.2.8",
+        "pkg:npm/react@19.2.8"
+      ]
+    }
+  ]
+}

@@ -14,6 +14,11 @@ import json
 import os
 import sys
 from pathlib import Path
+from app.library_overrides import activate, diagnostic
+activate()
+if __name__ == '__main__' and sys.argv[1:] == ['--mina-library-info']:
+    diagnostic()
+    raise SystemExit(0)
 
 
 def load_project(application: Path):

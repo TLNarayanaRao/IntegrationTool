@@ -99,3 +99,32 @@ test('the context menu offers Duplicate mapping for an unmapped repeat and follo
   menu('For Each…',true,{defaultLoopSource:'current-group()'}).props.onClick();
   assert.equal(rule.source,'current-group()');
 });
+
+
+test('complex context menu can delete descendant bindings without a direct value',()=>{
+ const fn=ast.statements.find(s=>s.name?.text==='MappingContextMenu');
+ const context=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children:children.flat(Infinity)})},
+  createPortal:content=>content,document:{body:{}},window:{innerWidth:800,innerHeight:800},DataNodeIcon:'icon',
+  useRef:()=>({current:null}),useState:()=>[null,()=>{}],useEffect:()=>{},mappingSource:value=>value});
+ vm.runInContext(compile(fn.getText(ast)),context);
+ let removed=0,closed=0;
+ const render=canDelete=>all(context.MappingContextMenu({menu:{label:'root',x:0,y:0},value:undefined,canDelete,
+  remove:()=>removed++,close:()=>closed++})).find(node=>node.type==='button'&&node.children.includes('Delete mapping'));
+ assert.equal(render(true).props.disabled,false);
+ render(true).props.onClick();assert.equal(removed,1);assert.equal(closed,1);
+ assert.equal(render(false).props.disabled,true);
+});
+
+
+test('Mapper complex target rows open their context menu even without a direct binding',()=>{
+ const editor=ast.statements.find(s=>s.name?.text==='TransformInputEditor');
+ let menu;
+ function visit(node) {if(ts.isVariableDeclaration(node)&&node.name.getText(ast)==='showMenu') menu=node;ts.forEachChild(node,visit);}
+ visit(editor);
+ let opened,prevented=false,selected=false;
+ const context=vm.createContext({structural:true,canMapStructure:false,field:{path:'root',name:'root'},
+  row:{ancestors:[]},displayRows:[],selectRow:()=>selected=true,setContextMenu:value=>opened=value,defaultGroupedLoopSource:()=>undefined});
+ vm.runInContext(compile(`const ${menu.getText(ast)}; globalThis.openMenu=showMenu;`),context);
+ context.openMenu({preventDefault:()=>prevented=true,clientX:20,clientY:30});
+ assert.equal(prevented,true);assert.equal(selected,true);assert.equal(opened.path,'root');
+});

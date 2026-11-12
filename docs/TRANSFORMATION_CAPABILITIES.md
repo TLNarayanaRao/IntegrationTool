@@ -30,6 +30,8 @@ The same three choices are available on other activity **Input** tabs and in **E
 
 To add another source for a repeating target, right-click the row and choose **Duplicate mapping**. This works in Mapper and other activity Input editors, including **Call Sub Task** and **End**. You can duplicate an unmapped repeating field too. The new occurrence starts with empty bindings. Drop a different collection onto it and choose a mapping mode for complex records. The original keeps its source and child bindings. At runtime the original items come first, followed by the configured duplicates in order. An occurrence with no source adds no items.
 
+Right-click a complex element and choose **Delete mapping** to clear its binding and all mappings below it, even when only its children are mapped. Nested repeating occurrences within that branch are cleared too. The schema structure stays available for remapping. This works in Mapper and other activity Input editors, including HTTP responses, Call Sub Task and End. Deleting a duplicate occurrence keeps the original and sibling occurrences unchanged.
+
 Use **Map & Test** to check the generated result before running or exporting the flow.
 
 ### XML expressions and bindings

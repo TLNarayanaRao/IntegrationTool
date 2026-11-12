@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import ts from 'typescript';
 const source=await readFile(new URL('../src/mapperLoopMappings.ts',import.meta.url),'utf8');
-const {activityMappingRules,activityMappingsFromRules,autoMapLoopChildren,emptyRepeatOccurrence,mapActivityRepeatingDrop,mapRepeatingDrop,relativeLoopExpression,expandLoopExpression,removeRepeatOccurrence}=await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText).toString('base64')}`);
+const {activityMappingRules,activityMappingsFromRules,autoMapLoopChildren,emptyRepeatOccurrence,mapActivityRepeatingDrop,mapRepeatingDrop,relativeLoopExpression,expandLoopExpression,removeRepeatOccurrence,removeMappingSubtree}=await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText).toString('base64')}`);
 const fields=[{path:'Record',type:'object[]',repeating:true},{path:'Record.Name',type:'string'},{path:'Record.Address',type:'object'},{path:'Record.Address.City',type:'string'},{path:'Record.Marks',type:'number'}];
 const sources=[{activity:{id:'s',type:'start',name:'Read'},reference:'Read',distance:1,fields:[{key:'rows.name'},{key:'rows.address.city'},{key:'rows.MARKS'}]}];
 
@@ -121,4 +121,32 @@ test('activity duplicate scopes survive reload, remapping and deletion without t
   assert.equal(mapped['Record.0.Name'],original['Record.0.Name']);
   assert.equal(mapped.$occurrences.find(rule=>rule.target==='Record.Name').source,'${Read.rows.name}');
   assert.deepEqual(activityMappingsFromRules(removeRepeatOccurrence(activityMappingRules(mapped),'second')),original);
+});
+
+
+test('complex root deletion clears descendants and nested occurrences without requiring a root binding',()=>{
+ const rules=[{target:'response.root.payloadMsg',source:'"hello"'},
+  {target:'response.root.rows',operator:'for-each',occurrenceId:'nested',duplicateOf:'primary'},
+  {target:'response.root.rows.value',occurrenceId:'nested',source:'value'},
+  {target:'response.root.rows.children',occurrenceId:'deep',parentOccurrenceId:'nested',duplicateOf:'nested'},
+  {target:'response.root.rows.children.value',occurrenceId:'deep',source:'child'},
+  {target:'response.rootOther',source:'keep'}, {target:'headers.status',source:'200'}];
+ assert.deepEqual(removeMappingSubtree(rules,'response.root'),rules.slice(-2));
+ const inputs=activityMappingsFromRules(rules);
+ assert.deepEqual(activityMappingsFromRules(removeMappingSubtree(activityMappingRules(inputs),'response.root')),
+  {'response.rootOther':'keep','headers.status':'200'});
+});
+
+test('subtree deletion preserves separate sibling occurrences, and deleting a duplicate leaves the original intact',()=>{
+ const rules=[{target:'Record',operator:'for-each',source:'original'},
+  {target:'Record.Name',source:'original name'},
+  {target:'Record',occurrenceId:'copy',duplicateOf:'primary',operator:'copy-of',source:'other'},
+  {target:'Record.Name',occurrenceId:'copy',source:'other name'},
+  {target:'Record.Lines',occurrenceId:'nested',parentOccurrenceId:'copy',duplicateOf:'copy'},
+  {target:'Record.Lines.Value',occurrenceId:'nested',source:'line'}];
+ assert.deepEqual(removeMappingSubtree(rules,'Record'),rules.slice(2));
+ assert.deepEqual(removeMappingSubtree(rules,'Record','copy',true),rules.slice(0,2));
+ assert.deepEqual(removeMappingSubtree(rules,'Record.Name','copy'),rules.filter((_,i)=>i!==3));
+ assert.deepEqual(removeMappingSubtree(rules,'Record.NoMapping'),rules);
+ assert.deepEqual(removeMappingSubtree([{target:'value',constant:0},{target:'other',constant:false}],'value'),[{target:'other',constant:false}]);
 });

@@ -1,0 +1,4 @@
+Set MINA_LIBRARY_PATH to an existing absolute directory containing compatible replacement paramiko, ldap3, psycopg, psycopg_binary, certifi or saxonche libraries.
+Restart the runtime; use MINARuntime.exe --mina-library-info or MINAWorker.exe --mina-library-info to inspect resolution.
+Only these library names can be overridden; MINA application modules are not overridden. The setting is controlled by the process owner, never project input.
+Keep Python ABI and native DLL compatibility. An incompatible replacement can prevent startup; remove the setting to restore bundled libraries.

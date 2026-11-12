@@ -11,6 +11,11 @@ New-Item -ItemType Directory -Force -Path $classes | Out-Null
 & javac -encoding UTF-8 -d $classes $source
 if ($LASTEXITCODE -ne 0) { throw "Java connector compilation failed with exit code $LASTEXITCODE" }
 if (Test-Path $runtime) {
+    $checkedRuntime = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $runtime).Path)
+    $expectedRuntime = [System.IO.Path]::GetFullPath((Join-Path $root 'java-bridge\build\runtime'))
+    if ($checkedRuntime -ine $expectedRuntime -or ((Get-Item -LiteralPath $runtime).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "Refusing to replace an unexpected Java build directory: $checkedRuntime"
+    }
     # The Studio/runtime can leave the bundled JVM alive after a debug session.
     # Stop only java.exe launched from this exact build directory; never stop
     # an unrelated system or developer Java process.

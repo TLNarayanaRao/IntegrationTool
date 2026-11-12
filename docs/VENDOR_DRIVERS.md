@@ -2,6 +2,13 @@
 
 MINA Studio bundles its own minimal Java runtime and connector bridge. Vendor-licensed JARs are intentionally not distributed in the installer.
 
+Vendor native client libraries (`.lib`, `.dll`, `.so`, `.dylib`) and license keys
+are also external prerequisites. They are ignored by Git under `drivers/`, and
+artifact verification rejects known SAP/EMS/JMS binaries in release payloads.
+Keep local drivers in the configured driver folder; source cleanup must not
+delete customer-owned local copies. See [distribution compliance](../compliance/README.md)
+for release SBOMs, notices and remaining permission/source-access review.
+
 The default machine-wide driver root on Windows is:
 
 ```text

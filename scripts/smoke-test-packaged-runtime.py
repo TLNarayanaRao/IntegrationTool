@@ -45,6 +45,10 @@ def main() -> int:
                     with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1) as response:
                         payload = json.loads(response.read())
                     if response.status == 200 and payload.get("status") == "ok":
+                        with urllib.request.urlopen(f"http://127.0.0.1:{port}/legal/THIRD_PARTY_NOTICES.txt", timeout=5) as legal:
+                            if b'THIRD-PARTY NOTICES' not in legal.read():raise RuntimeError('Renderer license notices are not served')
+                        with urllib.request.urlopen(f"http://127.0.0.1:{port}/legal/SBOM.cdx.json", timeout=5) as legal:
+                            if json.loads(legal.read()).get('bomFormat')!='CycloneDX':raise RuntimeError('Renderer SBOM is not served')
                         print(f"Packaged runtime health check passed on port {port}")
                         return 0
                 except Exception as exc:

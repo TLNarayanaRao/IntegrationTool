@@ -1,0 +1,11 @@
+Dashboard Icons — https://github.com/homarr-labs/dashboard-icons
+Source artwork: svg/app-service.svg, supplied by the project user.
+License: Apache License 2.0; see LICENSE.
+
+MINA's SOAP Service and SOAP Request Reply artwork adapts this source by adding
+direction arrows and SOAP labels. These modifications are identified here to
+preserve the upstream redistribution conditions.
+
+Product names, logos and trademarks remain the property of their respective
+owners. Their use identifies integration capabilities and does not imply
+endorsement. The copyright license is not a trademark permission grant.

@@ -1,0 +1,7 @@
+SaxonC-HE (Python package saxonche), published by Saxonica Limited.
+MINA uses the Home Edition, not a commercial PE/EE evaluation license.
+Publisher licensing: https://www.saxonica.com/html/license/terms.html
+Source releases: https://github.com/Saxonica/Saxon-HE/releases
+The generated component inventory records the installed version. Obtain the
+corresponding SaxonC-HE sources and native-runtime notices for that exact release.
+MPL-2.0 license text is included as LICENSE.

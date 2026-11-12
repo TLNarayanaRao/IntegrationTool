@@ -14,6 +14,17 @@ frontend/release-control-plane/
 frontend/*.tsbuildinfo
 java-bridge/build/
 drivers/**/*.jar
+# Vendor-supplied native clients are local prerequisites, not MINA source.
+drivers/**/*.lib
+drivers/**/*.dll
+drivers/**/*.so
+drivers/**/*.so.*
+drivers/**/*.a
+drivers/**/*.dylib
+drivers/**/*.lic
+
+# Release-specific legal bundles/source caches are produced by the build.
+compliance/generated/
 
 backend/.venv/
 backend/data/

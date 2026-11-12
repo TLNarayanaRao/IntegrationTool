@@ -1,0 +1,11 @@
+{
+  "technicalChecks": "passed",
+  "errors": [],
+  "legalClearance": "not-certified",
+  "runtimeComponents": 4,
+  "remainingReleaseReview": [
+    "Confirm vendor binary redistribution rights or exclude them.",
+    "Verify exact SaxonC native-runtime source/notices and full JDK corresponding-source access.",
+    "Confirm asset/trademark provenance for externally supplied artwork."
+  ]
+}

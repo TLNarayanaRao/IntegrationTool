@@ -14,6 +14,14 @@ from pathlib import Path
 from pprint import pformat
 
 
+def _archive_legal_files(files,project,kind,checks,external_files):
+    # Preserve this compiler's supported standalone/importlib use.
+    import importlib.util
+    spec=importlib.util.spec_from_file_location('_mina_export_compliance',Path(__file__).with_name('distribution_compliance.py'))
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+    return module.archive_legal_files(files,project,kind,checks,external_files)
+
+
 SUPPORTED = {
     ('start', ''), ('end', ''), ('log', ''), ('mapper', ''), ('confirm', 'acknowledge'),
     ('call_task', ''), ('catch', ''), ('throw', ''), ('rethrow', ''),
@@ -1192,6 +1200,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
                 compile(body, name, 'exec')
             except SyntaxError as error:
                 raise ValueError(f'Generated Python is invalid in {name}: {error}') from error
+    files.update(_archive_legal_files(files,project,'Direct',checks,external_files))
     return files
 
 
@@ -1199,6 +1208,7 @@ ENGINE_CAPABILITY_MODULES = {
     'dataweave': 'dataweave', 'sap': 'sap', 'snowflake': 'snowflake',
     'jdbc': 'jdbc', 'amqp': 'amqp', 'ems': 'java_bridge',
     'http': 'http_transport', 'rest': 'http_transport', 'soap': 'http_transport', 'http_listener': 'http_server',
+    'http_response': 'http_messages',
     'jms': 'java_bridge', 'pubsub': 'google_pubsub', 'sftp': 'sftp', 'basic': 'message_state',
 }
 
@@ -1435,6 +1445,8 @@ def engine_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[
     xml_dependencies = mapper_xml_dependencies(project)
     if xml_dependencies:
         files['requirements-mapper.txt'] = ('\n'.join(xml_dependencies) + '\n').encode('utf-8')
+    checks,external_files=raw_python_requirements(project)
+    files.update(_archive_legal_files(files,project,'Engine',checks,external_files))
     for name, body in files.items():
         if name.endswith('.py'):
             try: compile(body, name, 'exec')

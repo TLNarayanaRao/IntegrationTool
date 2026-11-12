@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import MapperStudio from "./MapperStudio";
 import MappingExpressionInput from "./MappingExpressionInput";
-import {activityMappingRules, activityMappingsFromRules, autoMapLoopChildren, emptyRepeatOccurrence, mapActivityRepeatingDrop, mapRepeatingDrop, relativeLoopExpression, expandLoopExpression, removeRepeatOccurrence, type RepeatingDropMode} from "./mapperLoopMappings";
+import {activityMappingRules, activityMappingsFromRules, autoMapLoopChildren, emptyRepeatOccurrence, mapActivityRepeatingDrop, mapRepeatingDrop, relativeLoopExpression, expandLoopExpression, removeRepeatOccurrence, removeMappingSubtree, type RepeatingDropMode} from "./mapperLoopMappings";
 import { activityGuidance } from "./activityGuidance";
 import { mappingTreeRows, MappingTreeRow } from "./mappingTree";
 import { validateMapping } from "./mappingValidation";
@@ -214,7 +214,7 @@ function defaultGroupedLoopSource(row: MappingTreeRow, rows: MappingTreeRow[]) {
   return insideGroup ? 'current-group()' : undefined;
 }
 
-function MappingContextMenu({ menu, value, close, change, remove, duplicate, canDuplicate = false }: any) {
+function MappingContextMenu({ menu, value, close, change, remove, duplicate, canDuplicate = false, canDelete = !!value }: any) {
   const [whenCount, setWhenCount] = useState<string | null>(null);
   useEffect(() => { setWhenCount(null); }, [menu]);
   const panel = useRef<HTMLDivElement>(null), source = String(mappingSource(value) || "");
@@ -247,7 +247,7 @@ function MappingContextMenu({ menu, value, close, change, remove, duplicate, can
       }}>Create branches</button></div>
     </section>}
     <button disabled={duplicate ? !canDuplicate : !value} onClick={() => { if (duplicate) duplicate(); else change(typeof value === "object" ? { ...value, duplicateOf: `${menu.path}-${Date.now()}` } : { $rule: "if", source: value, condition: "true()", duplicateOf: `${menu.path}-${Date.now()}` }); close(); }}>Duplicate mapping</button>
-    <button disabled={!value} className="danger" onClick={() => { remove(); close(); }}>Delete mapping</button>
+    <button disabled={!canDelete} className="danger" onClick={() => { remove(); close(); }}>Delete mapping</button>
   </div>;
   return createPortal(content, document.body);
 }
@@ -2820,8 +2820,7 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
     } else setRowValue(path,{...(row.occurrenceId ? previous : mappings[path]),$rule:previous.operator,...patch},row.occurrenceId);
   };
   const deleteRule = (path:string, occurrenceId?:string, duplicateRoot?:boolean) => {
-    set(activityMappingsFromRules(duplicateRoot && occurrenceId ? removeRepeatOccurrence(rules,occurrenceId)
-      : rules.filter(rule => rule.target !== path || rule.occurrenceId !== occurrenceId)));
+    set(activityMappingsFromRules(removeMappingSubtree(rules,path,occurrenceId,duplicateRoot)));
   };
   const duplicateRow = (path:string, occurrenceId?:string) => {
     const field = schemaRows.find(item => item.path === path);
@@ -2921,6 +2920,7 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
         </div>;
       })}</div>{!fields.length && <div className="contract-empty">No configurable input.</div>}
     </section><MappingConnections root={root} mappings={connectionMappings}/><MappingContextMenu menu={contextMenu} value={contextMenu ? (contextMenu.occurrenceId ? ruleIndex.get(`${contextMenu.occurrenceId}:${contextMenu.path}`) : mappings[contextMenu.path]) : null}
+      canDelete={!!contextMenu && removeMappingSubtree(rules,contextMenu.path,contextMenu.occurrenceId,contextMenu.duplicateRoot).length < rules.length}
       canDuplicate={!!contextMenu && schemaRows.some(row => row.path === contextMenu.path && row.repeating)}
       duplicate={() => contextMenu && duplicateRow(contextMenu.path,contextMenu.occurrenceId)}
       close={() => setContextMenu(null)} change={(value: any) => contextMenu && setRowValue(contextMenu.path,value,contextMenu.occurrenceId)}
@@ -3447,7 +3447,6 @@ function TransformInputEditor({ config, properties, sources, schemas = [], setSo
     if (!targetSearch.trim() && row.ancestors.some(key => tree.collapsed.has(key))) return null;
     const field = row.field, rule = row.rule, structural = structuralPaths.has(field.path) || isComplexSchemaType(field.type), canMapStructure = structural && field.repeating;
     const showMenu = (event: React.MouseEvent) => {
-      if (structural && !canMapStructure) return;
       event.preventDefault();
       selectRow(row);
       setContextMenu({x:event.clientX,y:event.clientY,path:field.path,label:field.name,required:field.required,
@@ -3472,7 +3471,7 @@ function TransformInputEditor({ config, properties, sources, schemas = [], setSo
       <span className={`mapping-connection ${rule ? "connected" : ""}`}><i/><ArrowRight/></span>
       {row.loopKey || (structural&&!canMapStructure) ? <span/> : <MappingBinding sourceScope={sourceScopeFor(row)} structural={structural} expression={rule?.operator && rule.operator !== "copy-of" ? {...rule,$rule:rule.operator} : rule && rule.constant !== undefined ? (typeof rule.constant === "string" ? JSON.stringify(rule.constant) : rule.constant) : rule?.source ?? ""} fieldType={field.type} fieldLabel={`${field.name}${cardinalitySymbol(field)}`} sources={sources} onChange={(value: any) => value?.$rule ? updateRule(field.path,row.occurrenceId,{...value,operator:value.$rule}) : change(value)} onConstantChange={(value: any) => row.occurrenceId ? updateRule(field.path,row.occurrenceId,{constant:value,source:undefined}) : mapConstant(field.path,value)}/>}
     </div>;
-  })}{!fields.length && <div className="contract-empty">Select a project XSD or enter a valid inline target schema on Configuration.</div>}</div></section><MappingConnections root={root} mappings={visibleConnections}/><MappingContextMenu menu={contextMenu} value={contextValue} canDuplicate={!!contextField?.repeating} duplicate={() => contextMenu && duplicateOccurrence(contextMenu.path,contextMenu.occurrenceId)} close={() => setContextMenu(null)} change={(value: any) => contextMenu && updateRule(contextMenu.path,contextMenu.occurrenceId,value?.$rule ? {...value,operator:value.$rule} : {source:value,operator:undefined})} remove={() => {if (!contextMenu) return; if (contextMenu.duplicateRoot) removeOccurrence(contextMenu.occurrenceId); else setMappings(mappings.filter((item:any) => !(item.target === contextMenu.path && item.occurrenceId === contextMenu.occurrenceId)));}}/></div>{repeatingDrop && <RepeatingDropDialog drop={repeatingDrop} close={() => setRepeatingDrop(null)} finish={finishRepeatingDrop}/>}{dialogOpen && <ExpandedInputMappingDialog title={editorTitle} mappingCount={draftMappings.length} onClose={() => setDialogOpen(false)} onApply={() => { setMappings(draftMappings); setDialogOpen(false); }}><TransformInputEditor config={{ ...config, mappings: draftMappings }} schemas={schemas} editorTitle={editorTitle} properties={properties} sources={sources} runtimeVariables={runtimeVariables} setMappings={setDraftMappings} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} expanded/></ExpandedInputMappingDialog>}</>;
+  })}{!fields.length && <div className="contract-empty">Select a project XSD or enter a valid inline target schema on Configuration.</div>}</div></section><MappingConnections root={root} mappings={visibleConnections}/><MappingContextMenu menu={contextMenu} value={contextValue} canDelete={!!contextMenu && removeMappingSubtree(mappings,contextMenu.path,contextMenu.occurrenceId,contextMenu.duplicateRoot).length < mappings.length} canDuplicate={!!contextField?.repeating} duplicate={() => contextMenu && duplicateOccurrence(contextMenu.path,contextMenu.occurrenceId)} close={() => setContextMenu(null)} change={(value: any) => contextMenu && updateRule(contextMenu.path,contextMenu.occurrenceId,value?.$rule ? {...value,operator:value.$rule} : {source:value,operator:undefined})} remove={() => {if (!contextMenu) return; setMappings(removeMappingSubtree(mappings,contextMenu.path,contextMenu.occurrenceId,contextMenu.duplicateRoot));}}/></div>{repeatingDrop && <RepeatingDropDialog drop={repeatingDrop} close={() => setRepeatingDrop(null)} finish={finishRepeatingDrop}/>}{dialogOpen && <ExpandedInputMappingDialog title={editorTitle} mappingCount={draftMappings.length} onClose={() => setDialogOpen(false)} onApply={() => { setMappings(draftMappings); setDialogOpen(false); }}><TransformInputEditor config={{ ...config, mappings: draftMappings }} schemas={schemas} editorTitle={editorTitle} properties={properties} sources={sources} runtimeVariables={runtimeVariables} setMappings={setDraftMappings} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} expanded/></ExpandedInputMappingDialog>}</>;
 }
 function mapperSchemaFields(config: any, schemas: any[]) {
   const asset = schemas.find(schema => schema.id === config.targetSchemaId);

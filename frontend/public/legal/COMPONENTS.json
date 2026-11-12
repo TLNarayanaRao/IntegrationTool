@@ -1,0 +1,77 @@
+{
+  "components": [
+    {
+      "name": "lucide-react",
+      "version": "1.34.0",
+      "notices": [
+        {
+          "path": "licenses/npm/lucide-react/LICENSE",
+          "sha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
+          "bytes": 3208
+        }
+      ],
+      "source": {
+        "url": "https://www.npmjs.com/package/lucide-react/v/1.34.0"
+      }
+    },
+    {
+      "name": "scheduler",
+      "version": "0.27.0",
+      "notices": [
+        {
+          "path": "licenses/npm/scheduler/LICENSE",
+          "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93",
+          "bytes": 1088
+        }
+      ],
+      "source": {
+        "url": "https://www.npmjs.com/package/scheduler/v/0.27.0"
+      }
+    },
+    {
+      "name": "react-dom",
+      "version": "19.2.8",
+      "notices": [
+        {
+          "path": "licenses/npm/react-dom/LICENSE",
+          "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93",
+          "bytes": 1088
+        }
+      ],
+      "source": {
+        "url": "https://www.npmjs.com/package/react-dom/v/19.2.8"
+      }
+    },
+    {
+      "name": "react",
+      "version": "19.2.8",
+      "notices": [
+        {
+          "path": "licenses/npm/react/LICENSE",
+          "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93",
+          "bytes": 1088
+        }
+      ],
+      "source": {
+        "url": "https://www.npmjs.com/package/react/v/19.2.8"
+      }
+    }
+  ],
+  "assets": [
+    {
+      "path": "licenses/assets/dashboard-icons/LICENSE",
+      "sha256": "e58a8fa57781d1dc7158b333b68c99461031fd2c25dfbd23eac15a8e984cae56",
+      "bytes": 11392
+    },
+    {
+      "path": "licenses/assets/java-icon/LICENSE",
+      "sha256": "121194741d4a915b9f5890fdd6dd95121f9b1f816517c792358d72d7c838d664",
+      "bytes": 1072
+    },
+    {
+      "path": "licenses/assets/saxonche/LICENSE",
+      "sha256": "e93716da6b9c0d5a4a1df60fe695b370f0695603d21f6f83f053e42cfc10caf7",
+      "bytes": 989
+    }
+  ]
+}
