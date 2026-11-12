@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<xsd:schema xmlns="http://www.petsmart.com/CnDM/item/Enterprise" xmlns:xsd="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" targetNamespace="http://www.petsmart.com/CnDM/item/Enterprise">
+
+    <xsd:complexType name="itemEnterpriseViewModelType">
+    	<xsd:sequence>
+    		<xsd:element maxOccurs="unbounded" minOccurs="0" name="items">
+    			<xsd:complexType>
+    				<xsd:sequence>
+    		        	<xsd:element ref="item"/>
+					</xsd:sequence>
+  				</xsd:complexType>
+  			</xsd:element>
+        </xsd:sequence>
+  </xsd:complexType>
+  
+    <xsd:element name="item">
+    	
+        <xsd:complexType>
+    		<xsd:sequence>
+    			<xsd:element name="ITEM_ID" type="xsd:integer"/>
+<xsd:element name="ITEM_DESC" type="xsd:string"/>
+<xsd:element name="ITEM_TITLE" type="xsd:string"/>
+<xsd:element name="DIVISION_ID" type="xsd:string"/>
+<xsd:element name="DIVISION_DESC" type="xsd:string"/>
+<xsd:element name="DEPARTMENT_ID" type="xsd:string"/>
+<xsd:element name="DEPARTMENT_DESC" type="xsd:string"/>
+<xsd:element name="CLASS_ID" type="xsd:string"/>
+<xsd:element name="CLASS_DESC" type="xsd:string"/>
+<xsd:element name="CATEGORY_ID" type="xsd:string"/>
+<xsd:element name="CATEGORY_DESC" type="xsd:string"/>
+<xsd:element name="ITEM_RECEIPT_DESC" type="xsd:string"/>
+<xsd:element name="ITEM_CREATE_DT" type="xsd:string"/>
+<xsd:element name="ITEM_END_DT" type="xsd:string"/>
+<xsd:element name="ITEM_TYPE_CD" type="xsd:string"/>
+<xsd:element name="ITEM_TYPE_DESC" type="xsd:string"/>
+<xsd:element name="ITEM_CATEGORY_CD" type="xsd:string"/>
+<xsd:element name="ITEM_CATEGORY_DESC" type="xsd:string"/>
+<xsd:element name="TAX_CLASS_CD" type="xsd:string"/>
+<xsd:element name="TAX_CLASS_DESC" type="xsd:string"/>
+<xsd:element name="PRIMARY_VENDOR_ID" type="xsd:string"/>
+<xsd:element name="PRIMARY_VENDOR_NAME" type="xsd:string"/>
+<xsd:element name="VENDOR_ITEM_ID" type="xsd:string"/>
+<xsd:element name="PURCHASE_GROUP_ID" type="xsd:string"/>
+<xsd:element name="PURCHASE_GROUP_NAME" type="xsd:string"/>
+<xsd:element name="PROCUREMENT_RULE_CD" type="xsd:string"/>
+<xsd:element name="PROCUREMENT_RULE_DESC" type="xsd:string"/>
+<xsd:element name="IMAGE_URL_TX" type="xsd:string"/>
+<xsd:element name="MULTI_ITEM_IND" type="xsd:string"/>
+<xsd:element name="RX_IND" type="xsd:string"/>
+<xsd:element name="IMPORT_IND" type="xsd:string"/>
+<xsd:element name="DROPSHIP_IND" type="xsd:string"/>
+<xsd:element name="OWN_BRAND_IND" type="xsd:string"/>
+<xsd:element name="AVAILABLE_IN_CD" type="xsd:string"/>
+<xsd:element name="AVAILABLE_IN_DESC" type="xsd:string"/>
+<xsd:element name="BRAND_ID" type="xsd:string"/>
+<xsd:element name="BRAND_NAME" type="xsd:string"/>
+<xsd:element name="BASIC_MATERIAL_DESC" type="xsd:string"/>
+<xsd:element name="BREED_CD" type="xsd:string"/>
+<xsd:element name="BREED_DESC" type="xsd:string"/>
+<xsd:element name="CHANNEL_POSITION_CD" type="xsd:string"/>
+<xsd:element name="CHANNEL_POSITION_DESC" type="xsd:string"/>
+<xsd:element name="COLLECTION_CD" type="xsd:string"/>
+<xsd:element name="COLLECTION_DESC" type="xsd:string"/>
+<xsd:element name="CONTAINER_CD" type="xsd:string"/>
+<xsd:element name="CONTAINER_DESC" type="xsd:string"/>
+<xsd:element name="LIFE_SPAN_CD" type="xsd:string"/>
+<xsd:element name="LIFE_SPAN_DESC" type="xsd:string"/>
+<xsd:element name="FLAVOR_CD" type="xsd:string"/>
+<xsd:element name="FLAVOR_DESC" type="xsd:string"/>
+<xsd:element name="FORM_CD" type="xsd:string"/>
+<xsd:element name="FORM_DESC" type="xsd:string"/>
+<xsd:element name="FORMULATION_CD" type="xsd:string"/>
+<xsd:element name="FORMULATION_DESC" type="xsd:string"/>
+<xsd:element name="GOOD_BETTER_BEST_CD" type="xsd:string"/>
+<xsd:element name="GOOD_BETTER_BEST_DESC" type="xsd:string"/>
+<xsd:element name="LIFE_SATGE_CD" type="xsd:string"/>
+<xsd:element name="LIFE_STAGE_DESC" type="xsd:string"/>
+<xsd:element name="LONGTERM_OOS_CD" type="xsd:string"/>
+<xsd:element name="LONGTERM_OOS_DESC" type="xsd:string"/>
+<xsd:element name="PET_ENV_CD" type="xsd:string"/>
+<xsd:element name="PET_ENV_DESC" type="xsd:string"/>
+<xsd:element name="PRIMARY_COLOR_CD" type="xsd:string"/>
+<xsd:element name="PRIMARY_COLOR_DESC" type="xsd:string"/>
+<xsd:element name="SECONDARY_COLOR_CD" type="xsd:string"/>
+<xsd:element name="SECONDARY_COLOR_DESC" type="xsd:string"/>
+<xsd:element name="ROLE_CD" type="xsd:string"/>
+<xsd:element name="ROLE_DESC" type="xsd:string"/>
+<xsd:element name="SUB_SPECIES_CD" type="xsd:string"/>
+<xsd:element name="SUB_SPECIES_DESC" type="xsd:string"/>
+<xsd:element name="SIZE_CD" type="xsd:string"/>
+<xsd:element name="SIZE_DESC" type="xsd:string"/>
+<xsd:element name="SEASONALITY_CD" type="xsd:string"/>
+<xsd:element name="SEASONALITY_DESC" type="xsd:string"/>
+<xsd:element name="SOLUTION_CD" type="xsd:string"/>
+<xsd:element name="SOLUTION_DESC" type="xsd:string"/>
+<xsd:element name="STORE_ORDERABLE_CD" type="xsd:string"/>
+<xsd:element name="STORE_ORDERABLE_DESC" type="xsd:string"/>
+<xsd:element name="PRICE_FAMILY_CD" type="xsd:string"/>
+<xsd:element name="PRICE_FAMILY_DESC" type="xsd:string"/>
+<xsd:element name="STATUS_CD" type="xsd:string"/>
+<xsd:element name="STATUS_DESC" type="xsd:string"/>
+<xsd:element name="STATUS_EFF_DT" type="xsd:string"/>
+<xsd:element name="STATUS_END_DT" type="xsd:string"/>
+<xsd:element name="WEIGHT_UOM_CD" type="xsd:string"/>
+<xsd:element name="NET_WEIGHT" type="xsd:string"/>
+<xsd:element name="GROSS_WEIGHT" type="xsd:string"/>
+<xsd:element name="CONTENT_UNITS_CD" type="xsd:string"/>
+<xsd:element name="NET_CONTENT_UNITS" type="xsd:string"/>
+<xsd:element name="GROSS_CONTENT_UNITS" type="xsd:string"/>
+<xsd:element name="VOLUME_UOM_CD" type="xsd:string"/>
+<xsd:element name="VOLUME" type="xsd:string"/>
+<xsd:element name="BASE_UOM_CD" type="xsd:string"/>
+<xsd:element name="UNIT_DIM_CD" type="xsd:string"/>
+<xsd:element name="LENGTH" type="xsd:string"/>
+<xsd:element name="WIDTH" type="xsd:string"/>
+<xsd:element name="HEIGHT" type="xsd:string"/>
+<xsd:element name="LIQUID_IND" type="xsd:string"/>
+<xsd:element name="SLOT_GROUP_NU" type="xsd:string"/>
+<xsd:element name="EXP_DATE_REQ_IND" type="xsd:string"/>
+<xsd:element name="SHELF_LIFE_REM_QTY" type="xsd:string"/>
+<xsd:element name="CASE_UNITS" type="xsd:string"/>
+<xsd:element name="PALLET_UNITS" type="xsd:string"/>
+<xsd:element name="PALLET_LAYER_UNITS" type="xsd:string"/>
+<xsd:element name="UNIT_NUMERATOR" type="xsd:string"/>
+<xsd:element name="UNIT_DENOMINATOR" type="xsd:string"/>
+<xsd:element name="PRIMARY_UPC_CD" type="xsd:string"/>
+<xsd:element name="PRIMARY_UPC_IND" type="xsd:string"/>
+<xsd:element name="UPC_FORMAT_CD" type="xsd:string"/>
+<xsd:element name="UPC_FORMAT_DESC" type="xsd:string"/>
+<xsd:element name="UPC_CREATE_DT" type="xsd:string"/>
+<xsd:element name="UPC_END_DT" type="xsd:string"/>
+			</xsd:sequence>
+		</xsd:complexType>
+    </xsd:element>
+
+ 
+	<xsd:element name="itemEnterpriseViewModel" type="itemResponseType"/>
+
+	<xsd:complexType name="itemResponseType">
+		<xsd:sequence>
+			<xsd:element name="itemEnterpriseViewModel"
+				type="itemEnterpriseViewModelType">
+			</xsd:element>
+			<xsd:element name="count" type="xsd:integer" minOccurs="0"
+				maxOccurs="1">
+			</xsd:element>
+			<xsd:element name="Size" type="xsd:integer" minOccurs="0"
+				maxOccurs="1">
+			</xsd:element>
+			<xsd:element name="page" type="xsd:integer" minOccurs="0"
+				maxOccurs="1">
+			</xsd:element>
+			<xsd:element name="Total" type="xsd:integer" minOccurs="0" maxOccurs="1"></xsd:element>
+                        <xsd:element name="next" type="xsd:string" minOccurs="0" maxOccurs="1"></xsd:element>
+                        <xsd:element name="prev" type="xsd:string" minOccurs="0" maxOccurs="1"></xsd:element>
+		</xsd:sequence>
+	</xsd:complexType>
+
+	<xsd:complexType name="hierarchyResponseType">
+		<xsd:sequence>
+			<xsd:element name="hierarchyTrustedViewModel"
+				type="hierarchyTrustedViewModelType">
+			</xsd:element>
+			<xsd:element name="RecordCount" type="xsd:integer" minOccurs="0"
+				maxOccurs="1">
+			</xsd:element>
+			<xsd:element name="Size" type="xsd:integer" minOccurs="0"
+				maxOccurs="1">
+			</xsd:element>
+			<xsd:element name="Page" type="xsd:integer" minOccurs="0"
+				maxOccurs="1">
+			</xsd:element>
+			<xsd:element name="Total" type="xsd:integer" minOccurs="0" maxOccurs="1"></xsd:element>
+		</xsd:sequence>
+	</xsd:complexType>
+</xsd:schema>
