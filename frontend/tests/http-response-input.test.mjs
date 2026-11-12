@@ -15,12 +15,16 @@ const fields=context.activityContract({type:'http_response',config:{}}).input;
 
 test('HTTP Send Response offers optional standard and repeating custom headers by default',()=>{
   for(const key of ['HTTPHeaders','HTTPHeaders.Content-Type','HTTPHeaders.StatusLine','HTTPHeaders.Cookies',
+    'HTTPHeaders.StatusLine.httpVersion','HTTPHeaders.StatusLine.statusCode','HTTPHeaders.StatusLine.reasonPhrase',
     'DynamicHTTPHeaders','DynamicHTTPHeaders.Headers','DynamicHTTPHeaders.Headers.headerName','DynamicHTTPHeaders.Headers.headerValue']){
     const field=fields.find(item=>item.key===key);
     assert.ok(field,key);assert.equal(field.required,false,key);assert.ok(field.help,key);
     assert.equal(context.cardinalitySymbol(field),['HTTPHeaders.Cookies','DynamicHTTPHeaders.Headers'].includes(key)?'*':'?',key);
   }
   for(const key of ['headers','body','binaryContent','fileName'])assert.ok(fields.some(item=>item.key===key),key);
+  assert.equal(fields.find(item=>item.key==='HTTPHeaders.StatusLine').type,'object');
+  assert.equal(fields.find(item=>item.key==='HTTPHeaders.StatusLine').validationType,'object|string');
+  assert.equal(fields.find(item=>item.key==='HTTPHeaders.StatusLine.statusCode').type,'integer');
 });
 
 test('independent dynamic response header entries keep both name/value child fields',()=>{

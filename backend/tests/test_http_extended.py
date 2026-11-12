@@ -123,7 +123,11 @@ class HTTPExtendedLiveTests(unittest.IsolatedAsyncioTestCase):
                 probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
             server = {'httpVersion':'3','scheme':'https','host':'127.0.0.1','port':port,
                       'certificateFile':str(cert),'privateKeyFile':str(private),'minimumQtpThreads':1}
-            async def echo(_, payload):return {'statusCode':200,'body':payload['body']}
+            from app.http_messages import response_message
+            async def echo(_, payload):
+                return response_message({'body':payload['body'],'HTTPHeaders':{'StatusLine':{
+                    'httpVersion':payload['headers'].get('x-response-version','3'),
+                    'reasonPhrase':payload['headers'].get('x-reason','')}}})
             ready = asyncio.Event()
             task = asyncio.create_task(serve([(None,server,{'path':'/echo','methods':'POST'})], echo, ready))
             try:
@@ -132,6 +136,11 @@ class HTTPExtendedLiveTests(unittest.IsolatedAsyncioTestCase):
                     'url':f'https://127.0.0.1:{port}/echo','method':'POST','certificateAuthorityFile':str(cert),
                     'body':{'protocol':3},'activityTimeoutSeconds':5})
                 self.assertEqual((result['httpVersion'],result['body']),('HTTP/3',{'protocol':3}))
+                for headers in ({'X-Response-Version':'1.1'},{'X-Response-Version':'3','X-Reason':'Unavailable reason'}):
+                    rejected=await asyncio.to_thread(transport.request,{'httpVersion':'3',
+                        'url':f'https://127.0.0.1:{port}/echo','method':'POST','certificateAuthorityFile':str(cert),
+                        'body':{'protocol':3},'headers':headers,'raiseForStatus':False,'activityTimeoutSeconds':5})
+                    self.assertEqual(rejected['statusCode'],500,rejected)
             finally:
                 task.cancel()
                 with self.assertRaises(asyncio.CancelledError):await task

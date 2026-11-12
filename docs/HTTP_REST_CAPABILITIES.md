@@ -59,10 +59,31 @@ This is MINA's Python equivalent of default TLS confidentiality, using the runti
 
 Every HTTP Send Response activity exposes these optional fields by default in **Input**, for both HTTP Listener and REST Receiver flows:
 
-- **HTTPHeaders** → **Content-Type**, **StatusLine**, and **Cookies**. Content-Type accepts common media types or a custom value. StatusLine accepts a quoted value such as `"HTTP/1.1 201 Created"` or `"201 Created"` and sets the numeric response status. The HTTP server controls the actual protocol version and reason phrase. Cookies accepts one complete Set-Cookie string or an array of strings; map an array in Studio, for example `["session=abc; Path=/; HttpOnly", "locale=en; Path=/"]`. Each cookie is emitted separately.
+- **HTTPHeaders** → **Content-Type**, complex **StatusLine**, and **Cookies**. Content-Type accepts common media types or a custom value. Cookies accepts one complete Set-Cookie string or an array of strings; map an array in Studio, for example `["session=abc; Path=/; HttpOnly", "locale=en; Path=/"]`. Each cookie is emitted separately.
 - **DynamicHTTPHeaders** → **Headers*** → **headerName**, **headerValue**. Choose **Add header** for independent entries, duplicate the repeating Headers structure, map a collection, or use For Each. Each populated entry needs a name and a value; an empty string is a valid value. Completely empty entries are ignored. Header names are case-insensitive. Repeated names produce separate header lines; Content-Type must have a single value.
 
 Legacy `headers`, `contentType` and `statusCode` mappings remain supported. HTTPHeaders overrides matching legacy settings. DynamicHTTPHeaders overrides matching standard/legacy headers, except Set-Cookie values append to Cookies. Unmapped optional fields keep the existing defaults. Response media types must still satisfy the endpoint contract and the caller's Accept header. Header names and values are validated; newline/control-character injection and malformed status lines fail the activity. The transport retains control of Content-Length, Transfer-Encoding and Connection. These mappings run identically in Studio Run/Debug and Direct/Engine Python archives.
+
+Expand **HTTPHeaders → StatusLine** in Input to map each optional child independently:
+
+| Field | Type | Example Input expression | Behavior |
+| --- | --- | --- | --- |
+| `httpVersion` | string | `"HTTP/1.0"` or `${input.version}` | Selects the actual response version on a native HTTP/1 listener (1.0 or 1.1). On HTTP/2 or HTTP/3 it must match the negotiated protocol. The `HTTP/` prefix is optional. |
+| `statusCode` | integer | `201` or `${Receive.query.status}` | Overrides the legacy statusCode when supplied. Leave unmapped to retain the legacy value or default 200. Numeric literals have no quotes. |
+| `reasonPhrase` | string | `"Stored by integration"` or `${input.description}` | Sends a custom reason phrase on native HTTP/1 listeners, including an explicitly empty string. Omit to use the standard status description. Newlines, control characters and non-Latin-1 text are rejected. |
+
+Map the whole StatusLine object when an upstream activity already supplies these fields. An empty object or omitted children keeps the existing numeric status. Legacy full status-line string mappings, such as `"HTTP/1.0 201 Stored by integration"`, also apply their version and reason rather than discarding them. Mapped settings remain visible in **Output → statusLine** and execution/debug data. Hosted final responses require status codes 200–599; 1xx informational responses are not sent by this activity.
+
+`statusCode` controls the actual response status. Native HTTP/1 listeners now apply the mapped version and reason to the wire response. For example, version `"1.0"`, status `201` and reason `"Stored by integration"` send `HTTP/1.0 201 Stored by integration`. This works over HTTP and HTTPS. HTTP/1.0 responses use length-delimited bodies and `Connection: close`; header-only responses retain their normal bodyless semantics. File responses retain their known content length. Each connection/request has independent settings, so custom phrases cannot leak to another response or modify global status tables.
+
+| Listener/connection | Version override | Reason override |
+| --- | --- | --- |
+| Native HTTP/1 listener (server connection version 1.1), HTTP or HTTPS | HTTP/1.0 or HTTP/1.1 | Custom Latin-1 text or explicitly empty string |
+| Negotiated HTTP/2 | Must be HTTP/2 (2.0 alias accepted) | Omit or use empty string; nonempty phrases are rejected |
+| Negotiated HTTP/3 | Must be HTTP/3 (3.0 alias accepted) | Omit or use empty string; nonempty phrases are rejected |
+| HTTP/1 fallback on a connection configured for HTTP/2 or HTTP/3, or an HTTP/1 ASGI preview/host without MINA's extension | Matching HTTP/1.1 only | Unsupported; omit the field |
+
+HTTP/2 and HTTP/3 carry a numeric `:status`, not a textual reason phrase ([HTTP/2](https://www.rfc-editor.org/rfc/rfc9113.html#section-8.3.2), [HTTP/3](https://www.rfc-editor.org/rfc/rfc9114.html#section-4.3.2)). A response mapping cannot upgrade or downgrade an established HTTP/2/3 connection: configure the server shared connection and client for that protocol instead. Unsupported settings produce an HTTP_RESPONSE 500 before response headers are committed, and the server log records the rejected setting. The workflow may already have run before its response is checked. Protocol-error responses use the transport's normal status line. Studio Run, Debug and both Python archive formats share these rules; ASGI-based previews cannot claim native status-line support unless their host advertises it.
 
 ### Request and listener setup
 

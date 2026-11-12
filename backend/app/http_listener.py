@@ -22,6 +22,30 @@ def error_response(cfg, status, message):
     return json.dumps({'type': 'about:blank', 'title': title, 'status': status, 'detail': detail}).encode(), 'application/problem+json'
 
 
+def wire_status_line(response,scope):
+    """Apply only transport-advertised capabilities, before committing bytes."""
+    from .http_messages import response_message
+    from .http_transport import HTTPFault
+    supplied=response.get('statusLine')
+    if supplied is None:return {}
+    try:
+        line=response_message({'statusCode':response.get('statusCode',200),'HTTPHeaders':{'StatusLine':supplied}}).get('statusLine',{})
+    except (ValueError,TypeError) as error:raise HTTPFault(str(error),'HTTP_RESPONSE',500) from None
+    capability=scope.get('extensions',{}).get('mina.http.response.status_line',{})
+    version=line.get('httpVersion','').removeprefix('HTTP/')
+    version={'2.0':'2','3.0':'3'}.get(version,version)
+    actual=scope.get('http_version','1.1')
+    if version=='1.0' and version not in capability.get('versions',[]):
+        raise HTTPFault('StatusLine.httpVersion HTTP/1.0 requires the native HTTP/1 listener','HTTP_RESPONSE',500)
+    if version and version not in capability.get('versions',[]) and version!=actual:
+        raise HTTPFault(f'StatusLine.httpVersion HTTP/{version} is unsupported on this HTTP/{actual} connection; protocol switching requires a separately configured listener','HTTP_RESPONSE',500)
+    phrase=line.get('reasonPhrase')
+    if phrase is not None and not capability.get('reason_phrase') and (phrase or actual not in ('2','3')):
+        raise HTTPFault(f'StatusLine.reasonPhrase is unsupported on this HTTP/{actual} transport; omit it or use the native HTTP/1 listener','HTTP_RESPONSE',500)
+    if version:line['httpVersion']='HTTP/'+version
+    return line
+
+
 def mapped_xml_response(value, schema):
     """Render a mapped body whose top-level key names a global XSD element."""
     if not isinstance(value, dict) or len(value) != 1 or not isinstance(schema, str) or not schema.lstrip().startswith('<'):
@@ -205,6 +229,7 @@ async def _handle_request(app,scope,receive,send,state):
                 trace_context.reset(trace_token)
         response=output if isinstance(output,dict) and any(key in output for key in ('__httpResponse','statusCode','sent','fileName','binaryContent')) else {'body':output}
         status=int(response.get('statusCode',200));value=response.get('body')
+        wire_line=wire_status_line(response,scope)
         if not 200<=status<=599:raise HTTPFault('Invalid response status','HTTP_RESPONSE',500)
         if status == 200 and method in ('GET', 'HEAD') and boolean(cfg.get('conditionalResponses')):
             if representation_unchanged(headers, response.get('headers') or {}):
@@ -279,14 +304,21 @@ async def _handle_request(app,scope,receive,send,state):
         response_headers.setdefault('content-type',response_media if negotiated else str(cfg.get('responseType') or ('application/xml' if xml_response else 'application/octet-stream' if stream_path or isinstance(value,(bytes,bytearray,memoryview)) else 'application/json' if isinstance(value,(dict,list,bool,int,float)) else 'text/plain; charset=utf-8')))
         if not boolean(cfg.get('usePersistentConnections'),True) and scope.get('http_version')!='2':response_headers['connection']='close'
         response_headers['content-length']=str(size)
+        if wire_line.get('httpVersion')=='HTTP/1.0':response_headers['connection']='close'
         if method=='HEAD':body=b'';stream_path=None
         encoded_headers(response_headers)  # Validate before committing any response.
     except HTTPFault as error:
+        wire_line={}
+        if error.fault_type=='HTTP_RESPONSE':
+            import logging
+            logging.getLogger('mina.http').error('HTTP response rejected: %s',error)
         status=error.status;body,media=error_response(locals().get('cfg') or app.connection,status,str(error));stream_path=None;response_headers={'content-type':media,**extra,**getattr(error,'headers',{})}
         if status==401:response_headers['WWW-Authenticate']='Basic realm="MINA"' if str((locals().get('cfg') or app.connection).get('authentication') or '').lower() in ('basic','ldap') else 'Bearer'
     except asyncio.TimeoutError:
+        wire_line={}
         status=504;body,media=error_response(locals().get('cfg') or app.connection,status,'HTTP execution or read timeout');stream_path=None;response_headers={'content-type':media}
     except Exception:
+        wire_line={}
         import logging
         logging.getLogger('mina.http').exception('HTTP listener request failed')
         status=500;body,media=error_response(locals().get('cfg') or app.connection,status,'HTTP request failed');stream_path=None;response_headers={'content-type':media}
@@ -296,7 +328,10 @@ async def _handle_request(app,scope,receive,send,state):
     response_headers.update(cors)
     if 'content-length' not in response_headers:response_headers['content-length']=str(len(body))
     if status in (204,304):response_headers.pop('content-length',None)
-    await send({'type':'http.response.start','status':status,'headers':encoded_headers(response_headers)})
+    start={'type':'http.response.start','status':status,'headers':encoded_headers(response_headers)}
+    if wire_line and scope.get('extensions',{}).get('mina.http.response.status_line'):
+        start['mina.http.response.status_line']=wire_line
+    await send(start)
     if stream_path:
         with stream_path.open('rb') as source:
             remaining=int(response_headers['content-length'])

@@ -114,6 +114,7 @@ class ListenerApp:
 
 async def _serve_http1(routes,handler,ready=None):
     import uvicorn
+    from .http1_protocol import StatusLineProtocol
     grouped={}
     for metadata,connection,activity in routes:
         cfg=listener_config(connection,activity);key=(str(cfg.get('host') or '0.0.0.0'),int(number(cfg,'port',8080,1,65535)))
@@ -136,6 +137,7 @@ async def _serve_http1(routes,handler,ready=None):
             if any(location == 'query' for _, cfg in members
                    for _, _, keys in cfg.get('_restSecurityAlternatives', []) for _, location, _ in keys):
                 options.access_log = False
+            options.http=StatusLineProtocol
             options.load()
             if server_tls(connection):options.ssl=tls_context(connection,server=True)
             import socket

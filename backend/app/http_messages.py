@@ -34,10 +34,26 @@ def response_message(config, default_body=None):
     if cookies not in (None,'',[]):header('set-cookie',cookies)
     status=config.get('statusCode',200)
     line=standard.get('StatusLine')
-    if line not in (None,''):
+    status_line={}
+    if isinstance(line,dict):
+        if line.get('statusCode') not in (None,''):status=line['statusCode']
+        version=line.get('httpVersion')
+        if version not in (None,''):
+            if not isinstance(version,str) or not re.fullmatch(r'(?:HTTP/)?(?:1\.[01]|2(?:\.0)?|3(?:\.0)?)',version):
+                raise ValueError('StatusLine.httpVersion must be HTTP/1.0, HTTP/1.1, HTTP/2 or HTTP/3 (HTTP/ prefix optional)')
+            status_line['httpVersion']=version if version.startswith('HTTP/') else 'HTTP/'+version
+        phrase=line.get('reasonPhrase')
+        if phrase is not None:
+            if not isinstance(phrase,str) or not re.fullmatch(r'[\x20-\x7e\x80-\xff]*',phrase):
+                raise ValueError('StatusLine.reasonPhrase must be a Latin-1 string without control characters')
+            status_line['reasonPhrase']=phrase
+    elif line not in (None,''):
         if not isinstance(line,str) or not re.fullmatch(r'(?:HTTP/(?:1\.[01]|2(?:\.0)?|3(?:\.0)?) )?[1-5][0-9]{2}(?: [\x20-\x7e\x80-\xff]*)?',line):
-            raise ValueError('StatusLine must be a status such as HTTP/1.1 201 Created or 201 Created')
+            raise ValueError('StatusLine must be an object or a legacy status such as HTTP/1.1 201 Created')
         status=line.split()[1 if line.startswith('HTTP/') else 0]
+        parts=line.split(' ',2 if line.startswith('HTTP/') else 1)
+        if line.startswith('HTTP/'):status_line['httpVersion']=parts.pop(0)
+        if len(parts)>1:status_line['reasonPhrase']=parts[1]
     if isinstance(status,bool) or not re.fullmatch(r'[1-5][0-9]{2}',str(status)):
         raise ValueError('HTTP response status must be an integer from 100 to 599')
     dynamic=object_value(config.get('DynamicHTTPHeaders'),'DynamicHTTPHeaders')
@@ -57,6 +73,7 @@ def response_message(config, default_body=None):
             headers[key]=(previous if isinstance(previous,list) else [previous])+(headers[key] if isinstance(headers[key],list) else [headers[key]])
         seen.add(key)
     return {'statusCode':int(status),'headers':headers,'body':config.get('body',default_body),
+            **({'statusLine':{**status_line,'statusCode':int(status)}} if isinstance(line,dict) or status_line else {}),
             **{key:config[key] for key in ('fileName','binaryContent','jsonValue') if config.get(key) is not None}}
 
 def multi_values(pairs):
