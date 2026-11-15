@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-15",
+  "provider": "Isolated loopback Artemis 2.40.0",
+  "passed": true,
+  "testsRun": 4,
+  "elapsedSeconds": 6.07,
+  "checks": [
+    "AMQP default expiration and automatic settlement",
+    "AMQP positive expiration units, custom properties, priority, content type, correlation and manual settlement",
+    "AMQP expired message not delivered",
+    "JMS temporary-destination request/reply and correlation"
+  ],
+  "notQualified": [
+    "Vendor EMS",
+    "Cloud Pub/Sub",
+    "SAP",
+    "TLS/SASL variants"
+  ],
+  "sourceSha256": {
+    "backend/app/amqp.py": "adf5373f0ba210ad46b391982cfdacbd2312defd08bf225162fc1c0780334c40",
+    "backend/app/java_bridge.py": "496978ff4c6e547b95665b7136c0a0b766afad250f94e1298313c5b7c9e154c1"
+  }
+}

@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { mapperFunctionCatalog } from "./mapper-functions";
 import { completeMapping, mappingPathSuggestions } from "./mappingCompletion";
 import { focusNextMapping } from "./mappingFocus";
+import { xpathSuggestions } from "./xpathPalette";
 
 export default function MappingExpressionInput({ value, onChange, onCommit, error = "", paths = [], label = "Mapping expression", multiline = false }: any) {
   const id = useId();
@@ -42,17 +43,21 @@ export default function MappingExpressionInput({ value, onChange, onCommit, erro
   }, [multiline]);
   const [caret, setCaret] = useState<number | null>(null);
   const prefix = text.slice(0, caret ?? text.length), suffix = text.slice(caret ?? text.length);
-  const token = prefix.match(/(?:\$\{?|)([\w.@\[\]-]+)$/)?.[1] || "";
+  const token = prefix.match(/(?:\$\{?|)([\w:.@\[\]-]+)$/)?.[1] || "";
   const options = open && token ? mappingPathSuggestions(paths, prefix)
     .map(path => ({ label: path, insert: `\${${path}}` }))
-    .concat(mapperFunctionCatalog.filter(fn => fn.name.toLowerCase().startsWith(token.toLowerCase())).map(fn => ({ label: fn.signature, insert: fn.template }))).slice(0, 30) : [];
-  const choose = (option: { insert: string }) => {
+    .concat(xpathSuggestions(prefix), mapperFunctionCatalog.filter(fn => fn.name.toLowerCase().startsWith(token.toLowerCase())).map(fn => ({ label: fn.signature, insert: fn.template }))).slice(0, 30) : [];
+  const choose = (option: { insert: string; needsArguments?: boolean }) => {
     const current = input.current?.value ?? text;
     const position = Math.min(input.current?.selectionStart ?? current.length, current.length);
     const completed = completeMapping(current.slice(0, position), current.slice(position), option.insert);
     onChange(completed);
     setCaret(null);
     setOpen(false); setIndex(0);
+    if(option.needsArguments)requestAnimationFrame(()=>{
+      const position=completed.lastIndexOf('()')+1;
+      if(position>0){input.current?.focus();input.current?.setSelectionRange(position,position);setCaret(position);}
+    });
     return completed;
   };
   const commitAndAdvance = (raw: string) => {
@@ -76,7 +81,7 @@ export default function MappingExpressionInput({ value, onChange, onCommit, erro
         if (event.key === "Enter" && (!open || !options.length || !completionSelected)) { event.preventDefault(); event.stopPropagation(); commitAndAdvance(event.currentTarget.value); return; }
         if (!open || !options.length) return;
         if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); event.stopPropagation(); setCompletionSelected(true); setIndex((index + (event.key === "ArrowDown" ? 1 : options.length - 1)) % options.length); }
-        if (event.key === "Enter" || event.key === "Tab") { event.preventDefault(); event.stopPropagation(); const option = options[Math.min(index, options.length - 1)]; const completed = choose(option); if (event.key === "Enter") commitAndAdvance(completed); }
+        if (event.key === "Enter" || event.key === "Tab") { event.preventDefault(); event.stopPropagation(); const option = options[Math.min(index, options.length - 1)]; const completed = choose(option); if (event.key === "Enter" && !("needsArguments" in option && option.needsArguments)) commitAndAdvance(completed); }
       }}/>
     {error && <small id={`${id}-error`} className="mapping-validation-error" role="alert">{error}</small>}
     {open && !!options.length && rect && createPortal(<div id={id} role="listbox" style={{ position: "fixed", top: rect.bottom + 200 > window.innerHeight ? Math.max(0, rect.top - 200) : rect.bottom, left: rect.left, width: rect.width, zIndex: 100000, maxHeight: 200, overflow: "auto", background: "var(--panel, #102c3b)", color: "var(--text, #e0edf5)", border: "1px solid #528ba3" }}>

@@ -22,6 +22,14 @@ const readHelpAsset = async (directory, name) => {
  return /\.(json|js|svg)$/.test(name) ? Buffer.from(normalizeLineEndings(bytes.toString('utf8'))) : bytes;
 };
 const guides = [
+ ['Connectors', 'COMPLETE_FLOW_THROUGHPUT.md'],
+ ['Connectors', 'MESSAGING_THROUGHPUT.md'],
+ ['Connectors', 'LIVE_MESSAGING_VERIFICATION.md'],
+ ['Operations', 'REMAINING_ACTIVITY_RESOURCE_VERIFICATION.md'],
+ ['Connectors', 'HTTP_DATABASE_MEMORY_VERIFICATION.md'],
+ ['Connectors', 'SFTP_WINDOWS_MEMORY_FIX.md'],
+ ['Connectors', 'CONNECTOR_SOAK_RESULTS.md'],
+ ['Connectors', 'FILE_TRANSFER_DATABASE_READINESS.md'],
  ['Getting started', 'DOCUMENTATION.md'],
  ['Data', 'PARSE_RENDER_ACTIVITIES.md'],
  ['Mapping', 'TRANSFORMATION_CAPABILITIES.md'], ['Studio', 'DEBUG_TESTING.md'], ['Studio', 'DEBUGGING.md'], ['Studio', 'execution-analytics.md'], ['Studio', 'FILE_UTILITIES.md'],
@@ -146,6 +154,7 @@ for (const pack of defs.packs) for (const entry of pack.items) {
   section('Advanced', [fields(Object.entries(advanced).map(([key, defaultValue]) => ({key, label:key, type:['logPayload','retryEnabled','retryJitter'].includes(key)?'boolean expression':['retryBackoff','retryFaultTypes'].includes(key)?'string expression':'number expression', defaultValue, help:({logPayload:'Controls automatic payload logging; browse to choose another environment property. Avoid logging sensitive data.',retryCount:'Additional attempts after the first failure, between 0 and 100. Invalid or non-finite settings fail before execution.',retryBackoff:'Fixed preserves the base interval. Exponential doubles it after each failure, capped by the maximum interval.',retryMaxIntervalSeconds:'Upper bound on each wait, from 0 to 86400 seconds. Blank defaults to 300 seconds or the base interval, whichever is greater.',retryMaxElapsedSeconds:'Retry scheduling budget in seconds, up to one week. Zero disables the budget. Another retry is not scheduled if its delay reaches the budget; in-flight work is not interrupted.',retryJitter:'Randomize each wait between half and all of its calculated delay to spread concurrent reconnection attempts.',retryFaultTypes:'Optional comma-separated fault types, exception class names or fault codes. Blank retries all ordinary faults. Cancellation is never retried.'})[key] || 'Outbound retry policy resolved from the active environment. Retries may repeat external side effects; design for idempotency.'}))), p(defs.supportsOutboundRetry(entry.type,entry.operation) ? 'Outbound retry is available for this operation. Coordinate it with any Repeat-on-Error group and connector-level retries to avoid multiplying attempts. An explicit Errors-tab retry policy takes precedence over Advanced retries.' : 'This operation does not expose outbound retry in the common Advanced settings.')]),
   section('Errors', [table(['Fault', 'Description'], contract.errors.map(e=>[e.type,e.description])), ...errorPolicy]),
  ], {type:entry.type,operation:entry.operation || 'default',source:'frontend/src/ActivityEditor.tsx',iconAsset:entry.asset});
+ if(entry.type==='sftp')pages.at(-1).sections.find(s=>s.title==='Advanced').blocks.unshift(p('On Windows, lazy persistent SSH transport workers bound native cryptography thread state. Every operation still opens and closes its own authenticated connection. MINA_SFTP_TRANSPORT_WORKERS defaults to 32 (1–128); set it before the first connection and restart after changes. At capacity, a new connection waits up to its configured timeout, then fails without closing another session. Host-key verification, algorithms, authentication and socket/subsystem timeouts remain enabled. Other operating systems use the normal transport. See the Windows SFTP memory verification guide.'));
  if(detail){
   const page=pages.at(-1);
   page.detailLevel='operational';

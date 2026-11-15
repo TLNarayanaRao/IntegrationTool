@@ -40,14 +40,25 @@ class StatusLineConnection(h11.Connection):
 
 
 class StatusLineProtocol(H11Protocol):
+    def connection_lost(self,exc):
+        try:super().connection_lost(exc)
+        finally:
+            # Reset/aborted connections need the same timer cleanup as clean EOF.
+            # A scheduled callback otherwise retains the protocol and buffers.
+            self._unset_keepalive_if_required()
+
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.conn=StatusLineConnection(h11.SERVER,max_incomplete_event_size=self.config.h11_max_incomplete_event_size or 16384)
         application=self.app
+        # Capture the h11 connection, not the protocol owning this closure.
+        # self.app -> closure -> self otherwise retains closed connections and
+        # their last request buffers until a cyclic GC collection.
+        connection=self.conn
         async def extended_app(scope,receive,send):
             scope={**scope,'extensions':{**scope.get('extensions',{}),EXTENSION:{'versions':['1.0','1.1'],'reason_phrase':True}}}
             async def extended_send(message):
-                if message['type']=='http.response.start':self.conn.response_line=message.get(EXTENSION)
+                if message['type']=='http.response.start':connection.response_line=message.get(EXTENSION)
                 await send(message)
             await application(scope,receive,extended_send)
         self.app=extended_app

@@ -37,8 +37,10 @@ def terminate_execution_processes(execution_scope: str) -> None:
             process.terminate()
             process.wait(timeout=1)
         except (OSError, subprocess.TimeoutExpired):
-            try: process.kill()
-            except OSError: pass
+            try:
+                process.kill()
+                process.wait(timeout=1)
+            except (OSError, subprocess.TimeoutExpired): pass
 
 
 def _track_process(scope: str, process: subprocess.Popen) -> None:
@@ -67,6 +69,8 @@ class SapJcoListener:
         self._events: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=max(2, min(4096, int(max_pending_events))))
         self._command_lock = threading.Lock()
         self._closed = threading.Event()
+        self._event_waiters_lock = threading.Lock()
+        self._event_waiters: set[tuple[Any, asyncio.Event]] = set()
         self._stderr_tail: queue.Queue[str] = queue.Queue(maxsize=100)
         self._reader = threading.Thread(target=self._read_events, name="sap-jco-stdout", daemon=True)
         self._stderr_reader = threading.Thread(target=self._read_stderr, name="sap-jco-stderr", daemon=True)
@@ -114,27 +118,44 @@ class SapJcoListener:
         while not self._closed.is_set():
             try:
                 self._events.put(event, timeout=.2)
+                self._wake_event_waiters()
                 return True
             except queue.Full:
                 continue
         return False
 
+    def _wake_event_waiters(self) -> None:
+        with self._event_waiters_lock:
+            for loop, ready in self._event_waiters:
+                try: loop.call_soon_threadsafe(ready.set)
+                except RuntimeError: pass  # An owning event loop may have closed.
+
     async def next_event(self, timeout: float | None = None) -> dict[str, Any]:
-        # Do not park queue.get() in asyncio.to_thread: cancelling a listener
-        # would leave that worker thread blocked forever.  Polling a bounded
-        # in-memory queue keeps cancellation immediate and thread counts flat.
+        # Wake on delivery without polling or parking a cancellable queue.get
+        # in an executor thread. Register before inspecting the queue so a
+        # delivery between inspection and awaiting cannot lose its wakeup.
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout if timeout else None
-        while True:
-            try:
-                event = self._events.get_nowait()
-                break
-            except queue.Empty:
-                if self.process.poll() is not None:
-                    raise JavaBridgeError(self._stderr_detail() or f"SAP JCo listener stopped with exit code {self.process.returncode}")
-                if deadline is not None and loop.time() >= deadline:
-                    raise JavaBridgeError("SAP JCo listener timed out while waiting for registration")
-                await asyncio.sleep(.05)
+        ready = asyncio.Event()
+        waiter = (loop, ready)
+        with self._event_waiters_lock: self._event_waiters.add(waiter)
+        try:
+            while True:
+                ready.clear()
+                try:
+                    event = self._events.get_nowait()
+                    break
+                except queue.Empty:
+                    if self._closed.is_set() or self.process.poll() is not None:
+                        raise JavaBridgeError(self._stderr_detail() or f"SAP JCo listener stopped with exit code {self.process.returncode}")
+                    remaining = deadline - loop.time() if deadline is not None else None
+                    if remaining is not None and remaining <= 0:
+                        raise JavaBridgeError("SAP JCo listener timed out while waiting for registration")
+                    try: await asyncio.wait_for(ready.wait(), remaining)
+                    except asyncio.TimeoutError:
+                        raise JavaBridgeError("SAP JCo listener timed out while waiting for registration") from None
+        finally:
+            with self._event_waiters_lock: self._event_waiters.discard(waiter)
         output = event
         if output.get("event") == "bridge_error":
             raise JavaBridgeError(str(output.get("message") or "SAP JCo listener failed"))
@@ -191,6 +212,7 @@ class SapJcoListener:
 
     def close(self) -> None:
         self._closed.set()
+        self._wake_event_waiters()
         if self.process.poll() is None:
             self.process.terminate()
             try: self.process.wait(timeout=5)
@@ -402,11 +424,14 @@ def invoke(command: str, config: dict[str, Any], values: dict[str, Any] | None =
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         _track_process(execution_scope, process)
+        timeout_budget = timeout or float(config.get("timeoutSeconds") or 30) + 5
         try:
-            stdout, stderr = process.communicate(timeout=timeout or float(config.get("timeoutSeconds") or 30) + 5)
+            stdout, stderr = process.communicate(timeout=timeout_budget)
         except subprocess.TimeoutExpired as exc:
             process.kill(); process.communicate()
-            raise JavaBridgeError(f"Java connector timed out after {exc.timeout:g} seconds") from exc
+            # Windows can expose a negative remaining timeout after a host
+            # suspend/resume; report the configured budget, not that artifact.
+            raise JavaBridgeError(f"Java connector timed out after {timeout_budget:g} seconds") from exc
     except FileNotFoundError as exc:
         raise JavaBridgeError("Java runtime is unavailable. Rebuild the desktop installer so its bundled Java runtime is included.") from exc
     finally:
@@ -619,6 +644,7 @@ def execute_jms(config: dict[str, Any], operation: str, destination: str, payloa
         **jms_values(config), "destination": destination, "topic": str(bool(options.get("topic"))).lower(),
         "jndiDestination": str(bool(options.get("jndiDestination"))).lower(), "body": payload if isinstance(payload, str) else json.dumps(payload),
         "selector": options.get("messageSelector"), "timeoutMs": options.get("receiveTimeout", 30000),
+        "maxMessages": max(1, min(10000, int(options.get("maxMessages") or 1))),
         "sessionCount": options.get("maxSessions", options.get("sessionCount", 1)), "flowLimit": options.get("flowLimit", 0),
         "clientAcknowledge": str(bool(options.get("clientAcknowledge"))).lower(), "persistent": str(str(options.get("deliveryMode", "Persistent")).lower() == "persistent").lower(),
         "priority": options.get("priority", 4), "expiration": options.get("expiration", 0), "correlationId": options.get("correlationId"), "messageType": options.get("type"),

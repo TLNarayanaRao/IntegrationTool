@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "records": 100000,
+  "uniquePayloadsVerified": 100000,
+  "elapsedSeconds": 229.45998169999802,
+  "recordsPerSecond": 435.80583968991425,
+  "exceptionType": null,
+  "normalRunDebugLogEntries": 0,
+  "scope": "Complete task orchestration, Mapper, send and receive, validation, archive startup/IPC and cleanup",
+  "family": "jms",
+  "mode": "python-direct",
+  "targetRecords": 100000,
+  "deadlineSeconds": 600,
+  "workers": 4,
+  "batchSize": 1000,
+  "approximatePayloadBytes": 1024,
+  "sharedStudioRuntime": false,
+  "archiveProcesses": 4
+}

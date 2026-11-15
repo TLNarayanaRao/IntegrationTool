@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "records": 100000,
+  "uniquePayloadsVerified": 100000,
+  "elapsedSeconds": 113.86379179998767,
+  "recordsPerSecond": 878.2423140769745,
+  "exceptionType": null,
+  "normalRunDebugLogEntries": 501500,
+  "scope": "Complete task orchestration, Mapper, send and receive, validation, archive startup/IPC and cleanup",
+  "family": "kafka",
+  "mode": "debug",
+  "targetRecords": 100000,
+  "deadlineSeconds": 600,
+  "workers": 4,
+  "batchSize": 1000,
+  "approximatePayloadBytes": 1024,
+  "sharedStudioRuntime": true,
+  "archiveProcesses": 0
+}

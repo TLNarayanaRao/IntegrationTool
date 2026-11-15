@@ -1,0 +1,6 @@
+Observed in the isolated Kafka 3.9.1 Windows test broker during retention cleanup:
+java.nio.file.FileSystemException: [test-data-directory]/[test-topic]/00000000000000000000.index -> [same-path].index.deleted: The process cannot access the file because it is being used by another process
+Stopping serving logs in dir [test-data-directory]
+Shutdown broker because all log dirs in [test-data-directory] have failed
+
+The broker was no longer listening on test port 19092. A fresh temporary data directory and retention longer than the test window were used for the next run. This does not qualify Kafka retention on Windows or change any production configuration.

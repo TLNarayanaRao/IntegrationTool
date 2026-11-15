@@ -1021,7 +1021,8 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
                 source = xml_path(_clean_path(source))
                 if source is None: raise ValueError('The configured Mapper XML source is missing')
             if source is None:
-                source = document.get('last', document) if isinstance(document, dict) else document
+                from .mapper_xml import xpath_context_source
+                source = xpath_context_source(document.get('last', document) if isinstance(document, dict) else document)
             xml_root = parse_xml(source)
         return xml_root
 

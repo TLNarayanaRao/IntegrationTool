@@ -5,6 +5,7 @@ import hashlib
 import os
 import tempfile
 from pathlib import Path
+from functools import lru_cache
 from typing import Any
 from urllib.parse import unquote, urlparse
 
@@ -19,22 +20,31 @@ def _credentials_from_info(info: dict[str, Any]):
     return service_account.Credentials.from_service_account_info(info, scopes=[PUBSUB_SCOPE])
 
 
-def _credentials_with_ca(credentials, ca_file: str):
-    """Make service-account token refreshes trust the configured corporate CA."""
+@lru_cache(maxsize=32)
+def _ca_credentials_type(base, ca_file: str):
+    """Keep the SDK constructor/copy contract and bound generated wrapper types."""
     from google.auth.transport.requests import Request
     import requests
 
-    class CACredentials(type(credentials)):
-        def __init__(self, source, certificate_file):
-            self.__dict__.update(source.__dict__)
-            self._mina_ca_file = certificate_file
-
+    class CACredentials(base):
         def refresh(self, request):
-            session = requests.Session()
-            session.verify = _merged_ca_bundle(self._mina_ca_file)
-            return super().refresh(Request(session=session))
+            with requests.Session() as session:
+                session.verify = _merged_ca_bundle(ca_file)
+                return super().refresh(Request(session=session))
 
-    return CACredentials(credentials, ca_file)
+    return CACredentials
+
+
+def _credentials_with_ca(credentials, ca_file: str):
+    """Preserve signer/token state without replacing the SDK constructor.
+
+    Google transports clone credentials with keyword constructor arguments for
+    scopes, JWT access and quota projects. A two-argument wrapper constructor
+    breaks those copies before the first provider request.
+    """
+    wrapped = object.__new__(_ca_credentials_type(type(credentials), ca_file))
+    wrapped.__dict__.update(credentials.__dict__)
+    return wrapped
 
 
 def _merged_ca_bundle(ca_file: str) -> str:
@@ -113,6 +123,18 @@ def _service_account_info(config: dict[str, Any]) -> dict[str, Any] | None:
     if credentials_file:
         return _load_service_account_file(credentials_file)
     return None
+
+
+def project_id(config: dict[str, Any]) -> str:
+    """Resolve routing without constructing/signing credentials on every send.
+
+    The client factory still validates and loads credentials when creating a
+    client. A cached publisher must not reload its RSA private key per message.
+    """
+    value = str(config.get('projectId') or '').strip()
+    if not value: value = str((_service_account_info(config) or {}).get('project_id') or '').strip()
+    if not value: raise ValueError('GCP project ID is required or must be present as project_id in the service account JSON')
+    return value
 
 
 def client_configuration(config: dict[str, Any]) -> tuple[dict[str, Any], str]:
@@ -226,9 +248,16 @@ def create_client(client_class, config: dict[str, Any]):
         "ssl_channel_credentials": ssl_credentials,
     }
     transport = transport_class(**transport_kwargs)
-    try: return client_class(transport=transport, **publisher_kwargs)
-    except TypeError:
-        if publisher_kwargs: return client_class(transport=transport)
+    try:
+        try: return client_class(transport=transport, **publisher_kwargs)
+        except TypeError:
+            if publisher_kwargs: return client_class(transport=transport)
+            raise
+    except BaseException:
+        # MINA created this explicit TLS transport; a failed client constructor
+        # leaves no client whose close() could release the channel.
+        try: transport.close()
+        except Exception: pass
         raise
 
 

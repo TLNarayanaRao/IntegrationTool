@@ -152,6 +152,12 @@ class ProjectResolver(etree.Resolver):
         raise OSError(f'External XML resource is unavailable: {url}')
 
 
+def xpath_context_source(value):
+    """Context-free XPath functions also work before a flow has an XML payload."""
+    candidate = next((value.get(key) for key in ('xmlString','xml','content','body') if value.get(key)), None) if isinstance(value,dict) else value
+    return value if isinstance(candidate,bytes) or isinstance(candidate,str) and candidate.lstrip().startswith('<') else '<input/>'
+
+
 def parse_xml(value, documents=None):
     if isinstance(value, dict):
         value = value.get('xmlString') or value.get('xml') or value.get('content') or value.get('body')
@@ -212,8 +218,112 @@ def restricted_xpath2(allow_regex=False):
     return OfflineXPath2
 
 
+_XPATH_HELP = {
+    'string':('Strings','Convert a value or the current context node to text.','value'),
+    'concat':('Strings','Join two or more text values.','first text','second text'),
+    'string-join':('Strings','Join sequence items using a separator.','values','separator'),
+    'substring':('Strings','Extract text starting at a one-based position, with an optional length.','text','start','length'),
+    'substring-before':('Strings','Return text before the first occurrence of a token.','text','token'),
+    'substring-after':('Strings','Return text after the first occurrence of a token.','text','token'),
+    'string-length':('Strings','Count the characters in a string.','text'),
+    'normalize-space':('Strings','Trim XML whitespace and collapse consecutive whitespace.','text'),
+    'normalize-unicode':('Strings','Normalize Unicode text using the requested normalization form.','text','normalization form'),
+    'upper-case':('Strings','Convert text to uppercase.','text'),
+    'lower-case':('Strings','Convert text to lowercase.','text'),
+    'translate':('Strings','Replace or remove individual characters by position in the translation strings.','text','characters','replacements'),
+    'contains':('Strings','Test whether text contains a substring.','text','substring','collation'),
+    'starts-with':('Strings','Test whether text begins with a prefix.','text','prefix','collation'),
+    'ends-with':('Strings','Test whether text ends with a suffix.','text','suffix','collation'),
+    'compare':('Strings','Compare two strings using the default or supplied collation.','first text','second text','collation'),
+    'codepoint-equal':('Strings','Compare strings by Unicode code points.','first text','second text'),
+    'string-to-codepoints':('Strings','Convert text into a sequence of Unicode code points.','text'),
+    'codepoints-to-string':('Strings','Create text from Unicode code points.','code points'),
+    'matches':('Regular expressions','Test text against an XML Schema regular expression.','text','pattern','flags'),
+    'replace':('Regular expressions','Replace regex matches using a replacement expression.','text','pattern','replacement','flags'),
+    'tokenize':('Regular expressions','Split text into a sequence using a regex separator.','text','pattern','flags'),
+    'number':('Numbers','Convert a value or the context node into a number.','value'),
+    'abs':('Numbers','Return the absolute value of a number.','number'),
+    'ceiling':('Numbers','Round upward to the nearest integer.','number'),
+    'floor':('Numbers','Round downward to the nearest integer.','number'),
+    'round':('Numbers','Round a number to the nearest integer.','number'),
+    'round-half-to-even':('Numbers','Round using the half-to-even rule, optionally to a decimal precision.','number','precision'),
+    'sum':('Numbers','Sum sequence values; optionally supply the result for an empty sequence.','values','empty result'),
+    'avg':('Numbers','Return the average of a sequence of numeric or duration values.','values'),
+    'min':('Numbers','Return the minimum sequence value.','values','collation'),
+    'max':('Numbers','Return the maximum sequence value.','values','collation'),
+    'count':('Sequences','Count sequence items or selected nodes.','items'),
+    'empty':('Sequences','Test whether a sequence has no items.','items'),
+    'exists':('Sequences','Test whether a sequence contains at least one item.','items'),
+    'distinct-values':('Sequences','Remove duplicate atomic values using the selected collation.','values','collation'),
+    'index-of':('Sequences','Find the one-based positions of a value in a sequence.','values','search value','collation'),
+    'insert-before':('Sequences','Insert items before a one-based sequence position.','items','position','new items'),
+    'remove':('Sequences','Remove the item at a one-based sequence position.','items','position'),
+    'reverse':('Sequences','Reverse the order of sequence items.','items'),
+    'subsequence':('Sequences','Select part of a sequence using a one-based position and optional length.','items','start','length'),
+    'deep-equal':('Sequences','Compare sequences and their nested node content.','first items','second items','collation'),
+    'zero-or-one':('Sequences','Require zero or one item; fail for a longer sequence.','items'),
+    'one-or-more':('Sequences','Require a nonempty sequence.','items'),
+    'exactly-one':('Sequences','Require exactly one sequence item.','items'),
+    'boolean':('Boolean','Return the effective boolean value of the argument.','value'),
+    'not':('Boolean','Negate the effective boolean value of the argument.','value'),
+    'true':('Boolean','Return true.'),
+    'false':('Boolean','Return false.'),
+    'name':('Nodes and namespaces','Return the qualified name of a node.','node'),
+    'local-name':('Nodes and namespaces','Return a node name without its namespace prefix.','node'),
+    'namespace-uri':('Nodes and namespaces','Return the namespace URI of a node.','node'),
+    'node-name':('Nodes and namespaces','Return a node name as an XML QName.','node'),
+    'root':('Nodes and namespaces','Return the root of the tree containing a node.','node'),
+    'data':('Nodes and namespaces','Extract atomic values from sequence items.','items'),
+    'base-uri':('Nodes and namespaces','Return the base URI associated with a node without retrieving it.','node'),
+    'document-uri':('Nodes and namespaces','Return the URI associated with a document node without retrieving it.','document node'),
+    'lang':('Nodes and namespaces','Test the xml:lang language of a node.','language','node'),
+    'id':('Nodes and namespaces','Find elements by XML ID values in the context tree.','ID values','node'),
+    'idref':('Nodes and namespaces','Find nodes that reference XML IDs.','ID values','node'),
+    'QName':('Nodes and namespaces','Create a QName from a namespace URI and lexical name.','namespace URI','qualified name'),
+    'resolve-QName':('Nodes and namespaces','Resolve a lexical QName against an element namespace context.','qualified name','element'),
+    'prefix-from-QName':('Nodes and namespaces','Extract the prefix from a QName.','QName'),
+    'local-name-from-QName':('Nodes and namespaces','Extract the local name from a QName.','QName'),
+    'namespace-uri-from-QName':('Nodes and namespaces','Extract the namespace URI from a QName.','QName'),
+    'namespace-uri-for-prefix':('Nodes and namespaces','Resolve a namespace prefix in an element context.','prefix','element'),
+    'in-scope-prefixes':('Nodes and namespaces','List namespace prefixes available on an element.','element'),
+    'position':('Context','Return the current one-based position within a predicate or iteration.'),
+    'last':('Context','Return the size of the current context sequence.'),
+    'current-date':('Date and time','Return the current date with its timezone.'),
+    'current-time':('Date and time','Return the current time with its timezone.'),
+    'current-dateTime':('Date and time','Return the current date and time with timezone.'),
+    'implicit-timezone':('Date and time','Return the implicit timezone offset used by the expression.'),
+    'dateTime':('Date and time','Combine an XML Schema date and time.','date','time'),
+    'adjust-date-to-timezone':('Date and time','Adjust a date to the implicit or supplied timezone.','date','timezone'),
+    'adjust-time-to-timezone':('Date and time','Adjust a time to the implicit or supplied timezone.','time','timezone'),
+    'adjust-dateTime-to-timezone':('Date and time','Adjust a date-time to the implicit or supplied timezone.','date and time','timezone'),
+    'encode-for-uri':('URI encoding','Encode text as a URI component without retrieving a resource.','text'),
+    'iri-to-uri':('URI encoding','Convert an internationalized resource identifier into a URI.','IRI'),
+    'escape-html-uri':('URI encoding','Escape URI characters for HTML attributes.','URI'),
+    'resolve-uri':('URI encoding','Resolve a relative URI against a base URI without retrieving it.','relative URI','base URI'),
+    'default-collation':('Context','Return the default string collation URI.'),
+    'static-base-uri':('Context','Return the expression static base URI.'),
+    'error':('Diagnostics','Raise an XPath error with an optional code, description and error object.','error QName','description','error object'),
+    'nilled':('Nodes and namespaces','Test whether an element is marked nil.','node'),
+    'unordered':('Sequences','Declare that the order of a sequence is not significant.','items'),
+}
+
+
+def _xpath_palette_entry(name,arity,signature,category):
+    info=_XPATH_HELP.get(name)
+    if info:category,description,*labels=info
+    elif name.startswith('xs:'):
+        category,description,labels='XML Schema constructors','Convert a value to XML Schema '+name[3:]+'.',['value']
+    elif '-from-' in name and any(part in name.lower() for part in ('date','time','duration')):
+        part,_,value=name.partition('-from-')
+        category,description,labels='Date and time',f'Extract {part} from a {value} value.',[value]
+    else:description,labels='Evaluate '+name+' using the displayed XPath signature.',[]
+    return {'name':name,'args':[(labels[index] if index<len(labels) else f'argument {index+1}') for index in range(arity)],
+            'category':category,'description':description,'signature':signature}
+
+
 @lru_cache(maxsize=2)
 def xpath_function_palette(version):
+    if version not in ('1.0','2.0'):raise ValueError('Unsupported XPath version: '+str(version))
     from elementpath import ElementPathError, XPath1Parser
     from elementpath.xpath_tokens import XPathConstructor
 
@@ -231,8 +341,7 @@ def xpath_function_palette(version):
             category, name = 'XML Schema constructors', 'xs:' + name
         else:
             continue
-        palette.append({'name': name, 'args': [f'argument {index + 1}' for index in range(arity)],
-                        'category': category, 'signature': signature})
+        palette.append(_xpath_palette_entry(name,arity,signature,category))
     if version == '2.0':
         names = {entry['name'] for entry in palette}
         probe = parser()
@@ -245,10 +354,12 @@ def xpath_function_palette(version):
                 probe.parse(f'xs:{name}(())')
             except ElementPathError:
                 continue
-            palette.append({'name':'xs:' + name, 'args':['value'], 'category':'XML Schema constructors', 'signature':''})
-    palette.extend({'name': 'ext:' + name, 'args': list(args), 'category': 'Extension functions', 'signature': ''}
+            palette.append(_xpath_palette_entry('xs:'+name,1,'','XML Schema constructors'))
+    palette.extend({'name': 'ext:' + name, 'args': list(args), 'category': 'Extension functions', 'signature': '',
+                    'description':'Apply the '+name+' text, encoding or timestamp extension.'}
                    for name, (_, args, _, _) in _BW_FUNCTIONS.items())
-    palette.append({'name': 'project:getModuleProperty', 'args': ['property name'], 'category': 'Extension functions', 'signature': ''})
+    palette.append({'name': 'project:getModuleProperty', 'args': ['property name'], 'category': 'Extension functions', 'signature': '',
+                    'description':'Read a configured project property by name.'})
     return sorted(palette, key=lambda entry: (entry['category'], entry['name'], len(entry['args'])))
 
 

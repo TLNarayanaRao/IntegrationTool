@@ -222,8 +222,8 @@ class ActivityPackTests(unittest.TestCase):
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.json()['pathParameters']['id'], '42')
 
-    def test_rest_receiver_supports_all_standard_http_methods(self):
-        methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'TRACE', 'CONNECT']
+    def test_rest_receiver_supports_all_application_http_methods(self):
+        methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'TRACE']
         project = Project(id='all-methods', name='All Methods', process=ProcessDefinition(activities=[
             Activity(id='receive', type='rest', name='Receive', config={
                 'operation': 'receiver', 'path': '/universal', 'methods': ','.join(methods),

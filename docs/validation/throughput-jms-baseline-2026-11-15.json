@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "measuredSeconds": 32.028957700007595,
+  "records": 20,
+  "recordsPerSecond": 0.6244349312683146,
+  "publishSeconds": 1.3575795000069775,
+  "receiveSeconds": 32.028957700007595,
+  "uniqueRecordsVerified": 20,
+  "runId": "591baeb9d70d4bb3b85b56b2c7341b5a",
+  "measurement": "MINA WorkflowRuntime.execute activity path; excludes task graph/UI overhead",
+  "publishConfirmation": "Kafka flush plus readback; other send operations await completion; Pub/Sub waits for delivery",
+  "family": "jms",
+  "operation": "receive",
+  "targetRecords": 20,
+  "deadlineSeconds": 600,
+  "batchSize": 20,
+  "concurrency": 8,
+  "payloadBytes": 1024,
+  "rssGrowthMiB": 0.35546875
+}

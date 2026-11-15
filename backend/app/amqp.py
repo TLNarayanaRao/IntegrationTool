@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import ssl
 import uuid
+from contextlib import ExitStack, contextmanager
 from typing import Any
 
 
@@ -47,6 +48,7 @@ def _address(config: dict, activity: dict) -> str:
     return str(activity.get("queueName") or activity.get("topicName") or activity.get("entityName") or config.get("entityName") or "default")
 
 
+@contextmanager
 def _azure_client(config: dict):
     try:
         from azure.servicebus import ServiceBusClient
@@ -65,7 +67,9 @@ def _azure_client(config: dict):
                 connection_string = f"Endpoint={endpoint.rstrip('/')}/;SharedAccessKeyName={key_name};SharedAccessKey={key}"
         if not connection_string:
             raise AmqpAdapterError("Azure SAS requires a connection string or endpoint and shared-access credentials", "AMQPConnectionException")
-        return ServiceBusClient.from_connection_string(connection_string)
+        with ServiceBusClient.from_connection_string(connection_string) as client:
+            yield client
+        return
     namespace = connection_string.removeprefix("sb://").split("/", 1)[0].rstrip(";")
     if not namespace:
         raise AmqpAdapterError("Azure OAuth and managed identity require a fully qualified Service Bus namespace", "AMQPConnectionException")
@@ -78,7 +82,11 @@ def _azure_client(config: dict):
         credential = ClientSecretCredential(tenant_id, client_id, secret)
     else:
         credential = ManagedIdentityCredential(client_id=client_id)
-    return ServiceBusClient(namespace, credential)
+    try:
+        with ServiceBusClient(namespace, credential) as client:
+            yield client
+    finally:
+        credential.close()
 
 
 def _azure_receiver(client, config: dict, activity: dict, receive_mode):
@@ -104,13 +112,10 @@ def test_connection(config: dict) -> dict:
     if broker == "AzureSB-1-0":
         try:
             from azure.servicebus import ServiceBusReceiveMode
-            client = _azure_client(config)
-            client.__enter__()
-            receiver = _azure_receiver(client, config, config, ServiceBusReceiveMode.PEEK_LOCK)
-            receiver.__enter__()
-            receiver.peek_messages(max_message_count=1)
-            receiver.__exit__(None, None, None)
-            client.__exit__(None, None, None)
+            with ExitStack() as resources:
+                client = resources.enter_context(_azure_client(config))
+                receiver = resources.enter_context(_azure_receiver(client, config, config, ServiceBusReceiveMode.PEEK_LOCK))
+                receiver.peek_messages(max_message_count=1)
             return {"ok": True, "message": "Azure Service Bus AMQP 1.0 connection succeeded"}
         except AmqpAdapterError:
             raise
@@ -143,7 +148,7 @@ def send(config: dict, activity: dict) -> dict:
             from azure.servicebus import ServiceBusMessage
             client = _azure_client(config)
             message = ServiceBusMessage(body, application_properties=properties, message_id=message_id, correlation_id=activity.get("correlationID"), content_type=activity.get("contentType"), subject=activity.get("type"), session_id=activity.get("sessionId") or None)
-            with client:
+            with client as client:
                 entity = _address(config, activity)
                 entity_type = str(activity.get("entityType") or config.get("entityType") or "Queue")
                 sender = client.get_topic_sender(entity) if entity_type == "Topic" else client.get_queue_sender(entity)
@@ -170,60 +175,84 @@ def send(config: dict, activity: dict) -> dict:
         from proton.utils import BlockingConnection
     except ImportError as exc:
         raise AmqpAdapterError("AMQP 1.0 sending requires python-qpid-proton") from exc
-    host, port = _host_port(config); scheme = "amqps" if config.get("sslEnabled") else "amqp"
+    host, port = _host_port(config); scheme = "amqps" if _as_bool(config.get("sslEnabled")) else "amqp"
     connection = BlockingConnection(f"{scheme}://{host}:{port}", user=config.get("username") or None, password=config.get("password") or None, timeout=float(config.get("connectionTimeoutMsec") or 30000) / 1000)
     try:
         sender = connection.create_sender(_address(config, activity))
-        sender.send(Message(body=body, id=message_id, correlation_id=activity.get("correlationID"), content_type=activity.get("contentType"), properties=properties, durable=activity.get("deliveryMode", "Persistent") == "Persistent", priority=int(activity.get("priority") or 4), ttl=int(activity.get("expiration") or 0) or None))
+        # Proton expects seconds; omit TTL for no expiration (None is invalid
+        # and an explicitly encoded zero can mean immediate expiry to a broker).
+        ttl_ms = max(0, int(activity.get("expiration") or 0))
+        optional = {key: value for key, value in {
+            'correlation_id': activity.get('correlationID'), 'content_type': activity.get('contentType')
+        }.items() if value is not None}
+        message = Message(body=body, id=message_id, properties=properties, durable=activity.get("deliveryMode", "Persistent") == "Persistent", priority=int(activity.get("priority") or 4), **optional, **({'ttl': ttl_ms / 1000} if ttl_ms else {}))
+        sender.send(message)
     finally: connection.close()
     return {"sendResult": True, "MessageId": message_id}
 
 
-def get(config: dict, activity: dict) -> tuple[dict | None, Any]:
-    broker = str(config.get("brokerType") or "Qpid-1-0")
-    client_ack = str(activity.get("acknowledgeMode") or "Auto") != "Auto"
-    if broker == "AzureSB-1-0":
+def _settlement(resources, acknowledge):
+    owned = resources.pop_all()
+    def settle(dead=False):
         try:
-            from azure.servicebus import ServiceBusReceiveMode
-            mode = ServiceBusReceiveMode.PEEK_LOCK if client_ack else ServiceBusReceiveMode.RECEIVE_AND_DELETE
-            client = _azure_client(config); client.__enter__()
-            receiver = _azure_receiver(client, config, activity, mode); receiver.__enter__()
-            messages = receiver.receive_messages(max_message_count=1, max_wait_time=float(activity.get("receiveTimeoutSeconds") or 1))
-            if not messages:
-                receiver.__exit__(None, None, None); client.__exit__(None, None, None)
-                return None, None
-            message = messages[0]
-            def settle(dead: bool = False):
-                try:
-                    if dead:
-                        receiver.dead_letter_message(message, reason=str(activity.get("deadLetterReason") or "Rejected by process"), error_description=str(activity.get("deadLetterDescription") or ""))
-                    else: receiver.complete_message(message)
-                finally:
-                    receiver.__exit__(None, None, None); client.__exit__(None, None, None)
-            output = {"UserProperties": dict(message.application_properties or {}), "MessageProperties": {"deliveryMode": True, "messageID": str(message.message_id or ""), "expiration": message.expires_at_utc.isoformat() if message.expires_at_utc else None, "contentType": message.content_type, "correlationID": str(message.correlation_id or ""), "type": message.subject, "sessionId": message.session_id}, "body": str(message), "messageId": str(message.message_id or uuid.uuid4()), "deliveryCount": message.delivery_count, "lockToken": str(message.lock_token or "")}
-            return output, settle if client_ack else None
-        except AmqpAdapterError:
-            raise
-        except Exception as exc:
-            raise AmqpAdapterError(str(exc), "AMQPPluginException") from exc
-    if broker == "RabbitMQ" and str(config.get("amqpVersion") or "AMQP-0-9-1") == "AMQP-0-9-1":
-        connection = _rabbit_connection(config); channel = connection.channel(); queue = _address(config, activity)
-        channel.basic_qos(prefetch_count=int(activity.get("prefetchCount") or 20)); method, props, body = channel.basic_get(queue=queue, auto_ack=not client_ack)
-        if not method: connection.close(); return None, None
-        callback = (lambda dead=False: (channel.basic_nack(method.delivery_tag, requeue=False) if dead else channel.basic_ack(method.delivery_tag), connection.close())) if client_ack else None
-        output = {"UserProperties": props.headers or {}, "MessageProperties": {"deliveryMode": props.delivery_mode == 2, "messageID": props.message_id, "timestamp": props.timestamp, "expiration": props.expiration, "priority": props.priority, "type": props.type, "contentType": props.content_type, "correlationID": props.correlation_id}, "body": body.decode(errors="replace") if activity.get("messageType", "TextMessage") != "BytesMessage" else body, "messageId": props.message_id or str(uuid.uuid4())}
+            return acknowledge(dead)
+        finally:
+            owned.close()
+    return settle
+
+
+def get(config: dict, activity: dict) -> tuple[dict | None, Any]:
+    with ExitStack() as resources:
+        broker = str(config.get("brokerType") or "Qpid-1-0")
+        client_ack = str(activity.get("acknowledgeMode") or "Auto") != "Auto"
+        if broker == "AzureSB-1-0":
+            try:
+                from azure.servicebus import ServiceBusReceiveMode
+                mode = ServiceBusReceiveMode.PEEK_LOCK if client_ack else ServiceBusReceiveMode.RECEIVE_AND_DELETE
+                client = resources.enter_context(_azure_client(config))
+                receiver = resources.enter_context(_azure_receiver(client, config, activity, mode))
+                messages = receiver.receive_messages(max_message_count=1, max_wait_time=float(activity.get("receiveTimeoutSeconds") or 1))
+                if not messages:
+                    return None, None
+                message = messages[0]
+                def settle(dead: bool = False):
+                    try:
+                        if dead:
+                            receiver.dead_letter_message(message, reason=str(activity.get("deadLetterReason") or "Rejected by process"), error_description=str(activity.get("deadLetterDescription") or ""))
+                        else: receiver.complete_message(message)
+                    finally:
+                        owned.close()
+                output = {"UserProperties": dict(message.application_properties or {}), "MessageProperties": {"deliveryMode": True, "messageID": str(message.message_id or ""), "expiration": message.expires_at_utc.isoformat() if message.expires_at_utc else None, "contentType": message.content_type, "correlationID": str(message.correlation_id or ""), "type": message.subject, "sessionId": message.session_id}, "body": str(message), "messageId": str(message.message_id or uuid.uuid4()), "deliveryCount": message.delivery_count, "lockToken": str(message.lock_token or "")}
+                if client_ack:
+                    owned = resources.pop_all()
+                return output, settle if client_ack else None
+            except AmqpAdapterError:
+                raise
+            except Exception as exc:
+                raise AmqpAdapterError(str(exc), "AMQPPluginException") from exc
+        if broker == "RabbitMQ" and str(config.get("amqpVersion") or "AMQP-0-9-1") == "AMQP-0-9-1":
+            connection = _rabbit_connection(config); resources.callback(connection.close)
+            channel = connection.channel(); queue = _address(config, activity)
+            channel.basic_qos(prefetch_count=int(activity.get("prefetchCount") or 20)); method, props, body = channel.basic_get(queue=queue, auto_ack=not client_ack)
+            if not method: return None, None
+            output = {"UserProperties": props.headers or {}, "MessageProperties": {"deliveryMode": props.delivery_mode == 2, "messageID": props.message_id, "timestamp": props.timestamp, "expiration": props.expiration, "priority": props.priority, "type": props.type, "contentType": props.content_type, "correlationID": props.correlation_id}, "body": body.decode(errors="replace") if activity.get("messageType", "TextMessage") != "BytesMessage" else body, "messageId": props.message_id or str(uuid.uuid4())}
+            callback = _settlement(resources, lambda dead: channel.basic_nack(method.delivery_tag, requeue=False) if dead else channel.basic_ack(method.delivery_tag)) if client_ack else None
+            return output, callback
+        try:
+            from proton.utils import BlockingConnection
+            from proton import Timeout
+        except ImportError as exc: raise AmqpAdapterError("AMQP 1.0 receiving requires python-qpid-proton") from exc
+        host, port = _host_port(config); scheme = "amqps" if _as_bool(config.get("sslEnabled")) else "amqp"
+        connection = BlockingConnection(f"{scheme}://{host}:{port}", user=config.get("username") or None, password=config.get("password") or None, timeout=float(config.get("connectionTimeoutMsec") or 30000) / 1000)
+        resources.callback(connection.close)
+        receiver = connection.create_receiver(_address(config, activity), credit=int(activity.get("prefetchCount") or 20))
+        try: message = receiver.receive(timeout=float(activity.get("receiveTimeoutSeconds") or 1))
+        except Timeout: return None, None
+        except Exception as exc: raise AmqpAdapterError(str(exc), "AMQPPluginException") from exc
+        output = {"UserProperties": message.properties or {}, "MessageProperties": {"deliveryMode": bool(message.durable), "messageID": str(message.id or ""), "expiration": int(message.ttl * 1000), "priority": message.priority, "contentType": message.content_type, "correlationID": str(message.correlation_id or "")}, "body": message.body, "messageId": str(message.id or uuid.uuid4())}
+        callback = _settlement(resources, lambda dead: receiver.reject() if dead else receiver.accept()) if client_ack else None
+        if not client_ack: receiver.accept()
         return output, callback
-    try:
-        from proton.utils import BlockingConnection
-    except ImportError as exc: raise AmqpAdapterError("AMQP 1.0 receiving requires python-qpid-proton") from exc
-    host, port = _host_port(config); scheme = "amqps" if config.get("sslEnabled") else "amqp"
-    connection = BlockingConnection(f"{scheme}://{host}:{port}", user=config.get("username") or None, password=config.get("password") or None, timeout=float(config.get("connectionTimeoutMsec") or 30000) / 1000)
-    receiver = connection.create_receiver(_address(config, activity), credit=int(activity.get("prefetchCount") or 20), auto_accept=not client_ack)
-    try: message = receiver.receive(timeout=float(activity.get("receiveTimeoutSeconds") or 1))
-    except Exception: connection.close(); return None, None
-    callback = (lambda dead=False: (receiver.reject(message) if dead else receiver.accept(message), connection.close())) if client_ack else None
-    if not client_ack: connection.close()
-    return {"UserProperties": message.properties or {}, "MessageProperties": {"deliveryMode": bool(message.durable), "messageID": str(message.id or ""), "expiration": message.ttl, "priority": message.priority, "contentType": message.content_type, "correlationID": str(message.correlation_id or "")}, "body": message.body, "messageId": str(message.id or uuid.uuid4())}, callback
 
 
 amqp_adapter = type("AmqpAdapter", (), {"test": staticmethod(test_connection), "send": staticmethod(send), "get": staticmethod(get)})()

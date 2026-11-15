@@ -60,7 +60,10 @@ def listener_config(connection,activity):
     cfg['path']=path
     from .api_docs import methods_for
     methods = methods_for(cfg)
-    if not methods or any(method not in {'GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','TRACE'} for method in methods):
+    unsupported=set(methods)-{'GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','TRACE'}
+    if unsupported:
+        raise HTTPFault('Unsupported listener HTTP method(s): '+', '.join(sorted(unsupported))+'. CONNECT tunnels and unimplemented methods cannot be hosted as ordinary API operations.','HTTP_CONFIGURATION',400)
+    if not methods:
         raise HTTPFault('Select at least one supported HTTP method','HTTP_CONFIGURATION',400)
     cfg['methods'] = methods
     try:
@@ -99,8 +102,13 @@ class ListenerApp:
         self.compiled=[(*route_pattern(cfg['path']),metadata,cfg) for metadata,cfg in sorted(routes,key=lambda item:('{' in item[1]['path'],-len(item[1]['path'])))]
         # Warm the minimum worker count for authentication/LDAP work.
         minimum=int(number(connection,'minimumQtpThreads',10,1,maximum)) if warm_workers else 0;ready=threading.Barrier(minimum+1)
-        jobs=[self.executor.submit(ready.wait,10) for _ in range(minimum)];ready.wait(10)
-        for job in jobs:job.result(10)
+        try:
+            jobs=[self.executor.submit(ready.wait,10) for _ in range(minimum)];ready.wait(10)
+            for job in jobs:job.result(10)
+        except BaseException:
+            ready.abort()
+            self.executor.shutdown(wait=False,cancel_futures=True)
+            raise
     async def __call__(self,scope,receive,send):
         if scope['type']=='lifespan':
             while True:
@@ -119,7 +127,7 @@ async def _serve_http1(routes,handler,ready=None):
     for metadata,connection,activity in routes:
         cfg=listener_config(connection,activity);key=(str(cfg.get('host') or '0.0.0.0'),int(number(cfg,'port',8080,1,65535)))
         grouped.setdefault(key,[]).append((metadata,cfg))
-    servers=[];sockets=[];jobs=[]
+    servers=[];sockets=[];jobs=[];apps=[]
     try:
         for (host,port),members in grouped.items():
             connection=members[0][1]
@@ -133,6 +141,7 @@ async def _serve_http1(routes,handler,ready=None):
                     if identity in route_methods:raise HTTPFault('Duplicate listener route and HTTP method','HTTP_CONFIGURATION',400)
                     route_methods.add(identity)
             app=ListenerApp(members,handler,connection,verified_mtls=server_tls(connection) and connection.get('clientAuthentication')=='required')
+            apps.append(app)
             options=uvicorn.Config(app,host=host,port=port,proxy_headers=False,server_header=False,backlog=int(number(connection,'acceptQueueSize',128,1,65535)),limit_concurrency=int(number(connection,'maximumQtpThreads',75,1,10000))+int(number(connection,'maxQueueSize',100,0,100000)),timeout_keep_alive=int(number(connection,'idleConnectionTimeoutMs',40000)/1000),h11_max_incomplete_event_size=int(number(connection,'maxHeaderBytes',65536,1024)),log_level='info')
             if any(location == 'query' for _, cfg in members
                    for _, _, keys in cfg.get('_restSecurityAlternatives', []) for _, location, _ in keys):
@@ -166,7 +175,7 @@ async def _serve_http1(routes,handler,ready=None):
             if server.started:
                 try:await asyncio.wait_for(server.shutdown(),timeout=10)
                 except Exception:pass
-            server.config.app.executor.shutdown(wait=False,cancel_futures=True)
+        for app in apps:app.executor.shutdown(wait=False,cancel_futures=True)
         for sock in sockets:sock.close()
 
 async def serve(routes,handler,ready=None):

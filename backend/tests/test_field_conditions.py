@@ -1,5 +1,5 @@
 import unittest
-from backend.app.runtime import WorkflowRuntime
+from app.runtime import WorkflowRuntime
 
 
 class FieldConditionTests(unittest.TestCase):

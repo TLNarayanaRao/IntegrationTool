@@ -816,25 +816,49 @@ public final class MinaJavaBridge {
             if (operation.equals("receive")) {
                 Object consumer = p.getProperty("selector", "").isBlank() ? invoke(session, "createConsumer", destination) : invoke(session, "createConsumer", destination, p.getProperty("selector"));
                 try {
-                    Object message = invoke(consumer, "receive", number(p, "timeoutMs", 30000));
-                    if (message == null) return map("received", false, "body", null, "headers", Map.of(), "properties", Map.of());
-                    Object body;
-                    try { body = invoke(message, "getText"); } catch (Exception ignored) { body = String.valueOf(message); }
-                    Map<String, Object> headers = new LinkedHashMap<>();
-                    copyHeader(headers, message, "JMSMessageID", "getJMSMessageID"); copyHeader(headers, message, "JMSCorrelationID", "getJMSCorrelationID"); copyHeader(headers, message, "JMSReplyTo", "getJMSReplyTo");
-                    copyHeader(headers, message, "JMSType", "getJMSType"); copyHeader(headers, message, "JMSTimestamp", "getJMSTimestamp");
-                    copyHeader(headers, message, "JMSPriority", "getJMSPriority"); copyHeader(headers, message, "JMSRedelivered", "getJMSRedelivered");
-                    Map<String, Object> properties = new LinkedHashMap<>();
-                    Enumeration<?> names = (Enumeration<?>) invoke(message, "getPropertyNames");
-                    while (names.hasMoreElements()) { String name = String.valueOf(names.nextElement()); properties.put(name, invoke(message, "getObjectProperty", name)); }
-                    if (bool(p, "clientAcknowledge", false)) invoke(message, "acknowledge");
-                    return map("received", true, "body", body, "headers", headers, "properties", properties, "count", 1);
+                    int maximum = Math.max(1, Math.min(10000, integer(p, "maxMessages", 1)));
+                    long timeoutMs = number(p, "timeoutMs", 30000);
+                    long deadline = System.nanoTime() + Math.max(0L, timeoutMs) * 1000000L;
+                    Object message = invoke(consumer, "receive", timeoutMs);
+                    List<Map<String, Object>> messages = new ArrayList<>();
+                    while (message != null) {
+                        messages.add(jmsReceived(message));
+                        if (bool(p, "clientAcknowledge", false)) invoke(message, "acknowledge");
+                        if (messages.size() >= maximum) break;
+                        // A single batch deadline includes all delivery waits.
+                        // Zero retains the legacy first-message indefinite wait,
+                        // then drains only immediately available messages.
+                        if (timeoutMs <= 0) message = invoke(consumer, "receiveNoWait");
+                        else {
+                            long remaining = deadline - System.nanoTime();
+                            if (remaining <= 0) break;
+                            message = invoke(consumer, "receive", Math.max(1L, (remaining + 999999L) / 1000000L));
+                        }
+                    }
+                    if (messages.isEmpty()) return map("received", false, "body", null, "headers", Map.of(), "properties", Map.of(), "count", 0);
+                    Map<String, Object> result = new LinkedHashMap<>(messages.get(0));
+                    result.put("count", messages.size());
+                    if (maximum > 1) result.put("messages", messages);
+                    return result;
                 } finally { close(consumer); }
             }
             throw new IllegalArgumentException("Unsupported JMS operation: " + operation);
         } finally {
             close(session); close(connection); if (context != null) context.close();
         }
+    }
+
+    private static Map<String, Object> jmsReceived(Object message) throws Exception {
+        Object body;
+        try { body = invoke(message, "getText"); } catch (Exception ignored) { body = String.valueOf(message); }
+        Map<String, Object> headers = new LinkedHashMap<>();
+        copyHeader(headers, message, "JMSMessageID", "getJMSMessageID"); copyHeader(headers, message, "JMSCorrelationID", "getJMSCorrelationID"); copyHeader(headers, message, "JMSReplyTo", "getJMSReplyTo");
+        copyHeader(headers, message, "JMSType", "getJMSType"); copyHeader(headers, message, "JMSTimestamp", "getJMSTimestamp");
+        copyHeader(headers, message, "JMSPriority", "getJMSPriority"); copyHeader(headers, message, "JMSRedelivered", "getJMSRedelivered");
+        Map<String, Object> properties = new LinkedHashMap<>();
+        Enumeration<?> names = (Enumeration<?>) invoke(message, "getPropertyNames");
+        while (names.hasMoreElements()) { String name = String.valueOf(names.nextElement()); properties.put(name, invoke(message, "getObjectProperty", name)); }
+        return map("received", true, "body", body, "headers", headers, "properties", properties, "count", 1);
     }
 
     private static Map<String, Object> jdbc(String operation, Properties p) throws Exception {
@@ -991,6 +1015,7 @@ public final class MinaJavaBridge {
 
     private static Map<String, Object> jdbcExecute(Connection connection, Properties p) throws SQLException {
         String sql = required(p, "sql");
+        if ("call".equals(p.getProperty("operation"))) return jdbcCall(connection, p, sql);
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             int timeout = integer(p, "queryTimeoutSeconds", 0);
             if (timeout > 0) statement.setQueryTimeout(timeout);
@@ -1045,6 +1070,58 @@ public final class MinaJavaBridge {
                 return map("resultSet", map("Record", rows), "rows", rows, "rowCount", rows.size(), "columns", columnOutput,
                         "lastSubset", !hasNext, "nextRowOffset", hasNext ? (long) offset + rows.size() : null);
             }
+        }
+    }
+
+    private static int jdbcOutType(String type) throws SQLException {
+        switch (type.toLowerCase(Locale.ROOT)) {
+            case "integer": return Types.INTEGER;
+            case "long": return Types.BIGINT;
+            case "number": case "double": case "float": return Types.DOUBLE;
+            case "decimal": return Types.DECIMAL;
+            case "boolean": return Types.BOOLEAN;
+            case "binary": return Types.VARBINARY;
+            case "date": return Types.DATE;
+            case "time": return Types.TIME;
+            case "timestamp": case "datetime": return Types.TIMESTAMP;
+            case "string": case "json": return Types.VARCHAR;
+            default: throw new SQLException("Unsupported JDBC OUT parameter type: " + type);
+        }
+    }
+
+    private static Map<String, Object> jdbcCall(Connection connection, Properties p, String sql) throws SQLException {
+        try (CallableStatement statement = connection.prepareCall(sql)) {
+            int count = integer(p, "parameterCount", 0), timeout = integer(p, "queryTimeoutSeconds", 0);
+            if (timeout > 0) statement.setQueryTimeout(timeout);
+            int maximum = integer(p, "maxRows", 0);
+            if (maximum > 0) statement.setMaxRows(maximum);
+            for (int index = 0; index < count; index++) {
+                String key = "parameter." + index, direction = p.getProperty(key + ".direction", "IN");
+                if (!direction.equals("IN")) statement.registerOutParameter(index + 1, jdbcOutType(p.getProperty(key + ".declaredType", "string")));
+                if (!direction.equals("OUT")) setParameter(statement, index + 1, p.getProperty(key + ".type", "string"), p.getProperty(key + ".value"));
+            }
+            List<Object> sets = new ArrayList<>();
+            boolean hasResult = statement.execute();
+            while (true) {
+                if (hasResult) {
+                    try (ResultSet result = statement.getResultSet()) {
+                        List<Object> rows = new ArrayList<>(); ResultSetMetaData metadata = result.getMetaData();
+                        while ((maximum == 0 || rows.size() < maximum) && result.next()) {
+                            Map<String,Object> row = new LinkedHashMap<>();
+                            for (int col = 1; col <= metadata.getColumnCount(); col++) row.put(metadata.getColumnLabel(col), sqlValue(result.getObject(col)));
+                            rows.add(row);
+                        }
+                        sets.add(rows);
+                    }
+                } else if (statement.getUpdateCount() == -1) break;
+                hasResult = statement.getMoreResults();
+            }
+            Map<String,Object> output = new LinkedHashMap<>();
+            for (int index = 0; index < count; index++) {
+                String key = "parameter." + index;
+                if (!p.getProperty(key + ".direction", "IN").equals("IN")) output.put(p.getProperty(key + ".name", "Parameter" + (index + 1)), sqlValue(statement.getObject(index + 1)));
+            }
+            return map("resultSets", sets, "outParameters", output, "UnresolvedResultSets", new ArrayList<>());
         }
     }
 

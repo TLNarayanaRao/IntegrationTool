@@ -1,0 +1,103 @@
+{
+  "passed": false,
+  "gates": {
+    "duration": false,
+    "noErrors": false,
+    "allFamilies": true,
+    "rssGrowth": true,
+    "lateRssSlope": true,
+    "handleGrowth": true,
+    "threadGrowth": true
+  },
+  "measuredSeconds": 18.09,
+  "warmupSeconds": 60.0,
+  "workers": 3,
+  "minimumCycleSecondsPerWorker": 0.5,
+  "roundTripsIncludingWarmup": {
+    "kafka": 72,
+    "amqp": 132,
+    "jms": 27
+  },
+  "errors": [
+    {
+      "family": "kafka",
+      "exceptionType": "RuntimeError",
+      "worker": 0
+    }
+  ],
+  "growth": {
+    "rssMiB": 0.0,
+    "handles": 0,
+    "threads": 0
+  },
+  "lateRssMiBPerMinute": 0,
+  "latencySampleMaxPerFamily": 10000,
+  "samples": [
+    {
+      "seconds": 0.05,
+      "rssMiB": 77.515625,
+      "handles": 454,
+      "threads": 13,
+      "childProcesses": 13,
+      "childRssMiB": 409.98828125
+    }
+  ],
+  "scope": "Live loopback Kafka 3.9.1 and Artemis 2.40.0 JMS/AMQP; not EMS, cloud Pub/Sub or SAP",
+  "sourceSha256": {
+    "backend/app/runtime.py": "3c51504e1af87d17918487183b778da317f520e322cdc4589a2470e32b13f87d",
+    "backend/app/amqp.py": "adf5373f0ba210ad46b391982cfdacbd2312defd08bf225162fc1c0780334c40",
+    "backend/app/java_bridge.py": "28e704d5e9573717a70d10f06554d722335d9abfa3d9ea85006edd5cc3edc3ca"
+  },
+  "mode": "python-engine",
+  "archiveWorkers": [
+    {
+      "passed": false,
+      "cleanShutdown": true,
+      "growth": {},
+      "lateRssMiBPerMinute": 0,
+      "samples": []
+    },
+    {
+      "passed": true,
+      "cleanShutdown": true,
+      "growth": {
+        "rssMiB": 0.0,
+        "handles": 2,
+        "threads": 0
+      },
+      "lateRssMiBPerMinute": 0,
+      "samples": [
+        {
+          "seconds": 2.094000000040978,
+          "rssMiB": 10.74609375,
+          "handles": 165,
+          "threads": 4
+        },
+        {
+          "seconds": 12.26600000000326,
+          "rssMiB": 10.74609375,
+          "handles": 167,
+          "threads": 4
+        }
+      ]
+    },
+    {
+      "passed": true,
+      "cleanShutdown": true,
+      "growth": {
+        "rssMiB": 0.0,
+        "handles": 0,
+        "threads": 0
+      },
+      "lateRssMiBPerMinute": 0,
+      "samples": [
+        {
+          "seconds": 0.23399999999674037,
+          "rssMiB": 10.7890625,
+          "handles": 165,
+          "threads": 4
+        }
+      ]
+    }
+  ]
+}

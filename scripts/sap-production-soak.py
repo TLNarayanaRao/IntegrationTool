@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+from collections import deque
 import json
-import statistics
 import sys
 import threading
 import time
@@ -40,19 +40,25 @@ def main() -> int:
     concurrency = max(1, min(128, int(specification.get("concurrency") or 4)))
     inject_every = max(0, int(specification.get("terminateWorkerEveryCalls") or 0))
     adapter, lock = SapAdapter(), threading.Lock()
-    latencies: list[float] = []
-    errors: list[dict] = []
-    completed = 0
+    # Instrumentation must not create apparent runtime growth in a long soak.
+    latencies = deque(maxlen=10000)
+    errors = deque(maxlen=1000)
+    completed = failed = 0
+    latency_total = 0.0
+    latency_min, latency_max = float('inf'), 0.0
     started_at, deadline = time.time(), time.monotonic() + duration
 
     def invoke_once() -> None:
-        nonlocal completed
+        nonlocal completed, failed, latency_total, latency_min, latency_max
         began = time.perf_counter()
         try:
             adapter.execute(operation, activity, payload)
             elapsed = (time.perf_counter() - began) * 1000
             with lock:
                 completed += 1; latencies.append(elapsed)
+                latency_total += elapsed
+                latency_min = min(latency_min, elapsed)
+                latency_max = max(latency_max, elapsed)
                 count = completed
             if inject_every and count % inject_every == 0:
                 with adapter._state_lock:
@@ -61,6 +67,7 @@ def main() -> int:
                     worker.process.terminate()
         except Exception as exc:
             with lock:
+                failed += 1
                 errors.append({"time": time.time(), "type": exc.__class__.__name__, "message": str(exc)[:1000]})
 
     try:
@@ -76,12 +83,13 @@ def main() -> int:
     finished_at = time.time()
     report = {
         "startedAtEpoch": started_at, "finishedAtEpoch": finished_at, "durationSeconds": finished_at - started_at,
-        "operation": operation, "concurrency": concurrency, "successfulCalls": completed, "failedCalls": len(errors),
+        "operation": operation, "concurrency": concurrency, "successfulCalls": completed, "failedCalls": failed,
         "throughputPerSecond": completed / max(0.001, finished_at - started_at),
-        "latencyMilliseconds": {"minimum": min(latencies, default=0), "mean": statistics.fmean(latencies) if latencies else 0,
-            "p50": percentile(latencies, .50), "p95": percentile(latencies, .95), "p99": percentile(latencies, .99), "maximum": max(latencies, default=0)},
-        "workerProcessIds": worker_pids, "failureInjectionEveryCalls": inject_every, "errors": errors[:1000],
-        "passed": completed > 0 and not errors,
+        "latencyMilliseconds": {"minimum": latency_min if completed else 0, "mean": latency_total / completed if completed else 0,
+            "p50": percentile(latencies, .50), "p95": percentile(latencies, .95), "p99": percentile(latencies, .99), "maximum": latency_max},
+        "quantileSampleLimit": 10000, "quantileScope": "Latest successful calls; min/mean/max cover all successful calls",
+        "workerProcessIds": worker_pids, "failureInjectionEveryCalls": inject_every, "errors": list(errors),
+        "errorSampleLimit": 1000, "passed": completed > 0 and failed == 0,
     }
     args.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(f"SAP qualification report: {args.output.resolve()}")

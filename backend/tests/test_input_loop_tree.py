@@ -1,6 +1,6 @@
 import copy
 import unittest
-from backend.app.runtime import WorkflowRuntime
+from app.runtime import WorkflowRuntime
 
 
 class InputLoopTreeTests(unittest.TestCase):

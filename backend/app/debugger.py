@@ -1,5 +1,5 @@
 from __future__ import annotations
-import asyncio
+import asyncio,os
 from copy import deepcopy
 from .flow_graph import parallel_plan
 from datetime import datetime, timezone
@@ -9,10 +9,34 @@ from .models import Project, find_subtask
 from .runtime import WorkflowRuntime
 from .time_utils import log_timestamp
 
+class _DebugLogs(list):
+    def __init__(self,values,limit):
+        super().__init__(values);self.limit=limit;self.dropped=0
+    def append(self,value):
+        super().append(value)
+        excess=max(0,len(self)-self.limit)
+        if excess:del self[:excess];self.dropped+=excess
+    def extend(self,values):
+        for value in values:self.append(value)
+    def __iadd__(self,values):self.extend(values);return self
+
 class DebugManager:
     def __init__(self, runtime: WorkflowRuntime):
         self.runtime = runtime
         self.sessions: dict[str, dict] = {}
+        def limit(name,default):
+            try:return max(1,int(os.environ.get(name,default)))
+            except (ValueError,TypeError):return default
+        self.history_limit=limit('MINA_DEBUG_HISTORY_LIMIT',8)
+        self.log_limit=limit('MINA_DEBUG_LOG_LIMIT',10000)
+
+    def _prune_history(self,current):
+        terminal=[key for key,state in self.sessions.items() if state.get('status') in ('completed','failed','stopped')]
+        excess=max(0,len(terminal)-self.history_limit)
+        for key in terminal:
+            if not excess:break
+            if key==current:continue
+            self.sessions.pop(key,None);excess-=1
 
     @staticmethod
     def _branch_context(ctx):
@@ -67,6 +91,7 @@ class DebugManager:
         session_id = str(uuid4())
         execution_state = {'activities': {}, 'tasks': {task.id: {'name': task.name, 'input': deepcopy(initial), 'activities': {}}}}
         logs = [{'time': log_timestamp(), 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Debug session started: {project.name} / {task.name}', 'taskId': task.id, 'sessionId': session_id}]
+        logs=_DebugLogs(logs,self.log_limit)
         group_plans = self.runtime.compile_groups(task)
         context = {'input': initial, 'vars': {}, 'last': initial, 'resources': resources, 'properties': properties, 'project': project, 'runtime': self.runtime, 'logs': logs, 'activities': execution_state['activities'], 'tasks': execution_state['tasks'], 'context': {'taskId': task.id, 'activityId': starters[0].id, 'environment': environment, 'debugSessionId': session_id, 'executionId': session_id}, '_process': task, 'groupStack': [], 'jdbcTransactions': {}}
         operation = starters[0].config.get('operation')
@@ -445,6 +470,12 @@ class DebugManager:
         return next((item for item in task.activities if item.id == frame['activityId']), None)
 
     def view(self, state):
+        if isinstance(state.get('logs'),_DebugLogs):state['logEntriesDropped']=state['logs'].dropped
+        excess=max(0,len(state.get('logs',[]))-self.log_limit)
+        if excess:
+            del state['logs'][:excess]
+            state['logEntriesDropped']=state.get('logEntriesDropped',0)+excess
+        self._prune_history(state.get('id'))
         current = self.current_activity(state)
         execution_state = state.get('executionState', {})
         group_stack = state['frames'][-1]['context'].get('groupStack', []) if state.get('frames') else []
@@ -465,4 +496,4 @@ class DebugManager:
         for expression in state.get('watches', []):
             try: watch_values.append({'expression': expression, 'value': self._evaluate(expression, ctx)})
             except Exception as exc: watch_values.append({'expression': expression, 'error': str(exc)})
-        return {'lastActivityTest': state.get('lastActivityTest'), 'testHistory': state.get('testHistory', []), 'sessionId': state['id'], 'status': state['status'], 'pauseReason': state.get('pauseReason'), 'currentActivityId': current.id if current else None, 'currentActivityIds': list(dict.fromkeys(active_ids)), 'currentTaskId': state['frames'][-1]['taskId'] if state['frames'] else None, 'currentGroupIds': [item['id'] for item in group_stack], 'groupIterations': {item['id']: item.get('iteration', 0) for item in group_stack}, 'callStack': [{'taskId': frame['taskId'], 'activityId': frame['activityId'], 'groupIds': [item['id'] for item in frame['context'].get('groupStack', [])]} for frame in state['frames']], 'logs': state['logs'], 'output': state.get('output', {}), 'activityOutputs': execution_state.get('activities', {}), 'taskOutputs': execution_state.get('tasks', {}), 'endpoints': state.get('endpoints', []), 'breakpoints': sorted(state.get('breakpoints', set())), 'breakpointConditions': state.get('breakpointConditions', {}), 'pauseOnError': state.get('pauseOnError', True), 'watches': state.get('watches', []), 'watchValues': watch_values, 'variables': {'input': ctx.get('input', {}), 'last': ctx.get('last', {}), 'vars': ctx.get('vars', {}), 'context': ctx.get('context', {})}, 'lastException': state.get('lastException'), 'lastEvaluation': state.get('lastEvaluation')}
+        return {'lastActivityTest': state.get('lastActivityTest'), 'testHistory': state.get('testHistory', []), 'sessionId': state['id'], 'status': state['status'], 'pauseReason': state.get('pauseReason'), 'currentActivityId': current.id if current else None, 'currentActivityIds': list(dict.fromkeys(active_ids)), 'currentTaskId': state['frames'][-1]['taskId'] if state['frames'] else None, 'currentGroupIds': [item['id'] for item in group_stack], 'groupIterations': {item['id']: item.get('iteration', 0) for item in group_stack}, 'callStack': [{'taskId': frame['taskId'], 'activityId': frame['activityId'], 'groupIds': [item['id'] for item in frame['context'].get('groupStack', [])]} for frame in state['frames']], 'logs': state['logs'], 'logEntriesDropped':state.get('logEntriesDropped',0), 'output': state.get('output', {}), 'activityOutputs': execution_state.get('activities', {}), 'taskOutputs': execution_state.get('tasks', {}), 'endpoints': state.get('endpoints', []), 'breakpoints': sorted(state.get('breakpoints', set())), 'breakpointConditions': state.get('breakpointConditions', {}), 'pauseOnError': state.get('pauseOnError', True), 'watches': state.get('watches', []), 'watchValues': watch_values, 'variables': {'input': ctx.get('input', {}), 'last': ctx.get('last', {}), 'vars': ctx.get('vars', {}), 'context': ctx.get('context', {})}, 'lastException': state.get('lastException'), 'lastEvaluation': state.get('lastEvaluation')}

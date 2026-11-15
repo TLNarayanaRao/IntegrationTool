@@ -37,6 +37,7 @@ class EngineExportTests(unittest.TestCase):
             ('ems', {'java_bridge'}), ('jms', {'java_bridge'}),
             ('pubsub', {'google_pubsub'}), ('amqp', {'amqp'}),
             ('snowflake', {'snowflake'}), ('dataweave', {'dataweave'}), ('kafka', set()),
+            ('file', {'file_operations'}), ('ftp', {'transfer','sftp','file_operations'}), ('sftp', {'transfer','sftp','file_operations'}),
         ]:
             with self.subTest(kind=kind):
                 self.assertEqual(self.modules(self.project(kind)), base | extra)

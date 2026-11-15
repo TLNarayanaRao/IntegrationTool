@@ -1,0 +1,1597 @@
+{
+  "startedAt": "2026-11-13T20:38:33.502105+00:00",
+  "finishedAt": "2026-11-13T21:09:58.191035+00:00",
+  "status": "failed",
+  "durationSeconds": 1800,
+  "warmupSeconds": 60,
+  "payloadBytes": 65536,
+  "workers": {
+    "file": 4,
+    "ftp": 4,
+    "ftps": 2,
+    "sftp": 4,
+    "sqlite": 4,
+    "mysql": 4
+  },
+  "growth": {
+    "rssMiB": 56.47265625,
+    "pythonMiB": 1.3369922637939453,
+    "idleHandles": -7,
+    "idleThreads": -2
+  },
+  "rssSlopeMiBPerMinute": 1.6708359508290975,
+  "problems": [
+    "Late RSS slope exceeds 0.5 MiB/minute"
+  ],
+  "idleBefore": {
+    "rss": 62992384,
+    "threads": 6,
+    "handles": 429,
+    "private": 37564416
+  },
+  "quiescentAfter": {
+    "rss": 124850176,
+    "threads": 4,
+    "handles": 422,
+    "private": 99622912,
+    "pythonCurrent": 4890509
+  },
+  "environment": {
+    "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+    "os": "Windows-10-10.0.26200-SP0",
+    "packages": {
+      "psutil": "7.2.2",
+      "paramiko": "3.5.1",
+      "pyftpdlib": "2.2.0",
+      "pyOpenSSL": "25.3.0",
+      "PyMySQL": "1.2.4"
+    },
+    "sources": {
+      "scripts/connector-soak.py": {
+        "sha256": "b6dccea183c9c4b1e661e53e65965fba041e0668ee99ec9ed11c0342ddd10751",
+        "mtime": 1794602309.8200386
+      },
+      "backend/app/file_operations.py": {
+        "sha256": "fcc81ebbee6238e9f2bc1396f443bf696f00ed935e078bd5427e58d383dd89dc",
+        "mtime": 1794600239.5225523
+      },
+      "backend/app/transfer.py": {
+        "sha256": "d1451a8cf095ecc1090dc99e273db16d782f2d4d8bcbb05aca3cf9c8750f33e5",
+        "mtime": 1794600104.319777
+      },
+      "backend/app/sftp.py": {
+        "sha256": "9120d1639c622f33c7c39c9d608ad6531b078bc056d9f6aa7c5584ef97c16a2b",
+        "mtime": 1794600426.2435918
+      },
+      "backend/app/jdbc.py": {
+        "sha256": "de14d4a4f8c77732ee6090c6d098d2c43232354c405f44086bea698523fc8c4a",
+        "mtime": 1794602003.0377939
+      }
+    }
+  },
+  "lanes": {
+    "file": {
+      "workers": 4,
+      "measuredCycles": 9768,
+      "measuredOperations": 39072,
+      "errorsIncludingWarmup": 0,
+      "recentP50Seconds": 0.5780000000086147,
+      "recentP95Seconds": 0.7810000000172295
+    },
+    "ftp": {
+      "workers": 4,
+      "measuredCycles": 8873,
+      "measuredOperations": 26619,
+      "errorsIncludingWarmup": 0,
+      "recentP50Seconds": 0.6570000000065193,
+      "recentP95Seconds": 0.875
+    },
+    "ftps": {
+      "workers": 2,
+      "measuredCycles": 3653,
+      "measuredOperations": 10959,
+      "errorsIncludingWarmup": 0,
+      "recentP50Seconds": 0.8120000000053551,
+      "recentP95Seconds": 1.0310000000172295
+    },
+    "sftp": {
+      "workers": 4,
+      "measuredCycles": 5195,
+      "measuredOperations": 15585,
+      "errorsIncludingWarmup": 0,
+      "recentP50Seconds": 1.2030000000086147,
+      "recentP95Seconds": 1.5309999999881256
+    },
+    "sqlite": {
+      "workers": 4,
+      "measuredCycles": 26537,
+      "measuredOperations": 79611,
+      "errorsIncludingWarmup": 0,
+      "recentP50Seconds": 0.09399999998277053,
+      "recentP95Seconds": 0.14100000000325963
+    },
+    "mysql": {
+      "workers": 4,
+      "measuredCycles": 13181,
+      "measuredOperations": 39543,
+      "errorsIncludingWarmup": 0,
+      "recentP50Seconds": 0.375,
+      "recentP95Seconds": 0.5310000000172295
+    }
+  },
+  "nativeControls": {
+    "46.0.0": {
+      "results": [
+        {
+          "mode": "empty-thread",
+          "iterations": 4000,
+          "baseline": {
+            "rssBytes": 25743360,
+            "handles": 203,
+            "threads": 4,
+            "pythonBytes": 876,
+            "uncollectable": 0
+          },
+          "final": {
+            "rssBytes": 25853952,
+            "handles": 203,
+            "threads": 4,
+            "pythonBytes": 3124,
+            "uncollectable": 0
+          },
+          "samples": [
+            {
+              "iterations": 1000,
+              "rssBytes": 26341376,
+              "handles": 203,
+              "threads": 4,
+              "pythonBytes": 1900,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 2000,
+              "rssBytes": 26374144,
+              "handles": 203,
+              "threads": 4,
+              "pythonBytes": 2292,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 3000,
+              "rssBytes": 25280512,
+              "handles": 203,
+              "threads": 4,
+              "pythonBytes": 2652,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 4000,
+              "rssBytes": 25853952,
+              "handles": 203,
+              "threads": 4,
+              "pythonBytes": 3012,
+              "uncollectable": 0
+            }
+          ],
+          "rssGrowthMiB": 0.10546875,
+          "pythonGrowthMiB": 0.00214385986328125,
+          "cryptography": "46.0.0",
+          "openssl": "OpenSSL 3.5.3 16 Sep 2025",
+          "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+          "platform": "win32"
+        },
+        {
+          "mode": "same-thread",
+          "iterations": 4000,
+          "baseline": {
+            "rssBytes": 27095040,
+            "handles": 212,
+            "threads": 4,
+            "pythonBytes": 876,
+            "uncollectable": 0
+          },
+          "final": {
+            "rssBytes": 27000832,
+            "handles": 212,
+            "threads": 4,
+            "pythonBytes": 2676,
+            "uncollectable": 0
+          },
+          "samples": [
+            {
+              "iterations": 1000,
+              "rssBytes": 27680768,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 1452,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 2000,
+              "rssBytes": 27680768,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 1844,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 3000,
+              "rssBytes": 27680768,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 2204,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 4000,
+              "rssBytes": 26427392,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 2564,
+              "uncollectable": 0
+            }
+          ],
+          "rssGrowthMiB": -0.08984375,
+          "pythonGrowthMiB": 0.00171661376953125,
+          "cryptography": "46.0.0",
+          "openssl": "OpenSSL 3.5.3 16 Sep 2025",
+          "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+          "platform": "win32"
+        },
+        {
+          "mode": "crypto-thread",
+          "iterations": 4000,
+          "baseline": {
+            "rssBytes": 28889088,
+            "handles": 212,
+            "threads": 4,
+            "pythonBytes": 876,
+            "uncollectable": 0
+          },
+          "final": {
+            "rssBytes": 42811392,
+            "handles": 212,
+            "threads": 4,
+            "pythonBytes": 3124,
+            "uncollectable": 0
+          },
+          "samples": [
+            {
+              "iterations": 1000,
+              "rssBytes": 32960512,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 1900,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 2000,
+              "rssBytes": 35467264,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 2292,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 3000,
+              "rssBytes": 38785024,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 2652,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 4000,
+              "rssBytes": 42790912,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 3012,
+              "uncollectable": 0
+            }
+          ],
+          "rssGrowthMiB": 13.27734375,
+          "pythonGrowthMiB": 0.00214385986328125,
+          "cryptography": "46.0.0",
+          "openssl": "OpenSSL 3.5.3 16 Sep 2025",
+          "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+          "platform": "win32"
+        }
+      ],
+      "excessThreadGrowthMiB": 13.171875,
+      "maximumExcessMiB": 4,
+      "status": "failed"
+    },
+    "46.0.7": {
+      "results": [
+        {
+          "mode": "empty-thread",
+          "iterations": 4000,
+          "baseline": {
+            "rssBytes": 25608192,
+            "handles": 203,
+            "threads": 4,
+            "pythonBytes": 876,
+            "uncollectable": 0
+          },
+          "final": {
+            "rssBytes": 25755648,
+            "handles": 203,
+            "threads": 4,
+            "pythonBytes": 3124,
+            "uncollectable": 0
+          },
+          "samples": [
+            {
+              "iterations": 1000,
+              "rssBytes": 26206208,
+              "handles": 203,
+              "threads": 4,
+              "pythonBytes": 1900,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 2000,
+              "rssBytes": 25145344,
+              "handles": 203,
+              "threads": 4,
+              "pythonBytes": 2292,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 3000,
+              "rssBytes": 25722880,
+              "handles": 203,
+              "threads": 4,
+              "pythonBytes": 2652,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 4000,
+              "rssBytes": 25755648,
+              "handles": 203,
+              "threads": 4,
+              "pythonBytes": 3012,
+              "uncollectable": 0
+            }
+          ],
+          "rssGrowthMiB": 0.140625,
+          "pythonGrowthMiB": 0.00214385986328125,
+          "cryptography": "46.0.7",
+          "openssl": "OpenSSL 3.5.6 7 Apr 2026",
+          "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+          "platform": "win32"
+        },
+        {
+          "mode": "same-thread",
+          "iterations": 4000,
+          "baseline": {
+            "rssBytes": 26959872,
+            "handles": 212,
+            "threads": 4,
+            "pythonBytes": 876,
+            "uncollectable": 0
+          },
+          "final": {
+            "rssBytes": 27049984,
+            "handles": 212,
+            "threads": 4,
+            "pythonBytes": 2676,
+            "uncollectable": 0
+          },
+          "samples": [
+            {
+              "iterations": 1000,
+              "rssBytes": 27541504,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 1452,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 2000,
+              "rssBytes": 27541504,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 1844,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 3000,
+              "rssBytes": 27545600,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 2204,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 4000,
+              "rssBytes": 26484736,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 2564,
+              "uncollectable": 0
+            }
+          ],
+          "rssGrowthMiB": 0.0859375,
+          "pythonGrowthMiB": 0.00171661376953125,
+          "cryptography": "46.0.7",
+          "openssl": "OpenSSL 3.5.6 7 Apr 2026",
+          "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+          "platform": "win32"
+        },
+        {
+          "mode": "crypto-thread",
+          "iterations": 4000,
+          "baseline": {
+            "rssBytes": 28913664,
+            "handles": 212,
+            "threads": 4,
+            "pythonBytes": 876,
+            "uncollectable": 0
+          },
+          "final": {
+            "rssBytes": 42790912,
+            "handles": 212,
+            "threads": 4,
+            "pythonBytes": 3124,
+            "uncollectable": 0
+          },
+          "samples": [
+            {
+              "iterations": 1000,
+              "rssBytes": 32972800,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 1900,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 2000,
+              "rssBytes": 35471360,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 2292,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 3000,
+              "rssBytes": 39366656,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 2652,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 4000,
+              "rssBytes": 42217472,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 3012,
+              "uncollectable": 0
+            }
+          ],
+          "rssGrowthMiB": 13.234375,
+          "pythonGrowthMiB": 0.00214385986328125,
+          "cryptography": "46.0.7",
+          "openssl": "OpenSSL 3.5.6 7 Apr 2026",
+          "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+          "platform": "win32"
+        }
+      ],
+      "excessThreadGrowthMiB": 13.09375,
+      "maximumExcessMiB": 4,
+      "status": "failed"
+    },
+    "50.0.2": {
+      "results": [
+        {
+          "mode": "empty-thread",
+          "iterations": 4000,
+          "baseline": {
+            "rssBytes": 26128384,
+            "handles": 203,
+            "threads": 4,
+            "pythonBytes": 876,
+            "uncollectable": 0
+          },
+          "final": {
+            "rssBytes": 26038272,
+            "handles": 203,
+            "threads": 4,
+            "pythonBytes": 3124,
+            "uncollectable": 0
+          },
+          "samples": [
+            {
+              "iterations": 1000,
+              "rssBytes": 26714112,
+              "handles": 203,
+              "threads": 4,
+              "pythonBytes": 1900,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 2000,
+              "rssBytes": 26742784,
+              "handles": 203,
+              "threads": 4,
+              "pythonBytes": 2292,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 3000,
+              "rssBytes": 25468928,
+              "handles": 203,
+              "threads": 4,
+              "pythonBytes": 2652,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 4000,
+              "rssBytes": 26038272,
+              "handles": 203,
+              "threads": 4,
+              "pythonBytes": 3012,
+              "uncollectable": 0
+            }
+          ],
+          "rssGrowthMiB": -0.0859375,
+          "pythonGrowthMiB": 0.00214385986328125,
+          "cryptography": "50.0.2",
+          "openssl": "OpenSSL 4.0.3 29 Sep 2026",
+          "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+          "platform": "win32"
+        },
+        {
+          "mode": "same-thread",
+          "iterations": 4000,
+          "baseline": {
+            "rssBytes": 27451392,
+            "handles": 212,
+            "threads": 4,
+            "pythonBytes": 876,
+            "uncollectable": 0
+          },
+          "final": {
+            "rssBytes": 27312128,
+            "handles": 212,
+            "threads": 4,
+            "pythonBytes": 2676,
+            "uncollectable": 0
+          },
+          "samples": [
+            {
+              "iterations": 1000,
+              "rssBytes": 28028928,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 1452,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 2000,
+              "rssBytes": 28028928,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 1844,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 3000,
+              "rssBytes": 28028928,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 2204,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 4000,
+              "rssBytes": 26742784,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 2564,
+              "uncollectable": 0
+            }
+          ],
+          "rssGrowthMiB": -0.1328125,
+          "pythonGrowthMiB": 0.00171661376953125,
+          "cryptography": "50.0.2",
+          "openssl": "OpenSSL 4.0.3 29 Sep 2026",
+          "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+          "platform": "win32"
+        },
+        {
+          "mode": "crypto-thread",
+          "iterations": 4000,
+          "baseline": {
+            "rssBytes": 30806016,
+            "handles": 212,
+            "threads": 4,
+            "pythonBytes": 876,
+            "uncollectable": 0
+          },
+          "final": {
+            "rssBytes": 57737216,
+            "handles": 212,
+            "threads": 4,
+            "pythonBytes": 3124,
+            "uncollectable": 0
+          },
+          "samples": [
+            {
+              "iterations": 1000,
+              "rssBytes": 37105664,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 1900,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 2000,
+              "rssBytes": 44335104,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 2292,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 3000,
+              "rssBytes": 50438144,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 2652,
+              "uncollectable": 0
+            },
+            {
+              "iterations": 4000,
+              "rssBytes": 57720832,
+              "handles": 212,
+              "threads": 4,
+              "pythonBytes": 3012,
+              "uncollectable": 0
+            }
+          ],
+          "rssGrowthMiB": 25.68359375,
+          "pythonGrowthMiB": 0.00214385986328125,
+          "cryptography": "50.0.2",
+          "openssl": "OpenSSL 4.0.3 29 Sep 2026",
+          "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+          "platform": "win32"
+        }
+      ],
+      "excessThreadGrowthMiB": 25.76953125,
+      "maximumExcessMiB": 4,
+      "status": "failed"
+    }
+  },
+  "samples": [
+    {
+      "measuredSeconds": 0,
+      "rss": 65634304,
+      "private": 40341504,
+      "pythonCurrent": 3488571,
+      "handles": 606,
+      "threads": 31,
+      "gcCollected": 17,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 30.10899999999674,
+      "rss": 71000064,
+      "private": 46239744,
+      "pythonCurrent": 4376415,
+      "handles": 633,
+      "threads": 34,
+      "gcCollected": 2825,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 60.21899999998277,
+      "rss": 72785920,
+      "private": 47988736,
+      "pythonCurrent": 4655011,
+      "handles": 654,
+      "threads": 33,
+      "gcCollected": 7341,
+      "gcSeconds": 0.031000000017229468,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 90.40599999998813,
+      "rss": 74121216,
+      "private": 49082368,
+      "pythonCurrent": 4500127,
+      "handles": 613,
+      "threads": 33,
+      "gcCollected": 6042,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 120.5,
+      "rss": 74932224,
+      "private": 49938432,
+      "pythonCurrent": 4785854,
+      "handles": 656,
+      "threads": 35,
+      "gcCollected": 6241,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 150.64100000000326,
+      "rss": 76210176,
+      "private": 51118080,
+      "pythonCurrent": 4826924,
+      "handles": 597,
+      "threads": 32,
+      "gcCollected": 6080,
+      "gcSeconds": 0.014999999984866008,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 180.76600000000326,
+      "rss": 76574720,
+      "private": 51486720,
+      "pythonCurrent": 4942535,
+      "handles": 645,
+      "threads": 32,
+      "gcCollected": 5239,
+      "gcSeconds": 0.014999999984866008,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 210.90599999998813,
+      "rss": 78032896,
+      "private": 52858880,
+      "pythonCurrent": 4750269,
+      "handles": 648,
+      "threads": 31,
+      "gcCollected": 3028,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 241.01600000000326,
+      "rss": 79396864,
+      "private": 54018048,
+      "pythonCurrent": 4818655,
+      "handles": 645,
+      "threads": 34,
+      "gcCollected": 3426,
+      "gcSeconds": 0.014999999984866008,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 271.1719999999914,
+      "rss": 79962112,
+      "private": 54497280,
+      "pythonCurrent": 4886253,
+      "handles": 628,
+      "threads": 32,
+      "gcCollected": 5035,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 301.3280000000086,
+      "rss": 81592320,
+      "private": 57024512,
+      "pythonCurrent": 5046764,
+      "handles": 639,
+      "threads": 33,
+      "gcCollected": 5880,
+      "gcSeconds": 0.0159999999741558,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 331.46899999998277,
+      "rss": 82595840,
+      "private": 57999360,
+      "pythonCurrent": 4805504,
+      "handles": 615,
+      "threads": 31,
+      "gcCollected": 5428,
+      "gcSeconds": 0.015000000013969839,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 361.625,
+      "rss": 83791872,
+      "private": 59109376,
+      "pythonCurrent": 4823724,
+      "handles": 580,
+      "threads": 29,
+      "gcCollected": 5674,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 391.76600000000326,
+      "rss": 84934656,
+      "private": 60289024,
+      "pythonCurrent": 5038308,
+      "handles": 619,
+      "threads": 31,
+      "gcCollected": 5867,
+      "gcSeconds": 0.030999999988125637,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 421.9219999999914,
+      "rss": 86048768,
+      "private": 61362176,
+      "pythonCurrent": 4956123,
+      "handles": 631,
+      "threads": 30,
+      "gcCollected": 5620,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 452.0780000000086,
+      "rss": 86605824,
+      "private": 61894656,
+      "pythonCurrent": 5109402,
+      "handles": 620,
+      "threads": 29,
+      "gcCollected": 5514,
+      "gcSeconds": 0.0159999999741558,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 482.25,
+      "rss": 88305664,
+      "private": 63557632,
+      "pythonCurrent": 5129564,
+      "handles": 629,
+      "threads": 30,
+      "gcCollected": 7476,
+      "gcSeconds": 0.046999999991385266,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 512.5309999999881,
+      "rss": 88371200,
+      "private": 63594496,
+      "pythonCurrent": 5072970,
+      "handles": 631,
+      "threads": 31,
+      "gcCollected": 4497,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 542.7030000000086,
+      "rss": 89354240,
+      "private": 64606208,
+      "pythonCurrent": 5107702,
+      "handles": 630,
+      "threads": 32,
+      "gcCollected": 5100,
+      "gcSeconds": 0.0159999999741558,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 572.8910000000033,
+      "rss": 91435008,
+      "private": 66715648,
+      "pythonCurrent": 4935857,
+      "handles": 637,
+      "threads": 33,
+      "gcCollected": 6259,
+      "gcSeconds": 0.014999999984866008,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 603.0939999999828,
+      "rss": 91918336,
+      "private": 67112960,
+      "pythonCurrent": 5087396,
+      "handles": 615,
+      "threads": 30,
+      "gcCollected": 5037,
+      "gcSeconds": 0.015000000013969839,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 633.2969999999914,
+      "rss": 93138944,
+      "private": 68259840,
+      "pythonCurrent": 4976796,
+      "handles": 607,
+      "threads": 29,
+      "gcCollected": 5706,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 663.5309999999881,
+      "rss": 94203904,
+      "private": 69439488,
+      "pythonCurrent": 5258219,
+      "handles": 652,
+      "threads": 32,
+      "gcCollected": 6247,
+      "gcSeconds": 0.03200000000651926,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 693.8280000000086,
+      "rss": 94834688,
+      "private": 70008832,
+      "pythonCurrent": 5236868,
+      "handles": 662,
+      "threads": 31,
+      "gcCollected": 4129,
+      "gcSeconds": 0.0629999999946449,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 724.2809999999881,
+      "rss": 95526912,
+      "private": 70627328,
+      "pythonCurrent": 5100607,
+      "handles": 591,
+      "threads": 28,
+      "gcCollected": 4741,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 754.5469999999914,
+      "rss": 96681984,
+      "private": 71835648,
+      "pythonCurrent": 5383808,
+      "handles": 657,
+      "threads": 30,
+      "gcCollected": 3134,
+      "gcSeconds": 0.046999999991385266,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 784.8129999999946,
+      "rss": 97206272,
+      "private": 72376320,
+      "pythonCurrent": 5221079,
+      "handles": 594,
+      "threads": 29,
+      "gcCollected": 6913,
+      "gcSeconds": 0.015000000013969839,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 815.0469999999914,
+      "rss": 98512896,
+      "private": 73646080,
+      "pythonCurrent": 5430332,
+      "handles": 603,
+      "threads": 28,
+      "gcCollected": 4315,
+      "gcSeconds": 0.031000000017229468,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 845.3280000000086,
+      "rss": 98906112,
+      "private": 74579968,
+      "pythonCurrent": 5286782,
+      "handles": 626,
+      "threads": 31,
+      "gcCollected": 5322,
+      "gcSeconds": 0.030999999988125637,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 875.6410000000033,
+      "rss": 101236736,
+      "private": 76836864,
+      "pythonCurrent": 5368779,
+      "handles": 641,
+      "threads": 31,
+      "gcCollected": 5732,
+      "gcSeconds": 0.030999999988125637,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 905.9219999999914,
+      "rss": 101658624,
+      "private": 77271040,
+      "pythonCurrent": 5141448,
+      "handles": 636,
+      "threads": 31,
+      "gcCollected": 3032,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 936.2339999999967,
+      "rss": 102711296,
+      "private": 78229504,
+      "pythonCurrent": 5383088,
+      "handles": 611,
+      "threads": 28,
+      "gcCollected": 3767,
+      "gcSeconds": 0.03200000000651926,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 966.5780000000086,
+      "rss": 103530496,
+      "private": 79073280,
+      "pythonCurrent": 5231224,
+      "handles": 604,
+      "threads": 28,
+      "gcCollected": 6117,
+      "gcSeconds": 0.030999999988125637,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 996.8910000000033,
+      "rss": 104878080,
+      "private": 80351232,
+      "pythonCurrent": 5288687,
+      "handles": 607,
+      "threads": 27,
+      "gcCollected": 6564,
+      "gcSeconds": 0.030999999988125637,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1027.2189999999828,
+      "rss": 105472000,
+      "private": 81039360,
+      "pythonCurrent": 5297754,
+      "handles": 639,
+      "threads": 30,
+      "gcCollected": 3688,
+      "gcSeconds": 0.015000000013969839,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1057.5309999999881,
+      "rss": 106065920,
+      "private": 81682432,
+      "pythonCurrent": 5267197,
+      "handles": 642,
+      "threads": 31,
+      "gcCollected": 5500,
+      "gcSeconds": 0.03200000000651926,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1087.875,
+      "rss": 107134976,
+      "private": 82710528,
+      "pythonCurrent": 5375667,
+      "handles": 623,
+      "threads": 29,
+      "gcCollected": 4751,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1118.2030000000086,
+      "rss": 107778048,
+      "private": 83324928,
+      "pythonCurrent": 5130814,
+      "handles": 600,
+      "threads": 28,
+      "gcCollected": 4022,
+      "gcSeconds": 0.0159999999741558,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1148.5629999999946,
+      "rss": 108732416,
+      "private": 84328448,
+      "pythonCurrent": 5412420,
+      "handles": 627,
+      "threads": 30,
+      "gcCollected": 6279,
+      "gcSeconds": 0.015000000013969839,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1178.9219999999914,
+      "rss": 109916160,
+      "private": 85491712,
+      "pythonCurrent": 5364993,
+      "handles": 594,
+      "threads": 28,
+      "gcCollected": 4106,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1209.3129999999946,
+      "rss": 110313472,
+      "private": 85889024,
+      "pythonCurrent": 5548207,
+      "handles": 646,
+      "threads": 30,
+      "gcCollected": 4300,
+      "gcSeconds": 0.030999999988125637,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1239.6410000000033,
+      "rss": 111271936,
+      "private": 86908928,
+      "pythonCurrent": 5335535,
+      "handles": 626,
+      "threads": 31,
+      "gcCollected": 4935,
+      "gcSeconds": 0.030999999988125637,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1270.0,
+      "rss": 112250880,
+      "private": 87810048,
+      "pythonCurrent": 5461921,
+      "handles": 613,
+      "threads": 30,
+      "gcCollected": 5506,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1300.4379999999946,
+      "rss": 113086464,
+      "private": 88608768,
+      "pythonCurrent": 5400336,
+      "handles": 595,
+      "threads": 29,
+      "gcCollected": 6963,
+      "gcSeconds": 0.030999999988125637,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1330.8129999999946,
+      "rss": 114081792,
+      "private": 89649152,
+      "pythonCurrent": 5479874,
+      "handles": 630,
+      "threads": 30,
+      "gcCollected": 6975,
+      "gcSeconds": 0.015000000013969839,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1361.1410000000033,
+      "rss": 114909184,
+      "private": 90402816,
+      "pythonCurrent": 5323224,
+      "handles": 607,
+      "threads": 29,
+      "gcCollected": 6115,
+      "gcSeconds": 0.030999999988125637,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1391.5469999999914,
+      "rss": 116019200,
+      "private": 91529216,
+      "pythonCurrent": 5340305,
+      "handles": 619,
+      "threads": 30,
+      "gcCollected": 6861,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1421.9379999999946,
+      "rss": 117276672,
+      "private": 92778496,
+      "pythonCurrent": 5414541,
+      "handles": 619,
+      "threads": 30,
+      "gcCollected": 4607,
+      "gcSeconds": 0.030999999988125637,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1452.4219999999914,
+      "rss": 116985856,
+      "private": 92524544,
+      "pythonCurrent": 5371851,
+      "handles": 614,
+      "threads": 30,
+      "gcCollected": 3702,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1482.7809999999881,
+      "rss": 117907456,
+      "private": 93405184,
+      "pythonCurrent": 5319526,
+      "handles": 627,
+      "threads": 30,
+      "gcCollected": 3615,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1513.1719999999914,
+      "rss": 118964224,
+      "private": 94482432,
+      "pythonCurrent": 5356432,
+      "handles": 637,
+      "threads": 29,
+      "gcCollected": 4169,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1543.5469999999914,
+      "rss": 119447552,
+      "private": 95006720,
+      "pythonCurrent": 5389858,
+      "handles": 643,
+      "threads": 31,
+      "gcCollected": 3981,
+      "gcSeconds": 0.031000000017229468,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1573.9839999999967,
+      "rss": 121155584,
+      "private": 96632832,
+      "pythonCurrent": 5338586,
+      "handles": 636,
+      "threads": 31,
+      "gcCollected": 4242,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1604.4219999999914,
+      "rss": 121913344,
+      "private": 97341440,
+      "pythonCurrent": 5462890,
+      "handles": 610,
+      "threads": 29,
+      "gcCollected": 6920,
+      "gcSeconds": 0.031000000017229468,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1634.8589999999967,
+      "rss": 123334656,
+      "private": 98783232,
+      "pythonCurrent": 5349361,
+      "handles": 611,
+      "threads": 30,
+      "gcCollected": 4859,
+      "gcSeconds": 0.01600000000325963,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1665.2660000000033,
+      "rss": 123686912,
+      "private": 99106816,
+      "pythonCurrent": 5527480,
+      "handles": 609,
+      "threads": 29,
+      "gcCollected": 3770,
+      "gcSeconds": 0.030999999988125637,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1695.6719999999914,
+      "rss": 125255680,
+      "private": 100610048,
+      "pythonCurrent": 5453018,
+      "handles": 595,
+      "threads": 28,
+      "gcCollected": 4782,
+      "gcSeconds": 0.031000000017229468,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1726.0629999999946,
+      "rss": 126382080,
+      "private": 101797888,
+      "pythonCurrent": 5539732,
+      "handles": 631,
+      "threads": 29,
+      "gcCollected": 4857,
+      "gcSeconds": 0.030999999988125637,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1756.4689999999828,
+      "rss": 126636032,
+      "private": 102133760,
+      "pythonCurrent": 5577173,
+      "handles": 627,
+      "threads": 31,
+      "gcCollected": 4825,
+      "gcSeconds": 0.015000000013969839,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "measuredSeconds": 1786.8439999999828,
+      "rss": 127770624,
+      "private": 103202816,
+      "pythonCurrent": 5279159,
+      "handles": 599,
+      "threads": 30,
+      "gcCollected": 4103,
+      "gcSeconds": 0.031000000017229468,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "testResults": {
+    "backendMain": {
+      "run": 245,
+      "failed": 0,
+      "skipped": 0
+    },
+    "backendAdditional": {
+      "run": 26,
+      "failed": 0,
+      "skipped": 1,
+      "skipReason": "Live PostgreSQL DSN unavailable"
+    },
+    "gcRecheck": {
+      "run": 10,
+      "failed": 0
+    },
+    "frontend": {
+      "run": 150,
+      "failed": 0
+    },
+    "interactiveStudio": "Not verified in this run; component tests used.",
+    "help": {
+      "run": 11,
+      "failed": 0
+    },
+    "productionFrontendBuild": "passed",
+    "syntax": "passed"
+  }
+}

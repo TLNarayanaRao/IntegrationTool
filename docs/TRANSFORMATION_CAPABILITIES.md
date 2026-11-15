@@ -60,6 +60,28 @@ Use **Map & Test** to check the generated result before running or exporting the
 
 ### XML expressions and bindings
 
+In any activity's **Input → Functions → XPath functions**, choose XPath 1.0 or 2.0,
+expand a category, select a function and fill its XPath arguments. Quote text
+arguments, for example `'text'`; XML paths and numeric expressions need no text
+quotes. Drag the prepared expression onto a target. Type a function prefix in a
+field for XPath suggestions. Mapper has additional XML source/namespace settings;
+other inputs can pass an explicit XML source with `xpath2("expression", ${input.xmlString})`.
+
+The designer includes the complete supported catalog even when the runtime
+palette request is unavailable: 49 XPath 1.0 signatures and 201 XPath 2.0
+signatures, including overloads. Categories include strings, regular
+expressions, numbers, sequences, booleans, date/time, nodes/namespaces, URI
+encoding and XML Schema constructors. The general Mapper functions remain
+available in the same Functions tab.
+
+The **XPath expression builder** offers the same categorized inventory, search,
+argument labels and descriptions. **Expression XPath version** selects the
+version for that field; applying it saves an explicit `xpath1(...)` or
+`xpath2(...)` expression. Existing fields keep their saved XPath versions.
+Use operators such as `+`, `-`, `*`, `div`, `mod`, `=`, `!=`, `<` and `>` directly
+in the expression. Functions that retrieve external documents or collections
+are not exposed by this offline runtime.
+
 In Mapper **Configuration**, choose the XPath version and expand **XML
 expressions and runtime binding**. Set the XML source to a mapping path such as
 `${last.xmlString}`, or leave it empty to use the previous activity's XML

@@ -1,0 +1,109 @@
+{
+  "passed": false,
+  "gates": {
+    "duration": true,
+    "noErrors": false,
+    "allFamilies": true,
+    "rssGrowth": true,
+    "lateRssSlope": false,
+    "handleGrowth": true,
+    "threadGrowth": true
+  },
+  "measuredSeconds": 3679.53,
+  "warmupSeconds": 60.0,
+  "workers": 3,
+  "minimumCycleSecondsPerWorker": 1.0,
+  "roundTripsIncludingWarmup": {
+    "kafka": 138,
+    "amqp": 139,
+    "jms": 28
+  },
+  "errors": [
+    {
+      "family": "jms",
+      "exceptionType": "RuntimeError",
+      "worker": 1
+    }
+  ],
+  "growth": {
+    "rssMiB": 0.1953125,
+    "handles": 14,
+    "threads": 0
+  },
+  "lateRssMiBPerMinute": 0.5836634488027466,
+  "latencySampleMaxPerFamily": 10000,
+  "samples": [
+    {
+      "seconds": 0.05,
+      "rssMiB": 68.26953125,
+      "handles": 664,
+      "threads": 40,
+      "childProcesses": 18,
+      "childRssMiB": 1096.21875
+    },
+    {
+      "seconds": 10.12,
+      "rssMiB": 68.78515625,
+      "handles": 666,
+      "threads": 40,
+      "childProcesses": 18,
+      "childRssMiB": 1105.01171875
+    },
+    {
+      "seconds": 20.16,
+      "rssMiB": 68.3203125,
+      "handles": 666,
+      "threads": 40,
+      "childProcesses": 18,
+      "childRssMiB": 1115.91796875
+    },
+    {
+      "seconds": 30.2,
+      "rssMiB": 67.51953125,
+      "handles": 665,
+      "threads": 39,
+      "childProcesses": 18,
+      "childRssMiB": 1136.015625
+    },
+    {
+      "seconds": 40.25,
+      "rssMiB": 68.1484375,
+      "handles": 655,
+      "threads": 30,
+      "childProcesses": 8,
+      "childRssMiB": 519.69140625
+    },
+    {
+      "seconds": 50.28,
+      "rssMiB": 68.2734375,
+      "handles": 693,
+      "threads": 34,
+      "childProcesses": 12,
+      "childRssMiB": 766.453125
+    },
+    {
+      "seconds": 60.33,
+      "rssMiB": 68.30078125,
+      "handles": 731,
+      "threads": 38,
+      "childProcesses": 16,
+      "childRssMiB": 1021.9921875
+    },
+    {
+      "seconds": 70.36,
+      "rssMiB": 68.46484375,
+      "handles": 678,
+      "threads": 40,
+      "childProcesses": 18,
+      "childRssMiB": 1051.77734375
+    }
+  ],
+  "scope": "Live loopback Kafka 3.9.1 and Artemis 2.40.0 JMS/AMQP; not EMS, cloud Pub/Sub or SAP",
+  "sourceSha256": {
+    "backend/app/runtime.py": "3c51504e1af87d17918487183b778da317f520e322cdc4589a2470e32b13f87d",
+    "backend/app/amqp.py": "adf5373f0ba210ad46b391982cfdacbd2312defd08bf225162fc1c0780334c40",
+    "backend/app/java_bridge.py": "28e704d5e9573717a70d10f06554d722335d9abfa3d9ea85006edd5cc3edc3ca"
+  },
+  "mode": "debug",
+  "scopeNote": "Automated DebugManager sessions, not an interactive Studio UI soak"
+}

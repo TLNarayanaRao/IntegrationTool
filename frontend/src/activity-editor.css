@@ -586,3 +586,12 @@ details:not([open])>summary>.tree-disclosure:after {
 .mapper-xpath-fields{max-height:180px;overflow:auto}
 .mapper-xpath-fields button{text-align:left;overflow-wrap:anywhere}
 .mapper-xpath-fields button[aria-pressed=true]{outline:1px solid currentColor}
+.xpath-function-palette label, .xpath-function-arguments { display: grid; gap: 6px; min-width: 0; }
+.xpath-function-palette :is(select,input) { min-width: 0; width: 100%; }
+.xpath-function-arguments { padding: 8px; border: 1px solid var(--line); border-radius: 5px; }
+.xpath-prepared-expression { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+
+.jdbc-parameters label:has(select[aria-label^="Direction"]){grid-template-columns:26px minmax(80px,1fr) 76px 105px;grid-column:1/-1}.jdbc-parameters label input{width:100%;min-width:0}
+@media(max-width:650px){.jdbc-parameters label:has(select[aria-label^="Direction"]){grid-template-columns:26px minmax(0,1fr)}.jdbc-parameters label:has(select[aria-label^="Direction"]) select{grid-column:2}}
+
+.jdbc-parameters .jdbc-remove-parameter{grid-column:2/-1;justify-self:start;padding:3px 7px}

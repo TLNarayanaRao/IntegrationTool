@@ -1,3 +1,5 @@
+import XPathFunctionPalette from "./XPathFunctionPalette";
+import {designerXPathFunctions} from "./xpathPalette";
 import XsdStructurePicker from "./XsdStructurePicker";
 import {selectXsdStructure, selectedSchemaText} from "./xsdSelection";
 import ModalLayer from "./ModalLayer";
@@ -422,19 +424,19 @@ export function activityContract(n: any): Contract {
   if (n.type === "file") {
     const common = [f("path", "Filename / directory", "text", "Absolute paths and project-property expressions are supported."), f("includeTimestamp", "Include timestamp metadata", "boolean")];
     const configs: Record<string, Field[]> = {
-      read: [...common, { ...f("readAs", "Read as", "select"), options: ["Text", "Binary"] }, f("excludeFileContent", "Exclude file content", "boolean"), f("encoding", "Text encoding")],
+      read: [...common, { ...f("readAs", "Read as", "select"), options: ["Text", "Binary"] }, f("excludeFileContent", "Exclude file content", "boolean"), f("encoding", "Text encoding"),{...f("compression","Compression","select"),options:["None","GZip"]}],
       write: [...common, { ...f("writeAs", "Write as", "select"), options: ["Text", "Binary"] }, f("encoding", "Text encoding"), f("append", "Append to existing file", "boolean"), f("overwrite", "Overwrite existing file", "boolean"), f("createDirectories", "Create non-existing directories", "boolean"), f("addLineSeparator", "Add line separator", "boolean"), { ...f("compression", "Compression", "select"), options: ["None", "GZip"] }],
       list: [...common, f("pattern", "File name pattern / wildcard"), f("recursive", "Recursive", "boolean"), { ...f("listType", "List", "select"), options: ["Files and Directories", "Only Files", "Only Directories"] }, { ...f("sortBy", "Sort by", "select"), options: ["Name", "Size", "Last Modified"] }, { ...f("sortOrder", "Sort order", "select"), options: ["Ascending", "Descending"] }],
       delete: [...common, f("recursive", "Remove non-empty directory recursively", "boolean"), f("ignoreMissing", "Ignore missing file", "boolean")],
       rename: [...common, f("destination", "To filename"), f("overwrite", "Overwrite existing file", "boolean"), f("createDirectories", "Create non-existing directories", "boolean")],
       copy: [...common, f("destination", "Destination filename / directory"), f("overwrite", "Overwrite existing file", "boolean"), f("createDirectories", "Create non-existing directories", "boolean"), f("preserveAttributes", "Preserve file attributes", "boolean"), f("recursive", "Copy directory recursively", "boolean")],
-      poll: [...common, f("pattern", "File name pattern / wildcard"), { ...f("eventType", "Change type", "select"), options: ["Created", "Modified", "Deleted", "Any"] }, f("pollInterval", "Poll interval (seconds)", "number"), f("includeExisting", "Include existing files", "boolean"), f("recursive", "Recursive", "boolean"), { ...f("postAction", "After processing", "select"), options: ["None", "Delete", "Move"] }, f("moveTo", "Move processed file to")],
+      poll: [...common, f("maxEntries","Maximum listed entries (0 = unlimited)","number"), f("pattern", "File name pattern / wildcard"), { ...f("eventType", "Change type", "select"), options: ["Created", "Modified", "Deleted", "Any"] }, f("pollInterval", "Poll interval (seconds)", "number"), f("includeExisting", "Include existing files", "boolean"), f("recursive", "Recursive", "boolean"), { ...f("postAction", "After processing", "select"), options: ["None", "Delete", "Move"] }, f("moveTo", "Move processed file to")],
     };
     const cfg = configs[op] || common;
     const inputs: Record<string, DataField[]> = {
-      read: [d("path", "Filename", "string", true), d("encoding", "Text encoding")],
+      read: [d("path", "Filename", "string", true), d("encoding", "Text encoding"),d("maxReadBytes","Maximum decompressed read bytes (0 = unlimited)","integer")],
       write: [d("path", "Filename", "string", true), d("textContent", "Text content", "string"), d("binaryContent", "Binary content", "base64"), d("encoding", "Text encoding"), d("addLineSeparator", "Add line separator", "boolean")],
-      list: [d("path", "Directory / wildcard", "string", true), d("recursive", "Recursive", "boolean")],
+      list: [d("path", "Directory / wildcard", "string", true), d("recursive", "Recursive", "boolean"),d("maxEntries","Maximum listed entries (0 = unlimited)","integer")],
       delete: [d("path", "Filename / directory", "string", true), d("recursive", "Recursive", "boolean")],
       rename: [d("path", "From filename", "string", true), d("destination", "To filename", "string", true)],
       copy: [d("path", "Source filename / directory", "string", true), d("destination", "Destination filename / directory", "string", true), d("recursive", "Recursive", "boolean")],
@@ -498,14 +500,16 @@ export function activityContract(n: any): Contract {
       input:
         op === "put"
           ? [
-              d("content", "Content", "binary|string", true),
+              d("content", "Content (or provide local path)", "binary|string"),
               d("remotePath", "Remote path", "string", true),
+              d("localPath","Local file to upload","string"),d("atomicUpload","Publish upload by remote rename","boolean"),d("overwrite","Allow atomic SFTP replacement","boolean"),
             ]
-          : [d("remotePath", "Remote path", "string", op !== "dir")],
+          : [d("remotePath", "Remote path", "string", op !== "dir"), ...(op === "dir" ? [d("maxEntries","Maximum listed entries (0 = unlimited)","integer")] : []), ...(op === "get" ? [d("maxDownloadBytes", "Maximum download bytes (0 = unlimited)", "integer"),d("localPath","Download directly to local file","string"),d("overwrite","Overwrite local file","boolean"),d("createDirectories","Create local directories","boolean")] : [])],
       output:
         op === "get"
           ? [
               d("contentBase64", "Downloaded content", "base64"),
+              d("localPath","Downloaded local file","string"),
               d("size", "Size", "integer"),
             ]
           : op === "dir"
@@ -779,7 +783,7 @@ export function activityContract(n: any): Contract {
         ...(["insert", "update", "delete"].includes(op) ? [f("interpretEmptyStringAsNull", "Interpret empty string as NULL", "boolean"), f("batchUpdate", "Batch update", "boolean"), f("overrideSqlStatement", "Allow mapped SQL override", "boolean")] : []),
       ],
       input: [d("ServerTimeZone", "Database server time zone", "string"), d("timeout", "Dynamic timeout", "number"), ...(["query", "dynamic"].includes(op) ? [d("maxRows", "Dynamic maximum rows", "number"), d("SqlStatement", "Dynamic SQL override", "string"), d("parameters", "Prepared statement parameters", "object"), d("rowOffset", "Row offset when processing subsets", "integer")] : op === "call" ? [d("parameters", "IN and IN/OUT procedure parameters", "object")] : [d("parameters", "Prepared statement parameters", "object"), d("records", "Batch parameter records", "array"), d("SqlUpdateStatement", "Dynamic update SQL", "string"), ...(op === "update" ? [d("InsertStatement", "Insert-if-missing SQL", "string")] : [])])],
-      output: ["query", "dynamic"].includes(op) ? [d("resultSet", "JDBC result set", "object"), d("resultSet.Record", "Result records", "array"), d("rows", "Result records", "array"), d("rowCount", "Rows returned", "integer"), d("lastSubset", "Last result subset", "boolean"), d("nextRowOffset", "Offset for the next subset, when available", "integer")] : op === "call" ? [d("resultSets", "Procedure result sets", "array"), d("outParameters", "OUT and IN/OUT parameters", "object"), d("UnresolvedResultSets", "Unresolved result sets", "array")] : [d("noOfUpdates", "Number of updates", "integer"), d("rowCount", "Affected rows", "integer"), d("lastInsertId", "Generated key", "integer|string")],
+      output: ["query", "dynamic"].includes(op) ? [d("resultSet", "JDBC result set", "object"), d("resultSet.Record", "Result records", "array"), d("rows", "Result records", "array"), d("rowCount", "Rows returned", "integer"), d("lastSubset", "Last result subset", "boolean"), d("nextRowOffset", "Offset for the next subset, when available", "integer")] : op === "call" ? [d("resultSets", "Procedure result sets", "array"), d("outParameters", "OUT and IN/OUT parameters", "object"), ...(Array.isArray(n.config.preparedParameters) ? n.config.preparedParameters : []).filter((parameter:any)=>["OUT","INOUT"].includes(parameter.direction)).map((parameter:any)=>d(`outParameters.${parameter.name}`,parameter.name,parameter.type||"string")), d("UnresolvedResultSets", "Unresolved result sets", "array")] : [d("noOfUpdates", "Number of updates", "integer"), d("rowCount", "Affected rows", "integer"), d("lastInsertId", "Generated key", "integer|string")],
       errors: [
         { type: "JDBCConnectionNotFoundException", description: "The selected JDBC shared connection is unavailable." },
         { type: "InvalidTimeZoneException", description: "The database server time zone is invalid." },
@@ -963,7 +967,7 @@ export function activityContract(n: any): Contract {
       messageType = { ...f("messageType", "Message type", "select"), options: ["Text", "Bytes", "Map", "Object", "Object Ref", "Simple", "Stream", "XML Text"] },
       style = { ...f("messagingStyle", "Messaging style", "select"), options: ["Queue", "Topic", "Generic"] },
       ack = { ...f("acknowledgeMode", "Acknowledge mode", "select"), options: ["Auto", "Client", "Dups OK", "Explicit Client", "Explicit Client Dups OK", "Transactional"] },
-      receiver = [resource, style, { ...f(destinationKey, "Destination", "text", "Queue or topic name; choose an environment property or enter an expression."), propertyBrowse: true }, messageType, f("messageSelector", "JMS message selector"), ack, { ...f("maxSessions", "Session count", "number", "Resolved from the selected environment at runtime."), propertyBrowse: true }, { ...f("flowLimit", "Flow limit", "number", "Resolved from the selected environment at runtime."), propertyBrowse: true }, { ...f("receiveTimeout", "Receive timeout (ms)", "number", "Resolved from the selected environment at runtime."), propertyBrowse: true }],
+      receiver = [resource, f("maxMessages", "Maximum messages per Get (1-10000)", "number", "Defaults to one. Batch Get returns up to this many messages within one total receive timeout."), style, { ...f(destinationKey, "Destination", "text", "Queue or topic name; choose an environment property or enter an expression."), propertyBrowse: true }, messageType, f("messageSelector", "JMS message selector"), ack, { ...f("maxSessions", "Session count", "number", "Resolved from the selected environment at runtime."), propertyBrowse: true }, { ...f("flowLimit", "Flow limit", "number", "Resolved from the selected environment at runtime."), propertyBrowse: true }, { ...f("receiveTimeout", "Receive timeout (ms)", "number", "Resolved from the selected environment at runtime."), propertyBrowse: true }],
       sender = [resource, style, f(destinationKey, "Destination"), messageType,
         { ...f("deliveryMode", "Delivery mode", "select"), options: ["Persistent", "Non-Persistent"] }, f("priority", "Priority (0-9)", "number"), f("expiration", "Expiration (ms)", "number"), f("correlationId", "JMS correlation ID"), f("replyTo", "Reply-to destination"), f("disableMessageId", "Disable JMS message ID", "boolean"), f("disableTimestamp", "Disable JMS timestamp", "boolean"), f("dynamicProperties", "JMS application / dynamic properties (JSON)", "textarea")];
     const configs: Record<string, Field[]> = {
@@ -973,7 +977,7 @@ export function activityContract(n: any): Contract {
       topic_publisher: sender,
       request_reply: [...sender, f("requestTimeout", "Request timeout (ms)", "number"), f("temporaryReplyDestination", "Use temporary reply destination", "boolean")],
       reply: [resource, style, f("destination", "Reply destination"), messageType, f("correlationId", "Request correlation ID"), ...sender.slice(4)],
-      get_queue_message: [resource, f("queue", "Queue name"), messageType, f("messageSelector", "JMS message selector"), ack, f("receiveTimeout", "Receive timeout (ms)", "number")],
+      get_queue_message: [resource, f("maxMessages", "Maximum messages (1-10000)", "number", "Defaults to one. Use bounded batches for bulk processing."), f("queue", "Queue name"), messageType, f("messageSelector", "JMS message selector"), ack, f("receiveTimeout", "Receive timeout (ms)", "number")],
       receive_message: [resource, style, f("destination", "Destination"), messageType, f("messageSelector", "JMS message selector"), ack, f("maxSessions", "Maximum sessions", "number"), f("flowLimit", "Flow limit", "number"), f("receiveTimeout", "Receive timeout (ms)", "number"), f("durable", "Durable subscription", "boolean"), f("subscriptionName", "Durable subscription name"), f("sharedSubscription", "Shared subscription", "boolean")],
       send_message: [resource, style, f("destination", "Destination"), messageType, ...sender.slice(4)],
       reply_message: [resource, style, f("destination", "Reply destination"), messageType, f("correlationId", "Request correlation ID"), ...sender.slice(4)],
@@ -1575,6 +1579,7 @@ function runtimeMappableInputs(node: any, contract: Contract): DataField[] {
   const configuredJdbcParameters = Array.isArray(node.config?.preparedParameters) ? node.config.preparedParameters : [];
   const jdbcParameters = node.type === "jdbc"
     ? (configuredJdbcParameters.length ? configuredJdbcParameters : (node.config?.preparedParameterNames || []).map((name: string) => ({ name, type: "string" })))
+      .filter((parameter:any)=>String(parameter.direction||'IN').toUpperCase()!=='OUT')
       .map((parameter: any) => d(`parameters.${parameter.name}`, parameter.name, parameter.type || "string", true, `Prepared SQL value for :${parameter.name}.`))
     : [];
   return [...contract.input, ...jdbcParameters, ...dynamic];
@@ -2310,6 +2315,9 @@ function JdbcDesigner({ config, resource, properties, setConfig }: any) {
     const existing = Object.fromEntries(configuredParameters.map((item: any) => [item.name, item.type]));
     setConfig({ sql, preparedParameterNames: names, preparedParameters: names.map((name) => ({ name, type: existing[name] || "string" })) });
   };
+  const addCallParameter = () => {const names=new Set(configuredParameters.map((item:any)=>item.name));let index=1;while(names.has('Parameter'+index))index++;const entries=[...configuredParameters,{name:'Parameter'+index,type:'string',direction:'IN'}];setConfig({preparedParameters:entries,preparedParameterNames:entries.map(item=>item.name)});};
+  const updateCallParameter = (index:number,patch:any) => {const entries=configuredParameters.map((item:any,current:number)=>current===index?{...item,...patch}:item);setConfig({preparedParameters:entries,preparedParameterNames:entries.map((item:any)=>item.name)});};
+  const procedureParameterError = config.operation === 'call' && configuredParameters.some((item:any,index:number)=>!/^[A-Za-z_][\w-]*$/.test(String(item.name||'')) || configuredParameters.findIndex((other:any)=>other.name===item.name)!==index) ? 'Procedure parameter names must be unique identifiers.' : '';
   const setParameterType = (name: string, type: string) => setConfig({ preparedParameters: configuredParameters.map((item: any) => item.name === name ? { ...item, type } : item) });
   const request = async (path: string, body: any) => {
     if (!runtimeResource) { setStatus("Select a JDBC shared connection first."); return null; }
@@ -2325,7 +2333,7 @@ function JdbcDesigner({ config, resource, properties, setConfig }: any) {
     return "SELECT * FROM " + (table.schema ? identifier(table.schema) + "." : "") + identifier(table.name);
   };
   const run = async () => { const output = await request("/api/jdbc/test-query", { resource: runtimeResource, operation: config.operation, config: { ...config, parameters: Object.fromEntries((config.preparedParameterNames || []).map((name: string) => [name, null])) } }); if (output) { setPreview(output); const columns = output.columns || Object.keys(output.rows?.[0] || {}).map((name) => ({ name, dataType: typeof output.rows[0][name] })); setConfig({ outputColumns: columns }); setStatus(`${output.rowCount ?? output.noOfUpdates ?? 0} rows returned/affected. Output schema refreshed.`); } };
-  return <section className="jdbc-designer"><header><span><Database/><b>JDBC SQL DESIGNER</b></span><span><button type="button" onClick={fetchMetadata} disabled={busy || !resource}><RefreshCw/> Fetch metadata</button><button type="button" onClick={run} disabled={busy || !resource || (!String(config.sql || "").trim() && config.operation !== "call")}><FlaskConical/> Run &amp; fetch</button></span></header>{config.operation !== "call" && <><div className="jdbc-editor-toolbar"><span><b>SQL statement</b></span><button type="button" onClick={() => updateSql(samples[config.operation] || samples.query)}>Insert sample {config.operation || "query"}</button></div><div className="jdbc-code-editor"><span aria-hidden="true">SQL</span><textarea aria-label="JDBC SQL statement" value={config.sql || ""} onChange={(event) => updateSql(event.target.value)} placeholder={samples[config.operation] || samples.query} spellCheck={false}/></div></>} {!!configuredParameters.length && <div className="jdbc-parameters"><header><b>Derived input parameters</b></header>{configuredParameters.map((parameter: any, index: number) => <label key={`${parameter.name}-${index}`}><code>{index + 1}</code><span><b>:{parameter.name}</b><small>parameters.{parameter.name}</small></span><select aria-label={`Datatype for ${parameter.name}`} value={parameter.type || "string"} onChange={(event) => setParameterType(parameter.name, event.target.value)}>{parameterTypes.map((type) => <option key={type}>{type}</option>)}</select></label>)}</div>} {metadata && <div className="jdbc-schema-browser">{metadata.tables?.map((table: any) => <button type="button" key={`${table.schema}.${table.name}`} onClick={["query", "dynamic"].includes(config.operation) ? () => updateSql(tableSelect(table)) : undefined}><span><b>{table.name}</b><small>{table.schema} · {table.type}</small></span><code>{table.columns?.length || 0} columns</code></button>)}</div>} {preview && <pre>{JSON.stringify(preview, null, 2)}</pre>} {status && <p>{status}</p>}</section>;
+  return <section className="jdbc-designer"><header><span><Database/><b>JDBC SQL DESIGNER</b></span><span>{config.operation === "call" && <button type="button" onClick={addCallParameter}>Add procedure parameter</button>}<button type="button" onClick={fetchMetadata} disabled={busy || !resource}><RefreshCw/> Fetch metadata</button><button type="button" onClick={run} disabled={busy || !resource || !!procedureParameterError || (!String(config.sql || "").trim() && config.operation !== "call")}><FlaskConical/> Run &amp; fetch</button></span></header>{config.operation !== "call" && <><div className="jdbc-editor-toolbar"><span><b>SQL statement</b></span><button type="button" onClick={() => updateSql(samples[config.operation] || samples.query)}>Insert sample {config.operation || "query"}</button></div><div className="jdbc-code-editor"><span aria-hidden="true">SQL</span><textarea aria-label="JDBC SQL statement" value={config.sql || ""} onChange={(event) => updateSql(event.target.value)} placeholder={samples[config.operation] || samples.query} spellCheck={false}/></div></>} {!!configuredParameters.length && <div className="jdbc-parameters"><header><b>Derived input parameters</b></header>{configuredParameters.map((parameter: any, index: number) => <label key={`${parameter.name}-${index}`}><code>{index + 1}</code><span>{config.operation === "call" ? <input aria-label={`Name for procedure parameter ${index+1}`} value={parameter.name} onChange={event=>updateCallParameter(index,{name:event.target.value.replace(/\s+/g,"-")})}/> : <b>:{parameter.name}</b>}<small>parameters.{parameter.name}</small></span>{config.operation === "call" && <select aria-label={`Direction for ${parameter.name}`} value={parameter.direction||"IN"} onChange={event=>updateCallParameter(index,{direction:event.target.value})}><option>IN</option><option>OUT</option><option>INOUT</option></select>}<select aria-label={`Datatype for ${parameter.name}`} value={parameter.type || "string"} onChange={(event) => setParameterType(parameter.name, event.target.value)}>{parameterTypes.map((type) => <option key={type}>{type}</option>)}</select>{config.operation === "call" && <button type="button" className="jdbc-remove-parameter" aria-label={`Remove parameter ${parameter.name}`} onClick={()=>{const entries=configuredParameters.filter((_:any,current:number)=>current!==index);setConfig({preparedParameters:entries,preparedParameterNames:entries.map((item:any)=>item.name)});}}>Remove parameter</button>}</label>)}</div>} {metadata && <div className="jdbc-schema-browser">{metadata.tables?.map((table: any) => <button type="button" key={`${table.schema}.${table.name}`} onClick={["query", "dynamic"].includes(config.operation) ? () => updateSql(tableSelect(table)) : undefined}><span><b>{table.name}</b><small>{table.schema} · {table.type}</small></span><code>{table.columns?.length || 0} columns</code></button>)}</div>} {preview && <pre>{JSON.stringify(preview, null, 2)}</pre>} {procedureParameterError && <p role="alert" className="mapping-validation-error">{procedureParameterError}</p>} {status && <p>{status}</p>}</section>;
 }
 
 function FieldEditor({ field, value, set, resources, tasks, properties = [], selectedResourceId, navigateTask, createConnection, httpRole }: any) {
@@ -2388,6 +2396,7 @@ function FieldEditor({ field, value, set, resources, tasks, properties = [], sel
             );
           })}
           <small>{String(value || "").split(",").filter(Boolean).length} methods enabled</small>
+          {String(value||'').split(',').some(method=>method.trim() && !HTTP_METHODS.includes(method.trim().toUpperCase())) && <span role="alert" className="mapping-validation-error">Unsupported methods: {String(value).split(',').filter(method=>method.trim() && !HTTP_METHODS.includes(method.trim().toUpperCase())).join(', ')}. <button type="button" onClick={()=>change(String(value).split(',').map(method=>method.trim().toUpperCase()).filter(method=>HTTP_METHODS.includes(method)).join(','))}>Remove unsupported methods</button></span>}
         </span>
       ) : field.type === "select" ? (
         <select
@@ -2535,7 +2544,7 @@ function activityGroupVariables(node: any, task: any, tasks: any[] = [], schemas
   });
   return variables;
 }
-export function DataSourcePane({ properties, sources = [], customFunctions = [], updateCustomFunctions, runtimeVariables = [], coercions = {} }: any) {
+export function DataSourcePane({ properties, sources = [], customFunctions = [], updateCustomFunctions, runtimeVariables = [], coercions = {}, xpathFunctions = true }: any) {
   customFunctions = customFunctions.length ? customFunctions : properties?.customFunctions || [];
   updateCustomFunctions = updateCustomFunctions || properties?.updateCustomFunctions;
   const [tab, setTab] = useState<"data" | "functions" | "constants">("data"), [search, setSearch] = useState(""), [selectedSource, setSelectedSource] = useState("");
@@ -2592,7 +2601,7 @@ export function DataSourcePane({ properties, sources = [], customFunctions = [],
     <h4>PROCESS CONTEXT</h4>{item("Task ID", "${context.taskId}", "string", false)}{item("Environment", "${context.environment}", "string", false)}{item("Current activity ID", "${context.activityId}", "string", false)}
     <h4>GLOBAL VARIABLES</h4>{dataTreeRows(propertyFields).map((property) => { const path = `properties.${property.path}`; return !query && !tree.visible(path) ? null : item(property.label, `\${properties.${property.path}}`, property.type, false, property.depth, property.group, property.explicit, path); })}
   </div>;
-  return <aside className="source-pane"><div className="source-tabs"><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}>Data</button><button className={tab === "functions" ? "active" : ""} onClick={() => setTab("functions")}>Functions</button><button className={tab === "constants" ? "active" : ""} onClick={() => setTab("constants")}>Constants</button></div><input className="source-search" aria-label={`Search ${tab}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${tab}…`}/>{tab === "data" ? renderData() : tab === "functions" ? <div className="source-list function-list"><div className="custom-function-heading"><h4>PROJECT FUNCTIONS · {customFunctions.length}</h4><button onClick={createFunction}><Plus/> New</button></div>{customFunctions.filter((fn: any) => fn.name.toLowerCase().includes(query)).map((fn: any) => item(fn.name, `custom:${fn.name}(${fn.parameters.map((name: string) => `$${name}`).join(", ")})`, "custom", false))}<h4>BUILT-IN FUNCTIONS · {functionItems.length}</h4>{mapperFunctionCategories.map((category) => { const definitions = functionItems.filter((item) => item.category === category); return definitions.length ? <details className="function-category" key={category} open={!!query || category === "String"}><summary><span className="tree-disclosure"/><b>{category}</b><code>{definitions.length}</code></summary>{definitions.map(functionItem)}</details> : null; })}</div> : <div className="source-list constants-list"><h4>TYPED CONSTANTS</h4>{constantItem("Empty string", "", "string")}{constantItem("True", true, "boolean")}{constantItem("False", false, "boolean")}{constantItem("Zero", 0, "integer")}{constantItem("Empty object", {}, "object")}{constantItem("Empty array", [], "array")}{constantItem("Null", null, "null")}</div>}</aside>;
+  return <aside className="source-pane"><div className="source-tabs"><button className={tab === "data" ? "active" : ""} onClick={() => setTab("data")}>Data</button><button className={tab === "functions" ? "active" : ""} onClick={() => setTab("functions")}>Functions</button><button className={tab === "constants" ? "active" : ""} onClick={() => setTab("constants")}>Constants</button></div><input className="source-search" aria-label={`Search ${tab}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`Search ${tab}…`}/>{tab === "data" ? renderData() : tab === "functions" ? <div className="source-list function-list"><div className="custom-function-heading"><h4>PROJECT FUNCTIONS · {customFunctions.length}</h4><button onClick={createFunction}><Plus/> New</button></div>{customFunctions.filter((fn: any) => fn.name.toLowerCase().includes(query)).map((fn: any) => item(fn.name, `custom:${fn.name}(${fn.parameters.map((name: string) => `$${name}`).join(", ")})`, "custom", false))}{xpathFunctions && <XPathFunctionPalette search={search} onSelect={setSelectedSource}/>}<h4>BUILT-IN FUNCTIONS · {functionItems.length}</h4>{mapperFunctionCategories.map((category) => { const definitions = functionItems.filter((item) => item.category === category); return definitions.length ? <details className="function-category" key={category} open={!!query || category === "String"}><summary><span className="tree-disclosure"/><b>{category}</b><code>{definitions.length}</code></summary>{definitions.map(functionItem)}</details> : null; })}</div> : <div className="source-list constants-list"><h4>TYPED CONSTANTS</h4>{constantItem("Empty string", "", "string")}{constantItem("True", true, "boolean")}{constantItem("False", false, "boolean")}{constantItem("Zero", 0, "integer")}{constantItem("Empty object", {}, "object")}{constantItem("Empty array", [], "array")}{constantItem("Null", null, "null")}</div>}</aside>;
 }
 function describeMapping(expression: any, sources: ActivitySource[]): string {
   if (expression === undefined || expression === null || expression === "") return "Drop a source field or enter a constant";
@@ -3209,15 +3218,16 @@ function MapperXPathBuilder({ config, target, targetType, savedSource, apply }: 
   const [argumentsByIndex, setArguments] = useState<string[]>([]);
   const [fieldPath, setFieldPath] = useState("");
   const [open, setOpen] = useState(false);
-  const [palette, setPalette] = useState<{version:string; functions:Array<{name:string;args:string[];category:string;signature?:string}>}>();
+  const [palette, setPalette] = useState<{version:string; functions:Array<{name:string;args:string[];category:string;signature:string;description:string}>}>();
   const [functionFilter, setFunctionFilter] = useState("");
   const [migration, setMigration] = useState<{key:string; candidate?:string; message:string}>();
+  const [expressionVersion,setExpressionVersion] = useState<string>();
   const saved = typeof savedSource === "string" ? savedSource.match(/^xpath([12]?)\(("(?:\\.|[^"\\])*")\)$/s) : null;
-  const version = saved?.[1] ? saved[1] + ".0" : config.xpathVersion || "1.0";
+  const version = expressionVersion || (saved?.[1] ? saved[1] + ".0" : config.xpathVersion || "1.0");
   useEffect(() => {
     try {setFormula(saved ? JSON.parse(saved[2]) : "");}
     catch {setFormula("");}
-    setDiagnostic("");
+    setDiagnostic("");setExpressionVersion(undefined);
   }, [savedSource, target]);
   useEffect(() => {
     if (!open) return;
@@ -3229,7 +3239,7 @@ function MapperXPathBuilder({ config, target, targetType, savedSource, apply }: 
     return () => request.abort();
   }, [open, version]);
   const templates = xpathTemplates.filter(item => item.version <= Number(version));
-  const entries = palette && palette.version === version ? palette.functions : templates.map(item=>({...item, category:"Common XPath", signature:""}));
+  const entries = designerXPathFunctions(version,palette?.version===version ? palette?.functions : undefined);
   const preferred = new Map<string, number>();
   for (const item of entries) if (!preferred.has(item.name)) {
     preferred.set(item.name, templates.find(template=>template.name===item.name)?.args.length ?? item.args.length);
@@ -3250,11 +3260,11 @@ function MapperXPathBuilder({ config, target, targetType, savedSource, apply }: 
   const castType = (targetType || "").replace(/\[\]$/, "").toLowerCase();
   const constructor = ({ string:"string", int:"int", integer:"integer", long:"long", decimal:"decimal",
     number:"decimal", double:"double", float:"float", boolean:"boolean", date:"date", datetime:"dateTime" } as Record<string,string>)[castType];
-  const source = `xpath${saved?.[1] || ""}(${JSON.stringify(formula.trim())})`;
+  const source = `xpath${expressionVersion ? version[0] : saved?.[1] || ""}(${JSON.stringify(formula.trim())})`;
   const preview = async (expression:string) => {
     const input = sample.trimStart().startsWith("<") ? {xmlString: sample} : JSON.parse(sample);
     const response = await fetch("/api/mapper/test", {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({
-      input, mappings:[{target:"value", source:expression}], options:{xpathVersion:config.xpathVersion, xmlSource:config.xmlSource,
+      input, mappings:[{target:"value", source:expression}], options:{xpathVersion:version, xmlSource:config.xmlSource,
         xmlNamespaces:config.xmlNamespaces, xmlVariables:config.xmlVariables, sourceTypeOverrides:config.sourceTypeOverrides, validateOutput:false},
     })});
     const result = await response.json();
@@ -3287,7 +3297,7 @@ function MapperXPathBuilder({ config, target, targetType, savedSource, apply }: 
       }
     } finally {setTesting(false);}
   };
-  return <details className="mapper-xpath-builder" onToggle={event=>setOpen(event.currentTarget.open)}><summary>XPath expression builder</summary><div className="transform-policy-grid">
+  return <details className="mapper-xpath-builder" onToggle={event=>setOpen(event.currentTarget.open)}><summary>XPath expression builder</summary><div className="transform-policy-grid"><label>Expression XPath version<select aria-label="Expression XPath version" value={version} onChange={event=>{setExpressionVersion(event.target.value);setFunctionName("");setArguments([]);setDiagnostic("");}}><option>1.0</option><option>2.0</option></select></label>
     <label>XPath {version}<textarea value={formula} onChange={event => setExpression(event.target.value)}
       onDragOver={event => { if (event.dataTransfer.types.includes("application/x-mina-xpath")) event.preventDefault(); }}
       onDrop={event => {const path = event.dataTransfer.getData("application/x-mina-xpath"); if (path) {event.preventDefault(); insert(path);}}}
@@ -3303,7 +3313,7 @@ function MapperXPathBuilder({ config, target, targetType, savedSource, apply }: 
     </div>}
     {version === "2.0" && constructor && <button type="button" disabled={!formula.trim()} onClick={() => setExpression(`xs:${constructor}(${formula.trim()})`)}>Cast XPath result to {constructor}</button>}
     <label>Filter XPath functions<input value={functionFilter || ""} onChange={event=>setFunctionFilter(event.target.value)}/></label>
-    <label>XPath function<select value={selectedFunction?.id || ""} onChange={event => {
+    <label>XPath function · {functions.length} signatures<select value={selectedFunction?.id || ""} onChange={event => {
       const id = event.target.value;
       setFunctionName(id);
       setArguments(functions.find(item => item.id === id)?.args.map(() => "") || []);
@@ -3311,7 +3321,7 @@ function MapperXPathBuilder({ config, target, targetType, savedSource, apply }: 
       <optgroup key={category} label={category}>{visibleFunctions.filter(item=>item.category===category).map(item=>
         <option key={item.id} value={item.id}>{item.id===item.name ? item.name : `${item.name} (${item.args.length} arguments)`}</option>)}</optgroup>)}</select></label>
     {selectedFunction && <div className="mapper-xpath-arguments">
-      {selectedFunction.signature && <code>{selectedFunction.signature}</code>}
+      {selectedFunction.description && <p>{selectedFunction.description}</p>}{selectedFunction.signature && <code>{selectedFunction.signature}</code>}
       {selectedFunction.args.map((label, index) => <label key={label}>{label}<input value={argumentsByIndex[index] || ""}
         placeholder="Drop a field or enter XPath" onChange={event => setArgument(index, event.target.value)}
         onDragOver={event => {if (event.dataTransfer.types.includes("application/x-mina-xpath")) event.preventDefault();}}
@@ -3449,7 +3459,7 @@ function TransformInputEditor({ config, properties, sources, schemas = [], setSo
     }
     setRepeatingDrop(null);
   };
-  return <><div ref={root} className={`activity-tab mapping-editor transform-input-editor resizable-mapper visual-field-mapper ${expanded ? "expanded-input-workspace" : ""}`} style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}><MemoizedDataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} coercions={config.sourceCoercions}/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}><span/></div><section><div className="contract-heading mapping-editor-heading"><SettingsTitle title="Target schema mapping" />{!expanded && <button type="button" className="edit-input-mapping" onClick={openDialog}><Pencil/> Edit mappings </button>}{actions}</div><div className="mapper-target-search"><input aria-label="Find target field" placeholder="Find target field…" value={targetSearch} onChange={event=>setTargetSearch(event.target.value)}/><button type="button" onClick={()=>tree.collapseAll(displayRows.filter(row=>row.hasChildren).map(row=>row.key))}>Collapse all</button><button type="button" onClick={tree.expandAll}>Expand all</button><label><input type="checkbox" checked={selectedConnectionsOnly} onChange={event => setSelectedConnectionsOnly(event.target.checked)}/> Selected connections only</label></div>{setSourceCoercions && <MapperCoercionEditor values={config.sourceCoercions || {}} schemas={schemas} update={setSourceCoercions}/>}<MapperXPathBuilder config={config} savedSource={selectedRule?.source} target={selected} targetType={fields.find(field => field.path === selected)?.type} apply={fields.some(field => field.path === selected) && selectedRule?.operator !== "choose" ? source => updateRule(selected,selectedOccurrence,{source,select:undefined,constant:undefined}) : undefined}/><div className="target-schema-tree">{filteredRows.map(row => {
+  return <><div ref={root} className={`activity-tab mapping-editor transform-input-editor resizable-mapper visual-field-mapper ${expanded ? "expanded-input-workspace" : ""}`} style={{ "--source-width": `${resize.width}px` } as React.CSSProperties}><MemoizedDataSourcePane properties={properties} sources={sources} runtimeVariables={runtimeVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} coercions={config.sourceCoercions} xpathFunctions/><div className="source-splitter" title="Drag left or right to resize data sources" onPointerDown={resize.begin}><span/></div><section><div className="contract-heading mapping-editor-heading"><SettingsTitle title="Target schema mapping" />{!expanded && <button type="button" className="edit-input-mapping" onClick={openDialog}><Pencil/> Edit mappings </button>}{actions}</div><div className="mapper-target-search"><input aria-label="Find target field" placeholder="Find target field…" value={targetSearch} onChange={event=>setTargetSearch(event.target.value)}/><button type="button" onClick={()=>tree.collapseAll(displayRows.filter(row=>row.hasChildren).map(row=>row.key))}>Collapse all</button><button type="button" onClick={tree.expandAll}>Expand all</button><label><input type="checkbox" checked={selectedConnectionsOnly} onChange={event => setSelectedConnectionsOnly(event.target.checked)}/> Selected connections only</label></div>{setSourceCoercions && <MapperCoercionEditor values={config.sourceCoercions || {}} schemas={schemas} update={setSourceCoercions}/>}<MapperXPathBuilder config={config} savedSource={selectedRule?.source} target={selected} targetType={fields.find(field => field.path === selected)?.type} apply={fields.some(field => field.path === selected) && selectedRule?.operator !== "choose" ? source => updateRule(selected,selectedOccurrence,{source,select:undefined,constant:undefined}) : undefined}/><div className="target-schema-tree">{filteredRows.map(row => {
     if (!targetSearch.trim() && row.ancestors.some(key => tree.collapsed.has(key))) return null;
     const field = row.field, rule = row.rule, structural = structuralPaths.has(field.path) || isComplexSchemaType(field.type), canMapStructure = structural && field.repeating;
     const showMenu = (event: React.MouseEvent) => {

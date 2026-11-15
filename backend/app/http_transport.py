@@ -172,11 +172,44 @@ def close_clients(scope=None):
     with _POOL_LOCK:
         keys=[key for key,client in _POOL.items() if scope is None or client._mina_scope==scope]
         clients=[_POOL.pop(key) for key in keys]
-    for client in clients: client.close()
+    first_error=None
+    for client in clients:
+        try:client.close()
+        except Exception as error:
+            if first_error is None:first_error=error
     with _SECURITY_LOCK:
         for key in list(_TOKENS):
             if scope is None or _TOKEN_SCOPES.get(key)==scope:_TOKENS.pop(key,None);_TOKEN_SCOPES.pop(key,None)
+    if first_error is not None:raise first_error
 atexit.register(close_clients)
+
+
+def _release_route(client, route, gate, acquired=True):
+    with client._mina_lock:
+        if acquired:gate.release()
+        users=client._mina_route_users
+        users[route]-=1
+        if not users[route]:
+            del users[route]
+            del client._mina_routes[route]
+
+
+def _acquire_route(client, route, timeout):
+    # Count both executing requests and waiters before releasing the map lock.
+    # Idle destinations must not accumulate when URLs are supplied dynamically.
+    with client._mina_lock:
+        if not hasattr(client,'_mina_route_users'):client._mina_route_users={}
+        gate=client._mina_routes.get(route)
+        if gate is None:
+            gate=threading.BoundedSemaphore(client._mina_route_limit)
+            client._mina_routes[route]=gate
+        client._mina_route_users[route]=client._mina_route_users.get(route,0)+1
+    try:
+        if not gate.acquire(timeout=timeout):raise HTTPFault('HTTP pool timeout','HTTP_TIMEOUT',504)
+    except BaseException:
+        _release_route(client,route,gate,False)
+        raise
+    return gate
 
 _NETWORK=('defaultConfidentiality','confidentiality','tlsEnabled','verifyTls','tlsVersion','maximumTlsVersion','cipherSuites','certificateAuthorityFile','trustStoreFile','trustStoreType','trustStorePassword','identityStoreFile','identityStoreType','identityStorePassword','keyAlias','certificateFile','privateKeyFile','privateKeyPassword','clientCertificateFile','clientKeyFile','clientKeyPassword','crlFile','proxyHost','proxyPort','proxyUrl','proxyUsername','proxyPassword','httpVersion','maximumTotalConnections','maximumConnectionsPerHost','idleConnectionTimeoutMs','disableConnectionPooling','usePersistentConnections','authentication','username','password','bearerToken','oauthClientId','oauthClientSecret','oauthTokenUrl','oauthScope','oauthGrantType','oauthRefreshToken','oauthAuthorizationCode','oauthRedirectUri','jwtSecret','jwtToken','hmacSecret','hmacKeyId','enableCookies','resourceId','_httpScope','baseUrl','oauthCodeVerifier','oauthClientAuthentication','jwtPrivateKeyFile','jwtPublicKeyFile')
 def _fingerprint(cfg):
@@ -437,9 +470,7 @@ def request(cfg,connection=None):
     deadline=started+activity_limit
     # Per-route gates complement HTTPX's global connection limit.
     route=urllib.parse.urlsplit(url).netloc
-    with client._mina_lock:gate=client._mina_routes.setdefault(route,threading.BoundedSemaphore(client._mina_route_limit))
-    acquired=gate.acquire(timeout=timeout.pool)
-    if not acquired:raise HTTPFault('HTTP pool timeout','HTTP_TIMEOUT',504)
+    gate=_acquire_route(client,route,timeout.pool)
     circuit=None;failed=False
     try:
         circuit=circuit_enter(cfg,route)
@@ -551,7 +582,8 @@ def request(cfg,connection=None):
     except HTTPFault as error:
         failed=error.status>=500;raise
     finally:
-        circuit_result(cfg,circuit,failed);gate.release()
+        try:circuit_result(cfg,circuit,failed)
+        finally:_release_route(client,route,gate)
 
 def _basic(headers):
     try:

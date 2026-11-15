@@ -1,0 +1,195 @@
+{
+  "localQualificationPassed": true,
+  "requestedLiveQualificationComplete": false,
+  "target": {
+    "records": 100000,
+    "secondsPerDirection": 600,
+    "minimumRecordsPerSecond": 166.66666666666666
+  },
+  "brokerResults": [
+    {
+      "activity": "Kafka local",
+      "records": 100000,
+      "payloadBytes": 1024,
+      "batchSize": 1000,
+      "concurrency": 8,
+      "sendSeconds": 24.03565420000814,
+      "receiveSeconds": 3.207513100001961,
+      "sendRecordsPerSecond": 4160.485883507433,
+      "receiveRecordsPerSecond": 31176.801740868606,
+      "bothDirectionsMeetTarget": true,
+      "allPayloadsVerified": true
+    },
+    {
+      "activity": "Artemis JMS local (not vendor EMS)",
+      "records": 100000,
+      "payloadBytes": 1024,
+      "batchSize": 1000,
+      "concurrency": 8,
+      "sendSeconds": 433.7266659999732,
+      "receiveSeconds": 205.5042170000379,
+      "sendRecordsPerSecond": 230.559953627583,
+      "receiveRecordsPerSecond": 486.6080193380244,
+      "bothDirectionsMeetTarget": true,
+      "allPayloadsVerified": true
+    }
+  ],
+  "mapper": {
+    "passed": true,
+    "records": 100000,
+    "measuredSeconds": 11.490643099998124,
+    "recordsPerSecond": 8702.733095941021,
+    "soakSeconds": 600.0000235000043,
+    "soakRecords": 4995087,
+    "measurement": "Mapper engine, eight mappings including functions and nested targets; no target XSD validation",
+    "family": "mapper",
+    "operation": "map",
+    "targetRecords": 100000,
+    "deadlineSeconds": 600,
+    "batchSize": 1000,
+    "concurrency": 8,
+    "payloadBytes": 1024,
+    "rssGrowthMiB": -0.015625
+  },
+  "soaks": {
+    "Kafka": {
+      "passed": true,
+      "soakSeconds": 601.0345000000088,
+      "cycles": 120,
+      "records": 120000,
+      "uniqueRecordsVerified": 120000,
+      "publishSeconds": 30.249294899927918,
+      "receiveSeconds": 3.6962756001739763,
+      "measurement": "Repeated verified send/receive cycles, including client cleanup; paced between cycles",
+      "family": "kafka",
+      "operation": "publish",
+      "targetRecords": 1000,
+      "deadlineSeconds": 600,
+      "batchSize": 1000,
+      "concurrency": 8,
+      "payloadBytes": 1024,
+      "rssGrowthMiB": 2.66015625
+    },
+    "JMS": {
+      "passed": true,
+      "soakSeconds": 610.7900188000058,
+      "cycles": 46,
+      "records": 92000,
+      "uniqueRecordsVerified": 92000,
+      "publishSeconds": 432.1476681002532,
+      "receiveSeconds": 177.96298340009525,
+      "measurement": "Repeated verified send/receive cycles, including client cleanup; paced between cycles",
+      "family": "jms",
+      "operation": "receive",
+      "targetRecords": 2000,
+      "deadlineSeconds": 600,
+      "batchSize": 1000,
+      "concurrency": 8,
+      "payloadBytes": 1024,
+      "rssGrowthMiB": 7.54296875
+    }
+  },
+  "compatibility": {
+    "passed": true,
+    "results": [
+      {
+        "family": "kafka",
+        "mode": "run",
+        "passed": true
+      },
+      {
+        "family": "kafka",
+        "mode": "debug",
+        "passed": true
+      },
+      {
+        "family": "kafka",
+        "mode": "python-direct",
+        "passed": true
+      },
+      {
+        "family": "kafka",
+        "mode": "python-engine",
+        "passed": true
+      },
+      {
+        "family": "jms",
+        "mode": "run",
+        "passed": true
+      },
+      {
+        "family": "jms",
+        "mode": "debug",
+        "passed": true
+      },
+      {
+        "family": "jms",
+        "mode": "python-direct",
+        "passed": true
+      },
+      {
+        "family": "jms",
+        "mode": "python-engine",
+        "passed": true
+      }
+    ],
+    "scope": "Local Kafka and Artemis JMS; compatibility only, not 100k performance",
+    "notVerified": [
+      "Cloud Pub/Sub",
+      "Vendor EMS unless explicitly configured",
+      "Live SAP"
+    ]
+  },
+  "jmsBatchCompatibility": {
+    "passed": true,
+    "results": [
+      {
+        "family": "jms",
+        "mode": "run",
+        "passed": true
+      },
+      {
+        "family": "jms",
+        "mode": "debug",
+        "passed": true
+      },
+      {
+        "family": "jms",
+        "mode": "python-direct",
+        "passed": true
+      },
+      {
+        "family": "jms",
+        "mode": "python-engine",
+        "passed": true
+      }
+    ],
+    "scope": "Local Kafka and Artemis JMS; compatibility only, not 100k performance",
+    "notVerified": [
+      "Cloud Pub/Sub",
+      "Vendor EMS unless explicitly configured",
+      "Live SAP"
+    ]
+  },
+  "verification": {
+    "backendTests": 641,
+    "backendSkipped": 15,
+    "focusedTests": 11,
+    "frontendTests": 150,
+    "helpTests": 11,
+    "studioProductionBuildPassed": true
+  },
+  "notVerified": [
+    "Live GCP Pub/Sub throughput/soak: dedicated approved QA connection and subscription required",
+    "Vendor EMS throughput/soak: dedicated approved EMS connection and queue required",
+    "High-rate receiver-starter dispatch and full task graph end-to-end SLA",
+    "100k benchmark inside generated Python archives; only small actual execution compatibility checks performed"
+  ],
+  "limits": [
+    "1 KiB synthetic broker records; local loopback brokers",
+    "JMS receive batches of 1000; default one-message Gets are below the target",
+    "Mapper workload has eight mappings and no target XSD validation",
+    "RSS endpoint comparisons do not prove absence of all leaks",
+    "Earlier failed fixture/routing reports retained for traceability"
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "passed": true,
+  "results": [
+    {
+      "family": "kafka",
+      "mode": "run",
+      "passed": true
+    },
+    {
+      "family": "kafka",
+      "mode": "debug",
+      "passed": true
+    },
+    {
+      "family": "kafka",
+      "mode": "python-direct",
+      "passed": true
+    },
+    {
+      "family": "kafka",
+      "mode": "python-engine",
+      "passed": true
+    },
+    {
+      "family": "jms",
+      "mode": "run",
+      "passed": true
+    },
+    {
+      "family": "jms",
+      "mode": "debug",
+      "passed": true
+    },
+    {
+      "family": "jms",
+      "mode": "python-direct",
+      "passed": true
+    },
+    {
+      "family": "jms",
+      "mode": "python-engine",
+      "passed": true
+    },
+    {
+      "family": "amqp",
+      "mode": "run",
+      "passed": true
+    },
+    {
+      "family": "amqp",
+      "mode": "debug",
+      "passed": true
+    },
+    {
+      "family": "amqp",
+      "mode": "python-direct",
+      "passed": true
+    },
+    {
+      "family": "amqp",
+      "mode": "python-engine",
+      "passed": true
+    }
+  ],
+  "scope": "Live loopback Kafka 3.9.1 and Artemis 2.40.0 JMS/AMQP; not EMS, cloud Pub/Sub or SAP",
+  "notVerified": [
+    "Cloud Pub/Sub",
+    "Vendor EMS unless explicitly configured",
+    "Live SAP"
+  ]
+}

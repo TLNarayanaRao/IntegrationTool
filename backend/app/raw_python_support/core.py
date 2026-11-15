@@ -410,7 +410,8 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
     # CAPABILITY file START
     if kind == 'file':
         from . import activities
-        return await asyncio.to_thread(activities.file_activity, operation, cfg, ctx.last)
+        from .native.file_operations import run_io
+        return await run_io(activities.file_activity, operation, cfg, ctx.last)
     # CAPABILITY file END
     # CAPABILITY data_formats START
     if kind in {'xml', 'json', 'flat'}:
@@ -431,7 +432,8 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
         resource_id = str(cfg.get('resourceId') or '')
         resource = ctx.resources.get(resource_id)
         if not resource or resource.type != kind: raise ValueError(f'{name} requires a shared {kind.upper()} connection')
-        return await asyncio.to_thread(activities.transfer, kind, operation, resolve(resource.config, ctx), cfg)
+        from .native.file_operations import run_io
+        return await run_io(activities.transfer, kind, operation, resolve(resource.config, ctx), cfg)
     # CAPABILITY transfer END
     # CAPABILITY inbound_http START
     if kind == 'http_listener' or kind == 'rest' and operation == 'receiver' or kind == 'soap' and operation == 'service':

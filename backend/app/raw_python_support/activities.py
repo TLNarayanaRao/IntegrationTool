@@ -38,67 +38,9 @@ def _bool(value: Any, default: bool = False) -> bool:
     return bool(value)
 
 
-def _file_info(item: Path, configured: Path) -> dict[str, Any]:
-    stat = item.stat()
-    return {'fullName': str(item.resolve()), 'fileName': item.name,
-            'location': str(item.parent.resolve()), 'configuredFileName': str(configured),
-            'type': 'directory' if item.is_dir() else 'file',
-            'readProtected': not os.access(item, os.R_OK), 'writeProtected': not os.access(item, os.W_OK),
-            'size': stat.st_size, 'lastModified': datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat()}
-
-
-def file_activity(operation: str, cfg: dict, payload: Any) -> dict:
-    path = Path(str(cfg.get('path') or cfg.get('filePath') or '')).expanduser()
-    if not str(path): raise ValueError('File path is required')
-    if operation == 'write':
-        if path.exists() and not _bool(cfg.get('overwrite')) and not _bool(cfg.get('append')):
-            raise FileExistsError(f'{path} already exists')
-        if _bool(cfg.get('createDirectories'), True): path.parent.mkdir(parents=True, exist_ok=True)
-        binary = str(cfg.get('writeAs') or 'Text').lower() == 'binary' or cfg.get('binaryContent') not in (None, '')
-        content = cfg.get('binaryContent') if binary else cfg.get('textContent', cfg.get('content', payload))
-        if binary:
-            raw = base64.b64decode(content) if isinstance(content, str) else bytes(content or b'')
-            if str(cfg.get('compression') or 'None').lower() == 'gzip': raw = gzip.compress(raw)
-            with path.open('ab' if _bool(cfg.get('append')) else 'wb') as stream: stream.write(raw)
-        else:
-            text = content if isinstance(content, str) else json.dumps(content, indent=2, default=str)
-            if _bool(cfg.get('addLineSeparator')): text += os.linesep
-            if str(cfg.get('compression') or 'None').lower() == 'gzip':
-                with gzip.open(path, 'at' if _bool(cfg.get('append')) else 'wt', encoding=cfg.get('encoding') or 'utf-8') as stream: stream.write(text)
-            else:
-                with path.open('a' if _bool(cfg.get('append')) else 'w', encoding=cfg.get('encoding') or 'utf-8') as stream: stream.write(text)
-        return {'path': str(path), 'written': True, 'success': True, 'fileInfo': _file_info(path, path)}
-    if operation in {'list', 'poll'}:
-        matches = list(path.rglob(str(cfg.get('pattern') or '*')) if _bool(cfg.get('recursive')) else path.glob(str(cfg.get('pattern') or '*')))
-        list_type = str(cfg.get('listType') or 'Files and Directories').lower()
-        if list_type == 'only files': matches = [item for item in matches if item.is_file()]
-        if list_type == 'only directories': matches = [item for item in matches if item.is_dir()]
-        sort_by = str(cfg.get('sortBy') or 'Name').lower()
-        key = (lambda item: item.stat().st_size) if sort_by == 'size' else ((lambda item: item.stat().st_mtime) if sort_by == 'last modified' else (lambda item: item.name.lower()))
-        matches.sort(key=key, reverse=str(cfg.get('sortOrder') or 'Ascending').lower() == 'descending')
-        return {'files': [_file_info(item, path) for item in matches], 'count': len(matches),
-                **({'eventType': cfg.get('eventType') or 'Created'} if operation == 'poll' else {})}
-    if operation == 'delete':
-        if not path.exists() and _bool(cfg.get('ignoreMissing')): return {'path': str(path), 'deleted': False, 'success': True}
-        shutil.rmtree(path) if path.is_dir() and _bool(cfg.get('recursive')) else path.rmdir() if path.is_dir() else path.unlink()
-        return {'path': str(path), 'deleted': True, 'success': True}
-    if operation in {'rename', 'copy'}:
-        destination = Path(str(cfg.get('destination') or '')).expanduser()
-        if not str(destination): raise ValueError('Destination path is required')
-        if _bool(cfg.get('createDirectories')): destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists() and not _bool(cfg.get('overwrite')): raise FileExistsError(f'{destination} already exists')
-        if destination.exists(): shutil.rmtree(destination) if destination.is_dir() else destination.unlink()
-        if operation == 'rename': path.rename(destination)
-        elif path.is_dir(): shutil.copytree(path, destination, copy_function=shutil.copy2 if _bool(cfg.get('preserveAttributes'), True) else shutil.copy)
-        else: (shutil.copy2 if _bool(cfg.get('preserveAttributes'), True) else shutil.copy)(path, destination)
-        return {'source': str(path), 'destination': str(destination), 'path': str(destination), 'operation': operation,
-                'success': True, 'fileInfo': _file_info(destination, destination)}
-    info = _file_info(path, path)
-    if _bool(cfg.get('excludeFileContent')): return {'path': str(path), 'fileInfo': info, **info}
-    if str(cfg.get('readAs') or 'Text').lower() == 'binary':
-        return {'path': str(path), 'binaryContent': base64.b64encode(path.read_bytes()).decode(), 'textContent': None, 'fileInfo': info, **info}
-    text = path.read_text(encoding=cfg.get('encoding') or 'utf-8')
-    return {'path': str(path), 'content': text, 'textContent': text, 'fileInfo': info, **info}
+def file_activity(operation: str, cfg: dict, payload: Any, *, cancel=None) -> dict:
+    from .native.file_operations import file_activity as execute_file
+    return execute_file(operation, cfg, payload,cancel=cancel)
 
 
 def _xml_to_value(element: ET.Element) -> Any:
@@ -141,59 +83,35 @@ def excel_read(cfg: dict) -> dict:
     except ImportError as error: raise RuntimeError('Excel Read requires the optional openpyxl package') from error
     path = Path(str(cfg.get('filePath') or '')).expanduser()
     book = load_workbook(path, read_only=True, data_only=_bool(cfg.get('dataOnly'), True))
-    selected = [book[str(cfg['sheetName'])]] if cfg.get('sheetName') else list(book.worksheets)
-    header_row, start_row, maximum = int(cfg.get('headerRow') or 1), int(cfg.get('startRow') or header_row + 1), int(cfg.get('maximumRows') or 0)
-    sheets = []
-    for sheet in selected:
-        headers = [str(cell.value if cell.value is not None else f'column{cell.column}') for cell in sheet[header_row]]
-        rows = []
-        for values in sheet.iter_rows(min_row=start_row, values_only=True):
-            if _bool(cfg.get('skipBlankRows'), True) and not any(value is not None for value in values): continue
-            row: dict[str, Any] = {}
-            for key, value in zip(headers, values):
-                target = row
-                parts = key.split('.') if _bool(cfg.get('nestedHeaders'), True) else [key]
-                for part in parts[:-1]: target = target.setdefault(part, {})
-                target[parts[-1]] = value
-            rows.append(row)
-            if maximum and len(rows) >= maximum: break
-        sheets.append({'name': sheet.title, 'headers': headers, 'rows': rows, 'rowCount': len(rows)})
-    return {'workbook': {'fileName': path.name, 'sheetCount': len(sheets), 'sheets': sheets}}
-
-
-def transfer(kind: str, operation: str, connection: dict, cfg: dict) -> dict:
-    remote = str(cfg.get('remotePath') or '')
-    if kind == 'ftp':
-        import ftplib
-        client = ftplib.FTP_TLS() if _bool(connection.get('tls')) else ftplib.FTP()
-        client.connect(str(connection.get('host') or ''), int(connection.get('port') or (990 if _bool(connection.get('implicitTls')) else 21)), timeout=float(cfg.get('timeout') or connection.get('timeout') or 30))
-        client.login(str(connection.get('username') or 'anonymous'), str(connection.get('password') or ''))
-        if isinstance(client, ftplib.FTP_TLS): client.prot_p()
-        try:
-            if cfg.get('workingDirectory'): client.cwd(str(cfg['workingDirectory']))
-            if operation == 'change_dir': client.cwd(remote); return {'remotePath': client.pwd(), 'success': True}
-            if operation == 'dir': return {'entries': [{'name': name} for name in client.nlst(remote or None)], 'directory': client.pwd()}
-            if operation == 'delete': client.delete(remote); return {'remotePath': remote, 'success': True}
-            if operation == 'put':
-                value = cfg.get('content', b''); raw = base64.b64decode(value) if _bool(cfg.get('binary')) and isinstance(value, str) else value.encode() if isinstance(value, str) else bytes(value)
-                client.storbinary(f'STOR {remote}', io.BytesIO(raw)); return {'remotePath': remote, 'success': True, 'size': len(raw)}
-            output = io.BytesIO(); client.retrbinary(f'RETR {remote}', output.write); raw = output.getvalue()
-            return {'contentBase64': base64.b64encode(raw).decode(), 'content': raw.decode(errors='replace') if not _bool(cfg.get('binary')) else None, 'size': len(raw)}
-        finally: client.quit()
-    from .native.sftp import open_connection
-    client, sftp = open_connection({**connection, **cfg})
     try:
-        if cfg.get('workingDirectory'): sftp.chdir(str(cfg['workingDirectory']))
-        if operation == 'change_dir': sftp.chdir(remote); return {'remotePath': sftp.getcwd(), 'success': True}
-        if operation == 'dir': return {'entries': [{'name': item.filename, 'size': item.st_size, 'modified': item.st_mtime} for item in sftp.listdir_attr(remote or '.')], 'directory': sftp.getcwd()}
-        if operation == 'delete': sftp.remove(remote); return {'remotePath': remote, 'success': True}
-        if operation == 'put':
-            value = cfg.get('content', b''); raw = base64.b64decode(value) if _bool(cfg.get('binary')) and isinstance(value, str) else value.encode() if isinstance(value, str) else bytes(value)
-            with sftp.file(remote, 'wb') as stream: stream.write(raw)
-            return {'remotePath': remote, 'success': True, 'size': len(raw)}
-        with sftp.file(remote, 'rb') as stream: raw = stream.read()
-        return {'contentBase64': base64.b64encode(raw).decode(), 'content': raw.decode(errors='replace') if not _bool(cfg.get('binary')) else None, 'size': len(raw)}
-    finally: sftp.close(); client.close()
+        selected = [book[str(cfg['sheetName'])]] if cfg.get('sheetName') else list(book.worksheets)
+        header_row = max(1, int(cfg.get('headerRow') or 1))
+        start_row = max(header_row + 1, int(cfg.get('startRow') or header_row + 1))
+        maximum = max(0, int(cfg.get('maximumRows') or 0))
+        sheets = []
+        for sheet in selected:
+            headers = [str(cell.value if cell.value is not None else f'column{cell.column}') for cell in sheet[header_row]]
+            rows = []
+            for values in sheet.iter_rows(min_row=start_row, values_only=True):
+                if _bool(cfg.get('skipBlankRows'), True) and not any(value is not None for value in values): continue
+                row: dict[str, Any] = {}
+                for key, value in zip(headers, values):
+                    target = row
+                    parts = key.split('.') if _bool(cfg.get('nestedHeaders'), True) else [key]
+                    for part in parts[:-1]: target = target.setdefault(part, {})
+                    target[parts[-1]] = value
+                rows.append(row)
+                if maximum and len(rows) >= maximum: break
+            sheets.append({'name': sheet.title, 'headers': headers, 'rows': rows, 'rowCount': len(rows)})
+        return {'workbook': {'fileName': path.name, 'sheetCount': len(sheets), 'sheets': sheets}}
+    finally:
+        book.close()
+
+
+
+def transfer(kind: str, operation: str, connection: dict, cfg: dict, *, cancel=None) -> dict:
+    from .native.transfer import transfer as execute_transfer
+    return execute_transfer(kind, operation, {**connection, **cfg},cancel=cancel)
 
 
 def http_request(cfg: dict, connection: dict | None = None) -> dict:

@@ -1,0 +1,123 @@
+{
+  "date": "2026-11-15",
+  "requestedFiveServiceQualificationComplete": false,
+  "availableLocalProfilesPassed": true,
+  "liveServices": {
+    "kafka": {
+      "provider": "Kafka 3.9.1",
+      "profile": "Loopback PLAINTEXT, one partition, confirmed publish and custom-offset get"
+    },
+    "jms": {
+      "provider": "Artemis 2.40.0",
+      "profile": "Loopback CORE JMS send/receive; additional temporary-destination request/reply check"
+    },
+    "amqp": {
+      "provider": "Artemis 2.40.0",
+      "profile": "Loopback AMQP 1.0 send/receive; additional expiry, headers and settlement checks"
+    }
+  },
+  "pendingLiveServices": {
+    "pubsub": "Approved cloud project, credentials/configuration and dedicated topic/subscription required; installed SDK checks passed, no live cloud claim",
+    "ems": "Approved vendor server, permitted client libraries and dedicated destinations required; Artemis JMS is not vendor EMS verification",
+    "sap": "Approved QA connection, permitted JCo JAR/native library and allowed RFC/IDoc scope required; no live SAP claim"
+  },
+  "runs": {
+    "run": {
+      "passed": true,
+      "measuredSeconds": 1801.55,
+      "workers": 6,
+      "roundTripsIncludingWarmup": {
+        "kafka": 3688,
+        "amqp": 3692,
+        "jms": 1693
+      },
+      "growth": {
+        "rssMiB": -0.8203125,
+        "handles": -5,
+        "threads": -2
+      },
+      "lateRssMiBPerMinute": -0.010332655746282832,
+      "maxSampleGapSeconds": 10.120000000000005
+    },
+    "debug": {
+      "passed": true,
+      "measuredSeconds": 600.8,
+      "workers": 3,
+      "roundTripsIncludingWarmup": {
+        "kafka": 654,
+        "amqp": 654,
+        "jms": 151
+      },
+      "growth": {
+        "rssMiB": 1.94921875,
+        "handles": 9,
+        "threads": 0
+      },
+      "lateRssMiBPerMinute": -0.02945739947758401,
+      "maxSampleGapSeconds": 10.160000000000025
+    },
+    "python-direct": {
+      "passed": true,
+      "measuredSeconds": 900.92,
+      "workers": 3,
+      "roundTripsIncludingWarmup": {
+        "amqp": 954,
+        "kafka": 953,
+        "jms": 496
+      },
+      "growth": {
+        "rssMiB": -0.22265625,
+        "handles": -6,
+        "threads": -3
+      },
+      "lateRssMiBPerMinute": -0.04049982117935196,
+      "maxSampleGapSeconds": 10.079999999999984
+    },
+    "python-engine": {
+      "passed": true,
+      "measuredSeconds": 900.97,
+      "workers": 3,
+      "roundTripsIncludingWarmup": {
+        "kafka": 950,
+        "amqp": 951,
+        "jms": 494
+      },
+      "growth": {
+        "rssMiB": -0.328125,
+        "handles": -6,
+        "threads": -4
+      },
+      "lateRssMiBPerMinute": -0.029503633767879744,
+      "maxSampleGapSeconds": 10.110000000000014
+    }
+  },
+  "regressions": {
+    "fullBackendRun": 623,
+    "fullBackendSkipped": 5,
+    "fullBackendFailures": 0,
+    "focusedFinalTests": 87,
+    "harnessFinalTests": 4,
+    "liveEdgeTests": 4,
+    "frontendTests": 150,
+    "helpTests": 11,
+    "productionStudioBuild": "passed; existing large-chunk advisory"
+  },
+  "limitations": [
+    "Earlier unpaced AMQP connection failure remains unqualified",
+    "Earlier Direct cold-start failure lacks original traceback and remains unexplained",
+    "Windows Kafka retention rename failure avoided only in temporary test fixture; production retention/failover not qualified",
+    "Earlier host-interrupted and launcher-only reports are failed/invalidated, not passes",
+    "No live cloud Pub/Sub, vendor EMS or SAP, no TLS/SASL/clustered failover qualification",
+    "Debug checks are automated service sessions, not an installed GUI soak"
+  ],
+  "actualArchiveInterpreterMeasured": true,
+  "allArchiveShutdownsClean": true,
+  "sourceSha256": {
+    "backend/app/runtime.py": "3c51504e1af87d17918487183b778da317f520e322cdc4589a2470e32b13f87d",
+    "backend/app/amqp.py": "adf5373f0ba210ad46b391982cfdacbd2312defd08bf225162fc1c0780334c40",
+    "backend/app/google_pubsub.py": "1cd9708000d4c3654fca0891b4a7406f96699e770013aba065e2a66545a3df75",
+    "backend/app/java_bridge.py": "496978ff4c6e547b95665b7136c0a0b766afad250f94e1298313c5b7c9e154c1",
+    "backend/app/raw_python.py": "a0d5e1087c53fc2059780a568e175cef9e35d6cd384d4737a23900181c01b9fe",
+    "backend/app/raw_python_support/connectors.py": "f3d6024d6eaa2b3ae0ecdbbc12a0c2db7ba317c7c47713f3456f0805e634638a"
+  }
+}

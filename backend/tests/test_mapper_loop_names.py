@@ -1,8 +1,8 @@
 import asyncio
 import unittest
-from backend.app.mapper import execute
-from backend.app.models import Activity
-from backend.app.runtime import WorkflowRuntime
+from app.mapper import execute
+from app.models import Activity
+from app.runtime import WorkflowRuntime
 
 class MapperLoopNameTests(unittest.TestCase):
     def test_display_name_references_keep_child_paths_relative_to_each_record(self):

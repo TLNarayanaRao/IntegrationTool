@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "records": 100000,
+  "measuredSeconds": 11.490643099998124,
+  "recordsPerSecond": 8702.733095941021,
+  "soakSeconds": 600.0000235000043,
+  "soakRecords": 4995087,
+  "measurement": "Mapper engine, eight mappings including functions and nested targets; no target XSD validation",
+  "family": "mapper",
+  "operation": "map",
+  "targetRecords": 100000,
+  "deadlineSeconds": 600,
+  "batchSize": 1000,
+  "concurrency": 8,
+  "payloadBytes": 1024,
+  "rssGrowthMiB": -0.015625
+}

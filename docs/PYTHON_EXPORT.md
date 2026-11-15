@@ -43,3 +43,22 @@ For qualification against real providers, run `python run.py --qualify-task TASK
 Real connectors require runtime provisioning, not source edits. Set `MINA_JAVA_BRIDGE_HOME` to the installed Java bridge directory containing `classes`, and `MINA_DRIVER_HOME` to a directory containing `sap/` and/or `jms/` licensed vendor JARs. Rebuild the bridge from this source before deploying client-acknowledge JMS flows. Place the SAP JCo native library in the SAP driver directory or on the platform native library path. A Java runtime must be available via `MINA_JAVA` or `PATH`. Depending on the generated preflight inventory, install `aiokafka`, `google-cloud-pubsub` and `google-auth`, `openpyxl`, `paramiko`, `snowflake-connector-python`, `pika`, or `azure-servicebus`. Provide connection URLs, credentials, and target-network access through the selected environment profile or environment variables. Missing packages and artifacts are reported before application startup.
 
 The direct export is not a blanket compatibility promise for every future Studio feature. Grouped parallel fan-out still requires an explicit top-level branch boundary because a deterministic in-group join is not represented in the saved graph. Live ECC/JCo, EMS/JMS provider, AMQP, Snowflake, failover, and soak results cannot be asserted without those systems; use the generated qualification command in the target test environment and retain its evidence before approving production. The automated suite covers hosted REST, JMS request/reply correlation, SAP-over-Kafka, mixed nested groups, mock/in-memory providers, SQLite transactions, and bridge compilation. The saved `order-integration` project passes direct compiler static validation, which is not itself a live SAP qualification. Export reports unsupported graph behavior instead of generating a package with silently different behavior.
+## Native and Java database prerequisites
+
+Generated archive checks identify the selected JDBC adapter and connection mode.
+SQLite uses Python's built-in driver. PostgreSQL requires `psycopg`, MySQL/MariaDB
+requires `pymysql`, native Oracle requires `oracledb`, native SQL Server requires
+`pyodbc`, DB2 requires `ibm_db_dbi`, Databricks requires `databricks.sql`, and
+Snowflake requires `snowflake.connector`. The checks provide corresponding pip
+installation commands; native libraries and licensed vendor drivers may require
+separate provisioning.
+
+Oracle and SQL Server in Java/JDBC mode declare Java/driver prerequisites rather
+than requiring their native Python adapter. Native-only flows do not acquire a
+Java prerequisite. Declared environment-property driver choices are considered
+when generating checks. Both formats use the same requirement logic.
+
+Direct archives containing JDBC retain the Snowflake adapter helper so a native
+Snowflake JDBC selection has its implementation even without a separate Snowflake
+activity. This does not bundle the vendor connector or credentials. See the
+HTTP/database resource verification guide for the archive regression checks.

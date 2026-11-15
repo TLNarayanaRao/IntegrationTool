@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "records": 100000,
+  "uniquePayloadsVerified": 100000,
+  "elapsedSeconds": 14.633010199991986,
+  "recordsPerSecond": 6833.863889471953,
+  "exceptionType": null,
+  "normalRunDebugLogEntries": 0,
+  "scope": "Complete task orchestration, Mapper, send and receive, validation, archive startup/IPC and cleanup",
+  "family": "mapper",
+  "mode": "python-direct",
+  "targetRecords": 100000,
+  "deadlineSeconds": 600,
+  "workers": 4,
+  "batchSize": 1000,
+  "approximatePayloadBytes": 1024
+}

@@ -1,0 +1,1674 @@
+{
+  "startedAt": "2026-11-13T23:18:39.223775+00:00",
+  "finishedAt": "2026-11-13T23:51:09.961383+00:00",
+  "status": "passed",
+  "durationSeconds": 1800,
+  "warmupSeconds": 120,
+  "payloadBytes": 65536,
+  "workers": {
+    "http": 4,
+    "https": 4,
+    "rest": 4,
+    "sqlite": 4,
+    "mysql": 4
+  },
+  "growth": {
+    "rssMiB": 5.91015625,
+    "pythonMiB": -0.6046361923217773,
+    "idleHandles": -7,
+    "idleThreads": -2
+  },
+  "rssSlopeMiBPerMinute": 0.07237349796859231,
+  "problems": [],
+  "idleBefore": {
+    "rss": 79851520,
+    "threads": 7,
+    "handles": 383,
+    "private": 54919168
+  },
+  "quiescentAfter": {
+    "rss": 89030656,
+    "threads": 5,
+    "handles": 376,
+    "private": 64569344,
+    "pythonCurrent": 8275506
+  },
+  "serverGrowth": {
+    "rssMiB": -4.94140625,
+    "idleHandles": 3,
+    "idleThreads": 0,
+    "lateSlopeMiBPerMinute": 0.08295581578957402,
+    "peakRssMiB": 68.671875
+  },
+  "serverWarmIdle": {
+    "rss": 62185472,
+    "threads": 8,
+    "handles": 286,
+    "private": 43028480
+  },
+  "serverQuiescentAfter": {
+    "rss": 57004032,
+    "threads": 8,
+    "handles": 289,
+    "private": 38195200
+  },
+  "environment": {
+    "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+    "os": "Windows-10-10.0.26200-SP0",
+    "packages": {
+      "httpx": "0.28.1",
+      "httpcore": "1.0.9",
+      "cryptography": "46.0.0",
+      "psutil": "7.2.2",
+      "PyMySQL": "1.2.4",
+      "uvicorn": "0.34.0"
+    },
+    "sources": {
+      "backend/app/http_transport.py": "905e870b8e2187bd84a64a80454e3cfad3512e4053aa1ac714f143068d1bb679",
+      "backend/app/http_server.py": "bac2f7dbe004c40856edd3e97fe3aa7835df0cb32b083d7d6aacb53b286cb6b3",
+      "backend/app/http1_protocol.py": "82401dc6c2280011954e49ed27e7ae982ea61ac64ffd50df1d034669ec434480",
+      "backend/app/schema_validation.py": "730122680b4afd7501da77f4c4397310c7b4dbaebb7fd8f9bf0cde0049ac55ac",
+      "backend/app/jdbc.py": "5f22b2a20d83b2c30cad262e83ee07a4ca2b7b5747c6f8fb69fca6d7fc3a0677",
+      "backend/app/snowflake.py": "cf2fa831a42962da2e61d3085ab704addf9807e6efd2d1588fa0650dfe279b95",
+      "scripts/http-database-soak.py": "4ac57fc754db259dd496bb27a910bbe6f39020ac050adc79dc67025aeeaf8ac1"
+    },
+    "exportSources": {
+      "backend/app/raw_python.py": "1952bc62b439ef21b3db773ce781d9eb86eb1f1df53dffcfe19e7a545ae79f49"
+    }
+  },
+  "lanes": {
+    "http": {
+      "workers": 4,
+      "cycles": 21383,
+      "operations": 22240,
+      "unexpectedErrorsIncludingWarmup": 0,
+      "recentP95Seconds": 0.28200000000651926,
+      "expectedResponseLimitFailures": 857
+    },
+    "https": {
+      "workers": 4,
+      "cycles": 18726,
+      "operations": 19477,
+      "unexpectedErrorsIncludingWarmup": 0,
+      "recentP95Seconds": 0.35899999999674037,
+      "expectedResponseLimitFailures": 751
+    },
+    "rest": {
+      "workers": 4,
+      "cycles": 18476,
+      "operations": 19216,
+      "unexpectedErrorsIncludingWarmup": 0,
+      "recentP95Seconds": 0.35899999999674037,
+      "expectedResponseLimitFailures": 740
+    },
+    "sqlite": {
+      "workers": 4,
+      "cycles": 17571,
+      "operations": 52713,
+      "unexpectedErrorsIncludingWarmup": 0,
+      "recentP95Seconds": 0.3289999999979045
+    },
+    "mysql": {
+      "workers": 4,
+      "cycles": 5913,
+      "operations": 17739,
+      "unexpectedErrorsIncludingWarmup": 0,
+      "recentP95Seconds": 1.25
+    }
+  },
+  "serverLateRssSlopeMiBPerMinute": 0.082955815789574,
+  "nativeThreadProbes": {
+    "https": {
+      "mode": "https",
+      "samples": [
+        {
+          "iterations": 0,
+          "rss": 50053120,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 0.8440000000118744
+        },
+        {
+          "iterations": 100,
+          "rss": 50655232,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 1.5789999999979045
+        },
+        {
+          "iterations": 200,
+          "rss": 49586176,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 2.062999999994645
+        },
+        {
+          "iterations": 300,
+          "rss": 49614848,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 2.8910000000032596
+        },
+        {
+          "iterations": 400,
+          "rss": 49614848,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 3.6719999999913853
+        },
+        {
+          "iterations": 500,
+          "rss": 50180096,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 4.23499999998603
+        },
+        {
+          "iterations": 600,
+          "rss": 49631232,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 4.85999999998603
+        },
+        {
+          "iterations": 700,
+          "rss": 50188288,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 5.469000000011874
+        },
+        {
+          "iterations": 800,
+          "rss": 49631232,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 6.14100000000326
+        },
+        {
+          "iterations": 900,
+          "rss": 49631232,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 6.921999999991385
+        },
+        {
+          "iterations": 1000,
+          "rss": 50192384,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 7.5789999999979045
+        },
+        {
+          "iterations": 1100,
+          "rss": 49635328,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 8.26600000000326
+        },
+        {
+          "iterations": 1200,
+          "rss": 49643520,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 8.937999999994645
+        },
+        {
+          "iterations": 1300,
+          "rss": 49643520,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 9.76600000000326
+        },
+        {
+          "iterations": 1400,
+          "rss": 50200576,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 10.35999999998603
+        },
+        {
+          "iterations": 1500,
+          "rss": 49643520,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 10.953999999997905
+        },
+        {
+          "iterations": 1600,
+          "rss": 50200576,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 11.594000000011874
+        },
+        {
+          "iterations": 1700,
+          "rss": 49643520,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 12.28200000000652
+        },
+        {
+          "iterations": 1800,
+          "rss": 49643520,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 12.90700000000652
+        },
+        {
+          "iterations": 1900,
+          "rss": 50204672,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 13.60999999998603
+        },
+        {
+          "iterations": 2000,
+          "rss": 49721344,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 14.421999999991385
+        },
+        {
+          "iterations": 2100,
+          "rss": 49717248,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 15.14100000000326
+        },
+        {
+          "iterations": 2200,
+          "rss": 50274304,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 15.75
+        },
+        {
+          "iterations": 2300,
+          "rss": 49717248,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 16.344000000011874
+        },
+        {
+          "iterations": 2400,
+          "rss": 49717248,
+          "handles": 344,
+          "threads": 11,
+          "seconds": 17.0
+        }
+      ],
+      "errors": [],
+      "endRss": 50286592,
+      "endHandles": 341,
+      "endThreads": 11
+    },
+    "mysql": {
+      "mode": "mysql",
+      "samples": [
+        {
+          "iterations": 0,
+          "rss": 49889280,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 1.0780000000086147
+        },
+        {
+          "iterations": 100,
+          "rss": 49750016,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 1.9690000000118744
+        },
+        {
+          "iterations": 200,
+          "rss": 49754112,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 2.984000000025844
+        },
+        {
+          "iterations": 300,
+          "rss": 49770496,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 3.89000000001397
+        },
+        {
+          "iterations": 400,
+          "rss": 50331648,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 4.672000000020489
+        },
+        {
+          "iterations": 500,
+          "rss": 49786880,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 5.6560000000172295
+        },
+        {
+          "iterations": 600,
+          "rss": 49786880,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 6.5
+        },
+        {
+          "iterations": 700,
+          "rss": 49786880,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 7.375
+        },
+        {
+          "iterations": 800,
+          "rss": 49803264,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 8.28100000001723
+        },
+        {
+          "iterations": 900,
+          "rss": 49786880,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 9.125
+        },
+        {
+          "iterations": 1000,
+          "rss": 49737728,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 9.969000000011874
+        },
+        {
+          "iterations": 1100,
+          "rss": 49672192,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 10.859000000025844
+        },
+        {
+          "iterations": 1200,
+          "rss": 50360320,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 11.734000000025844
+        },
+        {
+          "iterations": 1300,
+          "rss": 49799168,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 12.64000000001397
+        },
+        {
+          "iterations": 1400,
+          "rss": 49799168,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 13.547000000020489
+        },
+        {
+          "iterations": 1500,
+          "rss": 49799168,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 14.547000000020489
+        },
+        {
+          "iterations": 1600,
+          "rss": 49803264,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 15.453000000008615
+        },
+        {
+          "iterations": 1700,
+          "rss": 49799168,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 16.328000000008615
+        },
+        {
+          "iterations": 1800,
+          "rss": 49770496,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 17.219000000011874
+        },
+        {
+          "iterations": 1900,
+          "rss": 49725440,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 17.984000000025844
+        },
+        {
+          "iterations": 2000,
+          "rss": 50360320,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 18.76500000001397
+        },
+        {
+          "iterations": 2100,
+          "rss": 49811456,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 19.625
+        },
+        {
+          "iterations": 2200,
+          "rss": 49807360,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 20.437000000005355
+        },
+        {
+          "iterations": 2300,
+          "rss": 49811456,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 21.234000000025844
+        },
+        {
+          "iterations": 2400,
+          "rss": 49696768,
+          "handles": 344,
+          "threads": 10,
+          "seconds": 22.0
+        }
+      ],
+      "errors": [],
+      "endRss": 50360320,
+      "endHandles": 344,
+      "endThreads": 10
+    }
+  },
+  "samples": [
+    {
+      "measuredSeconds": 0,
+      "rss": 82833408,
+      "private": 57884672,
+      "pythonCurrent": 8909513,
+      "handles": 519,
+      "threads": 27,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 65531904,
+        "threads": 8,
+        "handles": 291,
+        "private": 47124480
+      }
+    },
+    {
+      "measuredSeconds": 30.219000000011874,
+      "rss": 90742784,
+      "private": 66461696,
+      "pythonCurrent": 8815723,
+      "handles": 541,
+      "threads": 28,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 65048576,
+        "threads": 8,
+        "handles": 296,
+        "private": 48185344
+      }
+    },
+    {
+      "measuredSeconds": 60.40700000000652,
+      "rss": 93302784,
+      "private": 68087808,
+      "pythonCurrent": 9123264,
+      "handles": 545,
+      "threads": 28,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 68562944,
+        "threads": 8,
+        "handles": 294,
+        "private": 50688000
+      }
+    },
+    {
+      "measuredSeconds": 90.56299999999464,
+      "rss": 92753920,
+      "private": 68386816,
+      "pythonCurrent": 8554457,
+      "handles": 553,
+      "threads": 28,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 66166784,
+        "threads": 8,
+        "handles": 298,
+        "private": 48234496
+      }
+    },
+    {
+      "measuredSeconds": 120.79699999999139,
+      "rss": 92954624,
+      "private": 68489216,
+      "pythonCurrent": 8712382,
+      "handles": 539,
+      "threads": 27,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 62722048,
+        "threads": 8,
+        "handles": 295,
+        "private": 45187072
+      }
+    },
+    {
+      "measuredSeconds": 150.96900000001187,
+      "rss": 92110848,
+      "private": 67575808,
+      "pythonCurrent": 9035981,
+      "handles": 543,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 66404352,
+        "threads": 8,
+        "handles": 297,
+        "private": 48365568
+      }
+    },
+    {
+      "measuredSeconds": 181.18799999999464,
+      "rss": 92975104,
+      "private": 68292608,
+      "pythonCurrent": 9008690,
+      "handles": 546,
+      "threads": 28,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 62361600,
+        "threads": 9,
+        "handles": 296,
+        "private": 45187072
+      }
+    },
+    {
+      "measuredSeconds": 211.42199999999139,
+      "rss": 93491200,
+      "private": 69722112,
+      "pythonCurrent": 9219618,
+      "handles": 548,
+      "threads": 28,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 65171456,
+        "threads": 9,
+        "handles": 297,
+        "private": 47104000
+      }
+    },
+    {
+      "measuredSeconds": 241.65700000000652,
+      "rss": 93569024,
+      "private": 69758976,
+      "pythonCurrent": 9058578,
+      "handles": 548,
+      "threads": 28,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 63156224,
+        "threads": 9,
+        "handles": 296,
+        "private": 45527040
+      }
+    },
+    {
+      "measuredSeconds": 271.89100000000326,
+      "rss": 92295168,
+      "private": 68370432,
+      "pythonCurrent": 8897330,
+      "handles": 547,
+      "threads": 26,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 66338816,
+        "threads": 7,
+        "handles": 296,
+        "private": 48177152
+      }
+    },
+    {
+      "measuredSeconds": 302.10999999998603,
+      "rss": 94138368,
+      "private": 70230016,
+      "pythonCurrent": 9157024,
+      "handles": 551,
+      "threads": 26,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 63848448,
+        "threads": 7,
+        "handles": 297,
+        "private": 46456832
+      }
+    },
+    {
+      "measuredSeconds": 332.3440000000119,
+      "rss": 94314496,
+      "private": 70500352,
+      "pythonCurrent": 9440630,
+      "handles": 548,
+      "threads": 26,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 67031040,
+        "threads": 7,
+        "handles": 295,
+        "private": 49147904
+      }
+    },
+    {
+      "measuredSeconds": 362.60999999998603,
+      "rss": 93454336,
+      "private": 69447680,
+      "pythonCurrent": 9354973,
+      "handles": 539,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 65982464,
+        "threads": 7,
+        "handles": 294,
+        "private": 47931392
+      }
+    },
+    {
+      "measuredSeconds": 392.9070000000065,
+      "rss": 94453760,
+      "private": 70447104,
+      "pythonCurrent": 9035404,
+      "handles": 545,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 65110016,
+        "threads": 7,
+        "handles": 296,
+        "private": 47521792
+      }
+    },
+    {
+      "measuredSeconds": 423.2039999999979,
+      "rss": 94232576,
+      "private": 70209536,
+      "pythonCurrent": 9276125,
+      "handles": 546,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 68280320,
+        "threads": 7,
+        "handles": 296,
+        "private": 50364416
+      }
+    },
+    {
+      "measuredSeconds": 453.51600000000326,
+      "rss": 93978624,
+      "private": 70021120,
+      "pythonCurrent": 9228565,
+      "handles": 547,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 67551232,
+        "threads": 7,
+        "handles": 296,
+        "private": 49491968
+      }
+    },
+    {
+      "measuredSeconds": 483.89100000000326,
+      "rss": 93794304,
+      "private": 69771264,
+      "pythonCurrent": 8573256,
+      "handles": 542,
+      "threads": 27,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 63442944,
+        "threads": 9,
+        "handles": 296,
+        "private": 46301184
+      }
+    },
+    {
+      "measuredSeconds": 514.234999999986,
+      "rss": 93511680,
+      "private": 69521408,
+      "pythonCurrent": 9231730,
+      "handles": 538,
+      "threads": 27,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 67375104,
+        "threads": 9,
+        "handles": 296,
+        "private": 49586176
+      }
+    },
+    {
+      "measuredSeconds": 544.4690000000119,
+      "rss": 94846976,
+      "private": 70791168,
+      "pythonCurrent": 9111255,
+      "handles": 541,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 64495616,
+        "threads": 7,
+        "handles": 295,
+        "private": 47067136
+      }
+    },
+    {
+      "measuredSeconds": 574.8440000000119,
+      "rss": 94416896,
+      "private": 70328320,
+      "pythonCurrent": 9092722,
+      "handles": 538,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 67743744,
+        "threads": 7,
+        "handles": 294,
+        "private": 49606656
+      }
+    },
+    {
+      "measuredSeconds": 605.0789999999979,
+      "rss": 94158848,
+      "private": 70082560,
+      "pythonCurrent": 8928699,
+      "handles": 541,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 62836736,
+        "threads": 7,
+        "handles": 295,
+        "private": 45547520
+      }
+    },
+    {
+      "measuredSeconds": 635.375,
+      "rss": 94019584,
+      "private": 69935104,
+      "pythonCurrent": 9285813,
+      "handles": 539,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 67104768,
+        "threads": 7,
+        "handles": 294,
+        "private": 47243264
+      }
+    },
+    {
+      "measuredSeconds": 665.7660000000033,
+      "rss": 93921280,
+      "private": 69861376,
+      "pythonCurrent": 9371566,
+      "handles": 544,
+      "threads": 26,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 65392640,
+        "threads": 7,
+        "handles": 295,
+        "private": 48205824
+      }
+    },
+    {
+      "measuredSeconds": 696.109999999986,
+      "rss": 94228480,
+      "private": 70184960,
+      "pythonCurrent": 9294706,
+      "handles": 541,
+      "threads": 26,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 67510272,
+        "threads": 7,
+        "handles": 295,
+        "private": 49897472
+      }
+    },
+    {
+      "measuredSeconds": 726.4219999999914,
+      "rss": 95096832,
+      "private": 71004160,
+      "pythonCurrent": 9027435,
+      "handles": 545,
+      "threads": 26,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 71372800,
+        "threads": 7,
+        "handles": 295,
+        "private": 53530624
+      }
+    },
+    {
+      "measuredSeconds": 756.859999999986,
+      "rss": 94765056,
+      "private": 70651904,
+      "pythonCurrent": 9476853,
+      "handles": 546,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 65699840,
+        "threads": 7,
+        "handles": 296,
+        "private": 48472064
+      }
+    },
+    {
+      "measuredSeconds": 787.234999999986,
+      "rss": 93884416,
+      "private": 70340608,
+      "pythonCurrent": 9463030,
+      "handles": 543,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 64614400,
+        "threads": 8,
+        "handles": 295,
+        "private": 47169536
+      }
+    },
+    {
+      "measuredSeconds": 817.5789999999979,
+      "rss": 94482432,
+      "private": 70914048,
+      "pythonCurrent": 9445887,
+      "handles": 549,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 67756032,
+        "threads": 8,
+        "handles": 297,
+        "private": 49676288
+      }
+    },
+    {
+      "measuredSeconds": 848.0,
+      "rss": 92934144,
+      "private": 69300224,
+      "pythonCurrent": 9170182,
+      "handles": 544,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 65667072,
+        "threads": 8,
+        "handles": 295,
+        "private": 48455680
+      }
+    },
+    {
+      "measuredSeconds": 878.4219999999914,
+      "rss": 94552064,
+      "private": 70926336,
+      "pythonCurrent": 9702655,
+      "handles": 541,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 69079040,
+        "threads": 7,
+        "handles": 294,
+        "private": 51519488
+      }
+    },
+    {
+      "measuredSeconds": 908.8129999999946,
+      "rss": 95105024,
+      "private": 71450624,
+      "pythonCurrent": 9349210,
+      "handles": 543,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 64327680,
+        "threads": 7,
+        "handles": 296,
+        "private": 47017984
+      }
+    },
+    {
+      "measuredSeconds": 939.2039999999979,
+      "rss": 93704192,
+      "private": 70090752,
+      "pythonCurrent": 9145869,
+      "handles": 542,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 68427776,
+        "threads": 8,
+        "handles": 300,
+        "private": 50257920
+      }
+    },
+    {
+      "measuredSeconds": 969.5320000000065,
+      "rss": 94568448,
+      "private": 70922240,
+      "pythonCurrent": 9311218,
+      "handles": 539,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 64913408,
+        "threads": 8,
+        "handles": 299,
+        "private": 47697920
+      }
+    },
+    {
+      "measuredSeconds": 999.9690000000119,
+      "rss": 93433856,
+      "private": 69812224,
+      "pythonCurrent": 9226094,
+      "handles": 543,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 68194304,
+        "threads": 8,
+        "handles": 300,
+        "private": 50704384
+      }
+    },
+    {
+      "measuredSeconds": 1030.4070000000065,
+      "rss": 94023680,
+      "private": 70385664,
+      "pythonCurrent": 9869264,
+      "handles": 552,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 66801664,
+        "threads": 8,
+        "handles": 301,
+        "private": 49512448
+      }
+    },
+    {
+      "measuredSeconds": 1060.859999999986,
+      "rss": 94248960,
+      "private": 70590464,
+      "pythonCurrent": 9047205,
+      "handles": 534,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 66560000,
+        "threads": 8,
+        "handles": 298,
+        "private": 48590848
+      }
+    },
+    {
+      "measuredSeconds": 1091.2820000000065,
+      "rss": 91389952,
+      "private": 67944448,
+      "pythonCurrent": 9485487,
+      "handles": 539,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 64479232,
+        "threads": 8,
+        "handles": 299,
+        "private": 46981120
+      }
+    },
+    {
+      "measuredSeconds": 1121.6879999999946,
+      "rss": 94457856,
+      "private": 70868992,
+      "pythonCurrent": 9597908,
+      "handles": 539,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 66211840,
+        "threads": 8,
+        "handles": 301,
+        "private": 48132096
+      }
+    },
+    {
+      "measuredSeconds": 1152.1879999999946,
+      "rss": 94015488,
+      "private": 70291456,
+      "pythonCurrent": 9723066,
+      "handles": 542,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 69025792,
+        "threads": 8,
+        "handles": 300,
+        "private": 50999296
+      }
+    },
+    {
+      "measuredSeconds": 1182.6410000000033,
+      "rss": 94564352,
+      "private": 70848512,
+      "pythonCurrent": 9271499,
+      "handles": 537,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 66584576,
+        "threads": 8,
+        "handles": 298,
+        "private": 49414144
+      }
+    },
+    {
+      "measuredSeconds": 1213.1879999999946,
+      "rss": 95043584,
+      "private": 71409664,
+      "pythonCurrent": 9173496,
+      "handles": 530,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 67391488,
+        "threads": 8,
+        "handles": 298,
+        "private": 49704960
+      }
+    },
+    {
+      "measuredSeconds": 1243.6570000000065,
+      "rss": 94285824,
+      "private": 70594560,
+      "pythonCurrent": 8989644,
+      "handles": 545,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 64335872,
+        "threads": 8,
+        "handles": 300,
+        "private": 46350336
+      }
+    },
+    {
+      "measuredSeconds": 1274.0940000000119,
+      "rss": 94126080,
+      "private": 70385664,
+      "pythonCurrent": 9484228,
+      "handles": 549,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 69017600,
+        "threads": 8,
+        "handles": 299,
+        "private": 51331072
+      }
+    },
+    {
+      "measuredSeconds": 1304.5469999999914,
+      "rss": 95096832,
+      "private": 71380992,
+      "pythonCurrent": 9224229,
+      "handles": 539,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 66805760,
+        "threads": 8,
+        "handles": 300,
+        "private": 49541120
+      }
+    },
+    {
+      "measuredSeconds": 1334.953999999998,
+      "rss": 94334976,
+      "private": 70717440,
+      "pythonCurrent": 9109339,
+      "handles": 546,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 64307200,
+        "threads": 8,
+        "handles": 301,
+        "private": 46989312
+      }
+    },
+    {
+      "measuredSeconds": 1365.609999999986,
+      "rss": 93573120,
+      "private": 69812224,
+      "pythonCurrent": 8502150,
+      "handles": 543,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 67039232,
+        "threads": 8,
+        "handles": 301,
+        "private": 49471488
+      }
+    },
+    {
+      "measuredSeconds": 1396.125,
+      "rss": 94625792,
+      "private": 70852608,
+      "pythonCurrent": 9377250,
+      "handles": 546,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 68325376,
+        "threads": 8,
+        "handles": 299,
+        "private": 50352128
+      }
+    },
+    {
+      "measuredSeconds": 1426.5629999999946,
+      "rss": 94662656,
+      "private": 70848512,
+      "pythonCurrent": 9189320,
+      "handles": 540,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 66342912,
+        "threads": 8,
+        "handles": 299,
+        "private": 49070080
+      }
+    },
+    {
+      "measuredSeconds": 1457.0320000000065,
+      "rss": 94937088,
+      "private": 71122944,
+      "pythonCurrent": 9211167,
+      "handles": 547,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 69689344,
+        "threads": 8,
+        "handles": 300,
+        "private": 51666944
+      }
+    },
+    {
+      "measuredSeconds": 1487.5160000000033,
+      "rss": 93908992,
+      "private": 70119424,
+      "pythonCurrent": 9439551,
+      "handles": 538,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 66207744,
+        "threads": 8,
+        "handles": 299,
+        "private": 48615424
+      }
+    },
+    {
+      "measuredSeconds": 1518.0,
+      "rss": 95756288,
+      "private": 71933952,
+      "pythonCurrent": 9516153,
+      "handles": 545,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 69640192,
+        "threads": 8,
+        "handles": 300,
+        "private": 51478528
+      }
+    },
+    {
+      "measuredSeconds": 1548.578999999998,
+      "rss": 95944704,
+      "private": 72069120,
+      "pythonCurrent": 9202096,
+      "handles": 544,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 66932736,
+        "threads": 8,
+        "handles": 300,
+        "private": 49704960
+      }
+    },
+    {
+      "measuredSeconds": 1579.0629999999946,
+      "rss": 92155904,
+      "private": 68276224,
+      "pythonCurrent": 9536734,
+      "handles": 548,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 72007680,
+        "threads": 8,
+        "handles": 301,
+        "private": 53772288
+      }
+    },
+    {
+      "measuredSeconds": 1609.578999999998,
+      "rss": 95326208,
+      "private": 71446528,
+      "pythonCurrent": 9353960,
+      "handles": 541,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 69754880,
+        "threads": 8,
+        "handles": 300,
+        "private": 52236288
+      }
+    },
+    {
+      "measuredSeconds": 1640.0940000000119,
+      "rss": 95387648,
+      "private": 71454720,
+      "pythonCurrent": 9414401,
+      "handles": 541,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 65789952,
+        "threads": 8,
+        "handles": 299,
+        "private": 48381952
+      }
+    },
+    {
+      "measuredSeconds": 1670.6719999999914,
+      "rss": 95035392,
+      "private": 71110656,
+      "pythonCurrent": 8963771,
+      "handles": 532,
+      "threads": 26,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 68460544,
+        "threads": 8,
+        "handles": 299,
+        "private": 51150848
+      }
+    },
+    {
+      "measuredSeconds": 1701.1879999999946,
+      "rss": 95232000,
+      "private": 71380992,
+      "pythonCurrent": 9496213,
+      "handles": 548,
+      "threads": 26,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 64913408,
+        "threads": 8,
+        "handles": 300,
+        "private": 48394240
+      }
+    },
+    {
+      "measuredSeconds": 1731.75,
+      "rss": 95412224,
+      "private": 71483392,
+      "pythonCurrent": 9575525,
+      "handles": 552,
+      "threads": 26,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 70103040,
+        "threads": 8,
+        "handles": 300,
+        "private": 52264960
+      }
+    },
+    {
+      "measuredSeconds": 1762.328999999998,
+      "rss": 94150656,
+      "private": 70279168,
+      "pythonCurrent": 9262488,
+      "handles": 546,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 68104192,
+        "threads": 8,
+        "handles": 299,
+        "private": 50790400
+      }
+    },
+    {
+      "measuredSeconds": 1792.9219999999914,
+      "rss": 94777344,
+      "private": 70819840,
+      "pythonCurrent": 9235005,
+      "handles": 550,
+      "threads": 25,
+      "gcUncollectable": [
+        0,
+        0,
+        0
+      ],
+      "server": {
+        "rss": 61890560,
+        "threads": 8,
+        "handles": 301,
+        "private": 44240896
+      }
+    }
+  ],
+  "validation": {
+    "primaryBackend": {
+      "run": 231,
+      "passed": 230,
+      "skipped": 1,
+      "skip": "Live PostgreSQL DSN unavailable"
+    },
+    "archiveAndResourceSuite": {
+      "run": 58,
+      "failed": 0
+    },
+    "focusedResourceSuite": {
+      "run": 17,
+      "failed": 0
+    },
+    "finalProtocolSuite": {
+      "run": 70,
+      "failed": 0
+    },
+    "frontend": {
+      "run": 150,
+      "failed": 0
+    },
+    "executionModes": [
+      "Run",
+      "Debug",
+      "Direct Python",
+      "Engine Python",
+      "Direct zip"
+    ],
+    "liveDatabases": [
+      "SQLite WAL",
+      "Disposable MySQL with verified TLS"
+    ],
+    "interactiveStudio": "Not performed; automated component/API checks used.",
+    "help": {
+      "run": 11,
+      "failed": 0
+    },
+    "productionFrontendBuild": "passed",
+    "syntax": "passed"
+  }
+}

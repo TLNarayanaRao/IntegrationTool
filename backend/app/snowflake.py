@@ -142,13 +142,16 @@ def test_connection(config: dict) -> dict:
     if config.get("mode") == "mock":
         return {"ok": True, "message": "Snowflake design-time mock connection is ready"}
     connection = connect(config)
+    cursor = None
     try:
         cursor = connection.cursor()
         cursor.execute("SELECT CURRENT_ACCOUNT(), CURRENT_WAREHOUSE(), CURRENT_DATABASE(), CURRENT_SCHEMA()")
         account, warehouse, database, schema = cursor.fetchone()
         return {"ok": True, "message": f"Snowflake connection succeeded: {account} · {warehouse or 'no warehouse'} · {database or 'no database'}.{schema or ''}"}
     finally:
-        connection.close()
+        try:
+            if cursor is not None:cursor.close()
+        finally:connection.close()
 
 
 def list_entities(config: dict, database: str = "", schema: str = "", pattern: str = "") -> list[dict]:
@@ -156,6 +159,7 @@ def list_entities(config: dict, database: str = "", schema: str = "", pattern: s
         items = config.get("mockEntities") or []
         return [item for item in items if not pattern or pattern.lower().replace("%", "") in str(item.get("name", "")).lower()]
     connection = connect(config)
+    cursor = None
     try:
         database = database or config.get("database")
         schema = schema or config.get("schema") or "PUBLIC"
@@ -168,7 +172,9 @@ def list_entities(config: dict, database: str = "", schema: str = "", pattern: s
         )
         return [{"database": row[0], "schema": row[1], "name": row[2], "entityType": row[3]} for row in cursor.fetchall()]
     finally:
-        connection.close()
+        try:
+            if cursor is not None:cursor.close()
+        finally:connection.close()
 
 
 def entity_metadata(config: dict, database: str, schema: str, entity: str) -> dict:
@@ -178,6 +184,7 @@ def entity_metadata(config: dict, database: str, schema: str, entity: str) -> di
             raise SnowflakeAdapterError(f"Mock Snowflake entity {entity!r} was not found")
         return found
     connection = connect(config)
+    cursor = None
     try:
         cursor = connection.cursor()
         cursor.execute(
@@ -198,7 +205,9 @@ def entity_metadata(config: dict, database: str, schema: str, entity: str) -> di
             pass
         return {"database": database, "schema": schema, "name": entity, "entityType": "TABLE_OR_VIEW", "columns": columns}
     finally:
-        connection.close()
+        try:
+            if cursor is not None:cursor.close()
+        finally:connection.close()
 
 
 def _query_limit(cfg: dict) -> int:
@@ -243,6 +252,8 @@ def execute(connection_config: dict, cfg: dict, payload: Any) -> dict:
     if connection_config.get("mode") == "mock":
         return _mock_execute(operation, cfg, records)
     connection = connect(connection_config)
+    cursor = None
+    temporary = None
     try:
         cursor = connection.cursor()
         timeout = int(cfg.get("timeout") or cfg.get("queryTimeoutSeconds") or 0)
@@ -369,8 +380,6 @@ def execute(connection_config: dict, cfg: dict, payload: Any) -> dict:
                 cursor.execute(f"MERGE INTO {table} t USING {temporary_table} s ON {on_clause} WHEN MATCHED THEN UPDATE SET {update_clause} WHEN NOT MATCHED THEN INSERT ({insert_names}) VALUES ({insert_values})")
                 cursor.execute(f"DROP TABLE {temporary_table}")
             connection.commit()
-            if temporary:
-                Path(temporary.name).unlink(missing_ok=True)
             return {"loadResults": rows}
         raise SnowflakeAdapterError(f"Unsupported Snowflake operation {operation}")
     except SnowflakeAdapterError:
@@ -378,7 +387,14 @@ def execute(connection_config: dict, cfg: dict, payload: Any) -> dict:
     except Exception as exc:
         raise SnowflakeAdapterError(f"Snowflake {operation} failed: {exc}") from exc
     finally:
-        connection.close()
+        try:
+            try:
+                if cursor is not None:cursor.close()
+            finally:connection.close()
+        finally:
+            if temporary is not None:
+                try:temporary.close()
+                finally:Path(temporary.name).unlink(missing_ok=True)
 
 
 snowflake_adapter = type("SnowflakeAdapter", (), {

@@ -59,7 +59,7 @@ def local_proposal(requirement: str, scope: str, current_task: dict | None = Non
         if kind == 'log': config.update({'level': 'INFO', 'message': '${last}', 'includePayload': True})
         if kind == 'sap' and operation == 'idoc_parser': config.update({'idocType': 'ARTMAS05', 'idocOutputMode': 'JSON', 'parserEngine': 'Built-in', 'validateIdocType': True, 'inputMappings': {'IDoc': '${last}'}})
         if kind == 'sap' and operation == 'post_idoc': config.update({'idocType': 'ARTMAS05', 'inputFormat': 'XML', 'idocInputMode': 'tRFC', 'inputMappings': {'payload': '${Parse-ARTMAS05-IDoc.SAPIDoc}'}})
-        if kind in ('http_listener','rest') and operation == 'receiver': config.update({'path':'/api/resource','methods':'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS,TRACE,CONNECT'})
+        if kind in ('http_listener','rest') and operation == 'receiver': config.update({'path':'/api/resource','methods':'GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS'})
         if kind == 'http_listener': config.update({'path':'/api/resource','method':'POST'})
         if kind == 'catch': config['catchAll'] = True
         activities.append({'id':activity_id,'type':kind,'name':activity_id,'position':{'x':80 + index * 190,'y':100 if kind != 'catch' else 260},'config':config})

@@ -1,0 +1,34 @@
+{
+  "passed": false,
+  "results": [
+    {
+      "family": "jms",
+      "mode": "run",
+      "passed": false,
+      "exceptionType": "AssertionError"
+    },
+    {
+      "family": "jms",
+      "mode": "debug",
+      "passed": false,
+      "exceptionType": "AssertionError"
+    },
+    {
+      "family": "jms",
+      "mode": "python-direct",
+      "passed": true
+    },
+    {
+      "family": "jms",
+      "mode": "python-engine",
+      "passed": false,
+      "exceptionType": "AssertionError"
+    }
+  ],
+  "scope": "Local Kafka and Artemis JMS; compatibility only, not 100k performance",
+  "notVerified": [
+    "Cloud Pub/Sub",
+    "Vendor EMS unless explicitly configured",
+    "Live SAP"
+  ]
+}

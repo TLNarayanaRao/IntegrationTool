@@ -546,8 +546,8 @@ def validate_raw_python(project: dict) -> None:
 
 
 def mapper_xml_dependencies(project: dict) -> list[str]:
-    configs = [a.get('config') or {} for task in project.get('tasks', []) for a in task.get('activities', [])
-               if a.get('type') in {'mapper', 'transform', 'ai_transform'}]
+    configs = [a.get('config') or {} for task in project.get('tasks', []) for a in task.get('activities', [])]
+    if project.get('custom_functions'): configs.append({'customFunctions':project['custom_functions']})
     guards = [edge['bw_xpath'] for task in project.get('tasks', []) for edge in task.get('transitions', []) if edge.get('bw_xpath')]
     def xpath_call(config, version='[12]?'):
         return re.search(r'\bxpath' + version + r'\s*\(', repr(config))
@@ -623,16 +623,41 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
                    for task in project.get('tasks', []) for activity in task.get('activities', [])
                    if activity.get('type') == 'sap' and activity.get('config', {}).get('operation') == 'idoc_listener'}
     if 'kafka' in sap_sources and needs_external('kafka'): add('Kafka client', ['aiokafka'], 'python -m pip install aiokafka')
+    jdbc_configs = [*(resources.get('jdbc') or []), *(a.get('config') or {} for t in project.get('tasks',[]) for a in t.get('activities',[]) if a.get('type')=='jdbc')]
+    uses_jdbc=any(kind=='jdbc' for kind,_ in activity_pairs) or any(group.get('type')=='transaction_jdbc' for task in project.get('tasks',[]) for group in task.get('groups') or [])
+    native_drivers=set();java_jdbc=False
+    java_modes={'jdbc','java','java bridge','jdbc (java bridge)'}
+    jdbc_profiles=[{item.get('key'):item.get('value') for item in values} for values in (project.get('properties') or {}).values()] or [{}]
+    def jdbc_setting(value,profile):
+        binding=re.fullmatch(r'\$\{properties\.([^}]+)\}',str(value))
+        resolved=profile.get(binding.group(1)) if binding else value
+        return str(resolved).lower() if resolved is not None else None
+    for config in jdbc_configs:
+        for profile in jdbc_profiles:
+            driver=jdbc_setting(config.get('driver') or 'sqlite',profile)
+            if driver is None:continue
+            if driver in {'oracle','sqlserver','mssql'}:
+                mode=jdbc_setting(config.get('connectionMode') or 'jdbc',profile)
+                java_jdbc=java_jdbc or mode in java_modes
+                if mode is not None and mode not in java_modes:native_drivers.add(driver)
+            else:native_drivers.add(driver)
     bridge_kinds = {kind for kind, _ in activity_pairs if kind in {'ems', 'jms', 'sap'} and needs_external(kind)}
+    if uses_jdbc and java_jdbc:bridge_kinds.add('jdbc')
     if any(source in sap_sources and needs_external(source) for source in ('ems', 'jms')):
         bridge_kinds.add('sap-messaging-bridge')
     if bridge_kinds or any(kind == 'java' for kind, _ in activity_pairs):
         add('Java vendor bridge', [], 'Provision Java plus the licensed vendor JARs in the configured driver directory.', java=True)
     external: list[str] = []
-    if any(kind == 'jdbc' for kind, _ in activity_pairs) and any(
-        setting_values(config.get('driver')) & {'postgres', 'postgresql'} for config in resources.get('jdbc', [])
-    ):
-        add('PostgreSQL JDBC activity', ['psycopg'], 'python -m pip install "psycopg[binary]"')
+    if uses_jdbc:
+        adapters=[({'postgres','postgresql'},'PostgreSQL JDBC activity','psycopg','"psycopg[binary]"'),
+                  ({'mysql','mariadb'},'MySQL JDBC activity','pymysql','PyMySQL'),
+                  ({'oracle'},'Oracle native JDBC activity','oracledb','oracledb'),
+                  ({'sqlserver','mssql'},'SQL Server native JDBC activity','pyodbc','pyodbc'),
+                  ({'db2'},'DB2 JDBC activity','ibm_db_dbi','ibm-db'),
+                  ({'databricks'},'Databricks JDBC activity','databricks.sql','databricks-sql-connector'),
+                  ({'snowflake'},'Snowflake client','snowflake.connector','snowflake-connector-python')]
+        for drivers,name,module,package in adapters:
+            if drivers & native_drivers:add(name,[module],'python -m pip install '+package)
     for task in project.get('tasks', []):
         for activity in task.get('activities', []):
             cfg = activity.get('config') or {}
@@ -721,7 +746,12 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     if 'pubsub' in capabilities: connector_roots.add('close_pubsub')
     if connector_roots:
         jms_operations = set().union(*(operations_by_kind.get(kind, set()) for kind in ('ems', 'jms')))
-        kafka_operations = set(operations_by_kind.get('kafka', set()))
+        # Match the canonical names used after each adapter normalizes aliases;
+        # otherwise pruning removes the live receive/pull implementation.
+        kafka_operations = {{'send': 'publish', 'get': 'receive'}.get(op, op)
+            for op in operations_by_kind.get('kafka', set())}
+        pubsub_operations = {{'subscribe': 'pull'}.get(op, op)
+            for op in operations_by_kind.get('pubsub', set())}
         for task in project['tasks']:
             for activity in task['activities']:
                 if activity.get('type') != 'sap' or activity.get('config', {}).get('operation') != 'idoc_listener': continue
@@ -733,7 +763,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
             'jms': {'operation': jms_operations, 'kind': {kind for kind in ('ems', 'jms') if kind in operations_by_kind} or {'ems', 'jms'}},
             'sap': {'operation': operations_by_kind.get('sap', set())},
             'kafka': {'operation': kafka_operations},
-            'pubsub': {'operation': operations_by_kind.get('pubsub', set())},
+            'pubsub': {'operation': pubsub_operations},
             'snowflake': {'operation': operations_by_kind.get('snowflake', set())},
             'amqp': {'operation': operations_by_kind.get('amqp', set())},
         })
@@ -779,6 +809,8 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     files['run.py'] = launcher
     files['__main__.py'] = launcher
     native_modules = set()
+    if 'file' in capabilities: native_modules.add('file_operations.py')
+    if 'transfer' in capabilities: native_modules.update({'transfer.py','sftp.py','file_operations.py'})
     if 'http_response' in capabilities:native_modules.add('http_messages.py')
     if capabilities & {'http_client','inbound_http'}: native_modules.update({'http_transport.py','http3_client.py','http_messages.py','rest_contract.py','mapper.py','http_contracts.py','schema_validation.py','data_formats.py','faults.py','http_policy.py','http_listener.py','http_streams.py','xsd_catalog.py'})
     if 'inbound_http' in capabilities: native_modules.update({'http_server.py','http1_protocol.py','http2_server.py','mapper.py','api_docs.py','api_docs_ui.py','swagger_assets.py','xsd_openapi.py'})
@@ -789,7 +821,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         native_modules.add('sftp.py')
     if 'sap' in capabilities: native_modules.update({'sap.py', 'java_bridge.py'})
     if 'jms' in capabilities or 'java' in capabilities: native_modules.add('java_bridge.py')
-    if 'jdbc' in capabilities: native_modules.update({'jdbc.py', 'java_bridge.py'})
+    if 'jdbc' in capabilities: native_modules.update({'jdbc.py', 'java_bridge.py','snowflake.py'})
     if 'snowflake' in capabilities: native_modules.add('snowflake.py')
     if 'amqp' in capabilities: native_modules.add('amqp.py')
     if 'dataweave' in capabilities: native_modules.add('dataweave.py')
@@ -1205,11 +1237,12 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
 
 
 ENGINE_CAPABILITY_MODULES = {
+    'file': 'file_operations', 'ftp': 'transfer', 'sftp': 'transfer',
     'dataweave': 'dataweave', 'sap': 'sap', 'snowflake': 'snowflake',
     'jdbc': 'jdbc', 'amqp': 'amqp', 'ems': 'java_bridge',
     'http': 'http_transport', 'rest': 'http_transport', 'soap': 'http_transport', 'http_listener': 'http_server',
     'http_response': 'http_messages',
-    'jms': 'java_bridge', 'pubsub': 'google_pubsub', 'sftp': 'sftp', 'basic': 'message_state',
+    'jms': 'java_bridge', 'pubsub': 'google_pubsub', 'basic': 'message_state',
 }
 
 

@@ -12,6 +12,28 @@ from .java_bridge import JavaBridgeError, invoke as invoke_java, start_jdbc_work
 
 _POSTGRES = {"postgresql", "postgres"}
 
+
+class JdbcConnection:
+    """One native transaction session, without a global connection/lock registry."""
+    def __init__(self,connection):
+        import threading
+        object.__setattr__(self,'_mina_connection',connection)
+        object.__setattr__(self,'_mina_lock',threading.RLock())
+        object.__setattr__(self,'_mina_closed',False)
+    def __getattr__(self,name):return getattr(self._mina_connection,name)
+    def __setattr__(self,name,value):
+        if name.startswith('_mina_'):object.__setattr__(self,name,value)
+        else:setattr(self._mina_connection,name,value)
+    def commit(self):
+        with self._mina_lock:return self._mina_connection.commit()
+    def rollback(self):
+        with self._mina_lock:return self._mina_connection.rollback()
+    def close(self):
+        with self._mina_lock:
+            if not self._mina_closed:
+                try:return self._mina_connection.close()
+                finally:self._mina_closed=True
+
 class JdbcAdapterError(RuntimeError):
     def __init__(self, message: str, fault_type: str = "JDBCSQLException"):
         super().__init__(message)
@@ -75,7 +97,11 @@ def _connect_mysql(config: dict):
         database=config.get("database") or parsed.path.lstrip("/") or None,
         charset=str(config.get("charset") or (query.get("characterEncoding") or ["utf8mb4"])[0]),
         connect_timeout=int(config.get("timeoutSeconds") or 30),
-        ssl={"ca": config.get("sslCaFile")} if config.get("sslCaFile") else None,
+        read_timeout=_seconds(config.get('readTimeoutSeconds'),int(config.get('timeoutSeconds') or 30)),
+        write_timeout=_seconds(config.get('writeTimeoutSeconds'),int(config.get('timeoutSeconds') or 30)),
+        ssl_ca=config.get('sslCaFile') or None,
+        ssl_verify_cert=True if config.get('sslCaFile') else None,
+        ssl_verify_identity=True if config.get('sslCaFile') else None,
     )
 
 
@@ -157,6 +183,46 @@ def _as_bool(value: Any, default: bool = False) -> bool:
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _seconds(value,default=0):
+    value=default if value in (None,'') else value
+    try:
+        number=int(value)
+        if number<0 or number!=float(value):raise ValueError()
+        return number
+    except (ValueError,TypeError,OverflowError) as error:
+        raise JdbcAdapterError('Timeout and row limits require nonnegative whole numbers','InvalidInputException') from error
+
+
+def _validate_operation(config):
+    if str(config.get('operation') or 'query') not in ('query','insert','update','delete','direct','dynamic','call','truncate'):
+        raise JdbcAdapterError('Unsupported database operation','InvalidInputException')
+    _seconds(config.get('timeout'))
+
+
+def _procedure_name(name):
+    identifier=r'(?:[A-Za-z_][\w$#]*|"(?:[^"]|"")+"|\[(?:[^\]]|\]\])+\])'
+    if not re.fullmatch(rf'{identifier}(?:\.{identifier}){{0,2}}',name):
+        raise JdbcAdapterError('Enter a qualified procedure identifier, without SQL or argument text','InvalidInputException')
+    return name
+
+
+def _call_parameters(config,driver=''):
+    parameters=_parameters(config,driver)
+    definitions=config.get('preparedParameters') or []
+    if not isinstance(definitions,list) or any(not isinstance(item,dict) for item in definitions):raise JdbcAdapterError('Procedure parameter definitions must be a list of named parameters','InvalidInputException')
+    if not definitions:return parameters,[]
+    entries=[];result={}
+    for index,item in enumerate(definitions):
+        name=str(item.get('name') or '')
+        if name in result or not re.fullmatch(r'[A-Za-z_][\w-]*',name):raise JdbcAdapterError('Procedure parameter names must be unique identifiers','InvalidInputException')
+        direction=str(item.get('direction') or 'IN').upper()
+        if direction not in ('IN','OUT','INOUT'):raise JdbcAdapterError('Parameter direction must be IN, OUT or INOUT','InvalidInputException')
+        entries.append({**item,'name':name,'direction':direction,'type':str(item.get('type') or 'string').lower()})
+        result[name]=None if direction=='OUT' else parameters.get(name) if isinstance(parameters,dict) else parameters[index] if index<len(parameters) else None
+    if isinstance(parameters,dict):result.update({name:value for name,value in parameters.items() if name not in result})
+    return result,entries
 
 
 def _uses_java(config: dict) -> bool:
@@ -283,19 +349,21 @@ def _java_metadata(config: dict) -> dict:
 
 
 def _java_execute(connection_config: dict, config: dict, worker=None) -> dict:
+    _validate_operation(config)
     operation = str(config.get("operation") or "query")
     sql = str(config.get("SqlStatement") or config.get("SqlUpdateStatement") or config.get("statement") or config.get("sql") or "").strip()
-    parameters = _parameters(config)
+    parameters = _parameters(config,'java')
+    call_definitions=[]
+    if operation=='call':parameters,call_definitions=_call_parameters(config,'java')
     if operation == "call" and not sql:
         procedure = str(config.get("procedure") or "").strip()
-        if not procedure: raise JdbcAdapterError("A stored procedure or function is required", "InvalidInputException")
-        values = list(parameters.values()) if isinstance(parameters, dict) else list(parameters or [])
-        sql, parameters = "{call " + procedure + "(" + ",".join("?" for _ in values) + ")}", values
+        _procedure_name(procedure)
+        sql = "{call " + procedure + "(" + ",".join("?" for _ in parameters) + ")}"
     if not sql: raise JdbcAdapterError("An SQL statement is required", "InvalidInputException")
     declared = _parameter_types(config)
     maximum, subset, offset = _query_window(config)
     values = {**_java_connection_values(connection_config), "queryTimeoutSeconds": config.get("timeout", 0),
-              "maxRows": maximum, "subsetSize": subset, "rowOffset": offset}
+              "maxRows": maximum, "subsetSize": subset, "rowOffset": offset,'operation':operation}
 
     def add_statement(statement, rows, prefix=""):
         for index, row in enumerate(rows):
@@ -306,11 +374,16 @@ def _java_execute(connection_config: dict, config: dict, worker=None) -> dict:
             values[prefix + "parameterCount"] = len(bindings)
             binding_prefix = prefix + (f"batch.{index}." if batch is not None else "")
             for position, value in enumerate(bindings):
-                data_type = _java_parameter_type(value, declared.get(names[position], ""))
+                data_type = _java_parameter_type(value, declared.get(names[position], list(declared.values())[position] if position<len(declared) else ""))
                 values[f"{binding_prefix}parameter.{position}.type"] = data_type
                 values[f"{binding_prefix}parameter.{position}.value"] = _java_parameter_value(value, data_type)
+                if operation=='call':
+                    entry=next((item for item in call_definitions if item['name']==names[position]),call_definitions[position] if position<len(call_definitions) else {})
+                    values[f'parameter.{position}.direction']=entry.get('direction','IN')
+                    values[f'parameter.{position}.name']=entry.get('name',names[position])
+                    values[f'parameter.{position}.declaredType']=entry.get('type','string')
 
-    batch = _write_batch(config, operation)
+    batch = _write_batch(config, operation,'java')
     if batch == []:
         return {"noOfUpdates": 0, "rowCount": 0}
     if batch is not None:
@@ -446,7 +519,7 @@ def _sqlserver_connection_string(config: dict, installed_drivers: list[str]) -> 
     return ";".join(parts) + ";"
 
 
-def connect(config: dict):
+def _connect_native(config: dict):
     driver = str(config.get("driver") or "sqlite").lower()
     try:
         if _uses_java(config): return JavaJdbcTransaction(config)
@@ -464,7 +537,7 @@ def connect(config: dict):
             return pyodbc.connect(connection_string, timeout=int(config.get("timeoutSeconds") or 30))
         if driver == "oracle":
             import oracledb
-            return oracledb.connect(user=config.get("username"), password=config.get("password"), dsn=config.get("dsn") or _oracle_dsn(config, oracledb))
+            return oracledb.connect(user=config.get("username"), password=config.get("password"), dsn=config.get("dsn") or _oracle_dsn(config, oracledb),tcp_connect_timeout=_seconds(config.get('timeoutSeconds'),30))
         if driver == "db2":
             import ibm_db_dbi
             return ibm_db_dbi.connect(_db2_connection_string(config), "", "")
@@ -481,17 +554,26 @@ def connect(config: dict):
     raise JdbcAdapterError(f"Unsupported JDBC driver {driver}", "JDBCConnectionNotFoundException")
 
 
+def connect(config: dict):
+    connection=_connect_native(config)
+    return connection if isinstance(connection,JavaJdbcTransaction) else JdbcConnection(connection)
+
+
 def test_connection(config: dict) -> dict:
     if _uses_java(config):
         return _java_test(config)
     connection = connect(config)
+    cursor = None
     try:
         cursor = connection.cursor()
-        cursor.execute("SELECT 1")
+        driver = str(config.get('driver') or 'sqlite').lower()
+        cursor.execute('SELECT 1 FROM DUAL' if driver == 'oracle' else 'VALUES 1' if driver == 'db2' else 'SELECT 1')
         cursor.fetchone()
         return {"ok": True, "message": f"{str(config.get('driver') or 'sqlite').upper()} connection succeeded"}
     finally:
-        connection.close()
+        try:
+            if cursor is not None: cursor.close()
+        finally: connection.close()
 
 
 def _metadata_queries(driver: str, schema: str) -> tuple[str, str, Any]:
@@ -523,6 +605,7 @@ def metadata(config: dict) -> dict:
         return _java_metadata(config)
     connection = connect(config)
     driver = str(config.get("driver") or "sqlite").lower()
+    cursor = None
     try:
         cursor = connection.cursor()
         tables: list[dict] = []
@@ -531,11 +614,16 @@ def metadata(config: dict) -> dict:
             for name, kind in cursor.fetchall():
                 escaped = str(name).replace(chr(34), chr(34) * 2)
                 columns = []
-                for row in connection.execute(f'PRAGMA table_info("{escaped}")').fetchall():
+                details=connection.cursor()
+                try:
+                    details.execute(f'PRAGMA table_info("{escaped}")')
+                    rows=details.fetchall()
+                finally:details.close()
+                for row in rows:
                     columns.append({"name": row[1], "dataType": row[2] or "TEXT", "notNull": bool(row[3]), "default": row[4], "primaryKey": bool(row[5])})
                 tables.append({"schema": "main", "name": name, "type": kind.upper(), "columns": columns})
         else:
-            schema = config.get("schema") or ("PUBLIC" if driver == "snowflake" else "dbo" if driver in ("sqlserver", "mssql") else "default" if driver == "databricks" else config.get("username") if driver == "oracle" else "public")
+            schema = config.get("schema") or (config.get('database') or _parsed_url(config,'jdbc:').path.lstrip('/') if driver in ('mysql','mariadb') else "PUBLIC" if driver == "snowflake" else "dbo" if driver in ("sqlserver", "mssql") else "default" if driver == "databricks" else config.get("username") if driver in ('oracle','db2') else "public")
             table_sql, column_sql, schema_value = _metadata_queries(driver, str(schema or ""))
             cursor.execute(table_sql, (schema_value,))
             for table_schema, name, kind in cursor.fetchall():
@@ -544,18 +632,18 @@ def metadata(config: dict) -> dict:
                 tables.append({"schema": table_schema, "name": name, "type": kind, "columns": columns})
         return {"driver": driver, "tables": tables}
     finally:
-        connection.close()
+        try:
+            if cursor is not None:cursor.close()
+        finally:connection.close()
 
 
 def _parameters(config: dict, driver: str = "") -> Any:
     value = config.get("parameters") or {}
-    if driver in _POSTGRES:
-        value = _empty_as_null(value, config)
+    value = _empty_as_null(value, config)
     if isinstance(value, list):
-        if driver not in _POSTGRES:
-            return [item.get("value") if isinstance(item, dict) else item for item in value]
-        return [_coerce_parameter(item.get("value"), item.get("type", ""), driver)
-                if isinstance(item, dict) and "value" in item else item for item in value]
+        definitions=list(_parameter_types(config).values())
+        return [_coerce_parameter(None if _as_bool(config.get('interpretEmptyStringAsNull')) and item.get('value')=='' else item.get('value'),item.get('type') or (definitions[index] if index<len(definitions) else ''),driver)
+                if isinstance(item,dict) and 'value' in item else _coerce_parameter(item,definitions[index],driver) if index<len(definitions) else item for index,item in enumerate(value)]
     definitions = _parameter_types(config)
     if isinstance(value, dict):
         return _typed_parameters(value, definitions, driver)
@@ -574,6 +662,9 @@ def _parameter_types(config: dict) -> dict[str, str]:
 def _coerce_parameter(value: Any, data_type: str, driver: str = "") -> Any:
     if value is None: return None
     kind = str(data_type or "string").lower()
+    if kind=='decimal' and driver in ('java','oracle','mysql','mariadb','sqlserver','mssql'):
+        from decimal import Decimal
+        return Decimal(str(value))
     if driver in _POSTGRES:
         from datetime import date, datetime, time
         from decimal import Decimal
@@ -587,11 +678,22 @@ def _coerce_parameter(value: Any, data_type: str, driver: str = "") -> Any:
             parsed = json.loads(value) if isinstance(value, str) else value
             return (Json if kind == "json" else Jsonb)(parsed)
     if kind in ("string", "date", "time", "timestamp", "datetime"): return str(value)
-    if kind in ("integer", "long"): return int(value)
+    if kind in ("integer", "long"):
+        from decimal import Decimal, InvalidOperation
+        try: number = Decimal(str(value))
+        except InvalidOperation as exc: raise JdbcAdapterError('Integer parameters require a finite whole number', 'InvalidInputException') from exc
+        if not number.is_finite() or number != number.to_integral_value():
+            raise JdbcAdapterError('Integer parameters require a finite whole number', 'InvalidInputException')
+        return int(number)
     if kind in ("number", "decimal", "float", "double"): return float(value)
-    if kind == "boolean": return value if isinstance(value, bool) else str(value).strip().lower() in ("1", "true", "yes", "on")
+    if kind == "boolean":
+        if isinstance(value,bool): return value
+        text = str(value).strip().lower()
+        if text not in ('1','true','yes','on','0','false','no','off'):
+            raise JdbcAdapterError('Boolean parameters require true or false', 'InvalidInputException')
+        return text in ('1','true','yes','on')
     if kind == "json": return value if isinstance(value, (dict, list)) else json.loads(str(value))
-    if kind == "binary": return value if isinstance(value, bytes) else base64.b64decode(str(value))
+    if kind == "binary": return value if isinstance(value, bytes) else base64.b64decode(str(value),validate=True)
     return value
 
 
@@ -601,7 +703,7 @@ def _typed_parameters(values, definitions, driver=""):
 
 
 def _empty_as_null(values, config):
-    if config.get("interpretEmptyStringAsNull"):
+    if _as_bool(config.get("interpretEmptyStringAsNull")):
         if isinstance(values, dict):
             return {key: None if value == "" else value for key, value in values.items()}
         if isinstance(values, (list, tuple)):
@@ -610,7 +712,7 @@ def _empty_as_null(values, config):
 
 
 def _write_batch(config, operation, driver=""):
-    if operation not in ("insert", "update", "delete") or not config.get("batchUpdate"):
+    if operation not in ("insert", "update", "delete") or not _as_bool(config.get("batchUpdate")):
         return None
     records = config.get("records")
     if records is None:
@@ -618,13 +720,12 @@ def _write_batch(config, operation, driver=""):
     if not isinstance(records, list) or any(not isinstance(row, (list, tuple, dict)) for row in records):
         raise JdbcAdapterError("Batch records must be a list of parameter records", "InvalidInputException")
     definitions = _parameter_types(config)
-    if driver in _POSTGRES:
-        records = [_empty_as_null(row, config) for row in records]
-    return [_typed_parameters(row, definitions, driver) if isinstance(row, dict) else row for row in records]
+    records = [_empty_as_null(row, config) for row in records]
+    return [_typed_parameters(row, definitions, driver) if isinstance(row, dict) else _parameters({**config,'parameters':list(row)},driver) for row in records]
 
 
 def _insert_fallback(config, operation):
-    if operation != "update" or not config.get("insertIfRecordDoesNotExist"):
+    if operation != "update" or not _as_bool(config.get("insertIfRecordDoesNotExist")):
         return ""
     statement = str(config.get("InsertStatement") or "").strip()
     if not re.match(r"INSERT\b", statement, re.IGNORECASE):
@@ -633,9 +734,9 @@ def _insert_fallback(config, operation):
 
 
 def _query_window(config):
-    maximum = int(config.get("maxRows") if config.get("maxRows") is not None else config.get("maximumRows") or 0)
-    subset = int(config.get("subsetSize") or 0) if config.get("processInSubsets") else 0
-    offset = int(config.get("rowOffset") or 0) if config.get("processInSubsets") else 0
+    maximum = _seconds(config.get("maxRows") if config.get("maxRows") is not None else config.get("maximumRows"))
+    subset = _seconds(config.get("subsetSize")) if _as_bool(config.get("processInSubsets")) else 0
+    offset = _seconds(config.get("rowOffset")) if _as_bool(config.get("processInSubsets")) else 0
     if min(maximum, subset, offset) < 0:
         raise JdbcAdapterError("Maximum rows, subset size, and row offset cannot be negative", "InvalidInputException")
     return maximum, subset, offset
@@ -695,11 +796,22 @@ def _postgres_call(cursor, procedure, parameters, schema=None):
 
 
 def execute(connection_config: dict, config: dict, connection=None, manage_transaction: bool = True) -> dict:
+    if isinstance(connection,JdbcConnection):
+        with connection._mina_lock:return _execute(connection_config,config,connection,manage_transaction)
+    return _execute(connection_config,config,connection,manage_transaction)
+
+
+def _execute(connection_config: dict, config: dict, connection=None, manage_transaction: bool = True) -> dict:
+    _validate_operation(config)
+    if connection is None and _as_bool(config.get('overrideTransactionBehavior')):
+        raise JdbcAdapterError('Override transaction behavior requires a JDBC Transaction group','JDBCTransactionException')
     if _uses_java(connection_config):
         if isinstance(connection, JavaJdbcTransaction): return connection.execute(config)
         if connection is not None or not manage_transaction: raise JdbcAdapterError("Invalid Java JDBC transaction session", "JDBCTransactionException")
         return _java_execute(connection_config, config)
     operation = str(config.get("operation") or "query")
+    if operation not in ('query','insert','update','delete','direct','dynamic','call','truncate'):
+        raise JdbcAdapterError('Unsupported database operation '+operation, 'InvalidInputException')
     sql = str(config.get("SqlStatement") or config.get("SqlUpdateStatement") or config.get("statement") or config.get("sql") or "").strip()
     if operation == "truncate" and sql.lower().startswith("truncate ") and str(connection_config.get("driver") or "sqlite").lower() == "sqlite":
         sql = "DELETE FROM " + sql.split()[-1]
@@ -708,11 +820,21 @@ def execute(connection_config: dict, config: dict, connection=None, manage_trans
     driver = str(connection_config.get("driver") or "sqlite").lower()
     cursor = None
     previous_timeout = None
+    sqlite_timeout = None
+    native_timeout = None
     try:
         cursor = connection.cursor()
         timeout = int(config.get("timeout") or 0)
+        if timeout < 0: raise JdbcAdapterError('SQL timeout cannot be negative', 'InvalidInputException')
         if driver == "sqlite" and timeout > 0:
+            if not owns_connection: sqlite_timeout = connection.execute('PRAGMA busy_timeout').fetchone()[0]
             connection.execute(f"PRAGMA busy_timeout={timeout * 1000}")
+        if timeout>0 and driver=='oracle':
+            native_timeout=('call_timeout',connection.call_timeout)
+            connection.call_timeout=timeout*1000
+        if timeout>0 and driver in ('sqlserver','mssql'):
+            native_timeout=('timeout',connection.timeout)
+            connection.timeout=timeout
         if driver in _POSTGRES and timeout > 0:
             if not manage_transaction:
                 cursor.execute("SHOW statement_timeout")
@@ -722,9 +844,10 @@ def execute(connection_config: dict, config: dict, connection=None, manage_trans
             procedure = str(config.get("procedure") or "").strip()
             if not procedure:
                 raise JdbcAdapterError("A stored procedure or function is required", "InvalidInputException")
+            _procedure_name(procedure)
             if driver not in _POSTGRES and not hasattr(cursor, "callproc"):
                 raise JdbcAdapterError("The selected database adapter does not support stored procedures", "JDBCSQLException")
-            parameters = _parameters(config, driver)
+            parameters,call_definitions = _call_parameters(config,driver)
             if isinstance(parameters, dict):
                 ordered_names = [name for name in _parameter_types(config) if name in parameters]
                 declared_names = set(ordered_names)
@@ -732,17 +855,34 @@ def execute(connection_config: dict, config: dict, connection=None, manage_trans
                 parameters = [parameters[name] for name in ordered_names]
             if driver in _POSTGRES:
                 result = _postgres_call(cursor, procedure, list(parameters or []), config.get("schema"))
-                if manage_transaction and not config.get("overrideTransactionBehavior"):
+                if manage_transaction and not _as_bool(config.get("overrideTransactionBehavior")):
                     connection.commit()
                 return {"resultSets": [[result]] if result else [], "outParameters": result, "UnresolvedResultSets": []}
+            if driver=='oracle' and any(item['direction']!='IN' for item in call_definitions):
+                import oracledb
+                types={'integer':int,'long':int,'number':float,'double':float,'decimal':getattr(oracledb,'DB_TYPE_NUMBER',float),'boolean':bool,'binary':bytes,'date':getattr(oracledb,'DB_TYPE_DATE',str),'timestamp':getattr(oracledb,'DB_TYPE_TIMESTAMP',str)}
+                for index,item in enumerate(call_definitions):
+                    if item['direction']!='IN':
+                        variable=cursor.var(types.get(item.get('type','string'),str))
+                        if item['direction']=='INOUT':variable.setvalue(0,parameters[index])
+                        parameters[index]=variable
             result = cursor.callproc(procedure, list(parameters or []))
             result_sets = []
-            while cursor.description:
-                names = [item[0] for item in cursor.description]
-                result_sets.append([dict(zip(names, row)) for row in cursor.fetchall()])
+            while True:
+                if cursor.description:
+                    names = [item[0] for item in cursor.description]
+                    result_sets.append([dict(zip(names, row)) for row in cursor.fetchall()])
                 if not getattr(cursor, "nextset", lambda: False)():
                     break
-            if manage_transaction and not config.get("overrideTransactionBehavior"):
+            if driver in ('mysql','mariadb') and any(item['direction']!='IN' for item in call_definitions):
+                # PyMySQL returns original IN arguments; OUT values live in server variables.
+                variables=['@`'+f'_{procedure}_{index}'.replace('`','``')+'`' for index,item in enumerate(call_definitions) if item['direction']!='IN']
+                cursor.execute('SELECT '+','.join(variables))
+                row=cursor.fetchone()
+                result={item['name']:value for item,value in zip([item for item in call_definitions if item['direction']!='IN'],row or [])}
+            elif driver=='oracle' and call_definitions:
+                result={item['name']:value.getvalue() if hasattr(value,'getvalue') else value for item,value in zip(call_definitions,result) if item['direction']!='IN'}
+            if manage_transaction and not _as_bool(config.get("overrideTransactionBehavior")):
                 connection.commit()
             return {"resultSets": result_sets, "outParameters": result, "UnresolvedResultSets": []}
         if not sql:
@@ -826,6 +966,9 @@ def execute(connection_config: dict, config: dict, connection=None, manage_trans
         try:
             if cursor is not None:
                 cursor.close()
+            if sqlite_timeout is not None:
+                connection.execute(f'PRAGMA busy_timeout={int(sqlite_timeout)}')
+            if native_timeout is not None:setattr(connection,*native_timeout)
             if previous_timeout is not None:
                 with connection.cursor() as restore:
                     restore.execute("SELECT set_config('statement_timeout', %s, true)", (previous_timeout,))

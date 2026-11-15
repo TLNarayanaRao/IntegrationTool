@@ -61,7 +61,7 @@ test('XPath builder tests and applies the same quoted expression',async()=>{
   const values=['string(/orders/order[@id="2"])','<orders><order id="2">west</order></orders>','',false,'',[],''];
   let request, applied;
   const context=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children:children.flat(Infinity)})},
-    useState:()=>[values.shift(),()=>{}],useMemo:()=>[],useEffect:()=>{},fetch:async (_url,options)=>{request=JSON.parse(options.body);return {ok:true,json:async()=>({output:{value:'west'}})};}});
+    designerXPathFunctions:()=>[],useState:()=>[values.shift(),()=>{}],useMemo:()=>[],useEffect:()=>{},fetch:async (_url,options)=>{request=JSON.parse(options.body);return {ok:true,json:async()=>({output:{value:'west'}})};}});
   const templates=ast.statements.find(s=>ts.isVariableStatement(s)&&s.declarationList.declarations.some(d=>d.name.getText(ast)==='xpathTemplates'));
   vm.runInContext(compile(`${templates.getText(ast)}\n${fn.getText(ast)}`),context);
   const nodes=all(context.MapperXPathBuilder({config:{xpathVersion:'2.0'},target:'region',apply:value=>applied=value}));

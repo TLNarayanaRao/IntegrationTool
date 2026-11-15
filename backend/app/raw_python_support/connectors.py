@@ -6,6 +6,7 @@ No MINA runtime, bridge, DSL, or project descriptor is required.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from typing import Any
 
@@ -121,10 +122,13 @@ async def jms(kind: str, operation: str, connection: dict, cfg: dict, payload: A
     if receive:
         if not output.get('received'):
             return {'destination': destination, 'body': None, 'count': 0, 'messages': []}
-        body = output.get('body')
-        try: body = json.loads(body) if isinstance(body, str) else body
-        except ValueError: pass
-        return {**output, 'body': body, 'count': 1, 'messages': [{'data': body}]}
+        records = []
+        for native in output.get('messages') or [output]:
+            body = native.get('body')
+            try: body = json.loads(body) if isinstance(body, str) else body
+            except ValueError: pass
+            records.append({'data': body})
+        return {**output, 'body': records[0]['data'], 'count': len(records), 'messages': records}
     if request_reply:
         body = output.get('body')
         try: body = json.loads(body) if isinstance(body, str) else body
@@ -262,49 +266,78 @@ async def kafka(operation: str, connection: dict, cfg: dict, payload: Any) -> di
         if connection.get('username'): options['sasl_plain_username'] = connection['username']
         if connection.get('password'): options['sasl_plain_password'] = connection['password']
         loop = asyncio.get_running_loop()
-        fingerprint = json.dumps(options, sort_keys=True, default=str)
+        fingerprint = hashlib.sha256(json.dumps(options, sort_keys=True, default=str).encode()).hexdigest()
         producer_key = (id(loop), fingerprint)
-        lock = _KAFKA_PRODUCER_LOCKS.setdefault(producer_key, asyncio.Lock())
+        lock_key = (id(loop), str(int(fingerprint, 16) % 64))
+        lock = _KAFKA_PRODUCER_LOCKS.setdefault(lock_key, asyncio.Lock())
+        one_shot = False
         producer_reused = False
         async with lock:
             producer = _KAFKA_PRODUCERS.get(producer_key)
             if producer is None or getattr(producer, '_closed', False):
                 producer = AIOKafkaProducer(**options)
-                await producer.start()
-                _KAFKA_PRODUCERS[producer_key] = producer
+                try:
+                    await producer.start()
+                except BaseException:
+                    # Failed/cancelled startup may already own sockets/tasks.
+                    # It has not entered the cache, so shutdown cannot find it.
+                    try: await producer.stop()
+                    except Exception: pass
+                    raise
+                one_shot = len(_KAFKA_PRODUCERS) >= 32
+                if not one_shot: _KAFKA_PRODUCERS[producer_key] = producer
             else:
                 producer_reused = True
-        producer_ready = loop.time()
-        message = cfg.get('message', payload)
-        data = message if isinstance(message, bytes) else message.encode() if isinstance(message, str) else json.dumps(message, separators=(',', ':'), default=str).encode()
-        key = cfg.get('key')
-        key_bytes = key if isinstance(key, bytes) else str(key).encode() if key is not None else None
-        headers = [(str(name), value if isinstance(value, bytes) else str(value).encode()) for name, value in (cfg.get('headers') or {}).items()]
-        raw_wait = cfg.get('waitForDelivery', False)
-        wait_for_delivery = raw_wait if isinstance(raw_wait, bool) else str(raw_wait).strip().lower() in {'1', 'true', 'yes', 'on'}
-        if wait_for_delivery:
-            metadata = await producer.send_and_wait(topic, data, key=key_bytes, headers=headers)
-            return {'topic': topic, 'partition': metadata.partition, 'offset': metadata.offset, 'published': True,
-                    'queued': True, 'deliveryConfirmed': True,
+        try:
+            producer_ready = loop.time()
+            message = cfg.get('message', payload)
+            data = message if isinstance(message, bytes) else message.encode() if isinstance(message, str) else json.dumps(message, separators=(',', ':'), default=str).encode()
+            key = cfg.get('key')
+            key_bytes = key if isinstance(key, bytes) else str(key).encode() if key is not None else None
+            headers = [(str(name), value if isinstance(value, bytes) else str(value).encode()) for name, value in (cfg.get('headers') or {}).items()]
+            raw_wait = cfg.get('waitForDelivery', False)
+            wait_for_delivery = raw_wait if isinstance(raw_wait, bool) else str(raw_wait).strip().lower() in {'1', 'true', 'yes', 'on'}
+            raw_partition = cfg.get('assignCustomPartition', False)
+            custom_partition = raw_partition if isinstance(raw_partition, bool) else str(raw_partition).strip().lower() in {'1', 'true', 'yes', 'on'}
+            partition_options = {'partition': int(cfg.get('partitionId') or 0)} if custom_partition else {}
+            if wait_for_delivery:
+                metadata = await producer.send_and_wait(topic, data, key=key_bytes, headers=headers, **partition_options)
+                return {'topic': topic, 'partition': metadata.partition, 'offset': metadata.offset, 'published': True,
+                        'queued': True, 'deliveryConfirmed': True,
+                        'producerReused': producer_reused,
+                        'producerSetupMs': round((producer_ready - publish_started) * 1000, 3),
+                        'sendAndWaitMs': round((loop.time() - producer_ready) * 1000, 3),
+                        'publishLatencyMs': round((loop.time() - publish_started) * 1000, 3)}
+            # AIOKafkaProducer batches in the background. Awaiting send() applies
+            # local buffer backpressure but deliberately does not await the broker
+            # delivery future, preserving high-throughput publisher semantics.
+            await producer.send(topic, data, key=key_bytes, headers=headers, **partition_options)
+            return {'topic': topic, 'published': True, 'queued': True, 'deliveryConfirmed': False,
                     'producerReused': producer_reused,
                     'producerSetupMs': round((producer_ready - publish_started) * 1000, 3),
                     'sendAndWaitMs': round((loop.time() - producer_ready) * 1000, 3),
                     'publishLatencyMs': round((loop.time() - publish_started) * 1000, 3)}
-        # AIOKafkaProducer batches in the background. Awaiting send() applies
-        # local buffer backpressure but deliberately does not await the broker
-        # delivery future, preserving high-throughput publisher semantics.
-        await producer.send(topic, data, key=key_bytes, headers=headers)
-        return {'topic': topic, 'published': True, 'queued': True, 'deliveryConfirmed': False,
-                'producerReused': producer_reused,
-                'producerSetupMs': round((producer_ready - publish_started) * 1000, 3),
-                'sendAndWaitMs': round((loop.time() - producer_ready) * 1000, 3),
-                'publishLatencyMs': round((loop.time() - publish_started) * 1000, 3)}
+        finally:
+            if one_shot: await producer.stop()
     if operation == 'receive':
-        consumer = AIOKafkaConsumer(topic, bootstrap_servers=servers,
+        custom = cfg.get('assignCustomPartition', False)
+        custom = custom if isinstance(custom, bool) else str(custom).lower() in ('true', '1', 'yes', 'on')
+        consumer = AIOKafkaConsumer(*([] if custom else [topic]), bootstrap_servers=servers,
                                    group_id=cfg.get('groupId') or connection.get('groupId'),
-                                   enable_auto_commit=bool(cfg.get('autoCommit', True)))
-        await consumer.start()
+                                   auto_offset_reset=cfg.get('autoOffsetReset', cfg.get('offsetReset', 'earliest')),
+                                   enable_auto_commit=bool(cfg.get('enableAutoCommit', cfg.get('autoCommit', True))))
         try:
+            await consumer.start()
+            if custom:
+                from aiokafka import TopicPartition
+                tokens = str(cfg.get('partitionIds') or cfg.get('partitionId') or '0').replace(';', ',').split(',')
+                partitions = [TopicPartition(topic, int(value.strip())) for value in tokens if value.strip()]
+                consumer.assign(partitions)
+                position = str(cfg.get('seekPosition') or '').lower()
+                if position == 'custom':
+                    for partition in partitions: consumer.seek(partition, int(cfg.get('customOffset') or 0))
+                elif position == 'beginning': await consumer.seek_to_beginning(*partitions)
+                else: await consumer.seek_to_end(*partitions)
             batch = await consumer.getmany(timeout_ms=int(cfg.get('timeoutMs') or 30000),
                                            max_records=max(1, int(cfg.get('maxMessages') or 1)))
             values = [record.value.decode(errors='replace') for records in batch.values() for record in records]
@@ -321,12 +354,9 @@ async def pubsub(operation: str, connection: dict, cfg: dict, payload: Any) -> d
         from google.oauth2 import service_account
     except ImportError as error:
         raise RuntimeError('Pub/Sub requires google-cloud-pubsub and google-auth') from error
-    credentials = None
     service_account_json = connection.get('serviceAccountJson') or connection.get('serviceAccount')
-    if service_account_json:
-        info = json.loads(service_account_json) if isinstance(service_account_json, str) else service_account_json
-        credentials = service_account.Credentials.from_service_account_info(info)
-    project_id = str(cfg.get('projectId') or connection.get('projectId') or '')
+    info = json.loads(service_account_json) if isinstance(service_account_json, str) else service_account_json
+    project_id = str(cfg.get('projectId') or connection.get('projectId') or (info or {}).get('project_id') or '')
     if not project_id: raise ValueError('Pub/Sub projectId is required')
     if operation == 'publish':
         loop = asyncio.get_running_loop(); publish_started = loop.time()
@@ -340,9 +370,11 @@ async def pubsub(operation: str, connection: dict, cfg: dict, payload: Any) -> d
             'batchMaxBytes': int(cfg.get('batchMaxBytes') or connection.get('batchMaxBytes') or 1048576),
             'batchDelayThresholdMilliseconds': float(cfg.get('batchDelayThresholdMilliseconds') or connection.get('batchDelayThresholdMilliseconds') or 10),
         }
-        fingerprint = json.dumps(publisher_config, sort_keys=True, default=str)
+        fingerprint = hashlib.sha256(json.dumps(publisher_config, sort_keys=True, default=str).encode()).hexdigest()
+        one_shot = False
         client = _PUBSUB_PUBLISHERS.get(fingerprint)
         if client is None:
+            credentials = service_account.Credentials.from_service_account_info(info) if service_account_json else None
             kwargs = {'credentials': credentials}
             try:
                 kwargs['batch_settings'] = pubsub_v1.types.BatchSettings(
@@ -352,27 +384,39 @@ async def pubsub(operation: str, connection: dict, cfg: dict, payload: Any) -> d
                 kwargs['publisher_options'] = pubsub_v1.types.PublisherOptions(enable_message_ordering=publisher_config['enableMessageOrdering'])
             except (AttributeError, TypeError): pass
             client = pubsub_v1.PublisherClient(**kwargs)
-            _PUBSUB_PUBLISHERS[fingerprint] = client
-        path = topic if topic.startswith('projects/') else client.topic_path(project_id, topic)
-        value = cfg.get('message', payload)
-        data = value if isinstance(value, bytes) else json.dumps(value, default=str).encode()
-        attributes = {str(key): str(value) for key, value in (cfg.get('attributes') or {}).items()}
-        future = client.publish(path, data, ordering_key=str(cfg.get('orderingKey') or ''), **attributes)
-        raw_wait = cfg.get('waitForDelivery', False)
-        wait_for_delivery = raw_wait if isinstance(raw_wait, bool) else str(raw_wait).strip().lower() in {'1', 'true', 'yes', 'on'}
-        provider_message_id = await asyncio.to_thread(future.result, timeout=float(cfg.get('publishTimeout') or 60)) if wait_for_delivery else None
-        if not wait_for_delivery and hasattr(future, 'add_done_callback'):
-            future.add_done_callback(lambda completed: completed.exception())
-        from uuid import uuid4
-        message_id = provider_message_id or str(uuid4())
-        return {'topic': path, 'messageId': message_id, 'providerMessageId': provider_message_id,
-                'published': True, 'queued': True, 'deliveryConfirmed': wait_for_delivery,
-                'publishLatencyMs': round((loop.time() - publish_started) * 1000, 3)}
+            one_shot = len(_PUBSUB_PUBLISHERS) >= 32
+            if not one_shot: _PUBSUB_PUBLISHERS[fingerprint] = client
+        try:
+            path = topic if topic.startswith('projects/') else client.topic_path(project_id, topic)
+            value = cfg.get('message', payload)
+            data = value if isinstance(value, bytes) else json.dumps(value, default=str).encode()
+            attributes = {str(key): str(value) for key, value in (cfg.get('attributes') or {}).items()}
+            future = client.publish(path, data, ordering_key=str(cfg.get('orderingKey') or ''), **attributes)
+            raw_wait = True if one_shot else cfg.get('waitForDelivery', False)
+            wait_for_delivery = raw_wait if isinstance(raw_wait, bool) else str(raw_wait).strip().lower() in {'1', 'true', 'yes', 'on'}
+            provider_message_id = await asyncio.to_thread(future.result, timeout=float(cfg.get('publishTimeout') or 60)) if wait_for_delivery else None
+            if not wait_for_delivery and hasattr(future, 'add_done_callback'):
+                future.add_done_callback(lambda completed: completed.exception())
+            from uuid import uuid4
+            message_id = provider_message_id or str(uuid4())
+            return {'topic': path, 'messageId': message_id, 'providerMessageId': provider_message_id,
+                    'published': True, 'queued': True, 'deliveryConfirmed': wait_for_delivery,
+                    'publishLatencyMs': round((loop.time() - publish_started) * 1000, 3)}
+        finally:
+            if one_shot:
+                def close():
+                    try: client.stop()
+                    finally: client.transport.close()
+                await asyncio.to_thread(close)
     if operation == 'pull':
         subscription = str(cfg.get('subscription') or '')
+        credentials = service_account.Credentials.from_service_account_info(info) if service_account_json else None
         client = pubsub_v1.SubscriberClient(credentials=credentials)
-        path = subscription if subscription.startswith('projects/') else client.subscription_path(project_id, subscription)
-        response = await asyncio.to_thread(client.pull, request={'subscription': path, 'max_messages': max(1, int(cfg.get('maxMessages') or 1))}, timeout=float(cfg.get('timeoutSeconds') or 30))
-        values = [{'data': item.message.data.decode(errors='replace'), 'ackId': item.ack_id} for item in response.received_messages]
-        return {'subscription': path, 'count': len(values), 'messages': values}
+        try:
+            path = subscription if subscription.startswith('projects/') else client.subscription_path(project_id, subscription)
+            response = await asyncio.to_thread(client.pull, request={'subscription': path, 'max_messages': max(1, int(cfg.get('maxMessages') or 1))}, timeout=float(cfg.get('timeoutSeconds') or 30))
+            values = [{'data': item.message.data.decode(errors='replace'), 'ackId': item.ack_id} for item in response.received_messages]
+            return {'subscription': path, 'count': len(values), 'messages': values}
+        finally:
+            await asyncio.to_thread(client.transport.close)
     raise ValueError(f'Unsupported Pub/Sub operation: {operation}')

@@ -1,0 +1,178 @@
+{
+  "passed": false,
+  "gates": {
+    "duration": false,
+    "noErrors": false,
+    "allFamilies": true,
+    "rssGrowth": true,
+    "lateRssSlope": true,
+    "handleGrowth": true,
+    "threadGrowth": true
+  },
+  "measuredSeconds": 169.02,
+  "warmupSeconds": 60.0,
+  "workers": 6,
+  "roundTripsIncludingWarmup": {
+    "kafka": 18482,
+    "amqp": 10460,
+    "jms": 209
+  },
+  "errors": [
+    {
+      "family": "amqp",
+      "exceptionType": "RuntimeError",
+      "worker": 5
+    }
+  ],
+  "growth": {
+    "rssMiB": 1.4296875,
+    "handles": 1,
+    "threads": 0
+  },
+  "lateRssMiBPerMinute": 0.36015667902285686,
+  "latencySampleMaxPerFamily": 10000,
+  "samples": [
+    {
+      "seconds": 0.06,
+      "rssMiB": 74.3046875,
+      "handles": 690,
+      "threads": 41,
+      "childProcesses": 8,
+      "childRssMiB": 461.46875
+    },
+    {
+      "seconds": 10.08,
+      "rssMiB": 74.5234375,
+      "handles": 737,
+      "threads": 44,
+      "childProcesses": 8,
+      "childRssMiB": 526.04296875
+    },
+    {
+      "seconds": 20.11,
+      "rssMiB": 74.69140625,
+      "handles": 788,
+      "threads": 49,
+      "childProcesses": 8,
+      "childRssMiB": 468.515625
+    },
+    {
+      "seconds": 30.12,
+      "rssMiB": 75.3671875,
+      "handles": 737,
+      "threads": 44,
+      "childProcesses": 8,
+      "childRssMiB": 389.328125
+    },
+    {
+      "seconds": 40.14,
+      "rssMiB": 74.6796875,
+      "handles": 739,
+      "threads": 44,
+      "childProcesses": 8,
+      "childRssMiB": 469.83203125
+    },
+    {
+      "seconds": 50.19,
+      "rssMiB": 74.83984375,
+      "handles": 731,
+      "threads": 44,
+      "childProcesses": 8,
+      "childRssMiB": 476.8671875
+    },
+    {
+      "seconds": 60.22,
+      "rssMiB": 74.8359375,
+      "handles": 718,
+      "threads": 44,
+      "childProcesses": 8,
+      "childRssMiB": 528.0234375
+    },
+    {
+      "seconds": 70.23,
+      "rssMiB": 75.54296875,
+      "handles": 730,
+      "threads": 44,
+      "childProcesses": 8,
+      "childRssMiB": 413.0859375
+    },
+    {
+      "seconds": 80.27,
+      "rssMiB": 75.7421875,
+      "handles": 726,
+      "threads": 43,
+      "childProcesses": 8,
+      "childRssMiB": 538.5703125
+    },
+    {
+      "seconds": 90.3,
+      "rssMiB": 75.63671875,
+      "handles": 722,
+      "threads": 43,
+      "childProcesses": 8,
+      "childRssMiB": 467.96484375
+    },
+    {
+      "seconds": 100.31,
+      "rssMiB": 75.453125,
+      "handles": 679,
+      "threads": 39,
+      "childProcesses": 6,
+      "childRssMiB": 341.3828125
+    },
+    {
+      "seconds": 110.34,
+      "rssMiB": 75.74609375,
+      "handles": 730,
+      "threads": 45,
+      "childProcesses": 8,
+      "childRssMiB": 450.203125
+    },
+    {
+      "seconds": 120.38,
+      "rssMiB": 75.7109375,
+      "handles": 731,
+      "threads": 45,
+      "childProcesses": 8,
+      "childRssMiB": 511.14453125
+    },
+    {
+      "seconds": 130.39,
+      "rssMiB": 76.23828125,
+      "handles": 682,
+      "threads": 41,
+      "childProcesses": 8,
+      "childRssMiB": 500.6640625
+    },
+    {
+      "seconds": 140.42,
+      "rssMiB": 76.30078125,
+      "handles": 688,
+      "threads": 41,
+      "childProcesses": 8,
+      "childRssMiB": 455.3984375
+    },
+    {
+      "seconds": 150.44,
+      "rssMiB": 76.12109375,
+      "handles": 739,
+      "threads": 45,
+      "childProcesses": 8,
+      "childRssMiB": 455.69140625
+    },
+    {
+      "seconds": 160.45,
+      "rssMiB": 75.734375,
+      "handles": 691,
+      "threads": 41,
+      "childProcesses": 8,
+      "childRssMiB": 531.84765625
+    }
+  ],
+  "scope": "Live loopback Kafka 3.9.1 and Artemis 2.40.0 JMS/AMQP; not EMS, cloud Pub/Sub or SAP",
+  "sourceSha256": {
+    "backend/app/runtime.py": "3c51504e1af87d17918487183b778da317f520e322cdc4589a2470e32b13f87d",
+    "backend/app/amqp.py": "adf5373f0ba210ad46b391982cfdacbd2312defd08bf225162fc1c0780334c40",
+    "backend/app/java_bridge.py": "28e704d5e9573717a70d10f06554d722335d9abfa3d9ea85006edd5cc3edc3ca"
+  }
+}

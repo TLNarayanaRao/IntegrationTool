@@ -19,6 +19,7 @@ container image.
 | `MINA_PROJECT_LOG_BACKUP_COUNT` | `4` | Number of rotated project log files retained. |
 | `MINA_LOG_TIMEZONE` | `America/Phoenix` | IANA display timezone for runtime, debugger, and audit timestamps. Arizona is emitted with `-07:00`. |
 | `MINA_WORKER_THREADS` | `auto` | Runtime worker-thread setting; otherwise environment property `advanced.workerThreads` or `advanced.threadCount` is used. |
+| `MINA_SFTP_TRANSPORT_WORKERS` | `32` | Windows only: maximum simultaneous SSH transport workers per runtime process/module, from 1 to 128. Lazy persistent workers bound native cryptography thread state. Excess connections wait up to their configured timeout, then fail without closing other sessions. Set before the first SFTP connection and restart after changes. Connections and credentials are not pooled. |
 | `MINA_APPLICATION_DIR` | unset | Application directory supplied to a deployed runtime by the Control Plane. |
 | `MINA_ENVIRONMENT` | `local` or deployment value | Active runtime environment. |
 | `MINA_DEPLOYMENT_ID` | unset | Deployment identifier supplied by the Control Plane. |

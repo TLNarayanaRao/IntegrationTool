@@ -269,3 +269,32 @@ Run `python -m unittest tests.test_http_capabilities tests.test_http_request_tre
 Export Direct or Engine Python and install the archive's generated dependencies. HTTP contract support requires `jsonschema`, `PyYAML` and `regex`; HTTP/2 hosting adds `hypercorn`/`h2`; distributed policies add `redis`. Keep certificate files and secrets external. Supply the Redis URL through the generated secret binding, never an unprotected source literal.
 
 Use the Direct archive's `--qualify-task <task-id>` runner against the staging API with representative payloads, concurrency, latency/error thresholds and memory limits. Test the Engine archive with the same fixtures and deployment load harness. Repeat under upstream outages, token/key rotation, Redis failure and deployment restart. Record the report with the release. Automated regression success is evidence for the implemented behavior, not a guarantee about an untested production environment or third-party service.
+
+### Resource ownership and sustained operation
+
+Per-destination request permits now track active requests and waiters only. An
+idle destination leaves no semaphore entry behind, so dynamically changing URLs
+do not create an ever-growing route history. Waiters keep the same gate until
+the last request finishes; pool timeouts and policy failures release their references.
+The shared-client quota and configured global/per-destination connection limits
+remain in effect.
+
+Scoped shutdown attempts every HTTP client close and clears its token cache even
+if one close fails, then reports the first failure. HTTP listener startup also
+releases warmed worker executors when configuration, TLS setup or worker warm-up
+fails. Completed-flow shutdown owns these actions; do not close a shared scope
+while intentionally keeping its requests active.
+
+The HTTP/1 status-line wrapper captures the h11 connection rather than its owning
+protocol, and all disconnects cancel keepalive callbacks, including reset/error
+paths. Closed protocols can therefore release without waiting for cyclic GC.
+JSON schema validation reuses bounded draft-specific validator types while
+constructing a fresh schema-bound instance and isolated execution budget per call.
+Schema edits and different concurrent request values do not share validation state.
+
+Response byte limits apply to each request, not the whole process. Concurrent
+large bodies can consume substantial memory through encoded bytes, decoded text
+and mapped structures. Use response-file streaming when appropriate, configure
+byte/row limits and qualify the intended concurrency. See
+[HTTP and database memory verification](HTTP_DATABASE_MEMORY_VERIFICATION.md)
+for measured scope, resource gates and remaining live-provider qualification.

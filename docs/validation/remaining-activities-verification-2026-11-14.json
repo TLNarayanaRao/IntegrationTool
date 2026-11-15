@@ -1,0 +1,44 @@
+{
+  "date": "2026-11-14",
+  "backend": {
+    "run": 609,
+    "skipped": 5,
+    "passed": 604,
+    "unexpectedFailures": 0
+  },
+  "finalFocusedResourceAndExportTests": {
+    "run": 65,
+    "passed": 65
+  },
+  "frontend": {
+    "run": 150,
+    "passed": 150
+  },
+  "help": {
+    "run": 11,
+    "passed": 11
+  },
+  "productionStudioBuild": "passed",
+  "soakReport": "remaining-activities-soak-2026-11-14.json",
+  "qualificationLimits": [
+    "No fresh installed-app UI session or installer build",
+    "No live external broker/cloud/SAP soak",
+    "No constant-memory guarantee for unbounded payloads",
+    "Arbitrary user Python code cannot be forcibly terminated in its invocation thread"
+  ],
+  "sourceSha256": {
+    "backend/app/amqp.py": "0690ed505bc96efe920f660db43be7b85605d5c14cb3e152d802f546bab90839",
+    "backend/app/google_pubsub.py": "90963bbc688415fdaa73d9fa677674cd0852a13cbbc096576f456bfc51c00cdc",
+    "backend/app/runtime.py": "43aedd2e4ed10f6fa6f3add841eb75448651ac3e5829dfbe1414fdfaeace5c78",
+    "backend/app/raw_python_support/activities.py": "e48e365d8460bf892a4d28d05aa486ab29cae4692492e4ebffda6d3a25ab05d6",
+    "backend/app/raw_python_support/connectors.py": "5283353f827e0bafe23d81ccf94dd8ad5cfd2606ce371c5d45e9ac5aeab6f5dc",
+    "backend/tests/test_field_conditions.py": "1b9ab0decb2b40d0bb3198d15e6f18553e7a3db66020a1e0ad87e33ea75d2bf7",
+    "backend/tests/test_input_loop_tree.py": "cc7be2dc84ca43a3258da285065cd19234e0a57e160f780024576292119ca45e",
+    "backend/tests/test_mapper_loop_names.py": "9901e6053c22964aaf90542eb58eb0c532bf815af2e2bbe2f8e46cb2b0be92af",
+    "backend/tests/test_remaining_activity_resources.py": "40681f34f26c21a31f8867bad227c2788cd28750a901b5e6d3fccd0da3c2925e",
+    "backend/tests/test_tasks_runtime.py": "ceb598a7602c8a8847a2ac3603c83d10757542328c9319d2dd3e1bb479d65838",
+    "scripts/activity-resource-soak.py": "81a54c334b5bb06bed384bdc67668f17ef3a6fa833de83de32f9057228fa89c8",
+    "frontend/scripts/build-documentation.mjs": "c04ff42eaaf64f1fc35ca4c63adea7cb982216484fb3bedbf5413add7969a4b6",
+    "frontend/scripts/developer-documentation.mjs": "58fa789c29430a3a2bbde7641f0ddc5762a572eef740ac3feb7d299cf852280a"
+  }
+}

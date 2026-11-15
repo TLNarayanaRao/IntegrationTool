@@ -13,12 +13,11 @@ from .snowflake import snowflake_adapter
 from .jdbc import jdbc_adapter
 from .amqp import amqp_adapter
 from .java_bridge import JavaBridgeError, execute_jms, close_jms_senders
-from .sftp import open_connection as open_sftp_connection
 from .mapping_literals import parse_literal
 from .retry_policy import RetryPlan, outbound_activity
 from .http_transport import request as http_request, merged as merge_http_config
 from .message_state import operate as mediation_operation
-from .google_pubsub import client_configuration as pubsub_client_configuration, create_client as create_pubsub_client
+from .google_pubsub import client_configuration as pubsub_client_configuration, create_client as create_pubsub_client, project_id as pubsub_project_id
 from .time_utils import log_timestamp
 from .data_formats import DataFormats
 from .faults import MinaFault
@@ -85,11 +84,16 @@ class WorkflowRuntime(DataFormats):
     def _publisher_operation_lock(self, kind: str, config: dict) -> tuple[str, threading.Lock]:
         key = self._publisher_key(kind, config)
         with self._publisher_lock:
-            return key, self._publisher_operation_locks.setdefault(key, threading.Lock())
+            # Fixed stripes also serialize one-shot dynamic producers without
+            # retaining every configuration fingerprint for the runtime lifetime.
+            stripe = str(int(key.rsplit(':', 1)[1], 16) % 64)
+            return key, self._publisher_operation_locks.setdefault(stripe, threading.Lock())
 
     def close_publishers(self):
         # Capability-pruned exports without JMS must not import its native bridge.
-        if self._jms_executor is not None: close_jms_senders(force=True)
+        if self._jms_executor is not None:
+            try: close_jms_senders(force=True)
+            except Exception: pass  # Still release the independently owned clients.
         with self._publisher_lock:
             executor, self._kafka_executor = self._kafka_executor, None
             jms_executor, self._jms_executor = self._jms_executor, None
@@ -106,8 +110,8 @@ class WorkflowRuntime(DataFormats):
             try:
                 if key.startswith('kafka:'): client.flush(3)
                 else:
-                    client.stop()
-                    client.transport.close()
+                    try: client.stop()
+                    finally: client.transport.close()
             except Exception: pass
 
     async def _publish_kafka_isolated(self, publish):
@@ -1046,60 +1050,8 @@ class WorkflowRuntime(DataFormats):
             request_cfg['_httpScope'] = getattr(ctx.get('project'), 'id', None) or str(id(self))
             return await asyncio.to_thread(http_request, request_cfg)
         if activity.type == 'file':
-            path = Path(self.resolve(cfg.get('path',''), ctx)).expanduser()
-            operation = cfg.get('operation','read')
-            def file_info(item: Path):
-                stat = item.stat()
-                return {'fullName':str(item.resolve()), 'fileName':item.name, 'location':str(item.parent.resolve()), 'configuredFileName':str(path), 'type':'directory' if item.is_dir() else 'file', 'readProtected':not os.access(item, os.R_OK), 'writeProtected':not os.access(item, os.W_OK), 'size':stat.st_size, 'lastModified':datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat()}
-            if operation == 'write':
-                if path.exists() and not self.as_bool(cfg.get('overwrite', False)) and not self.as_bool(cfg.get('append', False)): raise FileExistsError(f'{path} already exists')
-                if self.as_bool(cfg.get('createDirectories', True)): path.parent.mkdir(parents=True, exist_ok=True)
-                binary = str(cfg.get('writeAs', 'Text')).lower() == 'binary' or cfg.get('binaryContent') not in (None, '')
-                content = cfg.get('binaryContent') if binary else cfg.get('textContent', cfg.get('content', ctx['last']))
-                if binary:
-                    raw = base64.b64decode(content) if isinstance(content, str) else bytes(content)
-                    if str(cfg.get('compression', 'None')).lower() == 'gzip': raw = gzip.compress(raw)
-                    with path.open('ab' if self.as_bool(cfg.get('append', False)) else 'wb') as stream: stream.write(raw)
-                else:
-                    text = content if isinstance(content, str) else json.dumps(content, indent=2)
-                    if self.as_bool(cfg.get('addLineSeparator', False)): text += os.linesep
-                    if str(cfg.get('compression', 'None')).lower() == 'gzip':
-                        with gzip.open(path, 'at' if self.as_bool(cfg.get('append', False)) else 'wt', encoding=cfg.get('encoding') or 'utf-8') as stream: stream.write(text)
-                    else:
-                        with path.open('a' if self.as_bool(cfg.get('append', False)) else 'w', encoding=cfg.get('encoding') or 'utf-8') as stream: stream.write(text)
-                return {'path': str(path), 'written': True, 'success': True, 'fileInfo': file_info(path)}
-            if operation == 'list':
-                pattern = cfg.get('pattern', '*'); matches = list(path.rglob(pattern) if self.as_bool(cfg.get('recursive', False)) else path.glob(pattern))
-                list_type = str(cfg.get('listType', 'Files and Directories')).lower()
-                if list_type == 'only files': matches = [item for item in matches if item.is_file()]
-                if list_type == 'only directories': matches = [item for item in matches if item.is_dir()]
-                sort_by = str(cfg.get('sortBy', 'Name')).lower(); key = (lambda item: item.stat().st_size) if sort_by == 'size' else ((lambda item: item.stat().st_mtime) if sort_by == 'last modified' else (lambda item: item.name.lower()))
-                matches.sort(key=key, reverse=str(cfg.get('sortOrder', 'Ascending')).lower() == 'descending')
-                return {'files': [file_info(item) for item in matches], 'count':len(matches)}
-            if operation == 'delete':
-                if not path.exists() and self.as_bool(cfg.get('ignoreMissing', False)): return {'path':str(path), 'deleted':False, 'success':True}
-                if path.is_dir(): shutil.rmtree(path) if self.as_bool(cfg.get('recursive', False)) else path.rmdir()
-                else: path.unlink()
-                return {'path': str(path), 'deleted': True, 'success': True}
-            if operation in ('rename', 'copy'):
-                destination = Path(self.resolve(cfg.get('destination',''), ctx)).expanduser()
-                if self.as_bool(cfg.get('createDirectories', False)): destination.parent.mkdir(parents=True, exist_ok=True)
-                if destination.exists() and not self.as_bool(cfg.get('overwrite', False)): raise FileExistsError(f'{destination} already exists')
-                if destination.exists() and self.as_bool(cfg.get('overwrite', False)):
-                    shutil.rmtree(destination) if destination.is_dir() else destination.unlink()
-                if operation == 'copy':
-                    if path.is_dir(): shutil.copytree(path, destination, copy_function=shutil.copy2 if self.as_bool(cfg.get('preserveAttributes', True)) else shutil.copy)
-                    else: (shutil.copy2 if self.as_bool(cfg.get('preserveAttributes', True)) else shutil.copy)(path, destination)
-                else: path.rename(destination)
-                return {'source': str(path), 'destination': str(destination), 'path':str(destination), 'operation': operation, 'success':True, 'fileInfo':file_info(destination)}
-            if operation == 'poll':
-                matches = list(path.rglob(cfg.get('pattern', '*')) if self.as_bool(cfg.get('recursive', False)) else path.glob(cfg.get('pattern', '*')))
-                return {'files': [file_info(item) for item in matches], 'count': len(matches), 'eventType':cfg.get('eventType', 'Created')}
-            info = file_info(path)
-            if self.as_bool(cfg.get('excludeFileContent', False)): return {'path':str(path), 'fileInfo':info, **info}
-            if str(cfg.get('readAs', 'Text')).lower() == 'binary': return {'path':str(path), 'binaryContent':base64.b64encode(path.read_bytes()).decode(), 'content':None, 'fileInfo':info, **info}
-            content = path.read_text(encoding=cfg.get('encoding') or 'utf-8')
-            return {'path': str(path), 'content': content, 'textContent':content, 'fileInfo':info, **info}
+            from .file_operations import file_activity, run_io
+            return await run_io(file_activity, cfg.get('operation','read'), cfg, ctx['last'])
         if activity.type == 'jdbc':
             resource = ctx['resources'].get(cfg.get('resourceId'))
             if not resource or resource.type != 'jdbc': raise MinaFault('JDBC activity requires a valid shared JDBC connection', fault_type='JDBCConnectionNotFoundException')
@@ -1153,8 +1105,9 @@ class WorkflowRuntime(DataFormats):
         if activity.type == 'excel':
             try: return await asyncio.to_thread(self.read_excel, cfg)
             except Exception as exc: raise MinaFault(str(exc), fault_type='EXCEL_READ') from exc
-        if activity.type == 'ftp': return await asyncio.to_thread(self.ftp, cfg, ctx)
-        if activity.type == 'sftp': return await asyncio.to_thread(self.sftp, cfg, ctx)
+        if activity.type in ('ftp','sftp'):
+            from .file_operations import run_io
+            return await run_io(self.ftp if activity.type=='ftp' else self.sftp, cfg, ctx)
         if activity.type in ('xml','json','flat'):
             ctx.setdefault('formatCursors', {})
             return await asyncio.to_thread(DataFormats().run_format, activity.type,cfg.get('operation','parse'),cfg,ctx)
@@ -1224,7 +1177,7 @@ class WorkflowRuntime(DataFormats):
         attributes = {str(key): str(value) for key, value in {**mapping(cfg.get('dynamicProperties')), **mapping(cfg.get('attributes')), **mapping(cfg.get('headers'))}.items()}
         timestamp = log_timestamp()
         envelope = {'id': str(uuid.uuid4()), 'data': payload, 'attributes': attributes, 'destination': destination, 'technology': technology, 'timestamp': timestamp, 'key': cfg.get('key'), 'correlationId': cfg.get('correlationId'), 'replyTo': cfg.get('replyTo'), 'type': cfg.get('type'), 'priority': int(cfg.get('priority', 4) or 4), 'deliveryMode': cfg.get('deliveryMode', 'Persistent'), 'expiration': int(cfg.get('expiration', 0) or 0)}
-        receive_ops = {'receive', 'subscribe', 'get', 'queue_receiver', 'topic_subscriber', 'get_queue_message', 'receive_message', 'wait_request'}
+        receive_ops = {'receive', 'subscribe', 'pull', 'get', 'queue_receiver', 'topic_subscriber', 'get_queue_message', 'receive_message', 'wait_request'}
         client_ack = str(cfg.get('acknowledgeMode', '')).lower() in ('client', 'manual', 'explicit client', 'explicit client dups ok') or cfg.get('acknowledge') is False
         # Existing projects that explicitly selected the local broker retain
         # that behavior. New shared connections omit mode and use the real
@@ -1266,17 +1219,18 @@ class WorkflowRuntime(DataFormats):
                     output = await asyncio.to_thread(execute_jms, rcfg, 'receive', str(destination), None, options)
                     if not output.get('received'):
                         return {'body': None, 'headers': {}, 'properties': {}, 'ackId': None, 'messages': [], 'count': 0}
-                    body = output.get('body')
-                    try: body = json.loads(body) if isinstance(body, str) else body
-                    except ValueError: pass
-                    message_id = output.get('headers', {}).get('JMSMessageID') or str(uuid.uuid4())
-                    # The native bridge completes its provider receive before the
-                    # short-lived Java process exits. Preserve the client-ack
-                    # orchestration contract with a one-time confirmation token
-                    # so Confirm Message can be mapped consistently for native
-                    # EMS/JMS and the in-process providers.
-                    ack_id = self.register_acknowledgement(technology, message_id) if client_ack else None
-                    return {**output, 'body': body, 'ackId': ack_id, 'ackIds': [ack_id] if ack_id else [], 'messages': [{'id':message_id, 'data':body, 'attributes':output.get('properties', {}), 'ackId':ack_id}], 'count': 1}
+                    records, ack_ids = [], []
+                    for native in output.get('messages') or [output]:
+                        body = native.get('body')
+                        try: body = json.loads(body) if isinstance(body, str) else body
+                        except ValueError: pass
+                        message_id = native.get('headers', {}).get('JMSMessageID') or str(uuid.uuid4())
+                        # Preserve the existing native Get confirmation contract.
+                        ack_id = self.register_acknowledgement(technology, message_id) if client_ack else None
+                        if ack_id: ack_ids.append(ack_id)
+                        records.append({'id':message_id, 'data':body, 'attributes':native.get('properties', {}), 'ackId':ack_id})
+                    return {**output, 'body': records[0]['data'], 'ackId': ack_ids[0] if ack_ids else None,
+                            'ackIds': ack_ids, 'messages': records, 'count': len(records)}
                 output = await self._publish_jms_isolated(rcfg, str(destination), payload, options)
                 return {**output, 'destination':destination, 'timestamp':timestamp, 'published':True}
             except JavaBridgeError as exc:
@@ -1297,37 +1251,53 @@ class WorkflowRuntime(DataFormats):
             if rcfg.get('principalName'): common['sasl.kerberos.principal'] = rcfg['principalName']
             if operation in receive_ops:
                 consumer_cfg = {**common, 'group.id': cfg.get('groupId') or rcfg.get('groupId', 'mina'), 'auto.offset.reset': cfg.get('autoOffsetReset', cfg.get('offsetReset', 'earliest')), 'enable.auto.commit': bool(cfg.get('enableAutoCommit', not client_ack)), 'fetch.min.bytes': int(cfg.get('fetchMinBytes', 1) or 1), 'max.poll.records': int(cfg.get('maxPollRecords', cfg.get('maxMessages', 1)) or 1), 'session.timeout.ms': int(cfg.get('sessionTimeoutMs', 45000) or 45000), 'heartbeat.interval.ms': int(cfg.get('heartbeatIntervalMs', 3000) or 3000), **mapping(cfg.get('additionalProperties'))}
-                consumer = Consumer(consumer_cfg); topics = [item.strip() for item in str(destination).split(';') if item.strip()]
-                if self.as_bool(cfg.get('assignCustomPartition', False)):
-                    partitions = []
-                    for token in re.split(r'[,;]', str(cfg.get('partitionIds') or cfg.get('partitionId') or '0')):
-                        token = token.strip()
-                        if not token: continue
-                        if '-' in token:
-                            start, end = token.split('-', 1); partitions.extend(range(int(start), int(end) + 1))
-                        else: partitions.append(int(token))
-                    offset = int(cfg.get('customOffset')) if str(cfg.get('seekPosition', '')).lower() == 'custom' and cfg.get('customOffset') not in (None, '') else -2 if str(cfg.get('seekPosition', '')).lower() == 'beginning' else -1
-                    consumer.assign([TopicPartition(topic, partition, offset) for topic in topics for partition in partitions])
-                else: consumer.subscribe(topics)
-                messages, native_messages = [], []
-                for _ in range(int(cfg.get('maxMessages', 1))):
-                    message = consumer.poll(float(cfg.get('timeout', 1)))
-                    if message and not message.error():
-                        data = kafka_value(message.value(), cfg.get('valueDeserializer', 'String'))
-                        key = kafka_value(message.key(), cfg.get('keyDeserializer', 'String')) if message.key() else None
-                        item = {'id':f'{message.topic()}:{message.partition()}:{message.offset()}','data':data,'key':key,'topic':message.topic(),'partition':message.partition(),'offset':message.offset(),'timestamp':message.timestamp()[1],'headers':dict(message.headers() or [])}
-                        messages.append(item); native_messages.append(message)
-                if client_ack:
-                    pending = {'count': len(native_messages)}
-                    def kafka_confirm(native_message):
-                        consumer.commit(message=native_message, asynchronous=False)
-                        pending['count'] -= 1
-                        if pending['count'] <= 0: consumer.close()
-                    for item, native_message in zip(messages, native_messages):
-                        item['ackId'] = self.register_acknowledgement('kafka', item['id'], lambda m=native_message: kafka_confirm(m))
-                    if not native_messages: consumer.close()
-                else: consumer.close()
-                return {'messages': messages, 'count': len(messages), 'ackId': messages[0].get('ackId') if messages else None, 'ackIds':[item['ackId'] for item in messages if item.get('ackId')]}
+                # This producer-only setting otherwise logs a native warning
+                # for every newly opened consumer during polling workloads.
+                consumer_cfg.pop('request.timeout.ms', None)
+                def receive_kafka():
+                    consumer = Consumer(consumer_cfg); topics = [item.strip() for item in str(destination).split(';') if item.strip()]
+                    handed_off = False
+                    try:
+                        if self.as_bool(cfg.get('assignCustomPartition', False)):
+                            partitions = []
+                            for token in re.split(r'[,;]', str(cfg.get('partitionIds') or cfg.get('partitionId') or '0')):
+                                token = token.strip()
+                                if not token: continue
+                                if '-' in token:
+                                    start, end = token.split('-', 1); partitions.extend(range(int(start), int(end) + 1))
+                                else: partitions.append(int(token))
+                            offset = int(cfg.get('customOffset')) if str(cfg.get('seekPosition', '')).lower() == 'custom' and cfg.get('customOffset') not in (None, '') else -2 if str(cfg.get('seekPosition', '')).lower() == 'beginning' else -1
+                            consumer.assign([TopicPartition(topic, partition, offset) for topic in topics for partition in partitions])
+                        else: consumer.subscribe(topics)
+                        messages, native_messages = [], []
+                        timeout = max(0.0, float(cfg.get('timeout', 1)))
+                        deadline = perf_counter() + timeout
+                        for index in range(max(1, min(10000, int(cfg.get('maxMessages', 1))))):
+                            message = consumer.poll(max(0.0, deadline - perf_counter()) if index == 0 else 0)
+                            if message is None: break
+                            error = message.error()
+                            if error:
+                                error_type = getattr(importlib.import_module('confluent_kafka'), 'KafkaError', None)
+                                if error_type is not None and error.code() == error_type._PARTITION_EOF: break
+                                raise RuntimeError(str(error))
+                            if message:
+                                data = kafka_value(message.value(), cfg.get('valueDeserializer', 'String'))
+                                key = kafka_value(message.key(), cfg.get('keyDeserializer', 'String')) if message.key() else None
+                                item = {'id':f'{message.topic()}:{message.partition()}:{message.offset()}','data':data,'key':key,'topic':message.topic(),'partition':message.partition(),'offset':message.offset(),'timestamp':message.timestamp()[1],'headers':dict(message.headers() or [])}
+                                messages.append(item); native_messages.append(message)
+                        if client_ack:
+                            pending = {'count': len(native_messages)}
+                            def kafka_confirm(native_message):
+                                consumer.commit(message=native_message, asynchronous=False)
+                                pending['count'] -= 1
+                                if pending['count'] <= 0: consumer.close()
+                            for item, native_message in zip(messages, native_messages):
+                                item['ackId'] = self.register_acknowledgement('kafka', item['id'], lambda m=native_message: kafka_confirm(m))
+                            handed_off = bool(native_messages)
+                        return {'messages': messages, 'count': len(messages), 'ackId': messages[0].get('ackId') if messages else None, 'ackIds':[item['ackId'] for item in messages if item.get('ackId')]}
+                    finally:
+                        if not handed_off: consumer.close()
+                return await asyncio.to_thread(receive_kafka)
             raw = kafka_bytes(payload, cfg.get('valueSerializer', 'String'))
             key = kafka_bytes(cfg.get('key'), cfg.get('keySerializer', 'String'))
             producer_cfg = {**common, 'acks': str(cfg.get('acks','all')), 'compression.type': cfg.get('compressionType','none'), 'retries': int(cfg.get('retries',3) or 0), 'batch.size': int(cfg.get('batchSize',16384) or 16384), 'linger.ms': int(cfg.get('lingerMs',0) or 0), 'queue.buffering.max.kbytes': max(1, int(cfg.get('bufferMemory',33554432) or 33554432) // 1024), 'message.max.bytes': int(cfg.get('maxRequestSize',1048576) or 1048576), 'enable.idempotence': bool(cfg.get('enableIdempotence',False)), 'socket.keepalive.enable': True, **mapping(cfg.get('additionalProperties'))}
@@ -1408,11 +1378,14 @@ class WorkflowRuntime(DataFormats):
                 while not completed.is_set():
                     if perf_counter() >= deadline:
                         raise TimeoutError(f'Kafka publish timed out after {timeout:g} seconds waiting for broker acknowledgement; delivery may still occur')
-                    # poll(0) serves delivery callbacks without blocking a worker.
-                    # Yield between polls rather than spinning on the event loop.
-                    await self._publish_kafka_isolated(lambda: producer.poll(0))
-                    if not completed.is_set():
-                        await asyncio.sleep(min(.005, max(0, deadline - perf_counter())))
+                    # A native bounded poll wakes as soon as an ACK arrives.
+                    # Timer sleeps here impose the Windows timer quantum on
+                    # every confirmed record in a serial generated worker.
+                    # Limit each executor wait to 1 ms, rather than occupying
+                    # a send worker for the whole broker timeout; unrelated
+                    # buffered publishes must continue during slow ACKs.
+                    await self._publish_kafka_isolated(
+                        lambda: producer.poll(min(.001, max(0, deadline - perf_counter()))))
                 if report.get('error'): raise RuntimeError(report['error'])
                 delivered.update(report)
                 delivered['deliveryConfirmed'] = True
@@ -1422,27 +1395,33 @@ class WorkflowRuntime(DataFormats):
         if technology == 'pubsub':
             try: from google.cloud import pubsub_v1
             except ImportError: raise RuntimeError('External Google Pub/Sub mode requires google-cloud-pubsub')
-            client_kwargs, project_id = pubsub_client_configuration({**rcfg, 'projectId': cfg.get('projectId') or rcfg.get('projectId')})
+            project_id = pubsub_project_id({**rcfg, 'projectId': cfg.get('projectId') or rcfg.get('projectId')})
             if operation in receive_ops:
-                subscriber = create_pubsub_client(pubsub_v1.SubscriberClient, {**rcfg, 'projectId': cfg.get('projectId') or rcfg.get('projectId')}); path = subscriber.subscription_path(project_id, destination); response = subscriber.pull(request={'subscription': path, 'max_messages': int(cfg.get('maxMessages', 1))}, timeout=float(cfg.get('receiveTimeout', cfg.get('timeout', 10))))
-                messages, native_ack_ids = [], []
-                for item in response.received_messages:
-                    record = {'id':item.message.message_id,'messageId':item.message.message_id,'data':item.message.data.decode(errors='replace'),'attributes':dict(item.message.attributes),'publishTime':item.message.publish_time.isoformat() if item.message.publish_time else None}
-                    messages.append(record); native_ack_ids.append(item.ack_id)
-                if client_ack:
-                    pending = {'count': len(native_ack_ids)}
-                    def pubsub_confirm(native_ack_id):
-                        subscriber.acknowledge(request={'subscription':path,'ack_ids':[native_ack_id]})
-                        pending['count'] -= 1
-                        if pending['count'] <= 0: subscriber.close()
-                    for record, native_ack_id in zip(messages, native_ack_ids):
-                        record['ackId'] = self.register_acknowledgement('pubsub', record['id'], lambda ack=native_ack_id: pubsub_confirm(ack))
-                    if not native_ack_ids: subscriber.close()
-                else:
-                    if response.received_messages: subscriber.acknowledge(request={'subscription':path,'ack_ids':[item.ack_id for item in response.received_messages]})
-                    subscriber.close()
-                first = messages[0] if messages else {}
-                return {'MessageID':first.get('messageId'),'PublishTime':first.get('publishTime'),'Data':first.get('data'),'Attributes':first.get('attributes',{}),'AckID':first.get('ackId'),'ackId':first.get('ackId'),'messages':messages,'count':len(messages)}
+                def receive_pubsub():
+                    subscriber = create_pubsub_client(pubsub_v1.SubscriberClient, {**rcfg, 'projectId': cfg.get('projectId') or rcfg.get('projectId')})
+                    handed_off = False
+                    try:
+                        path = subscriber.subscription_path(project_id, destination); response = subscriber.pull(request={'subscription': path, 'max_messages': int(cfg.get('maxMessages', 1))}, timeout=float(cfg.get('receiveTimeout', cfg.get('timeout', 10))))
+                        messages, native_ack_ids = [], []
+                        for item in response.received_messages:
+                            record = {'id':item.message.message_id,'messageId':item.message.message_id,'data':item.message.data.decode(errors='replace'),'attributes':dict(item.message.attributes),'publishTime':item.message.publish_time.isoformat() if item.message.publish_time else None}
+                            messages.append(record); native_ack_ids.append(item.ack_id)
+                        if client_ack:
+                            pending = {'count': len(native_ack_ids)}
+                            def pubsub_confirm(native_ack_id):
+                                subscriber.acknowledge(request={'subscription':path,'ack_ids':[native_ack_id]})
+                                pending['count'] -= 1
+                                if pending['count'] <= 0: subscriber.close()
+                            for record, native_ack_id in zip(messages, native_ack_ids):
+                                record['ackId'] = self.register_acknowledgement('pubsub', record['id'], lambda ack=native_ack_id: pubsub_confirm(ack))
+                            handed_off = bool(native_ack_ids)
+                        else:
+                            if response.received_messages: subscriber.acknowledge(request={'subscription':path,'ack_ids':[item.ack_id for item in response.received_messages]})
+                        first = messages[0] if messages else {}
+                        return {'MessageID':first.get('messageId'),'PublishTime':first.get('publishTime'),'Data':first.get('data'),'Attributes':first.get('attributes',{}),'AckID':first.get('ackId'),'ackId':first.get('ackId'),'messages':messages,'count':len(messages)}
+                    finally:
+                        if not handed_off: subscriber.close()
+                return await asyncio.to_thread(receive_pubsub)
             publish_timeout = max(1.0, float(cfg.get('publishTimeout', 60) or 60))
             # Execution bookkeeping changes on every job and must never be
             # part of the publisher fingerprint. Including it prevented gRPC
@@ -1651,6 +1630,11 @@ class WorkflowRuntime(DataFormats):
         call = re.fullmatch(r'([\w:-]+)\((.*)\)', text, re.S)
         if not call: return self.resolve(text, ctx)
         name = call.group(1); args = [self.evaluate_function_expression(item, ctx, variables, depth + 1) for item in self.split_function_args(call.group(2))]
+        if name in ('xpath', 'xpath1', 'xpath2'):
+            from .mapper_xml import parse_xml, xpath_value, xpath_context_source
+            if not 1 <= len(args) <= 2: raise ValueError('xpath expects an expression and optional XML source')
+            source = args[1] if len(args)>1 else xpath_context_source(ctx.get('last'))
+            return xpath_value(parse_xml(source),args[0],'2.0' if name=='xpath2' else '1.0',{},properties=ctx.get('properties'))
         if name.startswith('custom:'):
             function_name = name.split(':', 1)[1]
             project = ctx.get('project')
@@ -1705,10 +1689,10 @@ class WorkflowRuntime(DataFormats):
                     elif isinstance(current, list) and part.isdigit() and int(part) < len(current): current = current[int(part)]
                     else: return ''
                 return current
-        if isinstance(value, str) and '${properties.' in value:
-            return re.sub(r'\$\{properties\.([^}]+)\}', lambda match: str(ctx['properties'].get(match.group(1), '')), value)
         if isinstance(value, str) and re.fullmatch(r'[\w:-]+\(.*\)', value.strip(), re.S):
             return self.evaluate_function_expression(value, ctx)
+        if isinstance(value, str) and '${properties.' in value:
+            return re.sub(r'\$\{properties\.([^}]+)\}', lambda match: str(ctx['properties'].get(match.group(1), '')), value)
         if isinstance(value, str) and len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
             try: return ast.literal_eval(value)
             except (SyntaxError, ValueError): return value[1:-1]
@@ -1797,39 +1781,13 @@ class WorkflowRuntime(DataFormats):
             return {'workbook': {'fileName': file_path.name, 'sheetCount': len(sheets), 'sheets': sheets}, 'sheets': sheets}
         finally: workbook.close()
 
-    def ftp(self, cfg, ctx):
-        client_class = ftplib.FTP_TLS if cfg.get('tls') else ftplib.FTP
-        client = client_class(); client.connect(cfg['host'], int(cfg.get('port', 21)), timeout=float(cfg.get('timeout', 30))); client.login(cfg.get('username', 'anonymous'), cfg.get('password', ''))
-        if cfg.get('tls'): client.prot_p()
-        try:
-            if cfg.get('workingDirectory'): client.cwd(cfg['workingDirectory'])
-            operation, remote = cfg.get('operation'), cfg.get('remotePath', '')
-            if operation == 'get':
-                buffer = io.BytesIO(); client.retrbinary(f'RETR {remote}', buffer.write); return {'remotePath': remote, 'contentBase64': __import__('base64').b64encode(buffer.getvalue()).decode(), 'size': buffer.tell()}
-            if operation == 'put':
-                content = cfg.get('content', ctx['last']); raw = content if isinstance(content, bytes) else (content.encode(cfg.get('encoding', 'utf-8')) if isinstance(content, str) else json.dumps(content).encode()); client.storbinary(f'STOR {remote}', io.BytesIO(raw)); return {'remotePath': remote, 'written': True, 'size': len(raw)}
-            if operation == 'delete': client.delete(remote); return {'remotePath': remote, 'deleted': True}
-            if operation == 'dir': return {'directory': client.pwd(), 'entries': client.nlst(remote) if remote else client.nlst()}
-            if operation == 'change_dir': client.cwd(remote); return {'directory': client.pwd()}
-            raise RuntimeError(f'Unsupported FTP operation {operation}')
-        finally:
-            try: client.quit()
-            except Exception: client.close()
+    def ftp(self, cfg, ctx, *, cancel=None):
+        from .transfer import transfer
+        return transfer('ftp', cfg.get('operation'), cfg, ctx.get('last'),cancel=cancel)
 
-    def sftp(self, cfg, ctx):
-        ssh, client = open_sftp_connection(cfg)
-        try:
-            if cfg.get('workingDirectory'): client.chdir(cfg['workingDirectory'])
-            operation, remote = cfg.get('operation'), cfg.get('remotePath', '')
-            if operation == 'get':
-                buffer = io.BytesIO(); client.getfo(remote, buffer); return {'remotePath': remote, 'contentBase64': __import__('base64').b64encode(buffer.getvalue()).decode(), 'size': buffer.tell()}
-            if operation == 'put':
-                content = cfg.get('content', ctx['last']); raw = content if isinstance(content, bytes) else (content.encode(cfg.get('encoding', 'utf-8')) if isinstance(content, str) else json.dumps(content).encode()); client.putfo(io.BytesIO(raw), remote); return {'remotePath': remote, 'written': True, 'size': len(raw)}
-            if operation == 'delete': client.remove(remote); return {'remotePath': remote, 'deleted': True}
-            if operation == 'dir': return {'directory': client.getcwd() or '.', 'entries': [{'name': item.filename, 'size': item.st_size, 'modified': item.st_mtime} for item in client.listdir_attr(remote or '.')]}
-            if operation == 'change_dir': client.chdir(remote); return {'directory': client.getcwd()}
-            raise RuntimeError(f'Unsupported SFTP operation {operation}')
-        finally: client.close(); ssh.close()
+    def sftp(self, cfg, ctx, *, cancel=None):
+        from .transfer import transfer
+        return transfer('sftp', cfg.get('operation'), cfg, ctx.get('last'),cancel=cancel)
 
 
     async def java_worker(self, cfg, payload):
@@ -1880,7 +1838,10 @@ class WorkflowRuntime(DataFormats):
                     except asyncio.TimeoutError:
                         process.kill(); await process.wait()
                 raise
-            except asyncio.TimeoutError: process.kill(); raise RuntimeError('Java method invocation timed out')
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                raise RuntimeError('Java method invocation timed out')
             if process.returncode: raise RuntimeError(err.decode().strip() or 'Java method invocation failed')
             value = out.decode().strip()
             try: value = json.loads(value)

@@ -1,0 +1,51 @@
+{
+  "passed": true,
+  "results": [
+    {
+      "family": "kafka",
+      "mode": "run",
+      "passed": true
+    },
+    {
+      "family": "kafka",
+      "mode": "debug",
+      "passed": true
+    },
+    {
+      "family": "kafka",
+      "mode": "python-direct",
+      "passed": true
+    },
+    {
+      "family": "kafka",
+      "mode": "python-engine",
+      "passed": true
+    },
+    {
+      "family": "jms",
+      "mode": "run",
+      "passed": true
+    },
+    {
+      "family": "jms",
+      "mode": "debug",
+      "passed": true
+    },
+    {
+      "family": "jms",
+      "mode": "python-direct",
+      "passed": true
+    },
+    {
+      "family": "jms",
+      "mode": "python-engine",
+      "passed": true
+    }
+  ],
+  "scope": "Local Kafka and Artemis JMS; compatibility only, not 100k performance",
+  "notVerified": [
+    "Cloud Pub/Sub",
+    "Vendor EMS unless explicitly configured",
+    "Live SAP"
+  ]
+}
