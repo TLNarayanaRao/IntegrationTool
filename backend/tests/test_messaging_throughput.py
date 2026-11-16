@@ -71,8 +71,13 @@ class MessagingThroughput(unittest.TestCase):
         with patch.object(java_bridge, 'invoke', return_value={}) as invoke:
             java_bridge.execute_jms({}, 'receive', 'qa')
             self.assertEqual(invoke.call_args.args[2]['maxMessages'], 1)
-            java_bridge.execute_jms({}, 'receive', 'qa', options={'maxMessages': 50000})
-            self.assertEqual(invoke.call_args.args[2]['maxMessages'], 10000)
+            with patch.object(java_bridge, '_send_jms_reused', return_value={}) as reuse:
+                java_bridge.execute_jms({}, 'receive', 'qa', options={'maxMessages': 50000})
+                self.assertEqual(reuse.call_args.args[1]['maxMessages'], 10000)
+                self.assertEqual(reuse.call_args.kwargs['operation'], 'receive')
+            invoke.assert_called_once()
+            java_bridge.execute_jms({'clientId':'explicit-owner'}, 'receive', 'qa', options={'maxMessages':2})
+            self.assertEqual(invoke.call_count,2)
 
     def test_kafka_empty_batch_waits_once_and_does_not_block_event_loop(self):
         polling = threading.Event(); release = threading.Event(); instance = MagicMock()

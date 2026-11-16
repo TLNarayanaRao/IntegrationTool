@@ -48,6 +48,27 @@ class JmsSenderWorkerTests(unittest.TestCase):
         self.assertEqual(second['messageId'], '1:1:2:2:4:0:two')
         self.assertIn('providerSendMs', second)
 
+    def test_batch_get_reuses_connection_but_closes_each_consumer_and_resets_selector(self):
+        first=bridge.execute_jms(self.config,'receive','queue',options={'maxMessages':2,'receiveTimeout':1000,'messageSelector':'first'})
+        second=bridge.execute_jms(self.config,'receive','queue',options={'maxMessages':2,'receiveTimeout':1000,'messageSelector':'first'})
+        self.assertEqual(first['count'],2);self.assertEqual(second['count'],2)
+        self.assertTrue(second['receiverReused'])
+        self.assertTrue(first['body'].startswith('1:1:0:queue:first:'))
+        self.assertTrue(second['body'].startswith('1:2:1:queue:first:'))
+        self.assertNotEqual(first['messages'][0]['body'],first['messages'][1]['body'])
+        self.assertEqual(len(bridge._jms_senders),1)
+        selected=bridge.execute_jms(self.config,'receive','another',options={'maxMessages':2,'receiveTimeout':1000,'messageSelector':'second'})
+        self.assertTrue(selected['body'].startswith('1:1:0:another:second:'))
+        self.assertEqual(len(bridge._jms_senders),2)
+
+    def test_receive_failure_is_not_replayed_and_sender_pool_is_independent(self):
+        bridge.execute_jms(self.config,'send','queue','one')
+        with self.assertRaises(bridge.JavaBridgeError):
+            bridge.execute_jms(self.config,'receive','FAIL',options={'maxMessages':2,'receiveTimeout':1000})
+        self.assertEqual(len(bridge._jms_senders),1)
+        output=bridge.execute_jms(self.config,'send','queue','two')
+        self.assertTrue(output['senderReused'])
+
     def test_run_jobs_reuse_sender_and_application_stop_is_isolated(self):
         config = {key: value for key, value in self.config.items() if key != '_executionScope'}
         project = Project(id='run-app', name='Run app', resources=[{

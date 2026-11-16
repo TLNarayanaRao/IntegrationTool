@@ -59,7 +59,7 @@ async def broker_test(args,profile):
     send_op='publish' if family in ('kafka','pubsub') else 'send_message' if family=='jms' else 'send'
     receive_op='get' if family=='kafka' else 'pull' if family=='pubsub' else 'get_queue_message' if family=='jms' else 'queue_receiver'
     send=Activity(id='send',name='Send',type=family,config={**base,'operation':send_op,'message':'${input}',
-        'waitForDelivery':family=='pubsub'})
+        'waitForDelivery':family=='pubsub' or getattr(args,'confirm_delivery',False)})
     receive_cfg={**base,'operation':receive_op,'maxMessages':args.batch_size,'timeout':1,'receiveTimeout':1000,
         'enableAutoCommit':False,'groupId':scope,'assignCustomPartition':True,'partitionIds':'0',
         'seekPosition':'custom','customOffset':'${vars.offset}'}
@@ -111,14 +111,21 @@ async def broker_test(args,profile):
 
 
 async def broker_soak(args, profile):
-    began=time.perf_counter(); cycles=[]; offset=int(profile.get('startOffset',0))
+    began=time.perf_counter(); cycles=[]; offset=int(profile.get('startOffset',0)); verified_within_window=0; target_reached_seconds=None
     while time.perf_counter()-began<args.soak_seconds:
         started=time.perf_counter()
         result=await broker_test(args,{**profile,'startOffset':offset})
         if not result['passed']:raise AssertionError('Soak cycle missed its deadline')
         cycles.append(result);offset+=args.records
+        if time.perf_counter()-began<=args.soak_seconds: verified_within_window+=result['uniqueRecordsVerified']
+        if target_reached_seconds is None and getattr(args,'minimum_soak_records',0)>0 and verified_within_window>=args.minimum_soak_records:
+            target_reached_seconds=time.perf_counter()-began
+        print(json.dumps({'phase':'soak','cycles':len(cycles),'verifiedRecords':offset-int(profile.get('startOffset',0)),
+            'elapsedSeconds':round(time.perf_counter()-began,3)}),flush=True)
         await asyncio.sleep(max(0,args.cycle_interval-(time.perf_counter()-started)))
-    return {'passed':True,'soakSeconds':time.perf_counter()-began,'cycles':len(cycles),
+    return {'passed':verified_within_window>=getattr(args,'minimum_soak_records',0),'soakSeconds':time.perf_counter()-began,'cycles':len(cycles),
+        'verifiedWithinWindow':verified_within_window,'requiredWithinWindow':getattr(args,'minimum_soak_records',0),
+        'targetReachedSeconds':target_reached_seconds,
         'records':sum(item['records'] for item in cycles),
         'uniqueRecordsVerified':sum(item['uniqueRecordsVerified'] for item in cycles),
         'publishSeconds':sum(item['publishSeconds'] for item in cycles),
@@ -129,13 +136,17 @@ async def broker_soak(args, profile):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--family',choices=('kafka','pubsub','ems','jms','mapper'),required=True)
+    parser.add_argument('--confirm-delivery',action='store_true',help='Wait for Kafka acknowledgement on each send; final flush and readback remain mandatory in either mode')
     parser.add_argument('--operation',choices=('publish','receive','map'),required=True)
     parser.add_argument('--config');parser.add_argument('--records',type=int,default=100000)
     parser.add_argument('--deadline',type=float,default=600);parser.add_argument('--payload-bytes',type=int,default=1024)
     parser.add_argument('--batch-size',type=int,default=1000);parser.add_argument('--concurrency',type=int,default=8)
     parser.add_argument('--soak-seconds',type=float,default=0);parser.add_argument('--output',required=True)
     parser.add_argument('--cycle-interval',type=float,default=5)
+    parser.add_argument('--minimum-soak-records',type=int,default=0,help='Require this many fully audited records before the soak window ends')
     args=parser.parse_args()
+    if args.minimum_soak_records<0 or (args.minimum_soak_records and (args.soak_seconds<=0 or args.family=='mapper')):
+        parser.error('A minimum soak count requires a positive broker soak window and a nonnegative record count')
     if args.records<1 or args.deadline<=0 or args.payload_bytes<128 or args.soak_seconds<0 or args.cycle_interval<0 or not 1<=args.batch_size<=10000 or not 1<=args.concurrency<=32:parser.error('Invalid record, payload, duration, batch or concurrency limits')
     if (args.family=='mapper') != (args.operation=='map'):parser.error('Mapper requires map; brokers require publish or receive')
     if args.family!='mapper' and not args.config:parser.error('Protected broker config required')
@@ -155,7 +166,7 @@ def main():
             profile=json.loads(Path(args.config).read_text(encoding='utf-8-sig'))
             report=asyncio.run(broker_soak(args,profile) if args.soak_seconds else broker_test(args,profile))
         report.update(family=args.family,operation=args.operation,targetRecords=args.records,deadlineSeconds=args.deadline,
-            batchSize=args.batch_size,concurrency=args.concurrency,payloadBytes=args.payload_bytes,rssGrowthMiB=(process.memory_info().rss-before)/1048576)
+            batchSize=args.batch_size,concurrency=args.concurrency,payloadBytes=args.payload_bytes,perSendConfirmation=args.family in ('pubsub','ems','jms') or args.confirm_delivery,rssGrowthMiB=(process.memory_info().rss-before)/1048576)
     except Exception as error:
         report={'passed':False,'family':args.family,'operation':args.operation,'exceptionType':type(error).__name__}
         raise

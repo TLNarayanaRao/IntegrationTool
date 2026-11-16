@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-16",
+  "provider": "EMS",
+  "status": "blocked_missing_server_distribution",
+  "brokerProvisioned": false,
+  "testExecuted": false,
+  "requiredRecords": 100000,
+  "deadlineSeconds": 600,
+  "missingPrerequisites": [
+    "EMS server installation or installer",
+    "Matching EMS Java provider libraries",
+    "Activation configuration if required by the selected release"
+  ],
+  "verification": {
+    "studio": "not_run",
+    "run": "not_run",
+    "debug": "not_run",
+    "python-direct": "not_run",
+    "python-engine": "not_run",
+    "soak": "not_run"
+  },
+  "otherJmsProviderResultsQualifyEms": false,
+  "documentation": "docs/EMS_ACTUAL_QUALIFICATION.md"
+}

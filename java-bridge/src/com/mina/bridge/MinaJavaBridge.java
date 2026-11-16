@@ -813,39 +813,43 @@ public final class MinaJavaBridge {
                     return map("received", true, "body", body, "headers", headers, "requestMessageId", invoke(request, "getJMSMessageID"));
                 } finally { close(consumer); close(producer); }
             }
-            if (operation.equals("receive")) {
-                Object consumer = p.getProperty("selector", "").isBlank() ? invoke(session, "createConsumer", destination) : invoke(session, "createConsumer", destination, p.getProperty("selector"));
-                try {
-                    int maximum = Math.max(1, Math.min(10000, integer(p, "maxMessages", 1)));
-                    long timeoutMs = number(p, "timeoutMs", 30000);
-                    long deadline = System.nanoTime() + Math.max(0L, timeoutMs) * 1000000L;
-                    Object message = invoke(consumer, "receive", timeoutMs);
-                    List<Map<String, Object>> messages = new ArrayList<>();
-                    while (message != null) {
-                        messages.add(jmsReceived(message));
-                        if (bool(p, "clientAcknowledge", false)) invoke(message, "acknowledge");
-                        if (messages.size() >= maximum) break;
-                        // A single batch deadline includes all delivery waits.
-                        // Zero retains the legacy first-message indefinite wait,
-                        // then drains only immediately available messages.
-                        if (timeoutMs <= 0) message = invoke(consumer, "receiveNoWait");
-                        else {
-                            long remaining = deadline - System.nanoTime();
-                            if (remaining <= 0) break;
-                            message = invoke(consumer, "receive", Math.max(1L, (remaining + 999999L) / 1000000L));
-                        }
-                    }
-                    if (messages.isEmpty()) return map("received", false, "body", null, "headers", Map.of(), "properties", Map.of(), "count", 0);
-                    Map<String, Object> result = new LinkedHashMap<>(messages.get(0));
-                    result.put("count", messages.size());
-                    if (maximum > 1) result.put("messages", messages);
-                    return result;
-                } finally { close(consumer); }
-            }
+            if (operation.equals("receive")) return jmsReceive(session, context, p, destination);
             throw new IllegalArgumentException("Unsupported JMS operation: " + operation);
         } finally {
             close(session); close(connection); if (context != null) context.close();
         }
+    }
+
+    private static Map<String, Object> jmsReceive(Object session, InitialContext context, Properties p, Object suppliedDestination) throws Exception {
+        String name = required(p, "destination");
+        Object destination = suppliedDestination != null ? suppliedDestination : context != null && bool(p, "jndiDestination", false) ? context.lookup(name) : invoke(session, bool(p, "topic", false) ? "createTopic" : "createQueue", name);
+        Object consumer = p.getProperty("selector", "").isBlank() ? invoke(session, "createConsumer", destination) : invoke(session, "createConsumer", destination, p.getProperty("selector"));
+        try {
+            int maximum = Math.max(1, Math.min(10000, integer(p, "maxMessages", 1)));
+            long timeoutMs = number(p, "timeoutMs", 30000);
+            long deadline = System.nanoTime() + Math.max(0L, timeoutMs) * 1000000L;
+            Object message = invoke(consumer, "receive", timeoutMs);
+            List<Map<String, Object>> messages = new ArrayList<>();
+            while (message != null) {
+                messages.add(jmsReceived(message));
+                if (bool(p, "clientAcknowledge", false)) invoke(message, "acknowledge");
+                if (messages.size() >= maximum) break;
+                // A single batch deadline includes all delivery waits.
+                // Zero retains the legacy first-message indefinite wait,
+                // then drains only immediately available messages.
+                if (timeoutMs <= 0) message = invoke(consumer, "receiveNoWait");
+                else {
+                    long remaining = deadline - System.nanoTime();
+                    if (remaining <= 0) break;
+                    message = invoke(consumer, "receive", Math.max(1L, (remaining + 999999L) / 1000000L));
+                }
+            }
+            if (messages.isEmpty()) return map("received", false, "body", null, "headers", Map.of(), "properties", Map.of(), "count", 0);
+            Map<String, Object> result = new LinkedHashMap<>(messages.get(0));
+            result.put("count", messages.size());
+            if (maximum > 1) result.put("messages", messages);
+            return result;
+        } finally { close(consumer); }
     }
 
     private static Map<String, Object> jmsReceived(Object message) throws Exception {
@@ -889,9 +893,7 @@ public final class MinaJavaBridge {
         }
     }
 
-    /** Keep one physical JDBC connection alive for the complete transaction
-     * group. Requests are serialized over stdin so a connection is never used
-     * concurrently and commit/rollback always applies to the same session. */
+    /** Send through a serialized JMS session while retaining provider completion. */
     private static Map<String, Object> jmsSend(Object session, Object producer, String destinationName, Properties p) throws Exception {
         Object message = invoke(session, "createTextMessage", p.getProperty("body", ""));
         setIfPresent(message, "setJMSCorrelationID", p, "correlationId");
@@ -921,10 +923,12 @@ public final class MinaJavaBridge {
                 Map<String, Object> result;
                 boolean failed = false;
                 try {
-                    if (!parts[0].equals("send") || parts.length < 3) throw new IllegalArgumentException("Invalid JMS sender command");
+                    if ((!parts[0].equals("send") && !parts[0].equals("receive")) || parts.length < 3) throw new IllegalArgumentException("Invalid JMS sender command");
                     Properties call = new Properties();
                     call.load(new StringReader(new String(Base64.getDecoder().decode(parts[2]), StandardCharsets.UTF_8)));
                     String destinationName = required(call, "destination");
+                    if (parts[0].equals("receive")) result = jmsReceive(session, context, call, null);
+                    else {
                     String cacheKey = bool(call, "topic", false) + ":" + bool(call, "jndiDestination", false) + ":" + destinationName;
                     Object producer = producers.get(cacheKey);
                     if (producer == null) {
@@ -939,6 +943,7 @@ public final class MinaJavaBridge {
                         producers.put(cacheKey, producer);
                     }
                     result = jmsSend(session, producer, destinationName, call);
+                    }
                     result.put("ok", true);
                 } catch (Throwable error) {
                     result = map("ok", false, "message", String.valueOf(error.getMessage() == null ? error : error.getMessage()));

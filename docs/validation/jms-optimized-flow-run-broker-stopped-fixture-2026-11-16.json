@@ -1,0 +1,19 @@
+{
+  "passed": false,
+  "records": 0,
+  "uniquePayloadsVerified": 0,
+  "elapsedSeconds": 1.5169216999784112,
+  "recordsPerSecond": 0.0,
+  "exceptionType": "RuntimeError",
+  "normalRunDebugLogEntries": 52,
+  "scope": "Complete task orchestration, Mapper, validation and cleanup; archive generation/startup/IPC where applicable; confirmed send and readback through receive tasks",
+  "family": "jms",
+  "mode": "run",
+  "targetRecords": 100000,
+  "deadlineSeconds": 600,
+  "workers": 4,
+  "batchSize": 1000,
+  "approximatePayloadBytes": 1024,
+  "sharedStudioRuntime": true,
+  "archiveProcesses": 0
+}

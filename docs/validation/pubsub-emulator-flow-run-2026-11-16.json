@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "records": 100000,
+  "uniquePayloadsVerified": 100000,
+  "elapsedSeconds": 369.3565021000104,
+  "recordsPerSecond": 270.7411387952853,
+  "exceptionType": null,
+  "normalRunDebugLogEntries": 710800,
+  "scope": "Complete task orchestration, Mapper, validation and cleanup; archive generation/startup/IPC where applicable; confirmed send and readback through receive tasks",
+  "family": "pubsub",
+  "mode": "run",
+  "targetRecords": 100000,
+  "deadlineSeconds": 600,
+  "workers": 4,
+  "batchSize": 1000,
+  "approximatePayloadBytes": 1024,
+  "sharedStudioRuntime": true,
+  "archiveProcesses": 0
+}

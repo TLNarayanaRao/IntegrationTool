@@ -361,6 +361,9 @@ async def pubsub(operation: str, connection: dict, cfg: dict, payload: Any) -> d
     if operation == 'publish':
         loop = asyncio.get_running_loop(); publish_started = loop.time()
         topic = str(cfg.get('topic') or '')
+        batch_delay = cfg.get('batchDelayThresholdMilliseconds')
+        if batch_delay in (None, ''): batch_delay = connection.get('batchDelayThresholdMilliseconds')
+        if batch_delay in (None, ''): batch_delay = 10
         publisher_config = {
             'projectId': project_id,
             'serviceAccountJson': service_account_json,
@@ -368,7 +371,9 @@ async def pubsub(operation: str, connection: dict, cfg: dict, payload: Any) -> d
             'enableMessageOrdering': bool(cfg.get('orderingKey')),
             'batchMaxMessages': int(cfg.get('batchMaxMessages') or connection.get('batchMaxMessages') or 100),
             'batchMaxBytes': int(cfg.get('batchMaxBytes') or connection.get('batchMaxBytes') or 1048576),
-            'batchDelayThresholdMilliseconds': float(cfg.get('batchDelayThresholdMilliseconds') or connection.get('batchDelayThresholdMilliseconds') or 10),
+            'batchDelayThresholdMilliseconds': float(batch_delay),
+            'flowControlMaxMessages': int(cfg.get('flowControlMaxMessages') or connection.get('flowControlMaxMessages') or 1000),
+            'flowControlMaxBytes': int(cfg.get('flowControlMaxBytes') or connection.get('flowControlMaxBytes') or 10485760),
         }
         fingerprint = hashlib.sha256(json.dumps(publisher_config, sort_keys=True, default=str).encode()).hexdigest()
         one_shot = False
@@ -376,12 +381,18 @@ async def pubsub(operation: str, connection: dict, cfg: dict, payload: Any) -> d
         if client is None:
             credentials = service_account.Credentials.from_service_account_info(info) if service_account_json else None
             kwargs = {'credentials': credentials}
+            if connection.get('endpoint'): kwargs['client_options'] = {'api_endpoint':str(connection['endpoint'])}
             try:
                 kwargs['batch_settings'] = pubsub_v1.types.BatchSettings(
                     max_messages=publisher_config['batchMaxMessages'], max_bytes=publisher_config['batchMaxBytes'],
                     max_latency=max(.001, publisher_config['batchDelayThresholdMilliseconds'] / 1000),
                 )
-                kwargs['publisher_options'] = pubsub_v1.types.PublisherOptions(enable_message_ordering=publisher_config['enableMessageOrdering'])
+                kwargs['publisher_options'] = pubsub_v1.types.PublisherOptions(
+                    enable_message_ordering=publisher_config['enableMessageOrdering'],
+                    flow_control=pubsub_v1.types.PublishFlowControl(
+                        message_limit=max(1,publisher_config['flowControlMaxMessages']),
+                        byte_limit=max(1024,publisher_config['flowControlMaxBytes']),
+                        limit_exceeded_behavior=pubsub_v1.types.LimitExceededBehavior.BLOCK))
             except (AttributeError, TypeError): pass
             client = pubsub_v1.PublisherClient(**kwargs)
             one_shot = len(_PUBSUB_PUBLISHERS) >= 32
@@ -391,10 +402,18 @@ async def pubsub(operation: str, connection: dict, cfg: dict, payload: Any) -> d
             value = cfg.get('message', payload)
             data = value if isinstance(value, bytes) else json.dumps(value, default=str).encode()
             attributes = {str(key): str(value) for key, value in (cfg.get('attributes') or {}).items()}
-            future = client.publish(path, data, ordering_key=str(cfg.get('orderingKey') or ''), **attributes)
+            future = await asyncio.to_thread(client.publish, path, data, ordering_key=str(cfg.get('orderingKey') or ''), **attributes)
             raw_wait = True if one_shot else cfg.get('waitForDelivery', False)
             wait_for_delivery = raw_wait if isinstance(raw_wait, bool) else str(raw_wait).strip().lower() in {'1', 'true', 'yes', 'on'}
-            provider_message_id = await asyncio.to_thread(future.result, timeout=float(cfg.get('publishTimeout') or 60)) if wait_for_delivery else None
+            provider_message_id = None
+            if wait_for_delivery:
+                from concurrent.futures import Future as ConcurrentFuture
+                if isinstance(future, ConcurrentFuture):
+                    waiter = asyncio.wrap_future(future)
+                    waiter.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+                    provider_message_id = await asyncio.wait_for(asyncio.shield(waiter), float(cfg.get('publishTimeout') or 60))
+                else:
+                    provider_message_id = await asyncio.to_thread(future.result, timeout=float(cfg.get('publishTimeout') or 60))
             if not wait_for_delivery and hasattr(future, 'add_done_callback'):
                 future.add_done_callback(lambda completed: completed.exception())
             from uuid import uuid4
@@ -411,11 +430,17 @@ async def pubsub(operation: str, connection: dict, cfg: dict, payload: Any) -> d
     if operation == 'pull':
         subscription = str(cfg.get('subscription') or '')
         credentials = service_account.Credentials.from_service_account_info(info) if service_account_json else None
-        client = pubsub_v1.SubscriberClient(credentials=credentials)
+        subscriber_options = {'credentials': credentials}
+        if connection.get('endpoint'): subscriber_options['client_options'] = {'api_endpoint':str(connection['endpoint'])}
+        client = pubsub_v1.SubscriberClient(**subscriber_options)
         try:
             path = subscription if subscription.startswith('projects/') else client.subscription_path(project_id, subscription)
-            response = await asyncio.to_thread(client.pull, request={'subscription': path, 'max_messages': max(1, int(cfg.get('maxMessages') or 1))}, timeout=float(cfg.get('timeoutSeconds') or 30))
+            response = await asyncio.to_thread(client.pull, request={'subscription': path, 'max_messages': max(1, min(1000,int(cfg.get('maxMessages') or 1)))}, timeout=float(cfg.get('receiveTimeout') or cfg.get('timeoutSeconds') or cfg.get('timeout') or 30))
             values = [{'data': item.message.data.decode(errors='replace'), 'ackId': item.ack_id} for item in response.received_messages]
+            mode = str(cfg.get('acknowledgeMode') or 'Auto').lower()
+            if mode not in ('client','manual','explicit client','explicit client dups ok') and cfg.get('acknowledge') is not False and response.received_messages:
+                await asyncio.to_thread(client.acknowledge, request={'subscription':path,
+                    'ack_ids':[item.ack_id for item in response.received_messages]})
             return {'subscription': path, 'count': len(values), 'messages': values}
         finally:
             await asyncio.to_thread(client.transport.close)

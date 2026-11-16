@@ -212,12 +212,14 @@ def create_client(client_class, config: dict[str, Any]):
     kwargs.pop("_ca_certificate_file", None)
     publisher_kwargs: dict[str, Any] = {}
     if "Publisher" in client_class.__name__:
+        batch_delay = config.get('batchDelayThresholdMilliseconds')
+        if batch_delay in (None, ''): batch_delay = 10
         try:
             from google.cloud import pubsub_v1
             publisher_kwargs["batch_settings"] = pubsub_v1.types.BatchSettings(
                 max_messages=max(1, int(config.get("batchMaxMessages") or 100)),
                 max_bytes=max(1024, int(config.get("batchMaxBytes") or 1048576)),
-                max_latency=max(0.001, float(config.get("batchDelayThresholdMilliseconds") or 10) / 1000),
+                  max_latency=max(0.001, float(batch_delay) / 1000),
             )
             publisher_kwargs["publisher_options"] = pubsub_v1.types.PublisherOptions(
                 enable_message_ordering=bool(config.get("enableMessageOrdering", False)),

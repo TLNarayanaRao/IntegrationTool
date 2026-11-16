@@ -18,6 +18,24 @@ def load():
 
 
 class CompleteFlowHarnessTests(unittest.TestCase):
+    def test_debug_cleanup_is_not_evicted_by_bounded_history(self):
+        module=load();project=module.project_for('mapper',{})
+        with tempfile.TemporaryDirectory() as folder:
+            executor=module.Executor('debug',project,str(Path(folder)/'worker.log'))
+            executor.manager.history_limit=1
+            def cleanup(session):
+                executor.manager.sessions['newer']={'status':'completed'}
+                executor.manager._prune_history('newer')
+                self.assertIn(session,executor.manager.sessions)
+                self.assertEqual(executor.manager.sessions[session]['status'],'stopping')
+            async def exercise():
+                try:
+                    with patch.object(module,'terminate_execution_processes',side_effect=cleanup):
+                        result=await executor.execute('publish',{'records':[module.record('qa',0,1024)[0]]})
+                    self.assertEqual(result[0]['seq'],0)
+                finally:await executor.close()
+            asyncio.run(exercise())
+
     def test_run_and_debug_execute_every_mapping_and_loop_transition(self):
         module = load()
         with tempfile.TemporaryDirectory() as folder, redirect_stdout(io.StringIO()):

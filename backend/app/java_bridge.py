@@ -594,22 +594,27 @@ def _start_jms_sender(config: dict[str, Any], values: dict[str, Any]) -> SapJcoW
         if process is not None: _untrack_process(str(config.get('_executionScope') or ''), process)
 
 
-def _send_jms_reused(config: dict[str, Any], values: dict[str, Any], timeout: float) -> dict:
+def _send_jms_reused(config: dict[str, Any], values: dict[str, Any], timeout: float, operation: str = "send") -> dict:
     global _jms_reaper_started
     # Scope isolation keeps Debug Stop from closing another application's sender.
-    identity = config
+    identity = config if operation == "send" else {**config, "_bridgeRole": "receive",
+        "_destination":values.get('destination'), "_selector":values.get('selector'),
+        "_topic":values.get('topic'), "_jndiDestination":values.get('jndiDestination')}
     key = hashlib.sha256(json.dumps(identity, sort_keys=True, default=str).encode()).hexdigest()
     with _jms_senders_lock:
         if not _jms_reaper_started:
             threading.Thread(target=_reap_jms_senders, name='mina-jms-idle-cleanup', daemon=True).start()
             _jms_reaper_started = True
         entry = _jms_senders.get(key)
-        if entry is None and len(_jms_senders) < 8:
-            entry = {'lock': threading.Lock(), 'worker': None, 'scope': str(config.get('_executionScope') or ''), 'stopped': False, 'lastUsed': time.monotonic()}
+        # Receive fanout must not exhaust the existing publisher cache budget.
+        limit = 8 if operation == 'send' else 4
+        if entry is None and sum(item.get('operation','send') == operation for item in _jms_senders.values()) < limit:
+            entry = {'lock': threading.Lock(), 'worker': None, 'operation':operation,
+                     'scope': str(config.get('_executionScope') or ''), 'stopped': False, 'lastUsed': time.monotonic()}
             _jms_senders[key] = entry
     if entry is None:
         # Bound persistent JVMs when dynamic destinations/configuration have high cardinality.
-        return invoke('jms.send', config, values, family='jms', timeout=timeout)
+        return invoke('jms.' + operation, config, values, family='jms', timeout=timeout)
     with entry['lock']:
         if entry['stopped']: raise JavaBridgeError('JMS sender was stopped')
         worker = entry.get('worker')
@@ -621,8 +626,8 @@ def _send_jms_reused(config: dict[str, Any], values: dict[str, Any], timeout: fl
                 entry['worker'] = worker
             if entry['stopped']: raise JavaBridgeError('JMS sender was stopped')
             _track_process(entry['scope'], worker.process)
-            result = worker.request('send', values, timeout=timeout)
-            return {**result, 'senderReused': reused}
+            result = worker.request(operation, values, timeout=timeout)
+            return {**result, ('senderReused' if operation == 'send' else 'receiverReused'): reused}
         except Exception:
             with _jms_senders_lock:
                 if _jms_senders.get(key) is entry: del _jms_senders[key]
@@ -654,6 +659,10 @@ def execute_jms(config: dict[str, Any], operation: str, destination: str, payloa
         values[f"messageProperty.{key}"] = value
     timeout = max(10, float(values['timeoutMs'] or 0) / 1000 + 10)
     if operation == 'send': return _send_jms_reused(config, values, timeout)
+    # Explicit JMS client IDs have provider-wide uniqueness/lifetime rules.
+    # Preserve one-shot ownership for those connections.
+    if operation == 'receive' and values['maxMessages'] > 1 and not str(config.get('clientId') or '').strip():
+        return _send_jms_reused(config, values, timeout, operation='receive')
     return invoke(f"jms.{operation}", config, values, family="jms", timeout=timeout)
 
 

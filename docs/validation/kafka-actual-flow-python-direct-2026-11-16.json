@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "records": 100000,
+  "uniquePayloadsVerified": 100000,
+  "elapsedSeconds": 27.99478080001427,
+  "recordsPerSecond": 3572.0944098247423,
+  "exceptionType": null,
+  "normalRunDebugLogEntries": 0,
+  "scope": "Complete task orchestration, Mapper, validation and cleanup; archive generation/startup/IPC where applicable; confirmed send and readback through receive tasks",
+  "family": "kafka",
+  "mode": "python-direct",
+  "targetRecords": 100000,
+  "deadlineSeconds": 600,
+  "workers": 4,
+  "batchSize": 1000,
+  "approximatePayloadBytes": 1024,
+  "sharedStudioRuntime": false,
+  "archiveProcesses": 4
+}

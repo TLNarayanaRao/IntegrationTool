@@ -152,8 +152,12 @@ class Executor:
             if result['status'] != 'completed': raise RuntimeError('Debug task failed: ' + str(result['logs'][-1:]))
             return result['output']
         finally:
+            # Match Studio Stop: mark the session before awaiting native
+            # cleanup so bounded history cannot prune it during that await.
+            state = self.manager.sessions.get(session)
+            if state is not None: state['status'] = 'stopping'
             await asyncio.to_thread(terminate_execution_processes, session)
-            await self.manager.stop(session)
+            if session in self.manager.sessions: await self.manager.stop(session)
 
     async def close(self):
         try:

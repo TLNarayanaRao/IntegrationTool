@@ -1,0 +1,56 @@
+{
+  "passed": true,
+  "environment": "Actual local Apache Kafka, single-node KRaft",
+  "recordsPerMode": 100000,
+  "deadlineSeconds": 600,
+  "results": [
+    {
+      "mode": "run",
+      "passed": true,
+      "report": "kafka-actual-flow-run-2026-11-16.json",
+      "elapsedSeconds": 85.15894540003501
+    },
+    {
+      "mode": "debug",
+      "passed": true,
+      "report": "kafka-actual-flow-debug-2026-11-16.json",
+      "elapsedSeconds": 90.57671459997073
+    },
+    {
+      "mode": "python-direct",
+      "passed": true,
+      "report": "kafka-actual-flow-python-direct-2026-11-16.json",
+      "elapsedSeconds": 27.99478080001427
+    },
+    {
+      "mode": "python-engine",
+      "passed": true,
+      "report": "kafka-actual-flow-python-engine-2026-11-16.json",
+      "elapsedSeconds": 39.84440479998011
+    }
+  ],
+  "brokerStopped": true,
+  "date": "2026-11-16",
+  "kafkaVersion": "3.9.1",
+  "clientVersions": {
+    "confluent-kafka": "2.16.1",
+    "python": "3.11.9",
+    "aiokafka": "0.12.0"
+  },
+  "kafkaArchiveSha512": "1EA204BA73411737A275429CA976D440F007FF0957B90B19BE41DC5A4BAE52617267769BE9F0B5791714D0B3C4C760605BD426FAEA39EDD90763585523FA2CFE",
+  "archiveChecksumMatchedApache": true,
+  "brokerPortsClosed": true,
+  "limits": [
+    "Single-node loopback PLAINTEXT fixture; TLS/SASL and replicated deployment unverified",
+    "Get receiver path tested; continuous receiver/failover/rebalance not qualified",
+    "Runtime and DebugManager tested; Studio GUI not automated",
+    "Count/deadline qualification; not a long-duration soak"
+  ],
+  "additionalChecks": {
+    "existingReportPreservationPassed": true,
+    "focusedBackendTestsPassed": 30,
+    "occupiedPortRefusalPassed": true,
+    "studioHelpTestsPassed": 11,
+    "studioBuildPassed": true
+  }
+}

@@ -9,6 +9,10 @@ const raw='backend/app/raw_python.py', core='backend/app/raw_python_support/core
 const formats='backend/app/data_formats.py';
 const connectors='backend/app/raw_python_support/connectors.py', acts='backend/app/raw_python_support/activities.py';
 export const developerSources=[ui,ed,rt,raw,core,connectors,acts,
+ 'scripts/kafka-local-qa.py',
+ 'scripts/pubsub-emulator-qa.py','backend/tests/test_pubsub_throughput.py',
+ 'backend/tests/test_jms_soak_gate.py',
+ 'backend/tests/test_sender_settings.py',
  'scripts/flow-throughput.py','backend/tests/test_flow_throughput.py',
  'scripts/activity-throughput.py','backend/tests/test_messaging_throughput.py',
  'scripts/live-messaging-soak.py','scripts/live-messaging-verify.py','scripts/live-messaging-archive-soak.py','scripts/live-messaging-debug-soak.py','scripts/sap-production-soak.py',

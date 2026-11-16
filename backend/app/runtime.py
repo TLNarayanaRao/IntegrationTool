@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import httpx
 from time import perf_counter
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, Future as ConcurrentFuture
 from .models import Activity, GroupDefinition, ProcessDefinition, Project, RunResult, find_subtask
 from .mapper import INPUT_OCCURRENCES, activity_occurrence_rules, _function_arguments, apply_function, evaluate_condition, get_path, rewrite_references, validate_output, execute as execute_mapping, execute_async as execute_mapping_async
 from .dataweave import DataWeaveError, execute as execute_dataweave
@@ -38,6 +38,7 @@ class WorkflowRuntime(DataFormats):
         self._initialized_transactional_publishers: set[str] = set()
         self._kafka_executor = None
         self._jms_executor = None
+        self._jms_receivers_used = False
         self._jms_scope_id = uuid.uuid4().hex
         self._active_activity: dict[str, dict] = {}
         self._active_execution: dict[str, dict] = {}
@@ -60,7 +61,7 @@ class WorkflowRuntime(DataFormats):
     def close_application_senders(self, project_id: str):
         from .http_transport import close_clients
         close_clients(project_id)
-        if self._jms_executor is not None:
+        if self._jms_executor is not None or self._jms_receivers_used:
             close_jms_senders(self.jms_application_scope(project_id), force=True)
 
     @staticmethod
@@ -91,7 +92,7 @@ class WorkflowRuntime(DataFormats):
 
     def close_publishers(self):
         # Capability-pruned exports without JMS must not import its native bridge.
-        if self._jms_executor is not None:
+        if self._jms_executor is not None or self._jms_receivers_used:
             try: close_jms_senders(force=True)
             except Exception: pass  # Still release the independently owned clients.
         with self._publisher_lock:
@@ -1216,6 +1217,7 @@ class WorkflowRuntime(DataFormats):
                     except ValueError: pass
                     return {**output, 'body': body, 'count': 1 if output.get('received') else 0, 'destination': destination}
                 if operation in receive_ops:
+                    self._jms_receivers_used = True
                     output = await asyncio.to_thread(execute_jms, rcfg, 'receive', str(destination), None, options)
                     if not output.get('received'):
                         return {'body': None, 'headers': {}, 'properties': {}, 'ackId': None, 'messages': [], 'count': 0}
@@ -1401,7 +1403,8 @@ class WorkflowRuntime(DataFormats):
                     subscriber = create_pubsub_client(pubsub_v1.SubscriberClient, {**rcfg, 'projectId': cfg.get('projectId') or rcfg.get('projectId')})
                     handed_off = False
                     try:
-                        path = subscriber.subscription_path(project_id, destination); response = subscriber.pull(request={'subscription': path, 'max_messages': int(cfg.get('maxMessages', 1))}, timeout=float(cfg.get('receiveTimeout', cfg.get('timeout', 10))))
+                        path = str(destination) if str(destination).startswith('projects/') else subscriber.subscription_path(project_id, destination)
+                        response = subscriber.pull(request={'subscription': path, 'max_messages': max(1,min(1000,int(cfg.get('maxMessages', 1))))}, timeout=float(cfg.get('receiveTimeout', cfg.get('timeout', 10))))
                         messages, native_ack_ids = [], []
                         for item in response.received_messages:
                             record = {'id':item.message.message_id,'messageId':item.message.message_id,'data':item.message.data.decode(errors='replace'),'attributes':dict(item.message.attributes),'publishTime':item.message.publish_time.isoformat() if item.message.publish_time else None}
@@ -1427,12 +1430,15 @@ class WorkflowRuntime(DataFormats):
             # part of the publisher fingerprint. Including it prevented gRPC
             # channel reuse and paid TLS/authentication startup on each send.
             publish_config = {key: value for key, value in rcfg.items() if not str(key).startswith('_')}
+            batch_delay = cfg.get('batchDelayThresholdMilliseconds')
+            if batch_delay in (None, ''): batch_delay = rcfg.get('batchDelayThresholdMilliseconds')
+            if batch_delay in (None, ''): batch_delay = 10
             publish_config.update({
                 'projectId': cfg.get('projectId') or rcfg.get('projectId'),
                 'enableMessageOrdering': bool(cfg.get('orderingKey')),
                 'batchMaxMessages': int(cfg.get('batchMaxMessages') or rcfg.get('batchMaxMessages') or 100),
                 'batchMaxBytes': int(cfg.get('batchMaxBytes') or rcfg.get('batchMaxBytes') or 1048576),
-                'batchDelayThresholdMilliseconds': float(cfg.get('batchDelayThresholdMilliseconds') or rcfg.get('batchDelayThresholdMilliseconds') or 10),
+                'batchDelayThresholdMilliseconds': float(batch_delay),
                 'flowControlMaxMessages': int(cfg.get('flowControlMaxMessages') or rcfg.get('flowControlMaxMessages') or 1000),
                 'flowControlMaxBytes': int(cfg.get('flowControlMaxBytes') or rcfg.get('flowControlMaxBytes') or 10485760),
             })
@@ -1442,7 +1448,7 @@ class WorkflowRuntime(DataFormats):
                 """Enqueue on the persistent batched publisher by default."""
                 publisher, one_shot = self._publisher('pubsub', publish_config, lambda: create_pubsub_client(pubsub_v1.PublisherClient, publish_config))
                 try:
-                    path = publisher.topic_path(project_id, destination)
+                    path = str(destination) if str(destination).startswith('projects/') else publisher.topic_path(project_id, destination)
                     try:
                         from google.api_core.retry import Retry
                         publish_future = publisher.publish(
@@ -1451,7 +1457,10 @@ class WorkflowRuntime(DataFormats):
                             timeout=publish_timeout, **attributes,
                         )
                         wait_for_delivery = self.as_bool(cfg.get('waitForDelivery', False)) or one_shot
-                        message_id = publish_future.result(timeout=publish_timeout + 2) if wait_for_delivery else None
+                        # Google SDK futures can notify asyncio directly; do not
+                        # occupy shared executor threads for network ACK waits.
+                        asynchronous = wait_for_delivery and not one_shot and isinstance(publish_future, ConcurrentFuture)
+                        message_id = publish_future if asynchronous else publish_future.result(timeout=publish_timeout + 2) if wait_for_delivery else None
                         if not wait_for_delivery:
                             # Consume asynchronous errors so the Google future
                             # cannot emit an unobserved-exception warning. The
@@ -1470,6 +1479,12 @@ class WorkflowRuntime(DataFormats):
 
             publish_started = perf_counter()
             path, provider_message_id, delivery_confirmed = await asyncio.to_thread(publish_pubsub)
+            if isinstance(provider_message_id, ConcurrentFuture):
+                waiter = asyncio.wrap_future(provider_message_id)
+                waiter.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+                try: provider_message_id = await asyncio.wait_for(asyncio.shield(waiter), publish_timeout + 2)
+                except asyncio.TimeoutError as exc:
+                    raise RuntimeError('Google Pub/Sub publish confirmation timed out; delivery may still occur') from exc
             message_id = provider_message_id or envelope['id']
             return {**envelope, 'TopicName': path, 'MessageID': message_id, 'messageId': message_id,
                     'providerMessageId': provider_message_id, 'published': True, 'queued': True,

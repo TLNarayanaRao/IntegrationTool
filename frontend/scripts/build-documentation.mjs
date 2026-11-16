@@ -22,6 +22,10 @@ const readHelpAsset = async (directory, name) => {
  return /\.(json|js|svg)$/.test(name) ? Buffer.from(normalizeLineEndings(bytes.toString('utf8'))) : bytes;
 };
 const guides = [
+ ['Connectors', 'KAFKA_ACTUAL_THROUGHPUT.md'],
+ ['Connectors', 'PUBSUB_THROUGHPUT.md'],
+ ['Connectors', 'JMS_BATCH_REUSE.md'],
+ ['Connectors', 'SENDER_PERFORMANCE.md'],
  ['Connectors', 'COMPLETE_FLOW_THROUGHPUT.md'],
  ['Connectors', 'MESSAGING_THROUGHPUT.md'],
  ['Connectors', 'LIVE_MESSAGING_VERIFICATION.md'],
