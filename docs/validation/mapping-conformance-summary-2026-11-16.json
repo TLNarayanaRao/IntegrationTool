@@ -1,0 +1,110 @@
+{
+  "measurement": "MINA complete task flows, not vendor-runtime speed comparison",
+  "results": [
+    {
+      "passed": true,
+      "records": 100000,
+      "report": "mapping-mapper-run-2026-11-16.json",
+      "seconds": 38.90502230002312,
+      "mode": "run",
+      "family": "mapper"
+    },
+    {
+      "passed": true,
+      "records": 100000,
+      "report": "mapping-mapper-debug-2026-11-16.json",
+      "seconds": 41.9514790000394,
+      "mode": "debug",
+      "family": "mapper"
+    },
+    {
+      "passed": true,
+      "records": 100000,
+      "report": "mapping-mapper-python-direct-2026-11-16.json",
+      "seconds": 11.721706100041047,
+      "mode": "python-direct",
+      "family": "mapper"
+    },
+    {
+      "passed": true,
+      "records": 100000,
+      "report": "mapping-mapper-python-engine-2026-11-16.json",
+      "seconds": 18.610592400014866,
+      "mode": "python-engine",
+      "family": "mapper"
+    },
+    {
+      "passed": true,
+      "records": 100000,
+      "report": "mapping-transformer-run-2026-11-16.json",
+      "seconds": 27.503170699987095,
+      "mode": "run",
+      "family": "transformer"
+    },
+    {
+      "passed": true,
+      "records": 100000,
+      "report": "mapping-transformer-debug-2026-11-16.json",
+      "seconds": 30.71996679995209,
+      "mode": "debug",
+      "family": "transformer"
+    },
+    {
+      "passed": true,
+      "records": 100000,
+      "report": "mapping-transformer-python-direct-2026-11-16.json",
+      "seconds": 9.078334699966945,
+      "mode": "python-direct",
+      "family": "transformer"
+    },
+    {
+      "passed": true,
+      "records": 100000,
+      "report": "mapping-transformer-python-engine-2026-11-16.json",
+      "seconds": 15.049879700003657,
+      "mode": "python-engine",
+      "family": "transformer"
+    }
+  ],
+  "date": "2026-11-16",
+  "remainingGaps": [
+    "Full script modules, libraries and language syntax",
+    "Atomic independently scripted multiple output targets",
+    "Arbitrary graphical/script round-trip",
+    "Streaming readers/writers and repeatable streams",
+    "Full scripted input/output schema enforcement",
+    "Full proprietary extensions and lossless arbitrary-project migration"
+  ],
+  "referenceVerification": {
+    "mule4": "Official documentation comparison; no Mule runtime installed",
+    "bw613": "Installed vendor sample bindings imported and executed in MINA; native engine not benchmarked"
+  },
+  "recordsPerMode": 100000,
+  "scriptedSemanticCases": {
+    "cases": 8,
+    "modes": [
+      "preview",
+      "run",
+      "debug",
+      "python-direct",
+      "python-engine"
+    ],
+    "passed": true
+  },
+  "deadlineSeconds": 600,
+  "validation": {
+    "backendSuite": {
+      "skipped": 11,
+      "testsRun": 673,
+      "failed": 0
+    },
+    "archiveXmlDependencyDeclared": true,
+    "finalTargeted": {
+      "failed": 0,
+      "testsRun": 27
+    },
+    "studioHelpTestsPassed": 15,
+    "studioBuildPassed": true,
+    "previewAndExecutionParityPassed": true
+  }
+}

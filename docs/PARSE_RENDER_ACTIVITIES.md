@@ -42,6 +42,64 @@ Quoted CSV values retain delimiters, escaped quotes and embedded line breaks. Li
 
 Fixed-width records use positive widths or zero-based `start:end` offsets (end excluded), so columns can have gaps. The optional fixed line length includes the separator. Numeric fields use left padding and preserve significant trailing zeroes. Strict mode rejects over-width values; permissive mode retains truncation. Single-character delimited and fixed-width files are read record by record; the multi-character delimiter reader has a 64 MiB limit. Use Mapper for hierarchy and complex transformations.
 
+## Data validation and layout safeguards
+
+Parse Data and Render Data now have an optional **Validate records against
+selected XSD** checkbox. The equivalent dynamic Input options are
+`formatOptions.validateOutput` for parsing and `formatOptions.validateInput`
+for rendering. Validation uses the complete record XML and selected project or
+inline XSD, including packaged imports/includes, required fields, numeric
+facets, string constraints and namespaces. Validation is off by default for
+existing Data activities. Enabling it without an XSD fails explicitly. JSON
+Schema field inference does not substitute for XSD record validation.
+
+Validation runs on the parsed batch or on the structured render input before
+formatting. It does not validate the truncated text of a permissive fixed-width
+render; enable strict mode to prevent truncation. If all records are rejected or
+the batch is empty, an XSD requiring at least one row can reject the batch.
+
+Declared field names and types are matched by name when a CSV header is in a
+different order. Under **Require exact record fields**, headers must contain
+the declared names, with no missing/extra fields; a different order is allowed.
+Without strict mode, legacy unmatched headers retain positional type fallback.
+Empty or duplicate field/header names are rejected. Header names remain case
+sensitive. This prevents an integer type intended for `id` being applied to
+the `name` column merely because the source changed column order.
+
+Strict rendering requires every declared field and rejects extra fields for
+single-character, multi-character and fixed layouts. An explicit null field
+remains distinct from a missing mapping and renders empty/padded text under
+existing rules. Fixed numeric zero-fill keeps a negative sign at the front
+(`-12` at width five becomes `-0012`).
+
+Automatic batch cursors now reset when field types, fixed offsets/length,
+trimming, fill, strictness, validation/schema or record-error handling changes,
+as well as when the source/header/separator changes. Changing batch size alone
+continues from the current position. Task runs retain separate cursor state.
+
+Unknown format, separator rule, blank-line policy and line-separator options
+fail rather than silently falling back to a different interpretation. Supported
+line-separator selectors are Auto, LF, CRLF and CR.
+
+**Nested record structures** preserves parent paths and repeating JSON-valued
+columns. **Stream large files** parses to JSON Lines or renders JSON Lines to a
+formatted file in byte/count-bounded batches, returning file/count metadata.
+Multi-character separators use the same bounded reader. **Continue on record
+errors** now supports bounded malformed-quote recovery and physical-line mode,
+with explicit rejected-record reporting. Recovery cannot remove the inherent
+ambiguity of missing quotes; select the policy matching the source contract.
+See [nested records and streaming](DATA_NESTED_STREAMING.md) for Input mappings,
+validation scope, limits, atomic output behavior and complete-flow measurements.
+Streaming activities also support explicit **Group header/detail/trailer
+records**, **Validate whole-file rules** and **Validate complete file against
+XSD**. Map role layouts, trailer controls, file counts/totals, unique keys and
+root attributes dynamically in Input. Global XSD validation runs through EOF
+before publication, replacing batch-only checks for that stream. See the
+[HDT and whole-file guide](DATA_GROUPS_VALIDATION.md).
+
+See [gap verification](validation/mapper-data-gaps-summary-2026-11-16.json)
+and [changed files](MAPPER_DATA_GAPS_CHANGED_FILES.md).
+
 ## Dynamic HTTP and REST invocation settings
 
 HTTP Request and REST Invoke Configuration keeps the display name and shared connection selector. Request-specific settings are mapped in **Input → RestInputRequest**:

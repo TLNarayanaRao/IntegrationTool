@@ -1,0 +1,152 @@
+{
+  "date": "2026-11-16",
+  "capabilities": [
+    "Explicit delimited/fixed header-detail-trailer role layouts and bounded groups",
+    "Trailer counts, decimal sums and optional derived trailers",
+    "EOF file counts/totals, rejected-record limits and disk-backed composite uniqueness",
+    "Complete-file staged XML/XSD validation with global keys/keyrefs and root attributes",
+    "Complete XSD takes precedence over per-batch XSD checks",
+    "Typed Studio layout/rule Inputs and validation metadata"
+  ],
+  "passed": true,
+  "limits": {
+    "maxCompositeKeyBytes": 65536,
+    "defaultGroupBytes": 8388608,
+    "defaultGroupDetails": 10000,
+    "maxFileTotals": 16,
+    "maxGroupBytes": 67108864,
+    "maxTrailerChecks": 16,
+    "maxGroupDetails": 1000000,
+    "maxPointersPerKey": 16,
+    "maxUniqueRules": 16
+  },
+  "limitations": [
+    "One group is buffered and must fit configured byte/detail limits; arbitrary recursive record grammars are not inferred",
+    "Complete XSD validation stages XML to disk; XML identity checking can retain global key/reference state in memory",
+    "Atomic publication is per activity; a later Render failure does not roll back an earlier successful Parse output",
+    "Reject and main files publish independently",
+    "Framing/header/trailer errors remain fatal; rejected details must be permitted by maxErrors and still satisfy trailer controls",
+    "Bulk timing excludes archive startup/cleanup and audit passes; no new memory or long-duration soak claim"
+  ],
+  "verification": {
+    "studioHelp": {
+      "webPages": 417,
+      "developerGuidePdfPages": 346,
+      "documentationPdfPages": 687,
+      "status": "Regenerated"
+    },
+    "namespacedInclude": "Parse and Render passed using a namespaced root XSD, packaged relative include, and global keys/keyrefs",
+    "frontendTests": {
+      "passed": 30,
+      "tests": 30,
+      "failed": 0
+    },
+    "bulkCompleteFlows": {
+      "passed": true,
+      "scope": "HDT -> grouped JSON Lines -> HDT, full rule/XSD validation on both stages and every record/byte audited",
+      "results": [
+        {
+          "mode": "run",
+          "passed": true,
+          "groupsAudited": 5000,
+          "detailsAudited": 10000,
+          "physicalRecords": 20000,
+          "sourceBytes": 289450,
+          "executionSeconds": 5.629,
+          "sha256": "f95b245ffd0126bbcb5f36f262596efb69d608e31ecbcfd25a78b97971da995e",
+          "eofKeyrefFailurePreservedOutputs": true,
+          "validation": {
+            "valid": true,
+            "rulesValidated": true,
+            "recordCount": 20000,
+            "groupCount": 5000,
+            "detailCount": 10000,
+            "totals": {
+              "amount": "1500.00"
+            },
+            "uniqueKeyRules": 1,
+            "xsdValidated": true
+          }
+        },
+        {
+          "mode": "debug",
+          "passed": true,
+          "groupsAudited": 5000,
+          "detailsAudited": 10000,
+          "physicalRecords": 20000,
+          "sourceBytes": 289450,
+          "executionSeconds": 5.611,
+          "sha256": "f95b245ffd0126bbcb5f36f262596efb69d608e31ecbcfd25a78b97971da995e",
+          "eofKeyrefFailurePreservedOutputs": true,
+          "validation": {
+            "valid": true,
+            "rulesValidated": true,
+            "recordCount": 20000,
+            "groupCount": 5000,
+            "detailCount": 10000,
+            "totals": {
+              "amount": "1500.00"
+            },
+            "uniqueKeyRules": 1,
+            "xsdValidated": true
+          }
+        },
+        {
+          "mode": "python-direct",
+          "passed": true,
+          "groupsAudited": 5000,
+          "detailsAudited": 10000,
+          "physicalRecords": 20000,
+          "sourceBytes": 289450,
+          "executionSeconds": 5.8191,
+          "sha256": "f95b245ffd0126bbcb5f36f262596efb69d608e31ecbcfd25a78b97971da995e",
+          "eofKeyrefFailurePreservedOutputs": true,
+          "validation": {
+            "valid": true,
+            "rulesValidated": true,
+            "recordCount": 20000,
+            "groupCount": 5000,
+            "detailCount": 10000,
+            "totals": {
+              "amount": "1500.00"
+            },
+            "uniqueKeyRules": 1,
+            "xsdValidated": true
+          }
+        },
+        {
+          "mode": "python-engine",
+          "passed": true,
+          "groupsAudited": 5000,
+          "detailsAudited": 10000,
+          "physicalRecords": 20000,
+          "sourceBytes": 289450,
+          "executionSeconds": 5.7355,
+          "sha256": "f95b245ffd0126bbcb5f36f262596efb69d608e31ecbcfd25a78b97971da995e",
+          "eofKeyrefFailurePreservedOutputs": true,
+          "validation": {
+            "valid": true,
+            "rulesValidated": true,
+            "recordCount": 20000,
+            "groupCount": 5000,
+            "detailCount": 10000,
+            "totals": {
+              "amount": "1500.00"
+            },
+            "uniqueKeyRules": 1,
+            "xsdValidated": true
+          }
+        }
+      ],
+      "limitations": "Synthetic local functional/bulk audit. Execution timing excludes archive startup/cleanup and audit passes; not a memory/soak benchmark."
+    },
+    "productionBuild": "Passed npm run build, including help fingerprints, renderer licenses, TypeScript and Vite",
+    "diffCheck": "Passed",
+    "backendTests": {
+      "passed": 93,
+      "tests": 93,
+      "failed": 0,
+      "elapsedSeconds": 53.958
+    }
+  }
+}

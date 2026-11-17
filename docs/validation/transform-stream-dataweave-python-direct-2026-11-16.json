@@ -1,0 +1,13 @@
+{
+  "family": "dataweave",
+  "mode": "python-direct",
+  "passed": true,
+  "records": 100000,
+  "elapsedSeconds": 28.18800000002375,
+  "deadlineSeconds": 600,
+  "actualInterpreterIdentified": true,
+  "baselineRssMiB": 28.0625,
+  "peakRssMiB": 37.88671875,
+  "scope": "Start -> streamed transform with source/target schema validation -> End; generated archive startup/import, output readback and cleanup included",
+  "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak"
+}

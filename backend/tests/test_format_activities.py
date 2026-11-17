@@ -357,9 +357,9 @@ class ArchiveFormatTests(unittest.TestCase):
             ('json', {'document':'{"row":[{"id":7,"name":"Ann"}]}','style':'JSON with Root'},
              {'schemaId':root,'schemaType':'XSD','inputMappings':{'jsonString':'${input.document}'}},
              {'schemaId':root,'schemaType':'XSD','inputMappings':{'formatOptions.jsonStyle':'${input.style}'}}, 'jsonString','{"records":{"row":[{"id":7,"name":"Ann"}]}}'),
-            ('flat', {'document':'7;Ann\n','separator':';','finalNewline':False},
-             {'dataFormatId':data,'inputMappings':{'text':'${input.document}','formatOptions.delimiter':'${input.separator}'}},
-             {'dataFormatId':data,'inputMappings':{'formatOptions.includeFinalLineSeparator':'${input.finalNewline}'}}, 'text','7|Ann'),
+            ('flat', {'document':'7;Ann\n','separator':';','finalNewline':False,'validate':True},
+             {'dataFormatId':data,'inputMappings':{'text':'${input.document}','formatOptions.delimiter':'${input.separator}','formatOptions.validateOutput':'${input.validate}'}},
+             {'dataFormatId':data,'inputMappings':{'formatOptions.includeFinalLineSeparator':'${input.finalNewline}','formatOptions.validateInput':'${input.validate}'}}, 'text','7|Ann'),
         ]
         for kind, payload, parse, render, output, expected_text in cases:
             with self.subTest(kind=kind):

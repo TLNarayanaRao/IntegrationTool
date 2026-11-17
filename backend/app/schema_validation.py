@@ -51,7 +51,7 @@ def _offline_schema(uri):
     raise NoSuchResource(ref=uri)
 
 
-def schema_errors(value, schema):
+def schema_errors(value, schema, registry=None):
     """Never retrieve schema URLs during validation; API refs are bundled first."""
     if isinstance(schema, str):
         try: schema = json.loads(schema)
@@ -71,7 +71,7 @@ def schema_errors(value, schema):
         validator_type=_cached_validator_type(jsonschema.validators.validator_for(schema))
     token=_VALIDATION_BUDGET.set([time.monotonic(),0])
     try:
-        validator = validator_type(schema, registry=Registry(retrieve=_offline_schema),format_checker=jsonschema.FormatChecker())
+        validator = validator_type(schema, registry=registry if registry is not None else Registry(retrieve=_offline_schema),format_checker=jsonschema.FormatChecker())
         errors=[]
         for error in validator.iter_errors(value):
             errors.append(f"{'.'.join(map(str,error.absolute_path)) or '$'}: {error.message}")

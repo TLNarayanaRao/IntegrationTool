@@ -1,0 +1,72 @@
+{
+  "date": "2026-11-16",
+  "compatibility": {
+    "permissiveFixedRendering": "Truncation retained; enable strict mode to prevent data loss",
+    "headerNames": "Case sensitive; legacy unmatched-header positional fallback retained outside strict mode",
+    "strictRendering": "Missing/extra fields rejected when strict mode enabled",
+    "xsdValidationDefault": "Off for existing Data activities"
+  },
+  "scope": "Aggregation/reconciliation gaps and Parse Data/Render Data functional review",
+  "limitations": [
+    "Data activities model flat records; use Mapper for hierarchy changes",
+    "Malformed quoting stops parsing; Continue on record errors handles column/type conversion errors",
+    "Returned batches and rendered output are materialized; use bounded batch sizes",
+    "Functional checks, not a new concurrency or long-duration soak",
+    "XSD requiring a row may reject empty batches; validation applies before permissive fixed-width text truncation"
+  ],
+  "fixes": [
+    "Lexical decimal equality for large JSON numeric snapshots and JSON Diff",
+    "Normalized integral numeric extrema in aggregation",
+    "Header type binding by declared field name, including reordered columns",
+    "Strict field-set checks for delimited, multi-character and fixed rendering",
+    "Leading sign retained during numeric zero-fill",
+    "Automatic cursor invalidation for layout, types and validation changes",
+    "Explicit rejection of unknown layout options and invalid field names",
+    "Opt-in full XSD record validation exposed in Studio and dynamic Input mappings"
+  ],
+  "verification": {
+    "executionModes": [
+      "Run",
+      "Debug",
+      "direct Python archive",
+      "engine Python archive"
+    ],
+    "initialFocusedTests": {
+      "passed": 58,
+      "tests": 58
+    },
+    "finalFocusedTests": {
+      "passed": 74,
+      "tests": 74,
+      "elapsedSeconds": 64.52,
+      "failed": 0
+    },
+    "recordCases": [
+      "Large scientific-notation number equals integral JSON value",
+      "Large-number minimum/maximum normalization",
+      "Generated and standalone XSLT parity",
+      "Existing record function regressions"
+    ],
+    "dataFlowCases": [
+      "Reordered header with XSD validation",
+      "Invalid positiveInteger rejected",
+      "Dynamic validation disabled permits invalid facet",
+      "Imported Data Format and packaged XSD imports/includes"
+    ],
+    "studioHelp": {
+      "webPages": 415,
+      "status": "Regenerated",
+      "developerGuidePdfPages": 346,
+      "documentationPdfPages": 679
+    },
+    "frontendTests": {
+      "passed": 27,
+      "tests": 27,
+      "note": "Rerun after help regeneration; initial test read the stale pre-regeneration source map",
+      "failed": 0
+    },
+    "productionBuild": "Passed npm run build, including documentation fingerprints, renderer licenses, TypeScript and Vite",
+    "diffCheck": "Passed"
+  },
+  "passed": true
+}

@@ -1,0 +1,13 @@
+{
+  "mode": "python-engine",
+  "passed": true,
+  "inputRecordsPerSide": 100000,
+  "uniqueJoinedRecordsVerified": 100000,
+  "elapsedSeconds": 5.327999999979511,
+  "deadlineSeconds": 600,
+  "baselineRssMiB": 53.07421875,
+  "sampledPeakRssMiB": 456.7109375,
+  "actualInterpreterIdentified": true,
+  "scope": "Start -> one bulk Mapper joinRecords -> End; archive generation/startup/IPC, full output audit and cleanup included",
+  "limitations": "Bulk collection processing, not per-message orchestration or a long-duration memory soak"
+}

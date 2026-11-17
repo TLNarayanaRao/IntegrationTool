@@ -1,0 +1,13 @@
+{
+  "mode": "run",
+  "passed": true,
+  "inputRecordsPerSide": 100000,
+  "uniqueJoinedRecordsVerified": 100000,
+  "elapsedSeconds": 4.0939999999827705,
+  "deadlineSeconds": 600,
+  "baselineRssMiB": 105.55078125,
+  "sampledPeakRssMiB": 287.93359375,
+  "actualInterpreterIdentified": true,
+  "scope": "Start -> one bulk Mapper joinRecords -> End; archive generation/startup/IPC, full output audit and cleanup included",
+  "limitations": "Bulk collection processing, not per-message orchestration or a long-duration memory soak"
+}

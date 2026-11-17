@@ -1,0 +1,69 @@
+{
+  "passed": true,
+  "scope": "Indexed schema planning plus Start -> Mapper -> End; every mapped value audited",
+  "fields": 2000,
+  "planningSeconds": 0.070459,
+  "candidateComparisons": 2000,
+  "results": [
+    {
+      "mode": "run",
+      "passed": true,
+      "fieldsAudited": 2000,
+      "elapsedSeconds": 0.027328
+    },
+    {
+      "mode": "debug",
+      "passed": true,
+      "fieldsAudited": 2000,
+      "elapsedSeconds": 0.027825
+    },
+    {
+      "mode": "python-direct",
+      "passed": true,
+      "fieldsAudited": 2000,
+      "elapsedSeconds": 0.789327
+    },
+    {
+      "mode": "python-engine",
+      "passed": true,
+      "fieldsAudited": 2000,
+      "elapsedSeconds": 1.452183
+    }
+  ],
+  "limitations": "Functional/bulk-field audit; not a UI interaction latency measurement or long-duration soak; editor interaction clicks were not exercised by metadata/rendering tests",
+  "date": "2026-11-16",
+  "functionalVerification": {
+    "backendFocusedTests": 10,
+    "passed": true,
+    "editorTests": 6,
+    "preview": true,
+    "run": true,
+    "debug": true,
+    "pythonDirect": true,
+    "pythonEngine": true,
+    "targetSchemaValidation": true,
+    "generatedXsltScalarCopies": true,
+    "existingLoopReusePreservesAuthoredValuesAllModes": true,
+    "duplicatePrimaryLoopsProtected": true
+  },
+  "backendSuite": {
+    "tests": 712,
+    "skipped": 11,
+    "errors": 0,
+    "passed": true,
+    "elapsedSeconds": 367.998
+  },
+  "editorAndHelp": {
+    "tests": 21,
+    "passed": true
+  },
+  "finalMapperRegression": {
+    "tests": 34,
+    "passed": true
+  },
+  "studioBuild": {
+    "typescript": true,
+    "production": true,
+    "helpFingerprints": true
+  }
+}

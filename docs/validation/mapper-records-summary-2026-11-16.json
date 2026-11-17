@@ -1,0 +1,107 @@
+{
+  "limits": {
+    "metricNameCharacters": 128,
+    "inputOutputBytes": 8388608,
+    "keyPointers": 16,
+    "sumAverageSignificantDigits": 1000,
+    "rowsPerInputArray": 100000,
+    "metrics": 16
+  },
+  "verification": {
+    "frontendTests": {
+      "failed": 0,
+      "passed": 27
+    },
+    "latestRecordTests": {
+      "failed": 0,
+      "passed": 7
+    },
+    "standaloneXslt": "Saxon subprocess without MINA imports/callbacks",
+    "completeFlows": [
+      "Start -> Mapper -> End",
+      "Start -> End generic Input expressions",
+      "Start -> script importing mina::Records -> End",
+      "Generated XSLT -> End",
+      "Manual downloaded XSLT -> End"
+    ],
+    "productionBuild": "Passed npm run build: documentation fingerprints, renderer licenses, TypeScript and Vite",
+    "studioHelp": {
+      "developerGuidePdfPages": 346,
+      "documentationPdfPages": 678,
+      "status": "Regenerated",
+      "webPages": 415,
+      "functionTopics": 113
+    },
+    "checks": [
+      "stable ordering",
+      "typed composite keys",
+      "decimal sums",
+      "tiny scientific-notation values",
+      "duplicate and missing keys",
+      "empty/null metrics",
+      "invalid numeric types",
+      "atomic failure and non-mutation",
+      "8 MiB output expansion",
+      "generated binding reopen"
+    ],
+    "executionModes": [
+      "Run",
+      "Debug",
+      "direct Python archive",
+      "engine Python archive"
+    ],
+    "broaderMapperRegression": {
+      "elapsedSeconds": 159.684,
+      "tests": 119,
+      "failed": 0,
+      "note": "Includes previous Mapper functions, archive parity, XML/generated bindings and Transformer semantics. Latest 7-test record suite separately verifies the final script-import flow.",
+      "passed": 119
+    },
+    "diffCheck": "Passed"
+  },
+  "scope": "Mapper record aggregation and snapshot reconciliation",
+  "capabilities": {
+    "reconcileRecords": {
+      "uniqueCompleteKeysRequired": true,
+      "outputs": [
+        "inserted",
+        "updated",
+        "deleted",
+        "unchanged"
+      ],
+      "durableState": false,
+      "writesApplied": false,
+      "updatedEnvelope": [
+        "key",
+        "before",
+        "after"
+      ]
+    },
+    "aggregateRecords": {
+      "operations": [
+        "count",
+        "sum",
+        "average",
+        "min",
+        "max"
+      ],
+      "allMissingNumericMetrics": {
+        "max": null,
+        "min": null,
+        "average": null,
+        "sum": 0
+      },
+      "compositeKeys": true,
+      "stableGroupOrder": true,
+      "missingNullMetricValues": "ignored"
+    }
+  },
+  "limitations": [
+    "Materialized collections; not a constant-memory stream or durable CDC engine",
+    "JSON numeric output precision applies; monetary rounding is explicit",
+    "Functional checks; no new UI latency benchmark or long-duration soak performed"
+  ],
+  "additionalFix": "Standalone XSLT JSON number parsing accepts scientific notation without converting through binary floating point",
+  "date": "2026-11-16",
+  "passed": true
+}

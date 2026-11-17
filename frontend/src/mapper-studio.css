@@ -42,3 +42,16 @@
 }
 .mapper-xml-preferences{display:flex;flex-wrap:wrap;gap:8px 16px;padding:0 18px 10px}
 .mapper-xml-preferences label{display:flex;align-items:center;gap:6px}
+.mapper-plan-review{border:1px solid #4b8dba;border-radius:8px;padding:10px;margin-bottom:12px;background:var(--panel-bg,#102b3a)}
+.mapper-plan-review header{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}
+.mapper-plan-review p{margin:8px 0;overflow-wrap:anywhere}
+.mapper-plan-rows{max-height:35dvh;overflow:auto;margin-top:10px}
+.mapper-plan-rows article{display:flex;flex-direction:column;gap:5px;padding:9px 0;border-bottom:1px solid #326075;overflow-wrap:anywhere}
+.mapper-plan-rows article>div{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.mapper-plan-rows code{white-space:pre-wrap}
+.mapper-plan-warning{color:#ffc2b8;background:#4b1720;padding:6px}
+.mapper-plan-engine{font-size:11px;color:#a8c4d6}
+.mapper-vocabulary{padding:0 18px 12px}
+.mapper-vocabulary>div{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.mapper-vocabulary input{min-width:0;max-width:100%;flex:1}
+.mapper-toolbar input:not([type=checkbox]){min-width:80px;width:150px;max-width:100%}

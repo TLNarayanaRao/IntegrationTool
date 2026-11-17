@@ -80,8 +80,8 @@ def lookup(path: str, ctx: Context) -> Any:
     if head == 'properties' and rest in ctx.properties:
         return ctx.properties[rest]
     value = {'input': ctx.input, 'last': ctx.last, 'properties': ctx.properties,
-             'vars': ctx.variables, 'activities': ctx.outputs}.get(head)
-    if head not in {'input', 'last', 'properties', 'vars', 'activities'}:
+             'vars': ctx.variables, 'activities': ctx.outputs, 'attributes': ctx.attributes}.get(head)
+    if head not in {'input', 'last', 'properties', 'vars', 'activities', 'attributes'}:
         if head in ctx.outputs: value = ctx.outputs[head].get('output')
         else: raise KeyError(f'Unknown expression root: {head}')
     for part in rest.split('.') if rest else []:
@@ -121,7 +121,7 @@ def mapping_expression(value: Any) -> Any:
 
 def mapping_document(ctx: Context) -> dict:
     return {**(ctx.last if isinstance(ctx.last, dict) else {}), 'input': ctx.input,
-            'last': ctx.last, 'properties': ctx.properties, 'vars': ctx.variables, 'activities': ctx.outputs}
+            'last': ctx.last, 'properties': ctx.properties, 'vars': ctx.variables, 'activities': ctx.outputs, 'attributes': ctx.attributes}
 
 
 def boundary_value(values, wrapper, fallback):
@@ -277,7 +277,7 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
         and ctx.transport.get('listenerKey')
     )
     ignored_confirm_handles = {'ackId', 'ackIds', 'acknowledgementHandle'} if sap_early_confirm else set()
-    literal_keys = {'targetSchema', 'targetSchemaText', 'sourceSchemaText', 'schemaText', '_dataFormatText', 'interfaceSchemaText', 'lookupTables', 'testCases', 'templateHistory', 'contractBaseline', 'xmlSource', 'xmlStylesheet', 'xmlNamespaces', 'xmlVariables', 'sourceTypeOverrides', 'sourceCoercions', 'xmlSchemaDocuments'}
+    literal_keys = {'script', 'libraries', 'outputs', 'sourceSchema', 'targetSchema', 'targetSchemaText', 'sourceSchemaText', 'schemaText', '_dataFormatText', 'interfaceSchemaText', 'lookupTables', 'testCases', 'templateHistory', 'contractBaseline', 'xmlSource', 'xmlStylesheet', 'xmlNamespaces', 'xmlVariables', 'sourceTypeOverrides', 'sourceCoercions', 'xmlSchemaDocuments'}
     static_config = {
         key: value for key, value in raw.items()
         if key not in literal_keys and key not in {'inputMappings', 'mappings', 'customFunctions'} and key not in ignored_confirm_handles
@@ -385,6 +385,11 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
     # CAPABILITY basic END
     # CAPABILITY mapper START
     if kind == 'mapper':
+        if retry_boolean(cfg.get('streamEnabled', False)):
+            from .native.transform_engine import execute_activity_async
+            from .config import SCHEMAS
+            plan = await execute_activity_async({**cfg, 'mappings': mapping_expression(raw.get('mappings') or [])}, ctx.last, ctx.attributes, ctx.variables, [vars(a) | {'id': key} for key, a in SCHEMAS.items()], kind='mapper', mapping_context=mapping_document(ctx))
+            return plan['output']
         from .native.mapper import execute_async as execute_mapping_async
         mappings = raw.get('mappings') or []
         rules = [{'target': key, 'source': value} for key, value in mappings.items()] if isinstance(mappings, dict) else mappings
@@ -419,7 +424,7 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
         from .config import SCHEMAS
         cfg['_formatSchemaAssets'] = [(asset.source_path or asset.name, asset.content) for asset in SCHEMAS.values()
                                       if (asset.source_path or asset.name).lower().endswith('.xsd')]
-        return activities.data_activity(kind, operation, cfg, ctx.last, ctx.format_cursors, activity_id)
+        return await activities.data_activity_async(kind, operation, cfg, ctx.last, ctx.format_cursors, activity_id)
     # CAPABILITY data_formats END
     # CAPABILITY excel START
     if kind == 'excel':
@@ -461,17 +466,12 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
     # CAPABILITY http_response END
     # CAPABILITY dataweave START
     if kind == 'dataweave':
-        from .native.dataweave import execute as transform
-        transformed = await asyncio.to_thread(transform, str(cfg.get('script') or '%dw 2.0\noutput application/json\n---\npayload'),
-                                                payload=cfg.get('payload', ctx.last), attributes=cfg.get('attributes', ctx.attributes),
-                                                variables={**ctx.variables, **(cfg.get('variables') or {})}, input_mime_type=str(cfg.get('inputMimeType') or ''))
-        target = str(cfg.get('outputTarget') or 'payload').lower()
-        if target == 'attributes': ctx.attributes = transformed
-        elif target == 'variable':
-            variable = str(cfg.get('outputVariable') or 'transformResult').strip()
-            if not variable: raise ValueError('A variable output target requires a variable name')
-            ctx.variables[variable] = transformed
-        return transformed
+        from .native.transform_engine import execute_activity_async
+        from .config import SCHEMAS
+        plan = await execute_activity_async(cfg, ctx.last, ctx.attributes, ctx.variables, [vars(a) | {'id': key} for key, a in SCHEMAS.items()])
+        if plan['attributesChanged']: ctx.attributes = plan['attributes']
+        ctx.variables.update(plan['variables'])
+        return plan['output']
     # CAPABILITY dataweave END
     # CAPABILITY python START
     if kind == 'python':

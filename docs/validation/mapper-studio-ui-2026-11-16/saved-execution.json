@@ -1,0 +1,435 @@
+{
+  "passed": true,
+  "scope": "Actual browser-saved rules; complete flows; every output value audited",
+  "results": [
+    {
+      "mode": "run",
+      "task": "nested",
+      "passed": true,
+      "output": {
+        "firstName": "Ada",
+        "tags": [
+          "fast",
+          "safe"
+        ],
+        "orders": [
+          {
+            "id": 1,
+            "lines": [
+              {
+                "productCode": "A",
+                "quantity": 2
+              },
+              {
+                "productCode": "B",
+                "quantity": 3
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "lines": [
+              {
+                "productCode": "C",
+                "quantity": 4
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "mode": "run",
+      "task": "ambiguous",
+      "passed": true,
+      "output": {
+        "id": 22
+      }
+    },
+    {
+      "mode": "run",
+      "task": "existing",
+      "passed": true,
+      "output": {
+        "firstName": "Authored",
+        "tags": [
+          "fast",
+          "safe"
+        ],
+        "orders": [
+          {
+            "id": 99,
+            "lines": [
+              {
+                "productCode": "A",
+                "quantity": 2
+              },
+              {
+                "productCode": "B",
+                "quantity": 3
+              }
+            ]
+          },
+          {
+            "id": 99,
+            "lines": [
+              {
+                "productCode": "C",
+                "quantity": 4
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "mode": "run",
+      "task": "ui-run",
+      "passed": true,
+      "output": {
+        "firstName": "Ada",
+        "tags": [
+          "fast",
+          "safe"
+        ],
+        "orders": [
+          {
+            "id": 1,
+            "lines": [
+              {
+                "productCode": "A",
+                "quantity": 2
+              },
+              {
+                "productCode": "B",
+                "quantity": 3
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "lines": [
+              {
+                "productCode": "C",
+                "quantity": 4
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "mode": "debug",
+      "task": "nested",
+      "passed": true,
+      "output": {
+        "firstName": "Ada",
+        "tags": [
+          "fast",
+          "safe"
+        ],
+        "orders": [
+          {
+            "id": 1,
+            "lines": [
+              {
+                "productCode": "A",
+                "quantity": 2
+              },
+              {
+                "productCode": "B",
+                "quantity": 3
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "lines": [
+              {
+                "productCode": "C",
+                "quantity": 4
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "mode": "debug",
+      "task": "ambiguous",
+      "passed": true,
+      "output": {
+        "id": 22
+      }
+    },
+    {
+      "mode": "debug",
+      "task": "existing",
+      "passed": true,
+      "output": {
+        "firstName": "Authored",
+        "tags": [
+          "fast",
+          "safe"
+        ],
+        "orders": [
+          {
+            "id": 99,
+            "lines": [
+              {
+                "productCode": "A",
+                "quantity": 2
+              },
+              {
+                "productCode": "B",
+                "quantity": 3
+              }
+            ]
+          },
+          {
+            "id": 99,
+            "lines": [
+              {
+                "productCode": "C",
+                "quantity": 4
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "mode": "python-direct",
+      "task": "nested",
+      "passed": true,
+      "output": {
+        "firstName": "Ada",
+        "tags": [
+          "fast",
+          "safe"
+        ],
+        "orders": [
+          {
+            "id": 1,
+            "lines": [
+              {
+                "productCode": "A",
+                "quantity": 2
+              },
+              {
+                "productCode": "B",
+                "quantity": 3
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "lines": [
+              {
+                "productCode": "C",
+                "quantity": 4
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "mode": "python-direct",
+      "task": "ambiguous",
+      "passed": true,
+      "output": {
+        "id": 22
+      }
+    },
+    {
+      "mode": "python-direct",
+      "task": "existing",
+      "passed": true,
+      "output": {
+        "firstName": "Authored",
+        "tags": [
+          "fast",
+          "safe"
+        ],
+        "orders": [
+          {
+            "id": 99,
+            "lines": [
+              {
+                "productCode": "A",
+                "quantity": 2
+              },
+              {
+                "productCode": "B",
+                "quantity": 3
+              }
+            ]
+          },
+          {
+            "id": 99,
+            "lines": [
+              {
+                "productCode": "C",
+                "quantity": 4
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "mode": "python-direct",
+      "task": "ui-run",
+      "passed": true,
+      "output": {
+        "firstName": "Ada",
+        "tags": [
+          "fast",
+          "safe"
+        ],
+        "orders": [
+          {
+            "id": 1,
+            "lines": [
+              {
+                "productCode": "A",
+                "quantity": 2
+              },
+              {
+                "productCode": "B",
+                "quantity": 3
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "lines": [
+              {
+                "productCode": "C",
+                "quantity": 4
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "mode": "python-engine",
+      "task": "nested",
+      "passed": true,
+      "output": {
+        "firstName": "Ada",
+        "tags": [
+          "fast",
+          "safe"
+        ],
+        "orders": [
+          {
+            "id": 1,
+            "lines": [
+              {
+                "productCode": "A",
+                "quantity": 2
+              },
+              {
+                "productCode": "B",
+                "quantity": 3
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "lines": [
+              {
+                "productCode": "C",
+                "quantity": 4
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "mode": "python-engine",
+      "task": "ambiguous",
+      "passed": true,
+      "output": {
+        "id": 22
+      }
+    },
+    {
+      "mode": "python-engine",
+      "task": "existing",
+      "passed": true,
+      "output": {
+        "firstName": "Authored",
+        "tags": [
+          "fast",
+          "safe"
+        ],
+        "orders": [
+          {
+            "id": 99,
+            "lines": [
+              {
+                "productCode": "A",
+                "quantity": 2
+              },
+              {
+                "productCode": "B",
+                "quantity": 3
+              }
+            ]
+          },
+          {
+            "id": 99,
+            "lines": [
+              {
+                "productCode": "C",
+                "quantity": 4
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "mode": "python-engine",
+      "task": "ui-run",
+      "passed": true,
+      "output": {
+        "firstName": "Ada",
+        "tags": [
+          "fast",
+          "safe"
+        ],
+        "orders": [
+          {
+            "id": 1,
+            "lines": [
+              {
+                "productCode": "A",
+                "quantity": 2
+              },
+              {
+                "productCode": "B",
+                "quantity": 3
+              }
+            ]
+          },
+          {
+            "id": 2,
+            "lines": [
+              {
+                "productCode": "C",
+                "quantity": 4
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "limitations": "Synthetic local data; functional verification, not a service soak or latency benchmark"
+}

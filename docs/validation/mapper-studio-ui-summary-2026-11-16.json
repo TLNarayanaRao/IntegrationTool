@@ -1,0 +1,585 @@
+{
+  "date": "2026-11-16",
+  "scope": "AI Mapper supported-browser retest and actual browser-saved complete-flow execution",
+  "verification": {
+    "browserConsoleErrors": 0,
+    "diffCheck": "Passed",
+    "savedFlowExecutions": {
+      "allOutputValuesMatched": true,
+      "debug": 3,
+      "pythonEngine": 4,
+      "pythonDirect": 4,
+      "run": 4
+    },
+    "backendRegression": {
+      "correctedRetest": {
+        "elapsedSeconds": 11.228,
+        "setting": "MINA_BW613_HOME points to bw/6.13",
+        "failed": 0,
+        "passed": 4
+      },
+      "initialRun": {
+        "elapsedSeconds": 424.27,
+        "cause": "MINA_BW613_HOME incorrectly set to installation root; optional sample ZIPs not found",
+        "skipped": 11,
+        "errors": 4,
+        "passed": 698
+      },
+      "passedAfterTargetedSetupCorrection": 702,
+      "productFailures": 0,
+      "skipped": 11,
+      "tests": 713
+    },
+    "frontendRegressionTests": {
+      "failed": 0,
+      "passed": 26
+    },
+    "warning": "Existing Vite bundle-size warning remains; not an AI Mapper test failure",
+    "productionBuild": "Passed npm run build, including documentation fingerprints, licenses, TypeScript and Vite",
+    "studioHelp": "Regenerated web help plus both PDF manuals",
+    "focusedBackendTests": {
+      "failed": 0,
+      "passed": 34
+    }
+  },
+  "fixes": [
+    "Nested JSON sample schema children now visible",
+    "Generated source references accepted by Input validation",
+    "Mixed bare/wrapped nested selectors preserved by preview",
+    "Changed or undone rules and sample data clear cached output; stale requests cancelled"
+  ],
+  "evidence": [
+    "mapper-studio-ui-2026-11-16/existing-mappings.jpg",
+    "mapper-studio-ui-2026-11-16/short-window-large-font.jpg",
+    "mapper-studio-ui-2026-11-16/studio-run.jpg",
+    "mapper-studio-ui-2026-11-16/studio-debug.jpg"
+  ],
+  "limitations": [
+    "Synthetic isolated project, no external service credentials",
+    "Functional checks; not a long-duration soak or UI latency benchmark",
+    "Scheduler starter Debug events verified interactively; subtask Debug outputs audited by execution script"
+  ],
+  "execution": {
+    "passed": true,
+    "scope": "Actual browser-saved rules; complete flows; every output value audited",
+    "results": [
+      {
+        "mode": "run",
+        "task": "nested",
+        "passed": true,
+        "output": {
+          "firstName": "Ada",
+          "tags": [
+            "fast",
+            "safe"
+          ],
+          "orders": [
+            {
+              "id": 1,
+              "lines": [
+                {
+                  "productCode": "A",
+                  "quantity": 2
+                },
+                {
+                  "productCode": "B",
+                  "quantity": 3
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "lines": [
+                {
+                  "productCode": "C",
+                  "quantity": 4
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "mode": "run",
+        "task": "ambiguous",
+        "passed": true,
+        "output": {
+          "id": 22
+        }
+      },
+      {
+        "mode": "run",
+        "task": "existing",
+        "passed": true,
+        "output": {
+          "firstName": "Authored",
+          "tags": [
+            "fast",
+            "safe"
+          ],
+          "orders": [
+            {
+              "id": 99,
+              "lines": [
+                {
+                  "productCode": "A",
+                  "quantity": 2
+                },
+                {
+                  "productCode": "B",
+                  "quantity": 3
+                }
+              ]
+            },
+            {
+              "id": 99,
+              "lines": [
+                {
+                  "productCode": "C",
+                  "quantity": 4
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "mode": "run",
+        "task": "ui-run",
+        "passed": true,
+        "output": {
+          "firstName": "Ada",
+          "tags": [
+            "fast",
+            "safe"
+          ],
+          "orders": [
+            {
+              "id": 1,
+              "lines": [
+                {
+                  "productCode": "A",
+                  "quantity": 2
+                },
+                {
+                  "productCode": "B",
+                  "quantity": 3
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "lines": [
+                {
+                  "productCode": "C",
+                  "quantity": 4
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "mode": "debug",
+        "task": "nested",
+        "passed": true,
+        "output": {
+          "firstName": "Ada",
+          "tags": [
+            "fast",
+            "safe"
+          ],
+          "orders": [
+            {
+              "id": 1,
+              "lines": [
+                {
+                  "productCode": "A",
+                  "quantity": 2
+                },
+                {
+                  "productCode": "B",
+                  "quantity": 3
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "lines": [
+                {
+                  "productCode": "C",
+                  "quantity": 4
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "mode": "debug",
+        "task": "ambiguous",
+        "passed": true,
+        "output": {
+          "id": 22
+        }
+      },
+      {
+        "mode": "debug",
+        "task": "existing",
+        "passed": true,
+        "output": {
+          "firstName": "Authored",
+          "tags": [
+            "fast",
+            "safe"
+          ],
+          "orders": [
+            {
+              "id": 99,
+              "lines": [
+                {
+                  "productCode": "A",
+                  "quantity": 2
+                },
+                {
+                  "productCode": "B",
+                  "quantity": 3
+                }
+              ]
+            },
+            {
+              "id": 99,
+              "lines": [
+                {
+                  "productCode": "C",
+                  "quantity": 4
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "mode": "python-direct",
+        "task": "nested",
+        "passed": true,
+        "output": {
+          "firstName": "Ada",
+          "tags": [
+            "fast",
+            "safe"
+          ],
+          "orders": [
+            {
+              "id": 1,
+              "lines": [
+                {
+                  "productCode": "A",
+                  "quantity": 2
+                },
+                {
+                  "productCode": "B",
+                  "quantity": 3
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "lines": [
+                {
+                  "productCode": "C",
+                  "quantity": 4
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "mode": "python-direct",
+        "task": "ambiguous",
+        "passed": true,
+        "output": {
+          "id": 22
+        }
+      },
+      {
+        "mode": "python-direct",
+        "task": "existing",
+        "passed": true,
+        "output": {
+          "firstName": "Authored",
+          "tags": [
+            "fast",
+            "safe"
+          ],
+          "orders": [
+            {
+              "id": 99,
+              "lines": [
+                {
+                  "productCode": "A",
+                  "quantity": 2
+                },
+                {
+                  "productCode": "B",
+                  "quantity": 3
+                }
+              ]
+            },
+            {
+              "id": 99,
+              "lines": [
+                {
+                  "productCode": "C",
+                  "quantity": 4
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "mode": "python-direct",
+        "task": "ui-run",
+        "passed": true,
+        "output": {
+          "firstName": "Ada",
+          "tags": [
+            "fast",
+            "safe"
+          ],
+          "orders": [
+            {
+              "id": 1,
+              "lines": [
+                {
+                  "productCode": "A",
+                  "quantity": 2
+                },
+                {
+                  "productCode": "B",
+                  "quantity": 3
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "lines": [
+                {
+                  "productCode": "C",
+                  "quantity": 4
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "mode": "python-engine",
+        "task": "nested",
+        "passed": true,
+        "output": {
+          "firstName": "Ada",
+          "tags": [
+            "fast",
+            "safe"
+          ],
+          "orders": [
+            {
+              "id": 1,
+              "lines": [
+                {
+                  "productCode": "A",
+                  "quantity": 2
+                },
+                {
+                  "productCode": "B",
+                  "quantity": 3
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "lines": [
+                {
+                  "productCode": "C",
+                  "quantity": 4
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "mode": "python-engine",
+        "task": "ambiguous",
+        "passed": true,
+        "output": {
+          "id": 22
+        }
+      },
+      {
+        "mode": "python-engine",
+        "task": "existing",
+        "passed": true,
+        "output": {
+          "firstName": "Authored",
+          "tags": [
+            "fast",
+            "safe"
+          ],
+          "orders": [
+            {
+              "id": 99,
+              "lines": [
+                {
+                  "productCode": "A",
+                  "quantity": 2
+                },
+                {
+                  "productCode": "B",
+                  "quantity": 3
+                }
+              ]
+            },
+            {
+              "id": 99,
+              "lines": [
+                {
+                  "productCode": "C",
+                  "quantity": 4
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "mode": "python-engine",
+        "task": "ui-run",
+        "passed": true,
+        "output": {
+          "firstName": "Ada",
+          "tags": [
+            "fast",
+            "safe"
+          ],
+          "orders": [
+            {
+              "id": 1,
+              "lines": [
+                {
+                  "productCode": "A",
+                  "quantity": 2
+                },
+                {
+                  "productCode": "B",
+                  "quantity": 3
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "lines": [
+                {
+                  "productCode": "C",
+                  "quantity": 4
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "limitations": "Synthetic local data; functional verification, not a service soak or latency benchmark"
+  },
+  "passed": true,
+  "browser": {
+    "browser": "Supported ChatGPT in-app Chromium browser",
+    "url": "http://127.0.0.1:8879/",
+    "syntheticIsolatedProject": "mapper-ui-retest",
+    "checks": [
+      {
+        "scenario": "sample-edit-invalidates-preview",
+        "passed": true
+      },
+      {
+        "scenario": "ambiguity-blocked-until-explicit-shipping-choice",
+        "output": {
+          "id": 22
+        },
+        "inputValidationAlerts": 0,
+        "passed": true
+      },
+      {
+        "scenario": "existing-loop-filled-without-changing-authored-values",
+        "passed": true,
+        "output": {
+          "firstName": "Authored",
+          "tags": [
+            "fast",
+            "safe"
+          ],
+          "orders": [
+            {
+              "id": 99,
+              "lines": [
+                {
+                  "productCode": "A",
+                  "quantity": 2
+                },
+                {
+                  "productCode": "B",
+                  "quantity": 3
+                }
+              ]
+            },
+            {
+              "id": 99,
+              "lines": [
+                {
+                  "productCode": "C",
+                  "quantity": 4
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "scenario": "undo-restores-original-three-rules-and-clears-result",
+        "passed": true
+      },
+      {
+        "scenario": "studio-toolbar-run",
+        "passed": true,
+        "observed": "Timer -> Call-Nested -> Nested-Repeats Mapper -> End completed; execution logs show both jobs completed"
+      },
+      {
+        "scenario": "studio-toolbar-debug",
+        "passed": true,
+        "observed": "Timer event received; entered Nested-Repeats; Mapper and End completed; Debug job completed"
+      },
+      {
+        "scenario": "nested-repeats",
+        "passed": true,
+        "observed": "Two orders, three nested line items, scalar array tags; every generated value checked"
+      },
+      {
+        "scenario": "preview-invalidated-on-undo-and-rule-edit",
+        "passed": true,
+        "observed": "Cleared output and requested retest; edit disabled Undo"
+      },
+      {
+        "scenario": "popup-viewport",
+        "passed": true,
+        "viewports": [
+          "1280x720 at 100%",
+          "1024x600 at 150%"
+        ],
+        "observed": "Close and footer actions reachable; content scrolls"
+      }
+    ]
+  }
+}

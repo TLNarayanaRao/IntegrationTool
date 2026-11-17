@@ -1,0 +1,87 @@
+{
+  "browser": "Supported ChatGPT in-app Chromium browser",
+  "url": "http://127.0.0.1:8879/",
+  "syntheticIsolatedProject": "mapper-ui-retest",
+  "checks": [
+    {
+      "scenario": "sample-edit-invalidates-preview",
+      "passed": true
+    },
+    {
+      "scenario": "ambiguity-blocked-until-explicit-shipping-choice",
+      "output": {
+        "id": 22
+      },
+      "inputValidationAlerts": 0,
+      "passed": true
+    },
+    {
+      "scenario": "existing-loop-filled-without-changing-authored-values",
+      "passed": true,
+      "output": {
+        "firstName": "Authored",
+        "tags": [
+          "fast",
+          "safe"
+        ],
+        "orders": [
+          {
+            "id": 99,
+            "lines": [
+              {
+                "productCode": "A",
+                "quantity": 2
+              },
+              {
+                "productCode": "B",
+                "quantity": 3
+              }
+            ]
+          },
+          {
+            "id": 99,
+            "lines": [
+              {
+                "productCode": "C",
+                "quantity": 4
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "scenario": "undo-restores-original-three-rules-and-clears-result",
+      "passed": true
+    },
+    {
+      "scenario": "studio-toolbar-run",
+      "passed": true,
+      "observed": "Timer -> Call-Nested -> Nested-Repeats Mapper -> End completed; execution logs show both jobs completed"
+    },
+    {
+      "scenario": "studio-toolbar-debug",
+      "passed": true,
+      "observed": "Timer event received; entered Nested-Repeats; Mapper and End completed; Debug job completed"
+    },
+    {
+      "scenario": "nested-repeats",
+      "passed": true,
+      "observed": "Two orders, three nested line items, scalar array tags; every generated value checked"
+    },
+    {
+      "scenario": "preview-invalidated-on-undo-and-rule-edit",
+      "passed": true,
+      "observed": "Cleared output and requested retest; edit disabled Undo"
+    },
+    {
+      "scenario": "popup-viewport",
+      "passed": true,
+      "viewports": [
+        "1280x720 at 100%",
+        "1024x600 at 150%"
+      ],
+      "observed": "Close and footer actions reachable; content scrolls"
+    }
+  ]
+}

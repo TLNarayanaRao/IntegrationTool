@@ -78,6 +78,12 @@ def data_activity(kind: str, operation: str, cfg: dict, payload: Any, cursors=No
     return execute_format(kind,operation,cfg,payload,cursors,activity_id)
 
 
+async def data_activity_async(kind,operation,cfg,payload,cursors=None,activity_id=None):
+    from .native.data_formats import run_format_async
+    return await run_format_async(kind,operation,{**cfg,'operation':operation},
+                                  {'last':payload,'formatCursors':cursors,'context':{'activityId':activity_id}})
+
+
 def excel_read(cfg: dict) -> dict:
     try: from openpyxl import load_workbook
     except ImportError as error: raise RuntimeError('Excel Read requires the optional openpyxl package') from error

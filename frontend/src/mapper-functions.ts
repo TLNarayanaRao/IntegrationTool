@@ -1,6 +1,6 @@
 export type MapperFunctionDefinition = {
   name: string;
-  category: "String" | "Date & Time" | "Number" | "Comparison" | "Collection" | "Conversion" | "General" | "Encoding";
+  category: "String" | "Date & Time" | "Number" | "Comparison" | "Collection" | "Conversion" | "General" | "Encoding" | "Document" | "Privacy";
   signature: string;
   description: string;
   template: string;
@@ -10,6 +10,16 @@ export type MapperFunctionDefinition = {
 const fn = (category: MapperFunctionDefinition["category"], name: string, signature: string, description: string, template: string, pipeline = name): MapperFunctionDefinition => ({ category, name, signature, description, template, pipeline });
 
 export const mapperFunctionCatalog: MapperFunctionDefinition[] = [
+  fn("Collection", "reconcileRecords", "reconcileRecords(before, after, keys)", "Compare uniquely keyed snapshots and return inserted, updated (key/before/after), deleted and unchanged records. Reject missing/null/duplicate keys; preserves snapshot order. Does not apply database writes.", 'reconcileRecords($value, ${input.after}, ["/id"])', 'reconcileRecords([], ["/id"])'),
+  fn("Collection", "aggregateRecords", "aggregateRecords(records, keys, metrics)", "Group by composite JSON Pointer keys and calculate named count/sum/average/min/max metrics. Returns key/count/values per group. Missing/null metric values are ignored; numeric text must be converted explicitly.", 'aggregateRecords($value, ["/region"], [{"name":"total","op":"sum","path":"/amount"}])', 'aggregateRecords(["/region"], [{"name":"total","op":"sum","path":"/amount"}])'),
+  fn("Document", "jsonPointer", "jsonPointer(document, pointer, default?)", "Select an exact JSON Pointer path (RFC 6901), including escaped keys and array indices. A supplied default handles missing values.", 'jsonPointer($value, "/customer/id")', 'jsonPointer("/customer/id")'),
+  fn("Document", "jsonPatch", "jsonPatch(document, operations)", "Apply add/remove/replace/move/copy/test atomically (RFC 6902), including root removal and recreation. A root left removed returns null; the Mapper null policy applies. Available in generated XSLT 3.0 too.", 'jsonPatch($value, ${input.patch})', 'jsonPatch([])'),
+  fn("Document", "jsonMergePatch", "jsonMergePatch(document, patch)", "Apply JSON Merge Patch (RFC 7396): null removes object members; arrays and scalar values replace the target.", 'jsonMergePatch($value, ${input.patch})', 'jsonMergePatch({})'),
+  fn("Document", "jsonDiff", "jsonDiff(before, after)", "Generate a deterministic JSON Patch from two values. Arrays are replaced as a whole.", 'jsonDiff($value, ${input.after})', 'jsonDiff({})'),
+  fn("Collection", "joinRecords", "joinRecords(left, right, leftKeys, rightKeys, mode?)", "Indexed inner/left/right/full/semi/anti join with composite JSON Pointer keys. Missing or null keys do not match.", 'joinRecords($value, ${input.right}, ["/id"], ["/id"], "left")', 'joinRecords([], ["/id"], ["/id"], "left")'),
+  fn("Collection", "deduplicateRecords", "deduplicateRecords(records, keys, keep?)", "Keep the first or last record for composite JSON Pointer keys. Unkeyed records are retained and input order is stable.", 'deduplicateRecords($value, ["/id"], "first")', 'deduplicateRecords(["/id"], "first")'),
+  fn("Privacy", "redactKeys", "redactKeys(document, fieldNames, replacement?)", "Recursively replace explicitly named fields, case-insensitively, including nested arrays. Default replacement is [REDACTED].", 'redactKeys($value, ["password", "token"])', 'redactKeys(["password", "token"])'),
+  fn("Privacy", "maskText", "maskText(text, visibleSuffix?, marker?)", "Mask text while retaining a chosen suffix; defaults to four visible characters. This is masking, not encryption.", 'maskText($value, 4, "*")', 'maskText(4, "*")'),
   fn("String", "concat", "concat(value, …values)", "Concatenate two or more values.", "concat($value, \"\")"),
   fn("String", "trim", "trim(value)", "Remove leading and trailing whitespace.", "trim($value)"),
   fn("String", "normalizeSpace", "normalizeSpace(value)", "Trim and collapse repeated whitespace.", "normalizeSpace($value)"),

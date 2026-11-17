@@ -450,7 +450,9 @@ def _run_xml_worker(payload, timeout, name):
     if getattr(sys, 'frozen', False):
         command = [sys.executable, '--mina-xslt-worker']
     else:
-        package_root = Path(__file__).parents[len(__package__.split('.'))]
+        # Archives may be imported through a relative ZIP path. The worker runs
+        # in a different temporary directory, so its import root must be absolute.
+        package_root = Path(__file__).resolve().parents[len(__package__.split('.'))]
         bootstrap = (f'import sys; sys.path.insert(0, {str(package_root)!r}); '
                      f'from {__name__} import xslt_worker; sys.exit(xslt_worker())')
         command = [sys.executable, '-I', '-c', bootstrap]
@@ -473,7 +475,7 @@ def _run_xml_worker(payload, timeout, name):
 
 def _transform_xslt2(root, binding, timeout, parameters):
     request = [etree.tostring(root, encoding='unicode'), etree.tostring(binding, encoding='unicode'), parameters]
-    return parse_xml(_run_xml_worker(request, timeout, 'XSLT 2.0').decode('utf-8'))
+    return parse_xml(_run_xml_worker(request, timeout, 'XSLT ' + binding.get('version')).decode('utf-8'))
 
 
 def xslt_worker():
@@ -517,8 +519,8 @@ def xslt_worker():
 def transform_xml(root, stylesheet, timeout=30, variables=None, *, properties=None, element_variables=False):
     binding = parse_xml(stylesheet)
     version = binding.get('version')
-    if binding.tag not in (XSL + 'stylesheet', XSL + 'transform') or version not in ('1.0', '2.0'):
-        raise ValueError('Mapper binding requires an XSLT 1.0 or 2.0 stylesheet')
+    if binding.tag not in (XSL + 'stylesheet', XSL + 'transform') or version not in ('1.0', '2.0', '3.0'):
+        raise ValueError('Mapper binding requires an XSLT 1.0, 2.0 or 3.0 stylesheet')
     parameters = {}
     for name, value in (variables or {}).items():
         if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z_][\w.-]*', name):
@@ -532,7 +534,7 @@ def transform_xml(root, stylesheet, timeout=30, variables=None, *, properties=No
         elif isinstance(value, float): parameters[name] = ('float', value)
         elif isinstance(value, str): parameters[name] = ('string', value)
         else: raise ValueError(f'XSLT parameter {name!r} requires XML or a scalar value')
-    if version == '2.0':
+    if version in ('2.0', '3.0'):
         _bw_xslt_functions(binding, properties or {}, parameters)
         return _transform_xslt2(root, binding, timeout, parameters)
     transform = etree.XSLT(binding, regexp=False, access_control=etree.XSLTAccessControl.DENY_ALL,

@@ -6,6 +6,7 @@ import re
 
 from .mapper import flatten_schema
 from .mapper_xml import XSL, etree, parse_xml
+from .mapper_document_xslt import NAMES as DOCUMENT_FUNCTIONS, NS as DOCUMENT_NAMESPACES, install as install_document_functions, literal as document_literal
 
 
 META = 'urn:mina:mapper:binding:1'
@@ -128,6 +129,8 @@ def generate_binding(mappings, schema='', source_schema='', *, preferences=None,
     fields, namespace, qualified = _contract(schema, 'target')
     source_fields, source_namespace, source_qualified = _contract(source_schema, 'source')
     nsmap = {'xsl': XSL[1:-1], 'mina': META}
+    document_functions = any(re.search(r'\b' + name + r'\b', json.dumps(mappings).replace('-', ''), re.I) for name in DOCUMENT_FUNCTIONS)
+    if document_functions: nsmap.update(DOCUMENT_NAMESPACES)
     if preferences is not None:
         if not isinstance(preferences, dict) or any(key not in {'implicitExistence', 'omitOptionalNil', 'copyNil'}
                                                     or not isinstance(value, bool) for key, value in preferences.items()):
@@ -143,12 +146,13 @@ def generate_binding(mappings, schema='', source_schema='', *, preferences=None,
         for prefix, uri in {'tib': BW_FUNCTIONS, 'bw': BW_RUNTIME_FUNCTIONS}.items():
             if any(prefix + ':' in formula for formula in formulae):
                 nsmap[prefix] = uri
-    binding = etree.Element(XSL + 'stylesheet', nsmap=nsmap, version='2.0',
+    binding = etree.Element(XSL + 'stylesheet', nsmap=nsmap, version='3.0' if document_functions else '2.0',
                             attrib={'exclude-result-prefixes': ' '.join(prefix for prefix in nsmap if prefix != 'xsl')})
     metadata = etree.SubElement(binding, f'{{{META}}}rules')
     metadata.text = json.dumps({'mappings': mappings, 'schema': schema, 'sourceSchema': source_schema,
                                **({'preferences': preferences} if preferences is not None else {})},
                                ensure_ascii=True, allow_nan=False)
+    if document_functions: install_document_functions(binding)
     template = etree.SubElement(binding, XSL + 'template', match='/')
     active = []
     for rule in mappings:
@@ -218,7 +222,7 @@ def generate_binding(mappings, schema='', source_schema='', *, preferences=None,
         copy = rule['operator'] == 'copy-of'
         if len(target_parts) < 2 or (target, occurrence) in loops or rule.get('functions') or copy and 'constant' in rule:
             raise ValueError(f'{target}: loop generation requires a unique repeating child element')
-        if fields and not any(field.get('repeating') and field['path'].startswith(target + '.') for field in fields.values()):
+        if fields and not any(field.get('repeating') and (field['path'].startswith(target + '.') or copy and field['path']==target) for field in fields.values()):
             raise ValueError(f'{target}: select a repeating element from the target XSD')
         parent_target, parent = enclosing(target_parts, rule.get('parentOccurrenceId') if rule.get('duplicateOf') else occurrence)
         raw_path = rule.get('source') if copy else rule.get('select') or rule.get('source')
@@ -236,7 +240,7 @@ def generate_binding(mappings, schema='', source_schema='', *, preferences=None,
             if depth == len(path):
                 raise ValueError(f'{target}: nested loops need a child source or current-group()')
             selection = selector(path, depth, alias)
-        if source_fields and not any(field.get('repeating') and field['path'].startswith('.'.join(path) + '.') for field in source_fields.values()):
+        if source_fields and not any(field.get('repeating') and (field['path'].startswith('.'.join(path) + '.') or copy and field['path']=='.'.join(path)) for field in source_fields.values()):
             raise ValueError(f'{target}: select a repeating source XML element')
         grouped = rule['operator'] == 'for-each-group'
         variant = {}
@@ -285,6 +289,9 @@ def generate_binding(mappings, schema='', source_schema='', *, preferences=None,
             return 'zero-or-one(' + selector(parts, relative_start, alias) + ')'
 
         def value(source):
+            if isinstance(source, (dict, list)):
+                if not document_functions: raise ValueError(f'{target}: JSON literals require a document-function binding')
+                return document_literal(source)
             if source is None or source in ('', 'null', '()'):
                 return '()'
             if isinstance(source, (bool, int, float)):
@@ -295,6 +302,23 @@ def generate_binding(mappings, schema='', source_schema='', *, preferences=None,
                 return _quoted_literal(source)
             if isinstance(source, str) and re.fullmatch(r'[+-]?\d+(?:\.\d+)?', source):
                 return source
+            call = re.fullmatch(r'([A-Za-z][\w-]*)\((.*)\)', str(source), re.S)
+            if call and call[1].lower().replace('-', '') in DOCUMENT_FUNCTIONS:
+                from .mapper import _function_arguments
+                args = _function_arguments(call[2])
+                if not args: raise ValueError(f'{target}: document function requires an input')
+                return "md:call(" + _literal(call[1].lower().replace('-', '')) + ', ' + value(args[0]) + ', [' + ', '.join(value(arg) for arg in args[1:]) + '])'
+            if call and call[1] in FUNCTIONS:
+                from .mapper import _function_arguments
+                args = _function_arguments(call[2])
+                if len(args) != 1: raise ValueError(f'{target}: {call[1]} requires one argument')
+                argument = value(args[0])
+                if document_functions: argument = 'md:text(' + argument + ')'
+                return FUNCTIONS[call[1]].format(argument)
+            if isinstance(source, str) and source.startswith(('[', '{')) and not source.startswith('${'):
+                if not document_functions: raise ValueError(f'{target}: JSON literals require a document-function binding')
+                try: return document_literal(json.loads(source))
+                except (ValueError, TypeError) as exc: raise ValueError(f'{target}: invalid JSON literal') from exc
             if isinstance(source, str) and source.startswith('xpath1('):
                 raise ValueError(f'{target}: an XPath 1.0 quick fix requires visual mapping execution')
             if isinstance(source, str) and source.startswith(('xpath(', 'xpath2(')) and source.endswith(')'):
@@ -327,10 +351,23 @@ def generate_binding(mappings, schema='', source_schema='', *, preferences=None,
         guard = 'exists(' + expression + ')'
         if _legacy and not operator:
             guard = expression[len('zero-or-one('):-1] if expression.startswith('zero-or-one(') else None
+        document_value = 'md:call(' in raw_expression
         for function in rule.get('functions', []):
+            name = function if isinstance(function, str) else function.get('name', '') if isinstance(function, dict) else ''
+            key = str(name).lower().replace('-', '')
+            if key in DOCUMENT_FUNCTIONS:
+                args = function.get('args', []) if isinstance(function, dict) else []
+                if not isinstance(args, list): raise ValueError(f'{target}: function arguments must be an array')
+                expression = 'md:call(' + _literal(key) + ', ' + expression + ', [' + ', '.join(
+                    value(arg) if isinstance(arg, str) and arg.startswith('${') else document_literal(arg) for arg in args) + '])'
+                document_value = True
+                continue
             if not isinstance(function, str) or function not in FUNCTIONS:
                 raise ValueError(f'{target}: unsupported binding function {function!r}')
+            if document_value: expression = 'md:text(' + expression + ')'
             expression = FUNCTIONS[function].format(expression)
+            document_value = False
+        if document_value: expression = 'md:text(' + expression + ')'
         destination[None] = (expression, guard, raw_expression, operator)
     if len(tree) != 1:
         raise ValueError('Map elements under a single XML document root')
@@ -403,8 +440,8 @@ def generate_binding(mappings, schema='', source_schema='', *, preferences=None,
 
 def reopen_binding(stylesheet):
     binding = parse_xml(stylesheet)
-    if binding.tag not in (XSL + 'stylesheet', XSL + 'transform') or binding.get('version') not in ('1.0', '2.0'):
-        raise ValueError('Select an XSLT 1.0 or 2.0 binding')
+    if binding.tag not in (XSL + 'stylesheet', XSL + 'transform') or binding.get('version') not in ('1.0', '2.0', '3.0'):
+        raise ValueError('Select an XSLT 1.0, 2.0 or 3.0 binding')
     metadata = binding.find(f'{{{META}}}rules')
     if metadata is None:
         return {'xmlStylesheet': stylesheet}

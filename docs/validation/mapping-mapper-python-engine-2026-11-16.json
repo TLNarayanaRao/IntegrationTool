@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "records": 100000,
+  "uniquePayloadsVerified": 100000,
+  "elapsedSeconds": 18.610592400014866,
+  "recordsPerSecond": 5373.284087395312,
+  "exceptionType": null,
+  "normalRunDebugLogEntries": 0,
+  "scope": "Complete task orchestration, Mapper, validation and cleanup; archive generation/startup/IPC where applicable",
+  "family": "mapper",
+  "mode": "python-engine",
+  "targetRecords": 100000,
+  "deadlineSeconds": 600.0,
+  "workers": 4,
+  "batchSize": 1000,
+  "approximatePayloadBytes": 1024,
+  "sharedStudioRuntime": false,
+  "archiveProcesses": 4
+}

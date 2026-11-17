@@ -39,7 +39,7 @@ class CompleteFlowHarnessTests(unittest.TestCase):
     def test_run_and_debug_execute_every_mapping_and_loop_transition(self):
         module = load()
         with tempfile.TemporaryDirectory() as folder, redirect_stdout(io.StringIO()):
-            for family in ('mapper', 'kafka', 'jms', 'pubsub'):
+            for family in ('mapper', 'transformer', 'kafka', 'jms', 'pubsub'):
                 for mode in ('run', 'debug'):
                     args = argparse.Namespace(family=family, mode=mode, records=19, deadline=30,
                         workers=2, batch_size=5, payload_bytes=1024, diagnostics=folder)

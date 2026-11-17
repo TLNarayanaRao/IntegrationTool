@@ -1,5 +1,5 @@
 """Shared XML, JSON and delimited/fixed data activities for every runtime."""
-import base64, codecs, csv, io, json, re, math
+import base64, codecs, csv, io, json, re, math, asyncio
 from itertools import islice, takewhile
 import threading
 from functools import lru_cache
@@ -77,12 +77,13 @@ def format_xml(content, pretty, default_namespace, cdata_paths):
 
 XSI_NIL = '{http://www.w3.org/2001/XMLSchema-instance}nil'
 JSON_KIND = '{urn:mina:json-conversion}kind'
-FORMAT_FIELDS = frozenset('format delimiter separatorRule lineSeparator lineEnding header fields fieldTypes widths fieldOffsets lineLength fillCharacter strictColumns trimValues skipBlankLines blankLinePolicy includeFinalLineSeparator rootElement recordElement schemaId fileEncoding'.split())
+FORMAT_FIELDS = frozenset('format delimiter separatorRule lineSeparator lineEnding header fields fieldTypes widths fieldOffsets lineLength fillCharacter strictColumns trimValues skipBlankLines blankLinePolicy includeFinalLineSeparator rootElement recordElement schemaId fileEncoding nestedRecords fieldPaths maxRecordLines quoteRecovery groupRecords recordLayouts wholeFileValidation wholeFileXsd wholeFileRules'.split())
 FORMAT_INPUT_OPTIONS = FORMAT_FIELDS - {'schemaId'} | frozenset(
     'forceEncoding encoding cdataElements validateInput validateOutput suppressXmlDeclaration prettyPrint disablePrettyPrint '
     'formatUsingDefaultNamespacePrefix jsonStyle rootStyle badgerfish useNullForEmptyValues useEmptyValuesForNull '
     'emptyToNull inferPrimitiveTypes ignoreAdditionalJsonFields duplicateKeyPolicy omitNulls indent asciiOnly '
-    'manualStartRecord continueOnError'.split())
+    'manualStartRecord continueOnError nestedRecords fieldPaths streaming streamBatchSize streamMaxBatchBytes '
+    'streamMaxRecordBytes maxRecordLines quoteRecovery groupRecords recordLayouts wholeFileValidation wholeFileXsd wholeFileRules'.split())
 
 
 def xml_from_value(name, value, shape=None, *, badger=False, ignore=False, namespaces=None, tree_input=False, generic=False):
@@ -695,24 +696,45 @@ class DataFormats:
             except (ValueError, TypeError, KeyError) as error:
                 raise MinaFault('Select a Data Format JSON asset with a dataFormat object', fault_type='BadDataFormatException') from error
             cfg = {**{key: value for key, value in shared.items() if key in FORMAT_FIELDS}, **cfg}
+        from .data_stream import execute_stream, paths_for, nest_record, flatten_record, logical_rows, integer, json_value, schema_columns
+        if not self.as_bool(cfg.get('streaming')) and not cfg.get('_inStream') and any(self.as_bool(cfg.get(key)) for key in ('groupRecords','wholeFileValidation','wholeFileXsd')):
+            raise ValueError('Grouping and whole-file validation require streaming mode')
+        if self.as_bool(cfg.get('streaming')): return execute_stream(self,cfg,ctx)
         source, delimiter = cfg.get('text', cfg.get('Text', cfg.get('records', cfg.get('Rows', cfg.get('source', ctx['last']))))), str(cfg.get('delimiter', ','))
         parsing = cfg.get('operation') == 'parse'
+        nested = self.as_bool(cfg.get('nestedRecords'))
         fixed = str(cfg.get('format', 'delimited')).lower() in ('fixed', 'fixed width')
+        if str(cfg.get('format', 'delimited')).lower() not in ('delimited', 'fixed', 'fixed width'):
+            raise ValueError('Unknown Data format; select delimited or fixed')
+        if str(cfg.get('separatorRule', 'single')).lower() not in ('single', 'any-character'):
+            raise ValueError('Unknown column separator rule')
         if not fixed and (not delimiter or any(char in delimiter for char in '\r\n"')): raise ValueError('Invalid column separator')
         fields = [item.strip() for item in str(cfg.get('fields') or '').split(',') if item.strip()]
+        if len(set(fields)) != len(fields): raise ValueError('Data field names must be unique')
+        if cfg.get('fields') and any(not item.strip() for item in str(cfg['fields']).split(',')):
+            raise ValueError('Data field names must not be empty')
         schema = self.configured_schema(cfg, ctx)
         bundle = self.schema_bundle(cfg, ctx, schema)
         types = [item.strip().lower() for item in str(cfg.get('fieldTypes', '')).split(',') if item.strip()]
         if schema and (not fields or not types):
-            schema_fields, schema_types = self.schema_leaf_fields(schema, bundle, cfg.get('rootElement') or '')
+            if nested:
+                shape = cfg.get('_recordShape') or (xsd_shape(schema,cfg.get('rootElement') or '',bundle) if isinstance(schema,str) and schema.lstrip().startswith('<') else json.loads(schema) if isinstance(schema,str) else schema)
+                schema_fields,schema_types,schema_paths = schema_columns(shape,'' if cfg.get('_recordShape') else cfg.get('recordElement') or '',unwrap=not bool(cfg.get('_recordShape')))
+                if not cfg.get('fieldPaths'): cfg={**cfg,'fieldPaths':{name:path for name,path in schema_paths.items() if not fields or name in fields}}
+            else: schema_fields, schema_types = self.schema_leaf_fields(cfg.get('_recordShape') or schema, bundle, cfg.get('rootElement') or '')
             fields = fields or schema_fields
             if not types and schema_types:
                 lookup = dict(zip(schema_fields, schema_types))
                 types = [lookup.get(field, 'string').lower() for field in fields]
+        field_type_indexes = {name: index for index, name in enumerate(fields)}
         line_ending = {'lf':'\n','crlf':'\r\n','cr':'\r','auto':'\n'}.get(str(cfg.get('lineSeparator', cfg.get('lineEnding', 'Auto'))).lower(), str(cfg.get('lineEnding', '\n')))
-        def typed(value, index):
+        if cfg.get('lineSeparator') not in (None, '') and str(cfg['lineSeparator']).lower() not in ('lf','crlf','cr','auto'):
+            raise ValueError('Unknown line separator; select Auto, LF, CRLF or CR')
+        if line_ending not in ('\n', '\r\n', '\r'): raise ValueError('Unsupported data line ending')
+        def typed(value, index, name=None):
             value = value.strip() if self.as_bool(cfg.get('trimValues', True)) else value
-            kind = types[index] if index < len(types) else 'string'
+            type_index = field_type_indexes.get(name, index)
+            kind = types[type_index] if type_index < len(types) else 'string'
             if value == '': return None if kind not in ('string','text') else ''
             if kind in ('integer','int','long'): return int(value)
             if kind in ('decimal','number','float','double'):
@@ -722,8 +744,11 @@ class DataFormats:
             if kind in ('boolean','bool'):
                 if value.lower() not in ('true','1','yes','y','false','0','no','n'):raise ValueError('Invalid boolean field: '+value)
                 return value.lower() in ('true','1','yes','y')
+            if kind == 'json': return json_value(value)
             return value
         def parsed_xml_result(records, names, errors, done, next_record):
+            if cfg.get('_streamRecordsOnly') and not self.as_bool(cfg.get('validateOutput' if parsing else 'validateInput')):
+                return {'records':records,'ErrorRows':{'error':errors},'done':done,'nextRecord':next_record,'fields':names}
             from xml.etree import ElementTree
             def xml_name(value, fallback):
                 normalized = re.sub(r'[^A-Za-z0-9_.-]+', '_', str(value or fallback))
@@ -740,13 +765,31 @@ class DataFormats:
             if shape and schema_record_name == record_name and shape.get('xml', {}).get('name') == root_name:
                 xml = etree.tostring(xml_from_value(root_name, {record_name: records}, shape, tree_input=True), encoding='unicode')
             else:
-                root = ElementTree.Element(root_name)
-                for record in records:
-                    item = ElementTree.SubElement(root, record_name)
-                    for key, value in record.items():
-                        child = ElementTree.SubElement(item, xml_name(key, 'field'))
-                        if value is not None: child.text = str(value).lower() if isinstance(value, bool) else str(value)
-                xml = ElementTree.tostring(root, encoding='unicode')
+                if nested:
+                    def xml_safe(value):
+                        if isinstance(value,dict):
+                            mapped={}
+                            for key,child in value.items():
+                                name=xml_name(key,'field')
+                                if name in mapped: raise ValueError('Nested JSON keys collide after XML name normalization')
+                                mapped[name]=xml_safe(child)
+                            return mapped
+                        if isinstance(value,list): return [xml_safe(child) for child in value]
+                        return value
+                    xml = etree.tostring(xml_from_value(root_name,{record_name:xml_safe(records)},tree_input=True),encoding='unicode')
+                else:
+                    root = ElementTree.Element(root_name)
+                    for record in records:
+                        item = ElementTree.SubElement(root, record_name)
+                        for key, value in record.items():
+                            child = ElementTree.SubElement(item, xml_name(key, 'field'))
+                            if value is not None: child.text = str(value).lower() if isinstance(value, bool) else str(value)
+                    xml = ElementTree.tostring(root, encoding='unicode')
+            flag = 'validateOutput' if parsing else 'validateInput'
+            if self.as_bool(cfg.get(flag)):
+                if not isinstance(schema, str) or not schema.lstrip().startswith('<'):
+                    raise MinaFault('Data record validation requires a selected XSD', fault_type='ValidationException')
+                self.validate_xml_document(xml, schema, bundle)
             return {
                 'mediaType': 'application/xml', 'xml': xml, 'xmlString': xml,
                 'root': root_name, 'value': {record_name: records},
@@ -756,6 +799,8 @@ class DataFormats:
                 **({'fields': names} if names else {}),
             }
         if fixed:
+            fill_value = str(cfg.get('fillCharacter',' ') or ' ')
+            if len(fill_value)!=1 or fill_value in '\r\n': raise ValueError('Fixed fill character must be one non-newline character')
             if cfg.get('fieldOffsets'):
                 offsets = [tuple(map(int, part.split(':'))) for part in str(cfg['fieldOffsets']).split(',')]
             else:
@@ -791,6 +836,8 @@ class DataFormats:
             automatic = state is not None and activity and cfg.get('startRecord') in (None,'') and not self.as_bool(cfg.get('manualStartRecord')) and limit >= 0
             start = int(cfg.get('startRecord') or 0)
             if start < 0: raise ValueError('Start record must be a zero-based nonnegative record offset')
+            blank_policy = str(cfg.get('blankLinePolicy') or ('Skip' if self.as_bool(cfg.get('skipBlankLines'), True) else 'Stop')).lower()
+            if blank_policy not in ('skip', 'stop', 'keep'): raise ValueError('Unknown blank line policy')
             try:
                 if file_mode:
                     path = Path(str(file_path)).expanduser()
@@ -800,13 +847,16 @@ class DataFormats:
                 else:
                     identity, handle = content, io.StringIO(content, newline='')
             except FileNotFoundError as error: raise MinaFault(str(error), fault_type='FileNotFoundException') from error
-            blank_policy = str(cfg.get('blankLinePolicy') or ('Skip' if self.as_bool(cfg.get('skipBlankLines'), True) else 'Stop')).lower()
             header = not fixed and self.as_bool(cfg.get('header'), True)
-            key = (identity, fixed, delimiter, cfg.get('separatorRule'), header_chars, header, blank_policy, tuple(fields))
+            key = (identity, fixed, delimiter, cfg.get('separatorRule'), header_chars, header, blank_policy, tuple(fields),
+                   tuple(types), tuple(offsets) if fixed else (), width_total if fixed else 0, line_ending,
+                   self.as_bool(cfg.get('trimValues', True)), cfg.get('fillCharacter'), self.as_bool(cfg.get('strictColumns')),
+                   self.as_bool(cfg.get('continueOnError')), self.as_bool(cfg.get('validateOutput')), schema,
+                   nested,json.dumps(cfg.get('fieldPaths'),sort_keys=True),cfg.get('quoteRecovery'),cfg.get('maxRecordLines'),cfg.get('streamMaxRecordBytes'))
             previous = state.get(activity) if automatic else None
             if previous and previous[0] != key: previous = None
             if previous: start = previous[1]
-            seekable = fixed or len(delimiter) == 1
+            seekable = True
             with handle:
                 if previous and previous[4]:
                     return parsed_xml_result([], previous[3], [], True, start)
@@ -818,38 +868,45 @@ class DataFormats:
                     chunk = handle.read(min(remaining, 65536))
                     if not chunk: break
                     remaining -= len(chunk)
-                raw_lines = []
                 continue_on_error = self.as_bool(cfg.get('continueOnError'))
-                if fixed:
-                    rows = (line.rstrip('\r\n') for line in iter(handle.readline, ''))
-                elif len(delimiter) == 1:
-                    def record_lines():
-                        for line in iter(handle.readline, ''):
-                            raw_lines.append(line)
-                            yield line
-                    reader = csv.reader(record_lines() if continue_on_error else iter(handle.readline, ''), delimiter=delimiter, strict=True)
-                    def csv_rows():
-                        while True:
-                            raw_lines.clear()
-                            row = next(reader, None)
-                            if row is None: return
-                            yield row
-                    rows = csv_rows() if continue_on_error else reader
-                else:
-                    text = handle.read(64*1024**2+1)
-                    if len(text) > 64*1024**2: raise ValueError('Multi-character data input exceeds the 64 MiB limit')
-                    rows = self.delimited_rows(text, delimiter, str(cfg.get('separatorRule','single')).lower()=='any-character')
-                if blank_policy == 'skip': rows = filter(bool, rows)
-                elif blank_policy == 'stop': rows = takewhile(bool, rows)
-                names = previous[3] if resume else next(rows, fields) if header else fields
+                recovery = str(cfg.get('quoteRecovery') or 'bounded').lower()
+                if recovery not in ('bounded','physical-line'): raise ValueError('Unknown quote recovery mode')
+                maximum = integer(cfg.get('streamMaxRecordBytes'),64*1024**2,64*1024**2)
+                rows = logical_rows(handle,delimiter,str(cfg.get('separatorRule','single')).lower()=='any-character',fixed,maximum,
+                                    integer(cfg.get('maxRecordLines'),1000,10000),recovery,continue_on_error,self.delimited_rows)
+                if blank_policy == 'skip': rows = (row for row in rows if row.error or row.values)
+                elif blank_policy == 'stop': rows = takewhile(lambda row: bool(row.error or row.values), rows)
+                position = handle.tell()
+                if resume: names = previous[3]
+                elif header:
+                    head = next(rows,None)
+                    if head and head.error: raise ValueError('Invalid Data header: '+head.error)
+                    names = head.values if head else fields
+                    if head: position = head.position
+                else: names = fields
                 if not names: raise ValueError('Parse Data requires header fields or configured field names')
+                if len(names)>10000: raise ValueError('Data layout exceeds 10000 columns')
+                if any(not str(name).strip() for name in names): raise ValueError('Data header field names must not be empty')
                 if len(set(names)) != len(names): raise ValueError('Data field names must be unique')
+                if header and fields and self.as_bool(cfg.get('strictColumns')) and set(names) != set(fields):
+                    raise ValueError('Header fields do not match configured field names')
                 if not resume: rows = islice(rows, start, None)
-                records, errors, consumed = [], [], 0
+                paths = paths_for(names,cfg.get('fieldPaths')) if nested else None
+                records, errors, consumed, used_bytes = [], [], 0, 0
                 strict = self.as_bool(cfg.get('strictColumns'))
-                for row in (rows if limit == -1 else islice(rows, limit)):
+                done = False
+                for token in (rows if limit == -1 else islice(rows, limit)):
+                    if callable(ctx.get('_formatCancelled')) and ctx['_formatCancelled'](): raise ValueError('Data processing cancelled')
+                    size = len(token.raw.encode('utf-8'))
+                    if consumed and cfg.get('_maxBatchBytes') and used_bytes+size > cfg['_maxBatchBytes']:
+                        break
+                    used_bytes += size
                     consumed += 1
+                    previous_position = position
+                    position = token.position
+                    row = token.values
                     try:
+                        if token.error: raise ValueError(token.error)
                         if fixed:
                             if strict and len(row) != width_total: raise ValueError(f'Fixed-width line length {len(row)} does not match {width_total}')
                             record = {}
@@ -858,20 +915,25 @@ class DataFormats:
                                 if index<len(types) and types[index] in ('integer','int','long','decimal','number','float','double'):
                                     value=value.lstrip(fill) or ('0' if fill=='0' else '')
                                 else:value=value.rstrip(fill)
-                                record[name]=typed(value,index)
+                                record[name]=typed(value,index,name)
                         else:
                             if strict and len(row) != len(names): raise ValueError(f'Column count {len(row)} does not match schema field count {len(names)}')
-                            record = {name: typed(row[index] if index < len(row) else '', index) for index, name in enumerate(names)}
+                            record = {name: typed(row[index] if index < len(row) else '', index, name) for index, name in enumerate(names)}
+                        record = nest_record(record,paths) if nested else record
+                        record_size = len(json.dumps(record,ensure_ascii=False,allow_nan=False,separators=(',',':')).encode('utf-8'))
+                        if record_size>maximum: raise ValueError('Parsed record exceeds byte limit')
+                        used_bytes+=max(0,record_size-size)
+                        if consumed>1 and cfg.get('_maxBatchBytes') and used_bytes>cfg['_maxBatchBytes']:
+                            consumed-=1;position=previous_position;break
                         records.append(record)
                     except ValueError as error:
                         if not continue_on_error: raise
-                        raw = row if fixed else ''.join(raw_lines).rstrip('\r\n') if raw_lines else delimiter.join(row)
-                        errors.append({'recordNumber': start + consumed, 'message': str(error), 'raw': raw})
-                position = handle.tell() if seekable and automatic else None
-                try: done = next(rows, None) is None
-                except (csv.Error, ValueError):
-                    if limit < 0 or consumed != limit: raise
-                    done = False  # Surface malformed data when the next batch actually reads it.
+                        errors.append({'recordNumber': start + consumed, 'message': str(error), 'raw': token.raw})
+                else:
+                    try: done = next(rows, None) is None
+                    except ValueError:
+                        if limit < 0 or consumed != limit: raise
+                        done = False
             result = parsed_xml_result(records, names, errors, done, start + consumed)
             if automatic: state[activity] = (key, start + consumed, position, names, done)
             return result
@@ -885,13 +947,32 @@ class DataFormats:
                 if isinstance(nested, list): source = nested
         records = source if isinstance(source, list) else [source]
         if any(not isinstance(record, dict) for record in records): raise ValueError('Render Data requires record objects')
+        names = fields or list(records[0].keys() if records else [])
+        if self.as_bool(cfg.get('validateInput')): parsed_xml_result(records, names, [], True, len(records))
+        if nested:
+            paths = paths_for(names,cfg.get('fieldPaths'))
+            records = [flatten_record(record,paths,self.as_bool(cfg.get('strictColumns'))) for record in records]
+        serialized_records = []
+        for record in records:
+            rendered = dict(record)
+            for name,value in record.items():
+                index = field_type_indexes.get(name,-1)
+                if index >= 0 and index < len(types) and types[index] == 'json':
+                    rendered[name] = json.dumps(value,ensure_ascii=False,allow_nan=False,separators=(',',':'))
+            serialized_records.append(rendered)
+        records = serialized_records
+        if self.as_bool(cfg.get('strictColumns')) and any(set(record) != set(names) for record in records):
+            raise ValueError('Rendered record fields do not match configured field names')
         if fixed:
             fill = str(cfg.get('fillCharacter', ' ') or ' ')[0]
             def fixed_field(record, name, width, index):
                 value = '' if record.get(name) is None else str(record.get(name))
+                if '\r' in value or '\n' in value: raise ValueError('Fixed-width fields cannot contain line breaks')
                 if self.as_bool(cfg.get('strictColumns',False)) and len(value)>width:raise ValueError('Value exceeds fixed field width: '+name)
                 value = value[:width]
-                return value.rjust(width, fill) if index < len(types) and types[index] in ('integer','int','long','decimal','number','float','double') else value.ljust(width, fill)
+                if index < len(types) and types[index] in ('integer','int','long','decimal','number','float','double'):
+                    return value.zfill(width) if fill == '0' and value else value.rjust(width, fill)
+                return value.ljust(width, fill)
             def fixed_line(record):
                 line = [fill] * width_total
                 for index, (name, (begin, end)) in enumerate(zip(fields, offsets)):
@@ -900,7 +981,6 @@ class DataFormats:
             content = line_ending.join(fixed_line(record) for record in records)
             if self.as_bool(cfg.get('includeFinalLineSeparator', False)): content += line_ending
             return {'content': content, 'text':content, 'Text':content, 'recordCount': len(records)}
-        names = fields or list(records[0].keys() if records else [])
         if len(delimiter) == 1:
             output = io.StringIO(); writer = csv.DictWriter(output, fieldnames=names, delimiter=delimiter, lineterminator=line_ending)
             if self.as_bool(cfg.get('header', True)): writer.writeheader()
@@ -916,6 +996,15 @@ class DataFormats:
             rows = ([separator.join(quote(name) for name in names)] if self.as_bool(cfg.get('header', True)) else []) + [separator.join(quote(record.get(name)) for name in names) for record in records]
             content = line_ending.join(rows) + (line_ending if self.as_bool(cfg.get('includeFinalLineSeparator', False)) else '')
         return {'content': content,'text':content, 'Text':content, 'recordCount': len(records), 'fields':names}
+
+
+async def run_format_async(kind,operation,cfg,ctx):
+    cancelled = threading.Event()
+    local = {**ctx,'_formatCancelled':cancelled.is_set}
+    try: return await asyncio.to_thread(DataFormats().run_format,kind,operation,cfg,local)
+    except asyncio.CancelledError:
+        cancelled.set()
+        raise
 
 
 def execute_format(kind,operation,cfg,payload,cursors=None,activity_id=None):

@@ -8,6 +8,7 @@ import argparse
 import asyncio
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -17,6 +18,7 @@ import uuid
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+TRANSFORM_ONLY = {'mapper', 'transformer'}
 sys.path.insert(0, str(ROOT / 'backend'))
 from app.models import Project
 from app.runtime import WorkflowRuntime
@@ -44,8 +46,12 @@ def project_for(family, connection):
     rules.append({'target': 'total', 'source': '${vars.currentElement.amounts}', 'functions': ['sum']})
     activities = [{'id': 'start', 'name': 'Start', 'type': 'start'},
                   {'id': 'map', 'name': 'Transform', 'type': 'mapper', 'config': {'mappings': rules}}]
+    if family == 'transformer':
+        activities[1].update(type='dataweave', config={'payload': '${vars.currentElement}',
+            'script': '%dw 2.0\noutput application/json\n---\n{run: payload.run, seq: payload.seq, text: payload.text, '
+                      'name: upper(trim(payload.name)), country: payload.country, sku: payload.sku, qty: payload.qty, total: sum(payload.amounts)}'})
     members = ['map']
-    if family != 'mapper':
+    if family not in TRANSFORM_ONLY:
         operation = {'kafka': 'publish', 'jms': 'send_message', 'ems': 'send', 'pubsub': 'publish'}[family]
         activities.append({'id': 'send', 'name': 'Publish', 'type': family, 'config': {
             'operation': operation, 'resourceId': 'connection', 'destination': '${input.destination}',
@@ -53,17 +59,17 @@ def project_for(family, connection):
             'assignCustomPartition': True, 'partitionId': 0}})
         members.append('send')
     activities.append({'id': 'end', 'name': 'End', 'type': 'end', 'config':
-                       {'inputMappings': {'result': '${vars.results}'}} if family == 'mapper' else {}})
+                       {'inputMappings': {'result': '${vars.results}'}} if family in TRANSFORM_ONLY else {}})
     group = {'id': 'records', 'name': 'Records', 'type': 'for_each', 'member_activity_ids': members,
              'config': {'source': '${input.records}', 'maxIterations': 10000,
-                        'accumulateOutput': family == 'mapper', 'accumulatorVariable': 'results'}}
+                        'accumulateOutput': family in TRANSFORM_ONLY, 'accumulatorVariable': 'results'}}
     def task(identifier, nodes, groups=None):
         return {'id': identifier, 'name': identifier, 'kind': 'subtask', 'activities': nodes, 'groups': groups or [],
                 'transitions': [{'id': str(i), 'source': a['id'], 'target': b['id']}
                                 for i, (a, b) in enumerate(zip(nodes, nodes[1:]))]}
     tasks = [task('publish', activities, [group])]
     resources = []
-    if family != 'mapper':
+    if family not in TRANSFORM_ONLY:
         resources = [{'id': 'connection', 'name': 'Dedicated-QA', 'type': family, 'config': connection}]
         operation = {'kafka': 'get', 'jms': 'get_queue_message', 'ems': 'queue_receiver', 'pubsub': 'pull'}[family]
         cfg = {'operation': operation, 'resourceId': 'connection', 'destination': '${input.destination}',
@@ -114,6 +120,7 @@ class Executor:
         self.mode, self.project, self.log_path = mode, project, log_path
         self.runtime = runtime or WorkflowRuntime(); self.manager = manager or DebugManager(self.runtime)
         self.folder = None; self.child = None; self.log_count = 0
+        self.interpreter_pid = os.getpid()
 
     async def start(self):
         if not self.mode.startswith('python-'): return
@@ -127,6 +134,7 @@ class Executor:
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         ready = json.loads(await asyncio.to_thread(self.child.stdout.readline))
         if not ready.get('ready'): raise RuntimeError('Generated application did not become ready')
+        self.interpreter_pid = int(ready['ready'])
 
     async def execute(self, task_id, initial):
         if self.child:
@@ -183,11 +191,11 @@ class Executor:
 
 
 async def measure(args, profile):
-    if args.family != 'mapper' and profile.get('dedicatedTestResources') is not True:
+    if args.family not in TRANSFORM_ONLY and profile.get('dedicatedTestResources') is not True:
         raise ValueError('Explicit dedicated test resources are required')
     destinations = profile.get('destinations', [''] * args.workers)
     if len(destinations) != args.workers: raise ValueError('One dedicated destination per worker is required')
-    if args.family != 'mapper' and len(set(destinations)) != len(destinations):
+    if args.family not in TRANSFORM_ONLY and len(set(destinations)) != len(destinations):
         raise ValueError('Worker destinations must be distinct')
     subscriptions = profile.get('subscriptions', destinations)
     if len(subscriptions) != args.workers: raise ValueError('One Pub/Sub subscription per worker is required')
@@ -209,7 +217,7 @@ async def measure(args, profile):
             indices = range(start, min(start + args.batch_size, args.records))
             values = [record(run, n, args.payload_bytes)[0] for n in indices]
             output = await executor.execute('publish', {'records': values, 'destination': destinations[i]})
-            if args.family == 'mapper': received = output.get('result', output) if isinstance(output, dict) else output
+            if args.family in TRANSFORM_ONLY: received = output.get('result', output) if isinstance(output, dict) else output
             else:
                 received = []
                 while len(received) < len(values):
@@ -249,14 +257,15 @@ async def measure(args, profile):
             'records': completed, 'uniquePayloadsVerified': sum(seen), 'elapsedSeconds': elapsed,
             'recordsPerSecond': completed / elapsed, 'exceptionType': type(error).__name__ if error else None,
             'normalRunDebugLogEntries': sum(e.log_count for e in executors),
-            'scope': 'Complete task orchestration, Mapper, validation and cleanup; archive generation/startup/IPC where applicable'
-                     + ('; confirmed send and readback through receive tasks' if args.family != 'mapper' else ''),
+            'scope': 'Complete task orchestration, ' + ('scripted Transformer' if args.family == 'transformer' else 'Mapper')
+                     + ', validation and cleanup; archive generation/startup/IPC where applicable'
+                     + ('; confirmed send and readback through receive tasks' if args.family not in TRANSFORM_ONLY else ''),
             'errorDetailPrivate': str(error) if error else None}
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--family', choices=['kafka', 'jms', 'ems', 'pubsub', 'mapper'], required=True)
+    p.add_argument('--family', choices=['kafka', 'jms', 'ems', 'pubsub', 'mapper', 'transformer'], required=True)
     p.add_argument('--mode', choices=['run', 'debug', 'python-direct', 'python-engine'], required=True)
     p.add_argument('--records', type=int, default=100000); p.add_argument('--deadline', type=float, default=600)
     p.add_argument('--workers', type=int, default=4); p.add_argument('--batch-size', type=int, default=1000)
@@ -264,7 +273,7 @@ def main():
     p.add_argument('--config'); p.add_argument('--output', required=True); p.add_argument('--diagnostics', required=True)
     args = p.parse_args()
     if not 1 <= args.workers <= 8 or not 1 <= args.batch_size <= 10000 or args.records < 1 or args.deadline <= 0 or args.payload_bytes < 256: p.error('Invalid workload limits')
-    if args.family != 'mapper' and not args.config: p.error('Protected dedicated broker profile required')
+    if args.family not in TRANSFORM_ONLY and not args.config: p.error('Protected dedicated broker profile required')
     release = host.keep_host_awake()
     try:
         report = asyncio.run(measure(args, json.loads(Path(args.config).read_text(encoding='utf-8-sig')) if args.config else {}))

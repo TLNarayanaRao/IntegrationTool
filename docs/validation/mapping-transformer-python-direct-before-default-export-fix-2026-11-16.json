@@ -1,0 +1,19 @@
+{
+  "passed": false,
+  "records": 0,
+  "uniquePayloadsVerified": 0,
+  "elapsedSeconds": 0.0724779000156559,
+  "recordsPerSecond": 0.0,
+  "exceptionType": "ValueError",
+  "normalRunDebugLogEntries": 0,
+  "scope": "Complete task orchestration, Mapper, validation and cleanup; archive generation/startup/IPC where applicable",
+  "family": "transformer",
+  "mode": "python-direct",
+  "targetRecords": 100000,
+  "deadlineSeconds": 600.0,
+  "workers": 4,
+  "batchSize": 1000,
+  "approximatePayloadBytes": 1024,
+  "sharedStudioRuntime": false,
+  "archiveProcesses": 4
+}

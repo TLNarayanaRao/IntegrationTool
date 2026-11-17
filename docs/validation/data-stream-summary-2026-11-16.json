@@ -1,0 +1,113 @@
+{
+  "verification": {
+    "help": {
+      "webPages": 416,
+      "developerGuidePdfPages": 346,
+      "status": "Regenerated",
+      "documentationPdfPages": 684
+    },
+    "largeFileFlows": {
+      "passed": true,
+      "results": [
+        {
+          "mode": "run",
+          "passed": true,
+          "recordsAudited": 35000,
+          "sourceBytes": 72963904,
+          "elapsedSeconds": 4.7164,
+          "sampledBaselineRssBytes": 66379776,
+          "sampledPeakRssBytes": 67485696,
+          "sampledRssGrowthBytes": 1105920,
+          "renderedSha256": "1cf5027a3e0a8aea4ec904ccf6cc3fff344b10ad99738609ffc232e2addb6e65",
+          "batchCount": 350
+        },
+        {
+          "mode": "debug",
+          "passed": true,
+          "recordsAudited": 35000,
+          "sourceBytes": 72963904,
+          "elapsedSeconds": 4.7299,
+          "sampledBaselineRssBytes": 60710912,
+          "sampledPeakRssBytes": 62709760,
+          "sampledRssGrowthBytes": 1998848,
+          "renderedSha256": "1cf5027a3e0a8aea4ec904ccf6cc3fff344b10ad99738609ffc232e2addb6e65",
+          "batchCount": 350
+        },
+        {
+          "mode": "python-direct",
+          "passed": true,
+          "recordsAudited": 35000,
+          "sourceBytes": 72963904,
+          "elapsedSeconds": 5.4401,
+          "sampledBaselineRssBytes": 29474816,
+          "sampledPeakRssBytes": 42311680,
+          "sampledRssGrowthBytes": 12836864,
+          "renderedSha256": "1cf5027a3e0a8aea4ec904ccf6cc3fff344b10ad99738609ffc232e2addb6e65",
+          "batchCount": 350
+        },
+        {
+          "mode": "python-engine",
+          "passed": true,
+          "recordsAudited": 35000,
+          "sourceBytes": 72963904,
+          "elapsedSeconds": 5.3015,
+          "sampledBaselineRssBytes": 55656448,
+          "sampledPeakRssBytes": 56131584,
+          "sampledRssGrowthBytes": 475136,
+          "renderedSha256": "1cf5027a3e0a8aea4ec904ccf6cc3fff344b10ad99738609ffc232e2addb6e65",
+          "batchCount": 350
+        }
+      ],
+      "scope": "Complete nested Parse file -> JSON Lines -> Render file flows; every value and rendered byte audited",
+      "limitations": "Synthetic local files. Timings cover flow execution, excluding archive creation/startup/cleanup and output audits. 10 ms sampled RSS can miss short peaks; no constant-RSS guarantee or long-duration soak claim."
+    },
+    "latestLifecycleAndNestedSchemaTests": {
+      "elapsedSeconds": 2.697,
+      "passed": 9,
+      "tests": 9
+    },
+    "studioBuild": "Passed npm run build: documentation fingerprints, renderer licenses, TypeScript and Vite",
+    "frontendTests": {
+      "passed": 29,
+      "failed": 0,
+      "scope": "Includes pure Studio contract checks for stream paths, nested path types, metadata output and legacy mode",
+      "tests": 29
+    },
+    "focusedRegressions": {
+      "elapsedSeconds": 47.148,
+      "passed": 82,
+      "tests": 82
+    },
+    "diffCheck": "Passed"
+  },
+  "limits": {
+    "maxColumns": 10000,
+    "maxExplicitArrayIndex": 1000,
+    "defaultStreamingRecordBytes": 1048576,
+    "maxNestedDepth": 64,
+    "maxRecordAndBatchBytes": 67108864,
+    "maxRecordLines": 10000,
+    "defaultBatchRecords": 500,
+    "defaultBatchBytes": 8388608,
+    "maxAutoArraySlots": 10000,
+    "maxBatchRecords": 10000
+  },
+  "date": "2026-11-16",
+  "capabilities": [
+    "Nested object/array paths and JSON-valued repeating columns",
+    "Schema-derived nested columns and optional batch XSD validation",
+    "Bounded Parse file -> JSON Lines and Render JSON Lines -> formatted file",
+    "Bounded malformed-quote recovery with replay and physical-line policy",
+    "Atomic output replacement and cooperative cancellation",
+    "Selective Python archive helper packaging"
+  ],
+  "passed": true,
+  "limitations": [
+    "Nested hierarchy is inside a logical record; header/detail/trailer relationships require explicit business grouping",
+    "Malformed unclosed quotes are ambiguous; review recovered records/rejects and use physical-line policy for single-line contracts",
+    "Stream XSD validation is per batch, not global document keys/cardinality",
+    "Reject and main output are independently published, not a multi-file transaction",
+    "String/legacy record modes remain available and materialize their requested result",
+    "Large-file tests use 10 ms sampled RSS, not a constant-memory guarantee or long-duration soak"
+  ]
+}

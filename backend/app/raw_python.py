@@ -35,7 +35,7 @@ SUPPORTED = {
     ('http', 'sse_read'), ('http', 'websocket_exchange'), ('http', 'write_precondition'),
     ('soap', 'service'), ('soap', 'request_reply'), ('http_response', 'response'), ('http_response', ''),
     ('xml', 'parse'), ('xml', 'render'), ('json', 'parse'), ('json', 'render'),
-    ('flat', 'parse'), ('flat', 'render'), ('excel', 'read'), ('dataweave', 'transform'),
+    ('flat', 'parse'), ('flat', 'render'), ('excel', 'read'), ('dataweave', 'transform'), ('dataweave', ''),
     ('python', 'invoke'), ('java', 'invoke'),
     *((('snowflake', operation) for operation in ('insert', 'query', 'update', 'delete', 'bulk_load'))),
     *((('amqp', operation) for operation in ('send', 'get', 'receive', 'dead_letter'))),
@@ -464,6 +464,9 @@ def _simple_group_plans(task: dict) -> list[dict]:
 def _direct_literal(value, indent: int = 0) -> str:
     """Compile expressions into Python reference objects, never Mina syntax."""
     import json
+    if isinstance(value, dict) and any(key in value for key in ('script', 'libraries', 'outputs', 'sourceSchema')):
+        literal = {'script', 'libraries', 'outputs', 'sourceSchema'}
+        return '{' + ', '.join(repr(key) + ': ' + (repr(item) if key in literal else _direct_literal(item, indent + 4)) for key, item in value.items()) + '}'
     if isinstance(value, str):
         if value.startswith('__mina_constant__:'): return repr(value)
         if value.strip()[:1] in ("'", '"') and value.strip()[-1:] == value.strip()[:1]: return repr(value)
@@ -556,7 +559,7 @@ def mapper_xml_dependencies(project: dict) -> list[str]:
     requirements = ['lxml>=6,<7']
     if any(str(c.get('xpathVersion')) == '2.0' or xpath_call(c, '2') for c in configs):
         requirements.append('elementpath>=5.1.4,<6')
-    if any(guard.get('version') == '2.0' for guard in guards) or any(c.get('generatedXmlBinding') or re.search(r'''\bversion\s*=\s*["']2\.0["']''', str(c.get('xmlStylesheet') or '')) for c in configs):
+    if any(guard.get('version') == '2.0' for guard in guards) or any(c.get('generatedXmlBinding') or re.search(r'''\bversion\s*=\s*["'][23]\.0["']''', str(c.get('xmlStylesheet') or '')) for c in configs):
         requirements.append('saxonche>=13.1.1,<14')
     return requirements
 
@@ -583,6 +586,8 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
                 for prop in profile if prop.get('key') == binding.group(1)}
     if any(kind in {'xml','json'} for kind,_ in activity_pairs):add('Data schema validation',['jsonschema','regex'],'python -m pip install jsonschema regex')
     if any(kind=='xml' for kind,_ in activity_pairs):add('XML schema validation',['lxml.etree'],'python -m pip install lxml')
+    if any(kind=='dataweave' for kind,_ in activity_pairs) or any(a.get('config',{}).get('streamEnabled') for t in project.get('tasks',[]) for a in t.get('activities',[])):
+        add('Transformation contracts',['lxml.etree','jsonschema','regex'],'python -m pip install lxml jsonschema regex')
     xml_dependencies = mapper_xml_dependencies(project)
     if xml_dependencies:
         add('Mapper XML binding', ['lxml.etree'], 'python -m pip install lxml')
@@ -719,7 +724,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     files['application/core.py'] = _prune_module(core_source, core_roots)
     activity_roots: set[str] = set()
     if 'file' in capabilities: activity_roots.add('file_activity')
-    if 'data_formats' in capabilities: activity_roots.add('data_activity')
+    if 'data_formats' in capabilities: activity_roots.update({'data_activity','data_activity_async'})
     if 'excel' in capabilities: activity_roots.add('excel_read')
     if 'transfer' in capabilities: activity_roots.add('transfer')
     if 'http_client' in capabilities: activity_roots.add('http_request')
@@ -824,7 +829,8 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     if 'jdbc' in capabilities: native_modules.update({'jdbc.py', 'java_bridge.py','snowflake.py'})
     if 'snowflake' in capabilities: native_modules.add('snowflake.py')
     if 'amqp' in capabilities: native_modules.add('amqp.py')
-    if 'dataweave' in capabilities: native_modules.add('dataweave.py')
+    if 'dataweave' in capabilities or any(a.get('config',{}).get('streamEnabled') for t in project.get('tasks',[]) for a in t.get('activities',[])):
+        native_modules.update({'dataweave.py','transform_libraries.py','transform_engine.py','transform_stream.py','mapper.py','schema_validation.py','data_formats.py','faults.py','xsd_catalog.py','xsd_openapi.py','retry_policy.py'})
     if any(activity.get('type') == 'json' and any(activity.get('config', {}).get(flag) for flag in ('validateInput', 'validateOutput')) for task in project.get('tasks', []) for activity in task.get('activities', [])):
         native_modules.add('mapper.py')
     if 'mapper' in capabilities or any(task.get('groups') or any(edge.get('type') == 'success_condition' for edge in task.get('transitions', [])) for task in project.get('tasks', [])) or any(
@@ -833,9 +839,11 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
             for key, value in (activity.get('config', {}).get('inputMappings') or {}).items()):
         native_modules.add('mapper.py')
     if 'mapper.py' in native_modules:
-        native_modules.update({'mapper_xml.py', 'mapper_binding.py', 'mapper_coercions.py'})
+        native_modules.update({'mapper_xml.py', 'mapper_binding.py', 'mapper_document_xslt.py', 'mapper_coercions.py', 'mapping_documents.py'})
     if _has_mapper_binding(project) or _has_selected_source_schema(project):
         native_modules.update({'data_formats.py', 'faults.py', 'xsd_openapi.py', 'xsd_catalog.py', 'schema_validation.py'})
+    if any(activity.get('type')=='flat' for task in project.get('tasks',[]) for activity in task.get('activities',[])):
+        native_modules.update({'data_stream.py','data_groups.py'})
     if native_modules:
         files['application/native/__init__.py'] = b'"""Capability-selected native adapters; vendor binaries remain external."""\n'
         for name in sorted(native_modules): files[f'application/native/{name}'] = Path(__file__).with_name(name).read_bytes()
@@ -1300,10 +1308,12 @@ def _engine_module_files(project: dict, source_root: Path) -> dict[str, bytes]:
     groups = {group['type'] for task in project.get('tasks', []) for group in task.get('groups', [])}
     if 'transaction_jdbc' in groups:
         kinds.add('jdbc')
-    optional = set(ENGINE_CAPABILITY_MODULES.values())
+    optional = set(ENGINE_CAPABILITY_MODULES.values()) | {'transform_engine'}
     pending = {'runtime', 'models', 'mapper', 'time_utils'}
     pending.update(module for kind, module in ENGINE_CAPABILITY_MODULES.items() if kind in kinds)
-    xsd_projection = bool(kinds & {'xml', 'json', 'flat'}) or _has_mapper_binding(project) or _has_selected_source_schema(project)
+    transform_pipeline = 'dataweave' in kinds or any(a.get('config',{}).get('streamEnabled') for t in project.get('tasks',[]) for a in t.get('activities',[]))
+    if transform_pipeline: pending.add('transform_engine')
+    xsd_projection = transform_pipeline or bool(kinds & {'xml', 'json', 'flat'}) or _has_mapper_binding(project) or _has_selected_source_schema(project)
     if any(a['type']=='http_listener' or a['type']=='rest' and a.get('config',{}).get('operation')=='receiver' or a['type']=='soap' and a.get('config',{}).get('operation')=='service' for t in project.get('tasks',[]) for a in t.get('activities',[])):pending.add('http_server')
     files = {}
     while pending:
@@ -1319,6 +1329,8 @@ def _engine_module_files(project: dict, source_root: Path) -> dict[str, bytes]:
                     raise ValueError(f'Engine dependency needs a linker rule: {module}: {ast.unparse(node)}')
                 if module == 'data_formats' and node.module == 'xsd_openapi' and not xsd_projection:
                     continue  # API docs link the projection independently.
+                if module == 'data_formats' and node.module == 'data_stream' and 'flat' not in kinds:
+                    continue  # Nested/streaming Data helpers are only used by Data activities.
                 # Only runtime dispatch imports are capability-dependent.
                 # Adapter dependencies (e.g. SAP/JDBC -> Java bridge) are mandatory.
                 if module != 'runtime' or node.module not in optional:

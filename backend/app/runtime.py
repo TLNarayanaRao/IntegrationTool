@@ -7,7 +7,8 @@ from time import perf_counter
 from concurrent.futures import ThreadPoolExecutor, Future as ConcurrentFuture
 from .models import Activity, GroupDefinition, ProcessDefinition, Project, RunResult, find_subtask
 from .mapper import INPUT_OCCURRENCES, activity_occurrence_rules, _function_arguments, apply_function, evaluate_condition, get_path, rewrite_references, validate_output, execute as execute_mapping, execute_async as execute_mapping_async
-from .dataweave import DataWeaveError, execute as execute_dataweave
+from .dataweave import DataWeaveError
+from .transform_engine import execute_activity_async as execute_transform_activity
 from .sap import sap_adapter
 from .snowflake import snowflake_adapter
 from .jdbc import jdbc_adapter
@@ -463,7 +464,7 @@ class WorkflowRuntime(DataFormats):
                 else:
                     self.log(logs, 'INFO', f'Activity completed: {process.name} / {current.name} in {activity_duration:.3f} ms', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation, durationMs=activity_duration)
                 outgoing = outgoing_by_source.get(current.id, [])
-                if current.type in ('end', 'http_response'): break
+                if current.type in ('end', 'http_response') and not error: break
                 if error:
                     chosen = next((t for t in outgoing if t.type == 'error'), None)
                     fault = self.fault_payload(error, current.id)
@@ -717,7 +718,7 @@ class WorkflowRuntime(DataFormats):
 
     def resolve_activity_config(self, activity: Activity, ctx: dict):
         # Resolve environment, input, variable, and previous-output expressions in every activity field.
-        literal_keys = {'mappings', 'inputMappings', 'targetSchema', 'targetSchemaText', 'sourceSchemaText', 'schemaText', 'interfaceSchemaText', 'lookupTables', 'testCases', 'templateHistory', 'customFunctions', 'contractBaseline', 'xmlSource', 'xmlStylesheet', 'xmlNamespaces', 'xmlVariables', 'sourceTypeOverrides', 'sourceCoercions'}
+        literal_keys = {'script', 'libraries', 'outputs', 'sourceSchema', 'mappings', 'inputMappings', 'targetSchema', 'targetSchemaText', 'sourceSchemaText', 'schemaText', 'interfaceSchemaText', 'lookupTables', 'testCases', 'templateHistory', 'customFunctions', 'contractBaseline', 'xmlSource', 'xmlStylesheet', 'xmlNamespaces', 'xmlVariables', 'sourceTypeOverrides', 'sourceCoercions'}
         cfg = self.resolve({key: value for key, value in activity.config.items() if key not in literal_keys}, ctx)
         cfg.update({key: value for key, value in activity.config.items() if key in literal_keys})
         if activity.type in ('mapper', 'transform', 'ai_transform') and cfg.get('targetSchemaId'):
@@ -934,6 +935,9 @@ class WorkflowRuntime(DataFormats):
                 return {'confirmed': False, 'count': 0, 'ackIds': [], 'technologies': []}
             return await self.confirm_messages(handles)
         if activity.type in ('mapper', 'transform', 'ai_transform'):
+            if self.as_bool(cfg.get('streamEnabled', False)):
+                plan = await execute_transform_activity(cfg, ctx.get('last'), ctx.get('attributes'), ctx.get('vars'), getattr(ctx.get('project'), 'schemas', ()), kind='mapper', mapping_context={key: ctx.get(key, {}) for key in ('properties', 'activities', 'context', 'tasks', 'attributes')})
+                return plan['output']
             if cfg.get('xmlStylesheet') or cfg.get('generatedXmlBinding') or cfg.get('sourceCoercions'):
                 cfg['xmlSchemaDocuments'] = {**(activity.config.get('xmlSchemaDocuments') or {}),
                     **{asset.source_path or asset.name: asset.content for asset in getattr(ctx.get('project'), 'schemas', [])
@@ -964,22 +968,12 @@ class WorkflowRuntime(DataFormats):
             return await execute_mapping_async(source, rules, {**cfg, 'customFunctions': functions})
         if activity.type == 'dataweave':
             try:
-                transformed = execute_dataweave(
-                    str(cfg.get('script') or '%dw 2.0\noutput application/json\n---\npayload'),
-                    payload=cfg.get('payload', ctx.get('last')),
-                    attributes=cfg.get('attributes', ctx.get('attributes', {})),
-                    variables={**ctx.get('vars', {}), **(cfg.get('variables', {}) or {})},
-                    input_mime_type=str(cfg.get('inputMimeType') or ''),
-                )
-                target = str(cfg.get('outputTarget') or 'payload').lower()
-                if target == 'attributes': ctx['attributes'] = transformed
-                elif target == 'variable':
-                    name = str(cfg.get('outputVariable') or 'transformResult').strip()
-                    if not name: raise DataWeaveError('A variable output target requires a variable name')
-                    ctx.setdefault('vars', {})[name] = transformed
-                return transformed
+                plan = await execute_transform_activity(cfg, ctx.get('last'), ctx.get('attributes'), ctx.get('vars'), getattr(ctx.get('project'), 'schemas', ()))
+                if plan['attributesChanged']: ctx['attributes'] = plan['attributes']
+                ctx.setdefault('vars', {}).update(plan['variables'])
+                return plan['output']
             except DataWeaveError as exc:
-                raise MinaFault(str(exc), fault_type='DATAWEAVE_SYNTAX', cause=exc.__class__.__name__) from exc
+                raise MinaFault(str(exc), fault_type=getattr(exc, 'fault_type', 'DATAWEAVE_SYNTAX'), cause=exc.__class__.__name__) from exc
         if activity.type == 'sap':
             resource = ctx['resources'].get(cfg.get('resourceId'))
             if not resource or resource.type != 'sap': raise RuntimeError('SAP activity requires an SAP ECC shared connection')
@@ -1111,7 +1105,8 @@ class WorkflowRuntime(DataFormats):
             return await run_io(self.ftp if activity.type=='ftp' else self.sftp, cfg, ctx)
         if activity.type in ('xml','json','flat'):
             ctx.setdefault('formatCursors', {})
-            return await asyncio.to_thread(DataFormats().run_format, activity.type,cfg.get('operation','parse'),cfg,ctx)
+            from .data_formats import run_format_async
+            return await run_format_async(activity.type,cfg.get('operation','parse'),cfg,ctx)
         if activity.type == 'call_task':
             project = ctx.get('project')
             if not project: raise RuntimeError('Call Sub Task requires project execution context')
@@ -1524,7 +1519,7 @@ class WorkflowRuntime(DataFormats):
             match = re.fullmatch(r'\$\{([^}]+)\}', str(source or ''))
             if not match: return scoped
             parts = match[1].split('.')
-            if parts[0] not in ('input', 'last', 'vars', 'properties', 'activities', 'context', 'tasks'):
+            if parts[0] not in ('input', 'last', 'vars', 'properties', 'activities', 'context', 'tasks', 'attributes'):
                 parts = ['activities', parts[0], 'output', *parts[1:]]
             # Copy only dictionaries on the source path; never mutate process data.
             original, current = context, scoped
@@ -1636,6 +1631,8 @@ class WorkflowRuntime(DataFormats):
         variables = variables or {}
         text = expression.strip()
         if text in variables: return variables[text]
+        literal, parsed = parse_literal(text)
+        if parsed: return literal
         if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'"):
             return ast.literal_eval(text)
         if re.fullmatch(r'[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?', text): return float(text) if any(char in text for char in '.eE') else int(text)
@@ -1662,6 +1659,12 @@ class WorkflowRuntime(DataFormats):
         except (TypeError, ValueError, IndexError) as exc: raise RuntimeError(str(exc)) from exc
 
     def resolve(self, value, ctx):
+        if isinstance(value, str) and value.startswith('${attributes') and value.endswith('}'):
+            path = value[2:-1]
+            if path == 'attributes' or path.startswith('attributes.'):
+                current = ctx.get('attributes', {})
+                for part in path.split('.')[1:]: current = current.get(part, '') if isinstance(current, dict) else ''
+                return current
         if isinstance(value, dict): return {key: copy.deepcopy(item) if key in ('openApiDocument','openApiReferenceDocuments') and not (isinstance(item,str) and re.fullmatch(r'\$\{[^}]+\}',item)) else self.resolve(item, ctx) for key, item in value.items()}
         if isinstance(value, list): return [self.resolve(item, ctx) for item in value]
         if isinstance(value, str) and value.startswith('__mina_constant__:'):
@@ -1718,7 +1721,7 @@ class WorkflowRuntime(DataFormats):
             reference = re.fullmatch(r'\$\{([^}]+)\}', text)
             if reference:
                 path = reference.group(1)
-                if path.split('.')[0] in ('input', 'last', 'vars', 'properties', 'activities', 'tasks', 'context'):
+                if path.split('.')[0] in ('input', 'last', 'vars', 'properties', 'activities', 'tasks', 'context', 'attributes'):
                     return get_path(ctx, path)
             return self.evaluate_function_expression(text, ctx)
         return evaluate_condition(expression, operand)

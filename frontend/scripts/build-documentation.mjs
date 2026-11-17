@@ -22,6 +22,12 @@ const readHelpAsset = async (directory, name) => {
  return /\.(json|js|svg)$/.test(name) ? Buffer.from(normalizeLineEndings(bytes.toString('utf8'))) : bytes;
 };
 const guides = [
+ ['Transformations', 'MAPPER_DOCUMENT_OPERATIONS.md'],
+ ['Transformations', 'DATA_NESTED_STREAMING.md'],
+ ['Transformations', 'DATA_GROUPS_VALIDATION.md'],
+ ['Transformations', 'MAPPER_ASSISTED_MAPPING.md'],
+ ['Transformations', 'TRANSFORM_RUNTIME_FEATURES.md'],
+ ['Transformations', 'MAPPING_CONFORMANCE.md'],
  ['Connectors', 'KAFKA_ACTUAL_THROUGHPUT.md'],
  ['Connectors', 'PUBSUB_THROUGHPUT.md'],
  ['Connectors', 'JMS_BATCH_REUSE.md'],

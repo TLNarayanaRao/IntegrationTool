@@ -1790,6 +1790,21 @@ def mapper_suggest(payload: dict):
     except (ValueError, TypeError, MinaFault) as exc:
         raise HTTPException(400, str(exc)) from exc
 
+@app.post('/api/mapper/plan')
+def mapper_plan(payload: dict):
+    """Return a reviewable, non-destructive mapping plan; never execute it here."""
+    from .mapper_assistant import plan
+    try:
+        source, target = mapper_matching_schemas(payload)
+        return plan(source, target, payload.get('mappings'), threshold=payload.get('threshold',70),
+                    profile=payload.get('profile','general'), aliases=payload.get('aliases'), choices=payload.get('choices'),
+                    learned=shared_paths(source,target), source_scope=payload.get('sourceScope',''),
+                    target_scope=payload.get('targetScope',''), source_level=payload.get('sourceLevel',4),
+                    target_level=payload.get('targetLevel',4), exact_names=payload.get('exactNames') is True,
+                    auto_repeating=payload.get('autoRepeating') is not False, strategy=payload.get('strategy','balanced'))
+    except (ValueError, TypeError, MinaFault) as exc:
+        raise HTTPException(400,str(exc)) from exc
+
 def mapper_matching_schemas(payload):
     from .data_formats import xsd_shape
     documents = payload.get('xmlSchemaDocuments') or {}
@@ -1845,15 +1860,16 @@ def mapper_test(payload: dict):
                 return path.split('.output.', 1)[1]
             if path.endswith('.output') and path.startswith('activities.'):
                 return ''
-            if path.startswith('input.'):
-                return path[6:]
-            if path.startswith('last.'):
-                return path[5:]
+            # The preview document already supplies the runtime aliases. Keep
+            # them so braced assistant paths and older bare loop selectors share
+            # the same scope (especially for nested collections).
+            if path in ('input','last') or path.startswith(('input.','last.')):
+                return path
             # Studio activity-name expressions omit the internal activity ID
             # and output envelope: ${IDoc-Parser.IDOC.EDI_DC40.DOCNUM}.
             if '.' in path and not path.startswith(('properties.', 'vars.', 'context.', 'tasks.', 'coerced.')):
                 return path.split('.', 1)[1]
-            return '' if path in ('input', 'last') else path
+            return path
         normalized = []
         for mapping in mappings:
             rule = dict(mapping)
@@ -1948,13 +1964,31 @@ def mapper_template(payload: dict):
 @app.post('/api/dataweave/test')
 def dataweave_test(payload: dict):
     try:
+        if payload.get('config'):
+            from .transform_engine import execute_plan
+            config = {**payload['config'], 'script': payload.get('script') or payload['config'].get('script') or ''}
+            if config.get('streamEnabled'): raise DataWeaveError('Use a sample record in Map & Test; streaming files run through Run or Debug')
+            plan = execute_plan(config, payload.get('input'), payload.get('attributes'), payload.get('variables'), payload.get('schemas') or [])
+            return {'output': plan['output'], 'outputs': plan['outputs'], 'mimeType': plan['outputs'][0]['mimeType'] if plan['outputs'] else 'application/json', 'version': '2.0'}
         return execute_dataweave(
             str(payload.get('script') or ''), payload=payload.get('input'),
             attributes=payload.get('attributes') or {}, variables=payload.get('variables') or {},
             input_mime_type=str(payload.get('inputMimeType') or ''),
+            libraries=payload.get('libraries') or {},
         )
     except DataWeaveError as exc:
         raise HTTPException(400, f'DataWeave validation failed: {exc}')
+
+@app.post('/api/dataweave/visual')
+def dataweave_visual(payload: dict):
+    from .transform_visual import script_to_visual, visual_to_script
+    try:
+        if 'mappings' in payload:
+            return {'script': visual_to_script(payload.get('header'), payload['mappings'])}
+        return script_to_visual(str(payload.get('script') or ''))
+    except (DataWeaveError, ValueError, SyntaxError, IndexError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
 
 @app.post('/api/dataweave/generate')
 def dataweave_generate(payload: dict):

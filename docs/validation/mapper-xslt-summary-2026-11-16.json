@@ -1,0 +1,110 @@
+{
+  "date": "2026-11-16",
+  "scope": "Mapper document-function XSLT bindings and JSON Patch root removal",
+  "functions": [
+    "jsonPointer",
+    "jsonPatch",
+    "jsonMergePatch",
+    "jsonDiff",
+    "joinRecords",
+    "deduplicateRecords",
+    "redactKeys",
+    "maskText"
+  ],
+  "functionalChecks": {
+    "focusedTests": 24,
+    "passed": true,
+    "parityCases": 28,
+    "generatedBindingRoundTrip": true,
+    "standaloneSaxonWithoutMinaImports": true,
+    "nestedExpressionsAndDynamicArguments": true,
+    "mixedOrdinaryAndJsonMappings": true,
+    "unicodeCaseFoldingAndPointerFragments": true,
+    "largeIntegerPrecision": true,
+    "nullRecordsPreservedInDeduplication": true,
+    "invalidPatchAndExpansionLimits": true,
+    "rootRemovalRecreationAndAbsentRootErrors": true,
+    "relativeZipWorkerImports": true,
+    "testSource": "backend/tests/test_mapper_document_xslt.py",
+    "crossModeTest": "MapperDocumentXsltTests.test_preview_run_debug_and_archives_generated_manual_and_root_removal"
+  },
+  "executionModes": [
+    {
+      "mode": "run",
+      "generatedXslt": true,
+      "manualXslt": true,
+      "targetXsdValidation": true,
+      "nativeRootRemoval": true,
+      "failedPatchFailsTask": true
+    },
+    {
+      "mode": "debug",
+      "generatedXslt": true,
+      "manualXslt": true,
+      "targetXsdValidation": true,
+      "nativeRootRemoval": true,
+      "failedPatchFailsTask": true
+    },
+    {
+      "mode": "python-direct",
+      "generatedXslt": true,
+      "manualXslt": true,
+      "targetXsdValidation": true,
+      "nativeRootRemoval": true,
+      "failedPatchFailsTask": true
+    },
+    {
+      "mode": "python-engine",
+      "generatedXslt": true,
+      "manualXslt": true,
+      "targetXsdValidation": true,
+      "nativeRootRemoval": true,
+      "failedPatchFailsTask": true
+    }
+  ],
+  "broadRegressionFirstRun": {
+    "tests": 703,
+    "skipped": 11,
+    "errors": 1,
+    "failure": "SFTP transport handshake: SSHException: No existing session",
+    "mapperFailures": 0
+  },
+  "sftpRecheck": {
+    "tests": 7,
+    "passed": true,
+    "sftpSourceChanged": false
+  },
+  "representation": {
+    "xslt": "3.0 generated only when document functions are present; existing bindings retain 2.0 generation",
+    "jsonInXml": "JSON document arguments in XML text; object/array/null results emitted as JSON text in string-valued target XML fields",
+    "rootRemoval": "Track absence during patch evaluation; return null at MINA value boundary if still absent; native Mapper null policy then applies",
+    "processor": "Saxon 13; number-parser option preserves numeric precision",
+    "dependencies": "Existing saxonche>=13.1.1,<14 dependency; no new package added"
+  },
+  "limitations": [
+    "Functional verification rather than a new throughput or soak benchmark",
+    "Not certification for every third-party XSLT processor",
+    "Live UI clicking is not covered by these automated preview, build and runtime checks"
+  ],
+  "passed": true,
+  "broadRegressionRepeat": {
+    "tests": 703,
+    "skipped": 11,
+    "errors": 0,
+    "passed": true,
+    "elapsedSeconds": 388.729
+  },
+  "studioChecks": {
+    "helpTests": 15,
+    "passed": true,
+    "typescript": true,
+    "productionBuild": true,
+    "documentationFingerprints": true
+  },
+  "sourceSha256": {
+    "backend/app/mapper_document_xslt.py": "8d5b8c2b39c821635e4f155dd39e05e6b552f81a89bfd6d5ea5f2f2b137275cc",
+    "backend/app/mapper_binding.py": "0e3afacceedec35461e5788db744120153b831d26508259c6eee9119b3479b0a",
+    "backend/app/mapping_documents.py": "38453649978bbca66423ddfaf9a0a0a5b8823d77a0d0d3d83a15826e33f81376",
+    "backend/tests/test_mapper_document_xslt.py": "b01eaa092d0086007f08490319075699fedaac3ffd4a33a0aeb56f93bb39a375"
+  }
+}

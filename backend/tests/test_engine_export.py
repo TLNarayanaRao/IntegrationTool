@@ -14,7 +14,7 @@ SPEC.loader.exec_module(compiler)
 
 class EngineExportTests(unittest.TestCase):
     BASE = {'runtime', 'models', 'mapper', 'mapping_literals', 'time_utils', 'flow_graph', 'data_formats',
-            'faults', 'schema_validation', 'retry_policy', 'mapper_binding', 'mapper_coercions', 'mapper_xml', 'xsd_catalog'}
+            'faults', 'schema_validation', 'retry_policy', 'mapper_binding', 'mapper_coercions', 'mapper_xml', 'xsd_catalog', 'mapping_documents', 'mapper_document_xslt'}
 
     def project(self, kind='log'):
         return dict(id='sample', name='Sample', resources=[], tasks=[dict(
@@ -36,7 +36,7 @@ class EngineExportTests(unittest.TestCase):
             ('sap', {'sap', 'java_bridge'}), ('jdbc', {'jdbc', 'java_bridge', 'snowflake'}),
             ('ems', {'java_bridge'}), ('jms', {'java_bridge'}),
             ('pubsub', {'google_pubsub'}), ('amqp', {'amqp'}),
-            ('snowflake', {'snowflake'}), ('dataweave', {'dataweave'}), ('kafka', set()),
+            ('snowflake', {'snowflake'}), ('dataweave', {'dataweave','transform_libraries','transform_engine','transform_stream','xsd_openapi'}), ('kafka', set()),
             ('file', {'file_operations'}), ('ftp', {'transfer','sftp','file_operations'}), ('sftp', {'transfer','sftp','file_operations'}),
         ]:
             with self.subTest(kind=kind):
@@ -45,7 +45,7 @@ class EngineExportTests(unittest.TestCase):
     def test_format_activities_link_the_xsd_projection(self):
         for kind in ('xml', 'json', 'flat'):
             with self.subTest(kind=kind):
-                self.assertEqual(self.modules(self.project(kind)), self.BASE | {'xsd_openapi'})
+                self.assertEqual(self.modules(self.project(kind)), self.BASE | {'xsd_openapi'} | ({'data_stream','data_groups'} if kind=='flat' else set()))
 
     def test_subtasks_and_nested_transaction_groups_are_included(self):
         project = self.project()
