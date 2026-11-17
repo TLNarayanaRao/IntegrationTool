@@ -1,0 +1,448 @@
+{
+  "date": "2026-11-17",
+  "scope": "Fresh bounded regression verification on Windows; no new long-duration soak or interactive browser qualification",
+  "backendBeforeJmsFix": {
+    "discovered": 747,
+    "passed": 736,
+    "skipped": 11,
+    "failed": 0,
+    "elapsedSeconds": 496.842,
+    "skippedServices": [
+      "Dedicated live AMQP/JMS destinations (4)",
+      "Disposable MySQL (6)",
+      "Disposable PostgreSQL (1)"
+    ]
+  },
+  "messagingAfterJmsFix": {
+    "tests": 40,
+    "passed": 40,
+    "failed": 0,
+    "elapsedSeconds": 6.684
+  },
+  "frontend": {
+    "tests": 32,
+    "passed": 32,
+    "failed": 0,
+    "productionBuild": "passed",
+    "documentationAndLicenseChecks": "passed",
+    "helpPages": 418,
+    "pdfPages": {
+      "user": 689,
+      "developer": 346
+    },
+    "warnings": [
+      "Existing large-chunk advisory: main JS approximately 1.07 MB minified / 293 KB gzip; not a build failure"
+    ]
+  },
+  "fix": "JMS/EMS provider-default authentication and JNDI validation parity across Studio, Run, Debug and archives; explicit credentials preserved",
+  "reports": {
+    "kafka": {
+      "passed": true,
+      "environment": "Actual local Apache Kafka, single-node KRaft",
+      "recordsPerMode": 2000,
+      "deadlineSeconds": 600,
+      "results": [
+        {
+          "mode": "run",
+          "passed": true,
+          "report": "run.json",
+          "elapsedSeconds": 3.709307200042531
+        },
+        {
+          "mode": "debug",
+          "passed": true,
+          "report": "debug.json",
+          "elapsedSeconds": 3.3305857999948785
+        },
+        {
+          "mode": "python-direct",
+          "passed": true,
+          "report": "python-direct.json",
+          "elapsedSeconds": 2.4301284999819472
+        },
+        {
+          "mode": "python-engine",
+          "passed": true,
+          "report": "python-engine.json",
+          "elapsedSeconds": 3.911613399977796
+        }
+      ],
+      "brokerStopped": true,
+      "kafkaDistribution": "kafka_2.13-3.9.1",
+      "workers": 2,
+      "partitionsPerTopic": 1,
+      "security": "Loopback PLAINTEXT test fixture; TLS/SASL not qualified"
+    },
+    "pubsub": {
+      "passed": true,
+      "environment": "Official local emulator; hosted GCP unverified",
+      "results": [
+        {
+          "mode": "run",
+          "passed": true,
+          "records": 2000,
+          "uniquePayloadsVerified": 2000,
+          "elapsedSeconds": 16.800047699944116
+        },
+        {
+          "mode": "debug",
+          "passed": true,
+          "records": 2000,
+          "uniquePayloadsVerified": 2000,
+          "elapsedSeconds": 16.28391450003255
+        },
+        {
+          "mode": "python-direct",
+          "passed": true,
+          "records": 2000,
+          "uniquePayloadsVerified": 2000,
+          "elapsedSeconds": 16.26332640007604
+        },
+        {
+          "mode": "python-engine",
+          "passed": true,
+          "records": 2000,
+          "uniquePayloadsVerified": 2000,
+          "elapsedSeconds": 17.68400719994679
+        }
+      ]
+    },
+    "jmsAndEms": {
+      "passed": true,
+      "provider": "Actual isolated Apache Artemis JMS 2.40.0",
+      "scope": "JMS and EMS activity aliases through an explicit JMS provider factory; actual EMS provider is not verified",
+      "recordsPerMode": 2000,
+      "brokerStopped": true,
+      "results": [
+        {
+          "family": "jms",
+          "mode": "run",
+          "passed": true,
+          "elapsedSeconds": 13.231280900072306,
+          "report": "jms-run.json"
+        },
+        {
+          "family": "jms",
+          "mode": "debug",
+          "passed": true,
+          "elapsedSeconds": 10.334464899962768,
+          "report": "jms-debug.json"
+        },
+        {
+          "family": "jms",
+          "mode": "python-direct",
+          "passed": true,
+          "elapsedSeconds": 10.447936199954711,
+          "report": "jms-python-direct.json"
+        },
+        {
+          "family": "jms",
+          "mode": "python-engine",
+          "passed": true,
+          "elapsedSeconds": 11.41862770006992,
+          "report": "jms-python-engine.json"
+        },
+        {
+          "family": "ems",
+          "mode": "run",
+          "passed": true,
+          "elapsedSeconds": 12.005464300047606,
+          "report": "ems-run.json"
+        },
+        {
+          "family": "ems",
+          "mode": "debug",
+          "passed": true,
+          "elapsedSeconds": 11.619007400004193,
+          "report": "ems-debug.json"
+        },
+        {
+          "family": "ems",
+          "mode": "python-direct",
+          "passed": true,
+          "elapsedSeconds": 11.931104899966158,
+          "report": "ems-python-direct.json"
+        },
+        {
+          "family": "ems",
+          "mode": "python-engine",
+          "passed": true,
+          "elapsedSeconds": 12.504949900088832,
+          "report": "ems-python-engine.json"
+        }
+      ]
+    },
+    "mapperAndTransformer": {
+      "passed": true,
+      "recordsPerCase": 10000,
+      "results": [
+        {
+          "family": "mapper",
+          "mode": "run",
+          "passed": true,
+          "records": 10000,
+          "elapsedSeconds": 4.844000000040978,
+          "deadlineSeconds": 600,
+          "actualInterpreterIdentified": true,
+          "baselineRssMiB": 57.6328125,
+          "peakRssMiB": 61.92578125,
+          "scope": "Start -> streamed transform with source/target schema validation -> End; generated archive startup/import, output readback and cleanup included",
+          "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak"
+        },
+        {
+          "family": "mapper",
+          "mode": "debug",
+          "passed": true,
+          "records": 10000,
+          "elapsedSeconds": 4.405999999959022,
+          "deadlineSeconds": 600,
+          "actualInterpreterIdentified": true,
+          "baselineRssMiB": 60.6328125,
+          "peakRssMiB": 60.69140625,
+          "scope": "Start -> streamed transform with source/target schema validation -> End; generated archive startup/import, output readback and cleanup included",
+          "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak"
+        },
+        {
+          "family": "mapper",
+          "mode": "python-direct",
+          "passed": true,
+          "records": 10000,
+          "elapsedSeconds": 4.827999999979511,
+          "deadlineSeconds": 600,
+          "actualInterpreterIdentified": true,
+          "baselineRssMiB": 28.2421875,
+          "peakRssMiB": 41.265625,
+          "scope": "Start -> streamed transform with source/target schema validation -> End; generated archive startup/import, output readback and cleanup included",
+          "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak"
+        },
+        {
+          "family": "mapper",
+          "mode": "python-engine",
+          "passed": true,
+          "records": 10000,
+          "elapsedSeconds": 5.454000000027008,
+          "deadlineSeconds": 600,
+          "actualInterpreterIdentified": true,
+          "baselineRssMiB": 52.8046875,
+          "peakRssMiB": 55.4921875,
+          "scope": "Start -> streamed transform with source/target schema validation -> End; generated archive startup/import, output readback and cleanup included",
+          "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak"
+        },
+        {
+          "family": "dataweave",
+          "mode": "run",
+          "passed": true,
+          "records": 10000,
+          "elapsedSeconds": 4.39000000001397,
+          "deadlineSeconds": 600,
+          "actualInterpreterIdentified": true,
+          "baselineRssMiB": 71.59765625,
+          "peakRssMiB": 71.85546875,
+          "scope": "Start -> streamed transform with source/target schema validation -> End; generated archive startup/import, output readback and cleanup included",
+          "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak"
+        },
+        {
+          "family": "dataweave",
+          "mode": "debug",
+          "passed": true,
+          "records": 10000,
+          "elapsedSeconds": 4.202999999979511,
+          "deadlineSeconds": 600,
+          "actualInterpreterIdentified": true,
+          "baselineRssMiB": 71.703125,
+          "peakRssMiB": 71.80859375,
+          "scope": "Start -> streamed transform with source/target schema validation -> End; generated archive startup/import, output readback and cleanup included",
+          "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak"
+        },
+        {
+          "family": "dataweave",
+          "mode": "python-direct",
+          "passed": true,
+          "records": 10000,
+          "elapsedSeconds": 4.577999999979511,
+          "deadlineSeconds": 600,
+          "actualInterpreterIdentified": true,
+          "baselineRssMiB": 28.07421875,
+          "peakRssMiB": 38.1875,
+          "scope": "Start -> streamed transform with source/target schema validation -> End; generated archive startup/import, output readback and cleanup included",
+          "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak"
+        },
+        {
+          "family": "dataweave",
+          "mode": "python-engine",
+          "passed": true,
+          "records": 10000,
+          "elapsedSeconds": 6.077999999979511,
+          "deadlineSeconds": 600,
+          "actualInterpreterIdentified": true,
+          "baselineRssMiB": 53.05859375,
+          "peakRssMiB": 56.40234375,
+          "scope": "Start -> streamed transform with source/target schema validation -> End; generated archive startup/import, output readback and cleanup included",
+          "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak"
+        }
+      ]
+    },
+    "dataStreaming": {
+      "passed": true,
+      "results": [
+        {
+          "mode": "run",
+          "passed": true,
+          "recordsAudited": 35000,
+          "sourceBytes": 72963904,
+          "elapsedSeconds": 6.5851,
+          "sampledBaselineRssBytes": 61521920,
+          "sampledPeakRssBytes": 62664704,
+          "sampledRssGrowthBytes": 1142784,
+          "renderedSha256": "1cf5027a3e0a8aea4ec904ccf6cc3fff344b10ad99738609ffc232e2addb6e65",
+          "batchCount": 350
+        },
+        {
+          "mode": "debug",
+          "passed": true,
+          "recordsAudited": 35000,
+          "sourceBytes": 72963904,
+          "elapsedSeconds": 6.6147,
+          "sampledBaselineRssBytes": 60391424,
+          "sampledPeakRssBytes": 62509056,
+          "sampledRssGrowthBytes": 2117632,
+          "renderedSha256": "1cf5027a3e0a8aea4ec904ccf6cc3fff344b10ad99738609ffc232e2addb6e65",
+          "batchCount": 350
+        },
+        {
+          "mode": "python-direct",
+          "passed": true,
+          "recordsAudited": 35000,
+          "sourceBytes": 72963904,
+          "elapsedSeconds": 6.4376,
+          "sampledBaselineRssBytes": 29306880,
+          "sampledPeakRssBytes": 41754624,
+          "sampledRssGrowthBytes": 12447744,
+          "renderedSha256": "1cf5027a3e0a8aea4ec904ccf6cc3fff344b10ad99738609ffc232e2addb6e65",
+          "batchCount": 350
+        },
+        {
+          "mode": "python-engine",
+          "passed": true,
+          "recordsAudited": 35000,
+          "sourceBytes": 72963904,
+          "elapsedSeconds": 6.2357,
+          "sampledBaselineRssBytes": 55042048,
+          "sampledPeakRssBytes": 55554048,
+          "sampledRssGrowthBytes": 512000,
+          "renderedSha256": "1cf5027a3e0a8aea4ec904ccf6cc3fff344b10ad99738609ffc232e2addb6e65",
+          "batchCount": 350
+        }
+      ],
+      "scope": "Complete nested Parse file -> JSON Lines -> Render file flows; every value and rendered byte audited",
+      "limitations": "Synthetic local files. Timings cover flow execution, excluding archive creation/startup/cleanup and output audits. 10 ms sampled RSS can miss short peaks; no constant-RSS guarantee or long-duration soak claim."
+    },
+    "dataGroups": {
+      "passed": true,
+      "scope": "HDT -> grouped JSON Lines -> HDT, full rule/XSD validation on both stages and every record/byte audited",
+      "results": [
+        {
+          "mode": "run",
+          "passed": true,
+          "groupsAudited": 1000,
+          "detailsAudited": 2000,
+          "physicalRecords": 4000,
+          "sourceBytes": 53450,
+          "executionSeconds": 1.8666,
+          "sha256": "cc861092cb64c4d11253f0d6834e4590ffbd5d10b6f4adb6ae4efb95a366bdf0",
+          "eofKeyrefFailurePreservedOutputs": true,
+          "validation": {
+            "valid": true,
+            "rulesValidated": true,
+            "recordCount": 4000,
+            "groupCount": 1000,
+            "detailCount": 2000,
+            "totals": {
+              "amount": "300.00"
+            },
+            "uniqueKeyRules": 1,
+            "xsdValidated": true
+          }
+        },
+        {
+          "mode": "debug",
+          "passed": true,
+          "groupsAudited": 1000,
+          "detailsAudited": 2000,
+          "physicalRecords": 4000,
+          "sourceBytes": 53450,
+          "executionSeconds": 1.72,
+          "sha256": "cc861092cb64c4d11253f0d6834e4590ffbd5d10b6f4adb6ae4efb95a366bdf0",
+          "eofKeyrefFailurePreservedOutputs": true,
+          "validation": {
+            "valid": true,
+            "rulesValidated": true,
+            "recordCount": 4000,
+            "groupCount": 1000,
+            "detailCount": 2000,
+            "totals": {
+              "amount": "300.00"
+            },
+            "uniqueKeyRules": 1,
+            "xsdValidated": true
+          }
+        },
+        {
+          "mode": "python-direct",
+          "passed": true,
+          "groupsAudited": 1000,
+          "detailsAudited": 2000,
+          "physicalRecords": 4000,
+          "sourceBytes": 53450,
+          "executionSeconds": 2.0815,
+          "sha256": "cc861092cb64c4d11253f0d6834e4590ffbd5d10b6f4adb6ae4efb95a366bdf0",
+          "eofKeyrefFailurePreservedOutputs": true,
+          "validation": {
+            "valid": true,
+            "rulesValidated": true,
+            "recordCount": 4000,
+            "groupCount": 1000,
+            "detailCount": 2000,
+            "totals": {
+              "amount": "300.00"
+            },
+            "uniqueKeyRules": 1,
+            "xsdValidated": true
+          }
+        },
+        {
+          "mode": "python-engine",
+          "passed": true,
+          "groupsAudited": 1000,
+          "detailsAudited": 2000,
+          "physicalRecords": 4000,
+          "sourceBytes": 53450,
+          "executionSeconds": 1.7453,
+          "sha256": "cc861092cb64c4d11253f0d6834e4590ffbd5d10b6f4adb6ae4efb95a366bdf0",
+          "eofKeyrefFailurePreservedOutputs": true,
+          "validation": {
+            "valid": true,
+            "rulesValidated": true,
+            "recordCount": 4000,
+            "groupCount": 1000,
+            "detailCount": 2000,
+            "totals": {
+              "amount": "300.00"
+            },
+            "uniqueKeyRules": 1,
+            "xsdValidated": true
+          }
+        }
+      ],
+      "limitations": "Synthetic local functional/bulk audit. Execution timing excludes archive startup/cleanup and audit passes; not a memory/soak benchmark."
+    }
+  },
+  "limitations": [
+    "Actual vendor EMS unavailable: Artemis qualifies shared activity code only",
+    "Hosted GCP unavailable: official Pub/Sub emulator only",
+    "Kafka is local single-node PLAINTEXT; TLS/SASL and failover not qualified",
+    "Both archives executed on this Windows host, not a second clean machine",
+    "No new 100,000-record/10-minute or long-duration soak claim",
+    "Windows installer not rebuilt"
+  ]
+}

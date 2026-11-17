@@ -17,7 +17,13 @@ Complete flows, 100,000 records each (limit 600 seconds):
 
 Profiles, timing limits and the actual-provider qualification boundary below are part of these results. Rates are workload/host-specific, not a universal production SLA. Reports and the final matrix are `docs/validation/jms-optimized-*-2026-11-16.json`.
 
-## Runtime optimization
+## Provider authentication
+
+Studio, Run, Debug and both Python formats allow provider/factory defaults when both JMS username and password are blank. The Java bridge calls the provider's no-argument `createConnection()` in that case. If either credential is supplied, both configured values are passed unchanged to `createConnection(username, password)`. Authentication remains enforced by the provider; optional fields do not grant access to a secured broker.
+
+JNDI uses its provider URL and connection-factory name instead of requiring an unused direct connection URL. Naming credentials are optional unless the naming provider requires them. Generic JMS requires an initial-context factory; the EMS connector can use its connector default. Rebuild the matching Java bridge and restart Studio to load this change.
+
+## Connection reuse
 
 Batch Gets (`maxMessages > 1`) reuse a bounded, scope-isolated Java worker, physical provider connection and auto-acknowledge session. Previously each Get started a JVM and established a new connection. A separate receive-worker cache identity prevents a waiting receive from occupying the sender's worker/session. The existing eight-worker sender budget is preserved, with a separate four-worker batch-Get budget. Receive fanout cannot exhaust publisher cache capacity; excess configurations within each role retain the one-shot fallback. Idle reaping, application/Debug Stop and process cleanup release workers.
 

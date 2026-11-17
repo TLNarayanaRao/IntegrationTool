@@ -728,7 +728,12 @@ public final class MinaJavaBridge {
         Object connection = null, session = null;
         try {
             String username = p.getProperty("username", ""), password = p.getProperty("password", "");
-            connection = invoke(factory, "createConnection", username, password);
+            // Empty credentials mean provider defaults/anonymous authentication.
+            // Passing two empty strings can override factory/JNDI credentials
+            // and is rejected by providers whose anonymous login needs nulls.
+            connection = username.isEmpty() && password.isEmpty()
+                ? invoke(factory, "createConnection")
+                : invoke(factory, "createConnection", username, password);
             if (!p.getProperty("clientId", "").isBlank()) invoke(connection, "setClientID", p.getProperty("clientId"));
             invoke(connection, "start");
             if (operation.equals("test")) return map("message", "Native JMS connection succeeded");

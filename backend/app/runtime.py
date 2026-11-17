@@ -1198,9 +1198,14 @@ class WorkflowRuntime(DataFormats):
             envelope.update({'topic': destination, 'partition': int(cfg.get('partitionId', 0) or 0), 'offset': len(queue)-1})
             return {'messageId': envelope['id'], 'topic': destination, 'partition': envelope['partition'], 'offset': envelope['offset'], 'timestamp': envelope['timestamp'], 'published': True}
         if technology in ('ems', 'jms'):
-            required = {'JMS connection URL':rcfg.get('serverUrl'), 'Username':rcfg.get('username'), 'Password':rcfg.get('password')}
+            # Authentication requirements belong to the provider. Blank
+            # credentials also support factory/JNDI defaults and anonymous QA
+            # brokers; do not reject them differently from direct archives.
             if str(rcfg.get('connectionFactoryType', 'Direct')).lower() == 'jndi':
-                required.update({'JNDI context factory':rcfg.get('jndiContextFactory'), 'JNDI provider URL':rcfg.get('jndiProviderUrl'), 'JNDI username':rcfg.get('jndiUsername'), 'JNDI password':rcfg.get('jndiPassword'), 'JNDI connection factory':rcfg.get('connectionFactory')})
+                required = {'JNDI provider URL':rcfg.get('jndiProviderUrl'), 'JNDI connection factory':rcfg.get('connectionFactory')}
+                if technology == 'jms': required['JNDI context factory'] = rcfg.get('jndiContextFactory')
+            else:
+                required = {'JMS connection URL':rcfg.get('serverUrl')}
             missing = [name for name, value in required.items() if not str(value or '').strip()]
             if missing: raise MinaFault(f"Required connection values are missing: {', '.join(missing)}", fault_type='JMSConnectionException')
             options = {**cfg, 'topic': 'topic' in operation or operation in ('publish', 'topic_subscriber'), 'clientAcknowledge': client_ack, 'properties': attributes}

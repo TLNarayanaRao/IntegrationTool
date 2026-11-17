@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "0c68c1119b5c40e93411f6bd817de3befe6d8e5ef308736a44b5287baf478153",
+  "fingerprint": "7437ee9e8525eb29da91958abd118763dd79d34b72cb5ef68998e7e5afb217cf",
   "counts": {
     "activities": 104,
     "groups": 11,
@@ -4111,7 +4111,7 @@
                 ],
                 [
                   "FTP operations using the selected operation",
-                  "backend/app/runtime.py:1802\ndef ftp("
+                  "backend/app/runtime.py:1807\ndef ftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation get",
@@ -4296,7 +4296,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1802,
+          "line": 1807,
           "symbol": "def ftp(",
           "role": "FTP operations using the selected operation"
         },
@@ -4458,7 +4458,7 @@
                 ],
                 [
                   "FTP operations using the selected operation",
-                  "backend/app/runtime.py:1802\ndef ftp("
+                  "backend/app/runtime.py:1807\ndef ftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation put",
@@ -4643,7 +4643,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1802,
+          "line": 1807,
           "symbol": "def ftp(",
           "role": "FTP operations using the selected operation"
         },
@@ -4805,7 +4805,7 @@
                 ],
                 [
                   "FTP operations using the selected operation",
-                  "backend/app/runtime.py:1802\ndef ftp("
+                  "backend/app/runtime.py:1807\ndef ftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation delete",
@@ -4990,7 +4990,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1802,
+          "line": 1807,
           "symbol": "def ftp(",
           "role": "FTP operations using the selected operation"
         },
@@ -5152,7 +5152,7 @@
                 ],
                 [
                   "FTP operations using the selected operation",
-                  "backend/app/runtime.py:1802\ndef ftp("
+                  "backend/app/runtime.py:1807\ndef ftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation dir",
@@ -5337,7 +5337,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1802,
+          "line": 1807,
           "symbol": "def ftp(",
           "role": "FTP operations using the selected operation"
         },
@@ -5499,7 +5499,7 @@
                 ],
                 [
                   "FTP operations using the selected operation",
-                  "backend/app/runtime.py:1802\ndef ftp("
+                  "backend/app/runtime.py:1807\ndef ftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation change_dir",
@@ -5684,7 +5684,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1802,
+          "line": 1807,
           "symbol": "def ftp(",
           "role": "FTP operations using the selected operation"
         },
@@ -5846,7 +5846,7 @@
                 ],
                 [
                   "SFTP operations using the selected operation",
-                  "backend/app/runtime.py:1806\ndef sftp("
+                  "backend/app/runtime.py:1811\ndef sftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation get",
@@ -6031,7 +6031,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1806,
+          "line": 1811,
           "symbol": "def sftp(",
           "role": "SFTP operations using the selected operation"
         },
@@ -6193,7 +6193,7 @@
                 ],
                 [
                   "SFTP operations using the selected operation",
-                  "backend/app/runtime.py:1806\ndef sftp("
+                  "backend/app/runtime.py:1811\ndef sftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation put",
@@ -6378,7 +6378,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1806,
+          "line": 1811,
           "symbol": "def sftp(",
           "role": "SFTP operations using the selected operation"
         },
@@ -6540,7 +6540,7 @@
                 ],
                 [
                   "SFTP operations using the selected operation",
-                  "backend/app/runtime.py:1806\ndef sftp("
+                  "backend/app/runtime.py:1811\ndef sftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation delete",
@@ -6725,7 +6725,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1806,
+          "line": 1811,
           "symbol": "def sftp(",
           "role": "SFTP operations using the selected operation"
         },
@@ -6887,7 +6887,7 @@
                 ],
                 [
                   "SFTP operations using the selected operation",
-                  "backend/app/runtime.py:1806\ndef sftp("
+                  "backend/app/runtime.py:1811\ndef sftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation dir",
@@ -7072,7 +7072,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1806,
+          "line": 1811,
           "symbol": "def sftp(",
           "role": "SFTP operations using the selected operation"
         },
@@ -7234,7 +7234,7 @@
                 ],
                 [
                   "SFTP operations using the selected operation",
-                  "backend/app/runtime.py:1806\ndef sftp("
+                  "backend/app/runtime.py:1811\ndef sftp("
                 ],
                 [
                   "Direct Python implementation; inspect operation change_dir",
@@ -7419,7 +7419,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1806,
+          "line": 1811,
           "symbol": "def sftp(",
           "role": "SFTP operations using the selected operation"
         },
@@ -28959,7 +28959,7 @@
                 ],
                 [
                   "Workbook reading",
-                  "backend/app/runtime.py:1749\ndef read_excel("
+                  "backend/app/runtime.py:1754\ndef read_excel("
                 ],
                 [
                   "Direct Python implementation; inspect operation read",
@@ -29142,7 +29142,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1749,
+          "line": 1754,
           "symbol": "def read_excel(",
           "role": "Workbook reading"
         },
@@ -31645,7 +31645,7 @@
                 ],
                 [
                   "Java invocation worker",
-                  "backend/app/runtime.py:1811\nasync def java_worker("
+                  "backend/app/runtime.py:1816\nasync def java_worker("
                 ],
                 [
                   "Direct Python implementation; inspect operation invoke",
@@ -31836,7 +31836,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1811,
+          "line": 1816,
           "symbol": "async def java_worker(",
           "role": "Java invocation worker"
         },
@@ -32002,7 +32002,7 @@
                 ],
                 [
                   "Python invocation worker",
-                  "backend/app/runtime.py:1869\nasync def python_worker("
+                  "backend/app/runtime.py:1874\nasync def python_worker("
                 ],
                 [
                   "Direct Python implementation; inspect operation invoke",
@@ -32185,7 +32185,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1869,
+          "line": 1874,
           "symbol": "async def python_worker(",
           "role": "Python invocation worker"
         },
@@ -36474,15 +36474,15 @@
                 ],
                 [
                   "Input mapping evaluation",
-                  "backend/app/runtime.py:1501\ndef map_input_values("
+                  "backend/app/runtime.py:1506\ndef map_input_values("
                 ],
                 [
                   "Structured rule evaluation",
-                  "backend/app/runtime.py:1582\ndef evaluate_mapping("
+                  "backend/app/runtime.py:1587\ndef evaluate_mapping("
                 ],
                 [
                   "Reference/expression resolution",
-                  "backend/app/runtime.py:1661\ndef resolve(self,"
+                  "backend/app/runtime.py:1666\ndef resolve(self,"
                 ],
                 [
                   "Transformation mapping",
@@ -36564,19 +36564,19 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1501,
+          "line": 1506,
           "symbol": "def map_input_values(",
           "role": "Input mapping evaluation"
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1582,
+          "line": 1587,
           "symbol": "def evaluate_mapping(",
           "role": "Structured rule evaluation"
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1661,
+          "line": 1666,
           "symbol": "def resolve(self,",
           "role": "Reference/expression resolution"
         },
@@ -36868,7 +36868,7 @@
                 ],
                 [
                   "Function expression evaluation",
-                  "backend/app/runtime.py:1629\ndef evaluate_function_expression("
+                  "backend/app/runtime.py:1634\ndef evaluate_function_expression("
                 ],
                 [
                   "Persisted custom functions",
@@ -36926,7 +36926,7 @@
         },
         {
           "file": "backend/app/runtime.py",
-          "line": 1629,
+          "line": 1634,
           "symbol": "def evaluate_function_expression(",
           "role": "Function expression evaluation"
         },
@@ -39561,7 +39561,7 @@
                 ],
                 [
                   "Expression call parsing",
-                  "backend/app/runtime.py:1629\ndef evaluate_function_expression("
+                  "backend/app/runtime.py:1634\ndef evaluate_function_expression("
                 ],
                 [
                   "Signatures/templates",
