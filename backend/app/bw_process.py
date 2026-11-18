@@ -2,18 +2,12 @@
 import re
 from urllib.parse import urlsplit
 
-from .mapper_xml import XSL, etree, parse_xml
+from .mapper_xml import XSL, etree, legacy_name, legacy_namespace, parse_xml
 
 
 BPEL = '{http://docs.oasis-open.org/wsbpel/2.0/process/executable}'
-BW = '{http://www.tibco.com/bpel/2007/extensions}'
-BW_ACTIVITY = '{http://tns.tibco.com/bw/model/core/bwext}BWActivity'
-JNDI = '{http://xsd.tns.tibco.com/amf/models/sharedresource/jndi}'
 XSI_TYPE = '{http://www.w3.org/2001/XMLSchema-instance}type'
 XMI = '{http://www.omg.org/XMI}'
-HTTP_CLIENT_NS = 'http://xsd.tns.tibco.com/bw/models/sharedresource/httpclient'
-HTTP_SERVER_NS = 'http://xsd.tns.tibco.com/bw/models/sharedresource/httpconnector'
-JDBC_NS = 'http://xsd.tns.tibco.com/amf/models/sharedresource/jdbc'
 _PROCESS_METADATA = {'partnerLinks', 'variables', 'extensions', 'import'}
 _NODE_METADATA = {'sources', 'targets', 'documentation'}
 _LINK_TYPES = {'SUCCESS': 'success', 'SUCCESSWITHCONDITION': 'success_condition',
@@ -22,6 +16,27 @@ XML_JSON_FORMATS = {
     'bw.xml.parsexml': ('xml', 'parse'), 'bw.xml.renderxml': ('xml', 'render'),
     'bw.restjson.jsonparser': ('json', 'parse'), 'bw.restjson.jsonrender': ('json', 'render'),
 }
+
+
+def process_extension(document):
+    namespaces = {uri for node in document.iter() for uri in node.nsmap.values()
+                  if legacy_namespace(uri, '/bpel/2007/extensions')}
+    if len(namespaces) > 1:
+        raise ValueError('ambiguous legacy process extension namespace')
+    return '{' + next(iter(namespaces), 'urn:mina:no-process-extension') + '}'
+
+
+def activity_design(owner, extension):
+    config = owner.find(extension + 'config')
+    if config is None:
+        return None
+    return next((node for node in config if legacy_name(node.tag, 'BWActivity', '/bw/model/core/bwext')), None)
+
+
+def named_resource_namespace(document):
+    if legacy_name(document.tag, 'namedResource', '/amf/models/sharedresource/jndi'):
+        return '{' + etree.QName(document).namespace + '}'
+    return None
 
 
 def expanded_name(node, value):
@@ -100,17 +115,18 @@ def _settings(node, allowed):
 
 
 def jdbc_resource(document, name, resource_id):
-    settings = document.find(JNDI + 'configuration')
-    if document.tag != JNDI + 'namedResource' or settings is None:
+    jndi = named_resource_namespace(document)
+    settings = document.find(jndi + 'configuration') if jndi else None
+    if settings is None:
         raise ValueError('expected a BW JDBC named resource')
     prefix, _, kind = settings.get(XSI_TYPE, '').partition(':')
     connection = settings.find('connectionConfig')
-    if settings.nsmap.get(prefix) != JDBC_NS or kind != 'JdbcDataSource' or connection is None:
+    if not legacy_namespace(settings.nsmap.get(prefix), '/amf/models/sharedresource/jdbc') or kind != 'JdbcDataSource' or connection is None:
         raise ValueError('expected a BW JDBC data source')
     prefix, _, kind = connection.get(XSI_TYPE, '').partition(':')
-    if connection.nsmap.get(prefix) != JDBC_NS or kind != 'NonXaConnection':
+    if not legacy_namespace(connection.nsmap.get(prefix), '/amf/models/sharedresource/jdbc') or kind != 'NonXaConnection':
         raise ValueError('XA JDBC resources require review')
-    if any(reference.get('value') for reference in document.findall(JNDI + 'reference')):
+    if any(reference.get('value') for reference in document.findall(jndi + 'reference')):
         raise ValueError('JDBC identity and subject resources require review')
     if (set(settings.attrib) - {XSI_TYPE, XMI + 'id', 'username', 'password'}
             or set(connection.attrib) - {XSI_TYPE, XMI + 'id', 'jdbcDriver', 'dbURL', 'loginTimeout'}
@@ -150,11 +166,12 @@ def jdbc_resource(document, name, resource_id):
 
 
 def jms_resource(document, name, resource_id):
+    jndi = named_resource_namespace(document)
     fields = {'serverUrl', 'username', 'password', 'clientId', 'connectionFactoryClass', 'connectionFactory',
               'connectionFactoryType', 'jndiContextFactory', 'jndiProviderUrl', 'jndiUsername', 'jndiPassword',
               'connectionTimeoutSeconds', 'mode'}
-    if document.tag == JNDI + 'namedResource':
-        node = document.find(JNDI + 'configuration')
+    if jndi:
+        node = document.find(jndi + 'configuration')
         if node is None or len(document) != 1 or len(node) or set(node.attrib) - fields - {XSI_TYPE, XMI + 'id'}:
             raise ValueError('unsupported JMS resource configuration or external policy')
         if node.get(XSI_TYPE, '').split(':')[-1] not in {'JMSConnection', 'JMSConnectionConfiguration', 'JmsConnectionConfiguration'}:
@@ -187,6 +204,7 @@ def jms_resource(document, name, resource_id):
 
 
 def http_resource(document, name, resource_id):
+    jndi = named_resource_namespace(document)
     integer_options = {'connectionTimeout': 'connectionTimeoutMs', 'socketTimeout': 'socketTimeoutMs',
                        'maxTotalConnections': 'maximumTotalConnections', 'maxConnectionsPerHost': 'maximumConnectionsPerHost',
                        'idleConnectionTimeout': 'idleConnectionTimeoutMs', 'proxyPort': 'proxyPort'}
@@ -194,12 +212,12 @@ def http_resource(document, name, resource_id):
     text_options = {'host', 'port', 'scheme', 'proxyHost', 'httpVersion', 'tlsVersion', 'maximumTlsVersion',
                     'certificateAuthorityFile'}
     allowed = set(integer_options) | boolean_options | text_options
-    if document.tag == JNDI + 'namedResource':
-        configuration = document.find(JNDI + 'configuration')
+    if jndi:
+        configuration = document.find(jndi + 'configuration')
         if configuration is None or len(document) != 1:
             raise ValueError('expected one HTTP client configuration')
         prefix, _, type_name = configuration.get(XSI_TYPE, '').partition(':')
-        if configuration.nsmap.get(prefix) != HTTP_CLIENT_NS or type_name != 'HttpClientConfiguration':
+        if not legacy_namespace(configuration.nsmap.get(prefix), '/bw/models/sharedresource/httpclient') or type_name != 'HttpClientConfiguration':
             raise ValueError('expected an HTTP client shared resource')
         tcp = configuration.find('tcpDetails')
         if (tcp is None or len(configuration) != 1 or len(tcp)
@@ -237,11 +255,12 @@ def http_resource(document, name, resource_id):
 
 
 def http_server_resource(document, name, resource_id):
-    configuration = document.find(JNDI + 'configuration')
-    if document.tag != JNDI + 'namedResource' or configuration is None or len(document) != 1:
+    jndi = named_resource_namespace(document)
+    configuration = document.find(jndi + 'configuration') if jndi else None
+    if configuration is None or len(document) != 1:
         raise ValueError('expected a BW HTTP server named resource')
     prefix, _, kind = configuration.get(XSI_TYPE, '').partition(':')
-    if configuration.nsmap.get(prefix) != HTTP_SERVER_NS or kind != 'HttpConnectorConfiguration':
+    if not legacy_namespace(configuration.nsmap.get(prefix), '/bw/models/sharedresource/httpconnector') or kind != 'HttpConnectorConfiguration':
         raise ValueError('expected a BW HTTP server connector')
     mapping = {'host': 'host', 'port': 'port', 'minThreads': 'minimumQtpThreads', 'maxThreads': 'maximumQtpThreads',
                'idleTimeout': 'idleConnectionTimeoutMs', 'maxHeaderSize': 'maxHeaderBytes'}
@@ -282,6 +301,7 @@ def _binding_fields(binding):
 class ProcessConverter:
     def __init__(self, document, task_id, name, resolve_task, resolve_resource, resolve_schema=None):
         self.document = document
+        self.extension = process_extension(document)
         self.task_id = task_id
         self.name = name
         self.resolve_task = resolve_task
@@ -333,7 +353,7 @@ class ProcessConverter:
         if links is not None:
             for link in links:
                 name = link.get('name')
-                kind = _LINK_TYPES.get(link.get(BW + 'linkType', 'SUCCESS'))
+                kind = _LINK_TYPES.get(link.get(self.extension + 'linkType', 'SUCCESS'))
                 if link.tag != BPEL + 'link' or not name or name in declared or len(link) or not kind:
                     raise ValueError('unsupported link declaration')
                 declared[name] = {'type': kind, 'condition': None}
@@ -346,7 +366,7 @@ class ProcessConverter:
                         match = declared.get(item.get('linkName'))
                         if match is None or endpoint_name in match:
                             raise ValueError('unsupported cross-scope process link')
-                        allowed = {BPEL + 'transitionCondition', BW + 'DesignExpression'} if endpoint_name == 'source' else set()
+                        allowed = {BPEL + 'transitionCondition', self.extension + 'DesignExpression'} if endpoint_name == 'source' else set()
                         if any(child.tag not in allowed for child in item):
                             raise ValueError('unsupported link metadata')
                         if endpoint_name == 'source':
@@ -396,10 +416,9 @@ class ProcessConverter:
         sinks = [index for index in results if index not in has_children]
         return results[sinks[0]][0] if sinks else previous
 
-    @staticmethod
-    def owner(node):
+    def owner(self, node):
         if node.tag == BPEL + 'extensionActivity':
-            extensions = [child for child in node if child.tag in {BW + 'extActivity', BW + 'activityExtension', BW + 'receiveEvent'}]
+            extensions = [child for child in node if child.tag in {self.extension + 'extActivity', self.extension + 'activityExtension', self.extension + 'receiveEvent'}]
             if len(extensions) != 1:
                 raise ValueError('expected one extension activity')
             return extensions[0]
@@ -436,19 +455,19 @@ class ProcessConverter:
         return config
 
     def event(self, owner, previous, label):
-        source = owner.find(BW + 'eventSource')
+        source = owner.find(self.extension + 'eventSource')
         if (source is None or len(source) != 1 or previous != [self.activities[0]['id']]
                 or self.activities[0]['type'] != 'start' or self.transitions or not owner.get('variable')):
             raise ValueError(f'{label}: expected one process entry event')
         event = source[0]
         variable = owner.get('variable')
-        if event.tag == BW + 'StartEvent':
+        if event.tag == self.extension + 'StartEvent':
             self.variables[variable] = '${input}'
             return self.connect(previous, self.node('basic', label, {'operation': 'empty'}))
-        if event.tag in {BW + 'JMSReceiveMessage', BW + 'JMSReceiveMessageEvent'}:
+        if event.tag in {self.extension + 'JMSReceiveMessage', self.extension + 'JMSReceiveMessageEvent'}:
             config = self.jms_config(event, 'receive_message')
             kind, output = 'jms', 'body'
-        elif event.tag == BW_ACTIVITY and event.get('activityTypeID', '').lower() == 'bw.generalactivities.timer':
+        elif legacy_name(event.tag, 'BWActivity', '/bw/model/core/bwext') and event.get('activityTypeID', '').lower() == 'bw.generalactivities.timer':
             value = event.find("activityConfig/properties[@name='config']/value")
             if value is None: raise ValueError(f'{label}: missing BW timer configuration')
             cron, date = value.get('cronExpression'), value.get('startTime')
@@ -458,14 +477,14 @@ class ProcessConverter:
                       'scheduleMode': 'cron' if cron else 'dateTime'}
             config['cronExpression' if cron else 'scheduledDateTime'] = cron or date
             kind, output = 'timer', ''
-        elif event.tag == BW + 'TimerEvent':
+        elif event.tag == self.extension + 'TimerEvent':
             settings = _settings(event, {'cronExpression', 'scheduledDateTime'})
             if bool(settings.get('cronExpression')) == bool(settings.get('scheduledDateTime')):
                 raise ValueError(f'{label}: expected a single timer schedule')
             config = {**settings, 'operation': 'schedule', 'runOnceOnLocalStart': False,
                       'scheduleMode': 'cron' if settings.get('cronExpression') else 'dateTime'}
             kind, output = 'timer', ''
-        elif event.tag in {BW + 'HTTPReceiveEvent', BW + 'HTTPListenerEvent'}:
+        elif event.tag in {self.extension + 'HTTPReceiveEvent', self.extension + 'HTTPListenerEvent'}:
             settings = _settings(event, {'httpConnection', 'path', 'method', 'contentType'})
             path = settings.get('path', '')
             method = settings.get('method', 'POST').upper()
@@ -492,19 +511,19 @@ class ProcessConverter:
             return previous
         if node.tag == BPEL + 'scope':
             children = [child for child in node if etree.QName(child).localname not in _NODE_METADATA]
-            if len(children) != 1 or set(node.attrib) - {'name', BW + 'xpdlId'}:
+            if len(children) != 1 or set(node.attrib) - {'name', self.extension + 'xpdlId'}:
                 raise ValueError(f'{label}: scope variables, handlers, or isolation require review')
             return self.step(children[0], previous)
         if node.tag == BPEL + 'flow':
             return self.linked_flow(node, previous)
         if owner.tag == BPEL + 'empty':
-            if owner.get(BW + 'constructor'):
+            if owner.get(self.extension + 'constructor'):
                 raise ValueError(f'{label}: event boundary requires a native starter or response')
             return self.connect(previous, self.node('basic', label, {'operation': 'empty'}))
-        if owner.tag == BW + 'receiveEvent':
+        if owner.tag == self.extension + 'receiveEvent':
             return self.event(owner, previous, label)
         if owner.tag == BPEL + 'reply' and self.activities[0]['type'] == 'http_listener':
-            sheets = bindings(owner.find(BW + 'inputBindings'))
+            sheets = bindings(owner.find(self.extension + 'inputBindings'))
             if len(sheets) != 1 or owner.get('faultName'):
                 raise ValueError(f'{label}: expected one successful XML reply binding')
             config = mapper_config(sheets[0], self.variables)
@@ -513,20 +532,20 @@ class ProcessConverter:
             after = self.connect(previous, mapped)
             return self.connect(after, self.node('http_response', label, {'operation': 'response',
                                 'contentType': 'application/xml', 'body': '${activities.' + mapped + '.output.xmlString}'}))
-        if owner.tag not in {BW + 'extActivity', BW + 'activityExtension'}:
+        if owner.tag not in {self.extension + 'extActivity', self.extension + 'activityExtension'}:
             raise ValueError(f'{label}: unsupported BPEL activity {etree.QName(owner).localname}')
-        design = owner.find(f'{BW}config/{BW_ACTIVITY}')
+        design = activity_design(owner, self.extension)
         kind = ((design.get('activityTypeID') if design is not None else owner.get('type')) or '').lower()
         value = design.find("activityConfig/properties[@name='config']/value") if design is not None else None
-        sheets = bindings(owner.find(BW + 'inputBindings'))
-        if len(sheets) > 1 or not sheets and owner.find(BW + 'inputBindings') is not None:
+        sheets = bindings(owner.find(self.extension + 'inputBindings'))
+        if len(sheets) > 1 or not sheets and owner.find(self.extension + 'inputBindings') is not None:
             raise ValueError(f'{label}: expected a single stylesheet input binding')
         binding = sheets[0] if sheets else None
         output_variable = owner.get('outputVariable') or label
 
         def map_binding():
             config = mapper_config(binding, self.variables)
-            if owner.tag == BW + 'activityExtension':
+            if owner.tag == self.extension + 'activityExtension':
                 config['bwXmlElementVariables'] = True
                 config.setdefault('xmlSource', '<input/>')
             return self.node('mapper', label + '-Binding', config)
@@ -614,15 +633,14 @@ class ProcessConverter:
                         raise ValueError(f'{label}: unsupported Parse {family.upper()} input binding')
                 else:
                     templates = binding.findall(XSL + 'template')
-                    render_wrapper = '{http://www.tibco.com/namespaces/tnt/plugins/xmlpallete}xmlInput'
                     wrapped = (family == 'xml' and len(templates) == 1 and len(templates[0]) == 1
-                               and templates[0][0].tag == render_wrapper)
+                               and legacy_name(templates[0][0].tag, 'xmlInput', '/namespaces/tnt/plugins/xmlpallete'))
                     input_mappings['bwRenderInput' if wrapped else 'xmlString'] = prefix + 'xmlString}'
             if not parsing: config['bwOutputEnvelope'] = True
             activity = self.node(family, label, config)
             self.variables[output_variable] = '${activities.' + activity + '.output.' + ('xmlString' if parsing else 'bwXml') + '}'
         elif kind == 'bw.generalactivities.callprocess':
-            call = owner.find(BW + 'CallProcess')
+            call = owner.find(self.extension + 'CallProcess')
             if binding is not None or call is None or set(call.attrib) != {'subProcessName'} or len(call):
                 raise ValueError(f'{label}: dynamic or bound Call Process requires review')
             target = self.resolve_task(call.get('subProcessName'))
@@ -631,7 +649,7 @@ class ProcessConverter:
             self.variables[output_variable] = '${activities.' + activity + '.output}'
         elif kind in {'bw.parse.parsedata', 'bw.parse.renderdata', 'bw.dataconversion.parsedata', 'bw.dataconversion.renderdata'}:
             parsing = kind.endswith('.parsedata')
-            settings = value if value is not None else owner.find(BW + ('ParseData' if parsing else 'RenderData'))
+            settings = value if value is not None else owner.find(self.extension + ('ParseData' if parsing else 'RenderData'))
             if settings is None: raise ValueError(f'{label}: missing Parse/Render Data configuration')
             options = {etree.QName(k).localname: v for k, v in settings.attrib.items() if not k.startswith('{')}
             for child in settings:
@@ -643,9 +661,10 @@ class ProcessConverter:
             unbound = False
             if variable is not None:
                 literal = (variable.findtext(f'{BPEL}from/{BPEL}literal') or
-                           variable.get('{http://ns.tibco.com/bw/property}source'))
-                unbound = not literal and variable.get(
-                    '{http://docs.oasis-open.org/ns/opencsa/sca-bpel/200801}sharedResourceType') == '{http://ns.tibco.com/bw/palette/dataformat}DataFormat'
+                           next((v for key, v in variable.attrib.items()
+                                 if legacy_name(key, 'source', '/bw/property')), None))
+                resource_type = variable.get('{http://docs.oasis-open.org/ns/opencsa/sca-bpel/200801}sharedResourceType')
+                unbound = not literal and legacy_name(resource_type, 'DataFormat', '/bw/palette/dataformat')
                 reference = literal or reference
             try:
                 format_id = self.resolve_resource(reference, 'data_format')
@@ -704,7 +723,7 @@ class ProcessConverter:
                               append=value.get('append', 'false') == 'true', overwrite=value.get('overwrite', 'false') == 'true')
             activity = self.node('file', label, config)
         elif kind in {'bw.file.read', 'bw.file.readfile'}:
-            config = _settings(owner.find(BW + 'ReadFile'), {'fileName', 'readAs', 'encoding', 'excludeFileContent'})
+            config = _settings(owner.find(self.extension + 'ReadFile'), {'fileName', 'readAs', 'encoding', 'excludeFileContent'})
             path = config.get('fileName')
             if (binding is not None or not path or '${' in path or config.get('excludeFileContent', 'false') != 'false'
                     or config.get('readAs', 'text').lower() not in {'text', 'binary'}):
@@ -712,7 +731,7 @@ class ProcessConverter:
             activity = self.node('file', label, {'operation': 'read', 'path': path, 'readAs': config.get('readAs', 'text'),
                                                   'encoding': config.get('encoding', 'utf-8')})
         elif kind in {'bw.http.sendhttprequest', 'bw.http.sendrequest'}:
-            config = _settings(owner.find(BW + 'SendHTTPRequest'), {'httpClient', 'method', 'requestURI'})
+            config = _settings(owner.find(self.extension + 'SendHTTPRequest'), {'httpClient', 'method', 'requestURI'})
             method, path = config.get('method', 'GET').upper(), config.get('requestURI', '')
             uri = urlsplit(path)
             if (binding is not None or method not in {'GET', 'HEAD'} or not path.startswith('/') or uri.netloc

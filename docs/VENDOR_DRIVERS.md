@@ -19,18 +19,14 @@ Set `MINA_DRIVER_HOME` to override the complete root, or enter a **Driver JAR di
 
 ## EMS / JMS
 
-Place the EMS client files in:
+Place the provider's EMS client and the matching JMS API JAR in the
+`jms` directory under the driver root. If the provider requires a separate
+library for failover, install the matching version from the same distribution.
 
-```text
-C:\ProgramData\MINA Studio\drivers\jms\tibjms.jar
-C:\ProgramData\MINA Studio\drivers\jms\jakarta.jms-api-2.0.3.jar
-```
-
-For older EMS releases, use the matching `jms-2.0.jar` supplied with that EMS installation. Add `tibjmsufo.jar` for unshared-state failover. Do not mix JARs from different EMS releases.
-
-The EMS direct factory class is supplied by the runtime default. If overriding it, use the exact fully qualified class name from your licensed driver documentation. Java class names are provider identifiers and must not be renamed.
-
-Direct mode uses the EMS URL, username, and password. JNDI mode additionally uses the configured initial-context factory, provider URL, credentials, and connection-factory JNDI name.
+In Direct mode, set the server URL and the provider's fully qualified
+connection factory class. In JNDI mode, set the provider URL, the initial
+context factory class, and the connection factory lookup name. Supply
+credentials if your provider requires them.
 
 ## Microsoft SQL Server
 

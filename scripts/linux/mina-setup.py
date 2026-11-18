@@ -49,12 +49,21 @@ def normalize_scripts(source):
 
 def bundle(output):
     output = Path(output).resolve()
-    excluded = {'.git', '.venv', 'node_modules', '__pycache__', 'dist', 'build', 'release', 'data', 'logs', 'agent-state', '.pytest_cache'}
+    excluded = {'node_modules', '__pycache__', 'dist', 'build', 'release', 'data', 'logs', 'agent-state'}
+    source_suffixes = {'.py', '.sh', '.ps1', '.cmd', '.cjs', '.ini', '.txt', '.md',
+                       '.java', '.nsi', '.html', '.js', '.css'}
     files = []
     for folder in ('administrator', 'backend', 'scripts', 'java-bridge', 'drivers'):
         base = SOFTWARE / folder
-        if base.exists():
-            files.extend(path for path in base.rglob('*') if path.is_file() and not path.is_symlink() and not excluded.intersection(path.relative_to(base).parts) and path.suffix not in {'.pyc', '.pyo'} and path.resolve() != output)
+        for directory, subdirectories, names in os.walk(base):
+            subdirectories[:] = sorted(name for name in subdirectories
+                                       if name not in excluded and not name.startswith('.'))
+            for name in sorted(names):
+                path = Path(directory) / name
+                if name.startswith('.') or path.is_symlink() or path == output:
+                    continue
+                if path.suffix in source_suffixes or path == SOFTWARE / 'administrator/bin/minaadmin':
+                    files.append(path)
     files.append(SOFTWARE / 'docs/LINUX_SETUP.md')
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:

@@ -33,6 +33,10 @@ backend/dist/
 backend/*.spec
 
 tmp/
+/backend/dev_jco_rfc.log
+/backend/sap-tids-*.properties*
+/samples/petm-out-artmas05-prc.mpackage
+/docs/kafka-idoc.txt
 
 administrator/.venv/
 administrator/data/

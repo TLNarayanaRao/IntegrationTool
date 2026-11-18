@@ -21,7 +21,7 @@ Profiles, timing limits and the actual-provider qualification boundary below are
 
 Studio, Run, Debug and both Python formats allow provider/factory defaults when both JMS username and password are blank. The Java bridge calls the provider's no-argument `createConnection()` in that case. If either credential is supplied, both configured values are passed unchanged to `createConnection(username, password)`. Authentication remains enforced by the provider; optional fields do not grant access to a secured broker.
 
-JNDI uses its provider URL and connection-factory name instead of requiring an unused direct connection URL. Naming credentials are optional unless the naming provider requires them. Generic JMS requires an initial-context factory; the EMS connector can use its connector default. Rebuild the matching Java bridge and restart Studio to load this change.
+JNDI uses its provider URL and connection-factory name instead of requiring an unused direct connection URL. Naming credentials are optional unless the naming provider requires them. Set the provider’s initial context factory for either EMS or JMS. Rebuild the matching Java bridge and restart Studio to load this change.
 
 ## Connection reuse
 

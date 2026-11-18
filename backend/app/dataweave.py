@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-"""A safe, executable DataWeave-compatible integration subset.
+"""MINA's bounded transform-script interpreter.
 
-This deliberately does not execute Python and does not claim to be Mule's
-proprietary DataWeave engine.  It implements the expressions most useful in an
-integration flow: selectors, objects/arrays, defaults, conditionals, common
-functions, and collection transforms.
+Supports selectors, objects and arrays, defaults, conditionals, common
+functions, and collection transforms without executing Python.
 """
 
 import csv
@@ -313,7 +311,7 @@ class Parser:
         if name in ('asString', 'string'): return '' if value is None else str(value)
         if name in ('asNumber', 'number'): return float(value) if value not in (None, '') else None
         if name in ('asBoolean', 'boolean'): return value if isinstance(value, bool) else str(value).lower() in ('true', '1', 'yes')
-        if name not in functions: raise DataWeaveError(f'Unsupported DataWeave function {name!r}')
+        if name not in functions: raise DataWeaveError(f'Unsupported transform function {name!r}')
         return functions[name]()
 
 
@@ -337,7 +335,7 @@ def _header_statements(header):
 
 
 def parse_script(script: str) -> tuple[dict[str, Any], str]:
-    if '---' not in script: raise DataWeaveError('A DataWeave script requires the --- header/body separator')
+    if '---' not in script: raise DataWeaveError('A transform script requires the --- header/body separator')
     header, body = script.split('---', 1)
     metadata: dict[str, Any] = {'version': '2.0', 'outputMimeType': 'application/json', 'variables': [], 'functions': {}}
     for raw in _header_statements(header):
@@ -367,7 +365,7 @@ def parse_script(script: str) -> tuple[dict[str, Any], str]:
         elif line.startswith('import '):
             metadata.setdefault('imports', []).append(line[7:].strip())
         elif line.startswith(('ns ', 'type ')):
-            raise DataWeaveError(f'{line.split()[0]} declarations require the Mule DataWeave runtime and are not supported by the embedded engine')
+            raise DataWeaveError(f'{line.split()[0]} declarations are unsupported by the transform engine')
         else: raise DataWeaveError(f'Unsupported header directive: {line}')
     return metadata, body.strip()
 

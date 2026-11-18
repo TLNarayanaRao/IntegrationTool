@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "032b08e730af8f11b156d75f8ad064443a473052167129f5157324b970267cb7",
+  "fingerprint": "c61fd93e7cd9d235a1cd15932a91a4e21396aae11ac8b964111d910c3a1152cf",
   "counts": {
     "activities": 104,
     "groups": 11,
@@ -16884,7 +16884,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation dynamic_connection",
@@ -17075,7 +17075,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -17241,7 +17241,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_acknowledgment",
@@ -17432,7 +17432,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -17598,7 +17598,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_confirmation",
@@ -17789,7 +17789,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -17955,7 +17955,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_converter",
@@ -18146,7 +18146,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -18312,7 +18312,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_listener",
@@ -18320,7 +18320,7 @@
                 ],
                 [
                   "Inbound SAP adapter",
-                  "backend/app/sap.py:808\nasync def receive_idoc("
+                  "backend/app/sap.py:809\nasync def receive_idoc("
                 ],
                 [
                   "Continuous SAP jobs",
@@ -18511,7 +18511,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -18523,7 +18523,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 808,
+          "line": 809,
           "symbol": "async def receive_idoc(",
           "role": "Inbound SAP adapter"
         },
@@ -18689,7 +18689,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_parser",
@@ -18880,7 +18880,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -19046,7 +19046,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_reader",
@@ -19237,7 +19237,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -19403,7 +19403,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation post_idoc",
@@ -19594,7 +19594,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -19760,7 +19760,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_renderer",
@@ -19951,7 +19951,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -20117,7 +20117,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation rfc_bapi_listener",
@@ -20125,7 +20125,7 @@
                 ],
                 [
                   "Inbound SAP adapter",
-                  "backend/app/sap.py:808\nasync def receive_idoc("
+                  "backend/app/sap.py:809\nasync def receive_idoc("
                 ],
                 [
                   "Continuous SAP jobs",
@@ -20316,7 +20316,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -20328,7 +20328,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 808,
+          "line": 809,
           "symbol": "async def receive_idoc(",
           "role": "Inbound SAP adapter"
         },
@@ -20494,7 +20494,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation invoke_rfc_bapi",
@@ -20685,7 +20685,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -20851,7 +20851,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation reply_rfc_bapi",
@@ -21042,7 +21042,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -21208,7 +21208,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation read_table",
@@ -21399,7 +21399,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -26983,7 +26983,7 @@
                 ],
                 [
                   "XML parse; render_xml_activity handles render",
-                  "backend/app/data_formats.py:393\ndef parse_xml_activity("
+                  "backend/app/data_formats.py:394\ndef parse_xml_activity("
                 ],
                 [
                   "Direct Python implementation; inspect operation parse",
@@ -27160,7 +27160,7 @@
         },
         {
           "file": "backend/app/data_formats.py",
-          "line": 393,
+          "line": 394,
           "symbol": "def parse_xml_activity(",
           "role": "XML parse; render_xml_activity handles render"
         },
@@ -27310,7 +27310,7 @@
                 ],
                 [
                   "XML parse; render_xml_activity handles render",
-                  "backend/app/data_formats.py:393\ndef parse_xml_activity("
+                  "backend/app/data_formats.py:394\ndef parse_xml_activity("
                 ],
                 [
                   "Direct Python implementation; inspect operation render",
@@ -27318,7 +27318,7 @@
                 ],
                 [
                   "XML render implementation",
-                  "backend/app/data_formats.py:425\ndef render_xml_activity("
+                  "backend/app/data_formats.py:426\ndef render_xml_activity("
                 ],
                 [
                   "Direct graph/code generation",
@@ -27491,7 +27491,7 @@
         },
         {
           "file": "backend/app/data_formats.py",
-          "line": 393,
+          "line": 394,
           "symbol": "def parse_xml_activity(",
           "role": "XML parse; render_xml_activity handles render"
         },
@@ -27503,7 +27503,7 @@
         },
         {
           "file": "backend/app/data_formats.py",
-          "line": 425,
+          "line": 426,
           "symbol": "def render_xml_activity(",
           "role": "XML render implementation"
         },
@@ -27647,7 +27647,7 @@
                 ],
                 [
                   "JSON parse/render and validation",
-                  "backend/app/data_formats.py:568\ndef json_activity("
+                  "backend/app/data_formats.py:569\ndef json_activity("
                 ],
                 [
                   "Direct Python implementation; inspect operation parse",
@@ -27824,7 +27824,7 @@
         },
         {
           "file": "backend/app/data_formats.py",
-          "line": 568,
+          "line": 569,
           "symbol": "def json_activity(",
           "role": "JSON parse/render and validation"
         },
@@ -27974,7 +27974,7 @@
                 ],
                 [
                   "JSON parse/render and validation",
-                  "backend/app/data_formats.py:568\ndef json_activity("
+                  "backend/app/data_formats.py:569\ndef json_activity("
                 ],
                 [
                   "Direct Python implementation; inspect operation render",
@@ -28151,7 +28151,7 @@
         },
         {
           "file": "backend/app/data_formats.py",
-          "line": 568,
+          "line": 569,
           "symbol": "def json_activity(",
           "role": "JSON parse/render and validation"
         },
@@ -28301,7 +28301,7 @@
                 ],
                 [
                   "Flat record parse/render",
-                  "backend/app/data_formats.py:736\ndef flat_data("
+                  "backend/app/data_formats.py:737\ndef flat_data("
                 ],
                 [
                   "Direct Python implementation; inspect operation parse",
@@ -28478,7 +28478,7 @@
         },
         {
           "file": "backend/app/data_formats.py",
-          "line": 736,
+          "line": 737,
           "symbol": "def flat_data(",
           "role": "Flat record parse/render"
         },
@@ -28628,7 +28628,7 @@
                 ],
                 [
                   "Flat record parse/render",
-                  "backend/app/data_formats.py:736\ndef flat_data("
+                  "backend/app/data_formats.py:737\ndef flat_data("
                 ],
                 [
                   "Direct Python implementation; inspect operation render",
@@ -28805,7 +28805,7 @@
         },
         {
           "file": "backend/app/data_formats.py",
-          "line": 736,
+          "line": 737,
           "symbol": "def flat_data(",
           "role": "Flat record parse/render"
         },
@@ -29623,7 +29623,7 @@
                 ],
                 [
                   "Transformation script parser and evaluator",
-                  "backend/app/dataweave.py:459\ndef execute_details("
+                  "backend/app/dataweave.py:457\ndef execute_details("
                 ],
                 [
                   "Direct Python implementation; inspect operation transform",
@@ -29806,7 +29806,7 @@
         },
         {
           "file": "backend/app/dataweave.py",
-          "line": 459,
+          "line": 457,
           "symbol": "def execute_details(",
           "role": "Transformation script parser and evaluator"
         },
@@ -36808,7 +36808,7 @@
                 ],
                 [
                   "Executable function inventory",
-                  "backend/app/mapper_xml.py:325\ndef xpath_function_palette("
+                  "backend/app/mapper_xml.py:365\ndef xpath_function_palette("
                 ],
                 [
                   "Function catalog and archive parity tests",
@@ -36854,7 +36854,7 @@
         },
         {
           "file": "backend/app/mapper_xml.py",
-          "line": 325,
+          "line": 365,
           "symbol": "def xpath_function_palette(",
           "role": "Executable function inventory"
         },
@@ -39285,7 +39285,7 @@
               ],
               "rows": [
                 [
-                  "Local format, Mapper, DataWeave, Excel and Python resource gates",
+                  "Local format, Mapper, scripted Transform, Excel and Python resource gates",
                   "scripts/activity-resource-soak.py:33\ndef run("
                 ],
                 [
@@ -39368,7 +39368,7 @@
           "file": "scripts/activity-resource-soak.py",
           "line": 33,
           "symbol": "def run(",
-          "role": "Local format, Mapper, DataWeave, Excel and Python resource gates"
+          "role": "Local format, Mapper, scripted Transform, Excel and Python resource gates"
         },
         {
           "file": "backend/tests/test_remaining_activity_resources.py",

@@ -16,7 +16,7 @@ This review extends the File/FTP/SFTP and HTTP/database checks to the remaining 
 
 | Family | Evidence | Qualification still needed |
 | --- | --- | --- |
-| Mapper, transforms, DataWeave and six XML/JSON/data format activities | Full backend regressions, Run/Debug/archive parity cases, concurrent local soak | Representative customer schema sizes and sustained deployment workloads |
+| Mapper, transforms, scripted Transform and six XML/JSON/data format activities | Full backend regressions, Run/Debug/archive parity cases, concurrent local soak | Representative customer schema sizes and sustained deployment workloads |
 | Tasks, subtasks, groups, forks/joins, faults, mapping deletion and basic activities | Full backend suite, including 100-branch join and generated execution tests | Application-specific failure and recovery policies |
 | Excel, Python and Java invocation | Real XLSX Run/Debug/archive regression, Java process timeout cleanup, Python/Excel local soak | User-supplied code behavior and large workbooks |
 | Kafka and Pub/Sub | Publisher reuse, failure injection, bounded dynamic-configuration checks and generated adapter tests | Live broker/cloud soak, TLS/SASL/IAM, ordering, redelivery and failover |
@@ -47,6 +47,6 @@ node --test scripts/documentation.test.mjs
 npm.cmd run build
 ```
 
-The eight-worker soak concurrently exercises Mapper/DataWeave, six format operations, source and Direct Excel, and source and Direct Python invocation. It records actual operation counts, errors, RSS, traced Python heap, OS handles and threads. It does not force garbage collection. Gates are at most 64 MiB RSS growth, 8 MiB Python heap growth, 8 additional handles, 2 additional threads, and a late RSS slope at most 0.5 MiB/minute. Sampling starts after warmup. A ten-minute local check is not a long-duration remote-provider soak.
+The eight-worker soak concurrently exercises Mapper and scripted Transform, six format operations, source and Direct Excel, and source and Direct Python invocation. It records actual operation counts, errors, RSS, traced Python heap, OS handles and threads. It does not force garbage collection. Gates are at most 64 MiB RSS growth, 8 MiB Python heap growth, 8 additional handles, 2 additional threads, and a late RSS slope at most 0.5 MiB/minute. Sampling starts after warmup. A ten-minute local check is not a long-duration remote-provider soak.
 
 Measured results are stored in `docs/validation/remaining-activities-soak-2026-11-14.json`. The final regression summary and changed-file list are in `docs/REMAINING_ACTIVITY_CHANGED_FILES.md`.

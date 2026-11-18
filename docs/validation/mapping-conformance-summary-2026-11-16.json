@@ -76,7 +76,7 @@
     "Full proprietary extensions and lossless arbitrary-project migration"
   ],
   "referenceVerification": {
-    "mule4": "Official documentation comparison; no Mule runtime installed",
+    "externalTransformReference": "Documentation comparison only",
     "bw613": "Installed vendor sample bindings imported and executed in MINA; native engine not benchmarked"
   },
   "recordsPerMode": 100000,

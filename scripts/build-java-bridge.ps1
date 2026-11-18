@@ -7,6 +7,16 @@ $output = "$root\java-bridge\build"
 $classes = "$output\classes"
 $runtime = "$output\runtime"
 
+if (Test-Path -LiteralPath $classes) {
+    $checkedClasses = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $classes).Path)
+    $expectedClasses = [System.IO.Path]::GetFullPath((Join-Path $root 'java-bridge\build\classes'))
+    $parent = Get-Item -LiteralPath $output
+    if ($checkedClasses -ine $expectedClasses -or
+        (($parent.Attributes -bor (Get-Item -LiteralPath $classes).Attributes) -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "Refusing to replace an unexpected Java classes directory: $checkedClasses"
+    }
+    Remove-Item -Recurse -Force -LiteralPath $checkedClasses
+}
 New-Item -ItemType Directory -Force -Path $classes | Out-Null
 & (Join-Path $javaHome 'bin\javac.exe') -encoding UTF-8 -d $classes $source
 if ($LASTEXITCODE -ne 0) { throw "Java connector compilation failed with exit code $LASTEXITCODE" }

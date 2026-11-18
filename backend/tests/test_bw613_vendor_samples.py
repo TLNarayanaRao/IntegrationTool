@@ -6,6 +6,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from functools import cached_property
+from xml.etree import ElementTree
+from zipfile import ZipFile
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -18,9 +21,19 @@ from app.runtime import WorkflowRuntime
 
 @unittest.skipUnless(os.environ.get('MINA_BW613_HOME'), 'set MINA_BW613_HOME to the installed BW 6.13 directory')
 class BW613VendorSamples(unittest.TestCase):
-    def verify_sample(self, archive_name, task_suffix, payload, expected_type):
+    def sample_archive(self, suffix):
         samples = Path(os.environ['MINA_BW613_HOME']) / 'samples' / 'AppSpace'
-        archive = next(samples.rglob(archive_name))
+        archives = list(samples.rglob('*' + suffix + '.zip'))
+        self.assertEqual(len(archives), 1, f'Expected a single {suffix} sample in {samples}')
+        return archives[0]
+
+    def sample_namespace(self, schema):
+        with ZipFile(self.sample_archive('InvokeCode')) as archive:
+            entry = next(name for name in archive.namelist() if name.endswith('/Schemas/' + schema))
+            return escape(ElementTree.fromstring(archive.read(entry)).attrib['targetNamespace'])
+
+    def verify_sample(self, archive_name, task_suffix, payload, expected_type):
+        archive = self.sample_archive(archive_name)
         imported = json.loads(project_payload(archive.read_bytes(), archive.name))
         task = next(task for task in imported['tasks'] if task['name'].endswith(task_suffix))
         activity = next(activity for activity in task['activities'] if activity['type'] == expected_type)
@@ -47,35 +60,43 @@ class BW613VendorSamples(unittest.TestCase):
                 self.assertEqual(json.loads(next(line[7:] for line in run_archive.stdout.splitlines() if line.startswith('RESULT='))),run.output)
         return run.output
 
-    ORDER = ('<PurchaseOrder xmlns="http://tibco.tnt.org/Invoice"><OrderIdentifier>PO-7</OrderIdentifier>'
+    @cached_property
+    def order(self):
+        namespace = self.sample_namespace('PurchaseOrderSchema.xsd')
+        return (f'<PurchaseOrder xmlns="{namespace}"><OrderIdentifier>PO-7</OrderIdentifier>'
              '<CustomerIdentifier>C-1</CustomerIdentifier><LineItem><OrderIdentifier>PO-7</OrderIdentifier>'
              '<LineNumber>1</LineNumber><ItemIdentifier>ITEM</ItemIdentifier><Quantity>2</Quantity>'
              '<UnitPrice>9.50</UnitPrice></LineItem></PurchaseOrder>')
 
+    @cached_property
+    def customer(self):
+        namespace = self.sample_namespace('CustomerSchema.xsd')
+        return f'<CustomerInfo xmlns="{namespace}"><CustomerName>MINA</CustomerName></CustomerInfo>'
+
     def test_vendor_parse_xml(self):
-        payload = {'ReadPOXMLFile': '<ReadPOXMLFile><fileContent><textContent>'+escape(self.ORDER)+'</textContent></fileContent></ReadPOXMLFile>'}
-        output = self.verify_sample('tibco.bw.sample.palette.java.InvokeCode.zip','JavaProcess ParsePOXML',payload,'xml')
+        payload = {'ReadPOXMLFile': '<ReadPOXMLFile><fileContent><textContent>'+escape(self.order)+'</textContent></fileContent></ReadPOXMLFile>'}
+        output = self.verify_sample('InvokeCode','JavaProcess ParsePOXML',payload,'xml')
         self.assertEqual(output['PurchaseOrder']['OrderIdentifier'],'PO-7')
         self.assertEqual(output['PurchaseOrder']['LineItem'][0]['Quantity'],'2')
 
     def test_vendor_render_xml(self):
-        payload = {'Variable': '<completePO>'+self.ORDER+'<CustomerInfo xmlns="http://tibco.tnt.org/Customer"><CustomerName>MINA</CustomerName></CustomerInfo></completePO>'}
-        output = self.verify_sample('tibco.bw.sample.palette.java.InvokeCode.zip','JavaProcess RenderPOXML',payload,'xml')
+        payload = {'Variable': '<completePO>'+self.order+self.customer+'</completePO>'}
+        output = self.verify_sample('InvokeCode','JavaProcess RenderPOXML',payload,'xml')
         self.assertIn('PO-7',output['xmlString'])
         self.assertIn('MINA',output['xmlString'])
 
     def test_vendor_mapper(self):
         payload = {'Start':'<Start xmlns="http://www.example.com/namespaces/tns/1580279674527"><elements><AuthorID>1</AuthorID></elements></Start>'}
-        output = self.verify_sample('tibco.bw.UT.sample.UnitTestDemoProject.zip','SubProcesswithActivityAssertion Mapper',payload,'mapper')
+        output = self.verify_sample('UnitTestDemoProject','SubProcesswithActivityAssertion Mapper',payload,'mapper')
         self.assertEqual(output['Book']['Title'],'My Life and Times')
 
     def test_vendor_mapper_repeating_element_with_linked_target_schema(self):
         payload = {
-            'ParsePOXML': self.ORDER,
-            'Variable': '<completePO><CustomerInfo xmlns="http://tibco.tnt.org/Customer"><CustomerName>MINA</CustomerName></CustomerInfo></completePO>',
+            'ParsePOXML': self.order,
+            'Variable': '<completePO>'+self.customer+'</completePO>',
             'JavaCode': '<JavaCode/>',
             'index': 1,
         }
-        output = self.verify_sample('tibco.bw.sample.palette.java.InvokeCode.zip', 'JavaProcess Map-Data', payload, 'mapper')
+        output = self.verify_sample('InvokeCode', 'JavaProcess Map-Data', payload, 'mapper')
         self.assertEqual(output['completePO']['PurchaseOrder']['LineItem'][0]['Quantity'], '2')
         self.assertEqual(output['completePO']['CustomerInfo']['CustomerName'], 'MINA')

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title"><title id="title">GCP Pub/Sub Publisher</title><defs><linearGradient id="topic" x1="0" y1="0" x2=".7" y2="1"><stop stop-color="#5398ff"/><stop offset="1" stop-color="#2563cf"/></linearGradient></defs>
+ <path d="M34 3h28a5 5 0 0 1 4 2l13 21a5 5 0 0 1 0 5L66 52a5 5 0 0 1-4 2H34a5 5 0 0 1-4-2L17 31a5 5 0 0 1 0-5L30 5a5 5 0 0 1 4-2Z" fill="url(#topic)" stroke="#90c2ff" stroke-width="2"/>
+ <path d="M48 29V13m0 16 14-8m-14 8 14 8m-14-8v16m0-16-14 8m14-8-14-8" stroke="#c4dfff" stroke-width="1.7" fill="none"/>
+ <g fill="#fff"><circle cx="48" cy="29" r="6"/><circle cx="48" cy="13" r="3.8"/><circle cx="62" cy="21" r="3.8"/><circle cx="62" cy="37" r="3.8"/><circle cx="48" cy="45" r="3.8"/><circle cx="34" cy="37" r="3.8"/><circle cx="34" cy="21" r="3.8"/></g><g fill="none" stroke="#40ddb1" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"><path d="M48 69V58m-7 7 7-7 7 7"/>
+ <g stroke-width="3.5"><rect x="26" y="76" width="44" height="17" rx="4" fill="#123b36"/><path d="M34 82h28m-28 5h20" stroke-width="2.5"/></g></g></svg>

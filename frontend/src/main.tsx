@@ -1397,8 +1397,8 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
     }
     if (item.type === "dataweave") {
       const script = String(item.config.script || "");
-      if (!script.trim()) add("error", "Transform", `${item.name} has no DataWeave script.`, "Enter or AI-generate an executable transform script.", item.id);
-      else if (!script.includes("---")) add("error", "Transform", `${item.name} is missing the DataWeave header/body separator.`, "Add --- before the transform expression.", item.id);
+      if (!script.trim()) add("error", "Transform", `${item.name} has no transform script.`, "Enter or AI-generate an executable transform script.", item.id);
+      else if (!script.includes("---")) add("error", "Transform", `${item.name} is missing the script header/body separator.`, "Add --- before the transform expression.", item.id);
       if (item.config.aiReviewRequired) add("mapping", "Transform", `${item.name} contains an unreviewed AI-generated draft.`, "Review the script and run Map & Test before packaging.", item.id);
     }
     if (item.type === "jdbc" && operation === "call" && !String(item.config.procedure || "").trim()) add("error", "JDBC", `${item.name} has no procedure or function.`, "Select or enter a stored procedure/function.", item.id);
@@ -5564,14 +5564,14 @@ const connectionFieldSets: Record<string, any[]> = {
   ems: [
     { key: "serverUrl", label: "JMS connection URL", required: true, when: (config: any) => config.connectionFactoryType !== "JNDI", placeholder: "tcp://ems-host:7222" },
     { key: "driverDirectory", label: "EMS/JMS driver JAR directory", placeholder: "Blank uses C:\\ProgramData\\MINA Studio\\drivers\\jms" },
-    { key: "connectionFactoryClass", label: "Native connection factory class", placeholder: "Fully qualified class name from your driver documentation" },
+    { key: "connectionFactoryClass", label: "Native connection factory class", placeholder: "Fully qualified class name from your driver documentation", required: (config: any) => config.connectionFactoryType !== "JNDI" && config.mode !== "memory" },
     { key: "connectionFactoryType", label: "Connection factory type", options: ["Direct", "JNDI"] },
     { key: "messagingStyle", label: "Messaging style", options: ["Generic", "Queue/Topic"] },
     { key: "username", label: "Username", help: "Optional: blank credentials use provider/factory defaults. The provider may still require authentication." }, { key: "password", label: "Password", password: true, help: "Optional provider credential; explicit credentials are passed unchanged." },
     { key: "clientId", label: "Client ID", placeholder: "Generated automatically when blank" },
     { key: "connectionFactory", label: "JNDI connection factory", required: true, when: (config: any) => config.connectionFactoryType === "JNDI", options: ["ConnectionFactory", "QueueConnectionFactory", "TopicConnectionFactory"] },
     { key: "queueConnectionFactory", label: "Queue connection factory", when: (config: any) => config.connectionFactoryType === "JNDI" && config.messagingStyle === "Queue/Topic" }, { key: "topicConnectionFactory", label: "Topic connection factory", when: (config: any) => config.connectionFactoryType === "JNDI" && config.messagingStyle === "Queue/Topic" },
-    { key: "jndiContextFactory", label: "JNDI context factory", placeholder: "Leave blank to use the connector default", when: (config: any) => config.connectionFactoryType === "JNDI" }, { key: "jndiProviderUrl", label: "JNDI provider URL", required: true, when: (config: any) => config.connectionFactoryType === "JNDI" },
+    { key: "jndiContextFactory", label: "JNDI context factory", placeholder: "Fully qualified class name from your driver documentation", required: (config: any) => config.mode !== "memory", when: (config: any) => config.connectionFactoryType === "JNDI" }, { key: "jndiProviderUrl", label: "JNDI provider URL", required: true, when: (config: any) => config.connectionFactoryType === "JNDI" },
     { key: "jndiUsername", label: "JNDI username", when: (config: any) => config.connectionFactoryType === "JNDI", help: "Optional authentication identity for the naming provider." }, { key: "jndiPassword", label: "JNDI password", password: true, when: (config: any) => config.connectionFactoryType === "JNDI", help: "Optional naming-provider credential; required only if that provider requires it." },
     { key: "useXa", label: "Use XA connection factory", options: ["false", "true"] }, { key: "useUfo", label: "Use EMS unshared failover", options: ["false", "true"] },
     { key: "sslEnabled", label: "Enable SSL", options: ["false", "true"] }, { key: "sslTrustedCertificates", label: "SSL trusted certificates" },

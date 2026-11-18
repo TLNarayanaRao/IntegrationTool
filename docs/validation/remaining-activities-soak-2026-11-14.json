@@ -989,5 +989,5 @@
       "threads": 35
     }
   ],
-  "scope": "Local XML/JSON/flat parse-render, Mapper, DataWeave, source/Direct Excel and Python. No remote provider claims."
+  "scope": "Local XML/JSON/flat parse-render, Mapper, scripted Transform, source/Direct Excel and Python. No remote provider claims."
 }

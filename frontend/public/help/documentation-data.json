@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "032b08e730af8f11b156d75f8ad064443a473052167129f5157324b970267cb7",
+  "fingerprint": "c61fd93e7cd9d235a1cd15932a91a4e21396aae11ac8b964111d910c3a1152cf",
   "counts": {
     "activities": 104,
     "groups": 11,
@@ -8509,7 +8509,7 @@
             },
             {
               "kind": "p",
-              "text": "Install the licensed, version-compatible JMS client JARs under the runtime driver root/jms or set Driver JAR directory. Use the bundled Java bridge/runtime. A direct EMS connection requires URL, username and password; JNDI additionally requires its context factory, provider URL and connection-factory settings. Keep Java class names exactly as provided by the driver. Test from the execution machine, not only the developer laptop."
+              "text": "Install the version-compatible JMS client JARs under the runtime driver root/jms or set Driver JAR directory. For Direct mode, enter the server URL and the connection factory class from the driver. For JNDI mode, enter the initial context factory class, provider URL and connection factory lookup name. Supply credentials if your provider requires them. Test the connection from the machine that runs the flow."
             },
             {
               "kind": "p",
@@ -8857,7 +8857,7 @@
             },
             {
               "kind": "p",
-              "text": "Install the licensed, version-compatible JMS client JARs under the runtime driver root/jms or set Driver JAR directory. Use the bundled Java bridge/runtime. A direct EMS connection requires URL, username and password; JNDI additionally requires its context factory, provider URL and connection-factory settings. Keep Java class names exactly as provided by the driver. Test from the execution machine, not only the developer laptop."
+              "text": "Install the version-compatible JMS client JARs under the runtime driver root/jms or set Driver JAR directory. For Direct mode, enter the server URL and the connection factory class from the driver. For JNDI mode, enter the initial context factory class, provider URL and connection factory lookup name. Supply credentials if your provider requires them. Test the connection from the machine that runs the flow."
             },
             {
               "kind": "p",
@@ -9235,7 +9235,7 @@
             },
             {
               "kind": "p",
-              "text": "Install the licensed, version-compatible JMS client JARs under the runtime driver root/jms or set Driver JAR directory. Use the bundled Java bridge/runtime. A direct EMS connection requires URL, username and password; JNDI additionally requires its context factory, provider URL and connection-factory settings. Keep Java class names exactly as provided by the driver. Test from the execution machine, not only the developer laptop."
+              "text": "Install the version-compatible JMS client JARs under the runtime driver root/jms or set Driver JAR directory. For Direct mode, enter the server URL and the connection factory class from the driver. For JNDI mode, enter the initial context factory class, provider URL and connection factory lookup name. Supply credentials if your provider requires them. Test the connection from the machine that runs the flow."
             },
             {
               "kind": "p",
@@ -9589,7 +9589,7 @@
             },
             {
               "kind": "p",
-              "text": "Install the licensed, version-compatible JMS client JARs under the runtime driver root/jms or set Driver JAR directory. Use the bundled Java bridge/runtime. A direct EMS connection requires URL, username and password; JNDI additionally requires its context factory, provider URL and connection-factory settings. Keep Java class names exactly as provided by the driver. Test from the execution machine, not only the developer laptop."
+              "text": "Install the version-compatible JMS client JARs under the runtime driver root/jms or set Driver JAR directory. For Direct mode, enter the server URL and the connection factory class from the driver. For JNDI mode, enter the initial context factory class, provider URL and connection factory lookup name. Supply credentials if your provider requires them. Test the connection from the machine that runs the flow."
             },
             {
               "kind": "p",
@@ -9943,7 +9943,7 @@
             },
             {
               "kind": "p",
-              "text": "Install the licensed, version-compatible JMS client JARs under the runtime driver root/jms or set Driver JAR directory. Use the bundled Java bridge/runtime. A direct EMS connection requires URL, username and password; JNDI additionally requires its context factory, provider URL and connection-factory settings. Keep Java class names exactly as provided by the driver. Test from the execution machine, not only the developer laptop."
+              "text": "Install the version-compatible JMS client JARs under the runtime driver root/jms or set Driver JAR directory. For Direct mode, enter the server URL and the connection factory class from the driver. For JNDI mode, enter the initial context factory class, provider URL and connection factory lookup name. Supply credentials if your provider requires them. Test the connection from the machine that runs the flow."
             },
             {
               "kind": "p",
@@ -10376,7 +10376,7 @@
             },
             {
               "kind": "p",
-              "text": "Install the licensed, version-compatible JMS client JARs under the runtime driver root/jms or set Driver JAR directory. Use the bundled Java bridge/runtime. A direct EMS connection requires URL, username and password; JNDI additionally requires its context factory, provider URL and connection-factory settings. Keep Java class names exactly as provided by the driver. Test from the execution machine, not only the developer laptop."
+              "text": "Install the version-compatible JMS client JARs under the runtime driver root/jms or set Driver JAR directory. For Direct mode, enter the server URL and the connection factory class from the driver. For JNDI mode, enter the initial context factory class, provider URL and connection factory lookup name. Supply credentials if your provider requires them. Test the connection from the machine that runs the flow."
             },
             {
               "kind": "p",
@@ -26422,7 +26422,7 @@
           "blocks": [
             {
               "kind": "p",
-              "text": "Transforms payloads with MINA's executable DataWeave-compatible language subset."
+              "text": "Transforms payloads with MINA's embedded transform language."
             },
             {
               "kind": "p",
@@ -26472,7 +26472,7 @@
               ],
               "rows": [
                 [
-                  "DataWeave payload\npayload",
+                  "Payload\npayload",
                   "object\nRequired",
                   "The business value at this activity boundary. Map an explicit source field or document; use the selected schema to choose child fields and datatypes."
                 ],
@@ -39014,7 +39014,7 @@
                 [
                   "JNDI context factory\njndiContextFactory",
                   "text\nConfiguration setting",
-                  "JMS connection-factory selection. Direct and JNDI modes require different provider configuration; JNDI uses the context factory/provider URL and registered factory name.\nDefault: \"\"\nShown when: (config) => config.connectionFactoryType === \"JNDI\"\nExample / hint: Leave blank to use the connector default"
+                  "JMS connection-factory selection. Direct and JNDI modes require different provider configuration; JNDI uses the context factory/provider URL and registered factory name.\nDefault: \"\"\nShown when: (config) => config.connectionFactoryType === \"JNDI\"\nExample / hint: Fully qualified class name from your driver documentation"
                 ],
                 [
                   "JNDI provider URL\njndiProviderUrl",
@@ -43281,10 +43281,6 @@
             {
               "kind": "p",
               "text": "The broad backend run completed 684 tests with 11 environment-dependent skips and no failures. A final 33-test focused run also passed after the property/ condition and cancellation refinements. See [qualification evidence](validation/transform-features-summary-2026-11-16.json)."
-            },
-            {
-              "kind": "p",
-              "text": "Reference behavior was checked against the official [module reference](https://docs.mulesoft.com/dataweave/2.9/dw-functions), [streaming documentation](https://docs.mulesoft.com/dataweave/latest/dataweave-streaming), [Numbers module](https://docs.mulesoft.com/dataweave/latest/dw-numbers) and [Math module](https://docs.mulesoft.com/dataweave/2.4/dw-math). These references do not imply full language or runtime equivalence."
             }
           ]
         }
@@ -43313,7 +43309,7 @@
             },
             {
               "kind": "p",
-              "text": "MINA provides a schema-driven Mapper and a scripted Transformer. They are different execution paths. This review uses the installed 6.13 sample bindings and published 4.x transformation documentation as references. No other transformation engine was run for timing comparison. The results below measure MINA, not comparative vendor speed or complete language/UI equivalence."
+              "text": "MINA provides a schema-driven Mapper and a scripted Transformer. The tests use local migration fixtures and cover MINA behavior and performance."
             },
             {
               "kind": "heading",
@@ -43533,34 +43529,6 @@
             {
               "kind": "p",
               "text": "Repeat each with `debug`, `python-direct` and `python-engine` and fresh output paths. No broker or network service is required. Keep temporary generated files out of Git."
-            },
-            {
-              "kind": "heading",
-              "text": "Reference sources"
-            },
-            {
-              "kind": "p",
-              "text": "The comparison is based on original documentation, not copied implementation code:"
-            },
-            {
-              "kind": "list",
-              "text": "[6.13 application development reference](https://docs.tibco.com/pub/activematrix_businessworks/6.13.0/doc/pdf/TIB_BW_6.13.0_application_development.pdf?id=0): mapping controls and repeating statements."
-            },
-            {
-              "kind": "list",
-              "text": "[Transform Message component](https://docs.mulesoft.com/studio/transform-message-component-concept-studio): graphical/script views and sample preview."
-            },
-            {
-              "kind": "list",
-              "text": "[4.x Transform XML reference](https://docs.mulesoft.com/mule-runtime/latest/transform-dataweave-xml-reference): message and variable targets."
-            },
-            {
-              "kind": "list",
-              "text": "[Control flow](https://docs.mulesoft.com/dataweave/2.9/dataweave-flow-control) and [defaults](https://docs.mulesoft.com/dataweave/2.9/dataweave-cookbook-defaults): conditional and missing/null behavior."
-            },
-            {
-              "kind": "list",
-              "text": "[Object filtering](https://docs.mulesoft.com/dataweave/2.9/dw-core-functions-filterobject), [object mapping](https://docs.mulesoft.com/dataweave/2.9/dw-core-functions-mapobject) and [core functions](https://docs.mulesoft.com/dataweave/2.9/dw-core): collection operations and signatures."
             }
           ]
         }
@@ -43878,7 +43846,7 @@
             },
             {
               "kind": "p",
-              "text": "JNDI uses its provider URL and connection-factory name instead of requiring an unused direct connection URL. Naming credentials are optional unless the naming provider requires them. Generic JMS requires an initial-context factory; the EMS connector can use its connector default. Rebuild the matching Java bridge and restart Studio to load this change."
+              "text": "JNDI uses its provider URL and connection-factory name instead of requiring an unused direct connection URL. Naming credentials are optional unless the naming provider requires them. Set the provider’s initial context factory for either EMS or JMS. Rebuild the matching Java bridge and restart Studio to load this change."
             },
             {
               "kind": "heading",
@@ -44628,7 +44596,7 @@
               ],
               "rows": [
                 [
-                  "Mapper, transforms, DataWeave and six XML/JSON/data format activities",
+                  "Mapper, transforms, scripted Transform and six XML/JSON/data format activities",
                   "Full backend regressions, Run/Debug/archive parity cases, concurrent local soak",
                   "Representative customer schema sizes and sustained deployment workloads"
                 ],
@@ -44700,7 +44668,7 @@
             },
             {
               "kind": "p",
-              "text": "The eight-worker soak concurrently exercises Mapper/DataWeave, six format operations, source and Direct Excel, and source and Direct Python invocation. It records actual operation counts, errors, RSS, traced Python heap, OS handles and threads. It does not force garbage collection. Gates are at most 64 MiB RSS growth, 8 MiB Python heap growth, 8 additional handles, 2 additional threads, and a late RSS slope at most 0.5 MiB/minute. Sampling starts after warmup. A ten-minute local check is not a long-duration remote-provider soak."
+              "text": "The eight-worker soak concurrently exercises Mapper and scripted Transform, six format operations, source and Direct Excel, and source and Direct Python invocation. It records actual operation counts, errors, RSS, traced Python heap, OS handles and threads. It does not force garbage collection. Gates are at most 64 MiB RSS growth, 8 MiB Python heap growth, 8 additional handles, 2 additional threads, and a late RSS slope at most 0.5 MiB/minute. Sampling starts after warmup. A ten-minute local check is not a long-duration remote-provider soak."
             },
             {
               "kind": "p",
@@ -48242,23 +48210,11 @@
             },
             {
               "kind": "p",
-              "text": "Place the EMS client files in:"
-            },
-            {
-              "kind": "code",
-              "text": "C:\\ProgramData\\MINA Studio\\drivers\\jms\\tibjms.jar\nC:\\ProgramData\\MINA Studio\\drivers\\jms\\jakarta.jms-api-2.0.3.jar"
+              "text": "Place the provider's EMS client and the matching JMS API JAR in the `jms` directory under the driver root. If the provider requires a separate library for failover, install the matching version from the same distribution."
             },
             {
               "kind": "p",
-              "text": "For older EMS releases, use the matching `jms-2.0.jar` supplied with that EMS installation. Add `tibjmsufo.jar` for unshared-state failover. Do not mix JARs from different EMS releases."
-            },
-            {
-              "kind": "p",
-              "text": "The EMS direct factory class is supplied by the runtime default. If overriding it, use the exact fully qualified class name from your licensed driver documentation. Java class names are provider identifiers and must not be renamed."
-            },
-            {
-              "kind": "p",
-              "text": "Direct mode uses the EMS URL, username, and password. JNDI mode additionally uses the configured initial-context factory, provider URL, credentials, and connection-factory JNDI name."
+              "text": "In Direct mode, set the server URL and the provider's fully qualified connection factory class. In JNDI mode, set the provider URL, the initial context factory class, and the connection factory lookup name. Supply credentials if your provider requires them."
             },
             {
               "kind": "heading",
@@ -67365,7 +67321,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation dynamic_connection",
@@ -67556,7 +67512,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -67722,7 +67678,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_acknowledgment",
@@ -67913,7 +67869,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -68079,7 +68035,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_confirmation",
@@ -68270,7 +68226,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -68436,7 +68392,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_converter",
@@ -68627,7 +68583,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -68793,7 +68749,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_listener",
@@ -68801,7 +68757,7 @@
                 ],
                 [
                   "Inbound SAP adapter",
-                  "backend/app/sap.py:808\nasync def receive_idoc("
+                  "backend/app/sap.py:809\nasync def receive_idoc("
                 ],
                 [
                   "Continuous SAP jobs",
@@ -68992,7 +68948,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -69004,7 +68960,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 808,
+          "line": 809,
           "symbol": "async def receive_idoc(",
           "role": "Inbound SAP adapter"
         },
@@ -69170,7 +69126,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_parser",
@@ -69361,7 +69317,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -69527,7 +69483,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_reader",
@@ -69718,7 +69674,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -69884,7 +69840,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation post_idoc",
@@ -70075,7 +70031,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -70241,7 +70197,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_renderer",
@@ -70432,7 +70388,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -70598,7 +70554,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation rfc_bapi_listener",
@@ -70606,7 +70562,7 @@
                 ],
                 [
                   "Inbound SAP adapter",
-                  "backend/app/sap.py:808\nasync def receive_idoc("
+                  "backend/app/sap.py:809\nasync def receive_idoc("
                 ],
                 [
                   "Continuous SAP jobs",
@@ -70797,7 +70753,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -70809,7 +70765,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 808,
+          "line": 809,
           "symbol": "async def receive_idoc(",
           "role": "Inbound SAP adapter"
         },
@@ -70975,7 +70931,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation invoke_rfc_bapi",
@@ -71166,7 +71122,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -71332,7 +71288,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation reply_rfc_bapi",
@@ -71523,7 +71479,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -71689,7 +71645,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1096\ndef execute("
+                  "backend/app/sap.py:1097\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation read_table",
@@ -71880,7 +71836,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1096,
+          "line": 1097,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -77464,7 +77420,7 @@
                 ],
                 [
                   "XML parse; render_xml_activity handles render",
-                  "backend/app/data_formats.py:393\ndef parse_xml_activity("
+                  "backend/app/data_formats.py:394\ndef parse_xml_activity("
                 ],
                 [
                   "Direct Python implementation; inspect operation parse",
@@ -77641,7 +77597,7 @@
         },
         {
           "file": "backend/app/data_formats.py",
-          "line": 393,
+          "line": 394,
           "symbol": "def parse_xml_activity(",
           "role": "XML parse; render_xml_activity handles render"
         },
@@ -77791,7 +77747,7 @@
                 ],
                 [
                   "XML parse; render_xml_activity handles render",
-                  "backend/app/data_formats.py:393\ndef parse_xml_activity("
+                  "backend/app/data_formats.py:394\ndef parse_xml_activity("
                 ],
                 [
                   "Direct Python implementation; inspect operation render",
@@ -77799,7 +77755,7 @@
                 ],
                 [
                   "XML render implementation",
-                  "backend/app/data_formats.py:425\ndef render_xml_activity("
+                  "backend/app/data_formats.py:426\ndef render_xml_activity("
                 ],
                 [
                   "Direct graph/code generation",
@@ -77972,7 +77928,7 @@
         },
         {
           "file": "backend/app/data_formats.py",
-          "line": 393,
+          "line": 394,
           "symbol": "def parse_xml_activity(",
           "role": "XML parse; render_xml_activity handles render"
         },
@@ -77984,7 +77940,7 @@
         },
         {
           "file": "backend/app/data_formats.py",
-          "line": 425,
+          "line": 426,
           "symbol": "def render_xml_activity(",
           "role": "XML render implementation"
         },
@@ -78128,7 +78084,7 @@
                 ],
                 [
                   "JSON parse/render and validation",
-                  "backend/app/data_formats.py:568\ndef json_activity("
+                  "backend/app/data_formats.py:569\ndef json_activity("
                 ],
                 [
                   "Direct Python implementation; inspect operation parse",
@@ -78305,7 +78261,7 @@
         },
         {
           "file": "backend/app/data_formats.py",
-          "line": 568,
+          "line": 569,
           "symbol": "def json_activity(",
           "role": "JSON parse/render and validation"
         },
@@ -78455,7 +78411,7 @@
                 ],
                 [
                   "JSON parse/render and validation",
-                  "backend/app/data_formats.py:568\ndef json_activity("
+                  "backend/app/data_formats.py:569\ndef json_activity("
                 ],
                 [
                   "Direct Python implementation; inspect operation render",
@@ -78632,7 +78588,7 @@
         },
         {
           "file": "backend/app/data_formats.py",
-          "line": 568,
+          "line": 569,
           "symbol": "def json_activity(",
           "role": "JSON parse/render and validation"
         },
@@ -78782,7 +78738,7 @@
                 ],
                 [
                   "Flat record parse/render",
-                  "backend/app/data_formats.py:736\ndef flat_data("
+                  "backend/app/data_formats.py:737\ndef flat_data("
                 ],
                 [
                   "Direct Python implementation; inspect operation parse",
@@ -78959,7 +78915,7 @@
         },
         {
           "file": "backend/app/data_formats.py",
-          "line": 736,
+          "line": 737,
           "symbol": "def flat_data(",
           "role": "Flat record parse/render"
         },
@@ -79109,7 +79065,7 @@
                 ],
                 [
                   "Flat record parse/render",
-                  "backend/app/data_formats.py:736\ndef flat_data("
+                  "backend/app/data_formats.py:737\ndef flat_data("
                 ],
                 [
                   "Direct Python implementation; inspect operation render",
@@ -79286,7 +79242,7 @@
         },
         {
           "file": "backend/app/data_formats.py",
-          "line": 736,
+          "line": 737,
           "symbol": "def flat_data(",
           "role": "Flat record parse/render"
         },
@@ -80104,7 +80060,7 @@
                 ],
                 [
                   "Transformation script parser and evaluator",
-                  "backend/app/dataweave.py:459\ndef execute_details("
+                  "backend/app/dataweave.py:457\ndef execute_details("
                 ],
                 [
                   "Direct Python implementation; inspect operation transform",
@@ -80287,7 +80243,7 @@
         },
         {
           "file": "backend/app/dataweave.py",
-          "line": 459,
+          "line": 457,
           "symbol": "def execute_details(",
           "role": "Transformation script parser and evaluator"
         },
@@ -87289,7 +87245,7 @@
                 ],
                 [
                   "Executable function inventory",
-                  "backend/app/mapper_xml.py:325\ndef xpath_function_palette("
+                  "backend/app/mapper_xml.py:365\ndef xpath_function_palette("
                 ],
                 [
                   "Function catalog and archive parity tests",
@@ -87335,7 +87291,7 @@
         },
         {
           "file": "backend/app/mapper_xml.py",
-          "line": 325,
+          "line": 365,
           "symbol": "def xpath_function_palette(",
           "role": "Executable function inventory"
         },
@@ -89766,7 +89722,7 @@
               ],
               "rows": [
                 [
-                  "Local format, Mapper, DataWeave, Excel and Python resource gates",
+                  "Local format, Mapper, scripted Transform, Excel and Python resource gates",
                   "scripts/activity-resource-soak.py:33\ndef run("
                 ],
                 [
@@ -89849,7 +89805,7 @@
           "file": "scripts/activity-resource-soak.py",
           "line": 33,
           "symbol": "def run(",
-          "role": "Local format, Mapper, DataWeave, Excel and Python resource gates"
+          "role": "Local format, Mapper, scripted Transform, Excel and Python resource gates"
         },
         {
           "file": "backend/tests/test_remaining_activity_resources.py",

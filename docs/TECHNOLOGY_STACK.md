@@ -167,7 +167,7 @@ The platform uses native Python implementations for:
 - XSD-informed schema structures;
 - flat-file and CSV parsing/rendering;
 - field mapping and mapping validation;
-- DataWeave-inspired expression execution and script recommendations;
+- Scripted transformation and script recommendations;
 - environment/property expressions such as `${input...}`, `${last...}`, and `${properties...}` where enabled by the activity model.
 
 The visual mapper is implemented in React/TypeScript, while execution and validation occur in the Python runtime. The runtime carries activity outputs, attributes, variables, and prior results through the graph context.

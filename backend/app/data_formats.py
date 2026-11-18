@@ -7,6 +7,7 @@ from pathlib import Path
 from lxml import etree
 from .faults import MinaFault
 from .mapper import validate_output
+from .mapper_xml import legacy_name
 
 @lru_cache(maxsize=8)
 def compiled_xsd(schema, bundle=()):
@@ -427,7 +428,7 @@ class DataFormats:
             wrapper = xml_document(cfg['bwRenderInput'])
             encoding = wrapper.find('byteEncoding')
             documents = [child for child in wrapper if isinstance(child.tag, str) and child.tag != 'byteEncoding']
-            if wrapper.tag != '{http://www.tibco.com/namespaces/tnt/plugins/xmlpallete}xmlInput' or len(documents) != 1:
+            if not legacy_name(wrapper.tag, 'xmlInput', '/namespaces/tnt/plugins/xmlpallete') or len(documents) != 1:
                 raise MinaFault('Expected one XML document in the render input wrapper', fault_type='ValidationException')
             cfg = {**cfg, 'xmlString': etree.tostring(documents[0], encoding='unicode', with_tail=False)}
             if encoding is not None and encoding.text:

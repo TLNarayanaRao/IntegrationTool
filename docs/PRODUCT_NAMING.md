@@ -4,12 +4,17 @@ MINA-owned UI labels, samples and documentation use MINA branding and neutral
 connector names such as EMS and JMS. Third-party product comparisons are not
 part of the product reference.
 
-Provider-owned Java class names, imported XML namespace identifiers and licensed
-dependency notices are compatibility or legal information, not product branding.
-Do not rename, encode or conceal those identifiers in executable configuration.
-The runtime still needs the exact values supplied by the provider. Existing user
-projects, credentials, installation directories and diagnostic logs are not
-rewritten by a branding update.
+MINA does not ship provider-specific Java factory defaults or hard-coded
+legacy XML namespace hosts. Imports recognize supported XML vocabulary shapes
+from declarations supplied in the input file. MINA preserves namespaces in
+user-supplied XML and stylesheets because namespace identifiers are part of
+the document contract. Namespace matching does not contact the named host.
+
+For a native EMS or JMS driver, enter the provider's fully qualified
+connection factory class for Direct mode or its initial context factory class
+and lookup name for JNDI mode. Existing connections that previously relied
+on a built-in default need the applicable class configured before use. Keep
+third-party dependency notices intact.
 
 New Linux setup defaults to `/opt/mina`. Existing installations must continue to
 set `MINA_ROOT` and `MINA_AGENT_ROOT` to their actual directories and preserve
@@ -20,8 +25,7 @@ numeric suffix. Update external alert rules that match the complete old error
 code; the common `SNOWFLAKE_DATABASE_JDBC` fault type is unchanged.
 
 Run `python scripts/check-product-naming.py` to check maintained product sources
-and bundled documentation. It permits only the explicit runtime compatibility
-identifiers listed in the checker. Dependencies, customer data, generated build
-directories, historical logs and old distributables are deliberately excluded.
+and bundled documentation. The checker does not allow exceptions in maintained source files. It excludes
+installed dependencies and user workspaces.
 Regenerate the web guide and PDF and rebuild the frontend and installer after
 changing user-facing product text.

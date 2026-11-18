@@ -7,11 +7,8 @@ libraries, multiple targets, bounded file streaming, script synchronization and
 schema enforcement added after the initial measurements below. The original
 reports remain historical evidence; current feature qualification is separate.
 
-MINA provides a schema-driven Mapper and a scripted Transformer. They are different
-execution paths. This review uses the installed 6.13 sample bindings and published
-4.x transformation documentation as references. No other transformation engine was
-run for timing comparison. The results below measure MINA, not comparative vendor
-speed or complete language/UI equivalence.
+MINA provides a schema-driven Mapper and a scripted Transformer. The tests
+use local migration fixtures and cover MINA behavior and performance.
 
 ## Changes from this review
 
@@ -107,13 +104,3 @@ python scripts/flow-throughput.py --family transformer --mode run --records 1000
 
 Repeat each with `debug`, `python-direct` and `python-engine` and fresh output paths.
 No broker or network service is required. Keep temporary generated files out of Git.
-
-## Reference sources
-
-The comparison is based on original documentation, not copied implementation code:
-
-- [6.13 application development reference](https://docs.tibco.com/pub/activematrix_businessworks/6.13.0/doc/pdf/TIB_BW_6.13.0_application_development.pdf?id=0): mapping controls and repeating statements.
-- [Transform Message component](https://docs.mulesoft.com/studio/transform-message-component-concept-studio): graphical/script views and sample preview.
-- [4.x Transform XML reference](https://docs.mulesoft.com/mule-runtime/latest/transform-dataweave-xml-reference): message and variable targets.
-- [Control flow](https://docs.mulesoft.com/dataweave/2.9/dataweave-flow-control) and [defaults](https://docs.mulesoft.com/dataweave/2.9/dataweave-cookbook-defaults): conditional and missing/null behavior.
-- [Object filtering](https://docs.mulesoft.com/dataweave/2.9/dw-core-functions-filterobject), [object mapping](https://docs.mulesoft.com/dataweave/2.9/dw-core-functions-mapobject) and [core functions](https://docs.mulesoft.com/dataweave/2.9/dw-core): collection operations and signatures.

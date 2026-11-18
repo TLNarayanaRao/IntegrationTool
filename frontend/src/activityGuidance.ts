@@ -34,9 +34,9 @@ export const activityGuidance: Record<string, string[]> = {
     "Executes immediately during local testing without waiting for the scheduled instant. Production packaging still honors the configured schedule."
   ],
   "DataWeaveScriptEditor": [
-    "Executable DataWeave 2.0-compatible integration language",
+    "Executable MINA transform scripts",
     "Embedded engine: Nested & wildcard selectors; Objects & arrays; default / if-else; Custom functions; as type coercion; map / flatMap / filter; mapObject / pluck; groupBy / orderBy / distinctBy; read / write; JSON / XML / CSV / text.",
-    "Common integration transformations execute locally in Run, Debug, and Test. Namespaces, type declarations, pattern matching, annotations, and Mule runtime-only modules are rejected explicitly."
+    "Common integration transformations execute locally in Run, Debug, and Test. Namespaces, type declarations, pattern matching, annotations, and external runtime modules are rejected explicitly."
   ],
   "DataWeaveTestEditor": [
     "Execute representative payload data before running the Task."

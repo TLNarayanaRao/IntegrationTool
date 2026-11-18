@@ -10,13 +10,14 @@ import time
 from functools import lru_cache
 from pathlib import Path
 from threading import BoundedSemaphore
+from urllib.parse import urlsplit
 
 from lxml import etree
 
 
 XSL = '{http://www.w3.org/1999/XSL/Transform}'
-BW_FUNCTIONS = 'http://www.tibco.com/bw/xslt/custom-functions'
-BW_RUNTIME_FUNCTIONS = 'http://www.tibco.com/bw/xpath/bw-custom-functions'
+BW_FUNCTIONS = 'urn:mina:mapper:extensions'
+BW_RUNTIME_FUNCTIONS = 'urn:mina:mapper:project'
 BW_PROPERTIES = 'mina-bw-module-properties'
 XSI_NIL = '{http://www.w3.org/2001/XMLSchema-instance}nil'
 MAX_XML_BYTES = 8 * 1024 * 1024
@@ -96,13 +97,50 @@ def _module_property(properties):
     return lookup
 
 
-def _bw_lxml_extensions(properties):
+def legacy_namespace(uri, path):
+    """Recognize an external XML vocabulary from its declared namespace path."""
+    if not uri:
+        return False
+    try:
+        parts = urlsplit(uri)
+        return (parts.scheme in ('http', 'https') and bool(parts.hostname)
+                and parts.path == path and not parts.query and not parts.fragment)
+    except ValueError:
+        return False
+
+
+def legacy_name(tag, name, path):
+    if not isinstance(tag, str) or not tag.startswith('{'):
+        return False
+    uri, _, local = tag[1:].partition('}')
+    return local == name and legacy_namespace(uri, path)
+
+
+def _function_namespaces(namespaces, native, legacy_path):
+    return sorted({uri for uri in namespaces if uri == native or legacy_namespace(uri, legacy_path)})
+
+
+def _text_namespaces(namespaces):
+    return _function_namespaces(namespaces, BW_FUNCTIONS, '/bw/xslt/custom-functions')
+
+
+def _property_namespaces(namespaces):
+    return _function_namespaces(namespaces, BW_RUNTIME_FUNCTIONS, '/bw/xpath/bw-custom-functions')
+
+
+def _stylesheet_namespaces(binding):
+    return {uri for node in binding.iter() for uri in node.nsmap.values()}
+
+
+def _bw_lxml_extensions(properties, namespaces):
     def convert(operation):
         return lambda _context, *values: operation(*values)
 
-    result = {(BW_FUNCTIONS, name): convert(operation) for name, (operation, _, _, _) in _BW_FUNCTIONS.items()}
+    result = {(uri, name): convert(operation) for uri in _text_namespaces(namespaces)
+              for name, (operation, _, _, _) in _BW_FUNCTIONS.items()}
     lookup = _module_property(properties)
-    result[BW_RUNTIME_FUNCTIONS, 'getModuleProperty'] = lambda _context, name: lookup(name)
+    for uri in _property_namespaces(namespaces):
+        result[uri, 'getModuleProperty'] = lambda _context, name: lookup(name)
     return result
 
 
@@ -120,12 +158,13 @@ def _bw_xslt_functions(binding, properties, parameters):
             etree.SubElement(declaration, XSL + 'param', name=argument)
         etree.SubElement(declaration, XSL + 'sequence', select=expression)
 
-    namespaces = {uri for element in binding.iter() for uri in element.nsmap.values()}
-    if BW_FUNCTIONS in namespaces:
+    namespaces = _stylesheet_namespaces(binding)
+    for uri in _text_namespaces(namespaces):
         for name, (_, arguments, expression, _) in _BW_FUNCTIONS.items():
-            if (BW_FUNCTIONS, name, len(arguments)) not in declared:
-                function(BW_FUNCTIONS, name, arguments, expression)
-    if BW_RUNTIME_FUNCTIONS in namespaces and (BW_RUNTIME_FUNCTIONS, 'getModuleProperty', 1) not in declared:
+            if (uri, name, len(arguments)) not in declared:
+                function(uri, name, arguments, expression)
+    missing = [uri for uri in _property_namespaces(namespaces) if (uri, 'getModuleProperty', 1) not in declared]
+    if missing:
         if BW_PROPERTIES in parameters or any(node.get('name') == BW_PROPERTIES for node in binding):
             raise ValueError('XSLT uses a reserved project property parameter')
         document = etree.Element('properties')
@@ -134,7 +173,8 @@ def _bw_xslt_functions(binding, properties, parameters):
                 etree.SubElement(document, 'property', name=key).text = str(value).lower() if isinstance(value, bool) else str(value)
         parameters[BW_PROPERTIES] = ('xml', etree.tostring(document, encoding='unicode'))
         etree.SubElement(binding, XSL + 'param', name=BW_PROPERTIES)
-        function(BW_RUNTIME_FUNCTIONS, 'getModuleProperty', ('value',), f'string(${BW_PROPERTIES}/properties/property[@name = string($value)])')
+        for uri in missing:
+            function(uri, 'getModuleProperty', ('value',), f'string(${BW_PROPERTIES}/properties/property[@name = string($value)])')
 
 
 class ProjectResolver(etree.Resolver):
@@ -393,7 +433,7 @@ def xpath_value(root, expression, version, namespace_text, variables=None, prope
     if version == '1.0':
         try:
             result = etree.XPath(expression, namespaces=namespaces, smart_strings=False, regexp=False,
-                                 extensions=_bw_lxml_extensions(properties))(root, **bindings)
+                                 extensions=_bw_lxml_extensions(properties, namespaces.values()))(root, **bindings)
         except etree.XPathError as error:
             raise ValueError(f'XPath 1.0: {error}') from error
     elif version == '2.0':
@@ -401,14 +441,16 @@ def xpath_value(root, expression, version, namespace_text, variables=None, prope
         try:
             parser_class = restricted_xpath2(allow_regex=_regex_worker)
             prefixes = {uri: key for key, uri in namespaces.items()}
-            if BW_FUNCTIONS in prefixes or BW_RUNTIME_FUNCTIONS in prefixes:
+            text_namespaces = _text_namespaces(prefixes)
+            property_namespaces = _property_namespaces(prefixes)
+            if text_namespaces or property_namespaces:
                 parser = parser_class(namespaces)
-                if BW_FUNCTIONS in prefixes:
+                for uri in text_namespaces:
                     for name, (operation, _, _, types) in _BW_FUNCTIONS.items():
-                        parser.external_function(operation, name=name, prefix=prefixes[BW_FUNCTIONS], sequence_types=types)
-                if BW_RUNTIME_FUNCTIONS in prefixes:
+                        parser.external_function(operation, name=name, prefix=prefixes[uri], sequence_types=types)
+                for uri in property_namespaces:
                     parser.external_function(_module_property(properties), name='getModuleProperty',
-                                             prefix=prefixes[BW_RUNTIME_FUNCTIONS], sequence_types=('xs:string', 'item()'))
+                                             prefix=prefixes[uri], sequence_types=('xs:string', 'item()'))
                 result = parser.parse(expression).get_results(XPathContext(root, namespaces=namespaces, variables=bindings))
             else:
                 result = select(root, expression, namespaces=namespaces, parser=parser_class, variables=bindings)
@@ -538,7 +580,7 @@ def transform_xml(root, stylesheet, timeout=30, variables=None, *, properties=No
         _bw_xslt_functions(binding, properties or {}, parameters)
         return _transform_xslt2(root, binding, timeout, parameters)
     transform = etree.XSLT(binding, regexp=False, access_control=etree.XSLTAccessControl.DENY_ALL,
-                           extensions=_bw_lxml_extensions(properties or {}))
+                           extensions=_bw_lxml_extensions(properties or {}, _stylesheet_namespaces(binding)))
     result = transform(root, **{name: etree.XSLT.strparam(value) if kind == 'string' else
                                 ('true()' if value else 'false()') if kind == 'boolean' else str(value)
                                 for name, (kind, value) in parameters.items()})

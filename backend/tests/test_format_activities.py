@@ -156,10 +156,10 @@ DETAIL_XSD = '''<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:t="
 TYPES_XSD = '''<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:types">
   <xs:simpleType name="Id"><xs:restriction base="xs:int"><xs:minInclusive value="1"/></xs:restriction></xs:simpleType>
 </xs:schema>'''
-BW_LAYOUT = '''<jndi:namedResource xmlns:jndi="http://xsd.tns.tibco.com/amf/models/sharedresource/jndi" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:df="http://xsd.tns.tibco.com/bw/models/sharedresource/dataformat">
+BW_LAYOUT = '''<jndi:namedResource xmlns:jndi="http://example.test/amf/models/sharedresource/jndi" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:df="http://example.test/bw/models/sharedresource/dataformat">
   <jndi:configuration xsi:type="df:DataFormatResource" formatType="Delimiter separated" colSeparator="|" lineSeparator="LF" schemaFile="../Contracts/Root.xsd"/>
 </jndi:namedResource>'''
-BW_FORMAT_PROCESS = '''<b:process xmlns:b="http://docs.oasis-open.org/wsbpel/2.0/process/executable" xmlns:t="http://www.tibco.com/bpel/2007/extensions">
+BW_FORMAT_PROCESS = '''<b:process xmlns:b="http://docs.oasis-open.org/wsbpel/2.0/process/executable" xmlns:t="http://example.test/bpel/2007/extensions">
   <b:sequence>
     <b:extensionActivity><t:extActivity name="Read" type="bw.parse.ParseData"><t:ParseData dataFormatResource="Rows" inputType="String"/></t:extActivity></b:extensionActivity>
     <b:extensionActivity><t:extActivity name="Write" type="bw.parse.RenderData"><t:RenderData dataFormatResource="Rows"/></t:extActivity></b:extensionActivity>
@@ -266,7 +266,7 @@ class ArchiveFormatTests(unittest.TestCase):
                 self.assertEqual(actual,expected)
 
     def test_bw613_json_model_imports_as_native_parse_and_render(self):
-        process = '''<b:process xmlns:b="http://docs.oasis-open.org/wsbpel/2.0/process/executable" xmlns:t="http://www.tibco.com/bpel/2007/extensions" xmlns:m="http://tns.tibco.com/bw/model/core/bwext" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:p="urn:items">
+        process = '''<b:process xmlns:b="http://docs.oasis-open.org/wsbpel/2.0/process/executable" xmlns:t="http://example.test/bpel/2007/extensions" xmlns:m="http://example.test/bw/model/core/bwext" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns:p="urn:items">
         <b:sequence>
           <b:extensionActivity><t:activityExtension name="Parse" outputVariable="Parsed">
             <t:inputBindings><xsl:stylesheet version="2.0"><xsl:template match="/"><jsonString>{"items":{"item":[1,2]}}</jsonString></xsl:template></xsl:stylesheet></t:inputBindings>
@@ -295,10 +295,10 @@ class ArchiveFormatTests(unittest.TestCase):
 
     def test_imported_binary_xml_preserves_render_binding_and_cdata_selectors(self):
         process = '''<b:process xmlns:b="http://docs.oasis-open.org/wsbpel/2.0/process/executable"
-          xmlns:t="http://www.tibco.com/bpel/2007/extensions"
-          xmlns:m="http://tns.tibco.com/bw/model/core/bwext"
+          xmlns:t="http://example.test/bpel/2007/extensions"
+          xmlns:m="http://example.test/bw/model/core/bwext"
           xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
-          xmlns:p="http://www.tibco.com/namespaces/tnt/plugins/xmlpallete" xmlns:r="urn:record">
+          xmlns:p="http://example.test/namespaces/tnt/plugins/xmlpallete" xmlns:r="urn:record">
           <b:sequence><b:extensionActivity><t:activityExtension name="Render">
             <t:inputBindings><xsl:stylesheet version="2.0"><xsl:template match="/">
               <p:xmlInput><byteEncoding>US-ASCII</byteEncoding><r:record><r:notes>café &lt;</r:notes></r:record></p:xmlInput>

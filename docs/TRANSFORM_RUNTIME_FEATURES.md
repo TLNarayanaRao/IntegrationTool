@@ -188,9 +188,3 @@ The broad backend run completed 684 tests with 11 environment-dependent skips
 and no failures. A final 33-test focused run also passed after the property/
 condition and cancellation refinements. See
 [qualification evidence](validation/transform-features-summary-2026-11-16.json).
-
-Reference behavior was checked against the official [module reference](https://docs.mulesoft.com/dataweave/2.9/dw-functions),
-[streaming documentation](https://docs.mulesoft.com/dataweave/latest/dataweave-streaming),
-[Numbers module](https://docs.mulesoft.com/dataweave/latest/dw-numbers) and
-[Math module](https://docs.mulesoft.com/dataweave/2.4/dw-math). These references do
-not imply full language or runtime equivalence.

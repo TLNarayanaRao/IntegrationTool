@@ -2012,7 +2012,7 @@ def dataweave_test(payload: dict):
             libraries=payload.get('libraries') or {},
         )
     except DataWeaveError as exc:
-        raise HTTPException(400, f'DataWeave validation failed: {exc}')
+        raise HTTPException(400, f'Transform script validation failed: {exc}')
 
 @app.post('/api/dataweave/visual')
 def dataweave_visual(payload: dict):

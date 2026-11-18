@@ -8,6 +8,16 @@ import unittest
 import zipfile
 from pathlib import Path
 
+
+# Exercise external XML contracts with neutral fixture namespaces.
+BW = '{https://legacy.example.test/bpel/2007/extensions}'
+BW_ACTIVITY = '{https://legacy.example.test/bw/model/core/bwext}BWActivity'
+JNDI = '{https://legacy.example.test/amf/models/sharedresource/jndi}'
+HTTP_CLIENT_NS = 'https://legacy.example.test/bw/models/sharedresource/httpclient'
+HTTP_SERVER_NS = 'https://legacy.example.test/bw/models/sharedresource/httpconnector'
+JDBC_NS = 'https://legacy.example.test/amf/models/sharedresource/jdbc'
+
+
 from app.raw_python import engine_python_files, raw_python_files
 
 
@@ -243,7 +253,7 @@ class PythonMapperParityTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 xpath_value(root, formula, '2.0', {})
 
-    def test_businessworks_import_executes_xslt2_in_studio_and_archives(self):
+    def test_legacy_process_import_executes_xslt2_in_studio_and_archives(self):
         from html import escape
         from io import BytesIO
         from unittest.mock import patch
@@ -256,7 +266,7 @@ class PythonMapperParityTests(unittest.TestCase):
           <xsl:template match="/"><result><xsl:value-of select="upper-case($order/order[@id = $minimum]/text())"/>
             <xsl:value-of select="environment-variable('MINA_XSLT_TEST_SECRET')"/></result></xsl:template>
         </xsl:stylesheet>'''
-        process = ('<process xmlns:tibex="http://www.tibco.com/bpel/2007/extensions">'
+        process = ('<process xmlns:tibex="http://example.test/bpel/2007/extensions">'
                    '<activity name="SelectOrder"><tibex:inputBindings><tibex:inputBinding expression="'
                    + escape(binding, quote=True) + '"/></tibex:inputBindings></activity></process>')
         archive = BytesIO()
@@ -277,8 +287,8 @@ class PythonMapperParityTests(unittest.TestCase):
         for compiler in (raw_python_files, engine_python_files):
             self.assertIn(b'saxonche', compiler(project, {'local': []})['requirements-mapper.txt'])
 
-    def test_businessworks_graph_preserves_links_and_static_call(self):
-        from app.bw_process import BPEL, BW
+    def test_legacy_process_graph_preserves_links_and_static_call(self):
+        from app.bw_process import BPEL
         from app.project_import import bw_project
         from app.mapper_xml import XSL
 
@@ -297,7 +307,7 @@ class PythonMapperParityTests(unittest.TestCase):
         child = process('Child', f'''
           <b:sequence><b:extensionActivity><t:extActivity type="bw.generalactivities.mapper" name="Mapper">
             <t:inputBindings><x:stylesheet xmlns:x="{XSL[1:-1]}" version="2.0"
-               xmlns:tib="http://www.tibco.com/bw/xslt/custom-functions" exclude-result-prefixes="#all">
+               xmlns:tib="http://example.test/bw/xslt/custom-functions" exclude-result-prefixes="#all">
               <x:param name="name"/>
               <x:template match="/"><result><x:value-of select="tib:upper-case(tib:trim($name))"/></result></x:template>
             </x:stylesheet></t:inputBindings>
@@ -313,10 +323,10 @@ class PythonMapperParityTests(unittest.TestCase):
         self.assert_studio(project, {'name': ' Ada '}, expected)
         self.assert_exports(project, {'name': ' Ada '}, expected)
 
-    def test_businessworks_http_connection_executes_in_runtime_and_archives(self):
+    def test_legacy_process_http_connection_executes_in_runtime_and_archives(self):
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
         from threading import Thread
-        from app.bw_process import BPEL, BW, HTTP_CLIENT_NS, JNDI
+        from app.bw_process import BPEL
         from app.project_import import bw_project
 
         class Handler(BaseHTTPRequestHandler):
@@ -531,8 +541,8 @@ class PythonMapperParityTests(unittest.TestCase):
         self.assert_studio(project, payload, expected)
         self.assert_exports(project, payload, expected)
 
-    def test_businessworks_xpath_links_and_no_match(self):
-        from app.bw_process import BPEL, BW
+    def test_legacy_process_xpath_links_and_no_match(self):
+        from app.bw_process import BPEL
         from app.mapper_xml import XSL
         from app.project_import import bw_project
 
@@ -580,8 +590,8 @@ class PythonMapperParityTests(unittest.TestCase):
             self.assert_studio(project, payload, expected)
             self.assert_exports(project, payload, expected)
 
-    def test_businessworks_jdbc_query_and_jms_text(self):
-        from app.bw_process import BPEL, BW, BW_ACTIVITY, JDBC_NS, JNDI
+    def test_legacy_process_jdbc_query_and_jms_text(self):
+        from app.bw_process import BPEL
         from app.mapper_xml import XSL
         from app.project_import import bw_project
 
@@ -623,8 +633,8 @@ class PythonMapperParityTests(unittest.TestCase):
         self.assert_studio(project, payload, {'message': 'hello', 'query': 1})
         self.assert_exports(project, payload, {'message': 'hello', 'query': 1})
 
-    def test_businessworks_timer_is_a_native_starter(self):
-        from app.bw_process import BPEL, BW
+    def test_legacy_process_timer_is_a_native_starter(self):
+        from app.bw_process import BPEL
         from app.project_import import bw_project
 
         process = f'''<b:process xmlns:b="{BPEL[1:-1]}" xmlns:t="{BW[1:-1]}">
@@ -639,8 +649,8 @@ class PythonMapperParityTests(unittest.TestCase):
         self.assert_studio(project, {}, {'fired': 1}, starter_event=True)
         self.assert_exports(project, {}, {'fired': 1})
 
-    def test_businessworks_http_event_and_reply_binding(self):
-        from app.bw_process import BPEL, BW, HTTP_SERVER_NS, JNDI
+    def test_legacy_process_http_event_and_reply_binding(self):
+        from app.bw_process import BPEL
         from app.mapper_xml import XSL
         from app.project_import import bw_project
 
@@ -666,8 +676,8 @@ class PythonMapperParityTests(unittest.TestCase):
         self.assertEqual(self.exported_result(raw_python_files, project, payload), {**expected, 'sent': True})
         self.assertEqual(self.exported_result(engine_python_files, project, payload), {**expected, '__httpResponse': True})
 
-    def test_businessworks_xmi_file_binding_writes_from_start_xml(self):
-        from app.bw_process import BPEL, BW, BW_ACTIVITY
+    def test_legacy_process_xmi_file_binding_writes_from_start_xml(self):
+        from app.bw_process import BPEL
         from app.mapper_xml import XSL
         from app.project_import import bw_project
         from xml.sax.saxutils import escape
@@ -707,20 +717,25 @@ class PythonMapperParityTests(unittest.TestCase):
             self.assert_exports(project, payload, {'written': True})
             self.assertEqual(output.read_text(), 'hello')
 
-    def test_tibco_text_functions_use_the_extension_namespace(self):
+    def test_legacy_text_functions_use_the_extension_namespace(self):
         from app.mapper_xml import BW_FUNCTIONS, BW_RUNTIME_FUNCTIONS, XSL, parse_xml, transform_xml, xpath_value
 
         root = parse_xml('<person><name> Ada </name></person>')
         formula = '''concat(vendor:upper-case(vendor:trim(vendor:concat-sequence(/person/name))),
                             vendor:left("!x", 1), vendor:right("x?", 1), bw:getModuleProperty("suffix"))'''
-        for version in ('1.0', '2.0'):
-            self.assertEqual(xpath_value(root, formula, version, {'vendor': BW_FUNCTIONS, 'bw': BW_RUNTIME_FUNCTIONS},
-                                         properties={'suffix': '#'}), 'ADA!?#')
-            binding = f'''<x:stylesheet xmlns:x="{XSL[1:-1]}" xmlns:vendor="{BW_FUNCTIONS}" xmlns:bw="{BW_RUNTIME_FUNCTIONS}"
-              exclude-result-prefixes="vendor bw" version="{version}">
-              <x:template match="/"><result><x:value-of select='{formula}'/></result></x:template>
-            </x:stylesheet>'''
-            self.assertEqual(transform_xml(root, binding, properties={'suffix': '#'}).text, 'ADA!?#')
+        for text_uri, property_uri in (
+            (BW_FUNCTIONS, BW_RUNTIME_FUNCTIONS),
+            ('https://legacy.example.test/bw/xslt/custom-functions',
+             'https://legacy.example.test/bw/xpath/bw-custom-functions'),
+        ):
+            for version in ('1.0', '2.0'):
+                self.assertEqual(xpath_value(root, formula, version, {'vendor': text_uri, 'bw': property_uri},
+                                             properties={'suffix': '#'}), 'ADA!?#')
+                binding = f'''<x:stylesheet xmlns:x="{XSL[1:-1]}" xmlns:vendor="{text_uri}" xmlns:bw="{property_uri}"
+                  exclude-result-prefixes="vendor bw" version="{version}">
+                  <x:template match="/"><result><x:value-of select='{formula}'/></result></x:template>
+                </x:stylesheet>'''
+                self.assertEqual(transform_xml(root, binding, properties={'suffix': '#'}).text, 'ADA!?#')
 
     def test_shared_mapper_learning_ranks_only_reviewed_schema_paths(self):
         from unittest.mock import patch

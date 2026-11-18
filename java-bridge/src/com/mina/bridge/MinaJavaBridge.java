@@ -710,14 +710,14 @@ public final class MinaJavaBridge {
         InitialContext context = null;
         if (bool(p, "jndiEnabled", false)) {
             Hashtable<String, String> environment = new Hashtable<>();
-            put(environment, Context.INITIAL_CONTEXT_FACTORY, p.getProperty("jndiContextFactory"));
+            put(environment, Context.INITIAL_CONTEXT_FACTORY, required(p, "jndiContextFactory"));
             put(environment, Context.PROVIDER_URL, p.getProperty("jndiProviderUrl"));
             put(environment, Context.SECURITY_PRINCIPAL, p.getProperty("jndiUsername"));
             put(environment, Context.SECURITY_CREDENTIALS, p.getProperty("jndiPassword"));
             context = new InitialContext(environment);
             factory = context.lookup(required(p, "connectionFactory"));
         } else {
-            String factoryClass = p.getProperty("connectionFactoryClass", "com.tibco.tibjms.TibjmsConnectionFactory");
+            String factoryClass = required(p, "connectionFactoryClass");
             Class<?> type = Class.forName(factoryClass);
             try { factory = type.getConstructor(String.class).newInstance(required(p, "serverUrl")); }
             catch (NoSuchMethodException ignored) {

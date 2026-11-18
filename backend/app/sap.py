@@ -3,6 +3,7 @@ import hashlib, json, os, re, uuid, time, threading
 from xml.etree import ElementTree as ET
 from typing import Any
 from xml.sax.saxutils import escape
+from .mapper_xml import legacy_name
 from .java_bridge import JavaBridgeError, invoke as invoke_java, start_sap_listener, start_sap_worker, SapJcoListener, SapJcoWorker
 
 class _IdocMapping(dict):
@@ -335,12 +336,12 @@ class SapAdapter:
         except ET.ParseError:
             return [], []
         xs = 'http://www.w3.org/2001/XMLSchema'
-        r3 = 'http://www.tibco.com/xmlns/sapscalar/2015/05'
         local = lambda tag: cls._xml_name(tag)
         types = {str(node.get('name')): node for node in root.findall(f'{{{xs}}}complexType') if node.get('name')}
         segment_defs: dict[str, str] = {}
         for node in root.iter(f'{{{xs}}}element'):
-            logical = node.get(f'{{{r3}}}segmentType')
+            logical = next((value for name, value in node.attrib.items()
+                            if legacy_name(name, 'segmentType', '/xmlns/sapscalar/2015/05')), None)
             type_name = str(node.get('type') or '').rsplit('}', 1)[-1].removesuffix('_Type')
             if logical and type_name:
                 segment_defs[str(logical)] = type_name

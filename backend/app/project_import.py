@@ -45,7 +45,7 @@ def project_payload(raw: bytes, filename: str = '') -> bytes:
 
 
 def bw_project(files: dict[str, bytes], filename: str) -> bytes:
-    from .bw_process import BW, BW_ACTIVITY, XML_JSON_FORMATS, ProcessConverter, bindings, http_resource, http_server_resource, jdbc_resource, jms_resource, mapper_config
+    from .bw_process import activity_design, process_extension, XML_JSON_FORMATS, ProcessConverter, bindings, http_resource, http_server_resource, jdbc_resource, jms_resource, mapper_config
     from .bw_data_format import PROFILES, layout_assets, profile_values
     from .mapper_xml import etree, parse_xml
 
@@ -151,7 +151,7 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
         # BW stores generated activity/process interfaces inside tibex:Types.
         # Publish only referenced schemas so internal fault/timer contracts do
         # not clutter the project or introduce unrelated import candidates.
-        embedded = document.findall(f"{BW}Types/{{http://www.w3.org/2001/XMLSchema}}schema")
+        embedded = document.findall(f"{process_extension(document)}Types/{{http://www.w3.org/2001/XMLSchema}}schema")
         module = name.split('/Processes/', 1)[0] if '/Processes/' in name else ''
         embedded_assets = {}
         def resolve_schema(qname):
@@ -216,10 +216,11 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
             continue
         path = PurePosixPath(name)
         resolve_schema, embedded_assets = schema_resolver(name, document)
-        for inputs in document.iter(BW + 'inputBindings'):
+        extension = process_extension(document)
+        for inputs in document.iter(extension + 'inputBindings'):
             owner = inputs.getparent()
             if owner is None: continue
-            design = owner.find(f'{BW}config/{BW_ACTIVITY}')
+            design = activity_design(owner, extension)
             kind = ((design.get('activityTypeID') if design is not None else owner.get('type')) or '').lower()
             if kind in XML_JSON_FORMATS or kind in ('bw.generalactivities.mapper', 'bw.generalactivities.map',
                                                     'bw.parse.parsedata', 'bw.parse.renderdata'):
@@ -245,7 +246,7 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
                 activity_name = owner.get('name') or 'Mapper'
                 try:
                     config = mapper_config(binding)
-                    if owner.tag == BW + 'activityExtension':
+                    if owner.tag == extension + 'activityExtension':
                         config['bwXmlElementVariables'] = True
                 except ValueError as error:
                     diagnostics.append(f'{name}/{activity_name}: {error}')

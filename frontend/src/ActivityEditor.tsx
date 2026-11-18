@@ -1329,7 +1329,7 @@ export function activityContract(n: any): Contract {
   if (n.type === "dataweave")
     return {
       configuration: [],
-      input: [d("payload", "DataWeave payload", "object", true), d("attributes", "Input attributes", "object"), d("variables", "Transform variables", "object")],
+      input: [d("payload", "Payload", "object", true), d("attributes", "Input attributes", "object"), d("variables", "Transform variables", "object")],
       output: [d("result", "Transformed payload", "object")],
       errors: [
         { type: "DATAWEAVE_SYNTAX", description: "The transform script could not be parsed." },
@@ -1678,9 +1678,9 @@ const activityDocumentation: Record<string, { summary: string; behavior: string 
   pubsub: { summary: "Publishes, receives, or acknowledges Google Cloud Pub/Sub messages.", behavior: "Project and credential defaults come from the shared connection. Message data, attributes, ordering keys, and acknowledgement handles remain available on the execution path." },
   sap: { summary: "Executes the selected SAP ECC operation.", behavior: "The shared SAP connection supplies system and authentication settings. IDoc metadata selected from SAP defines listener, parser, renderer, and sender structures." },
   mapper: { summary: "Maps execution-path data into a selected target schema.", behavior: "In Input, drop a repeating complex source onto a repeating complex target. Copy-Of copies the whole collection and hides child bindings. For-Each creates editable child bindings for matching names; SmartMap also matches names that differ by underscores or hyphens. The loop shows the collection expression once and child expressions relative to the current item. Run Map & Test to check the output." },
-  transform: { summary: "Legacy Mapper activity retained for project compatibility.", behavior: "Existing Transform nodes continue to execute with Mapper behavior. New projects should use Mapper for visual/XPath mappings or Transform for DataWeave scripts." },
+  transform: { summary: "Legacy Mapper activity retained for project compatibility.", behavior: "Existing Transform nodes continue to execute with Mapper behavior. New projects should use Mapper for visual/XPath mappings or Transform for scripts." },
   ai_transform: { summary: "Legacy AI Mapper activity retained for project compatibility.", behavior: "Existing AI Transform nodes continue to use the consolidated Mapper and its AI recommendation/review workflow." },
-  dataweave: { summary: "Transforms payloads with MINA's executable DataWeave-compatible language subset.", behavior: "Supports configured script libraries, atomic payload/attribute/variable outputs, visual/script expression synchronization, JSON Schema/XSD contracts and bounded JSON/JSONL/CSV file streaming. Each output reads the original message snapshot. Streaming returns file metadata and validates each record. Map & Test uses the same contracts and engine as Run, Debug and Python exports. See Help for supported module exports and syntax limits." },
+  dataweave: { summary: "Transforms payloads with MINA's embedded transform language.", behavior: "Supports configured script libraries, atomic payload/attribute/variable outputs, visual/script expression synchronization, JSON Schema/XSD contracts and bounded JSON/JSONL/CSV file streaming. Each output reads the original message snapshot. Streaming returns file metadata and validates each record. Map & Test uses the same contracts and engine as Run, Debug and Python exports. See Help for supported module exports and syntax limits." },
   call_task: { summary: "Invokes a reusable Sub Task and waits for its result.", behavior: "Mapped values become the Sub Task Start input. Dynamic Sub Task ID/name is resolved per invocation; the selected Sub Task is its design-time schema and runtime fallback. The Sub Task End output returns to this activity." },
   confirm: { summary: "Acknowledges one or more client-managed messages.", behavior: "Map the acknowledgement handle emitted by an EMS, Kafka, Pub/Sub, or compatible future receiver. The runtime dispatches confirmation to the originating connector." },
   start: { summary: "Defines the task input boundary.", behavior: "For Sub Tasks, the Start schema is the callable input contract. Starter Tasks normally use one external event activity instead." },
@@ -2071,7 +2071,7 @@ function DataWeaveScriptEditor({ config, schemas, setConfig }: any) {
     } catch (error: any) { setStatus(error.message || "AI generation failed"); }
   };
   return <section className="dataweave-editor">
-    <header><Braces/><span><b>DATAWEAVE TRANSFORM</b></span><button type="button" onClick={generate}><Sparkles/> AI generate</button></header>
+    <header><Braces/><span><b>TRANSFORM SCRIPT</b></span><button type="button" onClick={generate}><Sparkles/> AI generate</button></header>
     <div className="dataweave-contracts">
       <label>Source schema<select value={config.sourceSchemaId || ""} onChange={(event) => chooseSchema("sourceSchemaId", event.target.value)}><option value="">Runtime payload / no schema</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></label>
       <label>Single-output target schema<select disabled={!!config.outputs?.length} value={config.targetSchemaId || ""} onChange={(event) => chooseSchema("targetSchemaId", event.target.value)}><option value="">Dynamic output / no schema</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></label>

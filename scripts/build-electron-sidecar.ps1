@@ -133,10 +133,13 @@ if (!(Test-Path "$root\backend\dist\MINARuntime\MINARuntime.exe")) {
 if (!(Test-Path "$root\backend\dist\MINAWorker\MINAWorker.exe")) {
     throw "Deployment worker executable output was not created."
 }
-Copy-Item -Recurse -Force "$root\java-bridge\build" "$root\backend\dist\MINARuntime\java-bridge"
-Copy-Item -Recurse -Force "$root\java-bridge\build" "$root\backend\dist\MINAWorker\java-bridge"
 foreach ($runtimeName in @('MINARuntime','MINAWorker')) {
     $runtimePath = Join-Path $root "backend\dist\$runtimeName"
+    $bridgePath = Join-Path $runtimePath 'java-bridge'
+    New-Item -ItemType Directory -Force -Path $bridgePath | Out-Null
+    foreach ($part in @('classes','runtime')) {
+        Copy-Item -Recurse -Force -LiteralPath (Join-Path $root "java-bridge\build\$part") -Destination $bridgePath
+    }
     $legalPath = Join-Path $runtimePath 'legal'
     New-Item -ItemType Directory -Force -Path $legalPath | Out-Null
     Copy-Item -Recurse -Force (Join-Path $compliance '*') $legalPath

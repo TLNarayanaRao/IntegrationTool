@@ -172,7 +172,7 @@ class XmlJsonFlowParityTests(unittest.TestCase):
     def test_imported_render_wrapper_uses_mapped_encoding_and_qualified_cdata(self):
         text = ('<r:record xmlns:r="urn:record" xmlns:o="urn:other">'
                 '<r:notes>café &lt;</r:notes><o:notes>open &lt;</o:notes></r:record>')
-        wrapper = ('<p:xmlInput xmlns:p="http://www.tibco.com/namespaces/tnt/plugins/xmlpallete">'
+        wrapper = ('<p:xmlInput xmlns:p="http://example.test/namespaces/tnt/plugins/xmlpallete">'
                    f'<byteEncoding>US-ASCII</byteEncoding>{text}</p:xmlInput>')
 
         def audit(output):

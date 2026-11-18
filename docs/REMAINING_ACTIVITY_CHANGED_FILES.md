@@ -4,7 +4,7 @@ Full backend verification passed: **609 tests, five skipped, zero failures**. Th
 
 The local soak passed **600.12 measured seconds after 30 seconds of warmup**, eight workers and zero operation errors. RSS growth was **0.64 MiB**, traced Python heap growth **0.26 MiB**, peak sampled RSS **76.07 MiB**, and late RSS slope **0.004 MiB/minute**. Active handles ranged from 453 to 484 and ended at 458; active threads ranged from 33 to 38 and ended at 35. After worker shutdown they fell to 407 handles and 16 threads.
 
-Workload cycle counts include warmup: formats 19,839; Mapper/DataWeave 527,647; Python 6,275; Excel 416. A format cycle executes all six parse/render operations; other cycles execute both implementations or transformations described in the guide. No explicit garbage collection was forced.
+Workload cycle counts include warmup: formats 19,839; Mapper and scripted Transform 527,647; Python 6,275; Excel 416. A format cycle executes all six parse/render operations; other cycles execute both implementations or transformations described in the guide. No explicit garbage collection was forced.
 
 This is local resource verification, not live qualification of every external broker/cloud/database/SAP provider, arbitrary user code, or an interactive installed-app session. See the coverage guide for limitations.
 

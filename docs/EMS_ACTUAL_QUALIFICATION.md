@@ -11,14 +11,12 @@ measurements do not establish EMS performance or EMS provider compatibility.
 
 Read-only checks of the installed integration software, software/download folders,
 JMS driver folder and Windows installed-product records found no EMS server,
-EMS installer or `tibjms.jar`. The installed integration designer is not an EMS
+EMS installer or the matching JMS client JAR. The installed integration designer is not an EMS
 server installation. No broker was launched, and no existing broker was changed.
 
 Provisioning requires a supported EMS server distribution and its matching Java
 provider libraries, plus activation if that release requires it. Keep activation
-files and credentials outside Git. The [official download FAQ](https://www.tibco.com/downloads/faq)
-describes account entitlement requirements. Current server releases document
-[activation configuration](https://docs.tibco.com/pub/ems/10.5.1/doc/html/users-guide/license.htm).
+files and credentials outside Git. Follow the provider documentation for installation and activation.
 No account access or downloadable server distribution was supplied for this test.
 
 ## Qualification procedure once the distribution is available
@@ -28,8 +26,8 @@ No account access or downloadable server distribution was supplied for this test
    do not reuse production queues or edit an existing server's configuration.
 2. Point a private throughput profile's `connection.driverDirectory` at the
    matching provider libraries and set its EMS connection factory class to
-   `com.tibco.tibjms.TibjmsConnectionFactory`. Supply the temporary listener URL
-   and test credentials. Set `dedicatedTestResources` to `true` and supply four
+   the fully qualified class from the installed provider. Supply the temporary
+   listener URL and test credentials. Set `dedicatedTestResources` to `true` and supply four
    distinct dedicated queue names in `destinations` for four flow workers.
 3. From the repository root, use the development Python environment with
    `backend` on `PYTHONPATH` and the compiled Java bridge configured. Run

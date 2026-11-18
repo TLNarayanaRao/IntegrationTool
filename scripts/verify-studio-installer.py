@@ -41,9 +41,14 @@ def main():
                     raise ValueError('Bundled Python component has no license directory: '+component['name'])
             if not list((legal/'sources').glob('*')):raise ValueError('Missing corresponding-source archives')
             if not (legal/'java/library-sources.zip').is_file():raise ValueError('Missing Java library source material')
-            bridge=runtime/'java-bridge/classes/com/mina/bridge/MinaJavaBridge.class'
-            java=runtime/'java-bridge/runtime/bin/java.exe'
+            bridge_root=runtime/'java-bridge'
+            classes=bridge_root/'classes'
+            bridge=classes/'com/mina/bridge/MinaJavaBridge.class'
+            java=bridge_root/'runtime/bin/java.exe'
             if not bridge.is_file() or not java.is_file():raise ValueError('Missing bundled Java bridge/runtime: '+name)
+            if ({item.name for item in bridge_root.iterdir()} != {'classes', 'runtime'}
+                    or any(not item.is_relative_to(bridge.parent) for item in classes.rglob('*.class'))):
+                raise ValueError('Unexpected files in the bundled Java bridge: '+name)
             run(java,'-version',timeout=30)
             replacement=folder/'replacement';(replacement/'paramiko').mkdir(parents=True,exist_ok=True)
             (replacement/'paramiko/__init__.py').write_text('RECIPIENT_REPLACEMENT=True\n')

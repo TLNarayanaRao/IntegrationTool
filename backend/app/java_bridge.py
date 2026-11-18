@@ -518,9 +518,9 @@ def jms_values(config: dict[str, Any]) -> dict[str, Any]:
     jndi = str(config.get("connectionFactoryType") or "Direct").lower() == "jndi"
     return {
         "serverUrl": config.get("serverUrl"), "username": config.get("username"), "password": config.get("password"),
-        "clientId": config.get("clientId"), "connectionFactoryClass": config.get("connectionFactoryClass") or "com.tibco.tibjms.TibjmsConnectionFactory",
+        "clientId": config.get("clientId"), "connectionFactoryClass": config.get("connectionFactoryClass"),
         "jndiEnabled": str(jndi).lower(), "connectionFactory": config.get("connectionFactory"),
-        "jndiContextFactory": config.get("jndiContextFactory") or ("com.tibco.tibjms.naming.TibjmsInitialContextFactory" if jndi else None),
+        "jndiContextFactory": config.get("jndiContextFactory"),
         "jndiProviderUrl": config.get("jndiProviderUrl"),
         "jndiUsername": config.get("jndiUsername"), "jndiPassword": config.get("jndiPassword"),
     }
