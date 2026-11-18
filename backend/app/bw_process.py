@@ -2,13 +2,15 @@
 import re
 from urllib.parse import urlsplit
 
-from .mapper_xml import XSL, etree, legacy_name, legacy_namespace, parse_xml
+from .mapper_xml import XSL, etree, parse_xml
+from .xml_names import legacy_name, legacy_namespace
 
 
 BPEL = '{http://docs.oasis-open.org/wsbpel/2.0/process/executable}'
+XSD = '{http://www.w3.org/2001/XMLSchema}'
 XSI_TYPE = '{http://www.w3.org/2001/XMLSchema-instance}type'
 XMI = '{http://www.omg.org/XMI}'
-_PROCESS_METADATA = {'partnerLinks', 'variables', 'extensions', 'import'}
+_PROCESS_METADATA = {'partnerLinks', 'variables', 'extensions', 'import', 'documentation'}
 _NODE_METADATA = {'sources', 'targets', 'documentation'}
 _LINK_TYPES = {'SUCCESS': 'success', 'SUCCESSWITHCONDITION': 'success_condition',
                'SUCCESSWITHNOCONDITION': 'success_no_match', 'ERROR': 'error'}
@@ -19,10 +21,21 @@ XML_JSON_FORMATS = {
 
 
 def process_extension(document):
-    namespaces = {uri for node in document.iter() for uri in node.nsmap.values()
-                  if legacy_namespace(uri, '/bpel/2007/extensions')}
-    if len(namespaces) > 1:
-        raise ValueError('ambiguous legacy process extension namespace')
+    namespaces = set()
+    walker = etree.iterwalk(document, events=('start',))
+    for _, node in walker:
+        # Embedded content can reuse namespace paths without being part of
+        # the process vocabulary.
+        if node.tag.startswith((XSL, XSD)) or node.tag in (BPEL + 'literal', BPEL + 'documentation'):
+            walker.skip_subtree()
+            continue
+        for tag in (node.tag, *node.attrib):
+            if tag.startswith('{'):
+                uri = tag[1:].partition('}')[0]
+                if legacy_namespace(uri, '/bpel/2007/extensions'):
+                    namespaces.add(uri)
+        if len(namespaces) > 1:
+            raise ValueError('ambiguous legacy process extension namespace')
     return '{' + next(iter(namespaces), 'urn:mina:no-process-extension') + '}'
 
 
@@ -299,9 +312,9 @@ def _binding_fields(binding):
 
 
 class ProcessConverter:
-    def __init__(self, document, task_id, name, resolve_task, resolve_resource, resolve_schema=None):
+    def __init__(self, document, task_id, name, resolve_task, resolve_resource, resolve_schema=None, *, extension=None):
         self.document = document
-        self.extension = process_extension(document)
+        self.extension = process_extension(document) if extension is None else extension
         self.task_id = task_id
         self.name = name
         self.resolve_task = resolve_task

@@ -474,6 +474,53 @@ class PythonMapperParityTests(unittest.TestCase):
           </xsl:template></xsl:stylesheet>'''
         self.assertEqual(transform_xml(root, stylesheet).text, 'c')
 
+    def test_mapper_bindings_preserve_xpath_aliases_in_new_and_saved_stylesheets(self):
+        from app.mapper_binding import generate_binding, reopen_binding
+        from app.mapper_xml import BW_FUNCTIONS, BW_RUNTIME_FUNCTIONS, bw_transition_condition, parse_xml, transform_xml
+
+        formula = '''xpath2("concat(ext:upper-case('mina'), project:getModuleProperty('suffix'))")'''
+        rules = [{'target':'result', 'operator':'choose',
+                  'whens':[{'condition':'true()', 'source':formula}], 'otherwise':'"no match"'}]
+        properties = {'suffix':'!'}
+        stylesheet = generate_binding(rules)
+        self.assertEqual(reopen_binding(stylesheet)['mappings'], rules)
+        self.assertEqual(transform_xml(parse_xml('<input/>'), stylesheet, properties=properties).text, 'MINA!')
+
+        legacy_rules = [{'target':'result', 'source':formula.replace('ext:', 'tib:').replace('project:', 'bw:')}]
+        legacy = (generate_binding(legacy_rules)
+                  .replace(BW_FUNCTIONS, 'https://legacy.example.test/bw/xslt/custom-functions')
+                  .replace(BW_RUNTIME_FUNCTIONS, 'https://legacy.example.test/bw/xpath/bw-custom-functions'))
+        self.assertEqual(reopen_binding(legacy)['mappings'], legacy_rules)
+        self.assertEqual(transform_xml(parse_xml('<input/>'), legacy, properties=properties).text, 'MINA!')
+        self.assertTrue(bw_transition_condition("ext:upper-case('mina') = 'MINA'", {'version':'2.0'}, {}, properties))
+        with self.assertRaisesRegex(ValueError, 'no longer matches'):
+            reopen_binding(legacy.replace("'mina'", "'altered'", 1))
+
+        for binding in (stylesheet, legacy):
+            restored = reopen_binding(binding)
+            project = self.project(restored['mappings'], {'result.value':'${Mapper.value}'})
+            project['tasks'][0]['activities'][1]['config'].update(restored, xmlSource='<input/>')
+            self.assert_studio(project, {}, {'value':'MINA'})
+            self.assert_exports(project, {}, {'value':'MINA'})
+
+    def test_xml_worker_retries_only_the_transient_windows_launch_error(self):
+        from unittest.mock import patch
+        from app.mapper_xml import _run_xml_worker
+
+        launch_error = PermissionError('transient launch failure')
+        launch_error.winerror = 31
+        success = subprocess.CompletedProcess([], 0, b'<result/>')
+        with patch('app.mapper_xml.subprocess.run', side_effect=[launch_error, success]) as launch:
+            self.assertEqual(_run_xml_worker([], 1, 'XSLT'), b'<result/>')
+            self.assertEqual(launch.call_count, 2)
+            self.assertLess(launch.call_args.kwargs['timeout'], launch.call_args_list[0].kwargs['timeout'])
+        for failure, expected in ((PermissionError('access denied'), PermissionError),
+                                  (subprocess.CompletedProcess([], 1, b'invalid stylesheet'), ValueError)):
+            with self.subTest(failure=failure), patch('app.mapper_xml.subprocess.run', side_effect=[failure]) as launch:
+                with self.assertRaises(expected):
+                    _run_xml_worker([], 1, 'XSLT')
+                launch.assert_called_once()
+
     def test_generated_mapper_keeps_binding_in_sync_and_distinguishes_missing_from_nil(self):
         from app.main import mapper_test
         from app.mapper_binding import generate_binding, reopen_binding

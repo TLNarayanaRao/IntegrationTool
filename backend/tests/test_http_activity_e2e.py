@@ -605,16 +605,18 @@ async def check():
    for _ in range(100):
     if job.done():await job
     try:
-     response=await client.post('http://127.0.0.1:{port}/echo',content='hello',headers={{'Content-Type':'text/plain'}},timeout=.2)
+     ready=await client.get('http://127.0.0.1:{port}/_mina/openapi.json',timeout=.5)
+     ready.raise_for_status()
      break
-    except (httpx.ConnectError,httpx.ConnectTimeout):await asyncio.sleep(.05)
+    except (httpx.ConnectError,httpx.TimeoutException):await asyncio.sleep(.05)
    else:raise AssertionError('Listener did not start')
+   response=await client.post('http://127.0.0.1:{port}/echo',content='hello',headers={{'Content-Type':'text/plain'}})
    assert response.status_code==200 and response.text=='hello',response.text
    assert response.headers['content-type']=='text/plain'
    response=await client.post('http://127.0.0.1:{port}/echo',json={{'name':'hello'}},headers={{'Accept':'application/json'}})
    assert response.status_code==200 and response.json()=={{'name':'hello'}},response.text
    assert response.headers['content-type']=='application/json'
-   spec=(await client.get('http://127.0.0.1:{port}/_mina/openapi.json')).json()
+   spec=ready.json()
    assert set(spec['paths']['/echo']['post']['requestBody']['content'])=={{'text/plain','application/json'}}
    assert set(spec['paths']['/echo']['post']['responses']['200']['content'])=={{'text/plain','application/json'}}
  finally:

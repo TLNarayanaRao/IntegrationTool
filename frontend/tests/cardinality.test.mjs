@@ -5,9 +5,11 @@ import vm from 'node:vm';
 import ts from 'typescript';
 
 const source = await readFile(new URL('../src/ActivityEditor.tsx', import.meta.url), 'utf8');
+const schemaDefinition = await readFile(new URL('../src/mapperSchemaSample.ts', import.meta.url), 'utf8');
 const ast = ts.createSourceFile('editor.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const names = ['cardinalitySymbol', 'transformSchemaFields', 'schemaDataFields', 'dataTreeRows'];
-const code = ts.transpileModule(ast.statements.filter(s => names.includes(s.name?.text)).map(s => s.getText(ast)).join('\n'), {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+const fixture = [schemaDefinition.replace(/^export /gm,''), ...ast.statements.filter(s => names.includes(s.name?.text)).map(s => s.getText(ast))].join('\n');
+const code = ts.transpileModule(fixture, {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 const context = vm.createContext({d:(key,label,type) => ({key,label,type})});
 vm.runInContext(code, context);
 

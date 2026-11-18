@@ -566,14 +566,17 @@ class DebugManager:
             target = await self.runtime.retry_failed_group(ctx, plans)
             if target:
                 self._redirect(state, frame, target, 'group retry')
-        if target:
-            if state.get('pauseOnError') or not state.get('_autoContinue'):
-                state.update(status='paused', pauseReason='exception' if state.get('pauseOnError') else 'step')
-            return True
-        while ctx.get('groupStack'):
-            group_state = ctx['groupStack'].pop()
-            await self.runtime._finish_group(group_state, plans[group_state['id']], ctx, False)
-        return False
+        if not target:
+            while ctx.get('groupStack'):
+                group_state = ctx['groupStack'].pop()
+                await self.runtime._finish_group(group_state, plans[group_state['id']], ctx, False)
+            caught = self.runtime.route_catch(task.activities, ctx, fault)
+            if caught:
+                target = caught.id
+                self._redirect(state, frame, target, 'task catch')
+        if target and (state.get('pauseOnError') or not state.get('_autoContinue')):
+            state.update(status='paused', pauseReason='exception' if state.get('pauseOnError') else 'step')
+        return bool(target)
 
     @staticmethod
     def _fail_frame_threads(trace, frame):

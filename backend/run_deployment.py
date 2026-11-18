@@ -119,7 +119,7 @@ async def run_deployment(application: Path, environment: str) -> None:
             else:
                 await _continuous_event_loop(project, task, event, environment)
             return
-        result = await runtime.run(task, {}, resources, _environment_values(project, environment), project=project)
+        result = await runtime.run(task, {}, resources, _environment_values(project, environment), project=project, environment=environment)
         record_logs(project.id, project.name, result.logs, str(_environment_values(project, environment).get("runtime.logDirectory") or ""))
         if result.status != "completed":
             raise RuntimeError(f"Starter Task {task.name} finished with status {result.status}")

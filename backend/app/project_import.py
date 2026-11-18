@@ -51,6 +51,7 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
 
     tasks, schemas, resources, diagnostics = [], [], {}, []
     processes = {}
+    process_namespaces = {}
     resource_properties = {}
     formats, pending_layouts, paths, schema_names = {}, [], set(), set()
     bw_profiles, format_mappings, format_properties = [], {}, {}
@@ -63,12 +64,20 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
         if path.suffix.lower() == '.substvar':
             profile = path.stem.lower()
             if profile in ('default', *PROFILES):
-                bw_profiles.append((path.as_posix(), profile, list(profile_values(parse_xml(content)))))
+                try:
+                    bw_profiles.append((path.as_posix(), profile, list(profile_values(parse_xml(content)))))
+                except (ValueError, etree.XMLSyntaxError) as error:
+                    diagnostics.append(f'{path.as_posix()}: {error}')
             continue
-        document = parse_xml(content)
+        try:
+            document = parse_xml(content)
+        except (ValueError, etree.XMLSyntaxError) as error:
+            diagnostics.append(f'{path.as_posix()}: {error}')
+            continue
         if path.suffix.lower() == '.xsd':
             if document.tag != '{http://www.w3.org/2001/XMLSchema}schema':
-                raise ValueError(f'{name} is not an XML Schema')
+                diagnostics.append(f'{path.as_posix()}: expected an XML Schema')
+                continue
             start = next((index + 1 for index, part in enumerate(path.parts) if part.lower() == 'schemas'), len(path.parts) - 1)
             display_name = '/'.join(path.parts[start:])
             if display_name in schema_names: display_name = path.as_posix()
@@ -98,7 +107,12 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
             except ValueError as error:
                 diagnostics.append(f'{path.as_posix()}: {error}')
             continue
-        processes[path.as_posix()] = (f'bw-process-{len(processes) + 1}', document)
+        path_name = path.as_posix()
+        processes[path_name] = (f'bw-process-{len(processes) + 1}', document)
+        try:
+            process_namespaces[path_name] = process_extension(document)
+        except ValueError as error:
+            diagnostics.append(f'{path_name}: {error}')
 
     for path, document in pending_layouts:
         try:
@@ -147,11 +161,11 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
             raise ValueError(f'{resource_type.upper()} shared resource {name!r} is missing or ambiguous')
         return matching[0]
 
-    def schema_resolver(name, document):
+    def schema_resolver(name, document, extension):
         # BW stores generated activity/process interfaces inside tibex:Types.
         # Publish only referenced schemas so internal fault/timer contracts do
         # not clutter the project or introduce unrelated import candidates.
-        embedded = document.findall(f"{process_extension(document)}Types/{{http://www.w3.org/2001/XMLSchema}}schema")
+        embedded = document.findall(f"{extension}Types/{{http://www.w3.org/2001/XMLSchema}}schema")
         module = name.split('/Processes/', 1)[0] if '/Processes/' in name else ''
         embedded_assets = {}
         def resolve_schema(qname):
@@ -179,8 +193,12 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
 
     converted = {}
     for name, (task_id, document) in processes.items():
-        resolve_schema, embedded_assets = schema_resolver(name, document)
-        converter = ProcessConverter(document, task_id, PurePosixPath(name).stem, resolve_task, resolve_resource, resolve_schema)
+        extension = process_namespaces.get(name)
+        if extension is None:
+            continue
+        resolve_schema, embedded_assets = schema_resolver(name, document, extension)
+        converter = ProcessConverter(document, task_id, PurePosixPath(name).stem, resolve_task, resolve_resource, resolve_schema,
+                                     extension=extension)
         try:
             task = converter.convert()
             schemas.extend(embedded_assets.values())
@@ -212,11 +230,11 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
             diagnostics.append(f"{task['name']}: a called process was unavailable or recursive")
 
     for name, (task_id, document) in processes.items():
-        if task_id in ready:
+        extension = process_namespaces.get(name)
+        if task_id in ready or extension is None:
             continue
         path = PurePosixPath(name)
-        resolve_schema, embedded_assets = schema_resolver(name, document)
-        extension = process_extension(document)
+        resolve_schema, embedded_assets = schema_resolver(name, document, extension)
         for inputs in document.iter(extension + 'inputBindings'):
             owner = inputs.getparent()
             if owner is None: continue
@@ -226,7 +244,7 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
                                                     'bw.parse.parsedata', 'bw.parse.renderdata'):
                 label = owner.get('name') or kind
                 converter = ProcessConverter(document, f'bw-activity-{len(tasks)+1}', f'{path.stem} {label}',
-                                             resolve_task, resolve_resource, resolve_schema)
+                                             resolve_task, resolve_resource, resolve_schema, extension=extension)
                 try:
                     tail = converter.step(owner, [converter.node('start','Start')])
                     converter.connect(tail, converter.node('end','End'))

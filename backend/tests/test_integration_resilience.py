@@ -1,4 +1,5 @@
 import asyncio
+import importlib.util
 import sys
 import tempfile
 import subprocess
@@ -6,8 +7,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from app.models import Activity, ProcessDefinition, Transition
-from app.retry_policy import RetryPlan, RetryConfigurationError, outbound_activity
+from app.models import Activity, ProcessDefinition, Project, Transition
+from app.retry_policy import (
+    ActivityCircuits, CircuitCapacityError, CircuitOpenError, CircuitPlan, RetryConfigurationError, RetryPlan,
+    circuit_activity, outbound_activity,
+)
 from app.runtime import WorkflowRuntime, MinaFault
 from app.raw_python import raw_python_files, engine_python_files
 
@@ -44,6 +48,69 @@ class IntegrationResilienceTests(unittest.TestCase):
         for enabled in ('false', 'off', False, '0'):
             self.assertEqual(RetryPlan(True, dict(retryEnabled=enabled, retryCount=3), {}).count, 0)
         self.assertEqual(RetryPlan(True, dict(retryEnabled=True, retryCount=0), {}).count, 0)
+
+    def test_circuit_preserves_one_probe_against_stale_attempts_and_cancellation(self):
+        now = 0
+        events = []
+        circuits = ActivityCircuits(clock=lambda: now)
+        plan = CircuitPlan('ftp', 'get', dict(circuitEnabled=True, circuitFailureThreshold=1,
+                                             circuitCooldownSeconds=2, circuitFaultTypes='TimeoutError'))
+        attempt = lambda: circuits.attempt(('activity',), plan, events.append)
+        with attempt():  # A slow success starts in the closed generation.
+            with self.assertRaises(ValueError), attempt():
+                raise ValueError('excluded fault')
+            self.assertEqual(events, [])
+            with self.assertRaises(TimeoutError), attempt() as ticket:
+                raise TimeoutError('connection')
+            self.assertTrue(ticket.stops_retry)
+        with self.assertRaises(CircuitOpenError), attempt():
+            self.fail('a stale success closed the circuit')
+        now = 2
+        with self.assertRaises(asyncio.CancelledError), attempt():
+            with self.assertRaises(CircuitOpenError), attempt():
+                self.fail('two recovery probes were admitted')
+            raise asyncio.CancelledError()
+        with self.assertRaises(TimeoutError), attempt():
+            raise TimeoutError('still unavailable')
+        with self.assertRaises(CircuitOpenError), attempt():
+            self.fail('a failed probe should start a new cooldown')
+        now = 4
+        with attempt():
+            pass
+        self.assertEqual(events, ['open', 'blocked', 'blocked', 'open', 'blocked', 'closed'])
+        self.assertFalse(circuit_activity('amqp', 'dead_letter'))
+        self.assertFalse(circuit_activity('rest', 'invoke'))
+
+    def test_circuit_registry_bounds_state_and_reclaims_inactive_entries(self):
+        now = 0
+        circuits = ActivityCircuits(capacity=1, clock=lambda: now)
+        plan = CircuitPlan('sftp', 'send', dict(circuitEnabled=True))
+        with self.assertRaises(TimeoutError), circuits.attempt('one', plan, lambda _: None):
+            raise TimeoutError('count this failure')
+        with self.assertRaises(CircuitCapacityError), circuits.attempt('two', plan, lambda _: None):
+            self.fail('the circuit registry exceeded its capacity')
+        now = 3601
+        with circuits.attempt('two', plan, lambda _: None):
+            pass
+
+    def test_circuit_stops_retries_and_preserves_fault_policy(self):
+        async def check():
+            runtime = WorkflowRuntime()
+            runtime.execute = AsyncMock(side_effect=TimeoutError('unavailable'))
+            policy = dict(retryEnabled=True, retryCount=9, retryIntervalSeconds=0,
+                          circuitEnabled=True, circuitFailureThreshold=2)
+            activity = Activity(id='transfer', name='Transfer', type='ftp', config={
+                'operation':'get', 'advanced':policy, 'errorPolicy':{'action':'continue', 'includeInput':False},
+            })
+            ctx = {'properties':{}, 'vars':{}, 'context':{'taskId':'task','environment':'qa'}}
+            result = await runtime.execute_with_policy(activity, ctx)
+            self.assertEqual(result['type'], 'TimeoutError')
+            self.assertEqual(runtime.execute.await_count, 2)
+            result = await runtime.execute_with_policy(activity, ctx)
+            self.assertEqual(result['type'], 'CircuitOpen')
+            self.assertEqual(runtime.execute.await_count, 2)
+            self.assertEqual([line['circuitState'] for line in ctx['logs'] if line.get('kind') == 'circuitBreaker'], ['open', 'blocked'])
+        asyncio.run(check())
 
     def test_legacy_error_retry_overrides_advanced_consistently(self):
         retry = RetryPlan(True, dict(retryEnabled=True, retryCount=5, retryIntervalSeconds=60),
@@ -121,3 +188,91 @@ asyncio.run(check())
 ''' % engine
                 result = subprocess.run([sys.executable, '-c', script], cwd=folder, capture_output=True, text=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(importlib.util.find_spec('pyftpdlib'), 'Install test-only pyftpdlib for a live FTP server')
+    def test_live_circuit_with_run_debug_and_both_exports(self):
+        from app.debugger import DebugManager
+        from tests.test_python_mapper_parity import PythonMapperParityTests
+        from tests.test_transfer_network import ftp_server
+
+        with tempfile.TemporaryDirectory() as root, ftp_server(Path(root)) as connection:
+            (Path(root) / 'ready.txt').write_text('ready', encoding='utf-8')
+            project = PythonMapperParityTests().project(input_mappings={'result.outcome':'${activities.Fetch.output}'})
+            project['resources'] = [dict(id='ftp', name='FTP', type='ftp', config=connection)]
+            task = project['tasks'][0]
+            task['activities'].insert(1, dict(id='Fetch', name='Fetch', type='ftp', config={
+                'operation':'get', 'resourceId':'ftp', 'remotePath':'${input.path}',
+                'advanced':{'circuitEnabled':True, 'circuitFailureThreshold':1, 'circuitCooldownSeconds':1},
+            }))
+            task['activities'].extend([
+                dict(id='Fallback', name='Fallback', type='catch', config={'catchAll':True}),
+                dict(id='FaultEnd', name='FaultEnd', type='end',
+                     config={'inputMappings':{'result.outcome':'${activities.Fallback.output}'}}),
+            ])
+            task['transitions'] = [dict(id='a', source='Start', target='Fetch'),
+                                   dict(id='b', source='Fetch', target='End'),
+                                   dict(id='c', source='Fallback', target='FaultEnd')]
+
+            async def check_studio():
+                now = 0
+                model = Project.model_validate(project)
+                resources = {resource.id: resource for resource in model.resources}
+                runtime = WorkflowRuntime()
+                runtime.activity_circuits = ActivityCircuits(clock=lambda: now)
+                debugger = DebugManager(runtime)
+
+                async def run(path, environment='local'):
+                    result = await runtime.run(model.tasks[0], {'path':path}, resources, project=model,
+                                               environment=environment)
+                    self.assertEqual(result.status, 'completed', result.logs)
+                    return result.output['outcome']
+
+                async def debug(path):
+                    task_id = debugger.start(model, 'main', {'path':path}, resources, {}, [], pause_on_error=False)['sessionId']
+                    result = await debugger.action(task_id, 'continue')
+                    self.assertEqual(result['status'], 'completed', result['logs'])
+                    return result['output']['outcome']
+
+                self.assertEqual((await run('missing.txt'))['type'], 'error_perm')
+                self.assertIn('contentBase64', await debug('ready.txt'))
+                self.assertIn('contentBase64', await run('ready.txt', 'qa'))
+                self.assertEqual((await run('ready.txt'))['type'], 'CircuitOpen')
+                self.assertEqual((await debug('missing.txt'))['type'], 'error_perm')
+                self.assertEqual((await debug('ready.txt'))['type'], 'CircuitOpen')
+                now = 2
+                self.assertIn('contentBase64', await run('ready.txt'))
+                self.assertIn('contentBase64', await debug('ready.txt'))
+
+            asyncio.run(check_studio())
+            for compiler in (raw_python_files, engine_python_files):
+                with self.subTest(archive=compiler.__name__), tempfile.TemporaryDirectory() as folder:
+                    for name, body in compiler(project, {'local':[], 'qa':[]}).items():
+                        path = Path(folder) / name
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_bytes(body)
+                    registry_import = ('from application.core import _ACTIVITY_CIRCUITS as circuits'
+                        if compiler is raw_python_files else
+                        'from application.main import RUNTIME\ncircuits = RUNTIME.activity_circuits')
+                    script = registry_import + '''
+import asyncio
+from application.main import run_task
+
+now = 0
+circuits._clock = lambda: now
+
+async def run(path, environment='local'):
+    return (await run_task('main', {'path':path}, environment))['outcome']
+
+async def check():
+    global now
+    assert (await run('missing.txt'))['type'] == 'error_perm'
+    assert 'contentBase64' in await run('ready.txt', 'qa')
+    assert (await run('ready.txt'))['type'] == 'CircuitOpen'
+    now = 2
+    assert 'contentBase64' in await run('ready.txt')
+
+asyncio.run(check())
+'''
+                    result = subprocess.run([sys.executable, '-c', script], cwd=folder,
+                                            capture_output=True, text=True, timeout=40)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

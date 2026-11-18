@@ -14,7 +14,7 @@ SPEC.loader.exec_module(compiler)
 
 class EngineExportTests(unittest.TestCase):
     BASE = {'runtime', 'models', 'mapper', 'mapping_literals', 'time_utils', 'flow_graph', 'data_formats',
-            'faults', 'schema_validation', 'retry_policy', 'mapper_binding', 'mapper_coercions', 'mapper_xml', 'xsd_catalog', 'mapping_documents', 'mapper_document_xslt'}
+            'faults', 'schema_validation', 'retry_policy', 'mapper_binding', 'mapper_coercions', 'mapper_xml', 'xml_names', 'xsd_catalog', 'mapping_documents', 'mapper_document_xslt'}
 
     def project(self, kind='log'):
         return dict(id='sample', name='Sample', resources=[], tasks=[dict(

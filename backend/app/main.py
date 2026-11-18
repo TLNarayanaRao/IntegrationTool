@@ -198,7 +198,7 @@ async def _start_http_listener(item,task,event,environment,debug_handler=None):
     if previous:await _cancel_and_wait(previous)
     async def handle(metadata,payload):
         task_id,event_id=metadata
-        result=await runtime.run(by_task[task_id],payload,resources,properties,event_id,item)
+        result=await runtime.run(by_task[task_id],payload,resources,properties,event_id,item,environment=environment)
         await _write_runtime_logs(item, environment, result.logs)
         _publish_runtime_state(item.id,status='listening',logs=(runtime_states.get(item.id,{}).get('logs',[])+result.logs)[-500:],result=result,environment=environment)
         if result.status!='completed':raise RuntimeError('HTTP integration failed')
@@ -480,7 +480,7 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
                         await asyncio.sleep(max(.1, float(resolved_config.get('pollInterval', 1) or 1)))
                     continue
                 try:
-                    result = await runtime.run(task, output, resources, properties, activity.id, item, event_output=output)
+                    result = await runtime.run(task, output, resources, properties, activity.id, item, event_output=output, environment=environment)
                     if sap_delivery_id and sap_listener_key:
                         sap_adapter.acknowledge_idoc(sap_listener_key, sap_delivery_id, result.status == 'completed')
                 except Exception:
@@ -584,7 +584,7 @@ async def _continuous_sap_event_loop(item: Project, task, activity, environment:
                     'operation': activity.config.get('operation'),
                     'invocationProtocol': output.get('invocationProtocol') if isinstance(output, dict) else None,
                 }
-                result = await runtime.run(task, output, resources, properties, activity.id, item, event_output=output, transport=transport)
+                result = await runtime.run(task, output, resources, properties, activity.id, item, event_output=output, transport=transport, environment=environment)
                 request_reply = activity.config.get('operation') == 'rfc_bapi_listener' and str(transport.get('invocationProtocol') or 'Request/Reply').lower().replace('-', '').replace('/', '') in ('requestreply', 'srfc')
                 if delivery_id and listener_key and request_reply and result.status == 'completed' and not transport.get('completed'):
                     result.status = 'failed'
@@ -807,7 +807,7 @@ async def run(project_id: str, http_request: Request, request: RunRequest):
     if current_run: active_runs[project_id] = current_run
     runtime_states.setdefault(project_id, {})['environment'] = request.environment
     try:
-        result = await runtime.run(task, request.input, resources, properties, project=item)
+        result = await runtime.run(task, request.input, resources, properties, project=item, environment=request.environment)
     except asyncio.CancelledError:
         now = log_timestamp()
         logs = list(runtime_states.get(project_id, {}).get('logs', [])) + [{'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Application {item.name} stopped by user', 'endedAt': now}]
@@ -2259,7 +2259,7 @@ async def invoke_listener(project_id: str, listener_path: str, request: Request,
             selected_task=next(value for value in item.tasks if value.id==task_id)
             if debug_state:return await debug_state['httpHandler'](metadata,payload)
             resources={resource.id:resource for resource in item.resources}
-            result=await runtime.run(selected_task,payload,resources,properties,listener_id,item)
+            result=await runtime.run(selected_task,payload,resources,properties,listener_id,item,environment=environment)
             await _write_runtime_logs(item, environment, result.logs)
             combined_logs=list(runtime_states.get(project_id,{}).get('logs',[]))+result.logs
             _publish_runtime_state(project_id,status='listening' if result.status=='completed' else 'failed',logs=combined_logs[-500:],result=result,environment=environment)
@@ -2292,7 +2292,7 @@ async def invoke_listener(project_id: str, listener_path: str, request: Request,
     except (ValueError, UnicodeDecodeError): body = raw.decode(errors='replace')
     payload = {'body': body, 'method': request.method, 'path': request_path, 'query': dict(request.query_params), 'headers': dict(request.headers), 'pathParameters': path_parameters, 'auth': claims}
     resources = {resource.id: resource for resource in item.resources}
-    result = await runtime.run(task, payload, resources, properties, listener.id, item)
+    result = await runtime.run(task, payload, resources, properties, listener.id, item, environment=environment)
     deployment = runtime_states.get(project_id, {})
     combined_logs = list(deployment.get('logs', [])) + result.logs
     append_project_logs(project_id, item.name, result.logs, _project_log_directory(item, environment))

@@ -21,7 +21,7 @@ function harness({effects = [], eventWindow = {}} = {}) {
   const context = vm.createContext({
     React: { createElement: (type, props, ...children) => ({type, props: props || {}, children: children.flat(Infinity)}) },
     useState: initial => { const i = cursor++; if (!(i in state)) state[i] = typeof initial === 'function' ? initial() : initial; return [state[i], v => { state[i] = typeof v === 'function' ? v(state[i]) : v; }]; },
-    useEffect: effect => effects.push(effect), useRef: () => ({current: null}),
+    useEffect: effect => effects.push(effect), useRef: () => ({current: null}), useMemo: compute => compute(),
     mappingCompletionPaths: () => ['input', 'last'], relativeLoopExpression, expandLoopExpression, validateMapping, isComplexSchemaType:()=>false,
     MappingBinding:'mapping-binding', MappingExpressionInput: 'expression-input', Braces: 'icon', DataNodeIcon: 'icon', Plus: 'icon',
     createPortal: v => v, document: {body: {}}, window: {innerWidth: 1200, innerHeight: 900, ...eventWindow},

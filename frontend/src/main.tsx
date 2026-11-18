@@ -68,6 +68,7 @@ import {
 } from "lucide-react";
 import SchemaStudio, { SchemaDoc } from "./SchemaStudio";
 import ActivityEditor, { activityContract, activityReferenceName, activityMappingIssues, activityInputMappingTypes, possibleTaskExceptions, DataSourcePane, upstreamActivitySources } from "./ActivityEditor";
+import { activityCircuitDefaults, supportsActivityCircuit, supportsOutboundRetry } from "./activityResilience";
 import HttpEndpointSetup, { HttpEndpointFields, endpointConfig, isHttpEndpoint, newEndpointDraft, type EndpointConfig } from "./HttpEndpointSetup";
 import type { ConnectionKind, CreateConnection, SharedConnection } from "./SharedConnectionSelect";
 import { DEFAULT_PACKAGE, PackageDialog as ObjectPackageDialog, PackageTree, artifactNamePattern, packagePath, packagePaths, renamedPackagePath, type PackageCatalog, type PackageCategory } from "./ProjectPackages";
@@ -1018,16 +1019,6 @@ const seedAddedProtocols = (previous: Project | undefined, next: Project): Proje
 const envs = Object.fromEntries(
   ["local", "dev", "qa", "pre", "production"].map((name) => [name, newEnvironmentProperties()]),
 ) as Record<string, Property[]>;
-const supportsOutboundRetry = (type = "", operation = "") =>
-  ["http", "jdbc", "snowflake", "ftp", "sftp"].includes(type) ||
-  (type === "amqp" && ["send", "get", "dead_letter"].includes(operation)) ||
-  (type === "ems" && ["send", "publish", "request_reply", "reply"].includes(operation)) ||
-  (type === "jms" && ["send_message", "get_queue_message", "request_reply", "reply_message"].includes(operation)) ||
-  (type === "kafka" && ["send", "publish", "get"].includes(operation)) ||
-  (type === "pubsub" && operation === "publish") ||
-  (type === "rest" && operation === "invoke") ||
-  (type === "soap" && operation === "request_reply") ||
-  (type === "sap" && ["idoc_acknowledgment", "idoc_confirmation", "post_idoc", "invoke_rfc_bapi", "reply_rfc_bapi", "read_table"].includes(operation));
 const advancedDefaults = (type = "", operation = "") => ({
   logPayload: "${properties.advanced.logPayload}",
   ...(supportsOutboundRetry(type, operation) ? {
@@ -1040,6 +1031,7 @@ const advancedDefaults = (type = "", operation = "") => ({
     retryJitter: false,
     retryFaultTypes: "",
   } : {}),
+  ...(supportsActivityCircuit(type, operation) ? activityCircuitDefaults : {}),
 });
 const newSubtask = (id = "main", name = "Main-Subtask"): Task => ({
   id,

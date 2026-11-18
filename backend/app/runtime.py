@@ -1,6 +1,7 @@
 from __future__ import annotations
 import ast, asyncio, base64, copy, csv, ftplib, gzip, hashlib, importlib.util, io, json, os, re, shlex, shutil, sqlite3, sys, tempfile, threading, traceback, uuid
 from datetime import datetime, timezone, timedelta
+from contextlib import nullcontext
 from pathlib import Path
 import httpx
 from time import perf_counter
@@ -15,7 +16,7 @@ from .jdbc import jdbc_adapter
 from .amqp import amqp_adapter
 from .java_bridge import JavaBridgeError, execute_jms, close_jms_senders
 from .mapping_literals import parse_literal
-from .retry_policy import RetryPlan, outbound_activity
+from .retry_policy import ActivityCircuits, CircuitPlan, RetryPlan, outbound_activity
 from .http_transport import request as http_request, merged as merge_http_config
 from .message_state import operate as mediation_operation
 from .google_pubsub import client_configuration as pubsub_client_configuration, create_client as create_pubsub_client, project_id as pubsub_project_id
@@ -29,6 +30,7 @@ _NO_EVENT_OUTPUT = object()
 
 class WorkflowRuntime(DataFormats):
     def __init__(self):
+        self.activity_circuits = ActivityCircuits()
         self.messages: dict[str, list[dict]] = {}
         self.acknowledgements: dict[str, dict] = {}
         self.shared_variables: dict[str, Any] = {}
@@ -378,7 +380,7 @@ class WorkflowRuntime(DataFormats):
         if delay: await asyncio.sleep(delay)
         return plans[state['id']]['entry']
 
-    async def run(self, process: ProcessDefinition, initial: dict, resources=None, properties=None, entry_activity_id=None, project: Project | None=None, execution_state: dict | None=None, event_output: Any = _NO_EVENT_OUTPUT, transport: dict | None = None, jms_sender_scope: str | None = None, stop_activity_id=None, branch_context=None, branch_output=None) -> RunResult:
+    async def run(self, process: ProcessDefinition, initial: dict, resources=None, properties=None, entry_activity_id=None, project: Project | None=None, execution_state: dict | None=None, event_output: Any = _NO_EVENT_OUTPUT, transport: dict | None = None, jms_sender_scope: str | None = None, stop_activity_id=None, branch_context=None, branch_output=None, *, environment=None, debug_session_id=None) -> RunResult:
         run_id, logs = str(uuid.uuid4()), []
         started = datetime.now(timezone.utc)
         correlation_id = str(initial.get('correlationId') or initial.get('correlation_id') or run_id) if isinstance(initial, dict) else run_id
@@ -391,11 +393,13 @@ class WorkflowRuntime(DataFormats):
             'input': initial, 'vars': {}, 'last': initial, 'resources': resources or {},
             'properties': properties or {}, 'project': project, 'runtime': self, 'logs': logs,
             'activities': activity_outputs, 'tasks': task_outputs,
-            'context': {'taskId': process.id, 'activityId': '', 'environment': getattr(project, 'active_environment', '') if project else '', 'correlationId': correlation_id, 'runId': run_id, 'executionId': run_id,
+            'context': {'taskId': process.id, 'activityId': '', 'environment': environment or getattr(project, 'active_environment', ''), 'correlationId': correlation_id, 'runId': run_id, 'executionId': run_id,
                         'jmsSenderScope': jms_sender_scope or self.jms_application_scope(project.id if project else process.id)},
             'transport': transport or {},
             '_process': process, 'groupStack': [], 'jdbcTransactions': {},
         }
+        if debug_session_id:
+            context['context']['debugSessionId'] = debug_session_id
         if branch_context is not None:
             context['input'] = copy.deepcopy(branch_context['input'])
             context['vars'] = copy.deepcopy(branch_context['vars'])
@@ -477,12 +481,8 @@ class WorkflowRuntime(DataFormats):
                         while context.get('groupStack'):
                             failed_state = context['groupStack'].pop()
                             await self._finish_group(failed_state, group_plans[failed_state['id']], context, False)
-                        used = set(context['context'].setdefault('handledCatchIds', []))
-                        catches = [activity for activity in process.activities if activity.type == 'catch' and activity.id not in used]
-                        caught = next((activity for activity in catches if self.as_bool(activity.config.get('catchAll', True)) or (activity.config.get('errorType') and activity.config.get('errorType') == fault['type']) or (activity.config.get('errorCode') and str(activity.config.get('errorCode')) == fault['code'])), None)
+                        caught = self.route_catch(process.activities, context, fault)
                         if not caught: raise error
-                        context['context']['handledCatchIds'].append(caught.id)
-                        self.log(logs, 'WARN', f'{caught.name} caught {fault["type"]}: {fault["message"]}', caught.id, kind='exception', fault=fault)
                         current = caught
                         continue
                 else:
@@ -625,6 +625,21 @@ class WorkflowRuntime(DataFormats):
         stack_trace = ''.join(traceback.format_exception(type(error), error, error.__traceback__))
         return {'type': getattr(error, 'fault_type', error.__class__.__name__), 'code': str(getattr(error, 'code', '') or ''), 'message': str(error), 'stackTrace': stack_trace, 'activityId': activity_id, 'details': getattr(error, 'details', {}) or {}, 'cause': getattr(error, 'cause', None)}
 
+    def route_catch(self, activities, ctx, fault):
+        used = ctx['context'].setdefault('handledCatchIds', [])
+        for activity in activities:
+            if activity.type != 'catch' or activity.id in used:
+                continue
+            config = activity.config
+            if (self.as_bool(config.get('catchAll', True))
+                    or (config.get('errorType') and config['errorType'] == fault['type'])
+                    or (config.get('errorCode') and str(config['errorCode']) == fault['code'])):
+                used.append(activity.id)
+                self.log(ctx['logs'], 'WARN', f'{activity.name} caught {fault["type"]}: {fault["message"]}',
+                         activity.id, kind='exception', fault=fault)
+                return activity
+        return None
+
     def log(self, logs, level, message, activity_id=None, **details):
         logs.append({'time': log_timestamp(), 'level': level, 'message': message, 'activityId': activity_id, **details})
 
@@ -668,18 +683,32 @@ class WorkflowRuntime(DataFormats):
         }, ctx)
         log_payload = self.as_bool(advanced.get('logPayload', False))
         retry = RetryPlan(self.is_outbound(activity), advanced, policy)
+        operation = activity.config.get('operation', '')
+        circuit = CircuitPlan(activity.type, operation, advanced)
+        if circuit.enabled:
+            metadata = ctx.get('context', {})
+            key = (getattr(ctx.get('project'), 'id', ''), metadata.get('environment') or 'local',
+                   'debug' if metadata.get('debugSessionId') else 'run', metadata.get('taskId', ''),
+                   activity.id, activity.type, operation)
+
+            def circuit_event(state):
+                self.log(ctx.setdefault('logs', []), 'INFO' if state == 'closed' else 'WARN',
+                         f'{activity.name} circuit {state}', activity.id, kind='circuitBreaker',
+                         circuitState=state, taskId=metadata.get('taskId'))
         started = perf_counter()
         if log_payload:
             self.log(ctx.setdefault('logs', []), 'INFO', f'{activity.name} input payload: {self.payload_text(ctx.get("last"))}', activity.id)
         for attempt in range(retry.count + 1):
+            ticket = None
             try:
-                result = await self.execute(activity, ctx)
+                with self.activity_circuits.attempt(key, circuit, circuit_event) if circuit.enabled else nullcontext() as ticket:
+                    result = await self.execute(activity, ctx)
                 if activity.config.get('outputName'): ctx['vars'][activity.config['outputName']] = result
                 if log_payload:
                     self.log(ctx.setdefault('logs', []), 'INFO', f'{activity.name} output payload: {self.payload_text(result)}', activity.id)
                 return result
             except Exception as exc:
-                retry_delay = retry.delay(attempt, exc, perf_counter() - started)
+                retry_delay = None if ticket and ticket.stops_retry else retry.delay(attempt, exc, perf_counter() - started)
                 if retry_delay is not None:
                     self.log(ctx.setdefault('logs', []), 'WARN', f'{activity.name} failed; retry {attempt + 1} of {retry.count} in {retry_delay:g} seconds: {exc}', activity.id)
                     if retry_delay: await asyncio.sleep(retry_delay)
@@ -1117,8 +1146,10 @@ class WorkflowRuntime(DataFormats):
             mapped_values = self.map_input_values(activity.config.get('inputMappings', {}), ctx)
             mapped = self.unwrap_boundary(mapped_values, 'payload', ctx['last'] if isinstance(ctx['last'], dict) else {'value':ctx['last']})
             execution_state = {'activities': ctx.setdefault('activities', {}), 'tasks': ctx.setdefault('tasks', {})}
+            metadata = ctx.get('context', {})
             invocation = self.run(task, mapped, ctx['resources'], ctx['properties'], project=project, execution_state=execution_state,
-                                  jms_sender_scope=ctx.get('context', {}).get('debugSessionId') or ctx.get('context', {}).get('jmsSenderScope'))
+                                  jms_sender_scope=metadata.get('debugSessionId') or metadata.get('jmsSenderScope'),
+                                  environment=metadata.get('environment'), debug_session_id=metadata.get('debugSessionId'))
             if cfg.get('spawn'):
                 asyncio.create_task(invocation)
                 return {'spawned': True, 'taskId': task.id}

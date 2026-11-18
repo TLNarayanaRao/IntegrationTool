@@ -35,6 +35,7 @@ import MappingExpressionInput from "./MappingExpressionInput";
 import {mappingSchemaDefinition} from "./mapperSchemaSample";
 import {activityMappingRules, activityMappingsFromRules, autoMapLoopChildren, emptyRepeatOccurrence, mapActivityRepeatingDrop, mapRepeatingDrop, relativeLoopExpression, expandLoopExpression, removeRepeatOccurrence, removeMappingSubtree, type RepeatingDropMode} from "./mapperLoopMappings";
 import { activityGuidance } from "./activityGuidance";
+import { activityCircuitDefaults, activityCircuitErrors, supportsActivityCircuit, supportsOutboundRetry } from "./activityResilience";
 import { mappingTreeRows, MappingTreeRow } from "./mappingTree";
 import { validateMapping } from "./mappingValidation";
 import DataNodeIcon from "./DataNodeIcon";
@@ -1594,6 +1595,10 @@ export function possibleTaskExceptions(task: any, tasks: any[] = [], schemas: an
       if (activity.type === "catch" || activity.config?.generatedByCatchAI) continue;
       if (activity.type === "throw") values.add(String(activity.config?.errorType || "UserDefinedException"));
       else resolvedActivityContract(activity, current, tasks, schemas).errors.forEach((error) => values.add(error.type));
+      if (activity.config?.advanced?.circuitEnabled === true) {
+        values.add("CircuitOpen");
+        values.add("CircuitBreakerCapacity");
+      }
       if (activity.type === "call_task") {
         const dynamic = String(activity.config?.dynamicTaskId || "").trim();
         const target = dynamic && !dynamic.includes("${") ? dynamic : activity.config?.taskId;
@@ -1994,7 +1999,7 @@ export default function ActivityEditor({
     );
   return (
     <ErrorEditor
-      errors={contract.errors}
+      errors={supportsActivityCircuit(node.type, cfg.operation) ? [...contract.errors, ...activityCircuitErrors] : contract.errors}
       policy={cfg.errorPolicy || {}}
       set={(v: any) => set("errorPolicy", v)}
     />
@@ -3681,6 +3686,9 @@ function AdvancedEditor({ node, value, properties, set }: any) {
   const logPropertyPanel = useRef<HTMLDetailsElement>(null);
   const propertyRows = dataTreeRows(properties.filter((p: any) => p.key.startsWith("advanced.")).map((p: any) => d(p.key, p.key.split(".").pop() || p.key, p.data_type)));
   const propertyTree = useTreeCollapse();
+  const operation = node.config?.operation || "";
+  const outbound = supportsOutboundRetry(node.type, operation);
+  const supportsCircuit = supportsActivityCircuit(node.type, operation);
   const defaults = {
       logPayload: "${properties.advanced.logPayload}",
       retryEnabled: "${properties.advanced.retryEnabled}",
@@ -3691,6 +3699,7 @@ function AdvancedEditor({ node, value, properties, set }: any) {
       retryMaxElapsedSeconds: 0,
       retryJitter: false,
       retryFaultTypes: "",
+      ...(supportsCircuit ? activityCircuitDefaults : {}),
     },
     advanced = { ...defaults, ...value },
     change = (key: string, next: any) => set({ ...advanced, [key]: next }),
@@ -3700,20 +3709,6 @@ function AdvancedEditor({ node, value, properties, set }: any) {
       const query = logPropertySearch.trim().toLowerCase();
       return !query || property.key.toLowerCase().includes(query) || String(property.value ?? "").toLowerCase().includes(query);
     }),
-    operation = node.config?.operation || "",
-    outbound =
-      ["http", "jdbc", "snowflake", "ftp", "sftp"].includes(
-        node.type,
-      ) ||
-      (node.type === "amqp" && ["send", "get", "dead_letter"].includes(operation)) ||
-      (node.type === "jms" && ["send_message", "get_queue_message", "request_reply", "reply_message"].includes(operation)) ||
-      (node.type === "ems" && ["send", "publish", "request_reply", "reply"].includes(operation)) ||
-      (node.type === "kafka" && ["send", "publish", "get"].includes(operation)) ||
-      (node.type === "pubsub" && operation === "publish") ||
-      (node.type === "rest" && operation === "invoke") ||
-      (node.type === "soap" && operation === "request_reply") ||
-      (node.type === "sap" &&
-        ["idoc_acknowledgment", "idoc_confirmation", "post_idoc", "invoke_rfc_bapi", "reply_rfc_bapi", "read_table"].includes(operation)),
     resolvedRetry = (() => {
       const match = String(advanced.retryEnabled).match(/^\$\{properties\.([^}]+)\}$/);
       return match
@@ -3735,6 +3730,7 @@ function AdvancedEditor({ node, value, properties, set }: any) {
     "false",
     ...properties.map((p: any) => "${properties." + p.key + "}"),
   ];
+  const circuitEnabled = ["true", "1", "yes", "on"].includes(String(advanced.circuitEnabled).toLowerCase());
   return (
     <div className="activity-tab advanced-editor">
       <div className="contract-heading">
@@ -3823,6 +3819,24 @@ function AdvancedEditor({ node, value, properties, set }: any) {
             <label className="advanced-tree-field">Retry fault types or codes<input disabled={retryDisabled} value={advanced.retryFaultTypes} placeholder="All faults, or comma-separated names" onChange={e => change("retryFaultTypes", e.target.value)}/></label>
           </div>
           <p>Up to 100 additional attempts. The retry budget prevents starting another attempt after its limit; it does not interrupt an in-flight request. Enable retries for writes only when the destination can safely handle duplicates.</p>
+        </article>}
+        {supportsCircuit && <article className="advanced-tree-branch">
+          <header><ShieldAlert /><span><b>Activity circuit breaker</b></span></header>
+          <div className="advanced-grid">
+            <label className="advanced-tree-field">Enable circuit breaker
+              <input type="checkbox" checked={circuitEnabled} onChange={e => change("circuitEnabled", e.target.checked)}/>
+            </label>
+            <label className="advanced-tree-field">Failures before opening
+              <input type="number" min={1} max={1000} step={1} disabled={!circuitEnabled} value={advanced.circuitFailureThreshold} onChange={e => change("circuitFailureThreshold", e.target.value)}/>
+            </label>
+            <label className="advanced-tree-field">Recovery delay (seconds)
+              <input type="number" min={1} max={86400} step="any" disabled={!circuitEnabled} value={advanced.circuitCooldownSeconds} onChange={e => change("circuitCooldownSeconds", e.target.value)}/>
+            </label>
+            <label className="advanced-tree-field">Fault types or codes to count
+              <input disabled={!circuitEnabled} value={advanced.circuitFaultTypes} placeholder="All faults, or comma-separated names" onChange={e => change("circuitFaultTypes", e.target.value)}/>
+            </label>
+          </div>
+          <p>An open circuit raises CircuitOpen so the flow can take an error transition. After the recovery delay, one connector attempt checks whether the activity can resume.</p>
         </article>}
       </section>
       <aside>

@@ -32,6 +32,7 @@ const guides = [
  ['Connectors', 'KAFKA_ACTUAL_THROUGHPUT.md'],
  ['Connectors', 'PUBSUB_THROUGHPUT.md'],
  ['Connectors', 'JMS_BATCH_REUSE.md'],
+ ['Operations', 'ACTIVITY_RESILIENCE.md'],
  ['Connectors', 'SENDER_PERFORMANCE.md'],
  ['Connectors', 'COMPLETE_FLOW_THROUGHPUT.md'],
  ['Connectors', 'MESSAGING_THROUGHPUT.md'],
@@ -51,7 +52,7 @@ const guides = [
  ['Connectors', 'KAFKA_PUBLISHING.md'], ['Connectors', 'HTTP_REST_CAPABILITIES.md'], ['Connectors', 'HTTP_REST_ACTIVITY_VERIFICATION.md'], ['Security', 'SECURITY_REVIEW_2026-09-22.md'],
  ['Security', 'WEB_DEPENDENCY_SECURITY.md'],
 ];
-const sourceFiles = [...new Set(['frontend/src/main.tsx', 'frontend/src/studioObjectName.ts', 'frontend/src/taskEntry.ts', 'frontend/src/ActivityEditor.tsx', 'frontend/src/ActivityPicker.tsx', 'frontend/src/mapper-functions.ts', 'frontend/package.json', 'backend/app/runtime.py', 'backend/app/sap.py', 'backend/app/java_bridge.py', 'java-bridge/src/com/mina/bridge/MinaJavaBridge.java', 'frontend/scripts/connector-documentation.mjs', 'frontend/scripts/build-documentation.mjs', 'scripts/build-documentation-pdf.py', 'frontend/public/help/documentation.js', 'frontend/public/help/documentation.css', 'frontend/public/help/index.html', ...developerSources, ...guides.map(([, f]) => `docs/${f}`)])];
+const sourceFiles = [...new Set(['frontend/src/main.tsx', 'frontend/src/studioObjectName.ts', 'frontend/src/taskEntry.ts', 'frontend/src/ActivityEditor.tsx', 'frontend/src/activityResilience.ts', 'frontend/src/ActivityPicker.tsx', 'frontend/src/mapper-functions.ts', 'frontend/package.json', 'backend/app/runtime.py', 'backend/app/sap.py', 'backend/app/java_bridge.py', 'java-bridge/src/com/mina/bridge/MinaJavaBridge.java', 'frontend/scripts/connector-documentation.mjs', 'frontend/scripts/build-documentation.mjs', 'scripts/build-documentation-pdf.py', 'frontend/public/help/documentation.js', 'frontend/public/help/documentation.css', 'frontend/public/help/index.html', ...developerSources, ...guides.map(([, f]) => `docs/${f}`)])];
 const sources = new Map(await Promise.all(sourceFiles.map(async name => [name, await read(name)])));
 sources.set('frontend/scripts/field-documentation.mjs', await read('frontend/scripts/field-documentation.mjs'));
 const artwork = new Map();
@@ -94,8 +95,9 @@ function declarations(file, names, stripIcons = false) {
  return names.map(name => found.get(name)).join('\n');
 }
 const contractNames = ['f', 'd', 'commonErrors', 'httpRequestFields', 'httpRequestOccurrences', 'httpInputMappings', 'HTTP_METHODS', 'isMapperActivity', 'activityContract', 'runtimeMappableInputs', 'activityDocumentation'];
-const mainNames = ['packs', 'supportsOutboundRetry', 'advancedDefaults', 'defaultProperties', 'connectionFieldSets', 'propertyExpression', 'connectionDefaults', 'groupConfigDefaults', 'connectorType', 'connectorPropertyPrefix', 'protocolPropertyTemplates'];
-const extracted = declarations('frontend/src/ActivityEditor.tsx', contractNames) + '\n' + declarations('frontend/src/main.tsx', mainNames, true) + '\nexport {' + [...contractNames, ...mainNames].join(',') + '};';
+const resilienceNames = ['supportsOutboundRetry', 'supportsActivityCircuit', 'activityCircuitDefaults', 'activityCircuitErrors'];
+const mainNames = ['packs', 'advancedDefaults', 'defaultProperties', 'connectionFieldSets', 'propertyExpression', 'connectionDefaults', 'groupConfigDefaults', 'connectorType', 'connectorPropertyPrefix', 'protocolPropertyTemplates'];
+const extracted = declarations('frontend/src/activityResilience.ts', resilienceNames) + '\n' + declarations('frontend/src/ActivityEditor.tsx', contractNames) + '\n' + declarations('frontend/src/main.tsx', mainNames, true) + '\nexport {' + [...contractNames, ...mainNames, ...resilienceNames].join(',') + '};';
 const compile = code => ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
 const load = code => import(`data:text/javascript;base64,${Buffer.from(compile(code)).toString('base64')}`);
 const defs = await load(extracted);
@@ -131,6 +133,12 @@ add('transformation-assets', 'Transformation tests, templates and durable mediat
 add('ai-development', 'AI-assisted task and project development', 'Studio', [section('Workflow', [p('AI Build accepts a requirement for the current Task or Complete Project. Review the design preview and generated definition before Apply. Generation alone does not deploy or run the application. Without a configured model key, the local blueprint builder is used.'), p('Do not enter credentials or confidential payloads into AI prompts. The current prompt instruction to exclude credentials is not an enforced redaction boundary. Validate and test generated designs, and review the security report before enabling shared access.')])]);
 add('workspace', 'Workspace, projects and samples', 'Studio', [section('Workspace', [p('Use the project tree to manage Tasks, schemas, resources and environment properties. The palette and searchable activity picker add activities to the canvas. Select and move activities, edit their display names, and configure transition conditions. Use Window for the XML/JSON viewers and comparison workspace.'), p('Project export/import preserves editable design artifacts. Deployment export packages an executable application; these are different workflows. Installed samples open as editable project copies. Samples marked connection setup need your own provider configuration and credentials.'), p('Themes include Plain Classic and Plain Studio with light/dark variants. Layout panes can be shown or hidden from menus. The status/footer area exposes background work and execution state.')])]);
 const dynamicNote = type => ({sap:'SAP IDoc listener/parser schemas change with selected IDoc metadata and JSON/XML output mode. Repeating segment fields follow the fetched schema. No live ECC schema is embedded in this generic guide.',jdbc:'Prepared SQL parameters and fetched output column metadata add typed fields to these base contracts. Dynamic SQL needs matching parameter names and values at runtime.',snowflake:'Entity/table metadata adds actual input record and result row columns.',xml:'The selected XSD or inline schema determines actual parse output or render input.',json:'The selected JSON schema determines actual parse output or render input.',flat:'The record schema determines child fields under records.',start:'The Task input schema replaces the generic payload boundary when configured.',end:'The Task output schema determines the result mapping.',call_task:'The selected Sub Task Start and End schemas replace generic payload/result fields.',mapper:'The selected target schema and mapping rules determine actual output fields.',transform:'The selected schema and transformation mapping determine the actual fields.'}[type] || 'The table is the base editor contract. Runtime values depend on mapped inputs, selected operation and provider response.');
+const circuitSettings = {
+ circuitEnabled: ['Enable circuit breaker', 'boolean', 'Reject connector attempts during an outage after the configured failure threshold.'],
+ circuitFailureThreshold: ['Failures before opening', 'integer', 'Count qualifying failed connector attempts since the last success. Set 1 to 1000.'],
+ circuitCooldownSeconds: ['Recovery delay (seconds)', 'number', 'Wait 1 to 86400 seconds before allowing a single recovery probe.'],
+ circuitFaultTypes: ['Fault types or codes to count', 'string', 'Optional comma-separated fault types, codes, or exception class names. Blank counts all ordinary faults.'],
+};
 let activityCount = 0;
 for (const pack of defs.packs) for (const entry of pack.items) {
  const node = { type: entry.type, config: { operation: entry.operation || '' } };
@@ -138,6 +146,9 @@ for (const pack of defs.packs) for (const entry of pack.items) {
  if (!contract || !Array.isArray(contract.configuration)) throw new Error(`Missing activity contract: ${entry.type}/${entry.operation}`);
  const doc = defs.activityDocumentation[entry.type === 'rest' ? (entry.operation === 'invoke' ? 'rest_invoke' : 'rest_receiver') : entry.type === 'http' && defs.activityDocumentation[entry.operation] ? entry.operation : entry.type];
  const advanced = defs.advancedDefaults(entry.type, entry.operation);
+ if (defs.supportsActivityCircuit(entry.type, entry.operation)) {
+  contract.errors = [...contract.errors, ...defs.activityCircuitErrors];
+ }
  const detail = connectorDetails(entry.type, entry.operation, contract);
  if (['kafka','sap','ems'].includes(entry.type) && !detail) throw new Error(`Missing detailed activity guide: ${entry.type}/${entry.operation}`);
  if (detail) contract={...contract,configuration:detail.configuration,input:detail.input,output:detail.output};
@@ -162,7 +173,14 @@ for (const pack of defs.packs) for (const entry of pack.items) {
   section('Configuration', [p('Display name identifies this activity and its data references. Configuration supplies operation settings and shared-resource selection. The table lists the editor controls; additional connection requirements are documented under Shared connections.'), fields(configuration,{type:entry.type,section:'Configuration'})]),
   section('Input', [p('Map fields using the Data tree, functions, constants or environment properties. The table includes configuration values exposed as runtime mapping targets by Studio.'), p(dynamicNote(entry.type)), fields(mappedInputs,{type:entry.type,section:'Input'})]),
   section('Output', [p(dynamicNote(entry.type)), fields(contract.output,{type:entry.type,section:'Output'})]),
-  section('Advanced', [fields(Object.entries(advanced).map(([key, defaultValue]) => ({key, label:key, type:['logPayload','retryEnabled','retryJitter'].includes(key)?'boolean expression':['retryBackoff','retryFaultTypes'].includes(key)?'string expression':'number expression', defaultValue, help:({logPayload:'Controls automatic payload logging; browse to choose another environment property. Avoid logging sensitive data.',retryCount:'Additional attempts after the first failure, between 0 and 100. Invalid or non-finite settings fail before execution.',retryBackoff:'Fixed preserves the base interval. Exponential doubles it after each failure, capped by the maximum interval.',retryMaxIntervalSeconds:'Upper bound on each wait, from 0 to 86400 seconds. Blank defaults to 300 seconds or the base interval, whichever is greater.',retryMaxElapsedSeconds:'Retry scheduling budget in seconds, up to one week. Zero disables the budget. Another retry is not scheduled if its delay reaches the budget; in-flight work is not interrupted.',retryJitter:'Randomize each wait between half and all of its calculated delay to spread concurrent reconnection attempts.',retryFaultTypes:'Optional comma-separated fault types, exception class names or fault codes. Blank retries all ordinary faults. Cancellation is never retried.'})[key] || 'Outbound retry policy resolved from the active environment. Retries may repeat external side effects; design for idempotency.'}))), p(defs.supportsOutboundRetry(entry.type,entry.operation) ? 'Outbound retry is available for this operation. Coordinate it with any Repeat-on-Error group and connector-level retries to avoid multiplying attempts. An explicit Errors-tab retry policy takes precedence over Advanced retries.' : 'This operation does not expose outbound retry in the common Advanced settings.')]),
+  section('Advanced', [fields(Object.entries(advanced).filter(([key]) => !(key in circuitSettings)).map(([key, defaultValue]) => ({key, label:key, type:['logPayload','retryEnabled','retryJitter'].includes(key)?'boolean expression':['retryBackoff','retryFaultTypes'].includes(key)?'string expression':'number expression', defaultValue, help:({logPayload:'Controls automatic payload logging; browse to choose another environment property. Avoid logging sensitive data.',retryCount:'Additional attempts after the first failure, between 0 and 100. Invalid or non-finite settings fail before execution.',retryBackoff:'Fixed preserves the base interval. Exponential doubles it after each failure, capped by the maximum interval.',retryMaxIntervalSeconds:'Upper bound on each wait, from 0 to 86400 seconds. Blank defaults to 300 seconds or the base interval, whichever is greater.',retryMaxElapsedSeconds:'Retry scheduling budget in seconds, up to one week. Zero disables the budget. Another retry is not scheduled if its delay reaches the budget; in-flight work is not interrupted.',retryJitter:'Randomize each wait between half and all of its calculated delay to spread concurrent reconnection attempts.',retryFaultTypes:'Optional comma-separated fault types, exception class names or fault codes. Blank retries all ordinary faults. Cancellation is never retried.'})[key] || 'Outbound retry policy resolved from the active environment. Retries may repeat external side effects; design for idempotency.'}))), p(defs.supportsOutboundRetry(entry.type,entry.operation) ? 'Outbound retry is available for this operation. Coordinate it with any Repeat-on-Error group and connector-level retries to avoid multiplying attempts. An explicit Errors-tab retry policy takes precedence over Advanced retries.' : 'This operation does not expose outbound retry in the common Advanced settings.')]),
+  ...(defs.supportsActivityCircuit(entry.type,entry.operation) ? [
+   section('Activity circuit breaker', [p('Open Advanced to configure this policy. CircuitOpen can be routed through an Error transition or a Catch handler.'),
+    fields(Object.entries(defs.activityCircuitDefaults).map(([key, defaultValue]) => {
+     const [label, type, help] = circuitSettings[key];
+     return {key, label, type, help, defaultValue};
+    }))]),
+  ] : []),
   section('Errors', [table(['Fault', 'Description'], contract.errors.map(e=>[e.type,e.description])), ...errorPolicy]),
  ], {type:entry.type,operation:entry.operation || 'default',source:'frontend/src/ActivityEditor.tsx',iconAsset:entry.asset});
  if(entry.type==='sftp')pages.at(-1).sections.find(s=>s.title==='Advanced').blocks.unshift(p('On Windows, lazy persistent SSH transport workers bound native cryptography thread state. Every operation still opens and closes its own authenticated connection. MINA_SFTP_TRANSPORT_WORKERS defaults to 32 (1–128); set it before the first connection and restart after changes. At capacity, a new connection waits up to its configured timeout, then fails without closing another session. Host-key verification, algorithms, authentication and socket/subsystem timeouts remain enabled. Other operating systems use the normal transport. See the Windows SFTP memory verification guide.'));
@@ -170,7 +188,7 @@ for (const pack of defs.packs) for (const entry of pack.items) {
   const page=pages.at(-1);
   page.detailLevel='operational';
   page.source='frontend/src/ActivityEditor.tsx; backend/app/runtime.py; backend/app/sap.py; backend/app/java_bridge.py; frontend/scripts/connector-documentation.mjs';
-  for(const section of page.sections) section.blocks=[...detail.sections[section.title],...section.blocks];
+  for(const section of page.sections) section.blocks=[...(detail.sections[section.title] || []),...section.blocks];
  }
  activityCount++;
 }

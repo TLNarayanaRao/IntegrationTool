@@ -13,6 +13,27 @@ XSD='''<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="
 class FormatTests(unittest.TestCase):
     def run_format(self,kind,operation,config,payload=None):return execute_format(kind,operation,config,payload)
 
+    def test_project_import_isolates_bad_process_namespaces_and_malformed_assets(self):
+        from app.bw_process import BPEL, process_extension
+        from app.mapper_xml import parse_xml
+
+        bpel = BPEL[1:-1]
+        first = 'https://one.example.test/bpel/2007/extensions'
+        other = 'https://other.example.test/bpel/2007/extensions'
+        head = f'<b:process xmlns:b="{bpel}" xmlns:p="{first}" xmlns:q="{other}">'
+        healthy = head + '<b:documentation><q:example/></b:documentation><b:empty p:xpdlId="empty"/></b:process>'
+        conflicted = head + '<b:empty p:xpdlId="one" q:xpdlId="two"/></b:process>'
+        self.assertEqual(process_extension(parse_xml(healthy)), '{' + first + '}')
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, 'w') as package:
+            package.writestr('Processes/Healthy.bwp', healthy)
+            package.writestr('Processes/Conflict.bwp', conflicted)
+            package.writestr('Schemas/Broken.xsd', '<missing>')
+        imported = json.loads(project_payload(archive.getvalue(), 'Mixed.zip'))
+        self.assertEqual([task['name'] for task in imported['tasks']], ['Healthy'])
+        self.assertIn('Conflict.bwp: ambiguous legacy process extension namespace', imported['description'])
+        self.assertIn('Schemas/Broken.xsd:', imported['description'])
+
     def test_xml_xsd_validates_children_types_and_required_attributes(self):
         cfg={'schemaText':XSD,'validateOutput':True}
         self.assertEqual(self.run_format('xml','parse',{**cfg,'xmlString':'<order id="A"><quantity>2</quantity></order>'})['value']['quantity'],'2')

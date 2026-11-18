@@ -5,7 +5,7 @@ import math
 import re
 
 from .mapper import flatten_schema
-from .mapper_xml import XSL, etree, parse_xml
+from .mapper_xml import XSL, etree, parse_xml, saved_xpath_function_aliases, xpath_function_aliases
 from .mapper_document_xslt import NAMES as DOCUMENT_FUNCTIONS, NS as DOCUMENT_NAMESPACES, install as install_document_functions, literal as document_literal
 
 
@@ -123,7 +123,21 @@ def _quoted_literal(value):
         raise ValueError('Invalid quoted string in generated binding') from exc
 
 
-def generate_binding(mappings, schema='', source_schema='', *, preferences=None, _legacy=False):
+def _binding_xpath_namespaces(mappings):
+    sources = []
+    for rule in mappings:
+        if not isinstance(rule, dict):
+            continue
+        sources.extend(rule.get(key) for key in ('source', 'select', 'otherwise'))
+        branches = rule.get('whens')
+        if isinstance(branches, list):
+            sources.extend(branch.get('source') for branch in branches if isinstance(branch, dict))
+    formulae = '\n'.join(value for value in sources
+                         if isinstance(value, str) and re.search(r'\bxpath2?\(', value))
+    return {'xs': XSD[1:-1], **xpath_function_aliases(formulae)} if formulae else {}
+
+
+def generate_binding(mappings, schema='', source_schema='', *, preferences=None, _legacy=False, _xpath_namespaces=None):
     if not isinstance(mappings, list) or not mappings or len(mappings) > 5000:
         raise ValueError('A generated binding needs 1 to 5000 mapping rules')
     fields, namespace, qualified = _contract(schema, 'target')
@@ -138,14 +152,7 @@ def generate_binding(mappings, schema='', source_schema='', *, preferences=None,
         nsmap['xsi'] = 'http://www.w3.org/2001/XMLSchema-instance'
     if source_namespace:
         nsmap['source'] = source_namespace
-    formulae = [str(rule.get('source', '')) for rule in mappings
-                if isinstance(rule, dict) and str(rule.get('source', '')).startswith(('xpath(', 'xpath2('))]
-    if formulae:
-        nsmap['xs'] = XSD[1:-1]
-        from .mapper_xml import BW_FUNCTIONS, BW_RUNTIME_FUNCTIONS
-        for prefix, uri in {'tib': BW_FUNCTIONS, 'bw': BW_RUNTIME_FUNCTIONS}.items():
-            if any(prefix + ':' in formula for formula in formulae):
-                nsmap[prefix] = uri
+    nsmap.update(_binding_xpath_namespaces(mappings) if _xpath_namespaces is None else _xpath_namespaces)
     binding = etree.Element(XSL + 'stylesheet', nsmap=nsmap, version='3.0' if document_functions else '2.0',
                             attrib={'exclude-result-prefixes': ' '.join(prefix for prefix in nsmap if prefix != 'xsl')})
     metadata = etree.SubElement(binding, f'{{{META}}}rules')
@@ -450,9 +457,12 @@ def reopen_binding(stylesheet):
             or not isinstance(data.get('schema'), str) or not isinstance(data.get('sourceSchema'), str)):
         raise ValueError('Invalid editable binding metadata')
     canonical = etree.tostring(binding, method='c14n')
+    namespaces = {'xs': XSD[1:-1]} if binding.nsmap.get('xs') == XSD[1:-1] else {}
+    namespaces.update(saved_xpath_function_aliases(binding.nsmap))
     for legacy in (False, True):
         generated = parse_xml(generate_binding(data['mappings'], data['schema'], data['sourceSchema'],
-                                               preferences=data.get('preferences'), _legacy=legacy))
+                                               preferences=data.get('preferences'), _legacy=legacy,
+                                               _xpath_namespaces=namespaces))
         if canonical == etree.tostring(generated, method='c14n'):
             break
     else:

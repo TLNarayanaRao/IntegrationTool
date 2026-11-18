@@ -10,14 +10,20 @@ import time
 from functools import lru_cache
 from pathlib import Path
 from threading import BoundedSemaphore
-from urllib.parse import urlsplit
 
 from lxml import etree
 
+from .xml_names import legacy_namespace
 
 XSL = '{http://www.w3.org/1999/XSL/Transform}'
 BW_FUNCTIONS = 'urn:mina:mapper:extensions'
 BW_RUNTIME_FUNCTIONS = 'urn:mina:mapper:project'
+XPATH_FUNCTION_NAMESPACES = {
+    'tib': BW_FUNCTIONS,
+    'bw': BW_RUNTIME_FUNCTIONS,
+    'ext': BW_FUNCTIONS,
+    'project': BW_RUNTIME_FUNCTIONS,
+}
 BW_PROPERTIES = 'mina-bw-module-properties'
 XSI_NIL = '{http://www.w3.org/2001/XMLSchema-instance}nil'
 MAX_XML_BYTES = 8 * 1024 * 1024
@@ -97,25 +103,6 @@ def _module_property(properties):
     return lookup
 
 
-def legacy_namespace(uri, path):
-    """Recognize an external XML vocabulary from its declared namespace path."""
-    if not uri:
-        return False
-    try:
-        parts = urlsplit(uri)
-        return (parts.scheme in ('http', 'https') and bool(parts.hostname)
-                and parts.path == path and not parts.query and not parts.fragment)
-    except ValueError:
-        return False
-
-
-def legacy_name(tag, name, path):
-    if not isinstance(tag, str) or not tag.startswith('{'):
-        return False
-    uri, _, local = tag[1:].partition('}')
-    return local == name and legacy_namespace(uri, path)
-
-
 def _function_namespaces(namespaces, native, legacy_path):
     return sorted({uri for uri in namespaces if uri == native or legacy_namespace(uri, legacy_path)})
 
@@ -126,6 +113,21 @@ def _text_namespaces(namespaces):
 
 def _property_namespaces(namespaces):
     return _function_namespaces(namespaces, BW_RUNTIME_FUNCTIONS, '/bw/xpath/bw-custom-functions')
+
+
+def xpath_function_aliases(expression):
+    return {prefix: uri for prefix, uri in XPATH_FUNCTION_NAMESPACES.items()
+            if re.search(r'(?<![\w.:-])' + prefix + ':', expression)}
+
+
+def saved_xpath_function_aliases(namespaces):
+    result = {}
+    for prefix, native in XPATH_FUNCTION_NAMESPACES.items():
+        uri = namespaces.get(prefix)
+        compatible = _text_namespaces if native == BW_FUNCTIONS else _property_namespaces
+        if compatible((uri,)):
+            result[prefix] = uri
+    return result
 
 
 def _stylesheet_namespaces(binding):
@@ -416,9 +418,7 @@ def xpath_value(root, expression, version, namespace_text, variables=None, prope
     if not isinstance(namespaces, dict) or any(not isinstance(prefix, str) or not prefix or not isinstance(uri, str)
                                                for prefix, uri in namespaces.items()):
         raise ValueError('XPath namespaces must be a JSON object of prefix-to-URI strings')
-    conventional = {prefix: uri for prefix, uri in {'ext': BW_FUNCTIONS, 'project': BW_RUNTIME_FUNCTIONS,
-                                                    'tib': BW_FUNCTIONS, 'bw': BW_RUNTIME_FUNCTIONS}.items()
-                    if prefix + ':' in expression}
+    conventional = xpath_function_aliases(expression)
     namespaces = {**conventional, **{prefix: uri for prefix, uri in root.nsmap.items() if prefix}, **namespaces}
     properties = properties or {}
     bindings = {}
@@ -477,7 +477,7 @@ def bw_transition_condition(expression, config, lookup, properties):
         return xpath_value(root, f'boolean({expression})', '1.0', namespaces, variables, properties)
     if version != '2.0':
         raise ValueError('Unsupported transition XPath version')
-    binding = etree.Element(XSL + 'stylesheet', nsmap={**namespaces, 'mina-xsl': XSL[1:-1]}, version='2.0',
+    binding = etree.Element(XSL + 'stylesheet', nsmap={**xpath_function_aliases(expression), **namespaces, 'mina-xsl': XSL[1:-1]}, version='2.0',
                             attrib={'exclude-result-prefixes': '#all'})
     for name in variables:
         etree.SubElement(binding, XSL + 'param', name=name)
@@ -503,9 +503,22 @@ def _run_xml_worker(payload, timeout, name):
         raise ValueError(f'{name} worker limit reached')
     try:
         with tempfile.TemporaryDirectory(prefix='mina-xslt-') as directory:
-            result = subprocess.run(command, input=request, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                    timeout=timeout, cwd=directory, env={key: os.environ[key] for key in ('SystemRoot', 'WINDIR') if key in os.environ},
-                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), check=False)
+            deadline = time.monotonic() + timeout
+            environment = {key: os.environ[key] for key in ('SystemRoot', 'WINDIR') if key in os.environ}
+            for attempt in range(2):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(command, timeout)
+                try:
+                    result = subprocess.run(command, input=request, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                            timeout=remaining, cwd=directory, env=environment,
+                                            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), check=False)
+                    break
+                except OSError as exc:
+                    # Windows can transiently reject CreateProcess with ERROR_GEN_FAILURE.
+                    if attempt or getattr(exc, 'winerror', None) != 31 or deadline - time.monotonic() <= .05:
+                        raise
+                    time.sleep(.05)
     except subprocess.TimeoutExpired as exc:
         raise ValueError(f'{name} exceeded its execution time limit') from exc
     finally:

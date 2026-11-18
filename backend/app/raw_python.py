@@ -715,7 +715,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     files['application/flow_graph.py'] = Path(__file__).with_name('flow_graph.py').read_bytes()
     core_source = _filter_capability_blocks((root / 'core.py').read_text(encoding='utf-8'), capabilities)
     core_source = core_source.replace('from .native.mapping_literals import parse_literal', Path(__file__).with_name('mapping_literals.py').read_text(encoding='utf-8'))
-    core_source = core_source.replace('from .retry_policy import RetryPlan, outbound_activity, retry_boolean', Path(__file__).with_name('retry_policy.py').read_text(encoding='utf-8'))
+    core_source = core_source.replace('from .retry_policy import ActivityCircuits, CircuitPlan, RetryPlan, outbound_activity, retry_boolean', Path(__file__).with_name('retry_policy.py').read_text(encoding='utf-8'))
     core_roots = {'Context', 'Reference', 'Template', 'resolve', 'execute_with_policy'}
     if any(task.get('groups') or any(edge.get('type') == 'success_condition' for edge in task.get('transitions', [])) for task in project.get('tasks', [])):
         core_roots.add('condition')
@@ -844,6 +844,8 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         native_modules.update({'data_formats.py', 'faults.py', 'xsd_openapi.py', 'xsd_catalog.py', 'schema_validation.py'})
     if any(activity.get('type')=='flat' for task in project.get('tasks',[]) for activity in task.get('activities',[])):
         native_modules.update({'data_stream.py','data_groups.py'})
+    if native_modules & {'sap.py', 'mapper_xml.py', 'data_formats.py'}:
+        native_modules.add('xml_names.py')
     if native_modules:
         files['application/native/__init__.py'] = b'"""Capability-selected native adapters; vendor binaries remain external."""\n'
         for name in sorted(native_modules): files[f'application/native/{name}'] = Path(__file__).with_name(name).read_bytes()
@@ -939,6 +941,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
             f'TASK_NAME = {task["name"]!r}',
             '',
             'async def run(ctx: Context, *, start_after: str | None = None, event_output=None, start_at: str | None = None, stop_at: str | None = None):',
+            '    ctx.task_id = TASK_ID',
             '    injected_event_activity = start_after if start_at is None else None',
             f'    current = start_at if start_at is not None else ({starts[0]!r} if start_after is None else start_after)',
             '    steps = 0',

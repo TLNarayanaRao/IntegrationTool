@@ -10,6 +10,18 @@ reports remain historical evidence; current feature qualification is separate.
 MINA provides a schema-driven Mapper and a scripted Transformer. The tests
 use local migration fixtures and cover MINA behavior and performance.
 
+## XML namespaces and imports
+
+New generated Mapper bindings declare the XPath function namespaces used by
+their expressions, including expressions inside Choose and Otherwise branches.
+Saved bindings reopen with their declared compatible function namespaces.
+Studio checks that the stylesheet still matches its editable mapping rules.
+
+Project import identifies process extensions from the XML elements and
+attributes that use them. A conflicting process or an unreadable XML asset
+appears under **Review required** while other supported assets are imported.
+Namespace declarations are resolved locally.
+
 ## Changes from this review
 
 - Equality no longer executes unrelated relational operators, and Boolean values

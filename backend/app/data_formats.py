@@ -7,7 +7,7 @@ from pathlib import Path
 from lxml import etree
 from .faults import MinaFault
 from .mapper import validate_output
-from .mapper_xml import legacy_name
+from .xml_names import legacy_name
 
 @lru_cache(maxsize=8)
 def compiled_xsd(schema, bundle=()):

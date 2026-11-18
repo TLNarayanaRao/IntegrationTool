@@ -6,16 +6,18 @@ import json
 import logging
 import re
 import copy
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 from typing import Any
 from .native.mapping_literals import parse_literal
-from .retry_policy import RetryPlan, outbound_activity, retry_boolean
+from .retry_policy import ActivityCircuits, CircuitPlan, RetryPlan, outbound_activity, retry_boolean
 from time import perf_counter
 
 
 REFERENCE = re.compile(r'^\$\{([^}]+)\}$')
 _GROUP_LOCKS: dict[str, asyncio.Lock] = {}
+_ACTIVITY_CIRCUITS = ActivityCircuits()
 
 
 def group_lock(name: str) -> asyncio.Lock:
@@ -46,6 +48,7 @@ class Context:
     environment_name: str = 'local'
     error: Exception | None = None
     format_cursors: dict[str, Any] = field(default_factory=dict)
+    task_id: str = ''
 
     def __post_init__(self) -> None:
         self.last = self.input
@@ -64,6 +67,7 @@ class Context:
         child.transport = self.transport
         child.attributes = dict(self.attributes)
         child.environment_name = self.environment_name
+        child.task_id = self.task_id
         child.error = self.error
         return child
 
@@ -242,15 +246,24 @@ async def execute_with_policy(kind: str, raw: dict, ctx: Context, activity_id: s
     advanced = {key.removeprefix('advanced.'): value for key, value in ctx.properties.items() if key.startswith('advanced.retry')}
     advanced.update(resolve(raw.get('advanced') or {}, ctx))
     policy = resolve(raw.get('errorPolicy') or {}, ctx)
-    retry = RetryPlan(outbound_activity(kind, raw.get('operation', '')), advanced, policy)
+    operation = raw.get('operation', '')
+    retry = RetryPlan(outbound_activity(kind, operation), advanced, policy)
+    circuit = CircuitPlan(kind, operation, advanced)
+    if circuit.enabled:
+        key = (ctx.environment_name, ctx.task_id, activity_id, kind, operation)
+
+        def circuit_event(state):
+            logging.log(logging.INFO if state == 'closed' else logging.WARNING, '%s circuit %s', name, state)
     started = perf_counter()
     for attempt in range(retry.count + 1):
+        ticket = None
         try:
-            result = await execute(kind, raw, ctx, activity_id, name)
+            with _ACTIVITY_CIRCUITS.attempt(key, circuit, circuit_event) if circuit.enabled else nullcontext() as ticket:
+                result = await execute(kind, raw, ctx, activity_id, name)
             if raw.get('outputName'): ctx.variables[str(raw['outputName'])] = result
             return result
         except Exception as error:
-            delay = retry.delay(attempt, error, perf_counter() - started)
+            delay = None if ticket and ticket.stops_retry else retry.delay(attempt, error, perf_counter() - started)
             if delay is not None:
                 logging.warning('%s failed; retry %s of %s in %s seconds', name, attempt + 1, retry.count, delay)
                 if delay: await asyncio.sleep(delay)

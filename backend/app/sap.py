@@ -3,7 +3,7 @@ import hashlib, json, os, re, uuid, time, threading
 from xml.etree import ElementTree as ET
 from typing import Any
 from xml.sax.saxutils import escape
-from .mapper_xml import legacy_name
+from .xml_names import legacy_name
 from .java_bridge import JavaBridgeError, invoke as invoke_java, start_sap_listener, start_sap_worker, SapJcoListener, SapJcoWorker
 
 class _IdocMapping(dict):

@@ -4,11 +4,13 @@ import test from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
 const source=await readFile(new URL('../src/ActivityEditor.tsx',import.meta.url),'utf8');
+const schemaDefinition=await readFile(new URL('../src/mapperSchemaSample.ts',import.meta.url),'utf8');
 const ast=ts.createSourceFile('editor.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 const names=['f','d','commonErrors','HTTP_METHODS','isMapperActivity','activityContract','httpRequestFields','httpRequestOccurrences','httpInputMappings','runtimeMappableInputs','resolvedActivityContract','schemaDataFields','transformSchemaFields','upstreamActivitySources'];
 const selected=ast.statements.filter(statement=>names.includes(statement.name?.text)||statement.declarationList?.declarations.some(item=>names.includes(item.name.text)));
 const context=vm.createContext({});
-vm.runInContext(ts.transpileModule(selected.map(statement=>statement.getText(ast).replace('export ','')).join('\n'),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
+const fixture=[schemaDefinition.replace(/^export /gm,''),...selected.map(statement=>statement.getText(ast).replace('export ',''))].join('\n');
+vm.runInContext(ts.transpileModule(fixture,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
 
 test('HTTP method choices match API operations rather than proxy tunnels',()=>{
   const methods=Array.from(vm.runInContext('HTTP_METHODS',context));
