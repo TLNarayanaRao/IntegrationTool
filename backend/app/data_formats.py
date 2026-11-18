@@ -47,8 +47,9 @@ def xml_document(value):
 def format_xml(content, pretty, default_namespace, cdata_paths):
     from lxml import etree
     root = xml_document(content)
-    paths = set(part.strip().strip('/').replace('/', '.') for part in
-                (cdata_paths.split(',') if isinstance(cdata_paths, str) else cdata_paths or []) if part.strip())
+    selectors = [part.strip() for part in (cdata_paths.split(',') if isinstance(cdata_paths, str) else cdata_paths or []) if part.strip()]
+    names = {part.removeprefix('{}') for part in selectors if part.startswith('{')}
+    paths = {part.strip('/').replace('/', '.') for part in selectors if not part.startswith('{')}
     if default_namespace and etree.QName(root).namespace:
         ns = etree.QName(root).namespace
         def clone(node, inherited=None, is_root=False):
@@ -67,12 +68,31 @@ def format_xml(content, pretty, default_namespace, cdata_paths):
         root = clone(root, is_root=True)
     def cdata(node, parent=''):
         path = parent + etree.QName(node).localname
-        if path in paths and node.text is not None:
+        if (path in paths or node.tag in names) and node.text is not None:
             node.text = etree.CDATA(node.text)
         for child in node:
             if isinstance(child.tag, str): cdata(child, path + '.')
-    if paths: cdata(root)
+    if paths or names: cdata(root)
     return etree.tostring(root, encoding='unicode', pretty_print=pretty).rstrip('\n') if pretty else etree.tostring(root, encoding='unicode')
+
+
+def encode_xml(content, encoding):
+    def cdata(match):
+        body = match.group(1)
+        if body is None: return match.group(0)  # Comments and processing instructions.
+        try:
+            body.encode(encoding)
+            return match.group(0)
+        except UnicodeEncodeError:
+            replacements = {}
+            for char in set(body):
+                try: char.encode(encoding)
+                except UnicodeEncodeError:
+                    # References inside CDATA would become literal text.
+                    replacements[ord(char)] = f']]>&#{ord(char)};<![CDATA['
+            return '<![CDATA[' + body.translate(replacements) + ']]>'
+    content = re.sub(r'<!--.*?-->|<\?.*?\?>|<!\[CDATA\[(.*?)\]\]>', cdata, content, flags=re.S)
+    return content.encode(encoding, errors='xmlcharrefreplace')
 
 
 XSI_NIL = '{http://www.w3.org/2001/XMLSchema-instance}nil'
@@ -126,8 +146,10 @@ def xml_from_value(name, value, shape=None, *, badger=False, ignore=False, names
                             last = xml_from_value(child, text, tree_input=True)
                             element.append(last)
                 continue
-            local = key.rsplit(':', 1)[-1]
-            field = fields.get(key, fields.get(local))
+            raw_key = key.removeprefix('@')
+            local = etree.QName(raw_key).localname if raw_key.startswith('{') else raw_key.rsplit(':', 1)[-1]
+            field_key = ('@' if key.startswith('@') else '') + local
+            field = fields.get(key, fields.get(field_key))
             attr = key.startswith('@') and (badger or tree_input)
             if field is None and not attr: field = fields.get('@' + local)
             if shape and field is None and ignore: continue
@@ -166,6 +188,7 @@ def json_from_xml(element, shape=None, *, badger=False, infer=False, empty=None,
         if kind == 'integer': return int(text)
         if kind == 'number': return float(text)
         if kind == 'boolean':
+            text = text.strip()
             if text not in ('true','false','1','0'): raise ValueError('Invalid XML boolean: ' + text)
             return text in ('true','1')
         if infer and not field:
@@ -176,7 +199,12 @@ def json_from_xml(element, shape=None, *, badger=False, infer=False, empty=None,
     def name(node):
         local = etree.QName(node).localname
         return f'{node.prefix}:{local}' if badger and node.prefix else local
-    if element.get(XSI_NIL) in ('true', '1'): return empty
+    if element.get(XSI_NIL) in ('true', '1'):
+        if empty == '' and shape:
+            # Empty-value substitution applies to containers, never to a nil
+            # primitive (including a nil item in a repeating primitive field).
+            return {} if shape.get('type') == 'object' else [] if shape.get('type') == 'array' else None
+        return empty
     fields = (shape or {}).get('properties', {})
     result = {}
     if badger:
@@ -211,7 +239,8 @@ def json_from_xml(element, shape=None, *, badger=False, infer=False, empty=None,
     if not children and not result and not (shape or {}).get('type') == 'object' and element.get(JSON_KIND) != 'object' and not badger:
         return cast(element.text or '', shape)
     value = ''.join(element.itertext()) if not children else (element.text or '') + ''.join(child.tail or '' for child in children)
-    if value.strip() or badger and not children and not result: result['$'] = cast(value)
+    if value.strip() or badger and not children and not result or not children and (shape or {}).get('x-mina-textSchema'):
+        result['$'] = cast(value, (shape or {}).get('x-mina-textSchema') or (shape if not children else None))
     return result
 
 
@@ -363,6 +392,7 @@ class DataFormats:
 
     def parse_xml_activity(self, cfg, ctx):
         style = str(cfg.get('inputStyle', 'Text')).lower()
+        if style not in ('text', 'binary', 'dynamic'): raise ValueError('Unknown XML input style')
         payload = cfg.get('source', ctx['last'])
         inputs = payload if isinstance(payload, dict) else {}
         binary = cfg.get('xmlBinary', inputs.get('xmlBinary'))
@@ -393,6 +423,15 @@ class DataFormats:
         return result
 
     def render_xml_activity(self, cfg, ctx):
+        if cfg.get('bwRenderInput') is not None:
+            wrapper = xml_document(cfg['bwRenderInput'])
+            encoding = wrapper.find('byteEncoding')
+            documents = [child for child in wrapper if isinstance(child.tag, str) and child.tag != 'byteEncoding']
+            if wrapper.tag != '{http://www.tibco.com/namespaces/tnt/plugins/xmlpallete}xmlInput' or len(documents) != 1:
+                raise MinaFault('Expected one XML document in the render input wrapper', fault_type='ValidationException')
+            cfg = {**cfg, 'xmlString': etree.tostring(documents[0], encoding='unicode', with_tail=False)}
+            if encoding is not None and encoding.text:
+                cfg['byteEncoding'] = encoding.text
         schema = self.configured_schema(cfg, ctx)
         bundle = self.schema_bundle(cfg, ctx, schema)
         root_name = cfg.get('rootElement') or self.schema_root_name(schema, bundle) or 'root'
@@ -400,7 +439,9 @@ class DataFormats:
         if isinstance(source, dict) and root_name in source and not ('root' in source and 'value' in source): source = source[root_name]
         if self.as_bool(cfg.get('validateInput', False)):
             if not schema: raise MinaFault('Validate Input requires a project or inline XSD in Input Editor', fault_type='ValidationException')
-        binary = str(cfg.get('outputStyle', 'Text')).lower() == 'binary'
+        style = str(cfg.get('outputStyle', 'Text')).lower()
+        if style not in ('text', 'binary'): raise ValueError('Unknown XML output style')
+        binary = style == 'binary'
         encoding = str((cfg.get('byteEncoding') if binary else None) or cfg.get('encoding') or 'UTF-8')
         try:
             if not re.fullmatch(r'[A-Za-z][A-Za-z0-9._-]*', encoding): raise LookupError(f'Invalid XML encoding: {encoding}')
@@ -422,7 +463,9 @@ class DataFormats:
         content = format_xml(content, pretty, self.as_bool(cfg.get('formatUsingDefaultNamespacePrefix')), cfg.get('cdataElements'))
         if not self.as_bool(cfg.get('suppressXmlDeclaration', False)): content = f'<?xml version="1.0" encoding="{encoding}"?>\n{content}'
         if binary:
-            raw = content.encode(encoding)
+            # XML serializers represent characters outside the chosen byte
+            # encoding as character references, preserving their values.
+            raw = encode_xml(content, encoding)
             data = {'bytes': base64.b64encode(raw).decode(), 'byteCount': len(raw)}
             result = {**data, 'binaryContent': data['bytes'], 'xmlBytes': data['bytes'], 'xmlBinary': data, 'encoding': encoding, 'content': None}
             if cfg.get('bwOutputEnvelope'): result['bwXml'] = self.render_xml({'xmlBytes': data['bytes']}, 'Output')
@@ -547,12 +590,17 @@ class DataFormats:
             if mode != 'native json': return self.parse_bw_json(value, cfg, ctx, mode)
             self.validate_json_if_requested(value, cfg, ctx, 'validateOutput')
             return value
+        mapped_input = {key:value for key,value in (cfg.get('_mappedInput') or {}).items() if key != 'formatOptions'}
+        if mapped_input and not any(key in mapped_input for key in ('xmlString','value','source')):
+            # Explicit schema-tree mappings override a predecessor's serialized
+            # XML wrapper. Formatting-only mappings never become the payload.
+            source = mapped_input
         if mode != 'native json':
             value = self.render_bw_json(source, cfg, ctx, mode)
             return self.serialize_json(value, cfg, pretty_default=False)
         schema = self.configured_schema(cfg, ctx); root_name = self.schema_root_name(schema)
-        if cfg.get('_mappedInput') and not any(key in cfg['_mappedInput'] for key in ('value', 'source')):
-            source = cfg['_mappedInput']
+        if mapped_input and not any(key in mapped_input for key in ('value', 'source')):
+            source = mapped_input
             if str(cfg.get('rootStyle', 'With root')).lower() == 'anonymous' and len(source) == 1:
                 source = next(iter(source.values()))
         elif root_name and root_name in cfg:
@@ -643,8 +691,6 @@ class DataFormats:
         if isinstance(source, (str, bytes, bytearray)):
             root = xml_document(source)
         else:
-            mapped = cfg.get('_mappedInput') or {}
-            if mapped and not any(key in mapped for key in ('xmlString','value','source')): source = mapped
             root_name = cfg.get('rootElement') or self.schema_root_name(schema, bundle) or 'root'
             if isinstance(source, dict) and 'root' in source and 'value' in source:
                 root_name, source = source['root'], source['value']

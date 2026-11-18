@@ -1,0 +1,93 @@
+{
+  "reference": {
+    "version": "6.13 Preview V54",
+    "validation_errors": 0,
+    "validation_warnings": 0,
+    "ear_exported": true,
+    "executed_in_native_studio": true,
+    "binary_xml_base64": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVMtQVNDSUkiPz4KPGM6cmVjb3JkIHhtbG5zOmM9InVybjptaW5hOmZvcm1hdC1jb21wYXJpc29uIiBhY3RpdmU9InRydWUiPgogICAgPGM6aWQ+NzwvYzppZD4KICAgIDxjOml0ZW0+Zmlyc3Q8L2M6aXRlbT4KICAgIDxjOml0ZW0+c2Vjb25kPC9jOml0ZW0+CiAgICA8Yzpub3Rlcz48IVtDREFUQVtjYWY/IDwgJiAicXVvdGVkIl1dPjwvYzpub3Rlcz4KPC9jOnJlY29yZD4=",
+    "root_wrapped_json": {
+      "record": {
+        "active": true,
+        "id": 7,
+        "item": [
+          "first",
+          "second"
+        ],
+        "notes": "café < & \"quoted\""
+      }
+    }
+  },
+  "mina_complete_flow_checks": 16,
+  "mina_recovered_activity_checks": 16,
+  "ascii_text_difference": {
+    "reference": "caf? < & \"quoted\"",
+    "mina": "café < & \"quoted\""
+  },
+  "mode_checks": [
+    {
+      "mode": "run",
+      "scope": "complete_flow",
+      "json_equals_native": true,
+      "xml_ascii_and_cdata": true,
+      "xml_structure_matches": true,
+      "xml_unicode_preserved": true
+    },
+    {
+      "mode": "run",
+      "scope": "imported_activity",
+      "json_equals_native": true,
+      "xml_ascii_and_cdata": true,
+      "xml_structure_matches": true,
+      "xml_unicode_preserved": true
+    },
+    {
+      "mode": "debug",
+      "scope": "complete_flow",
+      "json_equals_native": true,
+      "xml_ascii_and_cdata": true,
+      "xml_structure_matches": true,
+      "xml_unicode_preserved": true
+    },
+    {
+      "mode": "debug",
+      "scope": "imported_activity",
+      "json_equals_native": true,
+      "xml_ascii_and_cdata": true,
+      "xml_structure_matches": true,
+      "xml_unicode_preserved": true
+    },
+    {
+      "mode": "python-direct",
+      "scope": "complete_flow",
+      "json_equals_native": true,
+      "xml_ascii_and_cdata": true,
+      "xml_structure_matches": true,
+      "xml_unicode_preserved": true
+    },
+    {
+      "mode": "python-direct",
+      "scope": "imported_activity",
+      "json_equals_native": true,
+      "xml_ascii_and_cdata": true,
+      "xml_structure_matches": true,
+      "xml_unicode_preserved": true
+    },
+    {
+      "mode": "python-engine",
+      "scope": "complete_flow",
+      "json_equals_native": true,
+      "xml_ascii_and_cdata": true,
+      "xml_structure_matches": true,
+      "xml_unicode_preserved": true
+    },
+    {
+      "mode": "python-engine",
+      "scope": "imported_activity",
+      "json_equals_native": true,
+      "xml_ascii_and_cdata": true,
+      "xml_structure_matches": true,
+      "xml_unicode_preserved": true
+    }
+  ]
+}

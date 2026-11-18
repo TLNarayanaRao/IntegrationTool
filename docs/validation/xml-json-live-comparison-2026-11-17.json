@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-17",
+  "referenceRuntime": "6.13.0 Preview V54",
+  "referenceFixture": {
+    "activitySequence": ["Timer", "Parse XML", "Render XML", "Parse JSON", "Render JSON", "Log"],
+    "initialValidationErrors": 6,
+    "finalValidationErrors": 0,
+    "finalValidationWarnings": 0,
+    "earExported": true,
+    "executedInInstalledRuntime": true,
+    "xml": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<c:record xmlns:c=\"urn:mina:format-comparison\" active=\"true\">\n    <c:id>7</c:id>\n    <c:item>first</c:item>\n    <c:item>second</c:item>\n    <c:notes>café &lt; &amp; \"quoted\"</c:notes>\n</c:record>",
+    "json": {"active": true, "id": 7, "item": ["first", "second"], "notes": "café < & \"quoted\""}
+  },
+  "matchedReferenceCases": {
+    "XML-Text": ["Run", "Debug", "Direct Python", "Engine Python"],
+    "JSON-XSD": ["Run", "Debug", "Direct Python", "Engine Python"]
+  },
+  "minaOnlyCases": {
+    "XML-Dynamic-Binary": ["Run", "Debug", "Direct Python", "Engine Python"],
+    "JSON-With-Root": ["Run", "Debug", "Direct Python", "Engine Python"]
+  },
+  "studioInAppBrowser": {
+    "inputPanelsVerified": ["Parse XML", "Render XML", "Parse JSON", "Render JSON"],
+    "runCompleted": ["XML-Text", "JSON-XSD"],
+    "debugCompleted": ["XML-Dynamic-Binary", "JSON-XSD"]
+  },
+  "minaFlowChecksPassed": 16,
+  "backendRegressionTestsPassed": 43
+}

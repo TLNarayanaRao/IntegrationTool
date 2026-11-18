@@ -1,0 +1,59 @@
+{
+  "date": "2026-11-17",
+  "scope": "Documented XML/JSON activity contract comparison and MINA functional regressions; no live side-by-side vendor runtime execution",
+  "finalAffectedAreaSuite": {
+    "tests": 60,
+    "passed": 60,
+    "failed": 0,
+    "elapsedSeconds": 54.928,
+    "modules": ["test_xml_json_conformance", "test_format_activities", "test_data_activity_gaps", "test_xsd_structure_selection", "test_api_docs"]
+  },
+  "newConformanceTests": {
+    "tests": 13,
+    "passed": 13,
+    "completeFlowScenarios": 6,
+    "modes": ["Run", "Debug", "Python direct archive", "Python engine archive"],
+    "audit": "Explicit expected values plus equality across modes; archives generated and executed in child Python processes",
+    "scenarios": ["XSD simple-content inheritance and attributes", "Nil primitive array positions and empty objects", "Explicit mapped render tree precedence", "Formatting-only mapped input preserves payload", "Namespaced Unicode XML to ASCII binary", "Generic Badgerfish namespace and escaping round-trip"]
+  },
+  "broadSuite": {
+    "discovered": 760,
+    "passed": 748,
+    "skipped": 11,
+    "errors": 1,
+    "elapsedSeconds": 501.758,
+    "stage": "Started after initial XML fixes; final mapped-input changes were qualified by the final affected-area suite",
+    "errorTest": "test_sftp_transport_workers.SftpTransportWorkerTests.test_parallel_streamed_transfers_keep_servers_and_payloads_isolated",
+    "error": "paramiko.ssh_exception.SSHException: No existing session",
+    "isolatedRechecks": {"runs": 3, "passed": 3, "failed": 0},
+    "qualification": "Broad run is not all green; intermittent SFTP failure is recorded, not claimed resolved"
+  },
+  "studio": {
+    "frontendTests": 35,
+    "passed": 35,
+    "failed": 0,
+    "newContractTests": 3,
+    "productionBuild": "passed",
+    "documentationAndLicenseChecks": "passed",
+    "helpPages": 418,
+    "userPdfPages": 689,
+    "developerPdfPages": 346,
+    "warning": "Existing main-bundle size advisory; approximately 1.07 MB minified / 293 KB gzip"
+  },
+  "referenceDocuments": [
+    "https://docs.tibco.com/pub/activematrix_businessworks/6.6.0/doc/html/GUID-2BEF1C2F-3B9C-42F6-AAB7-F6CE2661C8C7.html",
+    "https://docs.tibco.com/pub/activematrix_businessworks/6.8.1/doc/html/binding-palette/render-xml.htm",
+    "https://docs.tibco.com/pub/activematrix_businessworks/6.11.0/doc/html/binding-palette/parse-json.htm",
+    "https://docs.tibco.com/pub/activematrix_businessworks/6.11.0/doc/html/binding-palette/render-json.htm",
+    "https://docs.tibco.com/pub/activematrix_businessworks/6.13.0/relnotes/bw-ent-relnotes/new-features.htm",
+    "https://docs.tibco.com/pub/activematrix_businessworks/6.13.0/relnotes/bw-ent-relnotes/bwce-changes-in-functiona.htm"
+  ],
+  "limitations": [
+    "Public activity references and cumulative 6.13 release notes used; no exact full-parity certification",
+    "Automated Studio contract tests and runtime/debug-manager tests, not a fresh interactive GUI session",
+    "No long-duration soak, installer rebuild or second-machine archive deployment",
+    "XML schema resolution remains offline; DTDs/entities and unsafe references remain disabled",
+    "Namespace prefixes and lexical whitespace may differ while values and namespaces are preserved",
+    "Rebuild/restart Studio and re-export existing self-contained archives to use fixes"
+  ]
+}

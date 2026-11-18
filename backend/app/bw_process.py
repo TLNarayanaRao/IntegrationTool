@@ -567,8 +567,12 @@ class ProcessConverter:
                         formatUsingDefaultNamespacePrefix=value.get('formatUsingDefaultNSPrefix','false').lower() == 'true',
                     )
                     if value.get('encoding'): config['encoding'] = value.get('encoding')
-                    if value.get('cdata') or any(etree.QName(child).localname == 'cdata' for child in value):
-                        raise ValueError(f'{label}: select the imported CDATA paths in MINA Input')
+                    selectors = [value.get('cdata'), *(child.text for child in value if child.tag == 'cdata')]
+                    selectors = [item.strip() for item in selectors if item and item.strip()]
+                    if selectors:
+                        if any(not re.fullmatch(r'\{[^{}]*\}[^\s{},]+', item) for item in selectors):
+                            raise ValueError(f'{label}: unsupported CDATA selector. Select its element in MINA Input.')
+                        config['cdataElements'] = selectors
             else:
                 mode = (value.get('schemaType') or 'xsd').lower()
                 if mode not in ('generic','xsd'): raise ValueError(f'{label}: unsupported JSON schema type {mode!r}')
@@ -609,7 +613,11 @@ class ProcessConverter:
                     else:
                         raise ValueError(f'{label}: unsupported Parse {family.upper()} input binding')
                 else:
-                    input_mappings['xmlString'] = prefix + 'xmlString}'
+                    templates = binding.findall(XSL + 'template')
+                    render_wrapper = '{http://www.tibco.com/namespaces/tnt/plugins/xmlpallete}xmlInput'
+                    wrapped = (family == 'xml' and len(templates) == 1 and len(templates[0]) == 1
+                               and templates[0][0].tag == render_wrapper)
+                    input_mappings['bwRenderInput' if wrapped else 'xmlString'] = prefix + 'xmlString}'
             if not parsing: config['bwOutputEnvelope'] = True
             activity = self.node(family, label, config)
             self.variables[output_variable] = '${activities.' + activity + '.output.' + ('xmlString' if parsing else 'bwXml') + '}'

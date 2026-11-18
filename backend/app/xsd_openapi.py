@@ -107,6 +107,22 @@ class XsdProjection:
             schema['format'] = FORMATS[kind]
         return schema, EXAMPLES.get(kind, '1' if schema_type in ('number', 'integer') else 'example')
 
+    def simple_content(self, content, active=()):
+        """Retain the primitive value of a complex simple-content type."""
+        if content in active or len(active) >= 32:
+            return None
+        wrapper = content.find(XS + 'simpleContent')
+        if wrapper is None:
+            return None
+        derivation = next((node for node in wrapper if node.tag in (XS + 'extension', XS + 'restriction')), None)
+        if derivation is None:
+            return None
+        base = derivation.get('base', 'string')
+        named = self.lookup(derivation, base, 'complexType', 'simpleType')
+        if named is not None and named.tag == XS + 'complexType':
+            return self.simple_content(named, (*active, content))
+        return self.primitive(named if named is not None else derivation, base.split(':')[-1], (*active, content))
+
     def members(self, container, active=(), required=True, example=True):
         if container in active or len(active) >= 32 or self.nodes_left <= 0:
             return
@@ -194,6 +210,15 @@ class XsdProjection:
             schema = {'type': 'object', 'properties': properties}
             if required:
                 schema['required'] = list(dict.fromkeys(required))
+            text = self.simple_content(content)
+            if text is not None:
+                text_schema, text_example = text
+                if properties:
+                    schema['x-mina-textSchema'] = text_schema
+                else:
+                    schema = deepcopy(text_schema)
+                if node is not None:
+                    node.text = declaration.get('fixed', declaration.get('default', text_example))
         else:
             primitive = content if content is not None else declaration
             schema, value = self.primitive(primitive, (declaration.get('type') or 'string').split(':')[-1], active)

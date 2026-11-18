@@ -12,6 +12,8 @@ Validate parsed output and Validate input tree perform XSD validation, including
 
 The resolver is offline: URLs, local machine paths, traversal outside the project, DTDs, entities, XSD redefine and override are rejected. XML input is limited to 64 MiB; each XSD to 8 MiB and a dependency graph to 32 MiB. Namespace URIs and mixed text are preserved structurally; serialized prefixes, whitespace and lexical formatting need not match the original bytes.
 
+Binary XML output preserves characters outside the selected encoding using numeric XML character references. For CDATA-selected text, references are emitted outside the CDATA sections so parsing restores the original value. Literal ampersands and `]]>` content retain their values. A CDATA selector can be a schema path such as `record.notes` or an expanded element name such as `{urn:example}notes`. Expanded names match both the namespace and local name. Imported binary render bindings can carry a mapped byte encoding alongside the XML document. MINA uses that encoding and serializes the document inside the binding. Schema-tree mappings with expanded namespace names are ordered according to the XSD and retain qualified attributes. Unknown input or output styles raise a validation error.
+
 ## JSON
 
 Select the conversion mode under **Configuration → Schema type**:
@@ -21,6 +23,10 @@ Select the conversion mode under **Configuration → Schema type**:
 - **XSD** converts between JSON and a schema-defined XML tree. Select an XSD in Parse JSON's Output Editor or Render JSON's Input Editor. Validation is on by default. **Ignore additional JSON fields** filters unknown input fields when validation is enabled. An array declared by the XSD remains an array even when only one value is present.
 
 New JSON activities default to **XSD**. Existing activities without a saved mode continue to use **Native JSON**. The JSON root styles are **None**, **JSON with Root** and **Anonymous Array**. For Anonymous Array in XSD mode, the root must have one repeating child. **Use null for empty values** represents empty containers as nil when there is an XML container. Parse JSON rejects malformed JSON and non-finite numbers; its duplicate-key policy supports First wins, Last wins and Error. Render JSON can format the result and exposes the serialized output as `jsonString`.
+
+XSD simple-content types retain their primitive text datatype, including inheritance from another simple-content type. A type with attributes exposes its text as `#text` in XML schema-tree mappings, alongside `@attribute` fields. Parse JSON's normalized output aliases expose the same text as `$` and attributes without `@`; Studio source paths match those aliases. A simple-content value with no attributes is a primitive field. XML boolean text accepts the whitespace permitted by its XSD datatype.
+
+On Render JSON, explicitly mapped schema-tree fields take precedence over a predecessor's serialized XML wrapper. Mapping only `formatOptions` changes formatting or conversion settings without replacing the payload. **Use empty values for null** substitutes empty containers for schema-typed nil objects/arrays; nil primitives remain JSON `null`, including primitive items in repeating fields, preserving array positions. Empty simple-content strings with attributes remain explicit text values.
 
 ## Delimited and fixed-width Data
 

@@ -1426,6 +1426,15 @@ function schemaDataFields(value: any, schemaPath?: string, schemaDocuments?: any
   return transformSchemaFields({...config, schemaPath, schemaDocuments}).map((field) => ({...d(field.path, field.name, field.type), minOccurs: field.minOccurs, maxOccurs: field.maxOccurs, repeating: field.repeating, required: Number(field.minOccurs) > 0}));
 }
 
+export function formatSchemaOutputFields(node: any, fields: DataField[]): DataField[] {
+  if (node.type !== "json" || node.config?.operation !== "parse" || node.config?.schemaType !== "XSD") return fields;
+  // Parse JSON's schema-tree aliases use JSON attribute keys and '$' text;
+  // XML parsing and render inputs use '@attribute' and '#text'.
+  return fields.map(field => ({...field,
+    key: field.key.split('.').map(part => part === '#text' ? '$' : part.replace(/^@/, '')).join('.'),
+    label: field.label === '#text' ? '$' : field.label.replace(/^@/, '')}));
+}
+
 function activitySchemaAsset(node: any, schemas: any[]) {
   if (node.config?.schemaText && !node.config?.schemaId) return undefined;
   const id = node.config?.schemaId || (node.type === "flat" ? sharedDataFormat(node.config?.dataFormatId, schemas)?.schemaId : "");
@@ -1535,7 +1544,7 @@ function resolvedActivityContract(node: any, task: any, tasks: any[], schemas: a
     if(node.type==="flat" && node.config?.streaming)return contract;
     if (node.type === "json" && node.config?.schemaType === "Generic") return contract;
     const asset = activitySchemaAsset(node, schemas);
-    const schemaFields = schemaDataFields(activitySchemaText(node, schemas), asset?.source_path || asset?.name, schemas);
+    const schemaFields = formatSchemaOutputFields(node, schemaDataFields(activitySchemaText(node, schemas), asset?.source_path || asset?.name, schemas));
     if (!schemaFields.length) return contract;
     const parsing = node.config?.operation === "parse";
     const flatLeaves = schemaFields.filter((field) => !schemaFields.some((candidate) => candidate.key.startsWith(`${field.key}.`)));
@@ -3101,6 +3110,22 @@ function transformSchemaFields(config: any): SchemaTreeField[] {
         });
       };
       const directElements = (container: Element) => declarations(container, "element");
+      const primitiveTextType = (node: Element, base: string, active: Element[] = []): string => {
+        const simple = resolve(node,"simpletype",base);
+        if (!simple) return base.split(":").pop() || "string";
+        if (active.includes(simple) || active.length >= 32) return "string";
+        const restriction = Array.from(simple.children).find(child => local(child) === "restriction");
+        return restriction ? primitiveTextType(restriction,restriction.getAttribute("base") || "string",[...active,simple]) : "string";
+      };
+      const textType = (container: Element, active: Element[] = []): string | undefined => {
+        if (active.includes(container) || active.length >= 32) return undefined;
+        const wrapper = Array.from(container.children).find(child => local(child) === "simplecontent");
+        const derivation = wrapper && Array.from(wrapper.children).find(child => ["extension","restriction"].includes(local(child)));
+        if (!derivation) return undefined;
+        const base = derivation.getAttribute("base") || "string";
+        const complex = resolve(derivation,"complextype",base);
+        return complex ? textType(complex,[...active,container]) : primitiveTextType(derivation,base);
+      };
       const fields: SchemaTreeField[] = [];
       const walkElement = (element: Element, prefix = "", depth = 0, active: Element[] = []) => {
         const occurrence = element;
@@ -3111,11 +3136,17 @@ function transformSchemaFields(config: any): SchemaTreeField[] {
         for (let group = occurrence.parentElement; required && group && !['complextype', 'element', 'schema'].includes(local(group)); group = group.parentElement) {
           if (local(group) === 'choice' || group.getAttribute('minOccurs') === '0') required = false;
         }
-        fields.push({ path, name, type, depth, repeating, required, minOccurs, maxOccurs });
+        const ownField = { path, name, type, depth, repeating, required, minOccurs, maxOccurs };
+        fields.push(ownField);
         const inline = Array.from(element.children).find((child) => local(child) === "complextype"), referenced = resolve(element,"complextype",rawType);
         const container = inline || referenced || element;
         if (depth >= 32 || active.includes(container) || fields.length >= 16000) return;
         declarations(container, "attribute").forEach((attribute) => { const attributeName = attribute.getAttribute("name") || attribute.getAttribute("ref")?.split(":").pop() || "attribute", required = attribute.getAttribute("use") === "required"; fields.push({ path: `${path}.@${attributeName}`, name: `@${attributeName}`, type: (attribute.getAttribute("type") || "string").split(":").pop() || "string", depth: depth + 1, repeating: false, required, minOccurs: required ? "1" : "0", maxOccurs: "1" }); });
+        const text = textType(container);
+        if (text) {
+          if (declarations(container,"attribute").length) fields.push({path:`${path}.#text`,name:'#text',type:text,depth:depth+1,repeating:false,required:true,minOccurs:'1',maxOccurs:'1'});
+          else ownField.type = repeating ? `${text}[]` : text;
+        }
         directElements(container).forEach((child) => walkElement(child, path, depth + 1, [...active, container]));
       };
       const selected = document.documentElement.getAttributeNS("urn:mina:schema-selection","element");

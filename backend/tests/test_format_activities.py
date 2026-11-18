@@ -270,25 +270,55 @@ class ArchiveFormatTests(unittest.TestCase):
         <b:sequence>
           <b:extensionActivity><t:activityExtension name="Parse" outputVariable="Parsed">
             <t:inputBindings><xsl:stylesheet version="2.0"><xsl:template match="/"><jsonString>{"items":{"item":[1,2]}}</jsonString></xsl:template></xsl:stylesheet></t:inputBindings>
-            <t:config><m:BWActivity activityTypeID="bw.restjson.JsonParser"><activityConfig><properties name="config"><value schemaType="XSD" outputElementQName="p:items" jsonInputStyle="JsonWithRoot"/></properties></activityConfig></m:BWActivity></t:config>
+            <t:config><m:BWActivity activityTypeID="bw.restjson.JsonParser"><activityConfig><properties name="config"><value schemaType="XSD" outputElementQName="p:items" jsonInputStyle="Json with Root"/></properties></activityConfig></m:BWActivity></t:config>
           </t:activityExtension></b:extensionActivity>
           <b:extensionActivity><t:activityExtension name="Render">
             <t:inputBindings><xsl:stylesheet version="2.0"><xsl:param name="Parsed"/><xsl:template match="/"><xsl:copy-of select="$Parsed"/></xsl:template></xsl:stylesheet></t:inputBindings>
             <t:config><m:BWActivity activityTypeID="bw.restjson.JsonRender"><activityConfig><properties name="config"><value schemaType="XSD" outputElementQName="p:items" jsonOutputStyle="AnonymousArray" validateInput="true"/></properties></activityConfig></m:BWActivity></t:config>
           </t:activityExtension></b:extensionActivity>
         </b:sequence></b:process>'''
-        project = Project.model_validate_json(project_payload(bw_zip({'App/Processes/Json.bwp':process,'App/Schemas/Items.xsd':ITEMS_XSD}),'Json.zip'))
+        for style, expected in [('AnonymousArray', [1, 2]), ('Json with Root', {'items': {'item': [1, 2]}})]:
+            with self.subTest(style=style):
+                files = {'App/Processes/Json.bwp': process.replace('AnonymousArray', style), 'App/Schemas/Items.xsd': ITEMS_XSD}
+                project = Project.model_validate_json(project_payload(bw_zip(files), 'Json.zip'))
+                task = project.tasks[0]
+                self.assertEqual([activity.config['operation'] for activity in task.activities if activity.type == 'json'], ['parse', 'render'])
+                runtime = WorkflowRuntime()
+                run = asyncio.run(runtime.run(task, {}, project=project))
+                self.assertEqual(run.status, 'completed', run.logs)
+                self.assertEqual(json.loads(run.output['jsonString']), expected)
+                debug = DebugManager(runtime)
+                session = debug.start(project, task.id, {}, {}, {}, [])
+                result = asyncio.run(debug.action(session['sessionId'], 'continue'))
+                self.assertEqual(result['output'], run.output)
+                self.assert_archives(project, {}, run.output, f'6.13 JSON {style}')
+
+    def test_imported_binary_xml_preserves_render_binding_and_cdata_selectors(self):
+        process = '''<b:process xmlns:b="http://docs.oasis-open.org/wsbpel/2.0/process/executable"
+          xmlns:t="http://www.tibco.com/bpel/2007/extensions"
+          xmlns:m="http://tns.tibco.com/bw/model/core/bwext"
+          xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+          xmlns:p="http://www.tibco.com/namespaces/tnt/plugins/xmlpallete" xmlns:r="urn:record">
+          <b:sequence><b:extensionActivity><t:activityExtension name="Render">
+            <t:inputBindings><xsl:stylesheet version="2.0"><xsl:template match="/">
+              <p:xmlInput><byteEncoding>US-ASCII</byteEncoding><r:record><r:notes>café &lt;</r:notes></r:record></p:xmlInput>
+            </xsl:template></xsl:stylesheet></t:inputBindings>
+            <t:config><m:BWActivity activityTypeID="bw.xml.renderXML"><activityConfig><properties name="config">
+              <value outputStyle="binary" encoding="UTF-16"><cdata>{urn:record}notes</cdata></value>
+            </properties></activityConfig></m:BWActivity></t:config>
+          </t:activityExtension></b:extensionActivity></b:sequence>
+        </b:process>'''
+        files = {'App/Processes/Xml.bwp': process}
+        project = Project.model_validate_json(project_payload(bw_zip(files), 'Xml.zip'))
         task = project.tasks[0]
-        self.assertEqual([activity.config['operation'] for activity in task.activities if activity.type == 'json'],['parse','render'])
-        runtime = WorkflowRuntime()
-        run = asyncio.run(runtime.run(task,{},project=project))
-        self.assertEqual(run.status,'completed',run.logs)
-        self.assertEqual(run.output['jsonString'],'[1,2]')
-        debug = DebugManager(runtime)
-        session = debug.start(project,task.id,{}, {}, {}, [])
-        result = asyncio.run(debug.action(session['sessionId'],'continue'))
-        self.assertEqual(result['output'],run.output)
-        self.assert_archives(project,{},run.output,'BW 6.13 JSON activity model')
+        render = next(activity for activity in task.activities if activity.type == 'xml')
+        self.assertEqual(render.config['cdataElements'], ['{urn:record}notes'])
+        self.assertIn('bwRenderInput', render.config['inputMappings'])
+        run = asyncio.run(WorkflowRuntime().run(task, {}, project=project))
+        self.assertEqual(run.status, 'completed', run.logs)
+        raw = base64.b64decode(run.output['xmlBytes'], validate=True)
+        self.assertIn(b'encoding="US-ASCII"', raw)
+        self.assertIn(b']]>&#233;<![CDATA[', raw)
 
     def test_bw_data_format_substitutions_run_debug_and_archive_profiles(self):
         files = bw_substitution_assets()
