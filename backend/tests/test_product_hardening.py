@@ -54,11 +54,22 @@ class ProductHardeningTests(unittest.TestCase):
             with ThreadPoolExecutor(max_workers=8) as executor: list(executor.map(save, [str(index) for index in range(40)]))
             self.assertFalse(list(Path(folder).rglob('*.tmp')))
 
+    def test_saving_metadata_only_does_not_rewrite_unchanged_task(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(store, 'PROJECTS_DIR', Path(folder) / 'projects'), patch.object(store, 'LEGACY_DB', Path(folder) / 'missing.db'):
+            project = Project(id='saved', name='Original')
+            store.save_project(project)
+            task_file = store.project_dir('saved') / 'tasks' / f'{project.tasks[0].id}.json'
+            original = task_file.stat().st_mtime_ns
+            project.name = 'Changed'
+            store.save_project(project)
+            self.assertEqual(task_file.stat().st_mtime_ns, original)
+            self.assertEqual(store.get_project('saved').name, 'Changed')
+
     def test_sftp_settings_and_failures_are_consistent(self):
         client = MagicMock()
         reject, accept = object(), object()
         module = SimpleNamespace(SSHClient=lambda: client, RejectPolicy=lambda: reject, AutoAddPolicy=lambda: accept)
-        with patch.dict('sys.modules', paramiko=module):
+        with patch.dict('sys.modules', paramiko=module), patch('app.sftp._windows_transport_type', return_value=object):
             open_connection({'host': 'host', 'knownHostsFile': 'known', 'privateKeyFile': 'key', 'privateKeyPassphrase': 'pass', 'timeoutSeconds': 17, 'useSshAgent': 'false'})
             client.load_host_keys.assert_called_once_with('known')
             client.set_missing_host_key_policy.assert_called_with(reject)

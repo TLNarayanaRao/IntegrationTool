@@ -239,13 +239,15 @@ class AIBuildRequest(BaseModel):
 
 class DebugRequest(RunRequest):
     test_mode: bool = False
+    pause_at_entry: bool = False
+    capture_trace: bool = True
     breakpoints: list[str] = Field(default_factory=list)
     breakpoint_conditions: dict[str, str] = Field(default_factory=dict)
     watches: list[str] = Field(default_factory=list)
     pause_on_error: bool = True
 
 class DebugAction(BaseModel):
-    action: Literal['continue', 'pause', 'step_in', 'step_over', 'step_out', 'jump_in', 'jump_out', 'run_to', 'configure', 'evaluate', 'set_value', 'preview_activity', 'test_activity', 'mock_step', 'stop']
+    action: Literal['continue', 'continue_without_breakpoints', 'pause', 'step_in', 'step_over', 'step_out', 'jump_in', 'jump_out', 'run_to', 'break_next_event', 'configure', 'evaluate', 'set_value', 'preview_activity', 'test_activity', 'mock_step', 'stop']
     activity_id: str | None = None
     task_id: str | None = None
     expression: str | None = None

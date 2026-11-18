@@ -1,0 +1,746 @@
+{
+  "date": "2026-11-17",
+  "scope": "52 independent packaged runtime processes and 104 live HTTP/1.1 listeners on one Windows test host. Full RDS desktop-session acceptance is outside this lab run.",
+  "installer": {
+    "file": "MINAStudio-1.0.3-rds.3-Setup.exe",
+    "sha256": "875c13b09e2384e194cec32f6eb0e191a9fb5dde0f8811f08b085fba6b350f98",
+    "extractedPayloadVerified": true
+  },
+  "testsPassed": {
+    "backend": 74,
+    "frontend": 38
+  },
+  "loadDriverCalibration": {
+    "clients": 52,
+    "individualVerifiedTLSContextsSeconds": 10.264,
+    "sharedVerifiedTLSContextSeconds": 0.001,
+    "method": "Same CA bundle, independent HTTP clients, credential sets and pools. Both TLS contexts preserve certificate verification."
+  },
+  "sourceProbe": {
+    "users": 52,
+    "runtime": "source",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "logicalCpus": 12,
+    "elapsedSeconds": 92.04,
+    "cycles": 859,
+    "minCyclesPerUser": 16,
+    "distinctPorts": 52,
+    "cyclesPerSecond": 9.33,
+    "hostedListeners": 104,
+    "listenerProvisionBatch": 52,
+    "duplicateHostedPortRejected": true,
+    "foreignAndAnonymousRequestsRejected": 104,
+    "designerAssetsCheckedFor": 52,
+    "latency": {
+      "startup": {
+        "count": 52,
+        "p50Ms": 43949.71,
+        "p95Ms": 46796.21,
+        "maxMs": 46970.33
+      },
+      "create": {
+        "count": 52,
+        "p50Ms": 404.54,
+        "p95Ms": 483.42,
+        "maxMs": 523.27
+      },
+      "hostedCreate": {
+        "count": 105,
+        "p50Ms": 512.26,
+        "p95Ms": 872.5,
+        "maxMs": 917.75
+      },
+      "hostedStartup": {
+        "count": 104,
+        "p50Ms": 1148.7,
+        "p95Ms": 25541.23,
+        "maxMs": 28019.4
+      },
+      "studioPreview": {
+        "count": 52,
+        "p50Ms": 584.49,
+        "p95Ms": 653.98,
+        "maxMs": 718.66
+      },
+      "previewState": {
+        "count": 52,
+        "p50Ms": 510.45,
+        "p95Ms": 676.99,
+        "maxMs": 727.11
+      },
+      "save": {
+        "count": 859,
+        "p50Ms": 410.13,
+        "p95Ms": 584.11,
+        "maxMs": 830.94
+      },
+      "read": {
+        "count": 859,
+        "p50Ms": 474.31,
+        "p95Ms": 582.28,
+        "maxMs": 686.5
+      },
+      "run": {
+        "count": 859,
+        "p50Ms": 535.46,
+        "p95Ms": 652.24,
+        "maxMs": 737.19
+      },
+      "debugStart": {
+        "count": 859,
+        "p50Ms": 640.08,
+        "p95Ms": 790.8,
+        "maxMs": 953.9
+      },
+      "debugStep": {
+        "count": 859,
+        "p50Ms": 544.17,
+        "p95Ms": 739.35,
+        "maxMs": 867.66
+      },
+      "debugContinue": {
+        "count": 859,
+        "p50Ms": 524.91,
+        "p95Ms": 665.29,
+        "maxMs": 813.78
+      },
+      "debugTrace": {
+        "count": 859,
+        "p50Ms": 438.81,
+        "p95Ms": 547.57,
+        "maxMs": 630.46
+      },
+      "hostedRun": {
+        "count": 859,
+        "p50Ms": 721.58,
+        "p95Ms": 930.64,
+        "maxMs": 1125.03
+      },
+      "hostedDebug": {
+        "count": 859,
+        "p50Ms": 459.36,
+        "p95Ms": 630.48,
+        "maxMs": 753.3
+      }
+    },
+    "sidecarMemory": [
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3548.9,
+        "aggregatePrivateMiB": 2717.7,
+        "aggregateCpuSeconds": 174.17
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3618.5,
+        "aggregatePrivateMiB": 2812.2,
+        "aggregateCpuSeconds": 197.38
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3645.1,
+        "aggregatePrivateMiB": 2824.1,
+        "aggregateCpuSeconds": 219.22
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3688.8,
+        "aggregatePrivateMiB": 2877.5,
+        "aggregateCpuSeconds": 241.0
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3715.7,
+        "aggregatePrivateMiB": 2890.3,
+        "aggregateCpuSeconds": 265.16
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3726.8,
+        "aggregatePrivateMiB": 2898.0,
+        "aggregateCpuSeconds": 285.45
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3690.6,
+        "aggregatePrivateMiB": 2859.7,
+        "aggregateCpuSeconds": 310.12
+      }
+    ],
+    "maxP95Ms": 2000,
+    "loadDriverEventLoopDelay": {
+      "count": 546,
+      "p50Ms": 88.0,
+      "p95Ms": 244.0,
+      "maxMs": 28057.0
+    },
+    "latencyGateFailures": {
+      "hostedStartup": 25541.23
+    },
+    "passed": false
+  },
+  "tenMinutePackagedRunBeforeDriverCorrection": {
+    "users": 52,
+    "runtime": "packaged",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "logicalCpus": 12,
+    "elapsedSeconds": 601.85,
+    "cycles": 10750,
+    "minCyclesPerUser": 205,
+    "distinctPorts": 52,
+    "cyclesPerSecond": 17.86,
+    "hostedListeners": 104,
+    "listenerProvisionBatch": 52,
+    "duplicateHostedPortRejected": true,
+    "foreignAndAnonymousRequestsRejected": 104,
+    "designerAssetsCheckedFor": 52,
+    "latency": {
+      "startup": {
+        "count": 52,
+        "p50Ms": 18242.15,
+        "p95Ms": 18339.13,
+        "maxMs": 18452.07
+      },
+      "create": {
+        "count": 52,
+        "p50Ms": 198.76,
+        "p95Ms": 230.22,
+        "maxMs": 231.2
+      },
+      "hostedCreate": {
+        "count": 105,
+        "p50Ms": 316.87,
+        "p95Ms": 479.11,
+        "maxMs": 498.35
+      },
+      "hostedStartup": {
+        "count": 104,
+        "p50Ms": 404.07,
+        "p95Ms": 10030.51,
+        "maxMs": 10991.87
+      },
+      "studioPreview": {
+        "count": 52,
+        "p50Ms": 208.53,
+        "p95Ms": 304.04,
+        "maxMs": 321.61
+      },
+      "previewState": {
+        "count": 52,
+        "p50Ms": 276.09,
+        "p95Ms": 332.85,
+        "maxMs": 364.87
+      },
+      "save": {
+        "count": 10750,
+        "p50Ms": 174.06,
+        "p95Ms": 275.02,
+        "maxMs": 364.97
+      },
+      "read": {
+        "count": 10750,
+        "p50Ms": 174.89,
+        "p95Ms": 251.06,
+        "maxMs": 343.89
+      },
+      "run": {
+        "count": 10750,
+        "p50Ms": 221.14,
+        "p95Ms": 298.13,
+        "maxMs": 378.05
+      },
+      "debugStart": {
+        "count": 10750,
+        "p50Ms": 322.28,
+        "p95Ms": 416.8,
+        "maxMs": 540.4
+      },
+      "debugStep": {
+        "count": 10750,
+        "p50Ms": 295.58,
+        "p95Ms": 394.62,
+        "maxMs": 521.17
+      },
+      "debugContinue": {
+        "count": 10750,
+        "p50Ms": 275.48,
+        "p95Ms": 376.64,
+        "maxMs": 520.35
+      },
+      "debugTrace": {
+        "count": 10750,
+        "p50Ms": 183.74,
+        "p95Ms": 258.99,
+        "maxMs": 360.97
+      },
+      "hostedRun": {
+        "count": 10750,
+        "p50Ms": 160.09,
+        "p95Ms": 243.1,
+        "maxMs": 403.18
+      },
+      "hostedDebug": {
+        "count": 10750,
+        "p50Ms": 119.28,
+        "p95Ms": 221.87,
+        "maxMs": 338.84
+      }
+    },
+    "sidecarMemory": [
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3751.1,
+        "aggregatePrivateMiB": 3065.4,
+        "aggregateCpuSeconds": 92.95
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3839.8,
+        "aggregatePrivateMiB": 3147.8,
+        "aggregateCpuSeconds": 119.58
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3888.4,
+        "aggregatePrivateMiB": 3199.6,
+        "aggregateCpuSeconds": 148.36
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3900.0,
+        "aggregatePrivateMiB": 3207.2,
+        "aggregateCpuSeconds": 174.67
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3911.4,
+        "aggregatePrivateMiB": 3211.3,
+        "aggregateCpuSeconds": 202.55
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3921.1,
+        "aggregatePrivateMiB": 3213.5,
+        "aggregateCpuSeconds": 230.44
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3926.5,
+        "aggregatePrivateMiB": 3213.8,
+        "aggregateCpuSeconds": 256.83
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3935.4,
+        "aggregatePrivateMiB": 3214.7,
+        "aggregateCpuSeconds": 283.77
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3941.2,
+        "aggregatePrivateMiB": 3214.9,
+        "aggregateCpuSeconds": 308.78
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3948.9,
+        "aggregatePrivateMiB": 3215.2,
+        "aggregateCpuSeconds": 335.88
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3955.3,
+        "aggregatePrivateMiB": 3268.4,
+        "aggregateCpuSeconds": 361.83
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3962.1,
+        "aggregatePrivateMiB": 3269.2,
+        "aggregateCpuSeconds": 390.98
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3967.2,
+        "aggregatePrivateMiB": 3269.2,
+        "aggregateCpuSeconds": 415.52
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3975.7,
+        "aggregatePrivateMiB": 3270.3,
+        "aggregateCpuSeconds": 444.66
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3977.2,
+        "aggregatePrivateMiB": 3271.0,
+        "aggregateCpuSeconds": 471.78
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3980.8,
+        "aggregatePrivateMiB": 3271.5,
+        "aggregateCpuSeconds": 497.94
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3987.0,
+        "aggregatePrivateMiB": 3272.1,
+        "aggregateCpuSeconds": 525.22
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3995.7,
+        "aggregatePrivateMiB": 3274.3,
+        "aggregateCpuSeconds": 550.77
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4003.3,
+        "aggregatePrivateMiB": 3274.2,
+        "aggregateCpuSeconds": 578.3
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4008.8,
+        "aggregatePrivateMiB": 3274.5,
+        "aggregateCpuSeconds": 604.75
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4011.7,
+        "aggregatePrivateMiB": 3277.0,
+        "aggregateCpuSeconds": 632.3
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4013.2,
+        "aggregatePrivateMiB": 3278.3,
+        "aggregateCpuSeconds": 660.69
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4014.8,
+        "aggregatePrivateMiB": 3278.8,
+        "aggregateCpuSeconds": 689.81
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4017.1,
+        "aggregatePrivateMiB": 3278.8,
+        "aggregateCpuSeconds": 715.53
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4016.2,
+        "aggregatePrivateMiB": 3275.5,
+        "aggregateCpuSeconds": 743.06
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4022.0,
+        "aggregatePrivateMiB": 3280.1,
+        "aggregateCpuSeconds": 768.58
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4023.0,
+        "aggregatePrivateMiB": 3294.4,
+        "aggregateCpuSeconds": 796.89
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4024.9,
+        "aggregatePrivateMiB": 3323.7,
+        "aggregateCpuSeconds": 822.98
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4026.6,
+        "aggregatePrivateMiB": 3333.8,
+        "aggregateCpuSeconds": 850.88
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4028.4,
+        "aggregatePrivateMiB": 3333.9,
+        "aggregateCpuSeconds": 877.98
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4030.0,
+        "aggregatePrivateMiB": 3334.2,
+        "aggregateCpuSeconds": 904.67
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4031.2,
+        "aggregatePrivateMiB": 3334.4,
+        "aggregateCpuSeconds": 933.38
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4032.2,
+        "aggregatePrivateMiB": 3334.8,
+        "aggregateCpuSeconds": 960.8
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4033.9,
+        "aggregatePrivateMiB": 3335.2,
+        "aggregateCpuSeconds": 986.8
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4034.9,
+        "aggregatePrivateMiB": 3335.3,
+        "aggregateCpuSeconds": 1015.0
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4035.7,
+        "aggregatePrivateMiB": 3335.4,
+        "aggregateCpuSeconds": 1041.7
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4037.8,
+        "aggregatePrivateMiB": 3335.4,
+        "aggregateCpuSeconds": 1070.56
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4039.6,
+        "aggregatePrivateMiB": 3338.6,
+        "aggregateCpuSeconds": 1096.12
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4041.7,
+        "aggregatePrivateMiB": 3338.6,
+        "aggregateCpuSeconds": 1124.92
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4042.5,
+        "aggregatePrivateMiB": 3338.4,
+        "aggregateCpuSeconds": 1151.17
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 4043.2,
+        "aggregatePrivateMiB": 3338.8,
+        "aggregateCpuSeconds": 1174.39
+      }
+    ],
+    "maxP95Ms": 2000,
+    "loadDriverEventLoopDelay": {
+      "count": 4535,
+      "p50Ms": 25.0,
+      "p95Ms": 103.0,
+      "maxMs": 10791.0
+    },
+    "latencyGateFailures": {
+      "hostedStartup": 10030.51
+    },
+    "passed": false
+  },
+  "unbatchedPackagedAcceptanceWithCorrectedDriver": {
+    "users": 52,
+    "runtime": "packaged",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "logicalCpus": 12,
+    "elapsedSeconds": 182.57,
+    "cycles": 3304,
+    "minCyclesPerUser": 62,
+    "distinctPorts": 52,
+    "cyclesPerSecond": 18.1,
+    "hostedListeners": 104,
+    "listenerProvisionBatch": 52,
+    "duplicateHostedPortRejected": true,
+    "foreignAndAnonymousRequestsRejected": 104,
+    "designerAssetsCheckedFor": 52,
+    "latency": {
+      "startup": {
+        "count": 52,
+        "p50Ms": 6662.26,
+        "p95Ms": 7309.49,
+        "maxMs": 7389.72
+      },
+      "create": {
+        "count": 52,
+        "p50Ms": 23.08,
+        "p95Ms": 83.49,
+        "maxMs": 100.18
+      },
+      "hostedCreate": {
+        "count": 105,
+        "p50Ms": 276.05,
+        "p95Ms": 415.9,
+        "maxMs": 479.66
+      },
+      "hostedStartup": {
+        "count": 104,
+        "p50Ms": 466.09,
+        "p95Ms": 637.09,
+        "maxMs": 677.42
+      },
+      "studioPreview": {
+        "count": 52,
+        "p50Ms": 257.13,
+        "p95Ms": 314.67,
+        "maxMs": 323.76
+      },
+      "previewState": {
+        "count": 52,
+        "p50Ms": 252.51,
+        "p95Ms": 340.9,
+        "maxMs": 354.15
+      },
+      "save": {
+        "count": 3304,
+        "p50Ms": 169.54,
+        "p95Ms": 262.47,
+        "maxMs": 370.43
+      },
+      "read": {
+        "count": 3304,
+        "p50Ms": 167.41,
+        "p95Ms": 246.81,
+        "maxMs": 322.04
+      },
+      "run": {
+        "count": 3304,
+        "p50Ms": 213.37,
+        "p95Ms": 294.5,
+        "maxMs": 407.36
+      },
+      "debugStart": {
+        "count": 3304,
+        "p50Ms": 315.61,
+        "p95Ms": 406.7,
+        "maxMs": 465.55
+      },
+      "debugStep": {
+        "count": 3304,
+        "p50Ms": 286.76,
+        "p95Ms": 383.6,
+        "maxMs": 484.7
+      },
+      "debugContinue": {
+        "count": 3304,
+        "p50Ms": 263.14,
+        "p95Ms": 366.54,
+        "maxMs": 449.05
+      },
+      "debugTrace": {
+        "count": 3304,
+        "p50Ms": 178.57,
+        "p95Ms": 259.73,
+        "maxMs": 328.31
+      },
+      "hostedRun": {
+        "count": 3304,
+        "p50Ms": 159.7,
+        "p95Ms": 247.88,
+        "maxMs": 414.91
+      },
+      "hostedDebug": {
+        "count": 3304,
+        "p50Ms": 117.9,
+        "p95Ms": 222.48,
+        "maxMs": 339.65
+      }
+    },
+    "sidecarMemory": [
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3744.5,
+        "aggregatePrivateMiB": 3061.5,
+        "aggregateCpuSeconds": 85.39
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3837.6,
+        "aggregatePrivateMiB": 3146.7,
+        "aggregateCpuSeconds": 112.16
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3890.8,
+        "aggregatePrivateMiB": 3203.0,
+        "aggregateCpuSeconds": 140.48
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3900.2,
+        "aggregatePrivateMiB": 3210.4,
+        "aggregateCpuSeconds": 165.69
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3907.2,
+        "aggregatePrivateMiB": 3207.5,
+        "aggregateCpuSeconds": 191.91
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3917.9,
+        "aggregatePrivateMiB": 3211.1,
+        "aggregateCpuSeconds": 219.33
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3925.0,
+        "aggregatePrivateMiB": 3213.0,
+        "aggregateCpuSeconds": 246.55
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3933.9,
+        "aggregatePrivateMiB": 3214.3,
+        "aggregateCpuSeconds": 272.44
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3940.4,
+        "aggregatePrivateMiB": 3214.3,
+        "aggregateCpuSeconds": 299.88
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3948.2,
+        "aggregatePrivateMiB": 3215.8,
+        "aggregateCpuSeconds": 325.58
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3954.9,
+        "aggregatePrivateMiB": 3268.6,
+        "aggregateCpuSeconds": 351.97
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3961.6,
+        "aggregatePrivateMiB": 3269.5,
+        "aggregateCpuSeconds": 380.48
+      },
+      {
+        "processes": 52,
+        "aggregateWorkingSetMiB": 3968.3,
+        "aggregatePrivateMiB": 3270.0,
+        "aggregateCpuSeconds": 410.53
+      }
+    ],
+    "maxP95Ms": 2000,
+    "loadDriverEventLoopDelay": {
+      "count": 1451,
+      "p50Ms": 25.0,
+      "p95Ms": 103.0,
+      "maxMs": 275.0
+    },
+    "latencyGateFailures": {},
+    "passed": true
+  }
+}

@@ -143,6 +143,20 @@ cursor.close.assert_called_once();connection.close.assert_called_once()
                 result=subprocess.run([sys.executable,'-c',code],cwd=folder,capture_output=True,text=True,timeout=20)
                 self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
+    def test_anonymous_http_avoids_the_authentication_executor(self):
+        from app.http_server import ListenerApp, listener_config
+        from fastapi.testclient import TestClient
+
+        async def handler(_metadata, _payload):
+            return {'body': 'ready'}
+
+        connection = {'minimumQtpThreads': 2, 'maximumQtpThreads': 2}
+        config = listener_config(connection, {'path': '/', 'methods': 'GET'})
+        with patch.object(ThreadPoolExecutor, 'submit', side_effect=AssertionError('unexpected worker')):
+            listener = ListenerApp([(None, config)], handler, connection)
+            with TestClient(listener) as client:
+                self.assertEqual(client.get('/').json(), {'body': 'ready'})
+
     def test_listener_worker_warmup_failure_aborts_waiters_and_closes_executor(self):
         from app.http_server import ListenerApp
         created=[]
@@ -158,7 +172,8 @@ cursor.close.assert_called_once();connection.close.assert_called_once()
             return pool
         with patch('app.http_server.ThreadPoolExecutor',side_effect=executor):
             with self.assertRaisesRegex(RuntimeError,'worker startup failed'):
-                ListenerApp([],lambda *_:None,{'minimumQtpThreads':2,'maximumQtpThreads':2})
+                ListenerApp([(None, {'path': '/', 'authentication': 'Basic'})],lambda *_:None,
+                            {'minimumQtpThreads':2,'maximumQtpThreads':2})
         for pool in created:
             self.assertTrue(pool._shutdown);pool.shutdown(wait=True)
             self.assertFalse(any(thread.is_alive() for thread in pool._threads))

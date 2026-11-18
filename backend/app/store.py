@@ -32,10 +32,18 @@ def project_dir(project_id: str) -> Path:
     return target
 
 def write_json(path: Path, value):
+    encoded = json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    try:
+        # Studio saves the whole project model. Keep unchanged task and
+        # connection files out of the write/rename path on shared hosts.
+        if path.read_bytes() == encoded:
+            return
+    except OSError:
+        pass
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + f'.{uuid4().hex}.tmp')
     try:
-        temporary.write_text(json.dumps(value, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+        temporary.write_bytes(encoded)
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)

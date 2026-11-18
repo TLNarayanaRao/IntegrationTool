@@ -8,9 +8,10 @@ from .faults import MinaFault
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders
 from pydantic import BaseModel, Field
 from .models import AIBuildRequest, DebugAction, DebugRequest, Project, RunRequest, SharedResource, PackagePath, effective_event_activities
 from .store import delete_project, get_project, list_projects, project_dir, save_project, safe_component
@@ -43,7 +44,31 @@ debugger = DebugManager(runtime)
 runtime_states: dict[str, dict] = {}
 active_runs: dict[str, asyncio.Task] = {}
 debug_runs: dict[str, asyncio.Task] = {}
-debug_stop_locks: dict[str, asyncio.Lock] = {}
+
+async def _write_runtime_logs(project, environment, entries):
+    if entries:
+        await asyncio.to_thread(append_project_logs, project.id, project.name, list(entries),
+                                _project_log_directory(project, environment))
+
+async def _persist_debug_logs(state):
+    lock = state.get('_logWriteLock')
+    if lock is None:
+        lock = state['_logWriteLock'] = asyncio.Lock()
+    async with lock:
+        logs = state['logs']
+        dropped = getattr(logs, 'dropped', 0)
+        cursor = max(0, int(state.get('persistedLogCount', 0)) - dropped)
+        total = dropped + len(logs)
+        if cursor < len(logs):
+            write = asyncio.create_task(_write_runtime_logs(state['project'], state.get('environment', 'local'), logs[cursor:]))
+            try:
+                await asyncio.shield(write)
+            except asyncio.CancelledError:
+                await write
+                state['persistedLogCount'] = total
+                raise
+        state['persistedLogCount'] = total
+
 
 async def _cancel_and_wait(task: asyncio.Task | None, timeout: float = 3.0) -> None:
     """Cancel an owned runtime task and observe its cleanup before returning."""
@@ -60,10 +85,12 @@ async def _cancel_and_wait(task: asyncio.Task | None, timeout: float = 3.0) -> N
 
 async def _stop_debug_session(session_id: str) -> dict:
     """Stop every task owned by a debug session, then rollback its resources."""
-    lock = debug_stop_locks.setdefault(session_id, asyncio.Lock())
+    state = debugger.sessions.get(session_id)
+    if not state: raise ValueError('Debug session not found')
+    lock = state.get('_stopLock')
+    if lock is None:
+        lock = state['_stopLock'] = asyncio.Lock()
     async with lock:
-        state = debugger.sessions.get(session_id)
-        if not state: raise ValueError('Debug session not found')
         if state.get('status') == 'stopped': return debugger.view(state)
         project = state['project']
         # Publish the stop intent synchronously. Listener/debug loops inspect
@@ -84,26 +111,32 @@ async def _stop_debug_session(session_id: str) -> dict:
             try: sap_adapter.acknowledge_idoc(pending['listenerKey'], pending['deliveryId'], False)
             except Exception: pass
         view = await debugger.stop(session_id)
-        cursor = int(state.get('persistedLogCount', 0))
-        append_project_logs(project.id, project.name, state['logs'][cursor:], _project_log_directory(project, state.get('environment', 'local')))
-        state['persistedLogCount'] = len(state['logs'])
+        await _persist_debug_logs(state)
         return view
 
-@app.middleware('http')
-async def prevent_stale_studio_entry(request: Request, call_next):
-    """Always revalidate the HTML shell while allowing hashed assets to cache.
+class StudioEntryCache:
+    """Keep the Studio shell fresh without wrapping API request streams."""
 
-    Vite changes the JS/CSS filenames on every production build. Caching
-    index.html can therefore leave the browser requesting hashes from an old
-    build and produce a blank Studio after a 404. Static hashed assets remain
-    cacheable; only the entry document is marked as non-cacheable.
-    """
-    response = await call_next(request)
-    if request.url.path in {'/', '/index.html'}:
-        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-        response.headers['Pragma'] = 'no-cache'
-        response.headers['Expires'] = '0'
-    return response
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope['type'] != 'http' or scope['path'] not in ('/', '/index.html'):
+            await self.app(scope, receive, send)
+            return
+
+        async def send_entry(message):
+            if message['type'] == 'http.response.start':
+                headers = MutableHeaders(scope=message)
+                headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+                headers['Pragma'] = 'no-cache'
+                headers['Expires'] = '0'
+            await send(message)
+
+        await self.app(scope, receive, send_entry)
+
+
+app.add_middleware(StudioEntryCache)
 
 @app.on_event('shutdown')
 async def shutdown_native_connectors():
@@ -113,7 +146,6 @@ async def shutdown_native_connectors():
     if pending: await asyncio.gather(*pending, return_exceptions=True)
     active_runs.clear()
     debug_runs.clear()
-    debug_stop_locks.clear()
     sap_adapter.close_all()
     await asyncio.to_thread(runtime.close_publishers)
     from .http_transport import close_clients
@@ -167,7 +199,7 @@ async def _start_http_listener(item,task,event,environment,debug_handler=None):
     async def handle(metadata,payload):
         task_id,event_id=metadata
         result=await runtime.run(by_task[task_id],payload,resources,properties,event_id,item)
-        append_project_logs(item.id,item.name,result.logs,_project_log_directory(item,environment))
+        await _write_runtime_logs(item, environment, result.logs)
         _publish_runtime_state(item.id,status='listening',logs=(runtime_states.get(item.id,{}).get('logs',[])+result.logs)[-500:],result=result,environment=environment)
         if result.status!='completed':raise RuntimeError('HTTP integration failed')
         return result.output
@@ -177,9 +209,14 @@ async def _start_http_listener(item,task,event,environment,debug_handler=None):
         done,_=await asyncio.wait([job,waiter],timeout=15,return_when=asyncio.FIRST_COMPLETED)
         if job in done:await job
         if not ready.is_set():raise RuntimeError('HTTP listener did not start within 15 seconds')
-    except Exception:
-        active_runs.pop(item.id,None);await _cancel_and_wait(job);raise
-    finally:waiter.cancel()
+    except BaseException:
+        if active_runs.get(item.id) is job:
+            active_runs.pop(item.id, None)
+        await _cancel_and_wait(job)
+        raise
+    finally:
+        waiter.cancel()
+        await asyncio.gather(waiter, return_exceptions=True)
 
 
 def _listener_endpoints(item: Project, task, environment: str, base_url: str = '') -> list[dict]:
@@ -430,9 +467,7 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
                             # SAP transaction until the user resumes or stops.
                             session['pendingSapDelivery'] = {'listenerKey': sap_listener_key, 'deliveryId': sap_delivery_id, 'transport': delivery_transport}
                     if session:
-                        cursor = int(session.get('persistedLogCount', 0))
-                        append_project_logs(project_id, item.name, session['logs'][cursor:], _project_log_directory(item, environment))
-                        session['persistedLogCount'] = len(session['logs'])
+                        await _persist_debug_logs(session)
                         _publish_runtime_state(project_id, status=session.get('status', 'listening'), logs=session['logs'][-500:], endpoints=session.get('endpoints', []), environment=environment)
                     if activity.type == 'timer':
                         repeat = runtime.as_bool(resolved_config.get('repeatEnabled', False))
@@ -738,7 +773,7 @@ def project_json(project_id: str):
 
 @app.post('/api/projects/{project_id}/run')
 async def run(project_id: str, http_request: Request, request: RunRequest):
-    item = get_project(project_id)
+    item = await asyncio.to_thread(get_project, project_id)
     if not item: raise HTTPException(404, 'Project not found')
     resources = {resource.id: resource for resource in item.resources}
     selected = item.properties.get(request.environment, [])
@@ -756,7 +791,7 @@ async def run(project_id: str, http_request: Request, request: RunRequest):
         try:await _start_http_listener(item,task,event,request.environment)
         except Exception as error:raise HTTPException(400,f'HTTP listener startup failed: {error}')
         lifecycle = diagnostics + _lifecycle_logs(item, endpoints)
-        append_project_logs(project_id, item.name, lifecycle, _project_log_directory(item, request.environment))
+        await _write_runtime_logs(item, request.environment, lifecycle)
         _publish_runtime_state(project_id, status='listening', logs=lifecycle, endpoints=endpoints, environment=request.environment)
         return {'status': 'listening', 'output': {}, 'logs': lifecycle,
                 'activity_outputs': {}, 'task_outputs': {}, 'endpoints': endpoints, 'executions': []}
@@ -783,7 +818,7 @@ async def run(project_id: str, http_request: Request, request: RunRequest):
     payload = result.model_dump()
     payload['logs'] = _lifecycle_logs(item, []) + payload.get('logs', [])
     payload['endpoints'] = []
-    append_project_logs(project_id, item.name, payload['logs'], _project_log_directory(item, request.environment))
+    await _write_runtime_logs(item, request.environment, payload['logs'])
     _publish_runtime_state(project_id, status=result.status, logs=payload['logs'], endpoints=[], result=result, environment=request.environment)
     return payload
 
@@ -2073,19 +2108,18 @@ def download_http_collection(project_id: str, environment: str='local', task_id:
 
 @app.post('/api/projects/{project_id}/debug')
 async def start_debug(project_id: str, http_request: Request, request: DebugRequest):
-    item = get_project(project_id)
+    item = await asyncio.to_thread(get_project, project_id)
     if not item: raise HTTPException(404, 'Project not found')
     for session_id,state in list(debugger.sessions.items()):
         if state['project'].id==project_id and state.get('httpHandler') and not state.get('stopRequested'):await _stop_debug_session(session_id)
     task_id = request.task_id or item.active_task_id
     properties = {prop.key: prop.value for prop in item.properties.get(request.environment, [])}
     try:
-        view = debugger.start(item, task_id, request.input, {resource.id:resource for resource in item.resources}, properties, request.breakpoints, request.environment, request.breakpoint_conditions, request.watches, request.pause_on_error)
+        view = debugger.start(item, task_id, request.input, {resource.id:resource for resource in item.resources}, properties, request.breakpoints, request.environment, request.breakpoint_conditions, request.watches, request.pause_on_error, request.capture_trace)
         if request.test_mode:
             test_state = debugger.sessions[view['sessionId']]
             test_state.update(listenerMode=False, status='paused', pauseReason='activity-testing')
-            test_state['logs'] = [entry for entry in test_state['logs'] if entry.get('kind') != 'listener']
-            test_state['frames'][-1]['context']['logs'] = test_state['logs']
+            test_state['logs'][:] = [entry for entry in test_state['logs'] if entry.get('kind') != 'listener']
         task = next(value for value in item.tasks if value.id == task_id)
         diagnostics = _startup_diagnostics(item, task, {resource.id: resource for resource in item.resources}, properties, request.environment, 'DEBUG')
         endpoints = [] if request.test_mode else _listener_endpoints(item, task, request.environment, str(http_request.base_url).rstrip('/'))
@@ -2100,20 +2134,19 @@ async def start_debug(project_id: str, http_request: Request, request: DebugRequ
         runtime_states.setdefault(project_id, {})['environment'] = request.environment
         state['endpoints'] = endpoints
         state['logs'][:] = diagnostics + _lifecycle_logs(item, endpoints) + state['logs']
-        append_project_logs(project_id, item.name, state['logs'], _project_log_directory(item, request.environment))
-        state['persistedLogCount'] = len(state['logs'])
+        await _persist_debug_logs(state)
         if http_debug:
             from .debug_http import HTTPDebugBridge
             state.update(listenerMode=True,status='listening',pauseReason='event-listener')
             bridge=HTTPDebugBridge(debugger,state)
             state['httpHandler']=bridge
             try:await _start_http_listener(item,task,event,request.environment,bridge)
-            except Exception:
+            except BaseException:
                 await debugger.stop(state['id'])
                 raise
         elif event and _is_continuous_event(event) and not request.test_mode:
             _start_continuous_listener(item, task, event, request.environment, view['sessionId'])
-        elif not request.breakpoints and not request.test_mode:
+        elif not request.breakpoints and not request.test_mode and not request.pause_at_entry:
             # Run without breakpoints in the background. This lets the Studio
             # poll the debug session and paint each activity/parallel branch
             # while it executes instead of receiving only the final snapshot.
@@ -2126,9 +2159,7 @@ async def start_debug(project_id: str, http_request: Request, request: DebugRequ
                 finally:
                     current = debugger.sessions.get(session_id)
                     if current:
-                        cursor = int(current.get('persistedLogCount', 0))
-                        append_project_logs(current['project'].id, current['project'].name, current['logs'][cursor:], _project_log_directory(current['project'], current.get('environment', 'local')))
-                        current['persistedLogCount'] = len(current['logs'])
+                        await _persist_debug_logs(current)
                     debug_runs.pop(session_id, None)
 
             debug_runs[session_id] = asyncio.create_task(finish_debug_session())
@@ -2142,17 +2173,26 @@ async def debug_action(session_id: str, request: DebugAction):
             return await _stop_debug_session(session_id)
         view = await debugger.action(session_id, request.action, request.model_dump(exclude={'action'}, exclude_unset=True))
         state = debugger.sessions[session_id]
-        project = state['project']
         pending = state.get('pendingSapDelivery')
         if pending and state.get('status') in ('listening', 'failed', 'stopped'):
             if not pending.get('transport', {}).get('completed'):
                 sap_adapter.acknowledge_idoc(pending['listenerKey'], pending['deliveryId'], state.get('status') == 'listening')
             state.pop('pendingSapDelivery', None)
-        cursor = int(state.get('persistedLogCount', 0))
-        append_project_logs(project.id, project.name, state['logs'][cursor:], _project_log_directory(project, state.get('environment', 'local')))
-        state['persistedLogCount'] = len(state['logs'])
+        await _persist_debug_logs(state)
         return view
     except ValueError as exc: raise HTTPException(404 if str(exc) == 'Debug session not found' else 400, str(exc))
+
+@app.get('/api/debug/{session_id}/trace')
+async def debug_trace(session_id: str, before: int | None = Query(None, gt=0),
+                      thread: int | None = Query(None, gt=0), limit: int = Query(150, ge=1, le=500),
+                      download: bool = False):
+    state = debugger.sessions.get(session_id)
+    if not state: raise HTTPException(404, 'Debug session not found')
+    report = state['trace'].report(before, thread, limit, export=download)
+    headers = {'Cache-Control': 'no-store'}
+    if download:
+        headers['Content-Disposition'] = 'attachment; filename="MINA-debug-trace.json"'
+    return JSONResponse({'sessionId': session_id, 'status': state['status'], **report}, headers=headers)
 
 @app.get('/api/debug/{session_id}')
 def debug_state(session_id: str):
@@ -2172,7 +2212,7 @@ def _configured_http_methods(activity) -> set[str]:
 
 @app.api_route('/api/listeners/{project_id}/{listener_path:path}', methods=HTTP_LISTENER_METHODS)
 async def invoke_listener(project_id: str, listener_path: str, request: Request, environment: str = 'local'):
-    item = get_project(project_id)
+    item = await asyncio.to_thread(get_project, project_id)
     if not item: raise HTTPException(404, 'Project not found')
     debug_state = next((state for state in debugger.sessions.values()
                         if state['project'].id == project_id and state.get('httpHandler') and not state.get('stopRequested')), None)
@@ -2220,7 +2260,7 @@ async def invoke_listener(project_id: str, listener_path: str, request: Request,
             if debug_state:return await debug_state['httpHandler'](metadata,payload)
             resources={resource.id:resource for resource in item.resources}
             result=await runtime.run(selected_task,payload,resources,properties,listener_id,item)
-            append_project_logs(project_id,item.name,result.logs,_project_log_directory(item,environment))
+            await _write_runtime_logs(item, environment, result.logs)
             combined_logs=list(runtime_states.get(project_id,{}).get('logs',[]))+result.logs
             _publish_runtime_state(project_id,status='listening' if result.status=='completed' else 'failed',logs=combined_logs[-500:],result=result,environment=environment)
             if result.status!='completed':raise RuntimeError('Integration execution failed')

@@ -3,20 +3,18 @@ from __future__ import annotations
 
 import json
 import os
+from collections import deque
+from queue import Empty, Queue
 import re
-import socket
+from secrets import token_hex
 import subprocess
 import sys
 import tempfile
+from threading import Thread
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
-
-
-def free_port() -> int:
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        return int(listener.getsockname()[1])
 
 
 def verify_designer(base_url: str) -> int:
@@ -44,25 +42,52 @@ def main() -> int:
     if not executable.is_file():
         print(f"Runtime executable does not exist: {executable}", file=sys.stderr)
         return 2
-    port = free_port()
     with tempfile.TemporaryDirectory(prefix="mina-smoke-") as data_dir:
         environment = os.environ.copy()
-        environment.update(MINA_PORT=str(port), MINA_DATA_DIR=data_dir, MINA_LOG_LEVEL="info", PYTHONUTF8="1")
+        token = token_hex(32)
+        environment.update(MINA_PORT="0", MINA_DESKTOP_TOKEN=token, MINA_DATA_DIR=data_dir, MINA_LOG_LEVEL="warning", PYTHONUTF8="1")
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         process = subprocess.Popen([str(executable)], cwd=executable.parent, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, creationflags=flags)
+        recent = deque(maxlen=60)
+        announcements = Queue()
+
+        def read_stdout():
+            for line in process.stdout:
+                recent.append(line)
+                match = re.fullmatch(r'MINA_DESKTOP_PORT=(\d+)\s*', line)
+                if match:
+                    announcements.put(int(match.group(1)))
+            announcements.put(None)
+
+        reader = Thread(target=read_stdout, daemon=True)
+        reader.start()
         try:
             deadline = time.monotonic() + 60
+            try:
+                port = announcements.get(timeout=60)
+            except Empty:
+                port = None
+            if port is None:
+                print('Packaged runtime did not announce a port.\n' + ''.join(recent), file=sys.stderr)
+                return 1
+            health = urllib.request.Request(f'http://127.0.0.1:{port}/api/health', headers={'X-MINA-Desktop-Token': token})
             last_error = ""
             while time.monotonic() < deadline:
                 exit_code = process.poll()
                 if exit_code is not None:
-                    output = process.stdout.read() if process.stdout else ""
+                    output = ''.join(recent)
                     print(f"Packaged runtime exited with code {exit_code}:\n{output}", file=sys.stderr)
                     return 1
                 try:
-                    with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1) as response:
+                    with urllib.request.urlopen(health, timeout=1) as response:
                         payload = json.loads(response.read())
                     if response.status == 200 and payload.get("status") == "ok":
+                        try:
+                            with urllib.request.urlopen(health.full_url, timeout=2):
+                                raise RuntimeError('Packaged runtime admitted an anonymous API request')
+                        except urllib.error.HTTPError as denied:
+                            if denied.code != 403:
+                                raise
                         asset_count=verify_designer(f'http://127.0.0.1:{port}')
                         with urllib.request.urlopen(f"http://127.0.0.1:{port}/legal/THIRD_PARTY_NOTICES.txt", timeout=5) as legal:
                             if b'THIRD-PARTY NOTICES' not in legal.read():raise RuntimeError('Renderer license notices are not served')
@@ -73,12 +98,7 @@ def main() -> int:
                 except Exception as exc:
                     last_error = str(exc)
                 time.sleep(0.25)
-            process.terminate()
-            try:
-                output, _ = process.communicate(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill(); output, _ = process.communicate(timeout=5)
-            print(f"Packaged runtime did not become healthy: {last_error}\n{output}", file=sys.stderr)
+            print(f"Packaged runtime did not become healthy: {last_error}\n{''.join(recent)}", file=sys.stderr)
             return 1
         finally:
             if process.poll() is None:
@@ -87,6 +107,7 @@ def main() -> int:
                     process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     process.kill(); process.wait(timeout=5)
+            reader.join(timeout=5)
 
 
 if __name__ == "__main__":

@@ -2,10 +2,10 @@ const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
-const net = require('node:net');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { performance } = require('node:perf_hooks');
+const { header, waitForPort, protectStudioRequests } = require('./desktop-access.cjs');
 
 const desktopStarted = performance.now();
 let mainWindow;
@@ -37,16 +37,6 @@ let runtimeLogPath;
 let windowCloseApproved = false;
 const utilityFiles = new Map();
 
-const availablePort = () => new Promise((resolve, reject) => {
-  const server = net.createServer();
-  server.unref();
-  server.on('error', reject);
-  server.listen(0, '127.0.0.1', () => {
-    const address = server.address();
-    server.close(() => resolve(address.port));
-  });
-});
-
 const logTail = (filePath, maximum = 12000) => {
   try {
     const value = fs.readFileSync(filePath, 'utf8');
@@ -56,7 +46,7 @@ const logTail = (filePath, maximum = 12000) => {
   }
 };
 
-const healthReady = (port, executable, signal, timeoutMs = 60000) => new Promise((resolve, reject) => {
+const healthReady = (port, executable, signal, token, timeoutMs = 120000) => new Promise((resolve, reject) => {
   const deadline = performance.now() + timeoutMs;
   const fastPollUntil = performance.now() + 2000;
   let complete = false;
@@ -94,7 +84,7 @@ const healthReady = (port, executable, signal, timeoutMs = 60000) => new Promise
       retried = true;
       retry();
     };
-    const request = pendingRequest = http.get(`http://127.0.0.1:${port}/api/health`, (response) => {
+    const request = pendingRequest = http.get(`http://127.0.0.1:${port}/api/health`, { headers: token ? { [header]: token } : {} }, (response) => {
       response.resume();
       if (response.statusCode === 200) response.once('end', () => finish());
       else retryOnce();
@@ -114,7 +104,7 @@ function recordStartup(stage, at = performance.now()) {
   } catch { /* Timing diagnostics must not block launch. */ }
 }
 
-function startRuntime(port) {
+function startRuntime(port, token) {
   runtimeStartupError = undefined;
   const logDirectory = path.join(app.getPath('userData'), 'logs');
   fs.mkdirSync(logDirectory, { recursive: true });
@@ -123,10 +113,12 @@ function startRuntime(port) {
     ...process.env,
     MINA_PORT: String(port),
     MINA_DATA_DIR: path.join(app.getPath('userData'), 'workspace-data'),
-    MINA_LOG_LEVEL: process.env.MINA_LOG_LEVEL || 'info',
+    MINA_LOG_LEVEL: process.env.MINA_LOG_LEVEL || 'warning',
     MINA_BUILD_VERSION: app.getVersion(),
     PYTHONUTF8: '1',
   };
+  if (token) environment.MINA_DESKTOP_TOKEN = token;
+  else delete environment.MINA_DESKTOP_TOKEN;
   let executable;
   let args = [];
   let cwd;
@@ -142,7 +134,7 @@ function startRuntime(port) {
     cwd = path.join(root, 'backend');
   }
   if (!fs.existsSync(executable)) throw new Error(`The packaged runtime executable is missing: ${executable}`);
-  fs.writeFileSync(runtimeLogPath, `[${new Date().toISOString()}] Starting ${executable}\nWorking directory: ${cwd}\nPort: ${port}\n`, 'utf8');
+  fs.writeFileSync(runtimeLogPath, `[${new Date().toISOString()}] Starting ${executable}\nWorking directory: ${cwd}\nPort: ${port || 'assigned by operating system'}\n`, 'utf8');
   runtimeProcess = spawn(executable, args, { cwd, env: environment, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   const record = (stream, value) => {
     const line = `[${new Date().toISOString()}] [${stream}] ${value}`;
@@ -167,11 +159,12 @@ function startRuntime(port) {
 }
 
 async function createWindow() {
-  const runtimePort = app.isPackaged ? await availablePort() : 8787;
+  const token = app.isPackaged ? crypto.randomBytes(32).toString('hex') : null;
   if (startup.signal.aborted) return;
   // Start the sidecar before constructing the window, which can take time
   // on a busy machine. Only the Studio navigation waits for its health check.
-  const executable = startRuntime(runtimePort);
+  const executable = startRuntime(token ? 0 : 8787, token);
+  const portReady = token ? waitForPort(runtimeProcess, startup.signal, 120000) : Promise.resolve(8787);
   recordStartup('Runtime process started');
   publishStartup(1);
   mainWindow = new BrowserWindow({
@@ -202,13 +195,21 @@ async function createWindow() {
     event.preventDefault();
     mainWindow.webContents.send('mina:request-window-close');
   });
-  await healthReady(runtimePort, executable, startup.signal);
+  let runtimePort;
+  try {
+    runtimePort = await portReady;
+  } catch (error) {
+    throw new Error(`${error.message}\nStartup log: ${runtimeLogPath}\n${logTail(runtimeLogPath)}`);
+  }
+  const origin = `http://127.0.0.1:${runtimePort}`;
+  if (token) protectStudioRequests(mainWindow.webContents, origin, token);
+  await healthReady(runtimePort, executable, startup.signal, token);
   if (mainWindow.isDestroyed()) return;
   runtimeReady = true;
   recordStartup('Runtime ready');
   publishStartup(2);
   // This navigation may replace an unfinished splash on a fast launch.
-  await mainWindow.loadURL(process.env.MINA_DEV_URL || `http://127.0.0.1:${runtimePort}`);
+  await mainWindow.loadURL(token ? origin : process.env.MINA_DEV_URL || origin);
   if (mainWindow.isDestroyed()) return;
   rendererReady = true;
   await splash;

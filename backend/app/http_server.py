@@ -100,8 +100,13 @@ class ListenerApp:
         self.routes=routes;self.handler=handler;self.connection=connection;maximum=int(number(connection,'maximumQtpThreads',75,1,10000))
         self.gate=asyncio.Semaphore(maximum);self.queued=0;self.executor=ThreadPoolExecutor(max_workers=maximum,thread_name_prefix='mina-http')
         self.compiled=[(*route_pattern(cfg['path']),metadata,cfg) for metadata,cfg in sorted(routes,key=lambda item:('{' in item[1]['path'],-len(item[1]['path'])))]
-        # Warm the minimum worker count for authentication/LDAP work.
-        minimum=int(number(connection,'minimumQtpThreads',10,1,maximum)) if warm_workers else 0;ready=threading.Barrier(minimum+1)
+        # Anonymous routes have no authentication work to offload. Warming
+        # those pools multiplies idle threads across shared-host listeners.
+        needs_workers = any(str(cfg.get('authentication') or 'none').lower() != 'none' for _, cfg in routes)
+        minimum=int(number(connection,'minimumQtpThreads',10,1,maximum)) if warm_workers and needs_workers else 0
+        if not minimum:
+            return
+        ready=threading.Barrier(minimum+1)
         try:
             jobs=[self.executor.submit(ready.wait,10) for _ in range(minimum)];ready.wait(10)
             for job in jobs:job.result(10)
@@ -121,13 +126,17 @@ class ListenerApp:
         await handle_request(self,scope,receive,send)
 
 async def _serve_http1(routes,handler,ready=None):
+    members = [(metadata, listener_config(connection, activity)) for metadata, connection, activity in routes]
+    await _serve_prepared_http1(members, handler, ready)
+
+async def _serve_prepared_http1(routes,handler,ready=None):
     import uvicorn
     from .http1_protocol import StatusLineProtocol
     grouped={}
-    for metadata,connection,activity in routes:
-        cfg=listener_config(connection,activity);key=(str(cfg.get('host') or '0.0.0.0'),int(number(cfg,'port',8080,1,65535)))
+    for metadata,cfg in routes:
+        key=(str(cfg.get('host') or '0.0.0.0'),int(number(cfg,'port',8080,1,65535)))
         grouped.setdefault(key,[]).append((metadata,cfg))
-    servers=[];sockets=[];jobs=[];apps=[]
+    servers=[];sockets=[];jobs=[];apps=[];signals=[]
     try:
         for (host,port),members in grouped.items():
             connection=members[0][1]
@@ -142,7 +151,7 @@ async def _serve_http1(routes,handler,ready=None):
                     route_methods.add(identity)
             app=ListenerApp(members,handler,connection,verified_mtls=server_tls(connection) and connection.get('clientAuthentication')=='required')
             apps.append(app)
-            options=uvicorn.Config(app,host=host,port=port,proxy_headers=False,server_header=False,backlog=int(number(connection,'acceptQueueSize',128,1,65535)),limit_concurrency=int(number(connection,'maximumQtpThreads',75,1,10000))+int(number(connection,'maxQueueSize',100,0,100000)),timeout_keep_alive=int(number(connection,'idleConnectionTimeoutMs',40000)/1000),h11_max_incomplete_event_size=int(number(connection,'maxHeaderBytes',65536,1024)),log_level='info')
+            options=uvicorn.Config(app,host=host,port=port,proxy_headers=False,server_header=False,backlog=int(number(connection,'acceptQueueSize',128,1,65535)),limit_concurrency=int(number(connection,'maximumQtpThreads',75,1,10000))+int(number(connection,'maxQueueSize',100,0,100000)),timeout_keep_alive=int(number(connection,'idleConnectionTimeoutMs',40000)/1000),h11_max_incomplete_event_size=int(number(connection,'maxHeaderBytes',65536,1024)),log_config=None,lifespan='off')
             if any(location == 'query' for _, cfg in members
                    for _, _, keys in cfg.get('_restSecurityAlternatives', []) for _, location, _ in keys):
                 options.access_log = False
@@ -151,19 +160,28 @@ async def _serve_http1(routes,handler,ready=None):
             if server_tls(connection):options.ssl=tls_context(connection,server=True)
             import socket
             address=socket.getaddrinfo(host,port,type=socket.SOCK_STREAM,flags=socket.AI_PASSIVE)[0]
-            sock=socket.socket(address[0],address[1],address[2]);sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
-            try:sock.bind(address[4]);sock.listen(options.backlog);sock.setblocking(False)
+            sock=socket.socket(address[0],address[1],address[2])
+            try:
+                # On Windows SO_REUSEADDR can hand traffic to either process
+                # when two developers reuse the same configured port.
+                option = getattr(socket, 'SO_EXCLUSIVEADDRUSE', socket.SO_REUSEADDR)
+                sock.setsockopt(socket.SOL_SOCKET, option, 1)
+                sock.bind(address[4]);sock.listen(options.backlog);sock.setblocking(False)
             except Exception:sock.close();app.executor.shutdown(wait=False,cancel_futures=True);raise
             from contextlib import nullcontext
+            signal = asyncio.Event()
             class EmbeddedServer(uvicorn.Server):
                 def capture_signals(self):return nullcontext()
+                async def startup(self, sockets=None):
+                    await super().startup(sockets=sockets)
+                    if self.started:
+                        self.ready.set()
             sockets.append(sock);server=EmbeddedServer(options);servers.append(server)
+            server.ready = signal
+            signals.append(signal)
             jobs.append(asyncio.create_task(server.serve(sockets=[sock])))
         if ready is not None:
-            while not all(server.started for server in servers):
-                for job in jobs:
-                    if job.done():await job
-                await asyncio.sleep(.02)
+            await _wait_until_listening(jobs, signals)
             ready.set()
         await asyncio.gather(*jobs)
     finally:
@@ -178,27 +196,41 @@ async def _serve_http1(routes,handler,ready=None):
         for app in apps:app.executor.shutdown(wait=False,cancel_futures=True)
         for sock in sockets:sock.close()
 
+async def _wait_until_listening(jobs, signals):
+    async def wait_for_binds():
+        await asyncio.gather(*(signal.wait() for signal in signals))
+
+    waiter = asyncio.create_task(wait_for_binds())
+    try:
+        done, _ = await asyncio.wait([waiter, *jobs], return_when=asyncio.FIRST_COMPLETED)
+        for job in jobs:
+            if job in done:
+                await job
+                raise RuntimeError('HTTP listener exited during startup')
+        await waiter
+    finally:
+        waiter.cancel()
+        await asyncio.gather(waiter, return_exceptions=True)
+
+
 async def serve(routes,handler,ready=None):
     """Select Uvicorn HTTP/1.1 or Hypercorn HTTP/2 and HTTP/3 per bind address."""
     groups={}
     for metadata,connection,activity in routes:
         cfg=listener_config(connection,activity)
-        groups.setdefault((str(cfg.get('host') or '0.0.0.0'),int(cfg.get('port') or 8080)),[]).append((metadata,connection,activity,cfg))
+        groups.setdefault((str(cfg.get('host') or '0.0.0.0'),int(cfg.get('port') or 8080)),[]).append((metadata,cfg))
     jobs=[];signals=[]
     try:
         for members in groups.values():
-            versions={str(cfg.get('httpVersion') or '1.1') for _,_,_,cfg in members}
+            versions={str(cfg.get('httpVersion') or '1.1') for _,cfg in members}
             if len(versions)!=1:raise HTTPFault('Listeners sharing a port must use the same HTTP version','HTTP_CONFIGURATION',400)
             signal=asyncio.Event();signals.append(signal)
             if versions & {'2', '3'}:
                 from .http2_server import serve_http2
-                job=serve_http2([(metadata,cfg) for metadata,_,_,cfg in members],handler,signal)
-            else:job=_serve_http1([(metadata,connection,activity) for metadata,connection,activity,_ in members],handler,signal)
+                job=serve_http2(members,handler,signal)
+            else:job=_serve_prepared_http1(members,handler,signal)
             jobs.append(asyncio.create_task(job))
-        while not all(signal.is_set() for signal in signals):
-            for job in jobs:
-                if job.done():await job
-            await asyncio.sleep(.01)
+        await _wait_until_listening(jobs, signals)
         if ready is not None:ready.set()
         await asyncio.gather(*jobs)
     finally:

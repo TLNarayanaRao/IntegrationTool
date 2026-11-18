@@ -1,6 +1,7 @@
 import ExecutionDock from "./ExecutionDock";
 import RuntimeStatus from "./RuntimeStatus";
 import ModalLayer from "./ModalLayer";
+import DebugTraceDialog, { DebugLaunchDialog } from "./DebugTraceDialog";
 import ApiBlueprint from "./ApiBlueprint";
 import { closeTaskEditors, type CloseEditorsMode } from "./taskEditors";
 import { isEventActivity, taskEntryLabels, taskEntryMode } from "./taskEntry";
@@ -55,7 +56,6 @@ import {
   Settings2,
   ShieldCheck,
   ShieldAlert,
-  SkipBack,
   SkipForward,
   Square,
   Trash2,
@@ -1511,6 +1511,10 @@ function App() {
     [debugState, setDebugState] = useState<any>(null),
     [jobDataOpen, setJobDataOpen] = useState(false),
     [debugToolsOpen, setDebugToolsOpen] = useState(false),
+    [debugLaunchOpen, setDebugLaunchOpen] = useState(false),
+    [debugTraceTab, setDebugTraceTab] = useState<"threads" | "metrics" | null>(null),
+    [debugReview, setDebugReview] = useState<{ projectId: string; sessionId: string } | null>(null),
+    [debugCommandError, setDebugCommandError] = useState(""),
     [debugToolsSection, setDebugToolsSection] = useState(5),
     [executionOutputs, setExecutionOutputs] = useState<Record<string, any>>({}),
     [endpoints, setEndpoints] = useState<any[]>([]),
@@ -1535,6 +1539,7 @@ function App() {
   const [executionPanelOpen, setExecutionPanelOpen] = useState(false);
   const [autoExecutionPanel, setAutoExecutionPanel] = useState(false);
   const executionAttempt = useRef(0);
+  const debugActionRevision = useRef(0);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [monitorMode, setMonitorMode] = useState<"normal" | "expanded" | "fullscreen">("normal");
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -1851,16 +1856,19 @@ function App() {
       })),
     [],
   );
+  const finishedDebug = ["completed", "failed", "stopped"].includes(debugState?.status);
   useEffect(() => {
-    if (!busy && !endpoints.length && !debugState?.sessionId) return;
+    if (finishedDebug || (!busy && !endpoints.length && !debugState?.sessionId)) return;
     let cancelled = false;
     let refreshing = false;
     const refreshRuntime = async () => {
       if (cancelled || refreshing) return;
       refreshing = true;
+      const attempt = executionAttempt.current;
+      const revision = debugActionRevision.current;
       try {
         const response = await fetch(debugState?.sessionId ? `/api/debug/${debugState.sessionId}` : `/api/projects/${project.id}/runtime-state`);
-        if (cancelled) return;
+        if (cancelled || attempt !== executionAttempt.current || revision !== debugActionRevision.current) return;
         if (!response.ok) {
           // Uvicorn restarts clear in-memory debugger sessions. The browser
           // may still have the old session id and must not poll it forever.
@@ -1875,7 +1883,7 @@ function App() {
           return;
         }
         const state = await response.json();
-        if (cancelled) return;
+        if (cancelled || attempt !== executionAttempt.current || revision !== debugActionRevision.current) return;
         if (!debugState?.sessionId && busy && !["running","listening"].includes(state.status)) return;
         if (debugState?.sessionId) setDebugState(state);
         else setRuntimeState(state);
@@ -1888,7 +1896,7 @@ function App() {
     void refreshRuntime();
     const timer = window.setInterval(refreshRuntime, 750);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [project.id, busy, endpoints.length, debugState?.sessionId]);
+  }, [project.id, busy, endpoints.length, debugState?.sessionId, finishedDebug]);
   useEffect(() => {
     let frame = 0;
     let preview: typeof dragPreview = null;
@@ -2710,13 +2718,14 @@ function App() {
         setLogs(entries); setRuntimeState({status:"failed",logs:entries});
       } finally { if (attempt === executionAttempt.current) setBusy(false); }
     },
-    debug = async (requestedTaskId?: unknown, testMode = false) => {
+    debug = async (requestedTaskId?: unknown, testMode = false, launch?: { input: Record<string, unknown>; capture: boolean }) => {
       if (!editorOpen && typeof requestedTaskId !== "string") { setLogs([{level: "INFO", message: "Open a task from Project Explorer before debugging it."}]); return; }
       const attempt = ++executionAttempt.current;
       const taskId = typeof requestedTaskId === "string" ? requestedTaskId : task.id;
       if (!editorOpen || project.active_task_id !== taskId) selectTask(taskId);
       setAutoExecutionPanel(true); setExecutionPanelOpen(true); setMonitorMode("normal");
       setDebugState(null); setExecutionOutputs({});
+      setDebugCommandError("");
       const startingLogs = [{level:"INFO",kind:"debug",message:"Starting debugger…"}];
       setLogs(startingLogs); setRuntimeState({status:"starting",logs:startingLogs});
       setBusy(true);
@@ -2729,12 +2738,14 @@ function App() {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            input: {},
+            input: launch?.input ?? {},
             environment: project.active_environment,
             task_id: taskId,
             breakpoints,
             breakpoint_conditions: breakpointConditions,
-            test_mode: testMode,
+            test_mode: testMode || !!launch,
+            pause_at_entry: !!launch,
+            capture_trace: launch?.capture ?? true,
             watches: debugWatches,
             pause_on_error: pauseOnDebugError,
           }),
@@ -2757,6 +2768,7 @@ function App() {
           setLogs(out.logs || []);
           return;
         }
+        setDebugReview({ projectId: project.id, sessionId: out.sessionId });
         setDebugState(out);
         setExecutionOutputs(out.activityOutputs || {});
         setLogs(out.logs || [{ level: "ERROR", message: out.detail }]);
@@ -2776,18 +2788,20 @@ function App() {
     debugAction = async (action: string, options: Record<string, any> = {}) => {
       if (!debugState) return;
       const attempt = executionAttempt.current;
-      const r = await fetch(`/api/debug/${debugState.sessionId}/action`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action, ...options }),
-        }),
-        out = await r.json();
-      if (attempt !== executionAttempt.current) return null;
-      if (!r.ok) {
-        const message = out?.detail || `Debugger action failed (HTTP ${r.status})`;
-        setLogs((current) => [...current, { level: "ERROR", kind: "debug", message }]);
+      setDebugCommandError("");
+      let out;
+      try {
+        const response = await fetch(`/api/debug/${debugState.sessionId}/action`, {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...options }),
+        });
+        out = await response.json();
+        if (!response.ok) throw new Error(typeof out.detail === "string" ? out.detail : `Debugger action failed (HTTP ${response.status})`);
+      } catch (error) {
+        if (attempt === executionAttempt.current) setDebugCommandError(error instanceof Error ? error.message : "Debugger action failed.");
         return null;
       }
+      if (attempt !== executionAttempt.current) return null;
+      debugActionRevision.current++;
       if (out.status === "stopped") {
         setExecutionPanelOpen(false); setAutoExecutionPanel(false); setMonitorMode("normal");
         setDebugState(null); setExecutionOutputs({}); setEndpoints([]); setRuntimeState(null); setLogs(out.logs || []);
@@ -2829,6 +2843,7 @@ function App() {
   const executionActive = busy || (debugState
     ? !["completed", "failed", "stopped"].includes(debugState.status)
     : endpoints.length > 0 || ["running", "listening", "paused"].includes(runtimeState?.status));
+  const traceSessionId = debugReview?.projectId === project.id ? debugReview.sessionId : null;
   useEffect(() => {
     if (autoExecutionPanel && !busy && ["completed","failed","stopped"].includes(debugState?.status || runtimeState?.status)) {
       setExecutionPanelOpen(false); setAutoExecutionPanel(false); setMonitorMode("normal");
@@ -2837,19 +2852,29 @@ function App() {
   useEffect(() => {
     executionAttempt.current++;
     setExecutionPanelOpen(false); setAutoExecutionPanel(false); setMonitorMode("normal");
+    setDebugLaunchOpen(false); setDebugTraceTab(null);
     setBusy(false); setDebugState(null); setRuntimeState(null); setEndpoints([]); setExecutionOutputs({});
   }, [project.id]);
   const inspectActivity = (id: string, ids: string[] = [id]) => {
     setSelected(id); setSelectedIds(ids); setSelectedEdge(null); setSelectedResource(null);
     setExecutionPanelOpen(false); setMonitorMode("normal"); setActiveTab("configuration");
   };
+  const inspectDebugActivity = (taskId: string, activityId: string) => {
+    if (!project.tasks.some(item => item.id === taskId && item.activities.some(activity => activity.id === activityId))) return;
+    if (taskId !== project.active_task_id || !editorOpen) selectTask(taskId);
+    inspectActivity(activityId);
+    setDebugTraceTab(null);
+  };
   // General Studio notices (open, save, copy, etc.) belong in the status area,
   // not in the execution console. The console is reserved for runtime work.
   const executionLogEntries: any[] = debugState?.logs || runtimeState?.logs || logs.filter((entry) =>
     ["activity", "listener", "lifecycle", "debug", "call", "runtime", "packaging"].includes(String(entry.kind || "").toLowerCase()) || !!entry.correlationId || !!entry.runtimeActivityId,
   );
-  const executedTransitionIds = new Set(executionLogEntries.filter((entry: any) => entry?.transitionId).map((entry: any) => String(entry.transitionId)));
-  const currentActivityIds = new Set<string>([debugState?.currentActivityId, ...(debugState?.currentActivityIds || [])].filter(Boolean));
+  const executedTransitionIds = new Set<string>(debugState
+    ? (debugState.recentTransitions || []).filter(([taskId]: string[]) => taskId === task.id).map(([, id]: string[]) => id)
+    : executionLogEntries.filter((entry: any) => entry?.transitionId).map((entry: any) => String(entry.transitionId)));
+  const currentActivityIds = new Set<string>(debugState?.currentTaskId === task.id && ["paused", "running"].includes(debugState.status) && debugState.currentActivityId
+    ? [debugState.currentActivityId] : []);
   const currentTransitionIds = new Set(edges.filter((transition) => currentActivityIds.has(transition.target) && executedTransitionIds.has(String(transition.id))).map((transition) => String(transition.id)));
   const designerWork = workStatus || (busy ? "Preparing or running task" : "");
   const debugActivityNames = (debugState?.currentActivityIds || (debugState?.currentActivityId ? [debugState.currentActivityId] : []))
@@ -3294,10 +3319,11 @@ function App() {
           { label: "Run Active Task", detail: `${task.name} · ${project.active_environment}`, icon: Zap, shortcut: "F5", action: run },
           { label: "Start Debugging", detail: "Honor configured breakpoints", icon: Bug, shortcut: "F6", action: debug },
           { label: "Execution Analytics", detail: "Timings, bottlenecks and graph reports", icon: Activity, action: () => setAnalyticsOpen(true) },
+          { label: "Debug with Input", detail: "Start the current task paused with a JSON payload", icon: Bug, action: () => setDebugLaunchOpen(true), disabled: executionActive || !editorOpen },
           { label: "Start Activity Testing", detail: "Start paused; provide test data without automatically starting listeners", icon: Bug, action: () => debug(undefined, true), disabled: executionActive },
           { label: "Validate Current Task", detail: "Check flow, mappings, connections, and configuration", icon: ShieldCheck, action: () => runValidation("task") },
           { label: "Validate Project", detail: "Check every task, environment, mapping, and package", icon: ShieldCheck, action: () => runValidation("project") },
-          { label: "Continue", detail: "Resume the active debug session", icon: CirclePlay, action: () => debugAction("continue"), disabled: !debugState },
+          { label: "Continue", detail: "Resume the paused debug session", icon: CirclePlay, action: () => debugAction("continue"), disabled: debugState?.status !== "paused" },
           { label: "Stop Execution", detail: "Stop the active run, listener deployment, or debug session", icon: Square, action: stopExecution, disabled: !executionActive },
         ]}/>
         <TopMenu label="Window" open={menu === "window"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "window" ? null : "window"); }} commands={[
@@ -3305,6 +3331,7 @@ function App() {
           { label: "Task Designer", detail: "Move focus to the orchestration canvas", icon: Workflow, action: () => focusStudioPanel(".canvas") },
           { label: "Configuration", detail: "Move focus to activity configuration", icon: Settings2, action: () => focusStudioPanel(".config") },
           { label: "Execution & Debug", detail: "Open runtime output", icon: Bug, action: () => { setExecutionPanelOpen(true); window.setTimeout(() => focusStudioPanel(".monitor"), 0); } },
+          { label: "Debug Trace & Metrics", detail: "Inspect the latest debug session's paths and timings", icon: Activity, action: () => setDebugTraceTab("threads"), disabled: !traceSessionId },
           { label: "Execution Analytics", detail: "Timings, bottlenecks and graph reports", icon: Activity, action: () => setAnalyticsOpen(true) },
           { label: "XML Viewer", detail: "Windowed large-file XML viewer and pretty printer", icon: CodeXml, action: () => setUtilityMode("xml") },
           { label: "JSON Viewer", detail: "Windowed large-file JSON viewer and pretty printer", icon: Braces, action: () => setUtilityMode("json") },
@@ -3351,7 +3378,8 @@ function App() {
         moveUp={() => moveSelection(-24)}
         moveDown={() => moveSelection(24)}
       />
-      {debugState && !["completed", "failed", "stopped"].includes(debugState.status) && <DebugRibbon state={debugState} act={debugAction} stop={stopExecution} openLogs={() => { setExecutionPanelOpen(true); setMonitorMode("normal"); }} openJobData={() => setJobDataOpen(true)} openTools={(section: number) => { setDebugToolsSection(section); setDebugToolsOpen(true); }} runToSelected={() => selected && debugAction("run_to", { activity_id: selected })} canRunTo={!!selected} />}
+      {debugState && !["completed", "failed", "stopped"].includes(debugState.status) && <DebugRibbon state={debugState} act={debugAction} stop={stopExecution} openLogs={() => { setExecutionPanelOpen(true); setMonitorMode("normal"); }} openJobData={() => setJobDataOpen(true)} openTools={(section: number) => { setDebugToolsSection(section); setDebugToolsOpen(true); }} runToSelected={() => selected && debugAction("run_to", { activity_id: selected, task_id: task.id })} canRunTo={!!selected} openTrace={setDebugTraceTab} inspectCurrent={() => inspectDebugActivity(debugState.currentTaskId, debugState.currentActivityId)} />}
+      {debugState && debugCommandError && <div className="debug-command-error" role="alert">{debugCommandError}<button type="button" onClick={() => setDebugCommandError("")} aria-label="Dismiss debugger message">×</button></div>}
       </div>
        <header>
          <IntegrationBrandArtwork className="studio-brand-art" />
@@ -3937,6 +3965,14 @@ function App() {
         </section>}</> : <><div className="orchestrator-empty" role="status"><Workflow/><b>No task editors open</b><span>Select a task in Project Explorer to open it.</span></div>{executionConsole}</>}
       </main>
       {analyticsOpen && <ExecutionAnalytics key={project.id} projectId={project.id} projectName={project.name} tasks={project.tasks} logs={logs} runtimeState={runtimeState} debugState={debugState} onClose={() => setAnalyticsOpen(false)} onInspect={(taskId: string, activityId: string) => { const target = project.tasks.find(item => item.id === taskId && item.activities.some(activity => activity.id === activityId)) || project.tasks.find(item => item.activities.some(activity => activity.id === activityId)); if (target) { selectTask(target.id); setSelected(activityId); setActiveTab("configuration"); setAnalyticsOpen(false); } }}/>}
+      {debugLaunchOpen && <DebugLaunchDialog taskName={task.name} onClose={() => setDebugLaunchOpen(false)} onStart={(input, capture) => {
+        setDebugLaunchOpen(false);
+        if (!executionActive) void debug(task.id, false, { input, capture });
+      }}/>}
+      {debugTraceTab && traceSessionId && <DebugTraceDialog key={traceSessionId} sessionId={traceSessionId}
+        activeThreadId={debugState?.sessionId === traceSessionId ? debugState.activeThreadId : undefined}
+        live={debugState?.sessionId === traceSessionId && !["completed", "failed", "stopped"].includes(debugState.status)}
+        tasks={project.tasks} initialTab={debugTraceTab} onClose={() => setDebugTraceTab(null)} onInspect={inspectDebugActivity}/>}
       {utilityMode && <FileUtilities initialMode={utilityMode} onClose={() => setUtilityMode(null)}/>}
       <footer className="studio-status-bar">
         <span className="status-product"><Workflow/> MINA Studio</span>
@@ -6584,6 +6620,7 @@ function DebugToolsDialog({ state, tasks, activities, breakpoints, conditions, w
   const [testFields, setTestFields] = useState("{}");
   const [payloadFormat, setPayloadFormat] = useState("json");
   const [assertion, setAssertion] = useState("");
+  const [testTimeout, setTestTimeout] = useState("10");
   const [toolError, setToolError] = useState("");
   const [toolMessage, setToolMessage] = useState("");
   const [toolBusy, setToolBusy] = useState(false);
@@ -6592,18 +6629,19 @@ function DebugToolsDialog({ state, tasks, activities, breakpoints, conditions, w
   const entryActivity = selectedProcess?.activities.find((item: any) => item.type === "start") || (entryCandidates.length === 1 ? entryCandidates[0] : null);
   const selectedTestActivity = selectedProcess?.activities.find((item: any) => item.id === testActivity) || (!testActivity ? entryActivity : null);
   const selectTestTarget = (taskId: string, activityId: string) => {
-    drafts.current[JSON.stringify([testTask, testActivity])] = { testInput, testFields, payloadFormat, assertion };
+    drafts.current[JSON.stringify([testTask, testActivity])] = { testInput, testFields, payloadFormat, assertion, testTimeout };
     const draft = drafts.current[JSON.stringify([taskId, activityId])];
     setTestTask(taskId); setTestActivity(activityId);
     setTestInput(draft?.testInput ?? "{}"); setTestFields(draft?.testFields ?? "{}");
     setPayloadFormat(draft?.payloadFormat ?? "json"); setAssertion(draft?.assertion ?? "");
+    setTestTimeout(draft?.testTimeout ?? "10");
     setToolError(""); setToolMessage("");
   };
   const runTool = async (action: string, options: Record<string, any>) => {
     setToolError(""); setToolMessage(""); setToolBusy(true);
     try {
       const result = await act(action, options);
-      if (!result) throw new Error("Debugger action failed. See the debug log for details.");
+      if (!result) throw new Error("Debugger action failed. Close this dialog to see the debugger message.");
       if (action === "test_activity" && ["failed", "assertion_failed"].includes(result.lastActivityTest?.status)) throw new Error(result.lastActivityTest.error || "Output assertion failed. See the test result below.");
       setToolMessage(action === "set_value" ? "Value updated. Check Live Variables below." : "Debugger action completed.");
     } catch (error: any) { setToolError(error.message || "Debugger action failed"); }
@@ -6614,8 +6652,11 @@ function DebugToolsDialog({ state, tasks, activities, breakpoints, conditions, w
       const fields = JSON.parse(testFields);
       if (!fields || Array.isArray(fields) || typeof fields !== "object") throw new Error("Field overrides must be a JSON object.");
       if (!selectedTestActivity) throw new Error("Select an activity in this process before testing.");
-      void runTool(action, { task_id: testTask, activity_id: selectedTestActivity.id, value: payloadFormat === "text" ? testInput : JSON.parse(testInput), fields, assertion });
-    } catch (error: any) { setToolError(`Invalid test JSON: ${error.message}`); }
+      const timeout = Number(testTimeout);
+      if (action === "test_activity" && (timeout < 0.1 || timeout > 60 || !Number.isFinite(timeout))) throw new Error("Choose a timeout between 0.1 and 60 seconds.");
+      void runTool(action, { task_id: testTask, activity_id: selectedTestActivity.id, value: payloadFormat === "text" ? testInput : JSON.parse(testInput), fields, assertion,
+        ...(action === "test_activity" ? { timeout_seconds: timeout } : {}) });
+    } catch (error: any) { setToolError(error.message || "Check the activity test inputs."); }
   };
   const formatted = (value: any) => value === undefined ? "(not available)" : JSON.stringify(value, null, 2);
   return <ModalLayer className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div ref={dialogRef} className="runtime-modal debug-tools-dialog">
@@ -6626,7 +6667,7 @@ function DebugToolsDialog({ state, tasks, activities, breakpoints, conditions, w
       <section className="debug-tool-section"><h3>LIVE VARIABLES</h3><div className="debug-variable-grid"><DebugPayloadEditor title="INPUT" value={state.variables?.input}/><DebugPayloadEditor title="LAST OUTPUT" value={state.variables?.last}/><DebugPayloadEditor title="VARIABLES" value={state.variables?.vars}/><DebugPayloadEditor title="PROCESS CONTEXT" value={state.variables?.context}/></div></section>
       <section className="debug-tool-section debug-evaluate"><h3>EVALUATE</h3><div><input value={expression} onChange={(event) => setExpression(event.target.value)} placeholder="${last.customer.id}"/><button onClick={() => act("evaluate", { expression })}>Evaluate</button></div>{state.lastEvaluation && <pre>{state.lastEvaluation.error || formatted(state.lastEvaluation.value)}</pre>}</section>
       <section className="debug-tool-section debug-edit"><h3>EDIT PAUSED VALUE</h3><p>Replace input or last with an object, array, text, or null. Use vars.name or input.field to change a child value. Input and last are separate values.</p><div><input aria-label="Debug value path" value={editPath} onChange={(event) => setEditPath(event.target.value)} placeholder="input, last, or vars.retryCount"/><input aria-label="Debug value" value={editValue} onChange={(event) => setEditValue(event.target.value)} placeholder='JSON or text value'/><button disabled={state.status !== "paused" || toolBusy} onClick={setRuntimeValue}>Set value</button></div></section>
-      <section className="debug-tool-section debug-activity-test"><h3>ACTIVITY TEST BENCH</h3><p>Pause first. Preview resolves mappings without executing. Run once executes the selected activity with isolated test data and does not advance the paused flow. Real connector, file, and script actions can change external systems. Timeout is 10 seconds; external work already started may continue.</p>
+      <section className="debug-tool-section debug-activity-test"><h3>ACTIVITY TEST BENCH</h3><p>Pause first. Preview resolves mappings without executing. Run once uses isolated test data and leaves the paused flow in place. Real connector, file, and script actions can change external systems. Work already started can continue after the timeout.</p>
         <div className="debug-test-workspace">
         <DebugActivityTree tasks={tasks} taskId={testTask} activityId={testActivity} busy={toolBusy} onSelect={selectTestTarget}/>
         <div className="debug-test-inputs">
@@ -6636,6 +6677,7 @@ function DebugToolsDialog({ state, tasks, activities, breakpoints, conditions, w
         <label>Test payload / mock output<textarea value={testInput} onChange={event => setTestInput(event.target.value)} spellCheck={false}/></label>
         <label>Input field overrides (JSON object; applied after mappings)<textarea value={testFields} onChange={event => setTestFields(event.target.value)} placeholder={'{"message":"test", "destination":"test.queue"}'} spellCheck={false}/></label>
         <label>Output assertion (optional)<input value={assertion} onChange={event => setAssertion(event.target.value)} placeholder="${last.count} > 0"/></label>
+        <label>Run-once timeout (seconds)<input type="number" min="0.1" max="60" step="0.1" value={testTimeout} onChange={event => setTestTimeout(event.target.value)}/></label>
         <div className="debug-test-actions"><button disabled={state.status !== "paused" || toolBusy || !selectedTestActivity} onClick={() => test("preview_activity")}>Preview inputs</button><button disabled={state.status !== "paused" || toolBusy || !selectedTestActivity} onClick={() => test("test_activity")}>Run once (real)</button><button disabled={state.status !== "paused" || toolBusy || testTask !== state.currentTaskId || selectedTestActivity?.id !== state.currentActivityId} onClick={() => test("mock_step")}>Use mock output & step</button><button disabled={toolBusy} onClick={() => { selectTestTarget(state.currentTaskId, state.currentActivityId || ""); setPayloadFormat("json"); setTestInput(formatted(state.variables?.last)); }}>Load paused activity</button></div>
         {state.lastActivityTest && <><h3>LAST TEST RESULT</h3><pre>{formatted(state.lastActivityTest)}</pre></>}
         {!!state.testHistory?.length && <details><summary>Recent test results ({state.testHistory.length})</summary><pre>{formatted(state.testHistory)}</pre></details>}
@@ -6647,28 +6689,31 @@ function DebugToolsDialog({ state, tasks, activities, breakpoints, conditions, w
   </div></ModalLayer>;
 }
 
-function DebugRibbon({ state, act, stop, openLogs, openJobData, openTools, runToSelected, canRunTo }: any) {
+function DebugRibbon({ state, act, stop, openLogs, openJobData, openTools, runToSelected, canRunTo, openTrace, inspectCurrent }: any) {
   const paused = state.status === "paused";
   const stopping = state.status === "stopping";
   const command = (label: string, Icon: any, action: () => void, disabled = false, title = label) =>
     <button type="button" disabled={disabled} onClick={action} title={title} aria-label={label}><Icon/><span>{label}</span></button>;
   return <section className="studio-ribbon debug-ribbon" aria-label="Debug ribbon">
-    <div className="debug-ribbon-status"><Bug/><b>DEBUG</b><span role="status">{state.status === "listening" ? "Waiting for event" : state.status}</span></div>
+    <div className="debug-ribbon-status"><Bug/><b>DEBUG</b><span role="status">{state.pauseRequested ? "Pausing…" : state.status === "listening" ? "Waiting for event" : state.status}</span></div>
     <div className="ribbon-group"><b>EXECUTION</b><div>
       {command("Continue", CirclePlay, () => act("continue"), !paused)}
-      {command("Pause", Pause, () => act("pause"), state.status !== "running")}
+      {command("Ignore Breakpoints", SkipForward, () => act("continue_without_breakpoints"), !paused, "Continue without breakpoints for this command")}
+      {command("Pause", Pause, () => act("pause"), state.status !== "running" || state.pauseRequested, "Pause before the next activity")}
+      {state.listenerMode && command(state.breakOnNextEvent ? "Cancel Next Event Break" : "Break on Next Event", Bug, () => act("break_next_event"), stopping)}
       {command("Stop", Square, stop, stopping, "Stop debugging and clean up resources")}
     </div></div>
     <div className="ribbon-group"><b>STEP & NAVIGATE</b><div>
       {command("Step In", ArrowDown, () => act("step_in"), !paused)}
       {command("Step Over", SkipForward, () => act("step_over"), !paused)}
-      {command("Step Out", ArrowUp, () => act("step_out"), !paused)}
-      {command("Jump In", SkipForward, () => act("jump_in"), !paused)}
-      {command("Jump Out", SkipBack, () => act("jump_out"), !paused)}
+      {command("Step Out", ArrowUp, () => act("step_out"), !paused || state.callStack?.length < 2)}
       {command("Run to Selected", CirclePlay, runToSelected, !paused || !canRunTo)}
+      {command("Go to Current Activity", Workflow, inspectCurrent, !state.currentActivityId || stopping)}
     </div></div>
     <div className="ribbon-group"><b>INSPECT & CONFIGURE</b><div>
       {command("Execution Logs", BookOpen, openLogs)}
+      {command("Thread Paths", Workflow, () => openTrace("threads"))}
+      {command("Debug Metrics", Activity, () => openTrace("metrics"))}
       {command("Breakpoints", Bug, () => openTools(0), stopping)}
       {command("Watches", Search, () => openTools(1), stopping)}
       {command("Variables", Database, () => openTools(2), stopping)}

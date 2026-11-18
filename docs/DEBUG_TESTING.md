@@ -14,8 +14,10 @@ Windows installations must be rebuilt and updated with the new installer to
 receive these UI/backend changes; restarting an older installation is insufficient.
 
 During an active debug session, a dedicated Debug ribbon appears underneath the
-Studio ribbon. It provides Continue, Pause, Stop, Step In/Over/Out, Jump In/Out,
-Run to Selected, Breakpoints, Watches, Variables, Evaluate, Job Data, Edit Payload,
+Studio ribbon. Its execution controls include Continue, Ignore Breakpoints,
+Pause, Stop, Step In/Over/Out, Run to Selected, Go to Current Activity, and Break
+on Next Event for a live listener. Its inspection tools include Thread Paths,
+Debug Metrics, Breakpoints, Watches, Variables, Evaluate, Job Data, Edit Payload,
 Preview Inputs, Test Activity, and Mock Output. Data/tool buttons open the relevant
 editor section; real tests and mocks still require explicit submission there.
 Commands are enabled according to session state. The ribbon disappears when the
@@ -71,7 +73,8 @@ an external-side-effect sandbox or an automatic rollback mechanism. Independent
 tests do not inherit a paused group's database transaction or lock context; use
 normal flow stepping to test those lifecycles.
 
-Single-activity tests default to a ten-second timeout. A timeout cannot guarantee
+Single-activity tests default to a ten-second timeout. Set **Run-once timeout**
+between 0.1 and 60 seconds. A timeout cannot guarantee
 cancellation of work already submitted to a provider or blocking vendor driver.
 Mocks bypass the activity, not the surrounding group's execution semantics.
 Input overrides apply to configuration-driven activity fields; special task or

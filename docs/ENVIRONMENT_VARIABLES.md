@@ -11,7 +11,7 @@ container image.
 
 | Variable | Default | Scope and purpose |
 |---|---|---|
-| `MINA_PORT` | `8787` | Backend HTTP port used by `run_sidecar.py`. Studio normally assigns this automatically. |
+| `MINA_PORT` | `8787` | Backend HTTP port used by `run_sidecar.py`. Installed Studio requests port `0` so the operating system binds an available loopback port. |
 | `MINA_LOG_LEVEL` | `info` | Uvicorn process log level, for example `debug`, `info`, `warning`, or `error`. |
 | `MINA_DATA_DIR` | `backend/data` | Runtime data root for projects, SAP TID files, and default project logs. |
 | `MINA_RUNTIME_LOG_DIR` | `<data-dir>/logs` | Process-wide fallback log root when `runtime.logDirectory` is blank. |

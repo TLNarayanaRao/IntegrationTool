@@ -37,7 +37,7 @@ frontend\release\MINAStudio-2.4.0-Setup.exe
 
 `-Version` is injected into Electron Builder at build time; `package.json` is not edited. It must be a semantic version. CI can set `$env:MINA_VERSION = '2.4.0'` and run `npm run desktop:installer` without passing the argument. When neither is supplied, the version in `frontend/package.json` is used as the fallback.
 
-The installer is machine-wide so different Windows users can launch Studio in parallel. Each user gets an independent local runtime port and workspace data directory under that user's application-data profile.
+The installer is machine-wide. An administrator installs it once, then each user opens MINA Studio from their own Windows session. Setup serializes installation across sessions and asks the administrator to close Studio before replacing the shared copy. For 50 or more concurrent users, follow [Shared Windows host rollout](STUDIO_MULTIUSER_WINDOWS.md).
 
 Useful development commands:
 
@@ -89,7 +89,7 @@ RFC/BAPI, transaction, lifecycle, and production certification behavior.
 
 Ensure the SDK's native library directory is on `PATH` before starting Studio. For an application-server connection, configure `ashost`, `sysnr`, `client`, `user`, and `passwd`; for a message-server/logon-group connection, configure `mshost`, `sysid`, `group`, `client`, `user`, and `passwd`. SNC connections additionally require the SNC partner name and SAP Cryptographic Library path. The Test Connection action calls `STFC_CONNECTION` and reports the native RFC error when authentication, routing, authorization, or network setup fails.
 
-After PyInstaller finishes, the build launches that exact packaged runtime on an isolated loopback port and requires a successful `/api/health` response before Electron Builder is allowed to create an installer. Installed Studio startup writes the runtime path, port, stdout, stderr, spawn errors, and exit status to `%APPDATA%\MINA Studio\logs\runtime-startup.log`. Startup errors include the log path and its latest output instead of only showing a generic readiness timeout.
+After PyInstaller finishes, the build launches that exact packaged runtime on an isolated loopback port and requires a successful `/api/health` response before Electron Builder is allowed to create an installer. Installed Studio startup writes the runtime path, bound port, stdout, stderr, spawn errors, and exit status to `%APPDATA%\MINA Studio\logs\runtime-startup.log`. Startup errors include the log path and its latest output. The Windows kernel assigns the desktop runtime port, and the Studio window authenticates to its own runtime.
 
 The Windows Studio window opens while the local runtime starts and switches to the welcome screen after the runtime passes its health check. Launching Studio again in the same Windows profile brings the existing window forward. If startup is slow, the same log records elapsed time for the startup page, runtime readiness, and Studio page load.
 

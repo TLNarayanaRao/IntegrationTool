@@ -45,7 +45,7 @@ const guides = [
  ['Data', 'PARSE_RENDER_ACTIVITIES.md'],
  ['Mapping', 'TRANSFORMATION_CAPABILITIES.md'], ['Studio', 'DEBUG_TESTING.md'], ['Studio', 'DEBUGGING.md'], ['Studio', 'execution-analytics.md'], ['Studio', 'FILE_UTILITIES.md'],
  ['Operations', 'RUNTIME_LOGGING.md'], ['Operations', 'LINUX_SETUP.md'],
- ['Deployment', 'PYTHON_EXPORT.md'], ['Deployment', 'BUILDING_AND_DISTRIBUTION.md'],
+ ['Deployment', 'PYTHON_EXPORT.md'], ['Deployment', 'BUILDING_AND_DISTRIBUTION.md'], ['Deployment', 'STUDIO_MULTIUSER_WINDOWS.md'],
  ['Deployment', 'VENDOR_DRIVERS.md'], ['Deployment', 'ENVIRONMENT_VARIABLES.md'],
  ['Connectors', 'SAP_INTEGRATION.md'], ['Connectors', 'EMS_RUN_CONNECTION_REUSE.md'],
  ['Connectors', 'KAFKA_PUBLISHING.md'], ['Connectors', 'HTTP_REST_CAPABILITIES.md'], ['Connectors', 'HTTP_REST_ACTIVITY_VERIFICATION.md'], ['Security', 'SECURITY_REVIEW_2026-09-22.md'],

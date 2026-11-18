@@ -1,6 +1,6 @@
 # Execution analytics
 
-Open **Run → Execution Analytics**, **View → Execution Analytics**, or the analytics icon in the Execution / Debug panel.
+Open **Run → Execution Analytics**, **Window → Execution Analytics**, or the analytics icon in the Execution / Debug panel.
 
 Select the current debug execution or a completed run. The window provides:
 
@@ -14,3 +14,5 @@ Select the current debug execution or a completed run. The window provides:
 Reports omit activity inputs, outputs, credentials and configuration. Timings include connector waits and retries. Subprocess durations include child execution, so summed activity times can overlap; they are not process wall time. Debug timings exclude time spent paused at breakpoints. Mocked debug steps measure the mock execution rather than a real connector call.
 
 Execution history is held in memory by the running Studio backend and retains up to 100 runs. A backend restart clears this history; export reports to retain them. Older runs captured before this feature do not contain detailed timing records. These reports describe the Studio runtime and debugger; they do not aggregate remote Control Plane agents.
+
+For a live or recently finished debug session, **Window → Debug Trace & Metrics** shows exact transition paths by workflow thread and reports both active-time and elapsed-time throughput. Use its JSON download to retain the trace and aggregate metrics together. See [Studio debugging](DEBUGGING.md#thread-paths-and-metrics).
