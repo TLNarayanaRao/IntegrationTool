@@ -590,6 +590,7 @@ details:not([open])>summary>.tree-disclosure:after {
 .xpath-function-palette label, .xpath-function-arguments { display: grid; gap: 6px; min-width: 0; }
 .xpath-function-palette :is(select,input) { min-width: 0; width: 100%; }
 .xpath-function-arguments { padding: 8px; border: 1px solid var(--line); border-radius: 5px; }
+.xpath-function-palette button[draggable="true"] { cursor: grab; }
 .xpath-prepared-expression { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 
 .jdbc-parameters label:has(select[aria-label^="Direction"]){grid-template-columns:26px minmax(80px,1fr) 76px 105px;grid-column:1/-1}.jdbc-parameters label input{width:100%;min-width:0}

@@ -46,6 +46,43 @@ test('prepared sidebar expressions preserve XPath version, quotes and XML paths'
  assert.equal(xpathFunctionExpression('count',['/orders/order'],'1.0'),'xpath1("count(/orders/order)")');
 });
 
+test('XPath catalog rows and the prepared expression button can be dragged to a target',async()=>{
+ const source=await readFile(new URL('../src/XPathFunctionPalette.tsx',import.meta.url),'utf8');
+ const component=ts.transpileModule(source.replace(/^import .*$/gm,'').replace('export default function','function'),{
+  compilerOptions:{jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2022},
+ }).outputText;
+ const all=node=>node&&typeof node==='object'?[node,...node.children.flatMap(all)]:[];
+ const render=(version,selected='',values=[])=>{
+  const states=[version,selected,values];
+  const context=vm.createContext({
+   React:{createElement:(type,props,...children)=>({type,props,children:children.flat(Infinity)})},
+   useState:()=>[states.shift(),()=>{}],useRef:()=>({current:null}),useMemo:fn=>fn(),useEffect:()=>{},
+   bundledXPathFunctions,xpathFunctionExpression,
+  });
+  vm.runInContext(component,context);
+  return all(context.XPathFunctionPalette({onSelect:()=>{}})).filter(node=>node.type==='button');
+ };
+ const drag=(button,expression)=>{
+  assert.equal(button.props.draggable,true);
+  const values=new Map();
+  const dataTransfer={setData:(format,value)=>values.set(format,value)};
+  button.props.onDragStart({dataTransfer});
+  assert.equal(dataTransfer.effectAllowed,'copy');
+  assert.equal(values.get('expression'),expression);
+  assert.equal(values.get('text/plain'),expression);
+  assert.equal(values.get('sourceType'),'function');
+ };
+ const unprepared=render('1.0');
+ drag(unprepared.find(node=>node.props.key==='count#1'),'xpath1("count()")');
+ drag(unprepared.find(node=>node.props.key==='true#0'),'xpath1("true()")');
+
+ const prepared=render('2.0','round-half-to-even#2',['/order/price','2']);
+ const expression='xpath2("round-half-to-even(/order/price, 2)")';
+ drag(prepared.find(node=>node.props.key==='round-half-to-even#2'),expression);
+ drag(prepared.find(node=>node.children.includes('Drag XPath expression to target')),expression);
+ drag(prepared.find(node=>node.props.key==='round-half-to-even#1'),'xpath2("round-half-to-even()")');
+});
+
 test('XPath builder version selection is applied to the actual saved and tested expression',()=>{
  const source=awaitSource;
  const ast=ts.createSourceFile('editor.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);

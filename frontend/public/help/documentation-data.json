@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "0e85963ce05e5dc7d513a14223131cb0ce8ad6f4dfda1eda34a8156683548656",
+  "fingerprint": "48b87e02c73801049b7811a1add474f82bc7dd67742e52867bfae3e423964947",
   "counts": {
     "activities": 104,
     "groups": 11,
@@ -88974,7 +88974,7 @@
           "blocks": [
             {
               "kind": "p",
-              "text": "The designer exposes the executable XPath 1.0/2.0 inventory with argument labels, categories and descriptions; the checked-in fallback keeps it available without a runtime request."
+              "text": "Drag a function from the XPath 1.0/2.0 catalog onto a target field to insert an editable expression. Click a function to fill its arguments before dragging a completed expression. The checked-in catalog is available offline."
             },
             {
               "kind": "code",
