@@ -49,7 +49,8 @@
     "wait-on": "latest",
     "@vitejs/plugin-react": "latest",
     "typescript": "latest",
-    "vite": "^8.3.7"
+    "vite": "^8.3.7",
+    "picomatch": "file:vendor/picomatch"
   },
   "build": {
     "appId": "io.mina.studio",
@@ -95,6 +96,7 @@
     }
   },
   "overrides": {
-    "minimatch@>=7 <11.0.1": "11.0.5"
+    "minimatch@>=7 <11.0.1": "11.0.5",
+    "picomatch": "$picomatch"
   }
 }
