@@ -73,7 +73,9 @@ async def _persist_debug_logs(state):
 async def _cancel_and_wait(task: asyncio.Task | None, timeout: float = 3.0) -> None:
     """Cancel an owned runtime task and observe its cleanup before returning."""
     if not task or task.done() or task is asyncio.current_task(): return
-    task.cancel()
+    # A caller may have signalled cancellation before releasing a connector.
+    # Do not interrupt the task again while its cleanup is already running.
+    if not task.cancelling(): task.cancel()
     try:
         await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
     except (asyncio.CancelledError, asyncio.TimeoutError):
@@ -544,7 +546,7 @@ async def _continuous_sap_event_loop(item: Project, task, activity, environment:
         configured = runtime.resolve(activity.config, {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}})
         resource = resources.get(configured.get('resourceId'))
         sap_config = {**(runtime.resolve(resource.config, {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}) if resource else {}), **configured}
-        worker_count = max(1, min(64, int(sap_config.get('maxConcurrentIdocs') or sap_config.get('maximumConnections') or 8)))
+        worker_count = max(1, min(64, int(sap_config.get('maxConcurrentIdocs') or sap_config.get('maximumConnections') or sap_config.get('connectionCount') or 8)))
     except (TypeError, ValueError):
         worker_count = 8
     retry_delay = 1.0
@@ -562,21 +564,23 @@ async def _continuous_sap_event_loop(item: Project, task, activity, environment:
             context = _listener_context(item, task, resources, properties, environment)
             delivery_id = None
             listener_key = None
+            transport = {}
             try:
                 async with receive_lock:
                     output = await runtime.execute_with_policy(activity, context)
                 diagnostics = output.pop('jcoDiagnostics', []) if isinstance(output, dict) else []
+                if isinstance(output, dict):
+                    delivery_id = output.pop('_sapDeliveryId', None)
+                    listener_key = output.pop('_sapListenerKey', None)
                 if diagnostics:
                     entries = [{'time': log_timestamp(), 'level': detail.get('level', 'INFO'), 'kind': 'connector', 'phase': detail.get('phase'), 'message': detail.get('message'), 'connector': 'SAP JCo', **{key: detail[key] for key in ('serverName', 'programId', 'gatewayHost', 'gatewayService', 'repositoryDestination', 'tidStore', 'functionName', 'connectionCount') if key in detail}, 'activityId': activity.id, 'taskId': task.id} for detail in diagnostics]
                     previous = runtime_states.get(project_id, {})
                     combined = (list(previous.get('logs', [])) + entries)[-500:]
-                    append_project_logs(project_id, item.name, entries, _project_log_directory(item, environment))
                     _publish_runtime_state(project_id, status='listening', logs=combined, environment=environment)
+                    await _write_runtime_logs(item, environment, entries)
                 if not _event_available(output):
                     await asyncio.sleep(.1)
                     continue
-                delivery_id = output.pop('_sapDeliveryId', None)
-                listener_key = output.pop('_sapListenerKey', None)
                 transport = {
                     'deliveryId': delivery_id,
                     'listenerKey': listener_key,
@@ -592,10 +596,11 @@ async def _continuous_sap_event_loop(item: Project, task, activity, environment:
                     result.logs.append({'time': log_timestamp(), 'level': 'ERROR', 'kind': 'connector', 'message': 'RFC/BAPI request completed without a Reply from RFC/BAPI activity; SAP request was rolled back.', 'activityId': activity.id, 'taskId': task.id})
                 if delivery_id and listener_key and not transport.get('completed'):
                     sap_adapter.acknowledge_idoc(listener_key, delivery_id, result.status == 'completed')
+                    transport['completed'] = True
                 previous = runtime_states.get(project_id, {})
                 combined_logs = (list(previous.get('logs', [])) + result.logs)[-500:]
-                append_project_logs(project_id, item.name, result.logs, _project_log_directory(item, environment))
                 _publish_runtime_state(project_id, status='listening', logs=combined_logs, result=result, environment=environment)
+                await _write_runtime_logs(item, environment, result.logs)
                 retry_delay = 1.0
             except asyncio.CancelledError:
                 if delivery_id and listener_key and not transport.get('completed'):
@@ -609,8 +614,8 @@ async def _continuous_sap_event_loop(item: Project, task, activity, environment:
                 entry = {'time': log_timestamp(), 'level': 'ERROR', 'kind': 'listener', 'message': f'{activity.name} worker {index} failed; retrying in {retry_delay:g} seconds: {exc}', 'activityId': activity.id, 'taskId': task.id, 'worker': index, 'deliveryId': delivery_id}
                 previous = runtime_states.get(project_id, {})
                 logs = (list(previous.get('logs', [])) + [entry])[-500:]
-                append_project_logs(project_id, item.name, [entry], _project_log_directory(item, environment))
                 _publish_runtime_state(project_id, status='listening', logs=logs, environment=environment)
+                await _write_runtime_logs(item, environment, [entry])
                 await asyncio.sleep(retry_delay)
                 retry_delay = min(30.0, retry_delay * 2)
 
@@ -621,11 +626,13 @@ async def _continuous_sap_event_loop(item: Project, task, activity, environment:
         stop.set()
         for task_handle in workers:
             if not task_handle.done(): task_handle.cancel()
-        await asyncio.gather(*workers, return_exceptions=True)
         try:
-            sap_adapter.stop_listener(sap_config)
-        except Exception:
-            pass
+            await asyncio.gather(*workers, return_exceptions=True)
+        finally:
+            try:
+                sap_adapter.stop_listener(sap_config)
+            except Exception:
+                pass
 
 def _start_continuous_listener(item: Project, task, activity, environment: str, debug_session_id: str | None = None):
     previous = active_runs.get(item.id)

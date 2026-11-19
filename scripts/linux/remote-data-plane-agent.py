@@ -28,7 +28,7 @@ VERSION = os.environ.get("AGENT_VERSION", dp.get("agent_version", "1.0.0"))
 INSTALL_ROOT = Path(os.environ.get("MINA_INSTALL_ROOT", setup_cfg.get("install_root", str(HERE.parent.parent)))).expanduser()
 ROOT = Path(os.environ.get("MINA_AGENT_ROOT", str(INSTALL_ROOT / "agent" / PLANE)))
 APP_ROOT = ROOT / "applications"; LOG_ROOT = ROOT / "logs"; APP_ROOT.mkdir(parents=True, exist_ok=True); LOG_ROOT.mkdir(parents=True, exist_ok=True)
-COMMAND = os.environ.get("MINA_RUNTIME_COMMAND", cp.get("runtime_command", "")) or f"{INSTALL_ROOT}/runtime/mina-runtime --application {{application}} --environment {{environment}}"
+COMMAND = os.environ.get("MINA_RUNTIME_COMMAND", cp.get("runtime_command", ""))
 # Generated Python archives keep their application source isolated below the
 # agent directory.  Native SAP/JMS/JDBC activities still share one platform
 # Java bridge, which lives beside ``runtime`` at the MINA installation root.
@@ -183,12 +183,21 @@ def raw_python_command(package_dir, environment):
     deployment.  An explicit MINA_PYTHON_EXECUTABLE remains available for
     installations that keep their runtime elsewhere.
     """
-    runtime_python = ROOT.parent.parent / "runtime" / ".venv" / "bin" / "python"
+    runtime_python = INSTALL_ROOT / "runtime" / ".venv" / "bin" / "python"
     executable = os.environ.get("MINA_PYTHON_EXECUTABLE") or (str(runtime_python) if runtime_python.is_file() else sys.executable)
     return [executable, "-m", "application.main", "--environment", str(environment)]
 
 def start(deployment):
-    deployment_id = deployment["id"]; stop(deployment_id)
+    deployment_id = deployment["id"]
+    stop(deployment_id)
+    try:
+        _start_instances(deployment)
+    except Exception:
+        stop(deployment_id)
+        raise
+
+def _start_instances(deployment):
+    deployment_id = deployment["id"]
     package_dir = APP_ROOT / deployment_id
     has_legacy_descriptor = (package_dir / "application" / "project.json").is_file() or (package_dir / "application" / "python" / "project.py").is_file()
     if not has_legacy_descriptor and not is_raw_python_package(package_dir):
@@ -197,14 +206,17 @@ def start(deployment):
         safe_zip_extract(blob, package_dir)
     processes = []
     enabled = json.dumps([key for key, value in (deployment.get("starterStates") or {}).items() if value != "STOPPED"])
+    workers[deployment_id] = {"processes": processes, "package": package_dir, "generation": deployment.get("runtimeGeneration")}
     for ordinal in range(int(deployment.get("desiredInstances", 1))):
         instance_id = f"{deployment_id[:8]}-{ordinal + 1}"; log = LOG_ROOT / f"{instance_id}.log"
         environment = deployment.get("environment", "local")
         if is_raw_python_package(package_dir):
             command_parts = raw_python_command(package_dir, environment)
-        else:
+        elif COMMAND:
             command = COMMAND.replace("{application}", str(package_dir / "application")).replace("{package}", str(package_dir)).replace("{environment}", str(environment)).replace("{deployment_id}", deployment_id).replace("{instance_id}", instance_id)
             command_parts = shlex.split(command)
+        else:
+            command_parts = [str(INSTALL_ROOT / "runtime/mina-runtime"), "--application", str(package_dir / "application"), "--environment", str(environment)]
         env = os.environ.copy(); env.update({"MINA_DEPLOYMENT_ID": deployment_id, "MINA_INSTANCE_ID": instance_id, "MINA_ENVIRONMENT": deployment.get("environment", "local"), "MINA_ENABLED_STARTERS": enabled})
         if not env.get("MINA_JAVA_BRIDGE_HOME") and DEFAULT_JAVA_BRIDGE_HOME.is_dir():
             env["MINA_JAVA_BRIDGE_HOME"] = str(DEFAULT_JAVA_BRIDGE_HOME)
@@ -226,18 +238,19 @@ def start(deployment):
             # keep every worker log file open for its entire lifetime.
             handle.close()
         processes.append(process)
-    workers[deployment_id] = {"processes": processes, "package": package_dir}
 
 def report(deployment, error=None):
     state = workers.get(deployment["id"]); instances=[]; logs=[]; healthy=True
     if state:
         for index, process in enumerate(state["processes"], 1):
-            alive = process.poll() is None; healthy &= alive; instance_id=f"{deployment['id'][:8]}-{index}"; log=LOG_ROOT / f"{instance_id}.log"
+            code = process.poll(); alive = code is None; healthy &= alive; instance_id=f"{deployment['id'][:8]}-{index}"; log=LOG_ROOT / f"{instance_id}.log"
+            if not alive and error is None:
+                error = f"Remote runtime instance {instance_id} exited with status {code}"
             instances.append({"id":instance_id,"ordinal":index,"pid":process.pid,"state":"RUNNING" if alive else "FAILED"})
             logs.append({"instanceId":instance_id,"lines":tail_log_lines(log, 200, MAX_REPORT_LOG_BYTES)})
-    desired = "RUNNING" if state and healthy else deployment.get("state", "DEPLOYED")
+    desired = ("RUNNING" if healthy else "FAILED") if state else deployment.get("state", "DEPLOYED")
     if error: desired="FAILED"
-    json_call("POST", f"/api/data-planes/{PLANE}/agent/deployments/{deployment['id']}/report", {"state":desired,"instances":instances,"message":error or ("Remote runtime instances started" if healthy and state else "Remote runtime pending"),"lastError":error,"health":{"status":"HEALTHY" if healthy and state else "UNHEALTHY" if state else "PENDING","message":error or "Remote agent health report"},"logs":logs})
+    json_call("POST", f"/api/data-planes/{PLANE}/agent/deployments/{deployment['id']}/report", {"state":desired,"runtimeGeneration":deployment.get("runtimeGeneration"),"instances":instances,"message":error or ("Remote runtime instances started" if healthy and state else "Remote runtime pending"),"lastError":error,"health":{"status":"HEALTHY" if healthy and state else "UNHEALTHY" if state else "PENDING","message":error or "Remote agent health report"},"logs":logs})
 
 def reconcile(deployments):
     wanted={item["id"]:item for item in deployments}
@@ -245,7 +258,11 @@ def reconcile(deployments):
         if deployment_id not in wanted or wanted[deployment_id].get("state") in {"STOPPED","UNDEPLOYED"}: stop(deployment_id)
     for deployment in deployments:
         try:
-            if deployment.get("state") in {"DEPLOYED","RUNNING"} and deployment["id"] not in workers: start(deployment)
+            state = workers.get(deployment["id"])
+            if deployment.get("state") in {"DEPLOYED", "RUNNING"} and (
+                not state or state["generation"] != deployment.get("runtimeGeneration")
+            ):
+                start(deployment)
             if deployment.get("state") in {"STOPPED","UNDEPLOYED"}: stop(deployment["id"])
             report(deployment)
         except Exception as exc:

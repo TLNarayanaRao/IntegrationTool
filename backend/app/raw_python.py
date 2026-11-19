@@ -805,7 +805,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         start = main_source.index('    # HTTP_CAPABILITY_START')
         end = main_source.index('    # HTTP_CAPABILITY_END', start) + len('    # HTTP_CAPABILITY_END')
         files['application/main.py'] = (main_source[:start]
-            + "    jobs = [receive_forever(task_id) if task_id in EVENT_STARTERS else run_task(task_id, environment_name=environment_name) for task_id in ids]\n"
+            + "    jobs = [run_starter(task_id) for task_id in ids]\n"
             + main_source[end:]).encode('utf-8')
     # A Python script task can run run.py from an extracted archive.  The
     # __main__ module also makes the .pympkg (and legacy .pyifpkg) directly executable by CPython

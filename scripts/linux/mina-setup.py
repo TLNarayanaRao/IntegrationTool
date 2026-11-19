@@ -64,7 +64,8 @@ def bundle(output):
                     continue
                 if path.suffix in source_suffixes or path == SOFTWARE / 'administrator/bin/minaadmin':
                     files.append(path)
-    files.append(SOFTWARE / 'docs/LINUX_SETUP.md')
+    files.extend(SOFTWARE / 'docs' / name for name in
+                 ('LINUX_SETUP.md', 'SAP_INTEGRATION.md', 'sap-soak-config.example.json'))
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
         for path in files:
@@ -92,8 +93,12 @@ def settings(config, role, config_file):
     env = os.environ.copy()
     env.update(environment(config))
     env.update(MINA_CONFIG_FILE=str(config_file), MINA_INSTALL_ROOT=str(root), MINA_SOURCE_ROOT=str(source), MINA_PYTHON=python)
+    bridge = root / 'java-bridge/build'
+    previous_bridge = source / 'java-bridge/build'
+    if not (bridge / 'classes').is_dir() and (previous_bridge / 'classes').is_dir():
+        bridge = previous_bridge
     env.update(MINA_DRIVER_HOME=get(config, 'runtime', 'driver_home', str(root / 'drivers')),
-               MINA_JAVA_BRIDGE_HOME=get(config, 'runtime', 'java_bridge_home', str(source / 'java-bridge/build')),
+               MINA_JAVA_BRIDGE_HOME=get(config, 'runtime', 'java_bridge_home') or str(bridge),
                MINA_PYPI_INDEX_URL=get(config, 'setup', 'pip_index_url'), MINA_WHEELHOUSE=get(config, 'setup', 'wheelhouse'),
                MINA_INSTALL_DB2=get(config, 'runtime', 'install_db2', 'false'))
     env['MINA_BUILD_JAVA_BRIDGE'] = get(config, 'runtime', 'build_java_bridge', 'false')
@@ -229,7 +234,7 @@ def control_plane(config, config_file, action, root, source, env):
     if config.getboolean('setup', 'start', fallback=True):
         bash(launcher, env, 'start')
         host = get(config, 'control-plane', 'host', '0.0.0.0')
-        host = '127.0.0.1' if host in ('0.0.0.0', '::') else host
+        host = {'0.0.0.0': '127.0.0.1', '::': '::1'}.get(host, host)
         host = f'[{host}]' if ':' in host else host
         api = Api(f'http://{host}:{get(config,"control-plane","port")}', required(config, 'control-plane', 'api_key'))
         for attempt in range(30):

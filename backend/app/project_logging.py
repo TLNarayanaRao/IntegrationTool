@@ -13,8 +13,32 @@ from .store import DATA_DIR, safe_component
 
 DEFAULT_MAX_BYTES = 10 * 1024 * 1024
 DEFAULT_BACKUP_COUNT = 4
-_handlers: dict[tuple[str, str], RotatingFileHandler] = {}
 _lock = RLock()
+
+
+class ProjectLogHandler(RotatingFileHandler):
+    def append_lines(self, lines: list[str]) -> None:
+        if self.stream is None:
+            self.stream = self._open()
+        self.stream.seek(0, os.SEEK_END)
+        size = self.stream.tell()
+        pending: list[str] = []
+        for text in lines:
+            line = text + '\n'
+            length = len(text.encode('utf-8')) + len(os.linesep)
+            if size and size + length >= self.maxBytes and os.path.isfile(self.baseFilename):
+                self.stream.write(''.join(pending))
+                pending.clear()
+                self.doRollover()
+                self.stream = self._open()
+                size = 0
+            pending.append(line)
+            size += length
+        self.stream.write(''.join(pending))
+        self.flush()
+
+
+_handlers: dict[tuple[str, str], ProjectLogHandler] = {}
 
 
 def log_settings() -> tuple[int, int]:
@@ -47,7 +71,7 @@ def project_log_path(project_id: str, project_name: str = "", configured_directo
     return target
 
 
-def _handler(project_id: str, project_name: str = "", configured_directory: str = "") -> RotatingFileHandler:
+def _handler(project_id: str, project_name: str = "", configured_directory: str = "") -> ProjectLogHandler:
     with _lock:
         path = project_log_path(project_id, project_name, configured_directory)
         cache_key = (project_id, str(path))
@@ -56,8 +80,7 @@ def _handler(project_id: str, project_name: str = "", configured_directory: str 
             return existing
         path.parent.mkdir(parents=True, exist_ok=True)
         max_bytes, backups = log_settings()
-        handler = RotatingFileHandler(path, maxBytes=max_bytes, backupCount=backups, encoding="utf-8", delay=True)
-        handler.setFormatter(logging.Formatter("%(message)s"))
+        handler = ProjectLogHandler(path, maxBytes=max_bytes, backupCount=backups, encoding="utf-8", delay=True)
         _handlers[cache_key] = handler
         return handler
 
@@ -65,15 +88,17 @@ def _handler(project_id: str, project_name: str = "", configured_directory: str 
 def append_project_logs(project_id: str, project_name: str, entries: list[dict], configured_directory: str = "") -> None:
     if not entries:
         return
-    handler = _handler(project_id, project_name, configured_directory)
+    lines = [json.dumps({"projectId": project_id, "project": project_name, **entry},
+                        ensure_ascii=False, default=str, separators=(",", ":")) for entry in entries]
     with _lock:
-        for supplied in entries:
-            entry = {"projectId": project_id, "project": project_name, **supplied}
-            record = logging.LogRecord(
-                name=f"mina.{project_id}", level=getattr(logging, str(entry.get("level", "INFO")).upper(), logging.INFO),
-                pathname="", lineno=0, msg=json.dumps(entry, ensure_ascii=False, default=str, separators=(",", ":")), args=(), exc_info=None,
-            )
-            handler.emit(record)
+        handler = _handler(project_id, project_name, configured_directory)
+        try:
+            handler.append_lines(lines)
+        except (OSError, UnicodeError):
+            # Logging failures keep logging's standard reporting behavior.
+            record = logging.LogRecord(f"mina.{project_id}", logging.ERROR, "", 0,
+                                       "Unable to persist project log batch", (), None)
+            handler.handleError(record)
 
 
 def close_project_log_handlers(project_id: str | None = None) -> None:

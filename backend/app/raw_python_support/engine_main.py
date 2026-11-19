@@ -95,9 +95,15 @@ def _listener_context(project, task, resources, properties, environment: str) ->
 async def _receive_forever(project, task, event, environment: str) -> None:
     resources = {item.id: item for item in project.resources}
     properties = _properties(project, environment)
-    cfg = RUNTIME.resolve(event.config, {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}})
+    context = {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}
+    cfg = RUNTIME.resolve(event.config, context)
     sap = event.type == 'sap'
-    workers = max(1, min(64, int(cfg.get('maxConcurrentIdocs') or cfg.get('maximumConnections') or 8))) if sap else 1
+    resource = resources.get(cfg.get('resourceId')) if sap else None
+    sap_cfg = {**RUNTIME.resolve(resource.config, context), **cfg} if resource else cfg
+    try:
+        workers = max(1, min(64, int(sap_cfg.get('maxConcurrentIdocs') or sap_cfg.get('maximumConnections') or sap_cfg.get('connectionCount') or 8))) if sap else 1
+    except (TypeError, ValueError):
+        workers = 8
     receive_lock = asyncio.Lock()
 
     async def worker(index: int):
@@ -124,9 +130,14 @@ async def _receive_forever(project, task, event, environment: str) -> None:
                                  'invocationProtocol': output.get('invocationProtocol')}
                 result = await RUNTIME.run(task, output, resources, properties, event.id, project,
                                            event_output=output, transport=transport)
-                _record(result)
                 if delivery_id and listener_key and not transport.get('completed'):
-                    sap_adapter.acknowledge_idoc(listener_key, delivery_id, result.status == 'completed')
+                    protocol = str(transport.get('invocationProtocol') or 'Request/Reply').lower().replace('-', '').replace('/', '')
+                    needs_reply = transport['operation'] == 'rfc_bapi_listener' and protocol in ('requestreply', 'srfc')
+                    sap_adapter.acknowledge_idoc(listener_key, delivery_id, result.status == 'completed' and not needs_reply)
+                    transport['completed'] = True
+                    if needs_reply and result.status == 'completed':
+                        LOG.error('RFC/BAPI request completed without a Reply from RFC/BAPI activity and was rolled back')
+                _record(result)
                 if event.type == 'timer':
                     repeat = bool(cfg.get('repeatEnabled'))
                     cron = str(cfg.get('scheduleMode') or '').lower() == 'cron'
@@ -152,8 +163,6 @@ async def _receive_forever(project, task, event, environment: str) -> None:
         await asyncio.gather(*(worker(index) for index in range(workers)))
     finally:
         if sap:
-            resource = resources.get(cfg.get('resourceId'))
-            sap_cfg = {**RUNTIME.resolve(resource.config, {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}), **cfg} if resource else cfg
             try: sap_adapter.stop_listener(sap_cfg)
             except Exception: LOG.exception('SAP listener shutdown failed')
 

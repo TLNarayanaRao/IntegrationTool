@@ -151,7 +151,56 @@ backend\.venv\Scripts\python.exe scripts\sap-production-soak.py `
 
 Set `terminateWorkerEveryCalls` to a positive number for controlled worker-JVM
 failure injection. Run separate 24–72 hour profiles for sRFC, transactional
-BAPI, tRFC/qRFC IDoc posting, and inbound listeners. The generated report holds
+BAPI and tRFC/qRFC IDoc posting. To qualify the 10-minute outbound target, set
+`durationSeconds` to `600` and add `--target-calls 100000`. The report fails if
+the 100,000th successful call falls after the deadline or a call fails. The report holds
 throughput, failures, latency percentiles, and worker process IDs; correlate
 those IDs with OS/JVM monitoring and SAP SM58/SMQ1/SMQ2 evidence. Never commit
 the local configuration because it contains credentials.
+
+### Qualifying SAP IDoc Listener throughput
+
+The listener splits SAP packages by document number. Each callback waits for
+all document workflows in the package. MINA reports a failed callback if a
+document fails or if queue admission and workflow acknowledgements exceed the
+configured `ackTimeoutSeconds`. SAP may replay the package, so use the
+document number and business context for idempotency at downstream systems.
+The bridge records its first inbound IDoc package and every thousandth
+package thereafter, plus callback errors and startup diagnostics.
+
+The 10-minute target requires at least 166.7 completed documents per second.
+On approved QA, send 100,000 unique IDocs with representative sizes from SAP
+and verify downstream completions and SAP transaction confirmations within 600
+seconds. Include the real downstream activities. Compare SAP packaging, RFC
+registration count (`maximumConnections`), MINA workflow concurrency
+(`maxConcurrentIdocs`, defaulting to the connection count), gateway limits,
+disk latency, and the slowest downstream activity. Use one active listener per
+registered Program ID on a host. Benchmark RFC/BAPI operations separately in
+calls per second and distinguish them from IDocs per second. At eight workers,
+sustaining the IDoc target requires a mean worker time below 48 ms even before
+accounting for idle time.
+
+The replay test exercises Listener → Parser → End with synthetic bridge
+events and checks unique document numbers, segment values, and acknowledgements.
+With backend dependencies installed, set `MINA_SAP_REPLAY_RECORDS=100000` and
+run `python -m unittest discover -s backend/tests -p test_sap_idoc_throughput.py`
+with `backend` on `PYTHONPATH`. It covers Studio Run and both Python exports.
+The Java bridge test takes the document count as an argument and checks package
+splitting, transaction duplicates, rollback, and restart behavior. Live SAP
+gateway, native library, network, and downstream timings require the QA run.
+
+The Windows development workspace recorded these synthetic results on
+November 19, 2026. Each test checked 100,000 documents.
+
+| Test path | Elapsed |
+| --- | ---: |
+| Java package splitting and TID storage | 74.19 s |
+| Studio Run with rotating project logs | 342.91 s |
+| Python engine archive | 88.97 s |
+| Direct Python archive | 50.77 s |
+
+Keep the TID properties file and its sibling `.committed` directory together.
+The bridge reads committed entries from older properties files and writes a
+marker for each new committed, unconfirmed TID. SAP confirmation removes the
+marker. Preserve both paths during upgrades and wait for outstanding
+transactions to confirm before reverting to a bridge that predates the markers.

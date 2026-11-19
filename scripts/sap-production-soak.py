@@ -30,10 +30,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Qualify SAP JCo calls using the exact target JCo/ECC environment")
     parser.add_argument("--config", required=True, type=Path, help="Operator-owned JSON configuration")
     parser.add_argument("--output", type=Path, default=Path("sap-soak-report.json"))
+    parser.add_argument("--target-calls", type=int, default=0, help="Require this many successes within durationSeconds")
     args = parser.parse_args()
+    if args.target_calls < 0:
+        parser.error('--target-calls must be nonnegative')
     specification = json.loads(args.config.read_text(encoding="utf-8"))
     connection = dict(specification.get("connection") or {})
     operation = str(specification.get("operation") or "invoke_rfc_bapi")
+    if operation in {'idoc_listener', 'rfc_bapi_listener', 'reply_rfc_bapi'}:
+        parser.error('Inbound SAP qualification needs a deployed listener and an SAP-side sender. This runner invokes activities directly.')
     activity = {**connection, **(specification.get("activity") or {}), "mode": "external"}
     payload = specification.get("payload") or {}
     duration = max(1, int(specification.get("durationSeconds") or 60))
@@ -44,12 +49,14 @@ def main() -> int:
     latencies = deque(maxlen=10000)
     errors = deque(maxlen=1000)
     completed = failed = 0
+    target_elapsed = None
     latency_total = 0.0
     latency_min, latency_max = float('inf'), 0.0
-    started_at, deadline = time.time(), time.monotonic() + duration
+    started_at, started_mono = time.time(), time.monotonic()
+    deadline = started_mono + duration
 
     def invoke_once() -> None:
-        nonlocal completed, failed, latency_total, latency_min, latency_max
+        nonlocal completed, failed, latency_total, latency_min, latency_max, target_elapsed
         began = time.perf_counter()
         try:
             adapter.execute(operation, activity, payload)
@@ -60,6 +67,8 @@ def main() -> int:
                 latency_min = min(latency_min, elapsed)
                 latency_max = max(latency_max, elapsed)
                 count = completed
+                if count == args.target_calls:
+                    target_elapsed = time.monotonic() - started_mono
             if inject_every and count % inject_every == 0:
                 with adapter._state_lock:
                     worker = next((item for pool in adapter.client_pools.values() for item in pool if item.process.poll() is None), None)
@@ -89,7 +98,8 @@ def main() -> int:
             "p50": percentile(latencies, .50), "p95": percentile(latencies, .95), "p99": percentile(latencies, .99), "maximum": latency_max},
         "quantileSampleLimit": 10000, "quantileScope": "Latest successful calls; min/mean/max cover all successful calls",
         "workerProcessIds": worker_pids, "failureInjectionEveryCalls": inject_every, "errors": list(errors),
-        "errorSampleLimit": 1000, "passed": completed > 0 and failed == 0,
+        "errorSampleLimit": 1000, "targetCalls": args.target_calls, "targetCompletionSeconds": target_elapsed,
+        "passed": completed > 0 and failed == 0 and (not args.target_calls or target_elapsed is not None and target_elapsed <= duration),
     }
     args.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(f"SAP qualification report: {args.output.resolve()}")

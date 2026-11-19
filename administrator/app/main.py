@@ -662,6 +662,10 @@ def agent_deployment_report(plane_id: str, deployment_id: str, request: Request,
     require_technology(request)
     deployments = read_json(DEPLOYMENTS_FILE, []); item = next((value for value in deployments if value.get("id") == deployment_id and (value.get("dataPlaneId") or value.get("machine")) == plane_id), None)
     if not item: raise HTTPException(404, "Deployment not found")
+    if ('runtimeGeneration' in payload and payload['runtimeGeneration'] != item.get('runtimeGeneration')) or (
+        item.get('state') in {'STOPPED', 'UNDEPLOYED'} and payload.get('state') != item['state']
+    ):
+        return item  # A heartbeat from the previous process must not undo a lifecycle command.
     for key in ("state", "instances", "message", "lastError"):
         if key in payload: item[key] = payload[key]
     if isinstance(payload.get("health"), dict): item["healthReport"] = payload["health"]
@@ -1254,7 +1258,10 @@ def deployment_package_path(item: dict) -> Path:
 def runtime_arguments(item: dict, instance_id: str) -> list[str] | str:
     package_path = deployment_package_path(item)
     if (item.get("pythonSource") or {}).get("entrypoint") == "application/main.py":
-        return [env_value('MINA_PYTHON_EXECUTABLE') or sys.executable, "-m", "application.main", "--environment", item["environment"]]
+        executable = env_value('MINA_PYTHON_EXECUTABLE')
+        if not executable and getattr(sys, 'frozen', False):
+            raise HTTPException(409, 'Install the local runtime or configure MINA_PYTHON_EXECUTABLE to run Python archives on this Control Plane.')
+        return [executable or sys.executable, "-m", "application.main", "--environment", item["environment"]]
     command = RUNTIME_COMMAND
     for marker, value in {"{application}": str(package_path / "application"), "{package}": str(package_path), "{environment}": item["environment"], "{deployment_id}": item["id"], "{instance_id}": instance_id}.items():
         command = command.replace(marker, value)
@@ -1285,7 +1292,7 @@ def start_instances(item: dict) -> None:
             ('MINA_DEPLOYMENT_ID', 'MINA_INSTANCE_ID', 'MINA_ENVIRONMENT', 'MINA_APPLICATION_DIR', 'MINA_ENABLED_STARTERS')}))
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW") else 0
         with log_path.open("ab") as log_handle:
-            process = subprocess.Popen(runtime_arguments(item, instance_id), cwd=deployment_package_path(item), env=environment, stdout=log_handle, stderr=subprocess.STDOUT, creationflags=flags)
+            process = subprocess.Popen(runtime_arguments(item, instance_id), cwd=deployment_package_path(item), env=environment, stdout=log_handle, stderr=subprocess.STDOUT, creationflags=flags, start_new_session=os.name == 'posix')
         PROCESS_HANDLES[instance_id] = process
         item["instances"].append({"id": instance_id, "ordinal": ordinal + 1, "pid": process.pid, "ownerRunId": RUN_ID, "state": "RUNNING", "startedAt": now(), "stoppedAt": None, "log": str(log_path)})
 
@@ -1305,11 +1312,18 @@ def terminate_instances(item: dict, force: bool = False) -> None:
         pid = int(instance.get("pid") or 0)
         process = PROCESS_HANDLES.pop(instance.get("id", ""), None)
         if process and process.poll() is None:
-            process.kill() if force else process.terminate()
+            def send_signal(kill):
+                if os.name == 'posix':
+                    try: os.killpg(process.pid, signal.SIGKILL if kill else signal.SIGTERM)
+                    except ProcessLookupError: pass
+                else:
+                    process.kill() if kill else process.terminate()
+            send_signal(force)
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                process.kill(); process.wait(timeout=5)
+                send_signal(True)
+                process.wait(timeout=5)
         elif instance.get("ownerRunId") == RUN_ID and process_alive(pid):
             try:
                 os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM) if force else signal.SIGTERM)
@@ -1382,14 +1396,14 @@ def lifecycle(deployment_id: str, action: str, request: Request):
     if item.get("state") not in ALLOWED_ACTIONS[action]:
         raise HTTPException(409, f"Cannot {action} a deployment in {item.get('state')} state")
     try:
-        if action in {"stop", "kill", "restart"} and item.get("state") == "RUNNING":
+        if action in {"stop", "kill", "restart"} and item.get("state") == "RUNNING" and (item.get('dataPlaneId') or item.get('machine')) == 'localhost':
             terminate_instances(item, action == "kill")
         if action in {"start", "restart"}:
             if item.get("machine") == "localhost":
                 start_instances(item)
                 item.update(state="RUNNING", message=f"{len(item['instances'])} runtime instance(s) started", lastError=None)
             else:
-                item.update(state="RUNNING", message="Start requested; awaiting the remote data-plane agent", lastError=None)
+                item.update(state="RUNNING", message="Start requested; awaiting the remote data-plane agent", lastError=None, runtimeGeneration=uuid4().hex)
         elif action in {"stop", "kill"}:
             item.update(state="STOPPED", message="Stop requested; awaiting the remote data-plane agent")
         else:
@@ -1526,6 +1540,7 @@ def update_deployment_configuration(deployment_id: str, payload: DeploymentConfi
     if payload.healthCheckEnabled is not None: item["healthCheckEnabled"] = payload.healthCheckEnabled
     save_deployment_secrets(deployment_id, secret_values)
     if was_running and payload.redeploy and (item.get("dataPlaneId") or item.get("machine")) == "localhost": start_instances(item)
+    elif was_running and payload.redeploy: item['runtimeGeneration'] = uuid4().hex
     item["message"] = "Configuration saved and redeployed" if payload.redeploy else "Configuration saved; redeploy pending"
     write_json(DEPLOYMENTS_FILE, deployments)
     caller = identity(request); snapshot = {"environment":environment, "instances":item["desiredInstances"], "healthCheckEnabled":item.get("healthCheckEnabled", True), "configuredSecretKeys":sorted(secret_values)}
@@ -1544,6 +1559,7 @@ def starter_lifecycle(deployment_id: str, task_id: str, action: str, request: Re
     if not package or task_id not in (package.get("starterTaskIds") or []): raise HTTPException(404, "Starter Task not found in this deployment package")
     item.setdefault("starterStates", {})[task_id] = "STARTED" if action == "start" else "STOPPED"
     if item.get("state") == "RUNNING" and (item.get("dataPlaneId") or item.get("machine")) == "localhost": terminate_instances(item); start_instances(item)
+    elif item.get('state') == 'RUNNING': item['runtimeGeneration'] = uuid4().hex
     item.update(updatedAt=now(), message=f"Starter {task_id} {action}ed")
     write_json(DEPLOYMENTS_FILE, deployments)
     caller = identity(request); record_revision("deployment", deployment_id, f"starter.{action}", {"starterStates":item["starterStates"]}, actor=caller["name"], team_id=item.get("teamId", TECHNOLOGY_TEAM_ID), detail=task_id)
@@ -1573,7 +1589,13 @@ def deployment_logs(deployment_id: str, request: Request, lines: int = 300):
     for instance in item.get("instances", []):
         log_path = Path(instance.get("log", ""))
         if log_path.exists() and LOGS_DIR in log_path.resolve().parents:
-            output.append({"instanceId": instance["id"], "lines": log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-min(max(lines, 1), 2000):]})
+            with log_path.open('rb') as stream:
+                stream.seek(0, os.SEEK_END)
+                offset = max(0, stream.tell() - 2 * 1024 * 1024)
+                stream.seek(offset)
+                tail = stream.read(2 * 1024 * 1024).decode('utf-8', errors='replace')
+                if offset: tail = tail.partition('\n')[2]
+            output.append({"instanceId": instance["id"], "lines": tail.splitlines()[-min(max(lines, 1), 2000):]})
     return output
 
 

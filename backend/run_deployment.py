@@ -13,6 +13,7 @@ import importlib.util
 import json
 import os
 import sys
+from threading import Lock
 from pathlib import Path
 from app.library_overrides import activate, diagnostic
 activate()
@@ -87,10 +88,14 @@ async def run_deployment(application: Path, environment: str) -> None:
     # The Control Plane redirects stdout/stderr to the per-instance log. Also
     # persist structured records using the same bounded logger as Studio and
     # mirror them to stdout so deployment logs work for packaged workers.
+    stdout_lock = Lock()
+
     def record_logs(project_id, project_name, entries, configured_directory=""):
         persist_logs(project_id, project_name, entries, configured_directory)
-        for entry in entries or []:
-            print(json.dumps({"projectId": project_id, "project": project_name, **entry}, ensure_ascii=False, default=str), flush=True)
+        if entries:
+            lines = '\n'.join(json.dumps({"projectId": project_id, "project": project_name, **entry}, ensure_ascii=False, default=str) for entry in entries)
+            with stdout_lock:
+                print(lines, flush=True)
 
     runtime_api.append_project_logs = record_logs
     resources = {resource.id: resource for resource in project.resources}

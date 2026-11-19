@@ -348,6 +348,19 @@ def _java_command(config: dict[str, Any], classpath: str, descriptor: str, famil
     ]
 
 
+def _java_environment(config: dict[str, Any], family: str) -> dict[str, str]:
+    environment = os.environ.copy()
+    if family == 'sap':
+        directories = [str(path) for path in driver_directories(config, family) if path.is_dir()]
+        # java.library.path locates JCo itself. The native linker must also
+        # be able to find companion libraries, including SNC libraries.
+        variable = 'PATH' if os.name == 'nt' else 'LD_LIBRARY_PATH'
+        supplied = environment.get(variable)
+        if directories:
+            environment[variable] = os.pathsep.join([*directories, *([supplied] if supplied else [])])
+    return environment
+
+
 def default_driver_home() -> Path:
     override = os.environ.get("MINA_DRIVER_HOME") or os.environ.get("FABRIC_DRIVER_HOME")
     if override:
@@ -401,13 +414,7 @@ def _escape_property(value: Any) -> str:
 
 def invoke(command: str, config: dict[str, Any], values: dict[str, Any] | None = None, *, family: str, timeout: float | None = None) -> dict[str, Any]:
     classpath, jars = _classpath(config, family)
-    process_env = os.environ.copy()
-    if family == "sap":
-        # JCo loads sapjco3.dll/lib sapjco3.so natively; keep the licensed
-        # driver outside the application and make its directory discoverable.
-        native_directories = [str(path) for path in driver_directories(config, family) if path.exists()]
-        if native_directories:
-            process_env["PATH"] = os.pathsep.join(native_directories + [process_env.get("PATH", "")])
+    process_env = _java_environment(config, family)
     properties = {"command": command, **(values or {})}
     descriptor = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".properties", delete=False)
     process = None
@@ -455,10 +462,7 @@ def invoke(command: str, config: dict[str, Any], values: dict[str, Any] | None =
 
 def start_sap_listener(config: dict[str, Any], values: dict[str, Any]) -> SapJcoListener:
     classpath, _ = _classpath(config, "sap")
-    process_env = os.environ.copy()
-    native_directories = [str(path) for path in driver_directories(config, "sap") if path.exists()]
-    if native_directories:
-        process_env["PATH"] = os.pathsep.join(native_directories + [process_env.get("PATH", "")])
+    process_env = _java_environment(config, 'sap')
     descriptor = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".properties", delete=False)
     with descriptor:
         for key, value in {"command": "sap.listen", **values}.items():
@@ -478,9 +482,7 @@ def start_sap_listener(config: dict[str, Any], values: dict[str, Any]) -> SapJco
 
 def start_sap_worker(config: dict[str, Any], values: dict[str, Any]) -> SapJcoWorker:
     classpath, jars = _classpath(config, "sap")
-    process_env = os.environ.copy()
-    native_directories = [str(path) for path in driver_directories(config, "sap") if path.exists()]
-    if native_directories: process_env["PATH"] = os.pathsep.join(native_directories + [process_env.get("PATH", "")])
+    process_env = _java_environment(config, 'sap')
     descriptor = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".properties", delete=False)
     with descriptor:
         for key, value in {"command":"sap.worker", **values}.items():

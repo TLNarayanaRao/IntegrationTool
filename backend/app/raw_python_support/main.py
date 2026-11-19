@@ -32,7 +32,7 @@ async def run_application(environment_name: str = DEFAULT_ENVIRONMENT):
         else:
             connectors.acknowledge_jms(listener_key, delivery_id, success)
     # ACKNOWLEDGEMENT_CAPABILITY_END
-    async def receive_forever(task_id: str):
+    async def receive_forever(task_id: str, receive_lock: asyncio.Lock | None):
         activity_id, kind, config, name = EVENT_STARTERS[task_id]
         delay = 1.0
         while True:
@@ -40,7 +40,11 @@ async def run_application(environment_name: str = DEFAULT_ENVIRONMENT):
             context = Context({}, properties, resources, environment_name=environment_name)
             delivery_id = listener_key = technology = None
             try:
-                output = await execute_with_policy(kind, config, context, activity_id, name)
+                if receive_lock is None:
+                    output = await execute_with_policy(kind, config, context, activity_id, name)
+                else:
+                    async with receive_lock:
+                        output = await execute_with_policy(kind, config, context, activity_id, name)
                 delay = 1.0
                 available = output is not None and (not isinstance(output, dict) or
                     bool(output.get('scheduledTime') or output.get('count') or output.get('received') or output.get('messages') or output.get('body') is not None))
@@ -60,7 +64,12 @@ async def run_application(environment_name: str = DEFAULT_ENVIRONMENT):
                                                   'technology': technology, 'functionName': output.get('functionName'), 'completed': False})
                     await TASKS[task_id](context, start_after=activity_id, event_output=output)
                     if delivery_id and listener_key and not context.transport.get('completed'):
-                        await acknowledge_delivery(technology, listener_key, delivery_id, True)
+                        protocol = str(output.get('invocationProtocol') or 'Request/Reply').lower().replace('-', '').replace('/', '')
+                        needs_reply = technology == 'sap' and config.get('operation') == 'rfc_bapi_listener' and protocol in ('requestreply', 'srfc')
+                        await acknowledge_delivery(technology, listener_key, delivery_id, not needs_reply)
+                        context.transport['completed'] = True
+                        if needs_reply:
+                            logging.error('Starter %s completed without a Reply from RFC/BAPI activity and was rolled back', task_id)
                 else:
                     await asyncio.sleep(.1)
                 if kind == 'sap' and isinstance(output, dict) and output.get('mock'):
@@ -76,7 +85,8 @@ async def run_application(environment_name: str = DEFAULT_ENVIRONMENT):
                         await asyncio.sleep(max(1, float(resolve(config.get('interval') or 1, context)) * unit))
             except asyncio.CancelledError:
                 if delivery_id and listener_key and not context.transport.get('completed'):
-                    await acknowledge_delivery(technology, listener_key, delivery_id, False)
+                    try: await acknowledge_delivery(technology, listener_key, delivery_id, False)
+                    except Exception: logging.exception('%s delivery rejection failed', technology)
                 raise
             except Exception:
                 if delivery_id and listener_key and not context.transport.get('completed'):
@@ -85,10 +95,32 @@ async def run_application(environment_name: str = DEFAULT_ENVIRONMENT):
                 logging.exception('Starter %s failed; retrying in %s seconds', task_id, delay)
                 await asyncio.sleep(delay)
                 delay = min(30.0, delay * 2)
+
+    async def run_starter(task_id: str):
+        if task_id not in EVENT_STARTERS:
+            return await run_task(task_id, environment_name=environment_name)
+        _, kind, config, _ = EVENT_STARTERS[task_id]
+        if kind != 'sap' or config.get('operation') != 'idoc_listener':
+            return await receive_forever(task_id, None)
+        properties, resources = environment(environment_name)
+        context = Context({}, properties, resources, environment_name=environment_name)
+        resource = resources.get(str(resolve(config.get('resourceId'), context) or ''))
+        settings = {**(resource.config if resource else {}), **config}
+        source = str(resolve(settings.get('messagingSource'), context) or '').strip().lower().replace(' ', '')
+        if source not in {'', 'nomessaging', 'direct', 'sapjcorfc/idoc_inbound_asynchronous'}:
+            return await receive_forever(task_id, None)
+        try:
+            workers = max(1, min(64, int(resolve(settings.get('maxConcurrentIdocs'), context) or
+                                         resolve(settings.get('maximumConnections'), context) or
+                                         resolve(settings.get('connectionCount'), context) or 8)))
+        except (TypeError, ValueError):
+            workers = 8
+        receive_lock = asyncio.Lock()
+        await asyncio.gather(*(receive_forever(task_id, receive_lock) for _ in range(workers)))
+
     # HTTP_CAPABILITY_START
     http_ids = [task_id for task_id in ids if task_id in EVENT_STARTERS and EVENT_STARTERS[task_id][1] in {'http_listener', 'rest', 'soap'}]
-    jobs = [receive_forever(task_id) if task_id in EVENT_STARTERS else run_task(task_id, environment_name=environment_name)
-            for task_id in ids if task_id not in http_ids]
+    jobs = [run_starter(task_id) for task_id in ids if task_id not in http_ids]
     if http_ids:
         from .inbound_http import serve_http
         jobs.append(serve_http(http_ids, environment_name))

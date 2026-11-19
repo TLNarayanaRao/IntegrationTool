@@ -1,10 +1,16 @@
 from __future__ import annotations
 import hashlib, json, os, re, uuid, time, threading
+from functools import lru_cache
 from xml.etree import ElementTree as ET
 from typing import Any
 from xml.sax.saxutils import escape
 from .xml_names import legacy_name
 from .java_bridge import JavaBridgeError, invoke as invoke_java, start_sap_listener, start_sap_worker, SapJcoListener, SapJcoWorker
+
+@lru_cache(maxsize=16)
+def _idoc_schema_root(schema: str) -> ET.Element:
+    """Share immutable schema trees across documents using the same XSD."""
+    return ET.fromstring(schema)
 
 class _IdocMapping(dict):
     """Serialize one schema branch; retain historic paths as lookup-only aliases."""
@@ -95,7 +101,7 @@ class SapAdapter:
             schema = cls._schema(str(cfg.get('idocType') or selected.get('idocType') or 'IDoc'),
                                  '', '', selected['segments'], selected.get('fields'))
         if not isinstance(schema, str) or not schema.strip(): return value
-        try: root = ET.fromstring(schema)
+        try: root = _idoc_schema_root(schema)
         except ET.ParseError: return value
         local = lambda name: name.rsplit(':', 1)[-1]
         types = {node.get('name'): node for node in root if cls._xml_name(node.tag) == 'complexType'}
@@ -332,7 +338,7 @@ class SapAdapter:
         if not schema or not isinstance(schema, str):
             return [], []
         try:
-            root = ET.fromstring(schema)
+            root = _idoc_schema_root(schema)
         except ET.ParseError:
             return [], []
         xs = 'http://www.w3.org/2001/XMLSchema'

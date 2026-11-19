@@ -1,11 +1,14 @@
 import asyncio
 import io
 import json
+import os
+import runpy
+import subprocess
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from administrator.agent.bootstrap import extract_python_package
 from administrator.agent.main import PythonAgent, Settings
@@ -22,6 +25,49 @@ def package_bytes(*, unsafe=False):
 
 
 class PythonAgentTests(unittest.TestCase):
+    def test_linux_agent_handles_spaced_paths_restart_and_failed_worker(self):
+        with tempfile.TemporaryDirectory(prefix='mina linux ') as folder:
+            root = Path(folder)
+            ini = root / 'agent.ini'
+            ini.write_text('[control-plane]\nadmin_key=unit-test\n[data-plane]\nid=qa\n', encoding='utf-8')
+            environment = {'MINA_CONFIG_FILE': str(ini), 'MINA_INSTALL_ROOT': str(root),
+                           'MINA_AGENT_ROOT': str(root / 'external state'), 'MINA_RUNTIME_COMMAND': ''}
+            with patch.dict(os.environ, environment):
+                loader = runpy.run_path(str(Path(__file__).parents[2] / 'scripts/linux/remote-data-plane-agent.py'))
+                agent = loader['start'].__globals__
+                deployment = {'id': 'qa-1', 'state': 'RUNNING', 'environment': 'qa', 'runtimeGeneration': 'one'}
+                application = agent['APP_ROOT'] / deployment['id'] / 'application'
+                application.mkdir(parents=True)
+                (application / 'project.json').touch()
+                first, second = Mock(pid=1234), Mock(pid=1235)
+                first.poll.return_value = second.poll.return_value = None
+                with patch.object(subprocess, 'Popen', side_effect=[first, second]) as launch, \
+                        patch.dict(agent, {'json_call': Mock()}), patch('os.killpg', create=True) as kill_group:
+                    agent['reconcile']([deployment])
+                    self.assertEqual(launch.call_args.args[0], [str(root / 'runtime/mina-runtime'),
+                        '--application', str(application), '--environment', 'qa'])
+                    agent['reconcile']([deployment])
+                    self.assertEqual(launch.call_count, 1)
+                    agent['reconcile']([{**deployment, 'runtimeGeneration': 'two'}])
+                    self.assertEqual(launch.call_count, 2)
+                    if os.name == 'posix':
+                        kill_group.assert_called_once()
+                    else:
+                        first.terminate.assert_called_once()
+                    second.poll.return_value = 1
+                    agent['reconcile']([{**deployment, 'runtimeGeneration': 'two'}])
+                    self.assertEqual(agent['json_call'].call_args.args[2]['state'], 'FAILED')
+                    self.assertEqual(agent['json_call'].call_args.args[2]['runtimeGeneration'], 'two')
+
+    def test_control_plane_ignores_agent_reports_for_previous_generation(self):
+        current = {'id': 'deployment', 'dataPlaneId': 'qa', 'state': 'RUNNING', 'runtimeGeneration': 'two'}
+        with patch.object(control_plane, 'require_technology'), patch.object(control_plane, 'read_json', return_value=[current]), \
+                patch.object(control_plane, 'write_json') as write:
+            result = control_plane.agent_deployment_report('qa', 'deployment', None,
+                                                           {'runtimeGeneration': 'one', 'state': 'FAILED'})
+        self.assertEqual(result['state'], 'RUNNING')
+        write.assert_not_called()
+
     def test_agent_heartbeat_reports_real_host_capacity(self):
         with tempfile.TemporaryDirectory() as folder:
             agent = PythonAgent(Settings('https://control.example', 'agent-key', 'remote-host', state_dir=Path(folder)))

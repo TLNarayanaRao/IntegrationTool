@@ -10,6 +10,7 @@ ini_value() {
   local wanted_section="$1" wanted_key="$2" section="" line key value
   while IFS= read -r line || [[ -n "$line" ]]; do
     line="${line%$'\r'}"
+    line="${line#$'\xef\xbb\xbf'}"
     line="${line#${line%%[![:space:]]*}}"
     [[ -z "$line" || "$line" == \#* || "$line" == \;* ]] && continue
     if [[ "$line" =~ ^\[([^]]+)\]$ ]]; then section="${BASH_REMATCH[1]}"; continue; fi
@@ -42,11 +43,22 @@ export MINA_ADMIN_SECRET_KEY="$(ini_value control-plane secret_key)"
 configured_runtime_data="$(ini_value_or_empty runtime data_dir)"
 configured_runtime_log="$(ini_value_or_empty runtime log_dir)"
 configured_driver_home="$(ini_value_or_empty runtime driver_home)"
+configured_java_bridge="$(ini_value_or_empty runtime java_bridge_home)"
+configured_java="$(ini_value_or_empty runtime java)"
 export MINA_DATA_DIR="${configured_runtime_data:-$INSTALL_ROOT/runtime/data}"
 export MINA_RUNTIME_LOG_DIR="${configured_runtime_log:-$INSTALL_ROOT/logs/runtime}"
 export MINA_DRIVER_HOME="${configured_driver_home:-$INSTALL_ROOT/drivers}"
+default_java_bridge="$INSTALL_ROOT/java-bridge/build"
+if [[ ! -d "$default_java_bridge/classes" && -d "${MINA_SOURCE_ROOT:-$INSTALL_ROOT/software}/java-bridge/build/classes" ]]; then
+  default_java_bridge="${MINA_SOURCE_ROOT:-$INSTALL_ROOT/software}/java-bridge/build"
+fi
+export MINA_JAVA_BRIDGE_HOME="${configured_java_bridge:-${MINA_JAVA_BRIDGE_HOME:-$default_java_bridge}}"
+if [[ -n "$configured_java" ]]; then export MINA_JAVA="$configured_java"; fi
+if [[ -x "$INSTALL_ROOT/runtime/.venv/bin/python" ]]; then
+  export MINA_PYTHON_EXECUTABLE="${MINA_PYTHON_EXECUTABLE:-$INSTALL_ROOT/runtime/.venv/bin/python}"
+fi
 runtime_command="$(ini_value_or_empty control-plane runtime_command)"
-[[ -n "$runtime_command" ]] || runtime_command="$INSTALL_ROOT/runtime/mina-runtime --application {application} --environment {environment}"
+[[ -n "$runtime_command" ]] || printf -v runtime_command '%q --application "{application}" --environment "{environment}"' "$INSTALL_ROOT/runtime/mina-runtime"
 if [[ -n "$runtime_command" ]]; then export MINA_ADMIN_RUNTIME_COMMAND="$runtime_command"; else unset MINA_ADMIN_RUNTIME_COMMAND; fi
 
 EXECUTABLE="$MINA_ADMIN_HOME/mina-control-plane"

@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "48b87e02c73801049b7811a1add474f82bc7dd67742e52867bfae3e423964947",
+  "fingerprint": "571795861ce8853f5359439de1c395919dab8637639458277844c5277632ceeb",
   "counts": {
     "activities": 104,
     "groups": 11,
@@ -48663,6 +48663,10 @@
             },
             {
               "kind": "p",
+              "text": "The runtime writes each batch as ordered JSON lines and flushes it before the logging call returns. Rotation accounts for the UTF-8 byte length of each record and the platform's line ending."
+            },
+            {
+              "kind": "p",
               "text": "Packaged desktop installations place the Mina data directory under the Studio user-data location configured through `MINA_DATA_DIR`. Administrators may override logging without changing code:"
             },
             {
@@ -48819,6 +48823,10 @@
               "text": "Optional INI keys `home`, `data_dir`, `log_dir`, `pid_dir`, and `runtime_command` under `[control-plane]`, and `data_dir`, `log_dir`, `driver_home`, `java_bridge_home`, `java`, `build_java_bridge`, `install_db2` under `[runtime]` allow explicit paths/options. Use absolute Linux paths. `runtime_command` accepts the existing application/environment placeholders; leave it absent for the generated local adapter. With separate Data Planes, the agent launches applications on its own host, not through the Control Plane's local runtime command."
             },
             {
+              "kind": "p",
+              "text": "For a Python archive deployed to the Control Plane's localhost capability, enable `install_local_runtime` or set `MINA_PYTHON_EXECUTABLE` to a compatible Python interpreter with the application's runtime dependencies. `java` can point to a JDK executable. When `build_java_bridge=true`, the setup uses `javac` from the same JDK if `java` is supplied as a path. After changing the Java bridge, rebuild it on every Data Plane that uses native activities and re-export Python archives to pick up updated application code."
+            },
+            {
               "kind": "heading",
               "text": "4. Set up each Data Plane separately"
             },
@@ -48911,6 +48919,10 @@
               "text": "`--check` validates the INI and source location without installing or starting anything; it does not prove that the network, OS libraries or package mirror are ready. API update errors other than 404 stop setup instead of creating duplicate resources. A failure leaves logs and completed setup steps available for diagnosis; correct the INI/prerequisite and rerun after stopping any affected process."
             },
             {
+              "kind": "p",
+              "text": "For deployment validation, upload both Python archive formats to a QA Data Plane. Start each application, check its instance PID and healthy state, and send a representative request or business event. A remote restart or Starter Task change takes effect when the agent next polls. Verify the replacement instance and check that stopping the deployment releases any Java listeners."
+            },
+            {
               "kind": "heading",
               "text": "6. Troubleshooting and backup"
             },
@@ -48953,6 +48965,14 @@
             {
               "kind": "p",
               "text": "driver locations. OS prerequisites and licensed drivers are not downloaded."
+            },
+            {
+              "kind": "list",
+              "text": "For SAP, use one active listener per registered Program ID on each host and"
+            },
+            {
+              "kind": "p",
+              "text": "give its transaction store a writable, persistent path. Back up the TID properties file and sibling `.committed` directory together. See [SAP listener throughput qualification](SAP_INTEGRATION.md#qualifying-sap-idoc-listener-throughput)."
             },
             {
               "kind": "list",
@@ -50716,7 +50736,56 @@
             },
             {
               "kind": "p",
-              "text": "Set `terminateWorkerEveryCalls` to a positive number for controlled worker-JVM failure injection. Run separate 24–72 hour profiles for sRFC, transactional BAPI, tRFC/qRFC IDoc posting, and inbound listeners. The generated report holds throughput, failures, latency percentiles, and worker process IDs; correlate those IDs with OS/JVM monitoring and SAP SM58/SMQ1/SMQ2 evidence. Never commit the local configuration because it contains credentials."
+              "text": "Set `terminateWorkerEveryCalls` to a positive number for controlled worker-JVM failure injection. Run separate 24–72 hour profiles for sRFC, transactional BAPI and tRFC/qRFC IDoc posting. To qualify the 10-minute outbound target, set `durationSeconds` to `600` and add `--target-calls 100000`. The report fails if the 100,000th successful call falls after the deadline or a call fails. The report holds throughput, failures, latency percentiles, and worker process IDs; correlate those IDs with OS/JVM monitoring and SAP SM58/SMQ1/SMQ2 evidence. Never commit the local configuration because it contains credentials."
+            },
+            {
+              "kind": "heading",
+              "text": "Qualifying SAP IDoc Listener throughput"
+            },
+            {
+              "kind": "p",
+              "text": "The listener splits SAP packages by document number. Each callback waits for all document workflows in the package. MINA reports a failed callback if a document fails or if queue admission and workflow acknowledgements exceed the configured `ackTimeoutSeconds`. SAP may replay the package, so use the document number and business context for idempotency at downstream systems. The bridge records its first inbound IDoc package and every thousandth package thereafter, plus callback errors and startup diagnostics."
+            },
+            {
+              "kind": "p",
+              "text": "The 10-minute target requires at least 166.7 completed documents per second. On approved QA, send 100,000 unique IDocs with representative sizes from SAP and verify downstream completions and SAP transaction confirmations within 600 seconds. Include the real downstream activities. Compare SAP packaging, RFC registration count (`maximumConnections`), MINA workflow concurrency (`maxConcurrentIdocs`, defaulting to the connection count), gateway limits, disk latency, and the slowest downstream activity. Use one active listener per registered Program ID on a host. Benchmark RFC/BAPI operations separately in calls per second and distinguish them from IDocs per second. At eight workers, sustaining the IDoc target requires a mean worker time below 48 ms even before accounting for idle time."
+            },
+            {
+              "kind": "p",
+              "text": "The replay test exercises Listener → Parser → End with synthetic bridge events and checks unique document numbers, segment values, and acknowledgements. With backend dependencies installed, set `MINA_SAP_REPLAY_RECORDS=100000` and run `python -m unittest discover -s backend/tests -p test_sap_idoc_throughput.py` with `backend` on `PYTHONPATH`. It covers Studio Run and both Python exports. The Java bridge test takes the document count as an argument and checks package splitting, transaction duplicates, rollback, and restart behavior. Live SAP gateway, native library, network, and downstream timings require the QA run."
+            },
+            {
+              "kind": "p",
+              "text": "The Windows development workspace recorded these synthetic results on November 19, 2026. Each test checked 100,000 documents."
+            },
+            {
+              "kind": "table",
+              "columns": [
+                "Test path",
+                "Elapsed"
+              ],
+              "rows": [
+                [
+                  "Java package splitting and TID storage",
+                  "74.19 s"
+                ],
+                [
+                  "Studio Run with rotating project logs",
+                  "342.91 s"
+                ],
+                [
+                  "Python engine archive",
+                  "88.97 s"
+                ],
+                [
+                  "Direct Python archive",
+                  "50.77 s"
+                ]
+              ]
+            },
+            {
+              "kind": "p",
+              "text": "Keep the TID properties file and its sibling `.committed` directory together. The bridge reads committed entries from older properties files and writes a marker for each new committed, unconfirmed TID. SAP confirmation removes the marker. Preserve both paths during upgrades and wait for outstanding transactions to confirm before reverting to a bridge that predates the markers."
             }
           ]
         }
@@ -52334,7 +52403,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -52454,7 +52523,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -52625,7 +52694,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -52801,7 +52870,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -52968,7 +53037,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -53138,7 +53207,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -53309,7 +53378,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -53485,7 +53554,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -53656,7 +53725,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -53832,7 +53901,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -54011,7 +54080,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -54199,7 +54268,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -54370,7 +54439,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -54546,7 +54615,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -54717,7 +54786,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -54893,7 +54962,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -55064,7 +55133,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -55240,7 +55309,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -55411,7 +55480,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -55587,7 +55656,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -55758,7 +55827,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -55934,7 +56003,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -56105,7 +56174,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -56281,7 +56350,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -56452,7 +56521,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -56628,7 +56697,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -56799,7 +56868,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -56975,7 +57044,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -57146,7 +57215,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -57322,7 +57391,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -57493,7 +57562,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -57669,7 +57738,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -57840,7 +57909,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -58016,7 +58085,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -58187,7 +58256,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -58363,7 +58432,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -58534,7 +58603,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -58710,7 +58779,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -58881,7 +58950,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -59057,7 +59126,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -59228,7 +59297,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -59404,7 +59473,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -59575,7 +59644,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -59751,7 +59820,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -59791,7 +59860,7 @@
                 ],
                 [
                   "Inbound HTTP/REST/SOAP hosting and response boundary",
-                  "backend/app/main.py:2214\nasync def invoke_listener("
+                  "backend/app/main.py:2221\nasync def invoke_listener("
                 ],
                 [
                   "Direct-export application hosting",
@@ -59926,7 +59995,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -59986,7 +60055,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 2214,
+          "line": 2221,
           "symbol": "async def invoke_listener(",
           "role": "Inbound HTTP/REST/SOAP hosting and response boundary"
         },
@@ -60108,7 +60177,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -60271,7 +60340,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -60435,7 +60504,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -60598,7 +60667,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -60762,7 +60831,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -60925,7 +60994,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -61089,7 +61158,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -61252,7 +61321,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -61416,7 +61485,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -61456,7 +61525,7 @@
                 ],
                 [
                   "Inbound HTTP/REST/SOAP hosting and response boundary",
-                  "backend/app/main.py:2214\nasync def invoke_listener("
+                  "backend/app/main.py:2221\nasync def invoke_listener("
                 ],
                 [
                   "Direct-export application hosting",
@@ -61591,7 +61660,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -61651,7 +61720,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 2214,
+          "line": 2221,
           "symbol": "async def invoke_listener(",
           "role": "Inbound HTTP/REST/SOAP hosting and response boundary"
         },
@@ -61773,7 +61842,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -61809,7 +61878,7 @@
                 ],
                 [
                   "Inbound HTTP/REST/SOAP hosting and response boundary",
-                  "backend/app/main.py:2214\nasync def invoke_listener("
+                  "backend/app/main.py:2221\nasync def invoke_listener("
                 ],
                 [
                   "Direct-export application hosting",
@@ -61944,7 +62013,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -61998,7 +62067,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 2214,
+          "line": 2221,
           "symbol": "async def invoke_listener(",
           "role": "Inbound HTTP/REST/SOAP hosting and response boundary"
         },
@@ -62120,7 +62189,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -62156,7 +62225,7 @@
                 ],
                 [
                   "Inbound HTTP/REST/SOAP hosting and response boundary",
-                  "backend/app/main.py:2214\nasync def invoke_listener("
+                  "backend/app/main.py:2221\nasync def invoke_listener("
                 ],
                 [
                   "Direct-export application hosting",
@@ -62291,7 +62360,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -62345,7 +62414,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 2214,
+          "line": 2221,
           "symbol": "async def invoke_listener(",
           "role": "Inbound HTTP/REST/SOAP hosting and response boundary"
         },
@@ -62467,7 +62536,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -62507,7 +62576,7 @@
                 ],
                 [
                   "Inbound HTTP/REST/SOAP hosting and response boundary",
-                  "backend/app/main.py:2214\nasync def invoke_listener("
+                  "backend/app/main.py:2221\nasync def invoke_listener("
                 ],
                 [
                   "Direct-export application hosting",
@@ -62642,7 +62711,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -62702,7 +62771,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 2214,
+          "line": 2221,
           "symbol": "async def invoke_listener(",
           "role": "Inbound HTTP/REST/SOAP hosting and response boundary"
         },
@@ -62824,7 +62893,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -62864,7 +62933,7 @@
                 ],
                 [
                   "Inbound HTTP/REST/SOAP hosting and response boundary",
-                  "backend/app/main.py:2214\nasync def invoke_listener("
+                  "backend/app/main.py:2221\nasync def invoke_listener("
                 ],
                 [
                   "Direct-export application hosting",
@@ -62999,7 +63068,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -63059,7 +63128,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 2214,
+          "line": 2221,
           "symbol": "async def invoke_listener(",
           "role": "Inbound HTTP/REST/SOAP hosting and response boundary"
         },
@@ -63181,7 +63250,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -63352,7 +63421,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -63528,7 +63597,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -63699,7 +63768,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -63875,7 +63944,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -64046,7 +64115,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -64222,7 +64291,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -64393,7 +64462,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -64569,7 +64638,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -64740,7 +64809,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -64916,7 +64985,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -65087,7 +65156,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -65263,7 +65332,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -65434,7 +65503,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -65610,7 +65679,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -65781,7 +65850,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -65957,7 +66026,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -66128,7 +66197,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -66304,7 +66373,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -66475,7 +66544,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -66651,7 +66720,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -66822,7 +66891,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -66998,7 +67067,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -67169,7 +67238,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -67345,7 +67414,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -67512,7 +67581,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -67682,7 +67751,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -67849,7 +67918,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -68019,7 +68088,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -68186,7 +68255,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -68356,7 +68425,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -68527,7 +68596,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -68703,7 +68772,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -68874,7 +68943,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -69050,7 +69119,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -69082,7 +69151,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1097\ndef execute("
+                  "backend/app/sap.py:1103\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation dynamic_connection",
@@ -69225,7 +69294,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -69273,7 +69342,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1097,
+          "line": 1103,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -69407,7 +69476,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -69439,7 +69508,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1097\ndef execute("
+                  "backend/app/sap.py:1103\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_acknowledgment",
@@ -69582,7 +69651,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -69630,7 +69699,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1097,
+          "line": 1103,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -69764,7 +69833,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -69796,7 +69865,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1097\ndef execute("
+                  "backend/app/sap.py:1103\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_confirmation",
@@ -69939,7 +70008,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -69987,7 +70056,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1097,
+          "line": 1103,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -70121,7 +70190,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -70153,7 +70222,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1097\ndef execute("
+                  "backend/app/sap.py:1103\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_converter",
@@ -70296,7 +70365,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -70344,7 +70413,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1097,
+          "line": 1103,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -70478,7 +70547,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -70510,7 +70579,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1097\ndef execute("
+                  "backend/app/sap.py:1103\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_listener",
@@ -70518,11 +70587,11 @@
                 ],
                 [
                   "Inbound SAP adapter",
-                  "backend/app/sap.py:809\nasync def receive_idoc("
+                  "backend/app/sap.py:815\nasync def receive_idoc("
                 ],
                 [
                   "Continuous SAP jobs",
-                  "backend/app/main.py:529\nasync def _continuous_sap_event_loop("
+                  "backend/app/main.py:531\nasync def _continuous_sap_event_loop("
                 ],
                 [
                   "Python/native worker lifecycle",
@@ -70661,7 +70730,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -70709,7 +70778,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1097,
+          "line": 1103,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -70721,13 +70790,13 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 809,
+          "line": 815,
           "symbol": "async def receive_idoc(",
           "role": "Inbound SAP adapter"
         },
         {
           "file": "backend/app/main.py",
-          "line": 529,
+          "line": 531,
           "symbol": "async def _continuous_sap_event_loop(",
           "role": "Continuous SAP jobs"
         },
@@ -70855,7 +70924,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -70887,7 +70956,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1097\ndef execute("
+                  "backend/app/sap.py:1103\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_parser",
@@ -71030,7 +71099,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -71078,7 +71147,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1097,
+          "line": 1103,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -71212,7 +71281,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -71244,7 +71313,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1097\ndef execute("
+                  "backend/app/sap.py:1103\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_reader",
@@ -71387,7 +71456,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -71435,7 +71504,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1097,
+          "line": 1103,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -71569,7 +71638,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -71601,7 +71670,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1097\ndef execute("
+                  "backend/app/sap.py:1103\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation post_idoc",
@@ -71744,7 +71813,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -71792,7 +71861,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1097,
+          "line": 1103,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -71926,7 +71995,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -71958,7 +72027,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1097\ndef execute("
+                  "backend/app/sap.py:1103\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation idoc_renderer",
@@ -72101,7 +72170,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -72149,7 +72218,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1097,
+          "line": 1103,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -72283,7 +72352,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -72315,7 +72384,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1097\ndef execute("
+                  "backend/app/sap.py:1103\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation rfc_bapi_listener",
@@ -72323,11 +72392,11 @@
                 ],
                 [
                   "Inbound SAP adapter",
-                  "backend/app/sap.py:809\nasync def receive_idoc("
+                  "backend/app/sap.py:815\nasync def receive_idoc("
                 ],
                 [
                   "Continuous SAP jobs",
-                  "backend/app/main.py:529\nasync def _continuous_sap_event_loop("
+                  "backend/app/main.py:531\nasync def _continuous_sap_event_loop("
                 ],
                 [
                   "Python/native worker lifecycle",
@@ -72466,7 +72535,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -72514,7 +72583,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1097,
+          "line": 1103,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -72526,13 +72595,13 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 809,
+          "line": 815,
           "symbol": "async def receive_idoc(",
           "role": "Inbound SAP adapter"
         },
         {
           "file": "backend/app/main.py",
-          "line": 529,
+          "line": 531,
           "symbol": "async def _continuous_sap_event_loop(",
           "role": "Continuous SAP jobs"
         },
@@ -72660,7 +72729,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -72692,7 +72761,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1097\ndef execute("
+                  "backend/app/sap.py:1103\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation invoke_rfc_bapi",
@@ -72835,7 +72904,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -72883,7 +72952,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1097,
+          "line": 1103,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -73017,7 +73086,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -73049,7 +73118,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1097\ndef execute("
+                  "backend/app/sap.py:1103\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation reply_rfc_bapi",
@@ -73192,7 +73261,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -73240,7 +73309,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1097,
+          "line": 1103,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -73374,7 +73443,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -73406,7 +73475,7 @@
                 ],
                 [
                   "SAP operation dispatch; listeners use receive_idoc",
-                  "backend/app/sap.py:1097\ndef execute("
+                  "backend/app/sap.py:1103\ndef execute("
                 ],
                 [
                   "Direct Python implementation; inspect operation read_table",
@@ -73549,7 +73618,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -73597,7 +73666,7 @@
         },
         {
           "file": "backend/app/sap.py",
-          "line": 1097,
+          "line": 1103,
           "symbol": "def execute(",
           "role": "SAP operation dispatch; listeners use receive_idoc"
         },
@@ -73731,7 +73800,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -73898,7 +73967,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -74068,7 +74137,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -74235,7 +74304,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -74405,7 +74474,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -74572,7 +74641,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -74742,7 +74811,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -74909,7 +74978,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -75079,7 +75148,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -75246,7 +75315,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -75416,7 +75485,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -75583,7 +75652,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -75753,7 +75822,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -75920,7 +75989,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -76090,7 +76159,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -76257,7 +76326,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -76427,7 +76496,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -76594,7 +76663,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -76764,7 +76833,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -76931,7 +77000,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -77101,7 +77170,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -77268,7 +77337,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -77438,7 +77507,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -77605,7 +77674,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -77775,7 +77844,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -77946,7 +78015,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -78122,7 +78191,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -78293,7 +78362,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -78469,7 +78538,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -78636,7 +78705,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -78806,7 +78875,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -78977,7 +79046,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -79153,7 +79222,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -79316,7 +79385,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -79480,7 +79549,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -79647,7 +79716,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -79817,7 +79886,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -79980,7 +80049,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -80144,7 +80213,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -80307,7 +80376,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -80471,7 +80540,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -80634,7 +80703,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -80798,7 +80867,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -80961,7 +81030,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -81125,7 +81194,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -81292,7 +81361,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -81462,7 +81531,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -81625,7 +81694,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -81789,7 +81858,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -81956,7 +82025,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -82126,7 +82195,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -82293,7 +82362,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -82463,7 +82532,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -82630,7 +82699,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -82800,7 +82869,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -82967,7 +83036,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -83137,7 +83206,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -83304,7 +83373,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -83474,7 +83543,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -83641,7 +83710,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -83811,7 +83880,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -83986,7 +84055,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -84168,7 +84237,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -84335,7 +84404,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -84505,7 +84574,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -84672,7 +84741,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -84842,7 +84911,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -85009,7 +85078,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -85179,7 +85248,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -85346,7 +85415,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -85516,7 +85585,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -85683,7 +85752,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -85853,7 +85922,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -86020,7 +86089,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -86190,7 +86259,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -86357,7 +86426,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -86527,7 +86596,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -86694,7 +86763,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -86864,7 +86933,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -87031,7 +87100,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -87201,7 +87270,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -87368,7 +87437,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -87538,7 +87607,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -87705,7 +87774,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -87875,7 +87944,7 @@
                 ],
                 [
                   "Run HTTP API",
-                  "backend/app/main.py:774\n@app.post('/api/projects/{project_id}/run')"
+                  "backend/app/main.py:781\n@app.post('/api/projects/{project_id}/run')"
                 ],
                 [
                   "Graph scheduler",
@@ -88042,7 +88111,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 774,
+          "line": 781,
           "symbol": "@app.post('/api/projects/{project_id}/run')",
           "role": "Run HTTP API"
         },
@@ -88298,19 +88367,19 @@
                 ],
                 [
                   "Run API",
-                  "backend/app/main.py:775\nasync def run(project_id:"
+                  "backend/app/main.py:782\nasync def run(project_id:"
                 ],
                 [
                   "Broker/event polling lifecycle",
-                  "backend/app/main.py:385\nasync def _continuous_event_loop("
+                  "backend/app/main.py:387\nasync def _continuous_event_loop("
                 ],
                 [
                   "SAP event lifecycle",
-                  "backend/app/main.py:529\nasync def _continuous_sap_event_loop("
+                  "backend/app/main.py:531\nasync def _continuous_sap_event_loop("
                 ],
                 [
                   "Stop endpoint",
-                  "backend/app/main.py:826\nasync def stop_project("
+                  "backend/app/main.py:833\nasync def stop_project("
                 ],
                 [
                   "Graph execution",
@@ -88356,25 +88425,25 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 775,
+          "line": 782,
           "symbol": "async def run(project_id:",
           "role": "Run API"
         },
         {
           "file": "backend/app/main.py",
-          "line": 385,
+          "line": 387,
           "symbol": "async def _continuous_event_loop(",
           "role": "Broker/event polling lifecycle"
         },
         {
           "file": "backend/app/main.py",
-          "line": 529,
+          "line": 531,
           "symbol": "async def _continuous_sap_event_loop(",
           "role": "SAP event lifecycle"
         },
         {
           "file": "backend/app/main.py",
-          "line": 826,
+          "line": 833,
           "symbol": "async def stop_project(",
           "role": "Stop endpoint"
         },
@@ -88470,11 +88539,11 @@
                 ],
                 [
                   "Debug API",
-                  "backend/app/main.py:2110\nasync def start_debug("
+                  "backend/app/main.py:2117\nasync def start_debug("
                 ],
                 [
                   "Trace and metrics API",
-                  "backend/app/main.py:2186\nasync def debug_trace("
+                  "backend/app/main.py:2193\nasync def debug_trace("
                 ],
                 [
                   "Bounded session telemetry",
@@ -88588,13 +88657,13 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 2110,
+          "line": 2117,
           "symbol": "async def start_debug(",
           "role": "Debug API"
         },
         {
           "file": "backend/app/main.py",
-          "line": 2186,
+          "line": 2193,
           "symbol": "async def debug_trace(",
           "role": "Trace and metrics API"
         },
@@ -88728,7 +88797,7 @@
                 ],
                 [
                   "Map & Test endpoint",
-                  "backend/app/main.py:1889\ndef mapper_test("
+                  "backend/app/main.py:1896\ndef mapper_test("
                 ],
                 [
                   "Regression suite: mapper_code_general",
@@ -88826,7 +88895,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 1889,
+          "line": 1896,
           "symbol": "def mapper_test(",
           "role": "Map & Test endpoint"
         },
@@ -91108,7 +91177,7 @@
                 ],
                 [
                   "Archive orchestration",
-                  "backend/app/main.py:1414\ndef build_deployment_archive("
+                  "backend/app/main.py:1421\ndef build_deployment_archive("
                 ],
                 [
                   "Capability registry",
@@ -91170,7 +91239,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 1414,
+          "line": 1421,
           "symbol": "def build_deployment_archive(",
           "role": "Archive orchestration"
         },
@@ -91700,7 +91769,7 @@
                 ],
                 [
                   "Logs API",
-                  "backend/app/main.py:689\ndef project_logs("
+                  "backend/app/main.py:696\ndef project_logs("
                 ],
                 [
                   "Regression suite: project_logging",
@@ -91756,7 +91825,7 @@
         },
         {
           "file": "backend/app/main.py",
-          "line": 689,
+          "line": 696,
           "symbol": "def project_logs(",
           "role": "Logs API"
         },

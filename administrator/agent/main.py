@@ -73,6 +73,7 @@ class PythonAgent:
     async def _report(self, item: dict, *, state: str, message: str, health: str, instances: list[dict] | None = None,
                       logs: list[dict] | None = None):
         payload = {'state': state, 'message': message, 'instances': instances or [],
+                   'runtimeGeneration': item.get('runtimeGeneration'),
                    'health': {'status': health, 'message': message}}
         if logs is not None: payload['logs'] = logs
         await self._request('POST', self._endpoint(f'/agent/deployments/{item["id"]}/report'), json=payload)
@@ -153,6 +154,7 @@ class PythonAgent:
             'packageId': item.get('packageId'), 'environment': item.get('environment'),
             'secrets': item.get('secrets') or {}, 'starterStates': item.get('starterStates') or {},
             'instances': item.get('desiredInstances') or 1,
+            'runtimeGeneration': item.get('runtimeGeneration'),
         }, sort_keys=True).encode()).hexdigest()
         if (current and self.local_revisions.get(deployment_id) == revision
                 and all(process.poll() is None for process in current)

@@ -120,6 +120,14 @@ the existing application/environment placeholders; leave it absent for the
 generated local adapter. With separate Data Planes, the agent launches applications
 on its own host, not through the Control Plane's local runtime command.
 
+For a Python archive deployed to the Control Plane's localhost capability,
+enable `install_local_runtime` or set `MINA_PYTHON_EXECUTABLE` to a compatible
+Python interpreter with the application's runtime dependencies. `java` can point
+to a JDK executable. When `build_java_bridge=true`, the setup uses `javac`
+from the same JDK if `java` is supplied as a path. After changing the Java
+bridge, rebuild it on every Data Plane that uses native activities and re-export
+Python archives to pick up updated application code.
+
 ## 4. Set up each Data Plane separately
 
 Copy the same software ZIP to the Data Plane host and extract it as in step 3.
@@ -201,6 +209,12 @@ ready. API update errors other than 404 stop setup instead of creating duplicate
 resources. A failure leaves logs and completed setup steps available for diagnosis;
 correct the INI/prerequisite and rerun after stopping any affected process.
 
+For deployment validation, upload both Python archive formats to a QA Data
+Plane. Start each application, check its instance PID and healthy state, and
+send a representative request or business event. A remote restart or Starter
+Task change takes effect when the agent next polls. Verify the replacement
+instance and check that stopping the deployment releases any Java listeners.
+
 ## 6. Troubleshooting and backup
 
 - Control Plane: `/opt/mina/logs/control-plane/administrator.log` and
@@ -216,6 +230,10 @@ correct the INI/prerequisite and rerun after stopping any affected process.
   replace them. The mirror must provide the versions in the shipped requirements.
 - Vendor failures: verify Linux native library compatibility, JDK/bridge and
   driver locations. OS prerequisites and licensed drivers are not downloaded.
+- For SAP, use one active listener per registered Program ID on each host and
+  give its transaction store a writable, persistent path. Back up the TID
+  properties file and sibling `.committed` directory together. See
+  [SAP listener throughput qualification](SAP_INTEGRATION.md#qualifying-sap-idoc-listener-throughput).
 - Protect INIs with mode 600. Back up `control-plane-data/`, the stable encryption
   key, private INIs, Data Plane state and any required vendor libraries together.
   Restore the same key with the data; changing it makes existing secrets unreadable.

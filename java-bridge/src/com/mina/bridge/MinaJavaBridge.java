@@ -7,6 +7,7 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.sql.*;
 import java.time.temporal.TemporalAccessor;
 import java.util.*;
@@ -15,6 +16,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import javax.naming.Context;
 import javax.naming.InitialContext;
 
@@ -271,21 +274,21 @@ public final class MinaJavaBridge {
             }
         }
         if (controls == null || controls.size() <= 1 || controlName == null || dataName == null) return List.of(payload);
-        List<Map<String, Object>> children = new ArrayList<>();
+        Map<String, List<Object>> recordsByDocument = new HashMap<>();
+        for (Object rawRecord : records) {
+            if (!(rawRecord instanceof Map<?, ?>)) continue;
+            Map<String, Object> record = (Map<String, Object>) rawRecord;
+            String number = String.valueOf(record.getOrDefault("DOCNUM", "")).trim();
+            if (!number.isEmpty()) recordsByDocument.computeIfAbsent(number, key -> new ArrayList<>()).add(record);
+        }
+        List<Map<String, Object>> children = new ArrayList<>(controls.size());
         for (Object rawControl : controls) {
             if (!(rawControl instanceof Map<?, ?>)) continue;
             Map<String, Object> control = (Map<String, Object>) rawControl;
             String documentNumber = String.valueOf(control.getOrDefault("DOCNUM", "")).trim();
-            List<Object> documentRecords = new ArrayList<>();
-            for (Object rawRecord : records == null ? List.of() : records) {
-                if (!(rawRecord instanceof Map<?, ?>)) continue;
-                Map<String, Object> record = (Map<String, Object>) rawRecord;
-                String recordNumber = String.valueOf(record.getOrDefault("DOCNUM", "")).trim();
-                if (!documentNumber.isEmpty() && documentNumber.equals(recordNumber)) documentRecords.add(record);
-            }
             Map<String, Object> childTables = new LinkedHashMap<>(tables);
             childTables.put(controlName, List.of(control));
-            childTables.put(dataName, documentRecords);
+            childTables.put(dataName, recordsByDocument.getOrDefault(documentNumber, List.of()));
             Map<String, Object> child = new LinkedHashMap<>(payload);
             child.put("tables", childTables);
             children.add(child);
@@ -374,6 +377,9 @@ public final class MinaJavaBridge {
         BlockingQueue<Map<String, Object>> idocEvents = new LinkedBlockingQueue<>(maxPendingEvents);
         Map<String, CompletableFuture<Boolean>> pendingDeliveries = new ConcurrentHashMap<>();
         Map<String, Properties> pendingResponses = new ConcurrentHashMap<>();
+        AtomicLong idocPackages = new AtomicLong();
+        AtomicBoolean commandChannelClosed = new AtomicBoolean();
+        long ackTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(Math.max(1L, (long) (number(p, "jco.server.ack_timeout_seconds", 300) * 1000)));
         Thread commandReader = new Thread(() -> {
             try (BufferedReader commands = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
                 String line;
@@ -391,6 +397,9 @@ public final class MinaJavaBridge {
                 }
             } catch (IOException error) {
                 System.err.println("SAP JCo acknowledgement channel stopped: " + error);
+            } finally {
+                commandChannelClosed.set(true);
+                pendingDeliveries.values().forEach(decision -> decision.complete(false));
             }
         }, "sap-idoc-ack-reader");
         commandReader.setDaemon(true);
@@ -399,8 +408,7 @@ public final class MinaJavaBridge {
             try {
                 while (!Thread.currentThread().isInterrupted()) {
                     Map<String, Object> event = idocEvents.take();
-                    System.out.println(json(event));
-                    System.out.flush();
+                    if (pendingDeliveries.containsKey(event.get("deliveryId"))) System.out.println(json(event));
                 }
             } catch (InterruptedException ignored) {
                 Thread.currentThread().interrupt();
@@ -419,17 +427,20 @@ public final class MinaJavaBridge {
                     String transactionId = optionalString(serverContext, "getTID");
                     String connectionId = optionalString(serverContext, "getConnectionID");
                     Map<String, Object> requestPayload = listenerFunctionResult(function);
-                    List<Map<String, Object>> requests = functionName.toUpperCase(Locale.ROOT).startsWith("IDOC_INBOUND") ? splitIdocPackage(requestPayload) : List.of(requestPayload);
+                    boolean idoc = functionName.toUpperCase(Locale.ROOT).startsWith("IDOC_INBOUND");
+                    List<Map<String, Object>> requests = idoc ? splitIdocPackage(requestPayload) : List.of(requestPayload);
                     // Keep this diagnostic separate from the payload event so
                     // operations teams can distinguish SAP routing/network
                     // failures from extraction or workflow failures without
                     // logging business data.
-                    System.out.println(json(map("event", "jco_log", "level", "INFO", "phase", "request_received", "message", "SAP JCo request callback received", "functionName", functionName, "TID", transactionId, "CPIC_ID", connectionId, "packageSize", requests.size())));
-                    System.out.flush();
+                    if (!idoc || idocPackages.getAndIncrement() % 1000 == 0) {
+                        System.out.println(json(map("event", "jco_log", "level", "INFO", "phase", "request_received", "message", "SAP JCo request callback received", "functionName", functionName, "TID", transactionId, "CPIC_ID", connectionId, "packageSize", requests.size())));
+                    }
                     List<String> deliveryIds = new ArrayList<>();
                     List<CompletableFuture<Boolean>> decisions = new ArrayList<>();
                     List<Properties> responses = new ArrayList<>();
                     try {
+                        long deadline = System.nanoTime() + ackTimeoutNanos;
                         for (Map<String, Object> request : requests) {
                             String deliveryId = UUID.randomUUID().toString();
                             CompletableFuture<Boolean> decision = new CompletableFuture<>();
@@ -437,17 +448,19 @@ public final class MinaJavaBridge {
                             deliveryIds.add(deliveryId); decisions.add(decision); responses.add(response);
                             pendingDeliveries.put(deliveryId, decision);
                             pendingResponses.put(deliveryId, response);
-                            idocEvents.put(map("event", "sap_request", "deliveryId", deliveryId, "functionName", functionName, "TID", transactionId, "CPIC_ID", connectionId, "packageSize", requests.size(), "payload", request));
+                            if (commandChannelClosed.get()) throw new IOException("SAP acknowledgement channel closed");
+                            if (!idocEvents.offer(map("event", "sap_request", "deliveryId", deliveryId, "functionName", functionName, "TID", transactionId, "CPIC_ID", connectionId, "packageSize", requests.size(), "payload", request),
+                                    deadline - System.nanoTime(), TimeUnit.NANOSECONDS)) {
+                                throw new IllegalStateException("Timed out queueing a SAP request or IDoc package");
+                            }
                         }
-                        long timeoutMillis = Math.max(1L, (long) (number(p, "jco.server.ack_timeout_seconds", 300) * 1000));
-                        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
                         for (CompletableFuture<Boolean> decision : decisions) {
                             long remaining = deadline - System.nanoTime();
                             if (remaining <= 0 || !Boolean.TRUE.equals(decision.get(remaining, TimeUnit.NANOSECONDS))) {
                                 throw new IllegalStateException("MINA rolled back the SAP request or IDoc package");
                             }
                         }
-                        if (responses.size() == 1) applyListenerResponse(function, responses.get(0));
+                        if (responses.size() == 1 && !responses.get(0).isEmpty()) applyListenerResponse(function, responses.get(0));
                     } finally {
                         for (String deliveryId : deliveryIds) {
                             pendingDeliveries.remove(deliveryId);
@@ -519,85 +532,98 @@ public final class MinaJavaBridge {
     /** Durable tRFC TID state prevents duplicate IDoc delivery after retries. */
     private static Object tidHandler(String fileName) throws Exception {
         Class<?> type = Class.forName("com.sap.conn.jco.server.JCoServerTIDHandler");
-        File store = new File(fileName == null || fileName.isBlank() ? "sap-tids.properties" : fileName);
-        File parent = store.getAbsoluteFile().getParentFile();
-        if (parent != null) parent.mkdirs();
-        Properties states = new Properties();
-        if (store.isFile()) {
-            try (InputStream input = new FileInputStream(store)) { states.load(input); }
-            catch (IOException error) { System.err.println("SAP JCo TID store could not be loaded: " + error); }
-        }
-        Object lock = new Object();
-        // RECEIVED is only an in-flight marker.  It must not permanently
-        // suppress a transaction after the bridge or host is restarted.
-        // Keep the in-process lease separately so a live duplicate is still
-        // rejected while an interrupted transaction remains retryable.
-        Set<String> activeTids = new HashSet<>();
+        SapTidStore store = new SapTidStore(Path.of(fileName == null || fileName.isBlank() ? "sap-tids.properties" : fileName));
         return Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, (proxy, method, args) -> {
-            try {
-                String tid = null;
-                if (args != null) {
-                    for (Object argument : args) {
-                        if (argument instanceof String) { tid = (String) argument; break; }
-                    }
-                }
-                if (tid == null || tid.isBlank()) return null;
-                synchronized (lock) {
-                    if (method.getName().equals("checkTID")) {
-                        String state = states.getProperty(tid, "");
-                        // Only reject a duplicate while this JVM is actively
-                        // handling it, or after it has been committed. A
-                        // RECEIVED marker can be left behind by a crash or a
-                        // forced restart and must therefore be retryable.
-                        if (activeTids.contains(tid) || "COMMITTED".equals(state) || "CONFIRMED".equals(state)) return false;
-                        activeTids.add(tid);
-                        states.setProperty(tid, "RECEIVED");
-                        // Persistence is best effort at this point. Never
-                        // return false merely because a Windows file rename,
-                        // antivirus scan, or transient disk issue prevented a
-                        // state write; that would make SAP discard the IDoc
-                        // before the function handler can receive it.
-                        persistTidState(store, states);
-                        return true;
-                    }
-                    String previous = states.getProperty(tid);
-                    if (method.getName().equals("commit")) states.setProperty(tid, "COMMITTED");
-                    else if (method.getName().equals("rollback")) states.setProperty(tid, "ROLLED_BACK");
-                    else if (method.getName().equals("confirmTID")) states.remove(tid);
-                    else return null;
-                    activeTids.remove(tid);
-                    if (!persistTidState(store, states)) {
-                        if (previous == null) states.remove(tid); else states.setProperty(tid, previous);
-                    }
-                }
-                return null;
-            } catch (Throwable error) {
-                Throwable cause = error;
-                while (cause instanceof InvocationTargetException && cause.getCause() != null) cause = cause.getCause();
-                // JCo calls this interface through a Java Proxy. Never throw from
-                // A persistence failure must not be reported as a successful
-                // checkTID; SAP must retry after the local store is healthy.
-                System.err.println("SAP JCo TID handler failed in " + method.getName() + ": " + cause);
-                if (method.getName().equals("checkTID")) return false;
-                return null;
+            String operation = method.getName();
+            if (method.getDeclaringClass() == Object.class) {
+                return switch (operation) {
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == args[0];
+                    default -> "MINA SAP TID handler";
+                };
             }
+            String tid = null;
+            for (Object argument : args == null ? new Object[0] : args) {
+                if (argument instanceof String) { tid = (String) argument; break; }
+            }
+            if (tid == null || tid.isBlank()) return operation.equals("checkTID") ? Boolean.FALSE : null;
+            try {
+                switch (operation) {
+                    case "checkTID": return store.check(tid);
+                    case "commit": store.commit(tid); break;
+                    case "rollback": store.rollback(tid); break;
+                    case "confirmTID": store.confirm(tid); break;
+                }
+            } catch (IOException error) {
+                throw new UncheckedIOException("SAP JCo TID store failed during " + operation, error);
+            }
+            return null;
         });
     }
 
-    private static boolean persistTidState(File store, Properties states) {
-        File temporary = new File(store.getPath() + ".tmp");
-        try (OutputStream output = new FileOutputStream(temporary)) {
-            states.store(output, "MINA SAP JCo tRFC transaction state");
-            Path source = temporary.toPath(), target = store.toPath();
+    /** A committed TID has one marker until SAP confirms it. In-flight and rolled back TIDs need no disk state. */
+    static final class SapTidStore {
+        private final Path legacyFile;
+        private final Path committedDirectory;
+        private final Properties legacy = new Properties();
+        private final Set<String> active = new HashSet<>();
+
+        SapTidStore(Path file) throws IOException {
+            legacyFile = file.toAbsolutePath();
+            committedDirectory = Files.createDirectories(legacyFile.resolveSibling(legacyFile.getFileName() + ".committed"));
+            try (InputStream input = Files.newInputStream(legacyFile)) { legacy.load(input); }
+            catch (NoSuchFileException absent) { /* Fresh installation. */ }
+        }
+
+        private Path marker(String tid) {
+            // Hex uses a single case so two TIDs cannot alias on Windows filesystems.
+            return committedDirectory.resolve(HexFormat.of().formatHex(tid.getBytes(StandardCharsets.UTF_8)));
+        }
+
+        synchronized boolean check(String tid) throws IOException {
+            String oldState = legacy.getProperty(tid);
+            if (active.contains(tid) || "COMMITTED".equals(oldState) || "CONFIRMED".equals(oldState)) return false;
             try {
-                Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (AtomicMoveNotSupportedException unsupported) {
-                Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+                Files.readAttributes(marker(tid), BasicFileAttributes.class);
+                return false;
+            } catch (NoSuchFileException absent) {
+                // A missing marker is expected, a missing store is an I/O fault.
+                Files.readAttributes(committedDirectory, BasicFileAttributes.class);
+                return active.add(tid);
             }
-            return true;
-        } catch (IOException error) {
-            System.err.println("Unable to persist SAP TID state at " + store + ": " + error);
-            return false;
+        }
+
+        synchronized void commit(String tid) throws IOException {
+            try { Files.createFile(marker(tid)); }
+            catch (FileAlreadyExistsException committed) { /* Commit can be retried. */ }
+            if (System.getProperty("os.name", "").equals("Linux")) {
+                // Persist the directory entry before acknowledging commit on Linux.
+                try (FileChannel directory = FileChannel.open(committedDirectory, StandardOpenOption.READ)) {
+                    directory.force(true);
+                }
+            }
+            active.remove(tid);
+        }
+
+        synchronized void rollback(String tid) { active.remove(tid); }
+
+        synchronized void confirm(String tid) throws IOException {
+            if (legacy.containsKey(tid)) {
+                Path temp = Files.createTempFile(legacyFile.getParent(), "sap-tids-", ".tmp");
+                Properties remaining = new Properties();
+                remaining.putAll(legacy);
+                remaining.remove(tid);
+                try {
+                    try (OutputStream output = Files.newOutputStream(temp)) { remaining.store(output, "MINA SAP JCo tRFC transaction state"); }
+                    try { Files.move(temp, legacyFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
+                    catch (AtomicMoveNotSupportedException unsupported) { Files.move(temp, legacyFile, StandardCopyOption.REPLACE_EXISTING); }
+                    legacy.remove(tid);
+                } finally {
+                    Files.deleteIfExists(temp);
+                }
+            }
+            Files.deleteIfExists(marker(tid));
+            active.remove(tid);
         }
     }
 
@@ -625,17 +651,16 @@ public final class MinaJavaBridge {
     }
 
     private static List<Object> tableRows(Object table) throws Exception {
-        List<Object> rows = new ArrayList<>();
         int count = ((Number) invoke(table, "getNumRows")).intValue();
+        List<Object> rows = new ArrayList<>(count);
         Object metadata = invoke(table, "getMetaData");
         int fields = ((Number) invoke(metadata, "getFieldCount")).intValue();
+        String[] names = new String[fields];
+        for (int field = 0; field < fields; field++) names[field] = String.valueOf(invoke(metadata, "getName", field));
         for (int row = 0; row < count; row++) {
             invoke(table, "setRow", row);
             Map<String, Object> item = new LinkedHashMap<>();
-            for (int field = 0; field < fields; field++) {
-                String name = String.valueOf(invoke(metadata, "getName", field));
-                item.put(name, jsonValue(invoke(table, "getValue", name)));
-            }
+            for (String name : names) item.put(name, jsonValue(invoke(table, "getValue", name)));
             rows.add(item);
         }
         return rows;

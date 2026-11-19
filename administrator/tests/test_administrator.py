@@ -79,6 +79,18 @@ class AdministratorTests(unittest.TestCase):
             self.assertEqual(main.runtime_arguments(item, 'instance-1'),
                              [sys.executable, '-m', 'application.main', '--environment', 'dev'])
 
+    def test_frozen_control_plane_uses_configured_interpreter_for_python_archives(self):
+        item = {'packageStoragePath': 'team/raw-orders/1.0.0', 'environment': 'dev',
+                'pythonSource': {'entrypoint': 'application/main.py', 'formatVersion': 2}}
+        with patch.object(sys, 'frozen', True, create=True), patch.object(main, 'env_value', return_value=''):
+            with self.assertRaises(main.HTTPException) as failure:
+                main.runtime_arguments(item, 'instance-1')
+            self.assertEqual(failure.exception.status_code, 409)
+        with patch.object(sys, 'frozen', True, create=True), \
+                patch.object(main, 'env_value', return_value='/opt/mina runtime/bin/python'):
+            self.assertEqual(main.runtime_arguments(item, 'instance-1'),
+                             ['/opt/mina runtime/bin/python', '-m', 'application.main', '--environment', 'dev'])
+
     def test_administrator_version_accepts_build_or_runtime_override(self):
         with patch.dict("os.environ", {"MINA_ADMIN_VERSION": "3.4.5"}):
             self.assertEqual(main.administrator_version(), "3.4.5")

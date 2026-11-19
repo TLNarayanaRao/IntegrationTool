@@ -21,6 +21,8 @@ expiry calculations continue to use UTC internally.
 
 The active file automatically rolls at 10 MB. Four numbered archives are retained by default (`<project-name>.log.1` through `<project-name>.log.4`), so an individual file never grows without bound. Each line is UTF-8 JSON and includes the project, timestamp, level, message, and available run, correlation, task, activity, duration, and exception context. Failed package builds also write a `packaging` record with a traceback to this log, and the API returns the log path with the error. The exact resolved path is shown in Studio's **Execution / Debug** panel after clicking the disk button.
 
+The runtime writes each batch as ordered JSON lines and flushes it before the logging call returns. Rotation accounts for the UTF-8 byte length of each record and the platform's line ending.
+
 Packaged desktop installations place the Mina data directory under the Studio user-data location configured through `MINA_DATA_DIR`. Administrators may override logging without changing code:
 
 - `MINA_RUNTIME_LOG_DIR`: process-wide fallback root when the active environment's `runtime.logDirectory` property is blank.

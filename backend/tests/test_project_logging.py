@@ -9,11 +9,28 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.models import ProcessDefinition, Project
-from app.project_logging import _handlers, append_project_logs, project_log_info, read_project_logs
+from app.project_logging import _handlers, append_project_logs, close_project_log_handlers, project_log_info, read_project_logs
 from app.runtime import WorkflowRuntime
 
 
 class ProjectLoggingTests(unittest.TestCase):
+    def test_single_batch_preserves_order_and_rotates_at_utf8_byte_limit(self):
+        project_id = 'batch-log-test'
+        messages = [f'{index} ' + '温' * 100 for index in range(8)]
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {
+            'MINA_PROJECT_LOG_MAX_BYTES': '1024', 'MINA_PROJECT_LOG_BACKUP_COUNT': '4',
+        }):
+            try:
+                append_project_logs(project_id, 'Batch', [{'message': text} for text in messages], folder)
+                path = Path(project_log_info(project_id, 'Batch', folder)['path'])
+                files = list(path.parent.glob(path.name + '*'))
+                self.assertGreater(len(files), 1)
+                self.assertTrue(all(file.stat().st_size <= 1024 for file in files))
+                entries = read_project_logs(project_id, 'Batch', configured_directory=folder)
+                self.assertEqual([entry['message'] for entry in entries], messages)
+            finally:
+                close_project_log_handlers(project_id)
+
     def test_project_log_rolls_and_can_be_read_back(self):
         project_id = "rolling-log-test"
         with tempfile.TemporaryDirectory() as folder:

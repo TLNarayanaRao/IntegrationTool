@@ -24,7 +24,9 @@ PIP_ARGS=()
 } > "$RUNTIME/mina-runtime"
 chmod 755 "$RUNTIME/mina-runtime"
 if [[ "${MINA_BUILD_JAVA_BRIDGE:-false}" == true ]]; then
-  command -v javac >/dev/null || { echo 'JDK 17+ is required for build_java_bridge=true' >&2; exit 1; }
+  JAVAC=javac
+  if [[ "${MINA_JAVA:-}" == */* ]]; then JAVAC="$(dirname "$MINA_JAVA")/javac"; fi
+  command -v "$JAVAC" >/dev/null || { echo 'JDK 17+ is required for build_java_bridge=true' >&2; exit 1; }
   mkdir -p "${MINA_JAVA_BRIDGE_HOME:?}/classes"
-  javac -encoding UTF-8 -d "$MINA_JAVA_BRIDGE_HOME/classes" "$SOURCE_ROOT/java-bridge/src/com/mina/bridge/MinaJavaBridge.java"
+  "$JAVAC" -encoding UTF-8 -d "$MINA_JAVA_BRIDGE_HOME/classes" "$SOURCE_ROOT/java-bridge/src/com/mina/bridge/MinaJavaBridge.java"
 fi
