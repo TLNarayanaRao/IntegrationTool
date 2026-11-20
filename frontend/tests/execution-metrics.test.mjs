@@ -23,3 +23,17 @@ test('report exports escape HTML and spreadsheet formulas',()=>{
   const padded=analyticsCsv(timingSummary([{activityId:'a',taskId:'one',name:'  =1+1',type:'mapper',durationMs:1,status:'completed',endedAt:''}]));
   assert.ok(padded.includes('"\'  =1+1"'));
 });
+test('IDoc receipts contribute listener counts and timing without counting untimed events',()=>{
+  const logs=[
+    {kind:'event',activityId:'listener',taskId:'main',activityName:'IDoc Listener',timingScope:'idoc_intake',durationMs:2,sapIDoc:{documentNumber:'private'}},
+    {kind:'event',activityId:'listener',taskId:'main',activityName:'IDoc Listener',timingScope:'idoc_intake',durationMs:4},
+    {kind:'event',activityId:'listener',durationMs:100},
+  ];
+  const records=timingRecords(logs),[row]=timingSummary(records);
+  assert.equal(row.name,'IDoc Listener');
+  assert.equal(row.count,2);
+  assert.equal(row.mean,3);
+  assert.equal(row.p95,4);
+  assert.equal(row.timingScope,'idoc_intake');
+  assert.ok(!JSON.stringify(records).includes('private'));
+});

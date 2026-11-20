@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from app import main
+from app.execution_analytics import activity_timings
 from app.models import Project
 from app.project_logging import close_project_log_handlers
 from app.raw_python import engine_python_files, raw_python_files
@@ -93,6 +94,23 @@ class ReplayBridge:
 
 
 class SapListenerThroughputTests(unittest.TestCase):
+    def test_intake_timer_starts_after_the_bridge_supplies_the_document(self):
+        cfg = {'operation': 'idoc_listener', 'programId': 'REPLAY', 'gatewayHost': 'replay.invalid',
+               'gatewayService': 'sapgw00', 'mode': 'external', '_captureReceiveTiming': True}
+        bridge = ReplayBridge(1)
+        clock_readings = iter((100.0, 100.0025))
+
+        def clock():
+            self.assertEqual(bridge.position, 1)
+            return next(clock_readings)
+
+        async def exercise():
+            with patch('app.sap.start_sap_listener', return_value=bridge), patch('app.sap.time.perf_counter', side_effect=clock):
+                result = await SapAdapter().receive_idoc(cfg)
+            self.assertAlmostEqual(result['_sapIntakeMs'], 2.5)
+
+        asyncio.run(exercise())
+
     def test_debug_rolls_back_idoc_without_a_matching_transition(self):
         project = project_for_replay()
         task = project.tasks[0]
@@ -109,6 +127,11 @@ class SapListenerThroughputTests(unittest.TestCase):
                 self.assertEqual(bridge.errors, ['0'], 'A rejected route must roll back its SAP delivery')
                 arrivals = [entry['sapIDoc'] for entry in main.debugger.sessions[session_id]['logs'] if 'sapIDoc' in entry]
                 self.assertEqual([item['documentNumber'] for item in arrivals], ['0'])
+                rows = activity_timings(main.debugger.sessions[session_id]['logs'])
+                intakes = [row for row in rows if row['activityId'] == 'listener']
+                self.assertEqual(len(intakes), 1)
+                self.assertEqual(intakes[0]['timingScope'], 'idoc_intake')
+                self.assertGreater(intakes[0]['durationMs'], 0)
             finally:
                 listener.cancel()
                 await asyncio.gather(listener, return_exceptions=True)
@@ -214,6 +237,12 @@ class SapListenerThroughputTests(unittest.TestCase):
                     self.assertEqual(len(history), min(count, 100))
                     self.assertEqual(len({entry['sapIDoc']['documentNumber'] for entry in history}), len(history))
                     self.assertTrue(all(entry['sapIDoc']['transactionId'] for entry in history))
+                    for entry in history:
+                        intakes = [row for row in entry['activityTimings'] if row['activityId'] == 'listener']
+                        self.assertEqual(len(intakes), 1)
+                        self.assertEqual(intakes[0]['timingScope'], 'idoc_intake')
+                        self.assertGreater(intakes[0]['durationMs'], 0)
+                        self.assertNotIn('_sapIntakeMs', entry['activityOutputs']['listener']['output'])
             finally:
                 close_project_log_handlers(project.id)
                 main.runtime_states.pop(project.id, None)

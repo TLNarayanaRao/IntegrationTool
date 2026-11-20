@@ -160,6 +160,15 @@ the local configuration because it contains credentials.
 
 ### Qualifying SAP IDoc Listener throughput
 
+Studio times the complete IDoc Parser activity, including connection settings
+and input mappings. Fetched IDoc catalogs are treated as metadata, and their
+fields are reused across executions. For XML inputs, the parser builds one
+tree and uses it directly to produce JSON. When XML output is selected, the
+parser serializes the expanded tree once.
+For a performance comparison, replay the same document, output mode, task,
+and Debug settings. Collect a separate live measurement for gateway and
+downstream provider timings.
+
 The listener splits SAP packages by document number. Each callback waits for
 all document workflows in the package. MINA reports a failed callback if a
 document fails or if queue admission and workflow acknowledgements exceed the
@@ -171,8 +180,12 @@ package thereafter, plus callback errors and startup diagnostics.
 Use **Execution analytics → SAP IDoc deliveries** to compare document numbers
 and SAP transaction IDs against the sender's list. In Run, the section shows
 the outcome of each recorded delivery within the latest 100 workflow runs.
-In Debug, it shows receipts in the current Debug log. **Activity invocations**
-counts activity calls, including downstream steps. The HTML and JSON execution
+In Debug, it shows receipts in the current Debug log. The **Activity analysis**
+table records one IDoc Listener invocation per receipt in Run and Debug.
+Listener time measures local processing once a document is available, including
+native SAP payload conversion and handoff to the workflow. It excludes idle
+wait for SAP, acknowledgement, and downstream steps. **Activity invocations**
+counts the listener and downstream calls. The HTML and JSON execution
 reports include the delivery list. For older deliveries, use
 the project runtime logs and search for `sap-idoc`. Bridge callback errors
 are shown even when SAP sends no later document. An unsplit or malformed

@@ -1,6 +1,6 @@
-export type Timing = {activityId:string;taskId:string;name:string;type:string;durationMs:number;endedAt:string;status:string};
+export type Timing = {activityId:string;taskId:string;name:string;type:string;durationMs:number;endedAt:string;status:string;timingScope?:'idoc_intake'};
 export function timingRecords(logs: any[]): Timing[] {
-  return logs.filter(e => e.kind === 'activity' && (e.runtimeActivityId || e.activityId) && typeof e.durationMs === 'number' && Number.isFinite(e.durationMs) && e.durationMs >= 0).map(e => ({activityId:e.runtimeActivityId || e.activityId,taskId:e.taskId || '',name:e.activityName || e.runtimeActivityId || e.activityId,type:e.activityType || '',durationMs:e.durationMs,endedAt:e.time || '',status:e.level === 'ERROR' ? 'failed' : 'completed'}));
+  return logs.filter(e => (e.kind === 'activity' || (e.kind === 'event' && e.timingScope === 'idoc_intake')) && (e.runtimeActivityId || e.activityId) && typeof e.durationMs === 'number' && Number.isFinite(e.durationMs) && e.durationMs >= 0).map(e => ({activityId:e.runtimeActivityId || e.activityId,taskId:e.taskId || '',name:e.activityName || e.runtimeActivityId || e.activityId,type:e.activityType || '',durationMs:e.durationMs,endedAt:e.time || '',status:e.level === 'ERROR' ? 'failed' : 'completed',...(e.timingScope === 'idoc_intake' ? {timingScope:'idoc_intake' as const} : {})}));
 }
 export function timingSummary(records: Timing[]) {
   const groups = new Map<string, Timing[]>();

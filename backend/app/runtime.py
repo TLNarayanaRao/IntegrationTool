@@ -442,6 +442,7 @@ class WorkflowRuntime(DataFormats):
                     current = activity_by_id[entered]; continue
                 activity_started = perf_counter()
                 operation = str(current.config.get('operation') or current.type)
+                idoc_intake = triggered_event_pending and current.type == 'sap' and operation == 'idoc_listener'
                 self.log(logs, 'INFO', f'Activity started: {process.name} / {current.name}', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation)
                 context['context']['activityId'] = current.id
                 activity_input = context['last']
@@ -462,11 +463,16 @@ class WorkflowRuntime(DataFormats):
                     self.record_activity_output(current, context['last'], context, activity_input)
                 except Exception as exc: error = exc
                 finally: self._active_activity.pop(run_id, None)
-                activity_duration = round((perf_counter() - activity_started) * 1000, 3)
+                activity_duration = (perf_counter() - activity_started) * 1000
+                timing_scope = {}
+                if idoc_intake:
+                    activity_duration += context['transport'].get('sapIntakeMs', 0.0)
+                    timing_scope['timingScope'] = 'idoc_intake'
+                activity_duration = round(activity_duration, 3)
                 if error:
-                    self.log(logs, 'ERROR', f'Activity failed: {process.name} / {current.name} in {activity_duration:.3f} ms: {error}', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation, durationMs=activity_duration)
+                    self.log(logs, 'ERROR', f'Activity failed: {process.name} / {current.name} in {activity_duration:.3f} ms: {error}', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation, durationMs=activity_duration, **timing_scope)
                 else:
-                    self.log(logs, 'INFO', f'Activity completed: {process.name} / {current.name} in {activity_duration:.3f} ms', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation, durationMs=activity_duration)
+                    self.log(logs, 'INFO', f'Activity completed: {process.name} / {current.name} in {activity_duration:.3f} ms', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation, durationMs=activity_duration, **timing_scope)
                 outgoing = outgoing_by_source.get(current.id, [])
                 if current.type in ('end', 'http_response') and not error: break
                 if error:
@@ -745,10 +751,17 @@ class WorkflowRuntime(DataFormats):
     def is_outbound(activity: Activity) -> bool:
         return outbound_activity(activity.type, activity.config.get('operation', ''))
 
+    def _resolve_sap_settings(self, settings: dict, ctx: dict) -> dict:
+        # Fetched SAP metadata is literal and read-only. Resolve a binding to
+        # a catalog, but do not walk every field in an embedded catalog.
+        return {key: value if key in {'idocCatalog', 'selectedIdoc'} and isinstance(value, (list, dict))
+                else self.resolve(value, ctx) for key, value in settings.items()}
+
     def resolve_activity_config(self, activity: Activity, ctx: dict):
         # Resolve environment, input, variable, and previous-output expressions in every activity field.
         literal_keys = {'script', 'libraries', 'outputs', 'sourceSchema', 'mappings', 'inputMappings', 'targetSchema', 'targetSchemaText', 'sourceSchemaText', 'schemaText', 'interfaceSchemaText', 'lookupTables', 'testCases', 'templateHistory', 'customFunctions', 'contractBaseline', 'xmlSource', 'xmlStylesheet', 'xmlNamespaces', 'xmlVariables', 'sourceTypeOverrides', 'sourceCoercions'}
-        cfg = self.resolve({key: value for key, value in activity.config.items() if key not in literal_keys}, ctx)
+        resolve_settings = self._resolve_sap_settings if activity.type == 'sap' else self.resolve
+        cfg = resolve_settings({key: value for key, value in activity.config.items() if key not in literal_keys}, ctx)
         cfg.update({key: value for key, value in activity.config.items() if key in literal_keys})
         if activity.type in ('mapper', 'transform', 'ai_transform') and cfg.get('targetSchemaId'):
             schema_id = cfg['targetSchemaId']
@@ -780,7 +793,8 @@ class WorkflowRuntime(DataFormats):
         if activity.type in ('ftp','sftp','http','http_listener','http_response','rest','soap','sap') and cfg.get('resourceId'):
             shared = ctx['resources'].get(cfg['resourceId'])
             if not shared: raise RuntimeError(f'{activity.name} requires a valid shared connection')
-            cfg = merge_http_config(self.resolve(shared.config, ctx), cfg) if activity.type in ('http','rest','soap','http_listener') else {**self.resolve(shared.config, ctx), **cfg}
+            shared_settings = resolve_settings(shared.config, ctx)
+            cfg = merge_http_config(shared_settings, cfg) if activity.type in ('http','rest','soap','http_listener') else {**shared_settings, **cfg}
         return cfg
 
     async def execute(self, activity: Activity, ctx: dict):
@@ -1006,7 +1020,7 @@ class WorkflowRuntime(DataFormats):
         if activity.type == 'sap':
             resource = ctx['resources'].get(cfg.get('resourceId'))
             if not resource or resource.type != 'sap': raise RuntimeError('SAP activity requires an SAP ECC shared connection')
-            sap_cfg = {**self.resolve(resource.config, ctx), **cfg}
+            sap_cfg = cfg
             # SAP's TID manager is a separate shared resource in the reference
             # plug-in. Resolve it here so the listener uses the configured
             # durable store instead of silently falling back to a process-local
@@ -1049,6 +1063,8 @@ class WorkflowRuntime(DataFormats):
                     properties = received.get('properties', {}) if isinstance(received, dict) else {}
                     sap_idoc = properties.get('SAPIDoc', {}) if isinstance(properties, dict) else {}
                     return {**received, 'payload': broker_payload, 'SAPIDoc': sap_adapter._normalize_idoc_arrays(sap_idoc, sap_cfg), 'messagingSource': technology.upper()}
+                if operation == 'idoc_listener' and ctx.get('captureSapIntakeTiming'):
+                    sap_cfg['_captureReceiveTiming'] = True
                 return await sap_adapter.receive_idoc(sap_cfg)
             if operation == 'reply_rfc_bapi' and sap_adapter._mode(sap_cfg) != 'mock':
                 delivery = ctx.get('transport') or {}

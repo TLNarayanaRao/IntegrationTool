@@ -226,6 +226,24 @@ class SapMapperTests(unittest.TestCase):
         # Preserve existing expressions that access the IDOC branch directly.
         self.assertEqual(result['SAPIDoc']['IDOC']['EDI_DC40']['DOCNUM'], '0000000123456789')
 
+    def test_idoc_parser_resolves_connection_settings_without_expanding_catalog_data(self):
+        runtime = WorkflowRuntime()
+        resource = SharedResource(id='sap', name='SAP', type='sap', config={
+            'programId': '${properties.sap.programId}',
+            'idocCatalog': [{'idocType': 'ARTMAS05', 'fields': [{'description': '${properties.sap.programId}'}]}],
+        })
+        activity = Activity(id='parse', name='Parse', type='sap', config={
+            'operation': 'idoc_parser', 'resourceId': 'sap', 'idocType': 'ARTMAS05',
+        })
+        context = {'input': {}, 'last': '<ARTMAS05/>', 'vars': {}, 'resources': {'sap': resource},
+                   'properties': {'sap.programId': 'configured-program'}}
+        with patch('app.runtime.sap_adapter.execute', return_value={}) as execute:
+            asyncio.run(runtime.execute(activity, context))
+        _, config, _ = execute.call_args.args
+        self.assertEqual(config['programId'], 'configured-program')
+        self.assertIs(config['idocCatalog'], resource.config['idocCatalog'])
+        self.assertEqual(config['selectedIdoc']['fields'][0]['description'], '${properties.sap.programId}')
+
     def test_sap_idoc_transaction_contract_selects_tids_and_bounded_listener_settings(self):
         adapter = SapAdapter()
         values = adapter._listener_values({'mode':'mock', 'programId':'MINA_IDOC', 'gatewayHost':'sapqa2', 'gatewayService':'sapgw00', 'maximumConnections':12, 'ackTimeoutSeconds':420})
@@ -406,6 +424,11 @@ class SapMapperTests(unittest.TestCase):
         self.assertEqual(result['SAPIDoc']['E1BPE1MATHEAD']['FUNCTION'], '005')
         self.assertEqual(result['SAPIDoc']['E1BPE1MATHEAD']['MATERIAL'], '5370119HAWA')
         self.assertNotIn('SDATA', str(result['SAPIDoc']))
+        xml_input = '<ARTMAS05><E2BPE1MATHEAD002><SDATA>005MATERIAL</SDATA></E2BPE1MATHEAD002></ARTMAS05>'
+        parsed_xml = adapter.execute('idoc_parser', {'selectedIdoc': selected, 'idocOutputMode': 'XML'}, xml_input)
+        self.assertEqual(parsed_xml['IDocXML'], '<ARTMAS05><E1BPE1MATHEAD><FUNCTION>005</FUNCTION>'
+                         '<MATERIAL>MATERIAL</MATERIAL></E1BPE1MATHEAD></ARTMAS05>')
+        self.assertEqual(parsed_xml['SAPIDoc']['E1BPE1MATHEAD']['MATERIAL'], 'MATERIAL')
 
         rendered = adapter.execute('idoc_renderer', {'idocType': 'ARTMAS05', 'selectedIdoc': selected}, result['SAPIDoc'])
         row = rendered['rawIDoc']['data'][0]

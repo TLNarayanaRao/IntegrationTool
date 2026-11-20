@@ -113,6 +113,7 @@ class SapAdapter:
         types = {node.get('name'): node for node in root if cls._xml_name(node.tag) == 'complexType'}
         elements = {node.get('name'): node for node in root if cls._xml_name(node.tag) == 'element'}
         groups = {node.get('name'): node for node in root if cls._xml_name(node.tag) == 'group'}
+        child_declarations = {}
         def repeats(node):
             count = node.get('maxOccurs', '1')
             return count == 'unbounded' or (count.isdigit() and int(count) > 1)
@@ -137,8 +138,12 @@ class SapAdapter:
             if complex_type is None: complex_type = types.get(local(declaration.get('type', '')))
             if complex_type is None: return data
             result = dict(data)
-            for child, repeated in children(complex_type):
-                name = child.get('name') or local(child.get('ref', ''))
+            declarations = child_declarations.get(complex_type)
+            if declarations is None:
+                declarations = tuple((child.get('name') or local(child.get('ref', '')), child, repeated)
+                                     for child, repeated in children(complex_type))
+                child_declarations[complex_type] = declarations
+            for name, child, repeated in declarations:
                 if name not in result: continue
                 item = result[name]
                 if repeated and not isinstance(item, list): item = [item]
@@ -398,22 +403,32 @@ class SapAdapter:
         return fields or schema_fields, segments or schema_segments
 
     @classmethod
-    def _expand_sdata_xml(cls, xml_text: str, fields: list[dict] | None, segments: list[dict] | None, schema: str | None = None, encoding: str = 'utf-8') -> str:
-        """Upgrade an older XML IDoc containing SDATA into named fields."""
-        root = ET.fromstring(xml_text)
+    def _expand_sdata_tree(cls, root: ET.Element, fields: list[dict] | None, segments: list[dict] | None,
+                           schema: str | None = None, encoding: str = 'utf-8') -> None:
+        """Upgrade an older XML IDoc containing SDATA into named fields in place."""
         if not fields or not segments:
             schema_fields, schema_segments = cls._schema_metadata(schema)
             fields, segments = fields or schema_fields, segments or schema_segments
-        field_index = cls._segment_field_definitions(fields, segments)
         logical_names = cls._segment_logical_names(segments)
         # Legacy captured JSON sometimes repeats the same DOCNUM inside every
         # SDATA row. Only treat a numeric prefix as DOCNUM when the same value
         # is observed in multiple segments; a single numeric field must never
         # be guessed or shifted.
-        sdata_nodes = [(node, next((child for child in list(node) if cls._xml_name(child.tag) == 'SDATA'), None)) for node in root.iter()]
+        sdata_nodes = []
+        for node in root.iter():
+            original_name = cls._xml_name(node.tag)
+            sdata = next((child for child in node if cls._xml_name(child.tag) == 'SDATA'), None) if len(node) else None
+            if sdata is not None:
+                sdata_nodes.append((node, original_name, sdata))
+            logical_name = logical_names.get(original_name.upper())
+            if logical_name and original_name.upper() != logical_name.upper():
+                node.tag = logical_name
+        if not sdata_nodes:
+            return
+        field_index = cls._segment_field_definitions(fields, segments)
         candidates: list[tuple[str, int]] = []
-        for _, sdata_node in sdata_nodes:
-            raw = str(sdata_node.text or '') if sdata_node is not None else ''
+        for _, _, sdata_node in sdata_nodes:
+            raw = str(sdata_node.text or '')
             if len(raw) >= 18 and raw[:18].isdigit(): candidates.append((raw[:18], 0))
             if len(raw) >= 21 and raw[3:21].isdigit(): candidates.append((raw[3:21], 3))
         repeated = {}
@@ -426,27 +441,17 @@ class SapAdapter:
             legacy_docnum = max(repeated_at_start.items(), key=lambda item: item[1])[0]
         else:
             legacy_docnum = None
-        for node in list(root.iter()):
-            original_name = cls._xml_name(node.tag)
-            sdata_node = next((child for child in list(node) if cls._xml_name(child.tag) == 'SDATA'), None)
-            if sdata_node is not None:
-                row = {}
-                raw = str(sdata_node.text or '')
-                if legacy_docnum and (raw.startswith(legacy_docnum[0]) if legacy_docnum[1] == 0 else raw[3:21] == legacy_docnum[0]):
-                    row['DOCNUM'] = legacy_docnum[0]
-                decoded = cls._decode_segment_fields(original_name, sdata_node.text, row, field_index, encoding)
-                if decoded:
-                    node.remove(sdata_node)
-                    for field_name, value in decoded.items():
-                        child = ET.SubElement(node, field_name)
-                        child.text = value
-            # Metadata describes the logical E1 segment while SAP RFC rows
-            # and older captured XML commonly use the physical E2 definition.
-            # Normalize it so JSON/XML output matches the fetched XSD.
-            logical_name = logical_names.get(original_name.upper())
-            if logical_name and original_name.upper() != logical_name.upper():
-                node.tag = logical_name
-        return ET.tostring(root, encoding='unicode')
+        for node, original_name, sdata_node in sdata_nodes:
+            row = {}
+            raw = str(sdata_node.text or '')
+            if legacy_docnum and (raw.startswith(legacy_docnum[0]) if legacy_docnum[1] == 0 else raw[3:21] == legacy_docnum[0]):
+                row['DOCNUM'] = legacy_docnum[0]
+            decoded = cls._decode_segment_fields(original_name, sdata_node.text, row, field_index, encoding)
+            if decoded:
+                node.remove(sdata_node)
+                for field_name, value in decoded.items():
+                    child = ET.SubElement(node, field_name)
+                    child.text = value
 
     @classmethod
     def _xml_to_raw_idoc(cls, value: Any, idoc_type: str, fields: list[dict] | None, segments: list[dict] | None, schema: str | None = None, encoding: str = 'utf-8') -> dict:
@@ -893,6 +898,7 @@ class SapAdapter:
                     '_sapDeliveryId': delivery_id,
                     '_sapListenerKey': listener_key,
                 }
+            intake_started = time.perf_counter() if cfg.get('_captureReceiveTiming') else None
             # IDOC_INBOUND_ASYNCHRONOUS carries control data as an import
             # structure and IDoc segments as table rows.
             control, data = self._idoc_response_parts(payload)
@@ -926,7 +932,10 @@ class SapAdapter:
             # Keep the named SAPIDoc JSON view for mappings/debugging, while
             # `payload` is deliberately XML because that is the listener
             # contract. The raw RFC representation is retained separately.
-            return {'SAPIDoc': parsed_payload, 'controlRecord': control_record, 'rawSAPIDoc': structured, 'payload': xml_payload, 'IDocXML': xml_payload, 'format': 'XML', 'received': True, 'TID': event.get('TID'), 'CPIC_ID': event.get('CPIC_ID'), 'packageSize': event.get('packageSize'), 'jcoDiagnostics': diagnostics, '_sapDeliveryId': delivery_id, '_sapListenerKey': listener_key}
+            result = {'SAPIDoc': parsed_payload, 'controlRecord': control_record, 'rawSAPIDoc': structured, 'payload': xml_payload, 'IDocXML': xml_payload, 'format': 'XML', 'received': True, 'TID': event.get('TID'), 'CPIC_ID': event.get('CPIC_ID'), 'packageSize': event.get('packageSize'), 'jcoDiagnostics': diagnostics, '_sapDeliveryId': delivery_id, '_sapListenerKey': listener_key}
+            if intake_started is not None:
+                result['_sapIntakeMs'] = (time.perf_counter() - intake_started) * 1000
+            return result
         except JavaBridgeError as exc:
             if delivery_id:
                 try: listener.acknowledge(delivery_id, False)
@@ -1160,6 +1169,8 @@ class SapAdapter:
             encoding = str(cfg.get('idocEncoding') or cfg.get('encoding') or 'utf-8').strip() or 'utf-8'
             invalid_policy = 'replace' if str(cfg.get('invalidCharacterPolicy') or 'strict').lower() == 'replace' else 'strict'
             xml_text = raw.decode(encoding, errors=invalid_policy) if isinstance(raw, bytes) else str(raw or '') if isinstance(raw, str) else ''
+            xml_root = None
+            expanded_xml = False
             if str(cfg.get('parserEngine') or '').lower().startswith('sap jidoc'):
                 if not xml_text.lstrip().startswith('<'):
                     raise RuntimeError('SAP JIDocLib validates IDoc XML; select the built-in byte parser for flat EDI_DC40/EDI_DD40 records')
@@ -1169,21 +1180,24 @@ class SapAdapter:
                     raise RuntimeError(f'SAP JIDocLib validation failed: {exc}') from exc
             json_value: Any
             if isinstance(raw, (str, bytes)):
-                textual = raw.decode(encoding, errors=invalid_policy) if isinstance(raw, bytes) else raw
+                textual = xml_text
                 try: json_value = json.loads(textual)
                 except ValueError:
                     try:
                         selected_idoc = cfg.get('selectedIdoc') or {}
                         metadata_fields, metadata_segments = self._metadata_for_idoc(selected_idoc)
-                        xml_text = self._expand_sdata_xml(textual, metadata_fields, metadata_segments, selected_idoc.get('schema'), encoding)
-                        json_value = self._xml_to_json(ET.fromstring(xml_text))
+                        xml_root = ET.fromstring(textual)
+                        self._expand_sdata_tree(xml_root, metadata_fields, metadata_segments, selected_idoc.get('schema'), encoding)
+                        expanded_xml = True
+                        json_value = self._xml_to_json(xml_root)
                     except ET.ParseError as exc:
                         if textual.lstrip().startswith('<'):
                             raise RuntimeError(f'Malformed SAP IDoc XML: {exc}') from exc
                         try:
                             flat = self._parse_flat_idoc(raw, cfg, metadata_fields, metadata_segments)
                             xml_text = self._idoc_structured_to_xml(flat, str(cfg.get('idocType') or selected_idoc.get('idocType') or 'IDoc'), metadata_fields, metadata_segments, selected_idoc.get('schema'), encoding)
-                            json_value = self._xml_to_json(ET.fromstring(xml_text))
+                            xml_root = ET.fromstring(xml_text)
+                            json_value = self._xml_to_json(xml_root)
                         except RuntimeError:
                             if self._mode(cfg) != 'mock': raise
                             json_value = {'rawIDoc': textual, 'segments': [line for line in textual.splitlines() if line]}
@@ -1201,7 +1215,9 @@ class SapAdapter:
                         selected_idoc.get('schema'),
                         encoding,
                     )
-                    try: json_value = self._xml_to_json(ET.fromstring(xml_text))
+                    try:
+                        xml_root = ET.fromstring(xml_text)
+                        json_value = self._xml_to_json(xml_root)
                     except ET.ParseError: json_value = raw
                 elif isinstance(raw, dict) and any(isinstance(item, (dict, list)) and ('SDATA' in item or (isinstance(item, list) and any(isinstance(row, dict) and 'SDATA' in row for row in item))) for item in raw.values()):
                     # Captured listener payloads and older projects may store
@@ -1214,8 +1230,10 @@ class SapAdapter:
                     metadata_fields, metadata_segments = self._metadata_for_idoc(selected_idoc)
                     xml_text = self._json_to_xml(raw, str(idoc_type_hint))
                     try:
-                        xml_text = self._expand_sdata_xml(xml_text, metadata_fields, metadata_segments, selected_idoc.get('schema'), encoding)
-                        json_value = self._xml_to_json(ET.fromstring(xml_text))
+                        xml_root = ET.fromstring(xml_text)
+                        self._expand_sdata_tree(xml_root, metadata_fields, metadata_segments, selected_idoc.get('schema'), encoding)
+                        expanded_xml = True
+                        json_value = self._xml_to_json(xml_root)
                     except ET.ParseError:
                         json_value = raw
             idoc_type = cfg.get('idocType') or cfg.get('selectedIdoc',{}).get('idocType')
@@ -1230,9 +1248,8 @@ class SapAdapter:
                         raise RuntimeError(f'IDoc type mismatch: parser expects {idoc_type}, received {actual_type}')
                     if expected_extension and actual_extension.upper() != expected_extension.upper():
                         raise RuntimeError(f'IDoc extension mismatch: parser expects {expected_extension}, received {actual_extension or "none"}')
-            if not idoc_type and xml_text.lstrip().startswith('<'):
-                try: idoc_type = self._xml_name(ET.fromstring(xml_text).tag)
-                except ET.ParseError: pass
+            if not idoc_type and xml_root is not None:
+                idoc_type = self._xml_name(xml_root.tag)
             json_value = self._normalize_idoc_arrays(json_value, {**cfg, 'idocType': idoc_type})
             # Match the output schema without serializing the same IDoc twice.
             # Historic direct paths remain available to runtime mappings, but
@@ -1241,7 +1258,10 @@ class SapAdapter:
             if idoc_type and isinstance(json_value, dict) and idoc_type not in json_value:
                 sap_idoc_value = _IdocMapping({idoc_type: json_value}, json_value)
             if mode == 'XML':
-                output = xml_text if xml_text.lstrip().startswith('<') else self._json_to_xml(json_value)
+                if expanded_xml:
+                    output = ET.tostring(xml_root, encoding='unicode')
+                else:
+                    output = xml_text if xml_text.lstrip().startswith('<') else self._json_to_xml(json_value)
                 # `payload` is the canonical downstream value for listener,
                 # parser, mapper, and log activities. Keep the structured
                 # JSON view for compatibility, but never make consumers know

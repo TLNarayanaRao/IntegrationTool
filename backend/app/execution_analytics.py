@@ -6,7 +6,9 @@ def activity_timings(logs):
     for entry in logs:
         identifier = entry.get('runtimeActivityId') or entry.get('activityId')
         duration = entry.get('durationMs')
-        if entry.get('kind') != 'activity' or not identifier or not isinstance(duration, (int, float)) or isinstance(duration, bool) or not isfinite(duration) or duration < 0:
+        intake = entry.get('timingScope') == 'idoc_intake'
+        is_timing = entry.get('kind') == 'activity' or (entry.get('kind') == 'event' and intake)
+        if not is_timing or not identifier or not isinstance(duration, (int, float)) or isinstance(duration, bool) or not isfinite(duration) or duration < 0:
             continue
         timings.append({
             'activityId': identifier, 'taskId': entry.get('taskId', ''),
@@ -14,5 +16,6 @@ def activity_timings(logs):
             'type': entry.get('activityType', ''), 'operation': entry.get('operation', ''),
             'durationMs': duration, 'endedAt': entry.get('time', ''),
             'status': 'failed' if entry.get('level') == 'ERROR' else 'completed',
+            **({'timingScope': 'idoc_intake'} if intake else {}),
         })
     return timings

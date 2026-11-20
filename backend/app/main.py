@@ -384,6 +384,7 @@ def _listener_context(item: Project, task, resources: dict, properties: dict, en
     return {
         'input': {}, 'vars': {}, 'last': {}, 'resources': resources, 'properties': properties,
         'project': item, 'runtime': runtime, 'logs': [], 'activities': {},
+        'captureSapIntakeTiming': True,
         'tasks': {task.id: {'name': task.name, 'activities': {}}},
         'context': {'taskId': task.id, 'activityId': '', 'environment': environment, 'debugSessionId': debug_session_id, 'executionId': debug_session_id or item.id},
     }
@@ -399,6 +400,7 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
         while True:
             sap_delivery_id = None
             sap_listener_key = None
+            sap_intake_ms = 0.0
             if debug_session_id:
                 session = debugger.sessions.get(debug_session_id)
                 if not session or session.get('status') == 'stopped': return
@@ -435,10 +437,12 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
                     # transaction.
                     sap_delivery_id = output.pop('_sapDeliveryId', None)
                     sap_listener_key = output.pop('_sapListenerKey', None)
+                    sap_intake_ms = output.pop('_sapIntakeMs', 0.0)
                 if debug_session_id:
                     delivery_transport = {
                         'deliveryId': sap_delivery_id,
                         'listenerKey': sap_listener_key,
+                        'sapIntakeMs': sap_intake_ms,
                         'functionName': output.get('functionName') if isinstance(output, dict) else None,
                         'operation': activity.config.get('operation'),
                         'invocationProtocol': output.get('invocationProtocol') if isinstance(output, dict) else None,
@@ -475,7 +479,9 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
                         await asyncio.sleep(max(.1, float(resolved_config.get('pollInterval', 1) or 1)))
                     continue
                 try:
-                    result = await runtime.run(task, output, resources, properties, activity.id, item, event_output=output, environment=environment)
+                    result = await runtime.run(task, output, resources, properties, activity.id, item, event_output=output,
+                                               transport={'sapIntakeMs': sap_intake_ms} if sap_intake_ms else None,
+                                               environment=environment)
                     if sap_delivery_id and sap_listener_key:
                         sap_adapter.acknowledge_idoc(sap_listener_key, sap_delivery_id, result.status == 'completed')
                 except Exception:
@@ -557,6 +563,7 @@ async def _continuous_sap_event_loop(item: Project, task, activity, environment:
             context = _listener_context(item, task, resources, properties, environment)
             delivery_id = None
             listener_key = None
+            sap_intake_ms = 0.0
             transport = {}
             try:
                 async with receive_lock:
@@ -565,6 +572,7 @@ async def _continuous_sap_event_loop(item: Project, task, activity, environment:
                 if isinstance(output, dict):
                     delivery_id = output.pop('_sapDeliveryId', None)
                     listener_key = output.pop('_sapListenerKey', None)
+                    sap_intake_ms = output.pop('_sapIntakeMs', 0.0)
                 if diagnostics:
                     entries = [{'time': log_timestamp(), 'level': 'INFO', 'kind': 'connector', 'connector': 'SAP JCo', **detail, 'activityId': activity.id, 'taskId': task.id} for detail in diagnostics]
                     previous = runtime_states.get(project_id, {})
@@ -577,6 +585,7 @@ async def _continuous_sap_event_loop(item: Project, task, activity, environment:
                 transport = {
                     'deliveryId': delivery_id,
                     'listenerKey': listener_key,
+                    'sapIntakeMs': sap_intake_ms,
                     'functionName': output.get('functionName') if isinstance(output, dict) else None,
                     'operation': activity.config.get('operation'),
                     'invocationProtocol': output.get('invocationProtocol') if isinstance(output, dict) else None,

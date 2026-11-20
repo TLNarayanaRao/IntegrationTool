@@ -206,18 +206,23 @@ class DebugManager:
         frame = state['frames'][-1]
         task = next(item for item in state['project'].tasks if item.id == frame['taskId'])
         activity = next(item for item in task.activities if item.id == frame['activityId'])
+        intake_started = perf_counter()
         ctx = frame['context']; ctx['input'] = output; ctx['last'] = output; ctx['context']['activityId'] = activity.id
         trace = state['trace']
         trace.open_job(frame, task)
         trace.resume()
         trace.set_thread(frame.get('threadId'), 'active')
-        trace.activity(frame, activity, 'received')
         now = log_timestamp()
         arrival = {'time': now, 'level': 'INFO', 'kind': 'event', 'message': f'Event received: {task.name} / {activity.name}', 'activityId': activity.id, 'taskId': task.id, 'sessionId': session_id}
-        if activity.type == 'sap' and activity.config.get('operation') == 'idoc_listener':
-            arrival['sapIDoc'] = idoc_delivery_details(output)
-        state['logs'].append(arrival)
         self.runtime.record_activity_output(activity, output, ctx, output)
+        duration = 0.0
+        if activity.type == 'sap' and activity.config.get('operation') == 'idoc_listener':
+            duration = (perf_counter() - intake_started) * 1000 + ctx.get('transport', {}).get('sapIntakeMs', 0.0)
+            arrival['sapIDoc'] = idoc_delivery_details(output)
+            arrival.update(activityName=activity.name, activityType=activity.type, operation='idoc_listener',
+                           durationMs=round(duration, 3), timingScope='idoc_intake')
+        trace.activity(frame, activity, 'received', duration)
+        state['logs'].append(arrival)
         outgoing = [edge for edge in task.transitions if edge.source == activity.id]
         chosen_edges = self.runtime.select_group_transitions(self.runtime.eligible_success_transitions(outgoing, ctx), ctx, state.get('groupPlans', {}).get(task.id, {}))
         if not chosen_edges:
