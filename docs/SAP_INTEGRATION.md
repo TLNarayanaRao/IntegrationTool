@@ -168,6 +168,16 @@ document number and business context for idempotency at downstream systems.
 The bridge records its first inbound IDoc package and every thousandth
 package thereafter, plus callback errors and startup diagnostics.
 
+Use **Execution analytics → SAP IDoc deliveries** to compare document numbers
+and SAP transaction IDs against the sender's list. In Run, the section shows
+the outcome of each recorded delivery within the latest 100 workflow runs.
+In Debug, it shows receipts in the current Debug log. **Activity invocations**
+counts activity calls, including downstream steps. The HTML and JSON execution
+reports include the delivery list. For older deliveries, use
+the project runtime logs and search for `sap-idoc`. Bridge callback errors
+are shown even when SAP sends no later document. An unsplit or malformed
+batch is rejected so SAP can retry it.
+
 The 10-minute target requires at least 166.7 completed documents per second.
 On approved QA, send 100,000 unique IDocs with representative sizes from SAP
 and verify downstream completions and SAP transaction confirmations within 600

@@ -2,6 +2,7 @@ import configparser
 import importlib.util
 import io
 from pathlib import Path
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -18,6 +19,41 @@ spec.loader.exec_module(setup)
 from linux_config import read_config, environment
 
 class LinuxSetupTests(unittest.TestCase):
+    @unittest.skipIf(sys.version_info < (3, 12), 'Executable setup bundle requires Python 3.12 or newer')
+    def test_executable_bundle_check_and_retry(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            archive = root / 'transfer.zip'
+            setup.bundle(archive)
+            cfg = root / 'control.ini'
+            cfg.write_text(f'[setup]\ninstall_root={root / "install with spaces"}\npython={sys.executable}\nversion=1.0.5\n'
+                           '[control-plane]\nhost=127.0.0.1\nport=19080\napi_key=qa-key\nsecret_key=qa-secret\n', encoding='utf-8')
+            result = subprocess.run([sys.executable, str(archive), 'control-plane', '--config', str(cfg), '--check'],
+                                    check=True, text=True, capture_output=True, cwd=root)
+            self.assertIn('INI validated: control-plane', result.stdout)
+            destination = root / 'install with spaces' / 'software'
+            self.assertFalse(destination.parent.exists())
+            setup.install_bundled_source(archive, destination)
+            setup.install_bundled_source(archive, destination)
+            self.assertTrue((destination / setup.LAUNCHER).is_file())
+            with zipfile.ZipFile(archive, 'a') as changed:
+                changed.writestr('software/new-file', 'new')
+            with self.assertRaisesRegex(ValueError, 'another source tree'):
+                setup.install_bundled_source(archive, destination)
+            self.assertFalse((destination / 'new-file').exists())
+
+    def test_zip_bootstrap_rejects_unsafe_members_before_writing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            archive = root / 'transfer.zip'
+            with zipfile.ZipFile(archive, 'w') as bundle:
+                bundle.writestr('software/' + setup.LAUNCHER, '')
+                bundle.writestr('software/../escaped', 'unsafe')
+            with self.assertRaisesRegex(ValueError, 'Invalid source entry'):
+                setup.install_bundled_source(archive, root / 'software')
+            self.assertFalse((root / 'escaped').exists())
+            self.assertFalse((root / 'software').exists())
+
     def test_registration_against_control_plane_api_is_repeatable_and_preserves_scopes(self):
         from fastapi.testclient import TestClient
         from administrator.app import main
@@ -76,7 +112,7 @@ class LinuxSetupTests(unittest.TestCase):
     def test_transfer_bundle_has_lf_shells_and_excludes_machine_state(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            for filename, payload in [('scripts/linux/example.sh', b'\xef\xbb\xbf#!/bin/bash\r\necho ok\r\n'), ('administrator/data/secret.json', b'secret'), ('backend/.venv/config', b'local'), ('docs/LINUX_SETUP.md', b'guide')]:
+            for filename, payload in [('scripts/linux/example.sh', b'\xef\xbb\xbf#!/bin/bash\r\necho ok\r\n'), ('administrator/data/secret.json', b'secret'), ('backend/.venv/config', b'local'), ('docs/LINUX_SETUP.md', b'guide'), ('docs/SAP_INTEGRATION.md', b'guide'), ('docs/sap-soak-config.example.json', b'{}')]:
                 path = root / filename; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(payload)
             output = root / 'transfer.zip'
             with patch.object(setup, 'SOFTWARE', root): setup.bundle(output)
@@ -101,7 +137,8 @@ class LinuxSetupTests(unittest.TestCase):
             (state/'data-plane.ini').write_text('[data-plane]\nid=first\n')
             config = configparser.ConfigParser(interpolation=None)
             config.read_string(f'[setup]\ninstall_root={root}\nsource_root={software}\npython={sys.executable}\n[control-plane]\nadmin_key=test\ncontrol_plane_url=http://localhost:19080\n[data-plane]\nid=second\nname=Second\nhost=host\nnamespace=orders\nstate_dir={state}\n')
-            with self.assertRaisesRegex(ValueError, 'another Data Plane'):
+            with patch.object(setup.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '3.12\n')), \
+                    self.assertRaisesRegex(ValueError, 'another Data Plane'):
                 setup.settings(config, 'data-plane', root/'second.ini')
 
     def test_data_plane_setup_keeps_control_plane_installation_separate(self):
@@ -133,12 +170,42 @@ class LinuxSetupTests(unittest.TestCase):
             ini.parent.mkdir()
             with ini.open('w') as handle: config.write(handle)
             state = root / 'control-plane-data/keep.json'; state.parent.mkdir(); state.write_text('existing')
+            config['control-plane']['install_local_runtime'] = 'true'
+            with ini.open('w') as handle: config.write(handle)
             with patch.object(setup, 'bash') as bash: setup.control_plane(config, ini, 'setup', root, software, {})
-            bash.assert_not_called()
+            self.assertEqual(bash.call_args.args[0], software / 'scripts/linux/install-runtime.sh')
             self.assertEqual(state.read_text(), 'existing')
             self.assertTrue((root / 'control-plane/_internal/library').is_file())
             self.assertIn('secret_key = stable', ini.read_text())
             self.assertFalse((root / 'agent').exists())
+
+    def test_readiness_requires_authenticated_local_capability(self):
+        from unittest.mock import Mock
+        api = Mock()
+        api.request.side_effect = [{'status':'ok', 'component':'mina-control-plane', 'runtimeAdapterConfigured':True}, {},
+                                   [{'id':'integration-runtime-local', 'dataPlaneId':'localhost', 'namespace':'default', 'state':'PROVISIONED'}]]
+        setup.verify_control_plane(api, True, Path('administrator.log'))
+        self.assertEqual([call.args[1] for call in api.request.call_args_list], ['/api/health', '/api/session', '/api/capabilities'])
+        api.request.side_effect = [{'status':'ok', 'component':'mina-control-plane', 'runtimeAdapterConfigured':True}, {}, []]
+        with self.assertRaisesRegex(ValueError, 'target is unavailable'):
+            setup.verify_control_plane(api, True, Path('administrator.log'))
+
+    def test_minimal_linux_missing_build_tools_and_venv_are_reported(self):
+        config = configparser.ConfigParser()
+        config.read_string('[setup]\nversion=1.0.5\n[control-plane]\ninstall_local_runtime=true\n')
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder)
+            with patch.object(setup.shutil, 'which', side_effect=lambda name: None if name in ('objdump','objcopy') else name), \
+                    self.assertRaisesRegex(ValueError, 'objdump, objcopy.*binutils'):
+                setup.check_linux_prerequisites(config, 'control-plane', source, {'MINA_PYTHON':'python3.12'})
+            with patch.object(setup.shutil, 'which', side_effect=lambda name: name), \
+                    patch.object(setup.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1)), \
+                    self.assertRaisesRegex(ValueError, 'python3.12-venv'):
+                setup.check_linux_prerequisites(config, 'control-plane', source, {'MINA_PYTHON':'python3.12'})
+            with patch.object(setup.shutil, 'which', side_effect=lambda name: name), \
+                    patch.object(setup.subprocess, 'run', side_effect=[subprocess.CompletedProcess([], 0), subprocess.CompletedProcess([], 1)]), \
+                    self.assertRaisesRegex(ValueError, 'libpython3.12'):
+                setup.check_linux_prerequisites(config, 'control-plane', source, {'MINA_PYTHON':'python3.12'})
 
     def test_archive_traversal_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:

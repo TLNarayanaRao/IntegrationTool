@@ -7,13 +7,14 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from app import main
 from app.models import Project
 from app.project_logging import close_project_log_handlers
 from app.raw_python import engine_python_files, raw_python_files
 from app.runtime import WorkflowRuntime
+from app.sap import SapAdapter
 
 
 def project_for_replay():
@@ -92,6 +93,54 @@ class ReplayBridge:
 
 
 class SapListenerThroughputTests(unittest.TestCase):
+    def test_debug_rolls_back_idoc_without_a_matching_transition(self):
+        project = project_for_replay()
+        task = project.tasks[0]
+        task.transitions = []
+        bridge = ReplayBridge(1)
+        async def exercise():
+            bridge.loop, bridge.finish = asyncio.get_running_loop(), asyncio.Event()
+            bridge.checked.add('0')
+            view = main.debugger.start(project, task.id, {}, {project.resources[0].id: project.resources[0]}, {}, [])
+            session_id = view['sessionId']
+            listener = asyncio.create_task(main._continuous_event_loop(project, task, task.activities[0], 'local', session_id))
+            try:
+                await asyncio.wait_for(bridge.finish.wait(), timeout=3)
+                self.assertEqual(bridge.errors, ['0'], 'A rejected route must roll back its SAP delivery')
+                arrivals = [entry['sapIDoc'] for entry in main.debugger.sessions[session_id]['logs'] if 'sapIDoc' in entry]
+                self.assertEqual([item['documentNumber'] for item in arrivals], ['0'])
+            finally:
+                listener.cancel()
+                await asyncio.gather(listener, return_exceptions=True)
+                main.debugger.sessions.pop(session_id, None)
+                main.runtime_states.pop(project.id, None)
+        with patch('app.sap.start_sap_listener', return_value=bridge), patch('app.main._persist_debug_logs', new_callable=AsyncMock):
+            asyncio.run(exercise())
+
+    def test_unsplit_package_is_rolled_back_and_bridge_error_is_reported_while_idle(self):
+        cfg = {'operation': 'idoc_listener', 'programId': 'REPLAY', 'gatewayHost': 'replay.invalid',
+               'gatewayService': 'sapgw00', 'mode': 'external'}
+        bridge = Mock()
+        bridge.process.poll.return_value = None
+        bridge.next_event = AsyncMock(side_effect=[
+            {'event': 'sap_request', 'deliveryId': 'package', 'payload': {'tables': {
+                'IDOC_CONTROL_REC_40': [{'DOCNUM': '1'}, {'DOCNUM': '2'}],
+            }}},
+            {'event': 'jco_log', 'level': 'ERROR', 'phase': 'request_callback', 'TID': 'failed-tid',
+             'error': 'Malformed IDoc package'},
+        ])
+        adapter = SapAdapter()
+        async def exercise():
+            with patch('app.sap.start_sap_listener', return_value=bridge):
+                with self.assertRaisesRegex(ValueError, 'multiple IDoc control rows'):
+                    await adapter.receive_idoc(cfg)
+                bridge.acknowledge.assert_called_once_with('package', False)
+                result = await adapter.receive_idoc(cfg)
+                self.assertFalse(result['received'])
+                self.assertEqual(result['jcoDiagnostics'][0]['TID'], 'failed-tid')
+                self.assertEqual(result['jcoDiagnostics'][0]['error'], 'Malformed IDoc package')
+        asyncio.run(exercise())
+
     def test_waiting_for_a_cancelled_listener_allows_its_cleanup_to_finish(self):
         async def exercise():
             running, cleaning, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
@@ -161,6 +210,10 @@ class SapListenerThroughputTests(unittest.TestCase):
                 with patch('app.sap.start_sap_listener', return_value=bridge), patch.object(main, 'runtime', runtime), \
                         patch.dict(os.environ, {'MINA_RUNTIME_LOG_DIR': log_directory}), validate_runtime(runtime, bridge):
                     asyncio.run(measure('studio-run', main._continuous_sap_event_loop(project, task, task.activities[0], 'local'), bridge))
+                    history = main.runtime_states[project.id]['executions']
+                    self.assertEqual(len(history), min(count, 100))
+                    self.assertEqual(len({entry['sapIDoc']['documentNumber'] for entry in history}), len(history))
+                    self.assertTrue(all(entry['sapIDoc']['transactionId'] for entry in history))
             finally:
                 close_project_log_handlers(project.id)
                 main.runtime_states.pop(project.id, None)

@@ -108,6 +108,7 @@ async def _receive_forever(project, task, event, environment: str) -> None:
 
     async def worker(index: int):
         retry_delay = 1.0
+        seen_files = None
         while True:
             context = _listener_context(project, task, resources, properties, environment)
             delivery_id = listener_key = None
@@ -119,6 +120,9 @@ async def _receive_forever(project, task, event, environment: str) -> None:
                 else:
                     output = await RUNTIME.execute_with_policy(event, context)
                 retry_delay = 1.0
+                if event.type == 'file':
+                    from .engine.file_operations import file_poll_events
+                    output, seen_files = file_poll_events(output, cfg, seen_files)
                 if not _event_available(output):
                     await asyncio.sleep(max(.1, float(cfg.get('pollInterval') or 1)) if event.type == 'file' else .1)
                     continue

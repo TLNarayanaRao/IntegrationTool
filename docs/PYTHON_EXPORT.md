@@ -7,6 +7,18 @@ Studio exposes two distinct Python exports. Both contain Python application file
 
 The standard `.mpkg` and `.ear` exports remain available. Python archives require separately licensed vendor drivers where the underlying connection needs them (for example SAP JCo or JMS/EMS). A Python source package does not replace those vendor libraries. Legacy `.ifpkg` packages remain importable.
 
+## File and AMQP starters
+
+Both Python archive modes keep File Poller and AMQP Receive Message starter tasks
+active until stopped. A File Poller takes an initial snapshot of matching paths.
+Enable **Include existing files** to send those matches into the flow on the
+first scan. Later scans emit the configured Created, Modified, Deleted, or All
+events. An unchanged scan does not start a workflow. Each restart takes a fresh
+snapshot, so enabling **Include existing files** can reprocess files left in
+the directory. To map the name of the first matching file from a preceding
+poll, use `${last.files.0.fileName}`. Numeric segments in these paths use
+zero-based indexes.
+
 ## Parallel branches and joins
 
 Multiple eligible success transitions start parallel branches. When all branches

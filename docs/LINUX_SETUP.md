@@ -2,8 +2,9 @@
 
 This is the authoritative setup and operations entry point. Use one program,
 `scripts/linux/mina-setup.py`, with separate INI files for the Control Plane and
-each Data Plane. The older shell entry points are compatibility aliases. Do not
-combine instructions from older layouts. No systemd or systemctl is required.
+each Data Plane. The Windows transfer bundle can run directly with Python and
+includes the same setup program. The older shell entry points are compatibility
+aliases. The setup starts a background process without systemd.
 
 ## 1. Provision the Linux hosts
 
@@ -12,8 +13,13 @@ will run MINA, for example `/opt/mina`. Run the installation and processes as th
 account. Each host needs Linux, Python 3.12+ with venv/pip, Bash and network access
 to the approved Python package mirror, or a complete Linux wheelhouse. `curl` is
 useful for manual health checks. The Control Plane source build additionally uses
-PyInstaller, installed by the build script. Build and deployment must use the same
-Linux architecture and a compatible Linux distribution/glibc.
+PyInstaller, installed by the build script, plus `ldd`, `objdump`, `objcopy`,
+`tar`, and the shared library for the configured Python. On Ubuntu 24.04 minimal,
+install `python3.12-venv`, `libpython3.12`, and `binutils` before a source build.
+`--check` verifies these prerequisites on Linux before setup extracts
+the software. A prebuilt Administrator archive skips the source-build tools.
+Build and deployment must use the same Linux architecture and a compatible Linux
+distribution/glibc.
 
 Data Planes need the Control Plane URL and owner credential for registration and
 the current remote-agent API. Use an internal HTTPS reverse proxy for remote
@@ -27,6 +33,21 @@ environments are not Linux runtimes. Set `[runtime] build_java_bridge=true` to
 compile the Java bridge automatically. Native ODBC, AMQP 1.0 and optional DB2
 prerequisites must be supplied on hosts whose applications use them.
 
+## Which application archive to deploy
+
+| Studio export | Use on Linux |
+| --- | --- |
+| **MINA deployment package (`.mpkg`)** | Default for Control Plane-managed applications. Deploy to the installed Integration Runtime and qualify against the same runtime release used in QA. Runtime fixes are delivered through the shared runtime. |
+| **Python compatibility archive (`.pympkg`)** | Use when the deployment needs to carry the MINA engine from export time, such as a pinned execution environment. Re-export to pick up fixes to that bundled engine. |
+| **Direct Python archive (`.pympkg`)** | Use for an independently runnable Python application or a flow that passes direct compilation and target qualification. Benchmark the deployed flow and its actual providers if throughput drives the choice. |
+
+Both Python formats require a compatible Python environment and any external
+connector dependencies on the target. The Python manifest's `pythonSource.mode`
+distinguishes engine and direct exports. The setup ZIP installs the platform. Upload
+the application archive separately through Studio or the Control Plane, select its
+environment, and provide its secrets and connection settings. For the single-host
+install, select Data Plane `localhost`, namespace `default`, and **Integration Runtime**.
+
 ## 2. Prepare the software on Windows
 
 From the repository root in PowerShell:
@@ -35,10 +56,11 @@ From the repository root in PowerShell:
 cd D:\Integration-tool\IntegrationFabric
 py -3 scripts/linux/mina-setup.py bundle --output MinaLinuxSetup.zip
 scp .\MinaLinuxSetup.zip minauser@control-plane-host:/tmp/
+scp .\scripts\linux\mina-control-plane.ini minauser@control-plane-host:/opt/mina/control-plane.ini
 ```
 
 The bundle contains `administrator/`, `backend/`, `scripts/`, Java bridge source,
-`drivers/` when present, the two INI templates and this guide under `software/`.
+the two INI templates and this guide under `software/`.
 It excludes local databases, logs, virtual environments, caches, Windows build
 outputs and release archives. Review vendor driver files before transfer. The
 bundle sets shell scripts to LF and removes UTF-8 BOMs; the Linux entry also
@@ -50,25 +72,16 @@ be used. To use a prebuilt Linux release instead, copy the entire
 `MinaAdministrator-<version>-Linux-x64.tar.gz` separately and set its absolute
 path in `[setup] administrator_archive`; set `build_administrator=false`.
 
-## 3. Extract and configure the Control Plane
+## 3. Configure and install the single-host Control Plane
 
-On the Control Plane host, as the MINA account:
-
-```bash
-mkdir -p /opt/mina
-python3.12 -m zipfile -e /tmp/MinaLinuxSetup.zip /opt/mina
-cd /opt/mina/software
-umask 077
-mkdir -p /opt/mina/config
-cp scripts/linux/mina-control-plane.ini /opt/mina/config/control-plane.ini
-```
-
-Edit only `/opt/mina/config/control-plane.ini`:
+On the Control Plane host, as the MINA account, protect the copied INI with
+`chmod 600 /opt/mina/control-plane.ini` and edit that file.
 
 - `install_root=/opt/mina`, `source_root=/opt/mina/software` and the available
   Python command/path under `[setup]`.
 - `version` for the Linux Administrator build/release.
-- `[control-plane] host` is a bind address; `0.0.0.0` binds all interfaces. Set
+- `[control-plane] host` defaults to `127.0.0.1` for a local reverse proxy.
+  Use a specific interface address for an approved remote bind. Set
   `port`, a strong `api_key`, and a separate stable `secret_key` for encryption.
   `CHANGE_ME` values are rejected. Preserve the encryption key across upgrades.
 - Set `pip_index_url` to the approved package mirror, or `wheelhouse` to an
@@ -78,30 +91,30 @@ Edit only `/opt/mina/config/control-plane.ini`:
   `#`, `%`, `$` and `;` inside a value are preserved. Put comments on separate lines.
 - `start=true` starts and health-checks the server after installation;
   `start=false` installs it without starting it.
-- Keep `install_local_runtime=false` when applications run on separate Data Planes.
-  Enable it only when the Control Plane host must also run local applications.
+- Keep `install_local_runtime=true` for the single-host setup. Use `false` for a
+  management-only Control Plane with separate Data Planes.
 
 ```bash
-chmod 600 /opt/mina/config/control-plane.ini
-python3.12 scripts/linux/mina-setup.py control-plane --config /opt/mina/config/control-plane.ini --check
-python3.12 scripts/linux/mina-setup.py control-plane --config /opt/mina/config/control-plane.ini
+python3.12 /tmp/MinaLinuxSetup.zip control-plane --config /opt/mina/control-plane.ini
 ```
 
-Execute from `/opt/mina/software` as shown. Absolute script/config paths also work
-from another directory. The default action is `setup`: it builds or reads the
-Linux archive, installs the complete bundle, retains existing Control Plane data,
-copies the private INI, starts the listener and waits for `/api/health`.
-Data Plane registration is a separate step. Do not append `&` to setup: it already
-starts the persistent process in the background and reports failures.
-Open the configured reverse-proxy URL, or `http://<control-plane-host>:19080/`
-on the permitted internal network, to use the Control Plane browser UI.
+Run the command from any directory. It extracts the source into `source_root`,
+builds or installs the Linux Administrator, installs and checks the local runtime,
+copies the private INI, starts the server, and verifies authenticated access and
+the built-in deployment target `localhost / default / integration-runtime-local`.
+Open the configured reverse-proxy URL or `http://127.0.0.1:19080/` on the host.
+Add `--check` for a validation-only pass. To retry a partial installation, reuse
+the same ZIP and INI. For a new release, choose a new `source_root` and keep the
+same state directories and encryption key. If `/opt/mina/software` already has a
+manually extracted tree, continue to run its `scripts/linux/mina-setup.py` entry
+point or choose a fresh `source_root` for the executable ZIP.
 
 Default layout:
 
 ```text
 /opt/mina/
   software/             copied source and setup scripts
-  config/               private operator-maintained INI files
+  control-plane.ini     private operator-maintained INI
   control-plane/        Linux executable, internal libraries, installed INI
   control-plane-data/   repository, encrypted secrets and audit state
   runtime/              Data Plane Python venv and runtime adapter (when installed)
@@ -130,17 +143,15 @@ Python archives to pick up updated application code.
 
 ## 4. Set up each Data Plane separately
 
-Copy the same software ZIP to the Data Plane host and extract it as in step 3.
-On that host:
+Copy the same software ZIP and the Data Plane INI template to each Data Plane
+host. For example, from PowerShell on Windows:
 
-```bash
-cd /opt/mina/software
-umask 077
-mkdir -p /opt/mina/config
-cp scripts/linux/mina-data-plane.ini /opt/mina/config/customer-plane.ini
+```powershell
+scp .\MinaLinuxSetup.zip minauser@data-plane-host:/tmp/
+scp .\scripts\linux\mina-data-plane.ini minauser@data-plane-host:/opt/mina/data-plane.ini
 ```
 
-Edit the new INI:
+On that Linux host, edit `/opt/mina/data-plane.ini`:
 
 - `[setup] install_root`, `source_root`, `python`, mirror/wheelhouse and `start`.
 - `[control-plane] control_plane_url` is the externally reachable URL (HTTP or
@@ -164,9 +175,8 @@ Edit the new INI:
   user ID, `team_id`, role and scope. Empty `resource_id` uses this namespace.
 
 ```bash
-chmod 600 /opt/mina/config/customer-plane.ini
-python3.12 scripts/linux/mina-setup.py data-plane --config /opt/mina/config/customer-plane.ini --check
-python3.12 scripts/linux/mina-setup.py data-plane --config /opt/mina/config/customer-plane.ini
+chmod 600 /opt/mina/data-plane.ini
+python3.12 /tmp/MinaLinuxSetup.zip data-plane --config /opt/mina/data-plane.ini
 ```
 
 This installs the host runtime, registers/updates the Data Plane, provisions its
@@ -184,15 +194,15 @@ the same Linux host; stop affected agents before upgrading that shared runtime.
 
 ## 5. Lifecycle commands and upgrades
 
-From `/opt/mina/software`, use the same entry and same INI with `--action`:
+From `/opt/mina/software`, use the extracted entry and the same INI with `--action`:
 
 ```bash
-python3.12 scripts/linux/mina-setup.py control-plane --config /opt/mina/config/control-plane.ini --action status
-python3.12 scripts/linux/mina-setup.py control-plane --config /opt/mina/config/control-plane.ini --action stop
-python3.12 scripts/linux/mina-setup.py control-plane --config /opt/mina/config/control-plane.ini --action start
-python3.12 scripts/linux/mina-setup.py data-plane --config /opt/mina/config/customer-plane.ini --action status
-python3.12 scripts/linux/mina-setup.py data-plane --config /opt/mina/config/customer-plane.ini --action stop
-python3.12 scripts/linux/mina-setup.py data-plane --config /opt/mina/config/customer-plane.ini --action start
+python3.12 scripts/linux/mina-setup.py control-plane --config /opt/mina/control-plane.ini --action status
+python3.12 scripts/linux/mina-setup.py control-plane --config /opt/mina/control-plane.ini --action stop
+python3.12 scripts/linux/mina-setup.py control-plane --config /opt/mina/control-plane.ini --action start
+python3.12 scripts/linux/mina-setup.py data-plane --config /opt/mina/data-plane.ini --action status
+python3.12 scripts/linux/mina-setup.py data-plane --config /opt/mina/data-plane.ini --action stop
+python3.12 scripts/linux/mina-setup.py data-plane --config /opt/mina/data-plane.ini --action start
 ```
 
 `restart` is available for both roles. To change installed software or INI values,

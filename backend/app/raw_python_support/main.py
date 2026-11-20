@@ -21,20 +21,35 @@ async def run_task(task_id: str, payload=None, environment_name: str = DEFAULT_E
     return await TASKS[task_id](context)
 
 
+async def _run_starter_jobs(jobs):
+    tasks = [asyncio.create_task(job) for job in jobs]
+    try:
+        return await asyncio.gather(*tasks)
+    except BaseException:
+        for task in tasks:
+            if not task.done() and not task.cancelling():
+                task.cancel()
+        # gather can raise as soon as one worker stops. Drain the other jobs
+        # before the application exits and closes their connector sessions.
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+
+
 async def run_application(environment_name: str = DEFAULT_ENVIRONMENT):
     enabled = os.environ.get('MINA_ENABLED_STARTERS')
     ids = [task_id for task_id in STARTERS if not enabled or task_id in json.loads(enabled)]
     if not ids: raise ValueError('No Starter Tasks are enabled')
     # ACKNOWLEDGEMENT_CAPABILITY_START
-    async def acknowledge_delivery(technology: str, listener_key: str, delivery_id: str, success: bool):
+    async def acknowledge_delivery(technology: str, transport: dict, success: bool):
         if technology == 'sap':
-            await asyncio.to_thread(connectors.acknowledge_sap, listener_key, delivery_id, success)
+            await connectors.settle_sap_delivery(transport, success)
         else:
-            connectors.acknowledge_jms(listener_key, delivery_id, success)
+            connectors.acknowledge_jms(transport['listenerKey'], transport['deliveryId'], success)
     # ACKNOWLEDGEMENT_CAPABILITY_END
     async def receive_forever(task_id: str, receive_lock: asyncio.Lock | None):
         activity_id, kind, config, name = EVENT_STARTERS[task_id]
         delay = 1.0
+        seen_files = None
         while True:
             properties, resources = environment(environment_name)
             context = Context({}, properties, resources, environment_name=environment_name)
@@ -46,6 +61,10 @@ async def run_application(environment_name: str = DEFAULT_ENVIRONMENT):
                     async with receive_lock:
                         output = await execute_with_policy(kind, config, context, activity_id, name)
                 delay = 1.0
+                if kind == 'file':
+                    from .native.file_operations import file_poll_events
+                    file_options = resolve(config, context)
+                    output, seen_files = file_poll_events(output, file_options, seen_files)
                 available = output is not None and (not isinstance(output, dict) or
                     bool(output.get('scheduledTime') or output.get('count') or output.get('received') or output.get('messages') or output.get('body') is not None))
                 if available:
@@ -66,11 +85,11 @@ async def run_application(environment_name: str = DEFAULT_ENVIRONMENT):
                     if delivery_id and listener_key and not context.transport.get('completed'):
                         protocol = str(output.get('invocationProtocol') or 'Request/Reply').lower().replace('-', '').replace('/', '')
                         needs_reply = technology == 'sap' and config.get('operation') == 'rfc_bapi_listener' and protocol in ('requestreply', 'srfc')
-                        await acknowledge_delivery(technology, listener_key, delivery_id, not needs_reply)
+                        await acknowledge_delivery(technology, context.transport, not needs_reply)
                         context.transport['completed'] = True
                         if needs_reply:
                             logging.error('Starter %s completed without a Reply from RFC/BAPI activity and was rolled back', task_id)
-                else:
+                elif kind != 'file':
                     await asyncio.sleep(.1)
                 if kind == 'sap' and isinstance(output, dict) and output.get('mock'):
                     await asyncio.sleep(.1)
@@ -83,14 +102,16 @@ async def run_application(environment_name: str = DEFAULT_ENVIRONMENT):
                     if repeat and mode != 'cron':
                         unit = {'seconds': 1, 'minutes': 60, 'hours': 3600, 'days': 86400}.get(str(resolve(config.get('unit') or 'minutes', context)).lower(), 60)
                         await asyncio.sleep(max(1, float(resolve(config.get('interval') or 1, context)) * unit))
+                elif kind == 'file':
+                    await asyncio.sleep(max(.1, float(file_options.get('pollInterval') or 1)))
             except asyncio.CancelledError:
                 if delivery_id and listener_key and not context.transport.get('completed'):
-                    try: await acknowledge_delivery(technology, listener_key, delivery_id, False)
+                    try: await acknowledge_delivery(technology, context.transport, False)
                     except Exception: logging.exception('%s delivery rejection failed', technology)
                 raise
             except Exception:
                 if delivery_id and listener_key and not context.transport.get('completed'):
-                    try: await acknowledge_delivery(technology, listener_key, delivery_id, False)
+                    try: await acknowledge_delivery(technology, context.transport, False)
                     except Exception: logging.exception('%s delivery rejection failed', technology)
                 logging.exception('Starter %s failed; retrying in %s seconds', task_id, delay)
                 await asyncio.sleep(delay)
@@ -116,7 +137,7 @@ async def run_application(environment_name: str = DEFAULT_ENVIRONMENT):
         except (TypeError, ValueError):
             workers = 8
         receive_lock = asyncio.Lock()
-        await asyncio.gather(*(receive_forever(task_id, receive_lock) for _ in range(workers)))
+        await _run_starter_jobs(receive_forever(task_id, receive_lock) for _ in range(workers))
 
     # HTTP_CAPABILITY_START
     http_ids = [task_id for task_id in ids if task_id in EVENT_STARTERS and EVENT_STARTERS[task_id][1] in {'http_listener', 'rest', 'soap'}]
@@ -125,7 +146,7 @@ async def run_application(environment_name: str = DEFAULT_ENVIRONMENT):
         from .inbound_http import serve_http
         jobs.append(serve_http(http_ids, environment_name))
     # HTTP_CAPABILITY_END
-    return await asyncio.gather(*jobs)
+    return await _run_starter_jobs(jobs)
 
 
 async def managed_run(awaitable):

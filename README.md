@@ -1,6 +1,6 @@
 # MINA
 
-For Linux installation and operations, use the [Control Plane and Data Plane one-stop guide](docs/LINUX_SETUP.md). It includes Windows transfer packaging and separate INI-driven setup commands for each role.
+For Linux installation and operations, use the [Control Plane and Data Plane one-stop guide](docs/LINUX_SETUP.md). It covers the executable transfer ZIP, single-host installation, archive selection, and separate INI-driven Data Plane setup.
 
 MINA is an integration studio. It combines a React visual designer, a FastAPI/Python execution runtime, and a Java extension worker contract.
 

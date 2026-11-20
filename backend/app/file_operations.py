@@ -120,6 +120,37 @@ def _file_info(item: Path, configured: Path) -> dict[str, Any]:
             'size': stat.st_size, 'lastModified': datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat()}
 
 
+def file_poll_events(output: dict, config: dict, previous: dict[str, tuple] | None) -> tuple[dict, dict[str, tuple]]:
+    """Compare two successful polls without emitting events for unchanged paths."""
+    event_type = config.get('eventType') or 'Created'
+    mode = str(event_type).lower()
+    include_existing = _boolean(config.get('includeExisting'))
+    current = {}
+    created = []
+    modified = []
+    for record in output.get('files', []):
+        if not record.get('fullName'):
+            continue
+        name = str(record['fullName'])
+        signature = (record.get('lastModified'), record.get('size'))
+        current[name] = signature
+        if previous is None:
+            if include_existing:
+                created.append(record)
+        elif name not in previous:
+            if mode not in {'modified', 'deleted'}:
+                created.append(record)
+        elif mode not in {'created', 'deleted'} and previous[name] != signature:
+            modified.append(record)
+    changed = created + modified
+    if previous is not None and mode not in {'created', 'modified'}:
+        changed.extend(
+            {'fullName': name, 'fileName': Path(name).name, 'eventType': 'Deleted'}
+            for name in previous if name not in current
+        )
+    return {**output, 'files': changed, 'count': len(changed), 'eventType': event_type}, current
+
+
 def file_activity(operation: str, cfg: dict, payload: Any, *, cancel=None) -> dict:
     check_cancel(cancel)
     raw_path = str(cfg.get('path') or cfg.get('filePath') or '').strip()

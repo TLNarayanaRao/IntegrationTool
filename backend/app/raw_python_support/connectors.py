@@ -224,6 +224,31 @@ def acknowledge_sap(listener_key: str, delivery_id: str, success: bool) -> None:
         _SAP_ADAPTER.acknowledge_idoc(listener_key, delivery_id, success)
 
 
+async def settle_sap_delivery(transport: dict, success: bool) -> None:
+    async def send_decision():
+        await asyncio.to_thread(acknowledge_sap, transport['listenerKey'], transport['deliveryId'], success)
+        transport['completed'] = True
+
+    # A cancelled asyncio wait cannot interrupt a write already happening in a
+    # thread. Let it finish so cleanup never sends rollback after commit.
+    operation = asyncio.create_task(send_decision())
+    cancelled = None
+    while not operation.done():
+        try:
+            await asyncio.shield(operation)
+        except asyncio.CancelledError as error:
+            cancelled = error
+        except Exception:
+            break
+    if cancelled is not None:
+        try:
+            operation.result()
+        except Exception as error:
+            raise cancelled from error
+        raise cancelled
+    operation.result()
+
+
 def close_sap() -> None:
     if _SAP_ADAPTER is not None:
         _SAP_ADAPTER.close_all()

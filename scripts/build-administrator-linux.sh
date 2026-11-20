@@ -20,7 +20,6 @@ command -v "$PYTHON" >/dev/null 2>&1 || { echo "Python executable not found: $PY
 cd "$ADMIN"
 [[ -x .venv/bin/python ]] || "$PYTHON" -m venv .venv
 . .venv/bin/activate
-python -m pip install --upgrade pip "${PIP_INDEX_ARGS[@]}"
 python -m pip install -r requirements.txt "pyinstaller>=6.15,<7" "${PIP_INDEX_ARGS[@]}"
 mkdir -p "$ADMIN/build"
 printf '{"version":"%s","builtAt":"%s"}\n' "$VERSION" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$ADMIN/build/build_info.json"

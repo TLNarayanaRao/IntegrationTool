@@ -30,6 +30,12 @@ public final class MinaJavaBridgeSapTest {
 
             Method split = MinaJavaBridge.class.getDeclaredMethod("splitIdocPackage", Map.class);
             split.setAccessible(true);
+            List<Map<String, String>> controlOnly = List.of(Map.of("DOCNUM", "1"), Map.of("DOCNUM", "2"));
+            require(((List<?>) split.invoke(null, Map.of("tables", Map.of("IDOC_CONTROL_REC_40", controlOnly)))).size() == 2,
+                    "A package without a segment table lost a control record");
+            expectBadPackage(split, List.of(Map.of("DOCNUM", "1"), "invalid row"), List.of());
+            expectBadPackage(split, controlOnly, List.of(Map.of("DOCNUM", "3")));
+            expectBadPackage(split, List.of(Map.of("DOCNUM", "1"), Map.of("DOCNUM", "1")), List.of());
             long begin = System.nanoTime();
             for (int first = 0; first < count; first += 250) {
                 int size = Math.min(count - first, 250);
@@ -64,5 +70,14 @@ public final class MinaJavaBridgeSapTest {
 
     private static void require(boolean condition, String message) {
         if (!condition) throw new AssertionError(message);
+    }
+
+    private static void expectBadPackage(Method split, List<?> controls, List<?> segments) throws Exception {
+        try {
+            split.invoke(null, Map.of("tables", Map.of("IDOC_CONTROL_REC_40", controls, "IDOC_DATA_REC_40", segments)));
+            throw new AssertionError("An invalid IDoc package was accepted");
+        } catch (java.lang.reflect.InvocationTargetException error) {
+            require(error.getCause() instanceof IllegalArgumentException, "Invalid package raised an unexpected error");
+        }
     }
 }

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Activity, ChevronDown, ChevronRight, CornerDownRight, Search } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, Search } from "lucide-react";
 import { debugCallTarget, debugTaskMatches } from "./debugTaskTree";
 import { taskEntryLabels, taskEntryMode } from "./taskEntry";
 import TaskEntryIcon from "./TaskEntryIcon";
@@ -14,12 +14,12 @@ export default function DebugActivityTree({ tasks, taskId, activityId, busy, onS
   const select = (task: any, activity?: any) => {
     const selected = taskId === task.id && activityId === (activity?.id || "");
     const mode = taskEntryMode(task);
-    const ActivityIcon = activity?.type === "call_task" ? CornerDownRight : Activity;
-    const label = activity ? (activity.type === "call_task" ? "Call Sub Task" : activity.type)
+    const isCallTask = activity?.type === "call_task";
+    const label = activity ? (isCallTask ? "Call Sub Task" : activity.type)
       : `${taskEntryLabels[mode]} · ${task.activities.length} activities`;
     const captured = activity ? records?.[task.id]?.activities?.[activity.id] : records?.[task.id];
     return <button type="button" disabled={busy} className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => onSelect(task.id, activity?.id || "")}>
-      {activity ? <ActivityIcon aria-hidden="true" /> : <TaskEntryIcon mode={mode} />}
+      {activity && !isCallTask ? <Activity aria-hidden="true" /> : <TaskEntryIcon mode={isCallTask ? "subtask" : mode} />}
       <span>{activity?.name || task.name}<small>{label}{records ? captured ? " · captured" : " · not captured" : ""}</small></span>
     </button>;
   };

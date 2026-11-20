@@ -1710,23 +1710,11 @@ class WorkflowRuntime(DataFormats):
         if value == '${input}': return ctx['input']
         if value == '${properties}': return ctx['properties']
         if value == '${vars}': return ctx['vars']
-        if isinstance(value, str) and value.startswith('${last.') and value.endswith('}'):
-            current = ctx['last']
-            for part in value[7:-1].split('.'): current = current.get(part, '') if isinstance(current, dict) else ''
-            return current
-        if isinstance(value, str) and value.startswith('${input.'):
-            current = ctx['input']
-            for part in value[8:-1].split('.'): current = current.get(part, '') if isinstance(current, dict) else ''
-            return current
-        if isinstance(value, str) and value.startswith('${vars.'):
-            current = ctx['vars']
-            for part in value[7:-1].split('.'): current = current.get(part, '') if isinstance(current, dict) else ''
-            return current
         if isinstance(value, str) and value.startswith('${properties.') and value.endswith('}'):
             return ctx['properties'].get(value[13:-1], '')
         if isinstance(value, str) and value.startswith('${') and value.endswith('}'):
             path = value[2:-1].split('.')
-            if path[0] in ('activities', 'tasks', 'context'):
+            if path[0] in ('input', 'last', 'vars', 'activities', 'tasks', 'context'):
                 current = ctx.get(path[0], {})
                 for part in path[1:]:
                     if isinstance(current, dict): current = current.get(part, '')

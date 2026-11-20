@@ -348,7 +348,7 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
             raise RuntimeError('Confirm Message acknowledgement handle does not match the active delivery')
         if delivery.get('completed'): raise RuntimeError('Delivery was already confirmed')
         if delivery.get('technology') == 'sap':
-            await asyncio.to_thread(connectors.acknowledge_sap, listener_key, delivery_id, True)
+            await connectors.settle_sap_delivery(delivery, True)
         else:
             connectors.acknowledge_jms(listener_key, delivery_id, True)
         delivery['completed'] = True

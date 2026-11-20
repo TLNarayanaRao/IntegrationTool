@@ -54,11 +54,18 @@ if [[ ! -d "$default_java_bridge/classes" && -d "${MINA_SOURCE_ROOT:-$INSTALL_RO
 fi
 export MINA_JAVA_BRIDGE_HOME="${configured_java_bridge:-${MINA_JAVA_BRIDGE_HOME:-$default_java_bridge}}"
 if [[ -n "$configured_java" ]]; then export MINA_JAVA="$configured_java"; fi
-if [[ -x "$INSTALL_ROOT/runtime/.venv/bin/python" ]]; then
-  export MINA_PYTHON_EXECUTABLE="${MINA_PYTHON_EXECUTABLE:-$INSTALL_ROOT/runtime/.venv/bin/python}"
-fi
 runtime_command="$(ini_value_or_empty control-plane runtime_command)"
-[[ -n "$runtime_command" ]] || printf -v runtime_command '%q --application "{application}" --environment "{environment}"' "$INSTALL_ROOT/runtime/mina-runtime"
+local_runtime="$(ini_value_or_empty control-plane install_local_runtime)"
+case "${local_runtime,,}" in
+  false|no|off|0) ;;
+  *)
+    if [[ -x "$INSTALL_ROOT/runtime/.venv/bin/python" ]]; then
+      export MINA_PYTHON_EXECUTABLE="${MINA_PYTHON_EXECUTABLE:-$INSTALL_ROOT/runtime/.venv/bin/python}"
+    fi
+    if [[ -z "$runtime_command" && -x "$INSTALL_ROOT/runtime/mina-runtime" ]]; then
+      printf -v runtime_command '%q --application "{application}" --environment "{environment}"' "$INSTALL_ROOT/runtime/mina-runtime"
+    fi ;;
+esac
 if [[ -n "$runtime_command" ]]; then export MINA_ADMIN_RUNTIME_COMMAND="$runtime_command"; else unset MINA_ADMIN_RUNTIME_COMMAND; fi
 
 EXECUTABLE="$MINA_ADMIN_HOME/mina-control-plane"

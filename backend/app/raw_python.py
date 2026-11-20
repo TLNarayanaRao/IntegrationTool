@@ -65,7 +65,8 @@ ACTIVITY_CAPABILITY_BY_KIND = {
 }
 EVENT_OPERATIONS = {('kafka', 'receive'), ('kafka', 'get'), ('pubsub', 'pull'), ('pubsub', 'subscribe'), ('ems', 'queue_receiver'),
                     ('ems', 'topic_subscriber'), ('jms', 'receive_message'), ('sap', 'idoc_listener'), ('sap', 'rfc_bapi_listener'), ('timer', 'schedule')}
-EVENT_OPERATIONS.update({('http_listener', 'listen'), ('rest', 'receiver'), ('soap', 'service'), ('jms', 'wait_request')})
+EVENT_OPERATIONS.update({('http_listener', 'listen'), ('rest', 'receiver'), ('soap', 'service'), ('jms', 'wait_request'),
+                         ('file', 'poll'), ('amqp', 'receive')})
 
 
 def _activity_capabilities(kind: str, operation: str) -> set[str] | None:
@@ -744,7 +745,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         files['application/activities.py'] = _prune_module(activity_source, activity_roots)
     connector_roots: set[str] = set()
     if 'jms' in capabilities: connector_roots.update({'jms', 'acknowledge_jms', 'close_jms'})
-    if 'sap' in capabilities: connector_roots.update({'sap', 'acknowledge_sap', 'close_sap'})
+    if 'sap' in capabilities: connector_roots.update({'sap', 'settle_sap_delivery', 'close_sap'})
     for capability in ('jdbc', 'snowflake', 'amqp', 'kafka', 'pubsub'):
         if capability in capabilities: connector_roots.add(capability)
     if 'kafka' in capabilities: connector_roots.add('close_kafka')
@@ -783,10 +784,12 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     ack_end = main_source.index('    # ACKNOWLEDGEMENT_CAPABILITY_END', ack_start) + len('    # ACKNOWLEDGEMENT_CAPABILITY_END')
     acknowledgement = ''
     if delivery_capabilities:
-        acknowledgement = '    async def acknowledge_delivery(technology: str, listener_key: str, delivery_id: str, success: bool):\n'
-        if delivery_capabilities == {'sap'}: acknowledgement += '        await asyncio.to_thread(connectors.acknowledge_sap, listener_key, delivery_id, success)\n'
-        elif delivery_capabilities == {'jms'}: acknowledgement += '        connectors.acknowledge_jms(listener_key, delivery_id, success)\n'
-        else: acknowledgement += "        if technology == 'sap': await asyncio.to_thread(connectors.acknowledge_sap, listener_key, delivery_id, success)\n        else: connectors.acknowledge_jms(listener_key, delivery_id, success)\n"
+        acknowledgement = '    async def acknowledge_delivery(technology: str, transport: dict, success: bool):\n'
+        sap_ack = 'await connectors.settle_sap_delivery(transport, success)'
+        jms_ack = "connectors.acknowledge_jms(transport['listenerKey'], transport['deliveryId'], success)"
+        if delivery_capabilities == {'sap'}: acknowledgement += f'        {sap_ack}\n'
+        elif delivery_capabilities == {'jms'}: acknowledgement += f'        {jms_ack}\n'
+        else: acknowledgement += f"        if technology == 'sap': {sap_ack}\n        else: {jms_ack}\n"
     main_source = main_source[:ack_start] + acknowledgement + main_source[ack_end:]
     close_start = main_source.index('        # CONNECTOR_CLOSE_START')
     close_end = main_source.index('        # CONNECTOR_CLOSE_END', close_start) + len('        # CONNECTOR_CLOSE_END')

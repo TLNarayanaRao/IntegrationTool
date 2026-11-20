@@ -7,6 +7,12 @@ from xml.sax.saxutils import escape
 from .xml_names import legacy_name
 from .java_bridge import JavaBridgeError, invoke as invoke_java, start_sap_listener, start_sap_worker, SapJcoListener, SapJcoWorker
 
+
+def idoc_delivery_details(output: dict) -> dict:
+    control = output.get('controlRecord') or {}
+    return {'documentNumber': control.get('DOCNUM'), 'transactionId': output.get('TID'),
+            'packageSize': output.get('packageSize')}
+
 @lru_cache(maxsize=16)
 def _idoc_schema_root(schema: str) -> ET.Element:
     """Share immutable schema trees across documents using the same XSD."""
@@ -777,6 +783,8 @@ class SapAdapter:
                 normalized = re.sub(r'[^A-Z0-9]', '', str(key).upper())
                 if 'IDOCCONTROLREC' in normalized:
                     if isinstance(value, list) and value and isinstance(value[0], dict):
+                        if len(value) > 1:
+                            raise ValueError('SAP bridge returned multiple IDoc control rows in one delivery. Rebuild the Java bridge so it emits one delivery per IDoc.')
                         control = value[0]
                     elif isinstance(value, dict):
                         control = value
@@ -855,25 +863,20 @@ class SapAdapter:
             # broken listener and closed after 30 seconds.
             startup_timeout = float(cfg.get('timeoutMilliseconds') or cfg.get('timeoutMs') or 30000) / 1000
             diagnostics = []
-            event = await listener.next_event(timeout=startup_timeout if starting_listener else None)
-            while event.get('event') == 'jco_log':
-                diagnostics.append({key: event[key] for key in ('level', 'phase', 'message', 'serverName', 'programId', 'gatewayHost', 'gatewayService', 'repositoryDestination', 'tidStore', 'functionName', 'connectionCount') if key in event})
+            diagnostic_fields = ('level', 'phase', 'message', 'serverName', 'programId', 'gatewayHost',
+                                 'gatewayService', 'repositoryDestination', 'tidStore', 'functionName',
+                                 'connectionCount', 'TID', 'CPIC_ID', 'packageSize', 'errorType', 'error')
+            while True:
                 event = await listener.next_event(timeout=startup_timeout if starting_listener else None)
-            if event.get('event') == 'listening':
-                # Once the JCo server is registered, an idle listener is
-                # healthy. Do not use the activity timeout while waiting for
-                # SAP to deliver the next IDoc.
-                if starting_listener:
-                    # Return the lifecycle state immediately.  The caller
-                    # persists these diagnostics before waiting for an IDoc;
-                    # otherwise startup logs misleadingly appear only when
-                    # SAP eventually sends the first message.
+                if event.get('event') == 'jco_log':
+                    diagnostics.append({key: event[key] for key in diagnostic_fields if key in event})
+                    if event.get('level') == 'ERROR':
+                        return {'received': False, 'jcoDiagnostics': diagnostics}
+                elif event.get('event') != 'listening':
+                    break
+                elif starting_listener:
                     diagnostics.append({'level': 'INFO', 'phase': 'listening', 'message': 'SAP JCo RFC server is listening for IDocs', 'serverName': event.get('serverName'), 'programId': event.get('programId'), 'gatewayHost': event.get('gatewayHost'), 'gatewayService': event.get('gatewayService'), 'repositoryDestination': event.get('repositoryDestination'), 'jcoServerClass': event.get('jcoServerClass')})
                     return {'listening': True, 'received': False, 'format': 'XML', 'jcoDiagnostics': diagnostics}
-                event = await listener.next_event()
-                while event.get('event') == 'jco_log':
-                    diagnostics.append({key: event[key] for key in ('level', 'phase', 'message', 'serverName', 'programId', 'gatewayHost', 'gatewayService', 'repositoryDestination', 'tidStore', 'functionName', 'connectionCount') if key in event})
-                    event = await listener.next_event()
             payload = event.get('payload') or {}
             delivery_id = str(event.get('deliveryId') or '').strip() or None
             if rfc_listener:
@@ -923,7 +926,7 @@ class SapAdapter:
             # Keep the named SAPIDoc JSON view for mappings/debugging, while
             # `payload` is deliberately XML because that is the listener
             # contract. The raw RFC representation is retained separately.
-            return {'SAPIDoc': parsed_payload, 'controlRecord': control_record, 'rawSAPIDoc': structured, 'payload': xml_payload, 'IDocXML': xml_payload, 'format': 'XML', 'received': True, 'TID': event.get('TID'), 'CPIC_ID': event.get('CPIC_ID'), 'jcoDiagnostics': diagnostics, '_sapDeliveryId': delivery_id, '_sapListenerKey': listener_key}
+            return {'SAPIDoc': parsed_payload, 'controlRecord': control_record, 'rawSAPIDoc': structured, 'payload': xml_payload, 'IDocXML': xml_payload, 'format': 'XML', 'received': True, 'TID': event.get('TID'), 'CPIC_ID': event.get('CPIC_ID'), 'packageSize': event.get('packageSize'), 'jcoDiagnostics': diagnostics, '_sapDeliveryId': delivery_id, '_sapListenerKey': listener_key}
         except JavaBridgeError as exc:
             if delivery_id:
                 try: listener.acknowledge(delivery_id, False)

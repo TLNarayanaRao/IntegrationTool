@@ -273,27 +273,39 @@ public final class MinaJavaBridge {
                 dataName = entry.getKey(); records = (List<Object>) entry.getValue();
             }
         }
-        if (controls == null || controls.size() <= 1 || controlName == null || dataName == null) return List.of(payload);
+        if (controls == null || controls.isEmpty()) return List.of(payload);
+        Map<String, Map<String, Object>> controlsByDocument = new LinkedHashMap<>();
+        for (Object rawControl : controls) {
+            if (!(rawControl instanceof Map<?, ?>)) throw new IllegalArgumentException("Invalid SAP IDoc control row");
+            Map<String, Object> control = (Map<String, Object>) rawControl;
+            String number = String.valueOf(control.getOrDefault("DOCNUM", "")).trim();
+            if ((number.isEmpty() && controls.size() > 1) || controlsByDocument.putIfAbsent(number, control) != null) {
+                throw new IllegalArgumentException("Missing or duplicate DOCNUM in SAP IDoc control rows");
+            }
+        }
+        boolean singleDocument = controls.size() == 1;
+        boolean hasDocumentNumber = !controlsByDocument.containsKey("");
         Map<String, List<Object>> recordsByDocument = new HashMap<>();
-        for (Object rawRecord : records) {
-            if (!(rawRecord instanceof Map<?, ?>)) continue;
+        for (Object rawRecord : records == null ? List.of() : records) {
+            if (!(rawRecord instanceof Map<?, ?>)) throw new IllegalArgumentException("Invalid SAP IDoc segment row");
             Map<String, Object> record = (Map<String, Object>) rawRecord;
             String number = String.valueOf(record.getOrDefault("DOCNUM", "")).trim();
-            if (!number.isEmpty()) recordsByDocument.computeIfAbsent(number, key -> new ArrayList<>()).add(record);
+            if (!controlsByDocument.containsKey(number) && !(singleDocument && (!hasDocumentNumber || number.isEmpty()))) {
+                throw new IllegalArgumentException("SAP IDoc segment has no matching control row");
+            }
+            if (!singleDocument) recordsByDocument.computeIfAbsent(number, key -> new ArrayList<>()).add(record);
         }
+        if (singleDocument) return List.of(payload);
         List<Map<String, Object>> children = new ArrayList<>(controls.size());
-        for (Object rawControl : controls) {
-            if (!(rawControl instanceof Map<?, ?>)) continue;
-            Map<String, Object> control = (Map<String, Object>) rawControl;
-            String documentNumber = String.valueOf(control.getOrDefault("DOCNUM", "")).trim();
+        for (Map.Entry<String, Map<String, Object>> document : controlsByDocument.entrySet()) {
             Map<String, Object> childTables = new LinkedHashMap<>(tables);
-            childTables.put(controlName, List.of(control));
-            childTables.put(dataName, recordsByDocument.getOrDefault(documentNumber, List.of()));
+            childTables.put(controlName, List.of(document.getValue()));
+            if (dataName != null) childTables.put(dataName, recordsByDocument.getOrDefault(document.getKey(), List.of()));
             Map<String, Object> child = new LinkedHashMap<>(payload);
             child.put("tables", childTables);
             children.add(child);
         }
-        return children.isEmpty() ? List.of(payload) : children;
+        return children;
     }
 
     /** Populate an RFC/BAPI listener response before returning to SAP. */
@@ -421,10 +433,11 @@ public final class MinaJavaBridge {
             if (!method.getName().equals("handleRequest")) return null;
             Object function = args != null && args.length > 1 ? args[1] : null;
             if (function != null) {
+                String transactionId = "";
                 try {
                     String functionName = String.valueOf(invoke(function, "getName"));
                     Object serverContext = args != null && args.length > 0 ? args[0] : null;
-                    String transactionId = optionalString(serverContext, "getTID");
+                    transactionId = optionalString(serverContext, "getTID");
                     String connectionId = optionalString(serverContext, "getConnectionID");
                     Map<String, Object> requestPayload = listenerFunctionResult(function);
                     boolean idoc = functionName.toUpperCase(Locale.ROOT).startsWith("IDOC_INBOUND");
@@ -470,7 +483,7 @@ public final class MinaJavaBridge {
                 } catch (Throwable error) {
                     Throwable cause = error;
                     while (cause instanceof InvocationTargetException && ((InvocationTargetException) cause).getCause() != null) cause = ((InvocationTargetException) cause).getCause();
-                    System.out.println(json(map("event", "jco_log", "level", "ERROR", "phase", "request_callback", "message", "SAP JCo request callback failed", "errorType", cause.getClass().getName(), "error", String.valueOf(cause.getMessage() == null ? cause : cause.getMessage()))));
+                    System.out.println(json(map("event", "jco_log", "level", "ERROR", "phase", "request_callback", "message", "SAP JCo request callback failed", "TID", transactionId, "errorType", cause.getClass().getName(), "error", String.valueOf(cause.getMessage() == null ? cause : cause.getMessage()))));
                     System.out.flush();
                     throw new RuntimeException(cause);
                 }

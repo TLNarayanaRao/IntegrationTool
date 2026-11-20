@@ -17,13 +17,14 @@ from .models import AIBuildRequest, DebugAction, DebugRequest, Project, RunReque
 from .store import delete_project, get_project, list_projects, project_dir, save_project, safe_component
 from .project_import import MAX_IMPORT_BYTES, project_payload
 from .runtime import WorkflowRuntime
+from .file_operations import file_poll_events
 from .http_transport import HTTPFault
 from .debugger import DebugManager
 from .mapper import execute as execute_mapping, recommend, rewrite_references, validate_output
 from .mapper_learning import shared_paths
 from .mapper_binding import generate_binding, reopen_binding
 from .dataweave import DataWeaveError, execute_details as execute_dataweave
-from .sap import sap_adapter
+from .sap import idoc_delivery_details, sap_adapter
 from .snowflake import snowflake_adapter
 from .jdbc import jdbc_adapter
 from .amqp import amqp_adapter
@@ -320,6 +321,9 @@ def _publish_runtime_state(project_id: str, *, status: str, logs: list[dict], en
             'activityOutputs': result.activity_outputs, 'taskOutputs': result.task_outputs,
             'activityTimings': activity_timings(result.logs),
         }
+        idoc = next((entry['sapIDoc'] for entry in result.logs if 'sapIDoc' in entry), None)
+        if idoc is not None:
+            execution['sapIDoc'] = idoc
         executions = ([execution] + executions)[:100]
     state = {
         'status': status, 'updatedAt': log_timestamp(),
@@ -389,7 +393,7 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
     resources = {resource.id: resource for resource in item.resources}
     properties = _environment_values(item, environment)
     retry_delay = 1.0
-    seen_files: dict[str, str] | None = None
+    seen_files = None
     current = asyncio.current_task()
     try:
         while True:
@@ -407,23 +411,12 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
                 retry_delay = 1.0
                 resolved_config = runtime.resolve(activity.config, context)
                 if activity.type == 'file' and activity.config.get('operation') == 'poll':
-                    current_files = {str(value.get('fullName')): str(value.get('lastModified')) for value in output.get('files', []) if value.get('fullName')}
-                    include_existing = runtime.as_bool(resolved_config.get('includeExisting', False))
-                    event_type = str(resolved_config.get('eventType') or 'Created').lower()
-                    if seen_files is None:
-                        changed = list(output.get('files', [])) if include_existing else []
-                    else:
-                        created = [value for value in output.get('files', []) if str(value.get('fullName')) not in seen_files]
-                        modified = [value for value in output.get('files', []) if str(value.get('fullName')) in seen_files and seen_files[str(value.get('fullName'))] != str(value.get('lastModified'))]
-                        deleted = [{'fullName': name, 'fileName': Path(name).name, 'eventType':'Deleted'} for name in seen_files if name not in current_files]
-                        changed = created if event_type == 'created' else modified if event_type == 'modified' else deleted if event_type == 'deleted' else created + modified + deleted
-                    seen_files = current_files
-                    output = {**output, 'files': changed, 'count': len(changed), 'eventType': resolved_config.get('eventType', 'Created')}
+                    output, seen_files = file_poll_events(output, resolved_config, seen_files)
                 jco_diagnostics = output.pop('jcoDiagnostics', []) if isinstance(output, dict) else []
                 if jco_diagnostics:
                     diagnostic_logs = []
                     for detail in jco_diagnostics:
-                        diagnostic_logs.append({'time': log_timestamp(), 'level': detail.get('level', 'INFO'), 'kind': 'connector', 'phase': detail.get('phase'), 'message': detail.get('message'), 'connector': 'SAP JCo', **{key: detail[key] for key in ('serverName', 'programId', 'gatewayHost', 'gatewayService', 'repositoryDestination', 'tidStore', 'functionName', 'connectionCount') if key in detail}, 'activityId': activity.id, 'taskId': task.id})
+                        diagnostic_logs.append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'connector', 'connector': 'SAP JCo', **detail, 'activityId': activity.id, 'taskId': task.id})
                     if debug_session_id:
                         session = debugger.sessions.get(debug_session_id)
                         if session: session['logs'].extend(diagnostic_logs)
@@ -458,7 +451,7 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
                     if sap_delivery_id and sap_listener_key and not delivery_transport.get('completed'):
                         if session and session.get('status') == 'listening':
                             request_reply = activity.config.get('operation') == 'rfc_bapi_listener' and str(delivery_transport.get('invocationProtocol') or 'Request/Reply').lower().replace('-', '').replace('/', '') in ('requestreply', 'srfc')
-                            sap_adapter.acknowledge_idoc(sap_listener_key, sap_delivery_id, not request_reply)
+                            sap_adapter.acknowledge_idoc(sap_listener_key, sap_delivery_id, not request_reply and not delivery_transport.get('eventFailed'))
                             if request_reply:
                                 session['status'] = 'failed'
                                 session['logs'].append({'time': log_timestamp(), 'level': 'ERROR', 'kind': 'connector', 'message': 'RFC/BAPI request completed without a Reply from RFC/BAPI activity; SAP request was rolled back.', 'activityId': activity.id, 'taskId': task.id})
@@ -573,7 +566,7 @@ async def _continuous_sap_event_loop(item: Project, task, activity, environment:
                     delivery_id = output.pop('_sapDeliveryId', None)
                     listener_key = output.pop('_sapListenerKey', None)
                 if diagnostics:
-                    entries = [{'time': log_timestamp(), 'level': detail.get('level', 'INFO'), 'kind': 'connector', 'phase': detail.get('phase'), 'message': detail.get('message'), 'connector': 'SAP JCo', **{key: detail[key] for key in ('serverName', 'programId', 'gatewayHost', 'gatewayService', 'repositoryDestination', 'tidStore', 'functionName', 'connectionCount') if key in detail}, 'activityId': activity.id, 'taskId': task.id} for detail in diagnostics]
+                    entries = [{'time': log_timestamp(), 'level': 'INFO', 'kind': 'connector', 'connector': 'SAP JCo', **detail, 'activityId': activity.id, 'taskId': task.id} for detail in diagnostics]
                     previous = runtime_states.get(project_id, {})
                     combined = (list(previous.get('logs', [])) + entries)[-500:]
                     _publish_runtime_state(project_id, status='listening', logs=combined, environment=environment)
@@ -594,13 +587,30 @@ async def _continuous_sap_event_loop(item: Project, task, activity, environment:
                     result.status = 'failed'
                     result.output = {}
                     result.logs.append({'time': log_timestamp(), 'level': 'ERROR', 'kind': 'connector', 'message': 'RFC/BAPI request completed without a Reply from RFC/BAPI activity; SAP request was rolled back.', 'activityId': activity.id, 'taskId': task.id})
-                if delivery_id and listener_key and not transport.get('completed'):
-                    sap_adapter.acknowledge_idoc(listener_key, delivery_id, result.status == 'completed')
-                    transport['completed'] = True
+                ack_error = None
+                try:
+                    if delivery_id and listener_key and not transport.get('completed'):
+                        sap_adapter.acknowledge_idoc(listener_key, delivery_id, result.status == 'completed')
+                        transport['completed'] = True
+                except Exception as exc:
+                    if activity.config.get('operation') != 'idoc_listener':
+                        raise
+                    ack_error = exc
+                    result.status = 'failed'
+                    result.logs.append({'time': log_timestamp(), 'level': 'ERROR', 'kind': 'listener',
+                                        'message': str(exc), 'activityId': activity.id, 'taskId': task.id})
+                if activity.config.get('operation') == 'idoc_listener':
+                    details = idoc_delivery_details(output)
+                    result.logs.append({'time': log_timestamp(), 'kind': 'sap-idoc',
+                        'level': 'INFO' if result.status == 'completed' else 'ERROR',
+                        'message': f"SAP IDoc {details['documentNumber'] or '(document number unavailable)'}: workflow {result.status}",
+                        'activityId': activity.id, 'taskId': task.id, 'sapIDoc': details})
                 previous = runtime_states.get(project_id, {})
                 combined_logs = (list(previous.get('logs', [])) + result.logs)[-500:]
                 _publish_runtime_state(project_id, status='listening', logs=combined_logs, result=result, environment=environment)
                 await _write_runtime_logs(item, environment, result.logs)
+                if ack_error is not None:
+                    raise ack_error
                 retry_delay = 1.0
             except asyncio.CancelledError:
                 if delivery_id and listener_key and not transport.get('completed'):
@@ -2183,7 +2193,8 @@ async def debug_action(session_id: str, request: DebugAction):
         pending = state.get('pendingSapDelivery')
         if pending and state.get('status') in ('listening', 'failed', 'stopped'):
             if not pending.get('transport', {}).get('completed'):
-                sap_adapter.acknowledge_idoc(pending['listenerKey'], pending['deliveryId'], state.get('status') == 'listening')
+                success = state.get('status') == 'listening' and not pending.get('transport', {}).get('eventFailed')
+                sap_adapter.acknowledge_idoc(pending['listenerKey'], pending['deliveryId'], success)
             state.pop('pendingSapDelivery', None)
         await _persist_debug_logs(state)
         return view

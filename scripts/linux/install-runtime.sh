@@ -17,6 +17,8 @@ PIP_ARGS=()
 [[ -z "${MINA_PYPI_INDEX_URL:-}" ]] || PIP_ARGS+=(--index-url "$MINA_PYPI_INDEX_URL")
 [[ -z "${MINA_WHEELHOUSE:-}" ]] || PIP_ARGS+=(--no-index --find-links "$MINA_WHEELHOUSE")
 "$RUNTIME/.venv/bin/python" -m pip install "${PIP_ARGS[@]}" -r "$RUNTIME/requirements-linux.txt"
+"$RUNTIME/.venv/bin/python" -m pip check
+PYTHONPATH="$SOURCE_ROOT/backend" "$RUNTIME/.venv/bin/python" -c 'from app.main import runtime; print("MINA workflow runtime imports verified")'
 {
   printf '#!/usr/bin/env bash\nset -Eeuo pipefail\n'
   printf 'export PYTHONPATH=%q\nexport MINA_DRIVER_HOME=%q\n' "$SOURCE_ROOT/backend" "$DRIVERS"

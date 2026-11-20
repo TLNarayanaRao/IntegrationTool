@@ -8,6 +8,7 @@ from time import perf_counter
 from uuid import uuid4
 from .models import Project, find_subtask
 from .runtime import WorkflowRuntime
+from .sap import idoc_delivery_details
 from .time_utils import log_timestamp
 
 class _DebugLogs(list):
@@ -212,11 +213,16 @@ class DebugManager:
         trace.set_thread(frame.get('threadId'), 'active')
         trace.activity(frame, activity, 'received')
         now = log_timestamp()
-        state['logs'].append({'time': now, 'level': 'INFO', 'kind': 'event', 'message': f'Event received: {task.name} / {activity.name}', 'activityId': activity.id, 'taskId': task.id, 'sessionId': session_id})
+        arrival = {'time': now, 'level': 'INFO', 'kind': 'event', 'message': f'Event received: {task.name} / {activity.name}', 'activityId': activity.id, 'taskId': task.id, 'sessionId': session_id}
+        if activity.type == 'sap' and activity.config.get('operation') == 'idoc_listener':
+            arrival['sapIDoc'] = idoc_delivery_details(output)
+        state['logs'].append(arrival)
         self.runtime.record_activity_output(activity, output, ctx, output)
         outgoing = [edge for edge in task.transitions if edge.source == activity.id]
         chosen_edges = self.runtime.select_group_transitions(self.runtime.eligible_success_transitions(outgoing, ctx), ctx, state.get('groupPlans', {}).get(task.id, {}))
         if not chosen_edges:
+            if activity.type == 'sap' and ctx.get('transport') is not None:
+                ctx['transport']['eventFailed'] = True
             message = f'{activity.name} has no matching outgoing transition'
             state['logs'].append({'time': now, 'level': 'ERROR', 'kind': 'event', 'message': message, 'activityId': activity.id, 'taskId': task.id})
             trace.finish_job('failed')

@@ -670,6 +670,8 @@ class RawPythonTests(unittest.TestCase):
                         return {'received': True, 'payload': '<IDOC/>', '_sapDeliveryId': f'd{self.received}', '_sapListenerKey': 'listener'}
                     def acknowledge_idoc(self, listener_key, delivery_id, success):
                         self.decisions.append((delivery_id, success))
+                        if success:
+                            time.sleep(.05)
                     def close_all(self): pass
                 fake = FakeSap()
                 connectors._SAP_ADAPTER = fake
