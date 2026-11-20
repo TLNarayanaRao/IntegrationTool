@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "36dff03b08ce9029216ae4d5e9fac5d7548e58f0681a09bc3084ee3e468f298a",
+  "fingerprint": "79e1b67c2fa3196ae4d1b6e6c3f04baa7eb53f11c31e79f248e3b99a87a9be96",
   "counts": {
     "activities": 104,
     "groups": 11,
@@ -48550,7 +48550,11 @@
             },
             {
               "kind": "p",
-              "text": "Open **Run → Execution Analytics**, **Window → Execution Analytics**, or the analytics icon in the Execution / Debug panel."
+              "text": "Select **Execution Analytics** in the Studio ribbon under **Execute & Validate**. You can also open it from the **Run** or **Window** menu, or the analytics icon in the Execution / Debug panel."
+            },
+            {
+              "kind": "p",
+              "text": "Use **Expand execution analytics** in the dialog header to fill the Studio window. Use **Restore execution analytics** to return to the previous size. The report scrolls independently of the header and export buttons."
             },
             {
               "kind": "p",
@@ -88697,11 +88701,11 @@
                 ],
                 [
                   "Ribbon controls",
-                  "frontend/src/main.tsx:6702\nfunction DebugRibbon("
+                  "frontend/src/main.tsx:6703\nfunction DebugRibbon("
                 ],
                 [
                   "Test bench/tools",
-                  "frontend/src/main.tsx:6602\nfunction DebugToolsDialog("
+                  "frontend/src/main.tsx:6603\nfunction DebugToolsDialog("
                 ],
                 [
                   "Input/output/variables viewer",
@@ -88801,13 +88805,13 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 6702,
+          "line": 6703,
           "symbol": "function DebugRibbon(",
           "role": "Ribbon controls"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 6602,
+          "line": 6603,
           "symbol": "function DebugToolsDialog(",
           "role": "Test bench/tools"
         },
@@ -89479,11 +89483,11 @@
               "rows": [
                 [
                   "Palette drag source",
-                  "frontend/src/main.tsx:3620\nonDragStart={(e) =>"
+                  "frontend/src/main.tsx:3621\nonDragStart={(e) =>"
                 ],
                 [
                   "Canvas drop target",
-                  "frontend/src/main.tsx:3684\nonDrop={(e) =>"
+                  "frontend/src/main.tsx:3685\nonDrop={(e) =>"
                 ],
                 [
                   "Activity creation",
@@ -89511,7 +89515,7 @@
                 ],
                 [
                   "Group condition drop target",
-                  "frontend/src/main.tsx:4279\nfunction GroupExpressionTarget("
+                  "frontend/src/main.tsx:4280\nfunction GroupExpressionTarget("
                 ],
                 [
                   "Selection visuals",
@@ -89539,13 +89543,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 3620,
+          "line": 3621,
           "symbol": "onDragStart={(e) =>",
           "role": "Palette drag source"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 3684,
+          "line": 3685,
           "symbol": "onDrop={(e) =>",
           "role": "Canvas drop target"
         },
@@ -89587,7 +89591,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4279,
+          "line": 4280,
           "symbol": "function GroupExpressionTarget(",
           "role": "Group condition drop target"
         },
@@ -89633,11 +89637,11 @@
                 ],
                 [
                   "Editor defaults",
-                  "frontend/src/main.tsx:4293\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group configuration",
-                  "frontend/src/main.tsx:4299\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
                 ],
                 [
                   "Group rendering",
@@ -89711,13 +89715,13 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4293,
+          "line": 4294,
           "symbol": "function groupConfigDefaults(",
           "role": "Editor defaults"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4299,
+          "line": 4300,
           "symbol": "function GroupEditor(",
           "role": "Group configuration"
         },
@@ -89823,11 +89827,11 @@
               "rows": [
                 [
                   "If defaults; match group type if",
-                  "frontend/src/main.tsx:4293\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4299\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -89875,13 +89879,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4293,
+          "line": 4294,
           "symbol": "function groupConfigDefaults(",
           "role": "If defaults; match group type if"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4299,
+          "line": 4300,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -89963,11 +89967,11 @@
               "rows": [
                 [
                   "While True defaults; match group type while",
-                  "frontend/src/main.tsx:4293\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4299\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -90015,13 +90019,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4293,
+          "line": 4294,
           "symbol": "function groupConfigDefaults(",
           "role": "While True defaults; match group type while"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4299,
+          "line": 4300,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -90103,11 +90107,11 @@
               "rows": [
                 [
                   "For Each defaults; match group type for-each",
-                  "frontend/src/main.tsx:4293\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4299\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -90155,13 +90159,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4293,
+          "line": 4294,
           "symbol": "function groupConfigDefaults(",
           "role": "For Each defaults; match group type for-each"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4299,
+          "line": 4300,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -90243,11 +90247,11 @@
               "rows": [
                 [
                   "Iterate defaults; match group type iterate",
-                  "frontend/src/main.tsx:4293\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4299\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -90295,13 +90299,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4293,
+          "line": 4294,
           "symbol": "function groupConfigDefaults(",
           "role": "Iterate defaults; match group type iterate"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4299,
+          "line": 4300,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -90383,11 +90387,11 @@
               "rows": [
                 [
                   "Repeat Until True defaults; match group type repeat",
-                  "frontend/src/main.tsx:4293\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4299\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -90435,13 +90439,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4293,
+          "line": 4294,
           "symbol": "function groupConfigDefaults(",
           "role": "Repeat Until True defaults; match group type repeat"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4299,
+          "line": 4300,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -90523,11 +90527,11 @@
               "rows": [
                 [
                   "Repeat on Error Until True defaults; match group type repeat-on-error",
-                  "frontend/src/main.tsx:4293\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4299\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -90575,13 +90579,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4293,
+          "line": 4294,
           "symbol": "function groupConfigDefaults(",
           "role": "Repeat on Error Until True defaults; match group type repeat-on-error"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4299,
+          "line": 4300,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -90663,11 +90667,11 @@
               "rows": [
                 [
                   "Scope defaults; match group type scope",
-                  "frontend/src/main.tsx:4293\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4299\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -90715,13 +90719,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4293,
+          "line": 4294,
           "symbol": "function groupConfigDefaults(",
           "role": "Scope defaults; match group type scope"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4299,
+          "line": 4300,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -90803,11 +90807,11 @@
               "rows": [
                 [
                   "None defaults; match group type none",
-                  "frontend/src/main.tsx:4293\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4299\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -90855,13 +90859,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4293,
+          "line": 4294,
           "symbol": "function groupConfigDefaults(",
           "role": "None defaults; match group type none"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4299,
+          "line": 4300,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -90943,11 +90947,11 @@
               "rows": [
                 [
                   "Critical Section defaults; match group type critical-section",
-                  "frontend/src/main.tsx:4293\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4299\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -90995,13 +90999,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4293,
+          "line": 4294,
           "symbol": "function groupConfigDefaults(",
           "role": "Critical Section defaults; match group type critical-section"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4299,
+          "line": 4300,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -91083,11 +91087,11 @@
               "rows": [
                 [
                   "JDBC Transaction defaults; match group type transaction-jdbc",
-                  "frontend/src/main.tsx:4293\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4299\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -91135,13 +91139,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4293,
+          "line": 4294,
           "symbol": "function groupConfigDefaults(",
           "role": "JDBC Transaction defaults; match group type transaction-jdbc"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4299,
+          "line": 4300,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -91223,11 +91227,11 @@
               "rows": [
                 [
                   "Pick First defaults; match group type pick-first",
-                  "frontend/src/main.tsx:4293\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4299\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -91275,13 +91279,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4293,
+          "line": 4294,
           "symbol": "function groupConfigDefaults(",
           "role": "Pick First defaults; match group type pick-first"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4299,
+          "line": 4300,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -91359,7 +91363,7 @@
               "rows": [
                 [
                   "Packaging UI",
-                  "frontend/src/main.tsx:4375\nfunction PackageDialog("
+                  "frontend/src/main.tsx:4376\nfunction PackageDialog("
                 ],
                 [
                   "Archive orchestration",
@@ -91419,7 +91423,7 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4375,
+          "line": 4376,
           "symbol": "function PackageDialog(",
           "role": "Packaging UI"
         },

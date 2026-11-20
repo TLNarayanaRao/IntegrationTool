@@ -1,4 +1,5 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
+import {Maximize2, Minimize2} from 'lucide-react';
 import ModalLayer from './ModalLayer';
 import {analyticsCsv,escapeReport,publisherTimingSummary,timingRecords,timingSummary,type Timing} from './executionMetrics';
 import './execution-analytics.css';
@@ -9,7 +10,8 @@ function download(name:string,body:string,type:string) {
 }
 export default function ExecutionAnalytics({projectId,projectName,tasks,logs,runtimeState,debugState,onClose,onInspect}:any) {
   const [history,setHistory]=useState<any[]>(runtimeState?.executions || []),[selected,setSelected]=useState('current'),[search,setSearch]=useState(''),[error,setError]=useState('');
-  const chart=useRef<SVGSVGElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const chart = useRef<HTMLUListElement>(null);
   useEffect(()=>{let active=true;fetch(`/api/projects/${encodeURIComponent(projectId)}/runtime-state`).then(async response=>{if(!response.ok)throw Error('Unable to load execution history');return response.json()}).then(state=>{if(active)setHistory(state.executions || [])}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[projectId]);
   useEffect(()=>{if(runtimeState?.executions)setHistory(runtimeState.executions)},[runtimeState]);
   const execution=history.find(item=>item.runId===selected);
@@ -48,21 +50,52 @@ export default function ExecutionAnalytics({projectId,projectName,tasks,logs,run
     const publisherTable=publisherTimings.length ? `<h2>Publisher timings</h2><p>${escapeReport(publisherNote)}</p><table><thead><tr>${publisherHeaders.map(label=>`<th>${escapeReport(label)}</th>`).join('')}</tr></thead><tbody>${publisherTimings.map(row=>`<tr>${publisherCells(row).map(value=>`<td>${escapeReport(value)}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '';
     const table=rows.map(row=>`<tr>${[row.name,taskLabel(row.taskId),row.count,row.failures,row.total.toFixed(3),row.mean.toFixed(3),row.p95.toFixed(3)].map(value=>`<td>${escapeReport(value)}</td>`).join('')}</tr>`).join('');
     const idocTable=idocs.length ? `<h2>${idocs.length} SAP IDoc deliveries · ${escapeReport(idocScope)}</h2><table><thead><tr><th>Document number</th><th>SAP transaction ID</th><th>Package size</th><th>Workflow status</th></tr></thead><tbody>${idocs.map((delivery:any)=>`<tr>${[delivery.documentNumber,delivery.transactionId,delivery.packageSize,delivery.status].map(value=>`<td>${escapeReport(value ?? '—')}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '';
-    download('execution-report.html',`<!doctype html><html><head><meta charset="utf-8"><title>Execution report</title><style>body{font:14px Arial;padding:24px;color:#172a3a}table{border-collapse:collapse;width:100%}td,th{padding:8px;border:1px solid #bbb;text-align:left}svg{width:100%;max-width:1000px}svg text{fill:#172a3a}@media print{body{padding:0}}</style></head><body><h1>${escapeReport(projectName)} · Execution analysis</h1><p>${escapeReport(label)} · ${escapeReport(report.generatedAt)}</p><p>${escapeReport(report.notes)}</p>${idocTable}${publisherTable}${chart.current?.outerHTML || ''}<table><thead><tr><th>Activity</th><th>Task</th><th>Invocations</th><th>Failures</th><th>Total ms</th><th>Mean ms</th><th>P95 ms</th></tr></thead><tbody>${table}</tbody></table></body></html>`,'text/html');
+    download('execution-report.html',`<!doctype html><html><head><meta charset="utf-8"><title>Execution report</title><style>body{font:14px Arial;padding:24px;color:#172a3a}table{border-collapse:collapse;width:100%}td,th{padding:8px;border:1px solid #bbb;text-align:left}.analytics-bars{list-style:none;padding:0}.analytics-bars li{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr) auto;gap:12px;align-items:center;padding:6px 0}.analytics-bar-label{overflow-wrap:anywhere}.analytics-bar-value{white-space:nowrap}.analytics-bar-track,.analytics-bar{display:block;height:12px;background:#e2ebf0}.analytics-bar{background:#298faa;print-color-adjust:exact}.analytics-bar.failed{background:#b94b66}@media print{body{padding:0}}</style></head><body><h1>${escapeReport(projectName)} · Execution analysis</h1><p>${escapeReport(label)} · ${escapeReport(report.generatedAt)}</p><p>${escapeReport(report.notes)}</p>${idocTable}${publisherTable}${chart.current ? `<h2 id="analytics-slowest-title">Slowest activities · total execution time</h2>${chart.current.outerHTML}` : ''}<table><thead><tr><th>Activity</th><th>Task</th><th>Invocations</th><th>Failures</th><th>Total ms</th><th>Mean ms</th><th>P95 ms</th></tr></thead><tbody>${table}</tbody></table></body></html>`,'text/html');
   };
-  return <ModalLayer><div className="execution-analytics" role="dialog" aria-modal="true" aria-labelledby="execution-analytics-title">
-    <header><div><h2 id="execution-analytics-title">Execution analytics</h2><small>{projectName}</small></div><button autoFocus aria-label="Close execution analytics" onClick={onClose}>×</button></header>
+  const sizeAction = expanded ? 'Restore execution analytics' : 'Expand execution analytics';
+  return <ModalLayer><div className={`execution-analytics${expanded ? ' analytics-expanded' : ''}`} role="dialog" aria-modal="true" aria-labelledby="execution-analytics-title">
+    <header>
+      <div className="analytics-title"><h2 id="execution-analytics-title">Execution analytics</h2><small>{projectName}</small></div>
+      <div className="analytics-window-actions">
+        <button type="button" aria-label={sizeAction} title={sizeAction} onClick={() => setExpanded(value => !value)}>
+          {expanded ? <Minimize2 aria-hidden="true"/> : <Maximize2 aria-hidden="true"/>}
+        </button>
+        <button type="button" autoFocus aria-label="Close execution analytics" onClick={onClose}>×</button>
+      </div>
+    </header>
+    <div className="analytics-scroll">
     <div className="analytics-controls"><label>Execution <select value={selected} onChange={event=>setSelected(event.target.value)}><option value="current">Current / debug execution</option>{history.map(run=><option key={run.runId} value={run.runId}>{run.detachedTask ? `Spawned subtask: ${run.detachedTask} · ` : ''}{run.startedAt} · {run.status} · {Number(run.durationMs).toFixed(1)} ms</option>)}</select></label><label>Find activity <input value={search} onChange={event=>setSearch(event.target.value)} placeholder="Name, task or type"/></label></div>
-    <main><p>{label}</p>{error && <p role="alert">{error}</p>}<div className="analytics-metrics"><article><b>{records.length}</b><span>Activity invocations</span></article><article><b>{failures}</b><span>Failed activity invocations</span></article><article><b>{total.toFixed(2)} ms</b><span>Summed activity time</span></article><article><b>{execution?.durationMs != null ? `${Number(execution.durationMs).toFixed(2)} ms` : '—'}</b><span>Run wall time</span></article></div>
+    <div className="analytics-content"><p>{label}</p>{error && <p role="alert">{error}</p>}<div className="analytics-metrics"><article><b>{records.length}</b><span>Activity invocations</span></article><article><b>{failures}</b><span>Failed activity invocations</span></article><article><b>{total.toFixed(2)} ms</b><span>Summed activity time</span></article><article><b>{execution?.durationMs != null ? `${Number(execution.durationMs).toFixed(2)} ms` : '—'}</b><span>Run wall time</span></article></div>
     {!!idocs.length && <details><summary>{idocs.length} SAP IDoc deliveries · {idocScope}</summary><div className="analytics-table"><table><thead><tr><th>Document number</th><th>SAP transaction ID</th><th>Package size</th><th>Workflow status</th></tr></thead><tbody>{idocs.map((delivery:any,index:number)=><tr key={delivery.runId || index}><td>{delivery.documentNumber ?? '—'}</td><td>{delivery.transactionId ?? '—'}</td><td>{delivery.packageSize ?? '—'}</td><td>{delivery.status}</td></tr>)}</tbody></table></div></details>}
     <p className="analytics-note">{report.notes}</p>
     {!!publisherTimings.length && <details><summary>Publisher timings</summary><p>{publisherNote}</p><div className="analytics-table"><table><thead><tr>{publisherHeaders.map(label=><th key={label}>{label}</th>)}</tr></thead><tbody>{publisherTimings.map(row=><tr key={row.id}>{publisherCells(row).map((value,index)=><td key={index}>{value}</td>)}</tr>)}</tbody></table></div></details>}
-    {!!trend.length && <><h3>Run duration trend · latest 30 runs, oldest first</h3><svg className="analytics-chart" viewBox="0 0 900 160" role="img" aria-label="Execution duration trend">{trend.map((run,index)=>{const height=(Number(run.durationMs) || 0)/trendMax*115;return <g key={run.runId}><title>{run.startedAt}: {run.durationMs} ms · {run.status}</title><rect x={index*880/trend.length+10} y={125-height} width={Math.max(4,880/trend.length-5)} height={Math.max(1,height)} fill={run.status==='failed' ? '#b94b66' : '#298faa'}/></g>})}<text x="10" y="150">Peak {trendMax.toFixed(2)} ms · select a run above for details</text></svg></>}
+    {!!trend.length && <>
+      <h3>Run duration trend · latest 30 runs, oldest first</h3>
+      <svg className="analytics-chart" viewBox="0 0 900 140" role="img" aria-label="Execution duration trend">
+        {trend.map((run,index)=>{
+          const height=(Number(run.durationMs) || 0)/trendMax*115;
+          return <g key={run.runId}>
+            <title>{run.startedAt}: {run.durationMs} ms · {run.status}</title>
+            <rect x={index*880/trend.length+10} y={125-height} height={height}
+              width={Math.max(4,880/trend.length-5)} fill={run.status==='failed' ? '#b94b66' : '#298faa'}/>
+          </g>;
+        })}
+      </svg>
+      <p className="analytics-note">Peak {trendMax.toFixed(2)} ms · select a run above for details</p>
+    </>}
     {!records.length ? <p className="analytics-empty">Run or step through a process to capture activity timings. Historical timings are available for runs captured after this update.</p> : <>
-      <h3>Slowest activities · total execution time</h3><svg ref={chart} className="analytics-chart" viewBox={`0 0 900 ${Math.max(48,top.length*36)}`} role="img" aria-label="Slowest activity timing chart">{top.map((row,index)=><g key={`${row.taskId}:${row.activityId}`}><title>{row.name}: {row.total.toFixed(3)} ms across {row.count} invocations</title><text x="0" y={index*36+23}>{row.name.length>27 ? `${row.name.slice(0,25)}…` : row.name}</text><rect x="250" y={index*36+7} height="22" width={Math.max(1,row.total/max*500)} fill={row.failures ? '#b94b66' : '#298faa'}/><text x="765" y={index*36+23}>{row.total.toFixed(2)} ms</text></g>)}</svg>
+      <h3 id="analytics-slowest-title">Slowest activities · total execution time</h3>
+      {top.length ? <ul ref={chart} className="analytics-bars" aria-labelledby="analytics-slowest-title">
+        {top.map(row => <li key={`${row.taskId}:${row.activityId}`}>
+          <span className="analytics-bar-label" title={taskLabel(row.taskId)}>{row.name}</span>
+          <span className="analytics-bar-track" aria-hidden="true"><span className={row.failures ? 'analytics-bar failed' : 'analytics-bar'}
+            style={{width: `${row.total / max * 100}%`}}/></span>
+          <span className="analytics-bar-value">{row.total.toFixed(2)} ms</span>
+        </li>)}
+      </ul> : <p>No activities match the filter.</p>}
       <h3>Execution timeline · most recent 200 invocations</h3><div className="analytics-timeline">{records.slice(-200).map((row,index)=><article key={index}><span>{records.length-Math.min(200,records.length)+index+1}</span><b>{row.name}</b><meter min={0} max={invocationMax} value={row.durationMs}/><code>{row.durationMs.toFixed(3)} ms</code><small>{row.status} · {row.endedAt || 'Time unavailable'}</small></article>)}</div>
       <h3>Activity analysis · click an activity to inspect</h3><div className="analytics-table"><table><thead><tr>{['Activity','Task','Calls','Failures','Total ms','Mean ms','Min ms','Max ms','P95 ms'].map(title=><th key={title}>{title}</th>)}</tr></thead><tbody>{visible.map(row=><tr key={`${row.taskId}:${row.activityId}`}><td><button onClick={()=>onInspect(row.taskId,row.activityId)}>{row.name}</button></td><td>{taskLabel(row.taskId)}</td><td>{row.count}</td><td>{row.failures}</td>{[row.total,row.mean,row.min,row.max,row.p95].map((value,index)=><td key={index}>{value.toFixed(3)}</td>)}</tr>)}</tbody></table></div>
-    </>}</main>
+    </>}</div></div>
     <footer><button disabled={!records.length} onClick={()=>download('execution-timings.csv',analyticsCsv(rows),'text/csv')}>Export CSV</button><button disabled={!records.length && !idocs.length} onClick={()=>download('execution-report.json',JSON.stringify(report,null,2),'application/json')}>Export JSON</button><button disabled={!records.length && !idocs.length} onClick={exportHtml}>Export graph report</button><button onClick={onClose}>Close</button></footer>
   </div></ModalLayer>;
 }

@@ -1,6 +1,8 @@
 # Execution analytics
 
-Open **Run → Execution Analytics**, **Window → Execution Analytics**, or the analytics icon in the Execution / Debug panel.
+Select **Execution Analytics** in the Studio ribbon under **Execute & Validate**. You can also open it from the **Run** or **Window** menu, or the analytics icon in the Execution / Debug panel.
+
+Use **Expand execution analytics** in the dialog header to fill the Studio window. Use **Restore execution analytics** to return to the previous size. The report scrolls independently of the header and export buttons.
 
 Select the current debug execution or a completed run. The window provides:
 
