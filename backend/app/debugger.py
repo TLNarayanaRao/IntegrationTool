@@ -3,6 +3,7 @@ import asyncio,os
 from collections import defaultdict, deque
 from copy import deepcopy
 from .debug_trace import DebugTrace
+from .execution_analytics import PUBLISH_PHASES, publish_phases
 from .flow_graph import parallel_plan
 from time import perf_counter
 from uuid import uuid4
@@ -126,6 +127,7 @@ class DebugManager:
     def start(self, project: Project, task_id: str, initial: dict, resources: dict, properties: dict, breakpoints: list[str], environment: str = 'local', breakpoint_conditions: dict[str, str] | None = None, watches: list[str] | None = None, pause_on_error: bool = True, capture_trace: bool = True):
         task = next((item for item in project.tasks if item.id == task_id), None)
         if not task: raise ValueError('Task not found')
+        if task.library_origin: raise ValueError('Debug a project task that calls this library subtask.')
         incoming = {edge.target for edge in task.transitions}
         root_activities = [item for item in task.activities if item.id not in incoming]
         starters = [item for item in root_activities if item.type in ('start','timer','http_listener') or (item.type in ('rest','soap','ems','jms','kafka','pubsub') and item.config.get('operation') in ('receiver','service','receive','receive_message','subscribe','queue_receiver','topic_subscriber'))]
@@ -215,12 +217,16 @@ class DebugManager:
         now = log_timestamp()
         arrival = {'time': now, 'level': 'INFO', 'kind': 'event', 'message': f'Event received: {task.name} / {activity.name}', 'activityId': activity.id, 'taskId': task.id, 'sessionId': session_id}
         self.runtime.record_activity_output(activity, output, ctx, output)
-        duration = 0.0
-        if activity.type == 'sap' and activity.config.get('operation') == 'idoc_listener':
-            duration = (perf_counter() - intake_started) * 1000 + ctx.get('transport', {}).get('sapIntakeMs', 0.0)
+        operation = activity.config.get('operation') or activity.type
+        idoc = activity.type == 'sap' and operation == 'idoc_listener'
+        duration = (perf_counter() - intake_started) * 1000
+        timing_scope = 'event_handoff'
+        if idoc:
+            duration += ctx.get('transport', {}).get('sapIntakeMs', 0.0)
             arrival['sapIDoc'] = idoc_delivery_details(output)
-            arrival.update(activityName=activity.name, activityType=activity.type, operation='idoc_listener',
-                           durationMs=round(duration, 3), timingScope='idoc_intake')
+            timing_scope = 'idoc_intake'
+        arrival.update(activityName=activity.name, activityType=activity.type, operation=operation,
+                       durationMs=round(duration, 3), timingScope=timing_scope)
         trace.activity(frame, activity, 'received', duration)
         state['logs'].append(arrival)
         outgoing = [edge for edge in task.transitions if edge.source == activity.id]
@@ -256,7 +262,7 @@ class DebugManager:
             frame = state['frames'][-1]
             task_id = options.get('task_id') or frame['taskId']
             task = next((item for item in state['project'].tasks if item.id == task_id), None)
-            if not task: raise ValueError('Selected process was not found in the debug project')
+            if not task or task.library_origin: raise ValueError('Select an editable project task in the debugger')
             activity_id = options.get('activity_id') or frame['activityId']
             activity = next((item for item in task.activities if item.id == activity_id), None)
             if not activity: raise ValueError('Select an activity in the selected process')
@@ -360,7 +366,7 @@ class DebugManager:
         if action == 'run_to':
             task_id = options.get('task_id') or state['frames'][-1]['taskId']
             target = next((task for task in state['project'].tasks if task.id == task_id), None)
-            if not target or not any(item.id == options.get('activity_id') for item in target.activities):
+            if not target or target.library_origin or not any(item.id == options.get('activity_id') for item in target.activities):
                 raise ValueError('Select a run-to target in the debug project')
             options = {**options, 'task_id': task_id}
         return await self._drive(state, action, options)
@@ -498,36 +504,37 @@ class DebugManager:
         activity_started = perf_counter()
         trace = state['trace']
         trace.event(frame, 'activity_start', activityId=activity.id, activityName=activity.name)
-        if activity.type == 'call_task' and '_mockOutput' not in state:
-            dynamic_id = self.runtime.resolve(activity.config.get('dynamicTaskId', ''), ctx)
-            target_id = str(dynamic_id or activity.config.get('taskId') or '').strip()
-            target = find_subtask(project.tasks, target_id)
-            if target:
-                incoming = {edge.target for edge in target.transitions}; starter = next((item for item in target.activities if item.type == 'start'), None) or next(item for item in target.activities if item.id not in incoming)
-                values = self.runtime.map_input_values(activity.config.get('inputMappings', {}), ctx)
-                mapped = self.runtime.unwrap_boundary(values, 'payload', ctx['last'])
-                child_context = {**ctx, 'input': mapped, 'last': mapped, 'context': {'taskId': target.id, 'activityId': starter.id, 'environment': state['environment'], 'debugSessionId': state['id'], 'executionId': state['id']}, '_process': target, 'groupStack': [], 'jdbcTransactions': {}, 'formatCursors': {}}
-                ctx['tasks'].setdefault(target.id, {'name': target.name, 'activities': {}})
-                state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'call', 'message': f'Entering Sub Task: {target.name}', 'activityId': activity.id, 'taskId': task.id, 'calledTaskId': target.id})
-                ctx['tasks'][target.id]['input'] = mapped
-                child_thread = trace.new_thread('subtask', target, starter.id, frame.get('threadId'))
-                trace.event(frame, 'call', activityId=activity.id, targetTaskId=target.id,
-                            targetActivityId=starter.id, targetThreadId=child_thread)
-                trace.set_thread(frame.get('threadId'), 'waiting')
-                trace.set_thread(child_thread, 'active')
-                state['frames'].append({'taskId': target.id, 'activityId': starter.id, 'context': child_context,
-                                        'threadId': child_thread, 'callInput': mapped,
-                                        'callSetupMs': (perf_counter() - activity_started) * 1000})
-                # Step In pauses on the child Start; Continue keeps the debug
-                # engine running through the child frame and returns to the
-                # caller only after the child End completes.
-                if enter_subtask:
-                    state.update(status='paused', pauseReason='step-in')
-                return
-        ctx['context']['activityId'] = activity.id
         activity_input = ctx['last']
         mocked = '_mockOutput' in state
         try:
+            if activity.type == 'call_task' and not mocked:
+                config = self.runtime.resolve_activity_config(activity, ctx)
+                dynamic_id = self.runtime.resolve(config.get('dynamicTaskId', ''), ctx)
+                target_id = str(dynamic_id or config.get('taskId') or '').strip()
+                target = find_subtask(project.tasks, target_id, caller_id=task.id)
+                if target and not target.library_origin:
+                    incoming = {edge.target for edge in target.transitions}
+                    starter = next((item for item in target.activities if item.type == 'start'), None)
+                    if starter is None:
+                        starter = next(item for item in target.activities if item.id not in incoming)
+                    values = self.runtime.map_input_values(activity.config.get('inputMappings', {}), ctx)
+                    mapped = self.runtime.unwrap_boundary(values, 'payload', ctx['last'])
+                    child_context = {**ctx, 'input': mapped, 'last': mapped, 'context': {'taskId': target.id, 'activityId': starter.id, 'environment': state['environment'], 'debugSessionId': state['id'], 'executionId': state['id']}, '_process': target, 'groupStack': [], 'jdbcTransactions': {}, 'formatCursors': {}}
+                    ctx['tasks'].setdefault(target.id, {'name': target.name, 'activities': {}})
+                    state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'call', 'message': f'Entering Sub Task: {target.name}', 'activityId': activity.id, 'taskId': task.id, 'calledTaskId': target.id})
+                    ctx['tasks'][target.id]['input'] = mapped
+                    child_thread = trace.new_thread('subtask', target, starter.id, frame.get('threadId'))
+                    trace.event(frame, 'call', activityId=activity.id, targetTaskId=target.id,
+                                targetActivityId=starter.id, targetThreadId=child_thread)
+                    trace.set_thread(frame.get('threadId'), 'waiting')
+                    trace.set_thread(child_thread, 'active')
+                    state['frames'].append({'taskId': target.id, 'activityId': starter.id, 'context': child_context,
+                                            'threadId': child_thread, 'callInput': mapped,
+                                            'callSetupMs': (perf_counter() - activity_started) * 1000})
+                    if enter_subtask:
+                        state.update(status='paused', pauseReason='step-in')
+                    return
+            ctx['context']['activityId'] = activity.id
             if mocked:
                 ctx['last'] = state.pop('_mockOutput')
                 state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'debug',
@@ -536,7 +543,8 @@ class DebugManager:
                 ctx['last'] = await self.runtime.execute_with_policy(activity, ctx)
         except Exception as exc:
             duration = (perf_counter() - activity_started) * 1000
-            while not await self._handle_fault(state, frame, task, activity, exc, duration):
+            timing_scope = 'call_setup' if activity.type == 'call_task' else None
+            while not await self._handle_fault(state, frame, task, activity, exc, duration, timing_scope):
                 if len(state['frames']) == 1:
                     raise
                 failed = state['frames'].pop()
@@ -547,21 +555,24 @@ class DebugManager:
                 activity = next(item for item in task.activities if item.id == frame['activityId'])
                 trace.event(frame, 'return', activityId=activity.id, targetThreadId=failed.get('threadId'), outcome='failed')
                 duration = failed['callSetupMs']
+                timing_scope = 'call_setup'
             return
         duration = round((perf_counter() - activity_started) * 1000, 3)
         trace.activity(frame, activity, 'mocked' if mocked else 'completed', duration)
         state['logs'].append({'time': log_timestamp(), 'level': 'INFO', 'kind': 'activity', 'message': f'Activity completed: {task.name} / {activity.name} in {duration:.3f} ms', 'activityId': activity.id, 'activityName': activity.name, 'activityType': activity.type, 'taskId': task.id, 'durationMs': duration})
-        if isinstance(ctx['last'], dict) and isinstance(ctx['last'].get('publishTiming'), dict):
-            timing = ctx['last']['publishTiming']
-            state['logs'][-1]['publishTiming'] = timing
-            state['logs'][-1]['message'] += f" (send queue {timing.get('queueMs', 0)} ms; Java bridge {timing.get('bridgeMs', 0)} ms)"
+        if activity.type in ('ems', 'jms', 'pubsub') and isinstance(ctx['last'], dict):
+            timing = publish_phases(ctx['last'].get('publishTiming'))
+            if timing:
+                state['logs'][-1]['publishTiming'] = timing
+                breakdown = ', '.join(f'{PUBLISH_PHASES[key]} {value:.3f} ms' for key, value in timing.items() if key != 'totalMs')
+                state['logs'][-1]['message'] += f' ({breakdown})'
         self.runtime.record_activity_output(activity, ctx['last'], ctx, activity_input)
         await self._follow_success(state, frame, task, activity)
 
-    async def _handle_fault(self, state, frame, task, activity, error, duration):
+    async def _handle_fault(self, state, frame, task, activity, error, duration, timing_scope=None):
         trace = state['trace']
         trace.activity(frame, activity, 'failed', duration)
-        state['logs'].append({'time': log_timestamp(), 'level': 'ERROR', 'kind': 'activity', 'message': f'Activity failed: {task.name} / {activity.name} in {duration:.3f} ms: {error}', 'activityId': activity.id, 'activityName': activity.name, 'activityType': activity.type, 'taskId': task.id, 'durationMs': round(duration, 3)})
+        state['logs'].append({'time': log_timestamp(), 'level': 'ERROR', 'kind': 'activity', 'message': f'Activity failed: {task.name} / {activity.name} in {duration:.3f} ms: {error}', 'activityId': activity.id, 'activityName': activity.name, 'activityType': activity.type, 'taskId': task.id, 'durationMs': round(duration, 3), **({'timingScope': timing_scope} if timing_scope else {})})
         ctx = frame['context']
         plans = state['groupPlans'][task.id]
         fault = self.runtime.fault_payload(error, activity.id)
@@ -636,7 +647,14 @@ class DebugManager:
         call = next(item for item in parent_task.activities if item.id == parent['activityId'])
         trace.set_thread(parent.get('threadId'), 'active')
         trace.event(parent, 'return', activityId=call.id, targetThreadId=completed.get('threadId'), outcome='completed')
-        trace.activity(parent, call, 'completed', completed['callSetupMs'])
+        duration = round(completed['callSetupMs'], 3)
+        trace.activity(parent, call, 'completed', duration)
+        state['logs'].append({
+            'time': log_timestamp(), 'level': 'INFO', 'kind': 'activity',
+            'message': f'Activity completed: {parent_task.name} / {call.name} (call setup {duration:.3f} ms)',
+            'activityId': call.id, 'activityName': call.name, 'activityType': call.type,
+            'taskId': parent_task.id, 'durationMs': duration, 'timingScope': 'call_setup',
+        })
         parent['context']['_activityMetadata'] = {'calledTaskId': task.id}
         self.runtime.record_activity_output(call, output, parent['context'], completed['callInput'])
         await self._follow_success(state, parent, parent_task, call)

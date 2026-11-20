@@ -40,13 +40,16 @@ class JmsSenderWorkerTests(unittest.TestCase):
         self.cp.stop(); self.java.stop()
 
     def test_reuses_connection_and_producer_and_resets_delivery_options(self):
-        first = bridge.execute_jms(self.config, 'send', 'queue', 'one', {'deliveryMode': 'Non-Persistent', 'priority': 8, 'expiration': 99})
+        with patch.object(bridge, '_start_jms_sender', wraps=bridge._start_jms_sender) as start:
+            first = bridge.execute_jms(self.config, 'send', 'queue', 'one', {'deliveryMode': 'Non-Persistent', 'priority': 8, 'expiration': 99})
+        self.assertEqual(start.call_args.args[1], bridge.jms_values(self.config))
         second = bridge.execute_jms(self.config, 'send', 'queue', 'two')
         self.assertFalse(first['senderReused'])
         self.assertTrue(second['senderReused'])
         self.assertEqual(first['messageId'], '1:1:1:1:8:99:one')
         self.assertEqual(second['messageId'], '1:1:2:2:4:0:two')
         self.assertIn('providerSendMs', second)
+        self.assertGreaterEqual(second['sessionWaitMs'], 0)
 
     def test_batch_get_reuses_connection_but_closes_each_consumer_and_resets_selector(self):
         first=bridge.execute_jms(self.config,'receive','queue',options={'maxMessages':2,'receiveTimeout':1000,'messageSelector':'first'})

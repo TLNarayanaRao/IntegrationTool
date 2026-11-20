@@ -1,6 +1,7 @@
 """Pub/Sub correctness/concurrency guards; no hosted-cloud rate claims."""
 import asyncio
 from concurrent.futures import Future, ThreadPoolExecutor
+from threading import Event
 from unittest.mock import MagicMock, patch
 import types
 import unittest
@@ -10,6 +11,43 @@ from app.raw_python_support import connectors
 
 
 class PubsubThroughputTests(unittest.TestCase):
+    def test_publish_bypasses_a_saturated_receiver_pool_in_both_runtimes(self):
+        client = MagicMock()
+        confirmation = Future()
+        confirmation.set_result('confirmed')
+        client.publish.return_value = confirmation
+        client.topic_path.return_value = 'projects/qa/topics/test'
+
+        async def exercise():
+            loop = asyncio.get_running_loop()
+            loop.set_default_executor(ThreadPoolExecutor(max_workers=1))
+            entered, release = Event(), Event()
+            def receiver():
+                entered.set()
+                release.wait(5)
+
+            blocked = loop.run_in_executor(None, receiver)
+            runtime = WorkflowRuntime()
+            resource = SharedResource(id='p', name='QA', type='pubsub', config={'projectId': 'qa'})
+            cfg = {'resourceId': 'p', 'topic': 'test', 'waitForDelivery': True}
+            try:
+                while not entered.is_set():
+                    await asyncio.sleep(0)
+                result = await asyncio.wait_for(runtime.messaging('pubsub', cfg, {'resources': {'p': resource}, 'last': {}}), 1)
+                self.assertEqual(result['providerMessageId'], 'confirmed')
+                self.assertIn('confirmationMs', result['publishTiming'])
+                direct = await asyncio.wait_for(connectors.pubsub('publish', resource.config, cfg, {}), 1)
+                self.assertEqual(direct['providerMessageId'], 'confirmed')
+                self.assertFalse(blocked.done())
+            finally:
+                release.set()
+                await blocked
+                await connectors.close_pubsub()
+                runtime.close_publishers()
+
+        with patch('app.runtime.create_pubsub_client', return_value=client), patch('google.cloud.pubsub_v1.PublisherClient', return_value=client):
+            asyncio.run(exercise())
+
     def test_fully_qualified_topic_is_not_prefixed_twice(self):
         client=MagicMock();future=Future();future.set_result('id');client.publish.return_value=future
         async def exercise():

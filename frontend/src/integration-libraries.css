@@ -1,0 +1,29 @@
+.integration-libraries {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: min(46rem, calc(100vw - 1rem));
+  max-height: calc(100dvh - 1rem);
+  overflow: hidden;
+  border: 1px solid var(--line, #415866);
+  border-radius: 0.65rem;
+  background: var(--panel, #15202c);
+  color: var(--text, #edf6fc);
+}
+.integration-libraries > :is(header, nav, footer) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.9rem;
+}
+.integration-libraries > nav { justify-content: flex-start; flex-wrap: wrap; }
+.integration-libraries > main { overflow: auto; padding: 0.7rem 0.9rem; }
+.integration-libraries :is(h2, h3, h4, p) { margin: 0.45rem 0; }
+.integration-libraries > footer { justify-content: flex-end; }
+.integration-libraries details { padding: 0.5rem; border: 1px solid var(--line, #415866); border-radius: 0.3rem; }
+.integration-libraries label { display: grid; gap: 0.25rem; margin: 0.6rem 0; }
+.integration-libraries fieldset label { display: flex; align-items: center; gap: 0.5rem; }
+.integration-libraries .library-actions { display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; margin: 0.6rem 0; }
+.integration-libraries a { color: var(--accent, #8eeaff); }
+.integration-libraries [role="alert"] { color: var(--danger, #ff92a4); }
+.integration-libraries [aria-pressed="true"] { border-color: var(--accent, #8eeaff); }

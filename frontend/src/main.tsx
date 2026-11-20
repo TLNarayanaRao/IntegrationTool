@@ -1,6 +1,7 @@
 import ExecutionDock from "./ExecutionDock";
 import RuntimeStatus from "./RuntimeStatus";
 import ModalLayer from "./ModalLayer";
+import IntegrationLibraries, { type LibraryOrigin, type LibraryPin } from "./IntegrationLibraries";
 import DebugTraceDialog, { DebugLaunchDialog } from "./DebugTraceDialog";
 import ApiBlueprint from "./ApiBlueprint";
 import { closeTaskEditors, type CloseEditorsMode } from "./taskEditors";
@@ -186,7 +187,9 @@ type Task = {
   transitions: Edge[];
   input_schema?: Record<string, any>;
   output_schema?: Record<string, any>;
+  library_contract?: {input: string | Record<string, any>; output: string | Record<string, any>};
   groups?: GroupDefinition[];
+  library_origin?: LibraryOrigin | null;
 };
 type GroupDefinition = { id: string; type: "if" | "while" | "for_each" | "iterate" | "repeat" | "repeat_on_error" | "scope" | "none" | "critical_section" | "transaction_jdbc" | "pick_first"; name: string; member_activity_ids: string[]; config: Record<string, any>; position: { x: number; y: number }; size?: { width: number; height: number }; parent_group_id?: string | null };
 
@@ -258,6 +261,7 @@ type Project = {
   tasks: Task[];
   active_task_id: string;
   process?: any;
+  libraries?: LibraryPin[];
 };
 
 class StudioErrorBoundary extends Component<React.PropsWithChildren, { error: Error | null }> {
@@ -1190,18 +1194,19 @@ const rewriteBwEdgeVariables = (edge: Edge, aliases: Record<string, string>) => 
       [name, path.replace(/^activities\.([^.]+)(?=\.output(?:\.|$))/, (prefix, id) => aliases[id] ? `activities.${aliases[id]}` : prefix)])) }
   : edge.bw_xpath;
 const normalizeObjectNames = (project: Project, previous?: Project): Project => {
-  const named = <T extends { name: string }>(item: T): T => {
-    if (typeof item.name !== "string") return item;
+  const named = <T extends { name: string; library_origin?: LibraryOrigin | null }>(item: T): T => {
+    if (item.library_origin || typeof item.name !== "string") return item;
     const name = studioObjectName(item.name);
     return name === item.name ? item : { ...item, name };
   };
-  const namedList = <T extends { name: string }>(items: T[]): T[] => {
+  const namedList = <T extends { name: string; library_origin?: LibraryOrigin | null }>(items: T[]): T[] => {
     const updated = items.map(named);
     return updated.every((item, index) => item === items[index]) ? items : updated;
   };
   const taskIds = new Set(project.tasks.map(task => task.id));
 
   const tasks = project.tasks.map(task => {
+    if (task.library_origin) return task;
     const updated = named(task);
     const groups = task.groups?.map(named);
     const activities = task.activities.map(activity => {
@@ -1240,6 +1245,7 @@ const normalizeProject = (value: any): Project => {
   const source = value && typeof value === "object" ? value : {};
   const tasks = Array.isArray(source.tasks) ? source.tasks : [];
   const normalizedTasks = tasks.map((rawTask: any, taskIndex: number) => {
+    if (rawTask?.library_origin) return rawTask as Task;
     const task = rawTask && typeof rawTask === "object" ? rawTask : {};
     const activities = Array.isArray(task.activities) ? task.activities : [];
     const usedActivityNames = new Set<string>();
@@ -1268,6 +1274,7 @@ const normalizeProject = (value: any): Project => {
     });
   });
   const migratedTasks = normalizedTasks.map((rawTask: Task) => {
+    if (rawTask.library_origin) return rawTask;
     const task = repairCopiedTask(rawTask);
     const aliases = Object.fromEntries(task.activities.map((activity: Node) => [activity.id, activityReferenceName(activity.name)]));
     const references = Object.fromEntries(task.activities.flatMap((activity: Node) => [
@@ -1295,7 +1302,8 @@ const normalizeProject = (value: any): Project => {
   });
   const fallback = structuredClone(initial);
   const next = { ...fallback, ...source, tasks: migratedTasks.length ? normalizeTaskKinds(migratedTasks) : fallback.tasks } as Project;
-  next.active_task_id = next.tasks.some((task) => task.id === source.active_task_id) ? source.active_task_id : next.tasks[0].id;
+  next.active_task_id = next.tasks.some((task) => task.id === source.active_task_id && !task.library_origin)
+    ? source.active_task_id : next.tasks.find(task => !task.library_origin)?.id || "";
   next.resources = Array.isArray(source.resources) ? source.resources : [];
   next.schemas = Array.isArray(source.schemas) ? source.schemas : [];
   next.custom_functions = Array.isArray(source.custom_functions) ? source.custom_functions : [];
@@ -1304,6 +1312,7 @@ const normalizeProject = (value: any): Project => {
 };
 const propertyReferences = (value: any) => [...JSON.stringify(value ?? {}).matchAll(/\$\{properties\.([^}]+)\}/g)].map((match) => match[1]);
 const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[] => {
+  if (task.library_origin) return [];
   const issues: ValidationIssue[] = [], ids = new Set(task.activities.map((item) => item.id));
   const add = (severity: ValidationIssue["severity"], category: string, message: string, remedy: string, activityId?: string) =>
     issues.push({ id: `${task.id}-${issues.length}`, severity, category, message, remedy, taskId: task.id, activityId });
@@ -1568,6 +1577,7 @@ function App() {
     explorerClipboard = useRef<{ type: string; value: any } | null>(null),
     projectFileHandle = useRef<any>(null);
   const [dragPreview, setDragPreview] = useState<{ projectId: string; taskId: string; positions: Record<string, Node['position']> } | null>(null);
+  const [libraryDialogOpen, setLibraryDialogOpen] = useState(false);
   const task =
       project.tasks.find((t) => t.id === project.active_task_id) ||
       project.tasks[0],
@@ -1620,7 +1630,7 @@ function App() {
     });
   }, []);
   const mutateTask = (fn: (t: Task) => Task) =>
-    editorOpen && setProject((p) => ({
+    editorOpen && !task.library_origin && setProject((p) => ({
       ...p,
       tasks: p.tasks.map((t) => (t.id === p.active_task_id ? fn(t) : t)),
       process: undefined,
@@ -2066,7 +2076,7 @@ function App() {
   }, []);
   const selectTask = (id: string) => {
     const t = project.tasks.find((t) => t.id === id);
-    if (!t) return;
+    if (!t || t.library_origin) return;
     setOpenTaskIds((current) => current.includes(id) ? current : [...current, id]);
     setProject((p) => ({ ...p, active_task_id: id }));
     const first = t?.activities[0]?.id || "";
@@ -2549,7 +2559,10 @@ function App() {
   const saveProjectFolder = async () => {
     setWorkStatus("Saving project workspace…");
     try {
-      const saved = await persistProject();
+      const projectView = await persistProject();
+      const saved = {...projectView, tasks: projectView.tasks.filter((item: Task) => !item.library_origin),
+        resources: projectView.resources.filter((item: any) => !item.library_origin),
+        schemas: projectView.schemas.filter((item: any) => !item.library_origin)};
       const folderName = projectFilename("").replace(/\.$/, "");
       if (window.minaDesktop) {
         const remembered = typeof projectFileHandle.current === "string" && !/\.(mpackage|ifproject|ifpackage|zip|json)$/i.test(projectFileHandle.current) ? projectFileHandle.current : undefined;
@@ -3416,6 +3429,9 @@ function App() {
               <Settings2 />
             </i>
           </button>
+          <button className="tree-row indent" onClick={() => setLibraryDialogOpen(true)}>
+            <BookOpen aria-hidden="true" /> Libraries
+          </button>
           <button
             className="tree-row indent"
             aria-expanded={!!open.Tasks}
@@ -3430,7 +3446,7 @@ function App() {
             <Network aria-hidden="true" /> Tasks
           </button>
           {open.Tasks &&
-            <PackageTree {...packageTreeProps("tasks")} items={project.tasks} renderItem={t => {
+            <PackageTree {...packageTreeProps("tasks")} items={project.tasks.filter(item => !item.library_origin)} renderItem={t => {
               const mode = taskEntryMode(t);
               return (
                 <button
@@ -3475,7 +3491,7 @@ function App() {
                 <Cable /> Connections
               </button>
               {open.Connections &&
-                <PackageTree {...packageTreeProps("resources")} items={project.resources} renderItem={r => (
+                <PackageTree {...packageTreeProps("resources")} items={project.resources.filter(item => !item.library_origin)} renderItem={r => (
                   <button
                     className={`tree-row ${selectedResource === r.id ? "active" : ""}`}
                     key={r.id}
@@ -3523,7 +3539,7 @@ function App() {
             <CodeXml /> Schemas
           </button>
           {open.Schemas &&
-            <PackageTree {...packageTreeProps("schemas")} items={project.schemas} renderItem={s => (
+            <PackageTree {...packageTreeProps("schemas")} items={project.schemas.filter(item => !item.library_origin)} renderItem={s => (
               <button
                 className="tree-row"
                 key={s.id}
@@ -3619,7 +3635,7 @@ function App() {
         <nav className="task-editor-tabs" aria-label="Open task editors">
           {openTaskIds.map((taskId) => {
             const openTask = project.tasks.find((item) => item.id === taskId);
-            if (!openTask) return null;
+            if (!openTask || openTask.library_origin) return null;
             const active = taskId === project.active_task_id;
             const mode = taskEntryMode(openTask);
             return <div key={taskId} className={`task-editor-tab ${active ? "active" : ""}`} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); setTaskTabMenu({ taskId, x: event.clientX, y: event.clientY }); }}>
@@ -3889,15 +3905,15 @@ function App() {
               ),
             ) : <button className="active">Configuration</button>}
             <FontControl scope="Configuration" value={configFont} onChange={setConfigFont} />
-            {node && <button className="delete-selected-activity" title="Delete selected activity (Delete or Backspace)" onClick={deleteSelectedActivity}><Trash2/> Delete Activity</button>}
+            {node && !task.library_origin && <button className="delete-selected-activity" title="Delete selected activity (Delete or Backspace)" onClick={deleteSelectedActivity}><Trash2/> Delete Activity</button>}
           </div>
           {node ? (
             <ActivityEditor
               node={node}
               task={task}
-              resources={project.resources}
-              tasks={project.tasks}
-              schemas={project.schemas}
+              resources={project.resources.filter(item => !item.library_origin || item.library_origin.public)}
+              tasks={project.tasks.filter(item => !item.library_origin || item.library_origin.public)}
+              schemas={project.schemas.filter(item => !item.library_origin || item.library_origin.public)}
               customFunctions={project.custom_functions || []}
               updateCustomFunctions={(customFunctions: any[]) => setProject((current) => ({ ...current, custom_functions: customFunctions }))}
               properties={project.properties[project.active_environment] || []}
@@ -3956,6 +3972,8 @@ function App() {
           )}
         </section>}</> : <><div className="orchestrator-empty" role="status"><Workflow/><b>No task editors open</b><span>Select a task in Project Explorer to open it.</span></div>{executionConsole}</>}
       </main>
+      {libraryDialogOpen && <IntegrationLibraries project={project} onChange={updated => setProject(current => current.id === updated.id ? normalizeProject(updated) : current)}
+        onClose={() => setLibraryDialogOpen(false)} />}
       {analyticsOpen && <ExecutionAnalytics key={project.id} projectId={project.id} projectName={project.name} tasks={project.tasks} logs={logs} runtimeState={runtimeState} debugState={debugState} onClose={() => setAnalyticsOpen(false)} onInspect={(taskId: string, activityId: string) => { const target = project.tasks.find(item => item.id === taskId && item.activities.some(activity => activity.id === activityId)) || project.tasks.find(item => item.activities.some(activity => activity.id === activityId)); if (target) { selectTask(target.id); setSelected(activityId); setActiveTab("configuration"); setAnalyticsOpen(false); } }}/>}
       {debugLaunchOpen && <DebugLaunchDialog taskName={task.name} onClose={() => setDebugLaunchOpen(false)} onStart={(input, capture) => {
         setDebugLaunchOpen(false);

@@ -418,8 +418,24 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
     # CAPABILITY mapper END
     # CAPABILITY call_task START
     if kind == 'call_task':
-        from .registry import TASKS
-        target = str(cfg.get('taskId') or '')
+        from unicodedata import normalize
+        from .registry import TASKS, TASK_DETAILS
+        reference = str(cfg.get('dynamicTaskId') or cfg.get('taskId') or '').strip()
+        caller_origin = TASK_DETAILS[ctx.task_id][3] if ctx.task_id in TASK_DETAILS else None
+        def visible(entry):
+            _, _, kind, origin = entry
+            return kind == 'subtask' and (not origin or origin.get('public') or
+                (caller_origin and caller_origin['alias'] == origin['alias']))
+        if reference in TASK_DETAILS and visible(TASK_DETAILS[reference]):
+            target = reference
+        else:
+            def key(value):
+                return '/'.join(normalize('NFKC', '-'.join(part.split())).lower() for part in value.split('/'))
+            matches = [identity for identity, entry in TASK_DETAILS.items()
+                       if visible(entry) and key(f'{entry[1]}/{entry[0]}' if '/' in reference else entry[0]) == key(reference)]
+            if len(matches) != 1:
+                raise RuntimeError(f'Sub Task {reference!r} was not found')
+            target = matches[0]
         values = mapped(raw, ctx)
         fallback = ctx.last if isinstance(ctx.last, dict) else {'value': ctx.last}
         child = Context(boundary_value(values, 'payload', fallback), ctx.properties, ctx.resources)

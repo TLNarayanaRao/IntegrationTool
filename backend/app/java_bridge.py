@@ -617,18 +617,26 @@ def _send_jms_reused(config: dict[str, Any], values: dict[str, Any], timeout: fl
     if entry is None:
         # Bound persistent JVMs when dynamic destinations/configuration have high cardinality.
         return invoke('jms.' + operation, config, values, family='jms', timeout=timeout)
+    connection_values = jms_values(config)
+    request_values = {name: value for name, value in values.items() if name not in connection_values}
+    waiting = time.perf_counter()
     with entry['lock']:
+        session_wait_ms = (time.perf_counter() - waiting) * 1000
         if entry['stopped']: raise JavaBridgeError('JMS sender was stopped')
         worker = entry.get('worker')
         reused = worker is not None and worker.process.poll() is None
         try:
             if not reused:
                 if worker: worker.close()
-                worker = _start_jms_sender(config, values)
+                # The persistent JVM opens its connection before reading
+                # commands. Send message data only on its stdin command pipe.
+                worker = _start_jms_sender(config, connection_values)
                 entry['worker'] = worker
             if entry['stopped']: raise JavaBridgeError('JMS sender was stopped')
             _track_process(entry['scope'], worker.process)
-            result = worker.request(operation, values, timeout=timeout)
+            result = worker.request(operation, request_values, timeout=timeout)
+            if operation == 'send':
+                result['sessionWaitMs'] = round(session_wait_ms, 3)
             return {**result, ('senderReused' if operation == 'send' else 'receiverReused'): reused}
         except Exception:
             with _jms_senders_lock:

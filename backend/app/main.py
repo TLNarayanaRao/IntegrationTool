@@ -13,7 +13,8 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders
 from pydantic import BaseModel, Field
-from .models import AIBuildRequest, DebugAction, DebugRequest, Project, RunRequest, SharedResource, PackagePath, effective_event_activities
+from .models import AIBuildRequest, DebugAction, DebugRequest, LibraryPin, Project, RunRequest, SharedResource, PackagePath, effective_event_activities, find_subtask
+from . import integration_libraries as libraries
 from .store import delete_project, get_project, list_projects, project_dir, save_project, safe_component
 from .project_import import MAX_IMPORT_BYTES, project_payload
 from .runtime import WorkflowRuntime
@@ -310,31 +311,52 @@ def _connector_endpoint(connector_type: str, config: dict) -> dict:
     if kind == 'pubsub': return {'protocol': 'gcp-pubsub', 'project': config.get('projectId'), 'subscription': config.get('subscription'), 'topic': config.get('topic')}
     return {'protocol': kind}
 
-def _publish_runtime_state(project_id: str, *, status: str, logs: list[dict], endpoints=None, result=None, environment: str | None = None):
+def _publish_runtime_state(project_id: str, *, status: str, logs: list[dict], endpoints=None, result=None,
+                           environment: str | None = None, detached_task: str | None = None):
     from .execution_analytics import activity_timings
     previous = runtime_states.get(project_id, {})
     executions = list(previous.get('executions', []))
+    last_execution = previous.get('lastExecution')
     if result is not None:
         execution = {
             'runId': result.run_id, 'correlationId': result.correlation_id, 'status': result.status,
             'startedAt': result.started_at, 'endedAt': result.ended_at, 'durationMs': result.duration_ms,
-            'activityOutputs': result.activity_outputs, 'taskOutputs': result.task_outputs,
+            'activityOutputs': result.activity_outputs if detached_task is None else {},
+            'taskOutputs': result.task_outputs if detached_task is None else {},
             'activityTimings': activity_timings(result.logs),
         }
         idoc = next((entry['sapIDoc'] for entry in result.logs if 'sapIDoc' in entry), None)
         if idoc is not None:
             execution['sapIDoc'] = idoc
+        if detached_task is not None:
+            execution['detachedTask'] = detached_task
+        else:
+            last_execution = execution
         executions = ([execution] + executions)[:100]
+    update_outputs = result is not None and detached_task is None
     state = {
         'status': status, 'updatedAt': log_timestamp(),
         'environment': environment or previous.get('environment', 'local'),
         'logs': logs, 'endpoints': endpoints if endpoints is not None else previous.get('endpoints', []),
-        'activityOutputs': result.activity_outputs if result is not None else previous.get('activityOutputs', {}),
-        'taskOutputs': result.task_outputs if result is not None else previous.get('taskOutputs', {}),
-        'lastExecution': executions[0] if executions else None, 'executions': executions,
+        'activityOutputs': result.activity_outputs if update_outputs else previous.get('activityOutputs', {}),
+        'taskOutputs': result.task_outputs if update_outputs else previous.get('taskOutputs', {}),
+        'lastExecution': last_execution, 'executions': executions,
     }
     runtime_states[project_id] = state
     return state
+
+async def _record_detached_execution(project, task, environment, result):
+    previous = runtime_states.get(project.id)
+    if previous is None:
+        return
+    logs = (previous.get('logs', []) + result.logs)[-500:]
+    _publish_runtime_state(project.id, status=previous.get('status', 'idle'), logs=logs,
+                           result=result, detached_task=task.name)
+    await _write_runtime_logs(project, environment or project.active_environment, result.logs)
+
+
+runtime.on_detached_result = _record_detached_execution
+
 
 def _is_continuous_event(activity) -> bool:
     return activity.config.get('operation') in CONTINUOUS_EVENT_OPERATIONS.get(activity.type, set())
@@ -695,18 +717,22 @@ async def ai_generate(request: AIBuildRequest):
     except httpx.HTTPStatusError as exc: raise HTTPException(502, f'AI provider rejected the design request: {exc.response.text[:500]}')
     except (ValueError, json.JSONDecodeError) as exc: raise HTTPException(422, f'AI design did not pass Studio validation: {exc}')
 
-@app.get('/api/projects', response_model=list[Project])
-def projects(): return list_projects()
+@app.get('/api/projects')
+def projects(): return [libraries.studio_project(item) for item in list_projects()]
 
-@app.get('/api/projects/{project_id}', response_model=Project)
+@app.get('/api/projects/{project_id}')
 def project(project_id: str):
     item = get_project(project_id)
     if not item: raise HTTPException(404, 'Project not found')
-    return item
+    return libraries.studio_project(item)
 
 @app.get('/api/projects/{project_id}/runtime-state')
 async def runtime_state(project_id: str):
-    if not await asyncio.to_thread(get_project, project_id): raise HTTPException(404, 'Project not found')
+    # Runtime polling only needs existence. Keep deserializing installed
+    # implementations on the edit and execution paths.
+    exists = await asyncio.to_thread((project_dir(project_id) / 'project.json').is_file)
+    if not exists and not await asyncio.to_thread(get_project, project_id):
+        raise HTTPException(404, 'Project not found')
     state = runtime_states.get(project_id, {'status': 'stopped', 'logs': [], 'endpoints': [], 'activityOutputs': {}, 'taskOutputs': {}, 'lastExecution': None, 'executions': []})
     snapshot = runtime.execution_snapshot(project_id)
     return {**state, **snapshot} if snapshot else state
@@ -719,10 +745,142 @@ def project_logs(project_id: str, limit: int = 1000, environment: str = 'local')
     directory = _project_log_directory(item, environment)
     return {**project_log_info(project_id, item.name, directory), 'environment': environment, 'propertyKey': 'runtime.logDirectory', 'configuredDirectory': directory, 'entries': read_project_logs(project_id, item.name, limit, directory)}
 
-@app.post('/api/projects', response_model=Project)
-def create_project(item: Project):
-    try: return save_project(item, enforce_names=True)
+@app.post('/api/projects')
+def create_project(item: dict):
+    try: return libraries.studio_project(save_project(libraries.studio_project_input(item), enforce_names=True))
     except ValueError as error: raise HTTPException(400, str(error)) from error
+
+
+class LibraryPublishRequest(BaseModel):
+    project: dict
+    id: str
+    name: str
+    version: str
+    description: str = ''
+    exports: dict[str, list[str]]
+
+
+class LibraryAttachRequest(BaseModel):
+    project: dict
+    library_id: str
+    version: str
+    alias: str
+    sha256: str
+    preview: bool = False
+    allow_breaking: bool = False
+
+
+class LibraryRemoveRequest(BaseModel):
+    project: dict
+    alias: str
+
+
+@app.get('/api/libraries')
+def list_integration_libraries():
+    return [libraries.summary(release) for release in libraries.catalog()]
+
+
+@app.post('/api/libraries/publish')
+def publish_integration_library(request: LibraryPublishRequest):
+    try:
+        release = libraries.publish(libraries.studio_project_input(request.project), request.id, request.name, request.version,
+                                    request.description, request.exports)
+        return libraries.summary(libraries.save_release(release))
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+
+
+@app.post('/api/libraries/install')
+async def install_integration_library(file: UploadFile = File(...)):
+    try:
+        data = await file.read(libraries.MAX_ARCHIVE_BYTES + 1)
+        release = await asyncio.to_thread(libraries.read_archive, data)
+        return libraries.summary(await asyncio.to_thread(libraries.save_release, release))
+    except (ValueError, RuntimeError, zipfile.BadZipFile) as error:
+        raise HTTPException(400, str(error)) from error
+
+
+@app.get('/api/libraries/{library_id}/{version}/archive')
+def download_integration_library(library_id: str, version: str):
+    release = libraries.catalog_release(library_id, version)
+    if release is None:
+        raise HTTPException(404, 'Integration Library version not found.')
+    return library_archive_response(release)
+
+
+def library_archive_response(release: libraries.LibraryRelease):
+    try:
+        archive = libraries.archive_bytes(release)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return Response(archive, media_type='application/zip',
+                    headers={'Content-Disposition': f'attachment; filename="{release.id}-{release.version}.mlib"'})
+
+
+@app.post('/api/libraries/pin/archive')
+def download_pinned_integration_library(pin: dict):
+    try:
+        pin = libraries.resolve_pin(pin, pin.get('project_id', ''))
+        release = libraries.LibraryRelease.model_validate(pin.library)
+        if libraries.digest(release) != pin.sha256:
+            raise ValueError('Integration Library does not match its pinned checksum.')
+        return library_archive_response(release)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+
+
+@app.post('/api/libraries/attach')
+def attach_integration_library(request: LibraryAttachRequest):
+    try:
+        project = libraries.studio_project_input(request.project)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    pins = project.libraries
+    old = next((pin for pin in pins if pin.alias == request.alias), None)
+    if old and old.library['id'] != request.library_id:
+        raise HTTPException(409, 'Choose a different alias for this library.')
+    release = libraries.catalog_release(request.library_id, request.version)
+    # Projects carry the installed release so the same pin remains portable.
+    if release is None and old and old.library['version'] == request.version:
+        release = libraries.LibraryRelease.model_validate(old.library)
+    if release is None:
+        raise HTTPException(404, 'Integration Library version not found.')
+    if libraries.digest(release) != request.sha256:
+        raise HTTPException(409, 'The library checksum differs from the selected release.')
+    try:
+        changes = libraries.broken_exports(libraries.LibraryRelease.model_validate(old.library), release) if old else []
+        replacement = LibraryPin(alias=request.alias, sha256=request.sha256, library=release.model_dump(mode='json'))
+        updated = libraries.pinned_project(project, [pin if pin.alias != request.alias else replacement for pin in pins]
+                                           if old else [*pins, replacement])
+        try:
+            libraries.validate_project_references(updated, project)
+        except ValueError as error:
+            if request.preview:
+                return {'breakingChanges': changes, 'blockedBy': str(error)}
+            raise
+        if request.preview:
+            return {'breakingChanges': changes}
+        if changes and not request.allow_breaking:
+            raise HTTPException(409, 'Review breaking changes before changing the installed version.')
+        return {'project': libraries.studio_project(updated), 'breakingChanges': changes}
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+
+
+@app.post('/api/libraries/remove')
+def remove_integration_library(request: LibraryRemoveRequest):
+    try:
+        project = libraries.studio_project_input(request.project)
+        updated = libraries.pinned_project(project, [pin for pin in project.libraries if pin.alias != request.alias])
+        libraries.validate_project_references(updated, project)
+        return libraries.studio_project(updated)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+
+
+def require_library_bindings(item: Project, environment: str, task_id: str | None = None):
+    if item.libraries and (missing := libraries.unbound_settings(item, environment, task_id)):
+        raise HTTPException(400, f'Configure Integration Library properties in {environment}: {", ".join(missing)}')
 
 class APIBlueprintRequest(BaseModel):
     document: str | dict
@@ -774,15 +932,15 @@ def apply_api_blueprint_update(project_id: str, request: APIBlueprintUpdateReque
     try:
         project,report=apply_update(project_id,request.resourceId,request.document,request.operationIds,request.expectedRevision,
             request.reviewed,request.previewToken,reference_documents=request.referenceDocuments,document_path=request.documentPath,response_mode=request.responseMode)
-        return {'project':project,'changes':report}
+        return {'project':libraries.studio_project(project),'changes':report}
     except UpdateConflict as error:raise HTTPException(409,str(error)) from None
     except (ValueError,KeyError,TypeError,RecursionError) as error:raise HTTPException(400,str(error)) from None
     except (OSError,RuntimeError) as error:raise HTTPException(500,'API update could not be saved safely. '+str(error)) from None
 
-@app.put('/api/projects/{project_id}', response_model=Project)
-def update_project(project_id: str, item: Project):
-    if project_id != item.id: raise HTTPException(400, 'Project id mismatch')
-    try: return save_project(item, enforce_names=True)
+@app.put('/api/projects/{project_id}')
+def update_project(project_id: str, item: dict):
+    if project_id != item.get('id'): raise HTTPException(400, 'Project id mismatch')
+    try: return libraries.studio_project(save_project(libraries.studio_project_input(item), enforce_names=True))
     except ValueError as error: raise HTTPException(400, str(error)) from error
 
 @app.delete('/api/projects/{project_id}')
@@ -795,12 +953,13 @@ def project_json(project_id: str):
     item = get_project(project_id)
     if not item: raise HTTPException(404, 'Project not found')
     filename = re.sub(r'[^A-Za-z0-9_.-]+','-',item.name).strip('-') or item.id
-    return Response(item.model_dump_json(indent=2), media_type='application/json', headers={'Content-Disposition':f'attachment; filename="{filename}.json"','X-Project-Storage':str(project_dir(project_id))})
+    return Response(json.dumps(libraries.studio_project(item, workspace=True), indent=2), media_type='application/json', headers={'Content-Disposition':f'attachment; filename="{filename}.json"','X-Project-Storage':str(project_dir(project_id))})
 
 @app.post('/api/projects/{project_id}/run')
 async def run(project_id: str, http_request: Request, request: RunRequest):
     item = await asyncio.to_thread(get_project, project_id)
     if not item: raise HTTPException(404, 'Project not found')
+    require_library_bindings(item, request.environment, request.task_id or item.active_task_id)
     resources = {resource.id: resource for resource in item.resources}
     selected = item.properties.get(request.environment, [])
     properties = {prop.key: prop.value for prop in selected}
@@ -882,10 +1041,13 @@ def export_project(project_id: str):
     stream = io.BytesIO()
     with zipfile.ZipFile(stream, 'w', zipfile.ZIP_DEFLATED) as archive:
         archive.writestr('manifest.json', json.dumps({'format':'mina-project','version':2,'projectId':item.id,'name':item.name,'features':{'groups':'runtime-v1'}}, indent=2))
-        archive.writestr('project.json', item.model_dump_json(indent=2))
-        for task in item.tasks: archive.writestr(f'tasks/{task.id}.json', task.model_dump_json(indent=2))
-        for resource in item.resources: archive.writestr(f'resources/{resource.type}/{resource.id}.json', resource.model_dump_json(indent=2))
-        for schema in item.schemas: archive.writestr(f'schemas/{schema.name}', schema.content)
+        archive.writestr('project.json', json.dumps(libraries.studio_project(item, workspace=True), indent=2))
+        for task in item.tasks:
+            if not task.library_origin: archive.writestr(f'tasks/{task.id}.json', task.model_dump_json(indent=2))
+        for resource in item.resources:
+            if not resource.library_origin: archive.writestr(f'resources/{resource.type}/{resource.id}.json', resource.model_dump_json(indent=2))
+        for schema in item.schemas:
+            if not schema.library_origin: archive.writestr(f'schemas/{schema.name}', schema.content)
         for environment, values in item.properties.items(): archive.writestr(f'environments/{environment}.json', json.dumps([value.model_dump() for value in values], indent=2))
         archive.writestr('packaging.json', json.dumps(item.packaging, indent=2))
     stream.seek(0)
@@ -1028,10 +1190,12 @@ readable source into the MINA runtime model at startup.
         '        resources=build_resources(),\n        schemas=build_schemas(),\n        tasks=[\n' + '\n'.join(task_builders) + '\n        ],\n        profiles=[\n' + profiles + '        ],\n        custom_functions=[\n' + functions + '        ],\n    )\n').encode('utf-8')
     return files
 
-def packaging_task_closure(item: Project, starter_ids: list[str] | None = None) -> tuple[Project, list[str], list[str]]:
-    """Select package roots and follow statically determinable Call Process dependencies."""
+def packaging_task_closure(item: Project, starter_ids: list[str] | None = None,
+                           environments: list[str] | None = None) -> tuple[Project, list[str], list[str]]:
+    """Select package roots and preserve fixed and profile-bound subtask dependencies."""
     tasks = {task.id: task for task in item.tasks}
-    names = {task.name.casefold(): task.id for task in item.tasks}
+    profiles = [{entry.key: entry.value for entry in item.properties.get(name, [])}
+                for name in (environments or [item.active_environment])]
     available_roots = [task.id for task in item.tasks if task.kind == 'starter']
     roots = list(dict.fromkeys(starter_ids or available_roots))
     if not roots: raise HTTPException(400, 'The project has no Starter Tasks to package')
@@ -1046,16 +1210,20 @@ def packaging_task_closure(item: Project, starter_ids: list[str] | None = None) 
             if activity.type != 'call_task': continue
             configured = str(activity.config.get('taskId') or '').strip()
             dynamic = str(activity.config.get('dynamicTaskId') or '').strip()
-            candidates = [configured]
-            if dynamic and not dynamic.startswith('${'): candidates.insert(0, dynamic)
-            target_id = next((value for value in candidates if value in tasks), '')
-            if not target_id: target_id = next((names.get(value.casefold(), '') for value in candidates if value and names.get(value.casefold())), '')
-            if not target_id:
-                if dynamic.startswith('${') and not configured:
-                    raise HTTPException(400, f'{tasks[task_id].name} / {activity.name} uses a dynamic Call Process expression without a static fallback; packaging cannot determine its dependency')
-                raise HTTPException(400, f'{tasks[task_id].name} / {activity.name} references missing Sub Task {configured or dynamic!r}')
-            if tasks[target_id].kind != 'subtask': raise HTTPException(400, f'{tasks[task_id].name} / {activity.name} must call a Sub Task, not Starter Task {tasks[target_id].name}')
-            visit(target_id)
+            candidates = [configured] if configured else []
+            if match := libraries.PROPERTY.fullmatch(dynamic):
+                candidates.extend(str(profile[match[1]]).strip() for profile in profiles if profile.get(match[1]))
+                if not configured and any(not str(profile.get(match[1]) or '').strip() for profile in profiles):
+                    raise HTTPException(400, f'{tasks[task_id].name} / {activity.name} requires a value for {match[1]} in each selected environment.')
+            elif dynamic and '${' not in dynamic:
+                candidates.append(dynamic)
+            if not candidates:
+                raise HTTPException(400, f'{tasks[task_id].name} / {activity.name} needs a fixed Sub Task or a project property with a target in each selected environment.')
+            for reference in dict.fromkeys(candidates):
+                target = find_subtask(item.tasks, reference, caller_id=task_id)
+                if not target:
+                    raise HTTPException(400, f'{tasks[task_id].name} / {activity.name} references missing or private Sub Task {reference!r}.')
+                visit(target.id)
     for root in roots: visit(root)
     selected = item.model_copy(deep=True)
     selected_by_id = {task.id: task for task in selected.tasks}
@@ -1115,6 +1283,7 @@ def deployment_package_files(item: Project, target: str, environment: str, artif
         raise HTTPException(400, 'Target must be on-prem or cloud')
     if environment not in item.properties:
         raise HTTPException(400, f'Unknown environment: {environment}')
+    require_library_bindings(item, environment)
     allowed_artifacts = DEPLOYMENT_ARTIFACTS[target]
     selected_artifacts = set(artifacts) if artifacts is not None else set(allowed_artifacts)
     unknown_artifacts = selected_artifacts - allowed_artifacts
@@ -1150,6 +1319,7 @@ def deployment_package_files(item: Project, target: str, environment: str, artif
         if isinstance(value, list): return [scrub(child, f'{path}[{index}]') for index, child in enumerate(value)]
         return value
     sanitized_project = item.model_dump()
+    sanitized_project.pop('libraries', None)
     sanitized_project['properties'] = {environment: properties}
     sanitized_project = scrub(sanitized_project)
     sanitized_project['properties'] = {environment: properties}
@@ -1164,6 +1334,8 @@ def deployment_package_files(item: Project, target: str, environment: str, artif
         'selectedArtifacts': sorted(selected_artifacts),
         'features': {'groups': 'runtime-v1'},
     }
+    if item.libraries:
+        manifest['libraries'] = [libraries.pin_info(pin) for pin in item.libraries]
     files: dict[str, bytes] = {
         'manifest.json': json.dumps(manifest, indent=2).encode(),
         'application/project.json': json.dumps(sanitized_project, indent=2).encode(),
@@ -1440,7 +1612,7 @@ def multi_environment_package_files(item: Project, target: str, environments: li
 def build_deployment_archive(item: Project, target: str, environments: list[str], starter_ids: list[str] | None,
                              archive: str, artifacts: set[str] | None) -> tuple[bytes, str, str, dict]:
     """Build the exact archive used by both download and direct Control Plane deployment."""
-    selected, root_tasks, included_tasks = packaging_task_closure(item, starter_ids)
+    selected, root_tasks, included_tasks = packaging_task_closure(item, starter_ids, environments)
     selected.packaging.pop('sourceFormat', None)
     files = multi_environment_package_files(selected, target, environments, artifacts)
     manifest = json.loads(files['manifest.json'])
@@ -1580,6 +1752,58 @@ def _control_plane_client_options(payload: ControlPlaneDeployRequest | ControlPl
         verify = str(certificate.resolve())
     return base_url, headers, verify
 
+class LibraryCatalogConnection(ControlPlaneConnectionRequest):
+    teamId: str = ''
+    library_id: str = ''
+    version: str = ''
+    sha256: str = ''
+
+
+@app.post('/api/libraries/control-plane/{action}')
+async def control_plane_integration_libraries(action: str, payload: LibraryCatalogConnection):
+    if action not in ('list', 'publish', 'install'):
+        raise HTTPException(404, 'Unknown Integration Library catalog action.')
+    base, headers, verify = _control_plane_client_options(payload)
+    endpoint = f'{base}/api/integration-libraries'
+    params = {'teamId': payload.teamId} if payload.teamId else None
+    if action != 'list' and (not re.fullmatch(libraries.IDENTITY, payload.library_id)
+                             or not re.fullmatch(libraries.VERSION, payload.version)):
+        raise HTTPException(400, 'Invalid Integration Library ID or version.')
+    try:
+        async with httpx.AsyncClient(timeout=20, verify=verify, follow_redirects=False) as client:
+            if action == 'list':
+                response = await client.get(endpoint, headers=headers, params=params)
+                response.raise_for_status()
+                return response.json()
+            if action == 'publish':
+                release = libraries.catalog_release(payload.library_id, payload.version)
+                if release is None or libraries.digest(release) != payload.sha256:
+                    raise HTTPException(409, 'Select the exact local release before publishing.')
+                archive = libraries.archive_bytes(release)
+                response = await client.post(endpoint, headers=headers, params=params,
+                                             files={'file': (f'{release.id}.mlib', archive, 'application/zip')})
+                response.raise_for_status()
+                return response.json()
+            async with client.stream('GET', f'{endpoint}/{payload.library_id}/{payload.version}/archive',
+                                     headers=headers, params=params) as response:
+                response.raise_for_status()
+                data = bytearray()
+                async for part in response.aiter_bytes():
+                    data.extend(part)
+                    if len(data) > libraries.MAX_ARCHIVE_BYTES:
+                        raise HTTPException(413, 'Integration Library exceeds the maximum size.')
+        release = libraries.read_archive(bytes(data))
+        if (release.id, release.version, libraries.digest(release)) != (payload.library_id, payload.version, payload.sha256):
+            raise HTTPException(409, 'The downloaded library identity or checksum differs from the selected release.')
+        return libraries.summary(await asyncio.to_thread(libraries.save_release, release))
+    except httpx.HTTPStatusError as error:
+        raise HTTPException(error.response.status_code,
+                            f'Control Plane catalog returned HTTP {error.response.status_code}.') from error
+    except httpx.HTTPError as error:
+        raise HTTPException(502, 'Unable to reach the Control Plane library catalog.') from error
+    except (ValueError, RuntimeError, zipfile.BadZipFile) as error:
+        raise HTTPException(400, str(error)) from error
+
 @app.post('/api/control-plane/deployment-targets')
 async def control_plane_deployment_targets(payload: ControlPlaneConnectionRequest):
     base_url, headers, verify = _control_plane_client_options(payload)
@@ -1601,6 +1825,8 @@ async def control_plane_deployment_targets(payload: ControlPlaneConnectionReques
 def package_project(project_id: str, target: str = 'on-prem', environment: str = 'local', environments: str = '', starters: str = '', archive: str = 'mpkg', artifacts: str = ''):
     item = get_project(project_id)
     if not item: raise HTTPException(404, 'Project not found')
+    if protected_library_deployment(item):
+        raise HTTPException(403, 'Deploy applications with protected libraries through the managed Control Plane.')
     selected_starters = [value.strip() for value in starters.split(',') if value.strip()] if starters else None
     selected_artifacts = {value.strip() for value in artifacts.split(',') if value.strip()} if artifacts else None
     selected_environments = [value.strip() for value in environments.split(',') if value.strip()] if environments else [environment]
@@ -1612,10 +1838,20 @@ def package_project(project_id: str, target: str = 'on-prem', environment: str =
         raise _package_failure(item, selected_environments, error) from error
     return StreamingResponse(io.BytesIO(body), media_type=media, headers={'Content-Disposition': f'attachment; filename="{filename}"'})
 
+def protected_library_deployment(item: Project) -> bool:
+    return bool(os.getenv(libraries.ARCHIVE_KEY_ENV, '').strip() and
+                (item.libraries or any(task.library_origin for task in item.tasks)))
+
+
 @app.post('/api/projects/{project_id}/package/deploy')
 async def package_and_deploy_project(project_id: str, payload: ControlPlaneDeployRequest):
     item = get_project(project_id)
     if not item: raise HTTPException(404, 'Project not found')
+    base_url, headers, verify = _control_plane_client_options(payload)
+    if protected_library_deployment(item):
+        approved = os.getenv('MINA_LIBRARY_CONTROL_PLANE_URL', '').strip().rstrip('/')
+        if not approved or not approved.startswith('https://') or base_url != approved or verify is not True:
+            raise HTTPException(403, 'Protected libraries require the operator-configured Control Plane URL with TLS verification.')
     environments = payload.environments or [payload.deploymentEnvironment]
     if payload.deploymentEnvironment not in environments:
         raise HTTPException(400, 'Deployment environment must be one of the packaged environment profiles')
@@ -1630,7 +1866,6 @@ async def package_and_deploy_project(project_id: str, payload: ControlPlaneDeplo
         )
     except Exception as error:
         raise _package_failure(item, environments, error) from error
-    base_url, headers, verify = _control_plane_client_options(payload)
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=10.0), verify=verify, follow_redirects=False) as client:
             upload = await client.post(f'{base_url}/api/packages', params={'teamId': payload.teamId} if payload.teamId else None,
@@ -1663,13 +1898,15 @@ async def package_and_deploy_project(project_id: str, payload: ControlPlaneDeplo
     except httpx.RequestError as exc:
         raise HTTPException(502, f'Unable to reach Control Plane at {base_url}: {exc}') from exc
 
-@app.post('/api/projects/import', response_model=Project)
+@app.post('/api/projects/import')
 async def import_project(file: UploadFile = File(...)):
     raw = await file.read(MAX_IMPORT_BYTES + 1)
     try:
         payload = await asyncio.to_thread(project_payload, raw, file.filename or '')
-        item = Project.model_validate_json(payload)
-        return await asyncio.to_thread(save_project, item)
+        def import_workspace():
+            item = libraries.studio_project_input(json.loads(payload))
+            return libraries.studio_project(save_project(item))
+        return await asyncio.to_thread(import_workspace)
     except Exception as exc: raise HTTPException(400, f'Invalid MINA project: {exc}')
 
 @app.post('/api/schemas/import-format-assets')
@@ -2136,6 +2373,7 @@ def download_http_collection(project_id: str, environment: str='local', task_id:
 async def start_debug(project_id: str, http_request: Request, request: DebugRequest):
     item = await asyncio.to_thread(get_project, project_id)
     if not item: raise HTTPException(404, 'Project not found')
+    require_library_bindings(item, request.environment, request.task_id or item.active_task_id)
     for session_id,state in list(debugger.sessions.items()):
         if state['project'].id==project_id and state.get('httpHandler') and not state.get('stopRequested'):await _stop_debug_session(session_id)
     task_id = request.task_id or item.active_task_id

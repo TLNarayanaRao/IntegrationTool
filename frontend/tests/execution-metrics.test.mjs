@@ -6,7 +6,18 @@ import ts from 'typescript';
 const source=await readFile(new URL('../src/executionMetrics.ts',import.meta.url),'utf8');
 const context=vm.createContext({exports:{}});
 vm.runInContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2021}}).outputText,context);
-const {timingRecords,timingSummary,analyticsCsv,escapeReport}=context.exports;
+const {timingRecords,timingSummary,publisherTimingSummary,analyticsCsv,escapeReport}=context.exports;
+test('publisher timings average only calls that captured the phase',()=>{
+  const rows=timingRecords([
+    {kind:'activity',activityId:'sender',durationMs:5,publishTiming:{queueMs:0,confirmationMs:4,password:'private'}},
+    {kind:'activity',activityId:'sender',durationMs:6,publishTiming:{queueMs:2,confirmationMs:NaN}},
+  ]);
+  const summary=publisherTimingSummary(rows);
+  assert.equal(summary.find(row=>row.phase==='Send queue').mean,1);
+  assert.equal(summary.find(row=>row.phase==='Confirmation wait').calls,1);
+  assert.equal(summary.find(row=>row.phase==='Confirmation wait').mean,4);
+  assert.ok(!JSON.stringify(rows).includes('private'));
+});
 test('timings count repeats, zero duration and failures without mixing tasks',()=>{
   const logs=[0,10,20].map(durationMs=>({kind:'activity',activityId:'a',taskId:'one',durationMs,level:durationMs===20?'ERROR':'INFO',payload:'secret'}));
   logs.push({kind:'activity',runtimeActivityId:'a',taskId:'two',durationMs:2},{kind:'activity',activityId:'a',durationMs:NaN},{kind:'lifecycle',durationMs:100});
@@ -36,4 +47,14 @@ test('IDoc receipts contribute listener counts and timing without counting untim
   assert.equal(row.p95,4);
   assert.equal(row.timingScope,'idoc_intake');
   assert.ok(!JSON.stringify(records).includes('private'));
+});
+test('starter handoffs and subtask call setup appear in the timing summary',()=>{
+  const records=timingRecords([
+    {kind:'event',activityId:'receive',taskId:'main',timingScope:'event_handoff',durationMs:1},
+    {kind:'activity',activityId:'call',taskId:'main',timingScope:'call_setup',durationMs:2},
+    {kind:'call',activityId:'call',taskId:'main',durationMs:100},
+  ]);
+  assert.equal(records.length,2);
+  assert.equal(records[0].timingScope,'event_handoff');
+  assert.equal(records[1].timingScope,'call_setup');
 });

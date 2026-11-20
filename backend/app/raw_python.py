@@ -521,7 +521,7 @@ def validate_raw_python(project: dict) -> None:
                 client_ack = str(activity.get('config', {}).get('acknowledgeMode') or 'Auto').strip().lower() not in {'auto', 'automatic'}
                 if client_ack and not (starter_event and activity['id'] == starter_event['id']):
                     failures.append(f"{task['name']} / {activity['name']}: client acknowledgement requires a Starter Task receiver")
-            if kind == 'call_task' and str(activity.get('config', {}).get('taskId') or '') not in task_ids:
+            if kind == 'call_task' and not activity.get('config', {}).get('dynamicTaskId') and str(activity.get('config', {}).get('taskId') or '') not in task_ids:
                 failures.append(f"{task['name']} / {activity['name']}: Call Sub Task needs a static taskId")
         outbound: dict[str, list[str]] = {}
         for edge in task.get('transitions', []):
@@ -906,6 +906,8 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     ).encode('utf-8')
     task_imports = '\n'.join(f'from .tasks import {module}' for module in task_modules.values())
     registry = ', '.join(f'{task_id!r}: {module}.run' for task_id, module in task_modules.items())
+    task_details = {task['id']: (task['name'], task.get('package_path', 'Default'), task['kind'], task.get('library_origin'))
+                    for task in project['tasks']}
     event_starters = {task['id']: activity for task in project['tasks']
                       if (activity := _starter_event(task)) is not None}
     event_source = ',\n    '.join(
@@ -915,6 +917,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         '"""Generated task registry; callable from notebooks or another Python host."""\n'
         'from .core import Reference, Template\n'
         f'{task_imports}\nTASKS = {{{registry}}}\n'
+        f'TASK_DETAILS = {task_details!r}\n'
         f'STARTERS = {repr([task["id"] for task in project["tasks"] if task["kind"] == "starter"])}\n'
         f'EVENT_STARTERS = {{\n    {event_source}\n}}\n'
     ).encode('utf-8')
@@ -1331,6 +1334,8 @@ def _engine_module_files(project: dict, source_root: Path) -> dict[str, bytes]:
         tree = ast.parse(source)
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.level:
+                if module == 'models' and node.module == 'integration_libraries':
+                    continue  # Published applications already contain the resolved library assets.
                 if node.level != 1 or not node.module or '.' in node.module:
                     raise ValueError(f'Engine dependency needs a linker rule: {module}: {ast.unparse(node)}')
                 if module == 'data_formats' and node.module == 'xsd_openapi' and not xsd_projection:
@@ -1469,7 +1474,7 @@ def engine_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[
         groups = ',\n        '.join(
             _python_call('GroupDefinition', group, ('id', 'type', 'name', 'member_activity_ids', 'config', 'parent_group_id'))
             for group in task.get('groups', []))
-        task_header = _python_call('TaskDefinition', attributes, ('id', 'name', 'kind', 'description', 'input_schema', 'output_schema'), 4)
+        task_header = _python_call('TaskDefinition', attributes, ('id', 'name', 'kind', 'description', 'input_schema', 'output_schema', 'package_path', 'library_origin'), 4)
         task_header = task_header.rsplit('\n', 1)[0] + '\n'
         files[f'application/tasks/{module}.py'] = (
             '"""Executable Python task definition and async entry point."""\n'

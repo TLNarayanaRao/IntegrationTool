@@ -9,14 +9,14 @@ export default function DebugActivityTree({ tasks, taskId, activityId, busy, onS
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const term = query.trim().toLowerCase();
   const matches = (value: any) => `${value.name} ${value.id} ${value.type || ""}`.toLowerCase().includes(term);
-  const visible = tasks.filter((task: any) => debugTaskMatches(tasks, task, term));
+  const visible = tasks.filter((task: any) => !task.library_origin && debugTaskMatches(tasks, task, term));
   const toggle = (key: string, expanded: boolean, name: string) => <button type="button" aria-label={`${expanded ? "Collapse" : "Expand"} ${name}`} aria-expanded={expanded} onClick={() => setCollapsed(current => ({ ...current, [key]: expanded }))}>{expanded ? <ChevronDown/> : <ChevronRight/>}</button>;
   const select = (task: any, activity?: any) => {
     const selected = taskId === task.id && activityId === (activity?.id || "");
     const mode = taskEntryMode(task);
     const isCallTask = activity?.type === "call_task";
     const label = activity ? (isCallTask ? "Call Sub Task" : activity.type)
-      : `${taskEntryLabels[mode]} · ${task.activities.length} activities`;
+      : `${taskEntryLabels[mode]} · ${task.activities.length} activities${task.library_origin ? ` · ${task.library_origin.alias} ${task.library_origin.version}` : ""}`;
     const captured = activity ? records?.[task.id]?.activities?.[activity.id] : records?.[task.id];
     return <button type="button" disabled={busy} className={selected ? "selected" : ""} aria-pressed={selected} onClick={() => onSelect(task.id, activity?.id || "")}>
       {activity && !isCallTask ? <Activity aria-hidden="true" /> : <TaskEntryIcon mode={isCallTask ? "subtask" : mode} />}
@@ -36,12 +36,14 @@ export default function DebugActivityTree({ tasks, taskId, activityId, busy, onS
         if (!all && !matches(activity) && !(target && debugTaskMatches(tasks, target, term))) return null;
         const callPath = [...path, activity.id];
         const callKey = JSON.stringify(callPath);
+        const inspectable = target && !target.library_origin;
         const callOpen = !!term || !(collapsed[callKey] ?? !expandCalls);
         return <li key={activity.id}>
-          {target ? <div className="debug-tree-process">{toggle(callKey, callOpen, activity.name)}{select(task, activity)}</div> : select(task, activity)}
+          {inspectable ? <div className="debug-tree-process">{toggle(callKey, callOpen, activity.name)}{select(task, activity)}</div> : select(task, activity)}
+          {target?.library_origin && <p className="debug-tree-note">Library call · {target.name}</p>}
           {activity.type === "call_task" && deferred && <p className="debug-tree-note">{target ? "Configured fallback shown; runtime target may differ." : "Dynamic target — determined at runtime."}</p>}
           {activity.type === "call_task" && !target && !deferred && <p className="debug-tree-note">Called subtask is missing or not configured.</p>}
-          {target && callOpen && <ul>{renderTask(target, [...callPath, target.id], [...ancestors, task.id], all || matches(activity))}</ul>}
+          {inspectable && callOpen && <ul>{renderTask(target, [...callPath, target.id], [...ancestors, task.id], all || matches(activity))}</ul>}
         </li>;
       })}</ul>}
     </li>;

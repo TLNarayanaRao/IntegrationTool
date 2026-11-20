@@ -1,6 +1,7 @@
 """MINA self-hosted control plane."""
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -32,6 +33,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from .time_utils import log_timestamp
 from .compat import env_value, application_environment
+from . import library_catalog
 
 def administrator_version() -> str:
     override = env_value("MINA_ADMIN_VERSION", "").strip()
@@ -615,6 +617,64 @@ def control_plane_overview(request: Request):
 def list_packages(request: Request, teamId: str | None = None):
     if teamId: requested_asset_team(request, teamId)
     return visible_assets(request, package_inventory(), teamId)
+
+
+def integration_library_inventory():
+    root = DATA_DIR / 'integration-libraries'
+    return [entry for path in sorted(root.glob('*/*/*/release.json')) if (entry := read_json(path, None))]
+
+
+@app.get('/api/integration-libraries')
+def list_integration_libraries(request: Request, teamId: str | None = None):
+    if teamId:
+        requested_asset_team(request, teamId)
+    return visible_assets(request, integration_library_inventory(), teamId)
+
+
+@app.post('/api/integration-libraries')
+async def upload_integration_library(request: Request, file: UploadFile = File(...), teamId: str | None = None):
+    require_application_manager(request)
+    team = requested_asset_team(request, teamId)
+    body = await file.read(library_catalog.MAX_ARCHIVE_BYTES + 1)
+    try:
+        release = await asyncio.to_thread(library_catalog.describe, body)
+    except (ValueError, RuntimeError, zipfile.BadZipFile) as error:
+        raise HTTPException(400, str(error)) from error
+    directory = DATA_DIR / 'integration-libraries' / safe(team) / release['id'] / release['version']
+    descriptor = directory / 'release.json'
+    with STATE_LOCK:
+        existing = read_json(descriptor, None)
+        if existing:
+            if existing.get('sha256') != release['sha256']:
+                raise HTTPException(409, 'This Integration Library version has different content.')
+            if existing.get('protected') and not release['protected']:
+                raise HTTPException(409, 'Republish this version as a protected Integration Library.')
+            if (directory / 'library.mlib').is_file() and bool(existing.get('protected')) == release['protected']:
+                return existing
+        directory.mkdir(parents=True, exist_ok=True)
+        item = {**release, 'teamId': team}
+        temporary = directory / f'{uuid4().hex}.tmp'
+        try:
+            temporary.write_bytes(body)
+            temporary.replace(directory / 'library.mlib')
+            write_json(descriptor, item)
+        finally:
+            temporary.unlink(missing_ok=True)
+    audit('integration-library.publish', f"{release['id']}:{release['version']}", actor=identity(request)['name'], team_id=team)
+    return item
+
+
+@app.get('/api/integration-libraries/{library_id}/{version}/archive')
+def download_integration_library(library_id: str, version: str, request: Request, teamId: str | None = None):
+    items = list_integration_libraries(request, teamId)
+    matches = [item for item in items if item['id'] == library_id and item['version'] == version]
+    if len(matches) != 1:
+        raise HTTPException(409 if matches else 404, 'Select one team with the requested Integration Library release.')
+    archive = DATA_DIR / 'integration-libraries' / safe(matches[0]['teamId']) / library_id / version / 'library.mlib'
+    if not archive.is_file():
+        raise HTTPException(404, 'The Integration Library archive is missing. Republish this version to restore it.')
+    return Response(archive.read_bytes(), media_type='application/zip',
+                    headers={'Content-Disposition': f'attachment; filename="{library_id}-{version}.mlib"'})
 
 
 @app.get("/api/packages/{artifact}/{version}")

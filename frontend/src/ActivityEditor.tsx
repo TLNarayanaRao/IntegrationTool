@@ -1467,6 +1467,7 @@ function sharedDataFormatMappings(id: string, schemas: any[]): Record<string, st
 
 function boundaryFields(task: any, boundaryType: "start" | "end", schemas: any[]): DataField[] {
   if (!task) return [];
+  if (task.library_origin) return schemaDataFields(task.library_contract?.[boundaryType === "start" ? "input" : "output"]);
   const boundary = (task.activities || []).find((activity: any) => activity.type === boundaryType);
   const config = boundary?.config || {};
   const schemaId = config.interfaceSchemaId;

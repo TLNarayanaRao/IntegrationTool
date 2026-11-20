@@ -73,6 +73,9 @@ def _object_names(project: Project | None) -> dict:
 
 @synchronized
 def save_project(project: Project, *, enforce_names: bool = False) -> Project:
+    if project.libraries or any(item.library_origin for item in (*project.tasks, *project.resources, *project.schemas)):
+        from .integration_libraries import validate_project_references
+        validate_project_references(project)
     if enforce_names:
         conflicts = {scope: entries for scope, entries in _object_names(project).items() if len(entries) > 1}
         previous = _object_names(get_project(project.id)) if conflicts else {}
@@ -88,11 +91,15 @@ def save_project(project: Project, *, enforce_names: bool = False) -> Project:
     clean_activity_policies(project)
     folder = project_dir(project.id); tasks_dir = folder / 'tasks'; resources_dir = folder / 'resources'
     metadata = project.model_dump(exclude={'tasks','resources','process'})
+    if project.libraries:
+        metadata['schemas'] = [item.model_dump() for item in project.schemas if not item.library_origin]
     active_task_files = set()
     for task in project.tasks:
+        if project.libraries and task.library_origin: continue
         path = tasks_dir / f'{safe_component(task.id)}.json'; write_json(path, task.model_dump()); active_task_files.add(path.resolve())
     active_resource_files = set()
     for resource in project.resources:
+        if project.libraries and resource.library_origin: continue
         path = resources_dir / f'{safe_component(resource.id)}.json'; write_json(path, resource.model_dump()); active_resource_files.add(path.resolve())
     for path in tasks_dir.glob('*.json') if tasks_dir.exists() else []:
         if path.resolve() not in active_task_files: path.unlink()

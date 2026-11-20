@@ -43,6 +43,7 @@ const guides = [
  ['Connectors', 'CONNECTOR_SOAK_RESULTS.md'],
  ['Connectors', 'FILE_TRANSFER_DATABASE_READINESS.md'],
  ['Getting started', 'DOCUMENTATION.md'],
+ ['Studio', 'INTEGRATION_LIBRARIES.md'],
  ['Data', 'PARSE_RENDER_ACTIVITIES.md'],
  ['Mapping', 'TRANSFORMATION_CAPABILITIES.md'], ['Studio', 'DEBUG_TESTING.md'], ['Studio', 'DEBUGGING.md'], ['Studio', 'execution-analytics.md'], ['Studio', 'FILE_UTILITIES.md'],
  ['Operations', 'RUNTIME_LOGGING.md'], ['Operations', 'LINUX_SETUP.md'],

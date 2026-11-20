@@ -8,6 +8,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Any
 
 
@@ -15,6 +17,7 @@ _MEMORY_KAFKA: dict[str, asyncio.Queue] = {}
 _KAFKA_PRODUCERS: dict[tuple[int, str], Any] = {}
 _KAFKA_PRODUCER_LOCKS: dict[tuple[int, str], asyncio.Lock] = {}
 _PUBSUB_PUBLISHERS: dict[str, Any] = {}
+_PUBSUB_EXECUTOR: ThreadPoolExecutor | None = None
 _MEMORY_JMS: dict[tuple[str, str], asyncio.Queue] = {}
 _JMS_LISTENERS: dict[str, Any] = {}
 _MEMORY_ACKS: dict[str, tuple[asyncio.Queue, Any]] = {}
@@ -32,6 +35,10 @@ async def close_kafka() -> None:
 
 async def close_pubsub() -> None:
     """Flush and close cached Google publishers without blocking the loop."""
+    global _PUBSUB_EXECUTOR
+    executor, _PUBSUB_EXECUTOR = _PUBSUB_EXECUTOR, None
+    if executor is not None:
+        await asyncio.to_thread(executor.shutdown, wait=True, cancel_futures=True)
     publishers = list(_PUBSUB_PUBLISHERS.values())
     _PUBSUB_PUBLISHERS.clear()
     def close(client):
@@ -373,6 +380,7 @@ async def kafka(operation: str, connection: dict, cfg: dict, payload: Any) -> di
 
 
 async def pubsub(operation: str, connection: dict, cfg: dict, payload: Any) -> dict:
+    global _PUBSUB_EXECUTOR
     operation = 'pull' if operation == 'subscribe' else operation
     try:
         from google.cloud import pubsub_v1
@@ -427,7 +435,10 @@ async def pubsub(operation: str, connection: dict, cfg: dict, payload: Any) -> d
             value = cfg.get('message', payload)
             data = value if isinstance(value, bytes) else json.dumps(value, default=str).encode()
             attributes = {str(key): str(value) for key, value in (cfg.get('attributes') or {}).items()}
-            future = await asyncio.to_thread(client.publish, path, data, ordering_key=str(cfg.get('orderingKey') or ''), **attributes)
+            if _PUBSUB_EXECUTOR is None:
+                _PUBSUB_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix='mina-pubsub-send')
+            enqueue = partial(client.publish, path, data, ordering_key=str(cfg.get('orderingKey') or ''), **attributes)
+            future = await loop.run_in_executor(_PUBSUB_EXECUTOR, enqueue)
             raw_wait = True if one_shot else cfg.get('waitForDelivery', False)
             wait_for_delivery = raw_wait if isinstance(raw_wait, bool) else str(raw_wait).strip().lower() in {'1', 'true', 'yes', 'on'}
             provider_message_id = None

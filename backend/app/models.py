@@ -17,6 +17,7 @@ class SharedResource(BaseModel):
     name: str
     package_path: PackagePath = 'Default'
     config: dict[str, Any] = Field(default_factory=dict)
+    library_origin: dict[str, Any] | None = None
 
 class Activity(BaseModel):
     id: str
@@ -78,6 +79,7 @@ class SchemaAsset(BaseModel):
     content: str
     source_path: str = ''
     package_path: PackagePath = 'Default'
+    library_origin: dict[str, Any] | None = None
 
 def is_event_activity(activity: Activity) -> bool:
     operation = activity.config.get('operation', '')
@@ -164,9 +166,14 @@ class TaskDefinition(ProcessDefinition):
     package_path: PackagePath = 'Default'
     input_schema: dict[str, Any] = Field(default_factory=dict)
     output_schema: dict[str, Any] = Field(default_factory=dict)
+    library_origin: dict[str, Any] | None = None
 
-def find_subtask(tasks: list[TaskDefinition], reference: str) -> TaskDefinition | None:
-    subtasks = [task for task in tasks if task.kind == 'subtask']
+def find_subtask(tasks: list[TaskDefinition], reference: str, *, caller_id: str | None = None) -> TaskDefinition | None:
+    caller = next((task.library_origin for task in tasks if task.id == caller_id), None)
+    subtasks = [task for task in tasks if task.kind == 'subtask' and (
+        caller_id is None or not task.library_origin or task.library_origin.get('public')
+        or (caller and task.library_origin['alias'] == caller['alias'])
+    )]
     exact = next((task for task in subtasks if task.id == reference), None)
     if exact:
         return exact
@@ -182,6 +189,11 @@ class CustomFunction(BaseModel):
     expression: str
     description: str = ''
 
+class LibraryPin(BaseModel):
+    alias: str = Field(pattern=r'^[a-z][a-z0-9-]{0,47}$')
+    sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
+    library: dict[str, Any]
+
 class Project(BaseModel):
     id: str
     name: str
@@ -194,6 +206,7 @@ class Project(BaseModel):
     schemas: list[SchemaAsset] = Field(default_factory=list)
     object_packages: dict[PackageCategory, list[PackagePath]] = Field(default_factory=dict)
     custom_functions: list[CustomFunction] = Field(default_factory=list)
+    libraries: list[LibraryPin] = Field(default_factory=list, max_length=32)
     properties: dict[str, list[EnvironmentProperty]] = Field(default_factory=lambda: {
         name: default_environment_properties() for name in ('local', 'dev', 'qa', 'pre', 'production')
     })
@@ -212,6 +225,9 @@ class Project(BaseModel):
             current.extend(item.model_copy(deep=True) for item in defaults if item.key not in existing)
         if not self.tasks and self.process:
             self.tasks = [TaskDefinition(**self.process.model_dump(), kind='starter')]
+        if self.libraries:
+            from .integration_libraries import materialize
+            materialize(self)
         if not self.tasks:
             self.tasks = [TaskDefinition(
                 id='main', name='Main Subtask', kind='subtask',

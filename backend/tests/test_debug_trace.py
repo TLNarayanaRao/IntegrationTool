@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.debug_trace import DebugTrace
 from app.debugger import DebugManager
+from app.execution_analytics import activity_timings
 from app.main import app
 from app.models import Project
 from app.runtime import WorkflowRuntime
@@ -110,6 +111,10 @@ class DebugTraceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([event['kind'] for event in calls], ['call', 'return'])
         self.assertEqual(calls[0]['targetThreadId'], calls[1]['targetThreadId'])
         self.assertEqual(self.report(session)['metrics']['activities']['completed'], 5)
+        rows = activity_timings(paused['logs'])
+        self.assertEqual([(row['taskId'], row['timingScope']) for row in rows if row['activityId'] == 'call'],
+                         [('main', 'call_setup')])
+        self.assertTrue(any(row['taskId'] == 'child' and row['activityId'] == 'shared' for row in rows))
 
     async def test_step_out_can_honor_breakpoint_and_run_to_is_task_scoped(self):
         session = self.start(*self.call_tasks(), breakpoints=['shared'])
@@ -165,6 +170,35 @@ class DebugTraceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary['metrics']['jobs']['completed'], 2)
         self.assertEqual(summary['metrics']['activities']['received'], 2)
         self.assertEqual({thread['job'] for thread in summary['threads']}, {1, 2})
+        timings = [row for row in activity_timings(idle['logs']) if row['activityId'] == 'timer']
+        self.assertEqual([row['timingScope'] for row in timings], ['event_handoff', 'event_handoff'])
+
+    async def test_event_starters_use_the_same_debug_analytics_path(self):
+        from app.main import CONTINUOUS_EVENT_OPERATIONS
+
+        starters = {**CONTINUOUS_EVENT_OPERATIONS, 'http_listener': {'listen'}, 'rest': {'receiver'}}
+        for kind, operations in starters.items():
+            for operation in sorted(operations):
+                with self.subTest(kind=kind, operation=operation):
+                    session = self.start(task('main', [activity('receive', kind, operation=operation),
+                                                       activity('end', 'end')], [link('receive', 'end')]))
+                    if kind in ('http_listener', 'rest'):
+                        # Hosted Debug activates event mode before handing off the request.
+                        self.manager.sessions[session].update(listenerMode=True, status='listening')
+                    view = await self.manager.trigger_event(session, {'body': 'fixture'})
+                    rows = [row for row in activity_timings(view['logs']) if row['activityId'] == 'receive']
+                    self.assertEqual(len(rows), 1)
+                    self.assertEqual((rows[0]['type'], rows[0]['operation']), (kind, operation))
+                    self.assertEqual(rows[0]['timingScope'], 'idoc_intake' if operation == 'idoc_listener' else 'event_handoff')
+
+    async def test_call_input_failure_has_a_timing_record(self):
+        session = self.start(*self.call_tasks())
+        await self.manager.action(session, 'step_over')
+        with patch.object(self.runtime, 'map_input_values', side_effect=ValueError('Invalid call mapping')):
+            failed = await self.manager.action(session, 'continue')
+        self.assertEqual(failed['status'], 'failed')
+        calls = [row for row in activity_timings(failed['logs']) if row['activityId'] == 'call']
+        self.assertEqual([(row['status'], row['timingScope']) for row in calls], [('failed', 'call_setup')])
 
     async def test_child_fault_follows_parent_error_edge(self):
         parent, child = self.call_tasks()
@@ -185,6 +219,8 @@ class DebugTraceTests(unittest.IsolatedAsyncioTestCase):
                          ('main', 'end', 'exception'))
         report = self.report(session)
         self.assertEqual(report['events'][-1]['transitionId'], 'handler')
+        calls = [row for row in activity_timings(paused['logs']) if row['activityId'] == 'call']
+        self.assertEqual([(row['status'], row['timingScope']) for row in calls], [('failed', 'call_setup')])
         self.assertEqual(report['metrics']['activities']['failed'], 2)
         self.assertEqual((await self.manager.action(session, 'continue'))['status'], 'completed')
         threads = self.report(session)['threads']

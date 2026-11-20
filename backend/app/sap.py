@@ -107,8 +107,34 @@ class SapAdapter:
             schema = cls._schema(str(cfg.get('idocType') or selected.get('idocType') or 'IDoc'),
                                  '', '', selected['segments'], selected.get('fields'))
         if not isinstance(schema, str) or not schema.strip(): return value
-        try: root = _idoc_schema_root(schema)
+        try: elements, plan = cls._idoc_array_plan(schema)
         except ET.ParseError: return value
+        def normalize(data, declaration):
+            child_declarations = plan[declaration]
+            if not child_declarations: return data
+            if isinstance(data, list): return [normalize(item, declaration) for item in data]
+            if not isinstance(data, dict): return data
+            result = dict(data)
+            for name, child, repeated in child_declarations:
+                if name not in result: continue
+                item = result[name]
+                if repeated and not isinstance(item, list): item = [item]
+                result[name] = normalize(item, child)
+            return result
+        name = str(cfg.get('idocType') or selected.get('idocType') or '')
+        declaration = elements.get(name)
+        if declaration is None and len(elements) == 1: declaration = next(iter(elements.values()))
+        if declaration is None: return value
+        if isinstance(value, dict) and declaration.get('name') in value:
+            name = declaration.get('name')
+            return {**value, name: normalize(value[name], declaration)}
+        return normalize(value, declaration)
+
+    @classmethod
+    @lru_cache(maxsize=16)
+    def _idoc_array_plan(cls, schema: str):
+        """Compile immutable cardinality rules once per XSD."""
+        root = _idoc_schema_root(schema)
         local = lambda name: name.rsplit(':', 1)[-1]
         types = {node.get('name'): node for node in root if cls._xml_name(node.tag) == 'complexType'}
         elements = {node.get('name'): node for node in root if cls._xml_name(node.tag) == 'element'}
@@ -130,33 +156,26 @@ class SapAdapter:
                     if kind == 'group' and local(child.get('ref', '')) in groups:
                         yield from children(groups[local(child.get('ref'))], repeated, seen)
                     yield from children(child, repeated, seen)
-        def normalize(data, declaration):
-            if isinstance(data, list): return [normalize(item, declaration) for item in data]
-            if not isinstance(data, dict): return data
-            declaration = elements.get(local(declaration.get('ref', '')), declaration)
-            complex_type = next((node for node in declaration if cls._xml_name(node.tag) == 'complexType'), None)
-            if complex_type is None: complex_type = types.get(local(declaration.get('type', '')))
-            if complex_type is None: return data
-            result = dict(data)
-            declarations = child_declarations.get(complex_type)
-            if declarations is None:
-                declarations = tuple((child.get('name') or local(child.get('ref', '')), child, repeated)
-                                     for child, repeated in children(complex_type))
-                child_declarations[complex_type] = declarations
-            for name, child, repeated in declarations:
-                if name not in result: continue
-                item = result[name]
-                if repeated and not isinstance(item, list): item = [item]
-                result[name] = normalize(item, child)
-            return result
-        name = str(cfg.get('idocType') or selected.get('idocType') or '')
-        declaration = elements.get(name)
-        if declaration is None and len(elements) == 1: declaration = next(iter(elements.values()))
-        if declaration is None: return value
-        if isinstance(value, dict) and declaration.get('name') in value:
-            name = declaration.get('name')
-            return {**value, name: normalize(value[name], declaration)}
-        return normalize(value, declaration)
+        def complex_type_for(declaration):
+            node = elements.get(local(declaration.get('ref', '')), declaration)
+            inline = next((item for item in node if cls._xml_name(item.tag) == 'complexType'), None)
+            return inline if inline is not None else types.get(local(node.get('type', '')))
+
+        def compile_declaration(declaration):
+            if declaration in child_declarations: return
+            complex_type = complex_type_for(declaration)
+            rules = tuple(
+                (child.get('name') or local(child.get('ref', '')), child, repeated)
+                for child, repeated in children(complex_type)
+                if repeated or complex_type_for(child) is not None
+            ) if complex_type is not None else ()
+            child_declarations[declaration] = rules
+            for _, child, _ in rules:
+                compile_declaration(child)
+
+        for declaration in elements.values():
+            compile_declaration(declaration)
+        return elements, child_declarations
 
     @staticmethod
     def _json_to_xml(value: Any, root: str = 'IDoc') -> str:
@@ -222,27 +241,9 @@ class SapAdapter:
                 names[definition.upper()] = logical
         return names
 
-    @classmethod
-    def _decode_segment_fields(cls, segment_name: str, sdata: Any, row: dict, field_index: dict[str, list[dict]], encoding: str = 'utf-8') -> dict[str, str]:
-        raw = sdata if isinstance(sdata, bytes) else ('' if sdata is None else str(sdata)).encode(encoding, errors='strict')
-        definitions = field_index.get(str(segment_name or '').strip().upper(), [])
-        if not definitions:
-            return {}
-        # Some SAP RFC table variants prepend DOCNUM to SDATA even though the
-        # metadata byte offsets start at the first byte of the segment data.
-        # Remove it using the row value when available, with a conservative
-        # 16-digit fallback for flattened listener payloads.
-        docnum = str(row.get('DOCNUM') or '').strip()
-        docnum_bytes = docnum.encode(encoding, errors='strict')
-        leading = len(raw) - len(raw.lstrip())
-        if docnum_bytes and raw[leading:].startswith(docnum_bytes):
-            raw = raw[leading + len(docnum_bytes):]
-        if docnum_bytes and raw[3:21] == docnum_bytes:
-            raw = raw[:3] + raw[21:]
-        # Do not strip a numeric prefix heuristically. Valid IDoc fields often
-        # begin with digits (for example ARTMAS FUNCTION=005 and MATERIAL).
-        # Only a separately supplied DOCNUM is safe to remove here.
-        values: dict[str, str] = {}
+    @staticmethod
+    def _segment_field_layout(definitions: list[dict]) -> tuple[tuple[str, int, int], ...]:
+        layout = []
         for field in definitions:
             name = re.sub(r'[^A-Za-z0-9_.-]', '_', str(field.get('FIELDNAME') or field.get('FIELDNAM') or field.get('FIELD') or '').strip())
             if not name:
@@ -263,11 +264,37 @@ class SapAdapter:
                         end = min(end, start + declared_length)
                 except (TypeError, ValueError):
                     pass
-                # Emit every field defined for the segment. Empty values are
-                # meaningful in an IDoc schema and must remain addressable by
-                # mappings even when SAP sends a shorter/non-padded SDATA row.
-                values[name] = raw[start:min(end, len(raw))].rstrip(b' ').decode(encoding, errors='strict') if start < len(raw) else ''
+                layout.append((name, start, end))
             except (TypeError, ValueError):
+                continue
+        return tuple(layout)
+
+    @classmethod
+    def _decode_segment_fields(cls, segment_name: str, sdata: Any, row: dict, field_index: dict[str, list[dict]],
+                               layouts: dict[str, tuple], encoding: str = 'utf-8') -> dict[str, str]:
+        raw = sdata if isinstance(sdata, bytes) else ('' if sdata is None else str(sdata)).encode(encoding, errors='strict')
+        key = segment_name.strip().upper()
+        layout = layouts.get(key)
+        if layout is None:
+            layout = layouts[key] = cls._segment_field_layout(field_index.get(key, []))
+        if not layout:
+            return {}
+        # Strip a separately supplied DOCNUM only. Numeric field values can
+        # legitimately start at the first byte of SDATA.
+        docnum = str(row.get('DOCNUM') or '').strip()
+        if docnum:
+            docnum_bytes = docnum.encode(encoding, errors='strict')
+            leading = len(raw) - len(raw.lstrip())
+            if raw[leading:].startswith(docnum_bytes):
+                raw = raw[leading + len(docnum_bytes):]
+            if raw[3:21] == docnum_bytes:
+                raw = raw[:3] + raw[21:]
+        values: dict[str, str] = {}
+        for name, start, end in layout:
+            try:
+                # Empty fields remain addressable in mappings.
+                values[name] = raw[start:end].rstrip(b' ').decode(encoding, errors='strict')
+            except UnicodeDecodeError:
                 continue
         return values
 
@@ -409,23 +436,27 @@ class SapAdapter:
         if not fields or not segments:
             schema_fields, schema_segments = cls._schema_metadata(schema)
             fields, segments = fields or schema_fields, segments or schema_segments
-        logical_names = cls._segment_logical_names(segments)
+        logical_names = {name: logical for name, logical in cls._segment_logical_names(segments).items()
+                         if name != logical.upper()}
         # Legacy captured JSON sometimes repeats the same DOCNUM inside every
         # SDATA row. Only treat a numeric prefix as DOCNUM when the same value
         # is observed in multiple segments; a single numeric field must never
         # be guessed or shifted.
         sdata_nodes = []
         for node in root.iter():
-            original_name = cls._xml_name(node.tag)
-            sdata = next((child for child in node if cls._xml_name(child.tag) == 'SDATA'), None) if len(node) else None
-            if sdata is not None:
-                sdata_nodes.append((node, original_name, sdata))
-            logical_name = logical_names.get(original_name.upper())
-            if logical_name and original_name.upper() != logical_name.upper():
-                node.tag = logical_name
+            if len(node):
+                for child in node:
+                    if child.tag == 'SDATA' or child.tag.endswith('}SDATA'):
+                        sdata_nodes.append((node, cls._xml_name(node.tag), child))
+                        break
+            if logical_names:
+                logical_name = logical_names.get(cls._xml_name(node.tag).upper())
+                if logical_name:
+                    node.tag = logical_name
         if not sdata_nodes:
             return
         field_index = cls._segment_field_definitions(fields, segments)
+        layouts: dict[str, tuple] = {}
         candidates: list[tuple[str, int]] = []
         for _, _, sdata_node in sdata_nodes:
             raw = str(sdata_node.text or '')
@@ -446,7 +477,7 @@ class SapAdapter:
             raw = str(sdata_node.text or '')
             if legacy_docnum and (raw.startswith(legacy_docnum[0]) if legacy_docnum[1] == 0 else raw[3:21] == legacy_docnum[0]):
                 row['DOCNUM'] = legacy_docnum[0]
-            decoded = cls._decode_segment_fields(original_name, sdata_node.text, row, field_index, encoding)
+            decoded = cls._decode_segment_fields(original_name, sdata_node.text, row, field_index, layouts, encoding)
             if decoded:
                 node.remove(sdata_node)
                 for field_name, value in decoded.items():
@@ -579,13 +610,13 @@ class SapAdapter:
         if not isinstance(rows, list):
             rows = [rows]
         nodes: dict[str, ET.Element] = {}
-        parents: dict[str, str] = {}
-        pending: list[tuple[str, ET.Element, str]] = []
+        pending: list[tuple[ET.Element, str]] = []
         if not fields or not segments:
             schema_fields, schema_segments = cls._schema_metadata(schema)
             fields, segments = fields or schema_fields, segments or schema_segments
         field_index = cls._segment_field_definitions(fields, segments)
         logical_names = cls._segment_logical_names(segments)
+        layouts: dict[str, tuple] = {}
         for index, row in enumerate(rows):
             if not isinstance(row, dict):
                 continue
@@ -596,7 +627,7 @@ class SapAdapter:
             parent_number = str(row.get('PSGNUM') or '').strip().lstrip('0') or '0'
             node = ET.Element(tag, {'SEGMENT': '1'})
             sdata = row.get('SDATA')
-            decoded = cls._decode_segment_fields(name, sdata, row, field_index, encoding)
+            decoded = cls._decode_segment_fields(name, sdata, row, field_index, layouts, encoding)
             if decoded:
                 for field_name, value in decoded.items():
                     child = ET.SubElement(node, field_name)
@@ -605,9 +636,8 @@ class SapAdapter:
                 data_node = ET.SubElement(node, 'SDATA')
                 data_node.text = str(sdata)
             nodes[number.lstrip('0') or str(index + 1)] = node
-            parents[number.lstrip('0') or str(index + 1)] = parent_number
-            pending.append((number.lstrip('0') or str(index + 1), node, parent_number))
-        for number, node, parent_number in pending:
+            pending.append((node, parent_number))
+        for node, parent_number in pending:
             parent = nodes.get(parent_number)
             (parent if parent is not None else idoc_node).append(node)
         return ET.tostring(root, encoding='unicode')

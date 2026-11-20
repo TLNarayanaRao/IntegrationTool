@@ -1,9 +1,12 @@
+import type { LibraryOrigin } from "./IntegrationLibraries";
+
 export type SharedConnection = {
   id: string;
   type: "jdbc" | "snowflake" | "amqp" | "ftp" | "sftp" | "http" | "ems" | "jms" | "kafka" | "pubsub" | "sap" | "sap_tid";
   name: string;
   package_path?: string;
   config: Record<string, any>;
+  library_origin?: LibraryOrigin | null;
 };
 
 export type ConnectionKind = SharedConnection["type"] | "http_client" | "http_server";
@@ -40,7 +43,7 @@ export default function SharedConnectionSelect({ value, resources, kinds, onChan
     }}>
       <option value="">Select shared connection…</option>
       {value && !options.some(resource => resource.id === value) && <option value={value}>Missing connection ({value})</option>}
-      {options.map(resource => <option key={resource.id} value={resource.id}>{resource.name}</option>)}
+      {options.map(resource => <option key={resource.id} value={resource.id}>{resource.library_origin ? `${resource.library_origin.alias}/${resource.name}` : resource.name}</option>)}
       {onCreate && kinds.map(kind => (
         <option key={kind} value={createPrefix + kind}>
           {kinds.length === 1 ? "+ Create new connection…" : `+ Create ${kind.toUpperCase()} connection…`}

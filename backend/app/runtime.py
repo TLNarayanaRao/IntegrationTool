@@ -40,11 +40,14 @@ class WorkflowRuntime(DataFormats):
         self._publisher_operation_locks: dict[str, threading.Lock] = {}
         self._initialized_transactional_publishers: set[str] = set()
         self._kafka_executor = None
+        self._pubsub_executor = None
         self._jms_executor = None
         self._jms_receivers_used = False
         self._jms_scope_id = uuid.uuid4().hex
         self._active_activity: dict[str, dict] = {}
         self._active_execution: dict[str, dict] = {}
+        self.on_detached_result = None
+        self._detached_runs: set[asyncio.Task] = set()
 
     def active_activities(self, project_id: str) -> list[dict]:
         return [dict(activity) for activity in self._active_activity.values() if activity['projectId'] == project_id]
@@ -100,9 +103,12 @@ class WorkflowRuntime(DataFormats):
             except Exception: pass  # Still release the independently owned clients.
         with self._publisher_lock:
             executor, self._kafka_executor = self._kafka_executor, None
+            pubsub_executor, self._pubsub_executor = self._pubsub_executor, None
             jms_executor, self._jms_executor = self._jms_executor, None
         if executor is not None:
             executor.shutdown(wait=True, cancel_futures=True)
+        if pubsub_executor is not None:
+            pubsub_executor.shutdown(wait=True, cancel_futures=True)
         if jms_executor is not None:
             jms_executor.shutdown(wait=True, cancel_futures=True)
         with self._publisher_lock:
@@ -127,6 +133,13 @@ class WorkflowRuntime(DataFormats):
             future = self._kafka_executor.submit(publish)
         return await asyncio.wrap_future(future)
 
+    async def _publish_pubsub_isolated(self, publish):
+        with self._publisher_lock:
+            if self._pubsub_executor is None:
+                self._pubsub_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix='mina-pubsub-send')
+            future = self._pubsub_executor.submit(publish)
+        return await asyncio.wrap_future(future)
+
     async def _publish_jms_isolated(self, config, destination, payload, options):
         """Keep sends off the shared executor occupied by blocking receivers.
 
@@ -142,6 +155,7 @@ class WorkflowRuntime(DataFormats):
                 'queueMs': round((started - queued) * 1000, 3),
                 'bridgeMs': round((completed - started) * 1000, 3),
                 'totalMs': round((completed - queued) * 1000, 3),
+                **{key: output[key] for key in ('sessionWaitMs', 'providerSendMs') if key in output},
             }}
         with self._publisher_lock:
             if self._jms_executor is None:
@@ -382,6 +396,7 @@ class WorkflowRuntime(DataFormats):
 
     async def run(self, process: ProcessDefinition, initial: dict, resources=None, properties=None, entry_activity_id=None, project: Project | None=None, execution_state: dict | None=None, event_output: Any = _NO_EVENT_OUTPUT, transport: dict | None = None, jms_sender_scope: str | None = None, stop_activity_id=None, branch_context=None, branch_output=None, *, environment=None, debug_session_id=None) -> RunResult:
         run_id, logs = str(uuid.uuid4()), []
+        protected = bool(getattr(process, 'library_origin', None))
         started = datetime.now(timezone.utc)
         correlation_id = str(initial.get('correlationId') or initial.get('correlation_id') or run_id) if isinstance(initial, dict) else run_id
         if branch_context is not None: correlation_id = branch_context['context']['correlationId']
@@ -404,7 +419,7 @@ class WorkflowRuntime(DataFormats):
             context['input'] = copy.deepcopy(branch_context['input'])
             context['vars'] = copy.deepcopy(branch_context['vars'])
             context['context'].update(branch_context['context'])
-        if project:
+        if project and not protected:
             self._active_execution[run_id] = {'projectId':project.id,'logs':logs,'activities':activity_outputs,'tasks':task_outputs}
         self.log(logs, 'INFO', f'Job started: {process.name}', kind='lifecycle', correlationId=correlation_id, runId=run_id, startedAt=log_timestamp(started))
         def finish(status: str, output: dict) -> RunResult:
@@ -442,12 +457,13 @@ class WorkflowRuntime(DataFormats):
                     current = activity_by_id[entered]; continue
                 activity_started = perf_counter()
                 operation = str(current.config.get('operation') or current.type)
-                idoc_intake = triggered_event_pending and current.type == 'sap' and operation == 'idoc_listener'
+                event_handoff = triggered_event_pending
+                idoc_intake = event_handoff and current.type == 'sap' and operation == 'idoc_listener'
                 self.log(logs, 'INFO', f'Activity started: {process.name} / {current.name}', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation)
                 context['context']['activityId'] = current.id
                 activity_input = context['last']
                 error = None
-                if project:
+                if project and not protected:
                     self._active_activity[run_id] = {
                         'projectId': project.id, 'taskId': process.id, 'taskName': process.name,
                         'activityId': current.id, 'activityName': current.name, 'startedAt': log_timestamp(),
@@ -464,7 +480,7 @@ class WorkflowRuntime(DataFormats):
                 except Exception as exc: error = exc
                 finally: self._active_activity.pop(run_id, None)
                 activity_duration = (perf_counter() - activity_started) * 1000
-                timing_scope = {}
+                timing_scope = {'timingScope': 'event_handoff'} if event_handoff else {}
                 if idoc_intake:
                     activity_duration += context['transport'].get('sapIntakeMs', 0.0)
                     timing_scope['timingScope'] = 'idoc_intake'
@@ -472,7 +488,8 @@ class WorkflowRuntime(DataFormats):
                 if error:
                     self.log(logs, 'ERROR', f'Activity failed: {process.name} / {current.name} in {activity_duration:.3f} ms: {error}', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation, durationMs=activity_duration, **timing_scope)
                 else:
-                    self.log(logs, 'INFO', f'Activity completed: {process.name} / {current.name} in {activity_duration:.3f} ms', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation, durationMs=activity_duration, **timing_scope)
+                    publish_timing = context['last'].get('publishTiming') if current.type in ('ems', 'jms', 'pubsub') and isinstance(context['last'], dict) else None
+                    self.log(logs, 'INFO', f'Activity completed: {process.name} / {current.name} in {activity_duration:.3f} ms', kind='activity', taskId=process.id, runtimeActivityId=current.id, activityName=current.name, activityType=current.type, operation=operation, durationMs=activity_duration, **timing_scope, **({'publishTiming': publish_timing} if publish_timing else {}))
                 outgoing = outgoing_by_source.get(current.id, [])
                 if current.type in ('end', 'http_response') and not error: break
                 if error:
@@ -953,7 +970,9 @@ class WorkflowRuntime(DataFormats):
             if include_payload:
                 event['payload'] = payload
                 event['payloadFormat'] = 'XML' if isinstance(payload, str) and payload.lstrip().startswith('<') else 'JSON' if isinstance(payload, (dict, list)) else 'TEXT'
-            self.log(ctx.setdefault('logs', []), level, message, activity.id, activityName=activity.name, **({'payload': payload, 'payloadFormat': event['payloadFormat']} if include_payload else {}))
+            self.log(ctx.setdefault('logs', []), level, message, activity.id, activityName=activity.name,
+                     **({'kind': 'library_log'} if getattr(ctx.get('_process'), 'library_origin', None) and cfg.get('message') not in (None, '') else {}),
+                     **({'payload': payload, 'payloadFormat': event['payloadFormat']} if include_payload else {}))
             ctx['_activityMetadata'] = {'logEvent': event}
             return ctx['last']
         if activity.type == 'confirm':
@@ -1157,20 +1176,38 @@ class WorkflowRuntime(DataFormats):
             if not project: raise RuntimeError('Call Sub Task requires project execution context')
             dynamic_value = self.resolve(cfg.get('dynamicTaskId'), ctx) if cfg.get('dynamicTaskId') not in (None, '') else None
             task_id = str(dynamic_value).strip() if dynamic_value not in (None, '') else str(cfg.get('taskId') or '').strip()
-            task = find_subtask(project.tasks, task_id)
+            task = find_subtask(project.tasks, task_id, caller_id=str(ctx.get('context', {}).get('taskId') or ''))
             if not task or task.kind != 'subtask': raise RuntimeError(f'Sub Task {task_id!r} was not found')
             mapped_values = self.map_input_values(activity.config.get('inputMappings', {}), ctx)
             mapped = self.unwrap_boundary(mapped_values, 'payload', ctx['last'] if isinstance(ctx['last'], dict) else {'value':ctx['last']})
-            execution_state = {'activities': ctx.setdefault('activities', {}), 'tasks': ctx.setdefault('tasks', {})}
+            caller_origin = getattr(ctx.get('_process'), 'library_origin', None) or {}
+            protected_call = bool(task.library_origin and caller_origin.get('alias') != task.library_origin.get('alias'))
+            execution_state = None if protected_call else {'activities': ctx.setdefault('activities', {}), 'tasks': ctx.setdefault('tasks', {})}
             metadata = ctx.get('context', {})
             invocation = self.run(task, mapped, ctx['resources'], ctx['properties'], project=project, execution_state=execution_state,
                                   jms_sender_scope=metadata.get('debugSessionId') or metadata.get('jmsSenderScope'),
                                   environment=metadata.get('environment'), debug_session_id=metadata.get('debugSessionId'))
             if cfg.get('spawn'):
-                asyncio.create_task(invocation)
+                async def run_detached():
+                    result = await invocation
+                    if self.on_detached_result is not None and not task.library_origin:
+                        await self.on_detached_result(project, task, metadata.get('environment'), result)
+                detached = asyncio.create_task(run_detached())
+                self._detached_runs.add(detached)
+                detached.add_done_callback(self._detached_runs.discard)
                 return {'spawned': True, 'taskId': task.id}
             result = await invocation
-            ctx.setdefault('logs', []).extend(result.logs)
+            if protected_call:
+                for entry in result.logs:
+                    if entry.get('kind') == 'library_log':
+                        public_entry = {key: entry[key] for key in ('time', 'level', 'message', 'kind', 'payload', 'payloadFormat') if key in entry}
+                        ctx.setdefault('logs', []).append({**public_entry, 'libraryTask': task.name})
+                if result.status == 'failed':
+                    raise MinaFault(f'Library subtask {task.name} failed.', fault_type='LibraryTaskException')
+                ctx.setdefault('tasks', {})[task.id] = {'name': task.name, 'output': result.output}
+                ctx['_activityMetadata'] = {'calledTaskId': task.id}
+            else:
+                ctx.setdefault('logs', []).extend(result.logs)
             if result.status == 'failed': raise RuntimeError(result.logs[-1]['message'] if result.logs else f'Sub Task {task.name} failed')
             return result.output
         if activity.type in ('ems', 'jms', 'kafka', 'pubsub'):
@@ -1493,6 +1530,7 @@ class WorkflowRuntime(DataFormats):
 
             def publish_pubsub():
                 """Enqueue on the persistent batched publisher by default."""
+                worker_started = perf_counter()
                 publisher, one_shot = self._publisher('pubsub', publish_config, lambda: create_pubsub_client(pubsub_v1.PublisherClient, publish_config))
                 try:
                     path = str(destination) if str(destination).startswith('projects/') else publisher.topic_path(project_id, destination)
@@ -1503,6 +1541,7 @@ class WorkflowRuntime(DataFormats):
                             retry=Retry(deadline=publish_timeout),
                             timeout=publish_timeout, **attributes,
                         )
+                        enqueue_completed = perf_counter()
                         wait_for_delivery = self.as_bool(cfg.get('waitForDelivery', False)) or one_shot
                         # Google SDK futures can notify asyncio directly; do not
                         # occupy shared executor threads for network ACK waits.
@@ -1516,7 +1555,7 @@ class WorkflowRuntime(DataFormats):
                                 publish_future.add_done_callback(lambda future: future.exception())
                     except TimeoutError as exc:
                         raise RuntimeError(f'Google Pub/Sub publish timed out after {publish_timeout:g} seconds. Verify the topic, IAM permission, endpoint, proxy, and firewall settings.') from exc
-                    return path, message_id, wait_for_delivery
+                    return path, message_id, wait_for_delivery, worker_started, enqueue_completed
                 finally:
                     if one_shot:
                         try: publisher.stop()
@@ -1525,7 +1564,7 @@ class WorkflowRuntime(DataFormats):
                         except Exception: pass
 
             publish_started = perf_counter()
-            path, provider_message_id, delivery_confirmed = await asyncio.to_thread(publish_pubsub)
+            path, provider_message_id, delivery_confirmed, worker_started, enqueue_completed = await self._publish_pubsub_isolated(publish_pubsub)
             if isinstance(provider_message_id, ConcurrentFuture):
                 waiter = asyncio.wrap_future(provider_message_id)
                 waiter.add_done_callback(lambda done: None if done.cancelled() else done.exception())
@@ -1533,10 +1572,17 @@ class WorkflowRuntime(DataFormats):
                 except asyncio.TimeoutError as exc:
                     raise RuntimeError('Google Pub/Sub publish confirmation timed out; delivery may still occur') from exc
             message_id = provider_message_id or envelope['id']
+            completed = perf_counter()
+            latency = round((completed - publish_started) * 1000, 3)
             return {**envelope, 'TopicName': path, 'MessageID': message_id, 'messageId': message_id,
                     'providerMessageId': provider_message_id, 'published': True, 'queued': True,
                     'deliveryConfirmed': delivery_confirmed,
-                    'publishLatencyMs': round((perf_counter() - publish_started) * 1000, 3)}
+                    'publishLatencyMs': latency, 'publishTiming': {
+                        'queueMs': round((worker_started - publish_started) * 1000, 3),
+                        'enqueueMs': round((enqueue_completed - worker_started) * 1000, 3),
+                        **({'confirmationMs': round((completed - enqueue_completed) * 1000, 3)} if delivery_confirmed else {}),
+                        'totalMs': latency,
+                    }}
         raise RuntimeError(f'Unsupported messaging technology {technology}')
 
     @staticmethod
