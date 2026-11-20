@@ -1,6 +1,7 @@
 import { useState, type MouseEvent, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Folder, FolderOpen } from "lucide-react";
 import ModalLayer from "./ModalLayer";
+import { locationKey } from "./studioNavigation";
 
 export const DEFAULT_PACKAGE = "Default";
 export type PackageCategory = "tasks" | "resources" | "schemas";
@@ -28,7 +29,7 @@ export function renamedPackagePath(path: string, from: string, to: string) {
 
 export const artifactNamePattern = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 
-export function PackageTree<T extends PackageItem>({ paths, items, indent, isCollapsed, toggle, onMenu, renderItem }: {
+export function PackageTree<T extends PackageItem>({ paths, items, indent, isCollapsed, toggle, onMenu, renderItem, category, selectedPath }: {
   paths: string[];
   items: T[];
   indent: number;
@@ -36,6 +37,8 @@ export function PackageTree<T extends PackageItem>({ paths, items, indent, isCol
   toggle: (path: string) => void;
   onMenu: (event: MouseEvent, path: string) => void;
   renderItem: (item: T) => ReactNode;
+  category: PackageCategory;
+  selectedPath?: string;
 }) {
   const children = new Map<string, string[]>();
   const contents = new Map<string, T[]>();
@@ -52,7 +55,9 @@ export function PackageTree<T extends PackageItem>({ paths, items, indent, isCol
   const render = (parent: string, depth: number): ReactNode => children.get(parent)?.map(path => {
     const expanded = !isCollapsed(path);
     return <div className="explorer-package" key={path}>
-      <button type="button" className="tree-row explorer-package-row" aria-expanded={expanded} title={path}
+      <button type="button" className={`tree-row explorer-package-row${path === selectedPath ? " active" : ""}`}
+        aria-expanded={expanded} aria-current={path === selectedPath ? "location" : undefined} title={path}
+        data-navigation-key={locationKey({ kind: "package", category, path })}
         style={{paddingInlineStart: `min(${indent + depth * 12}px, 55%)`}}
         onClick={() => toggle(path)} onContextMenu={event => { event.preventDefault(); onMenu(event, path); }}>
         {expanded ? <ChevronDown/> : <ChevronRight/>}{expanded ? <FolderOpen/> : <Folder/>}

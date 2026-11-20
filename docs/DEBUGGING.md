@@ -1,5 +1,16 @@
 # MINA Studio debugging
 
+Use the workspace breadcrumb to reveal the current project, a package, or the
+open task in Project Explorer. The **Navigate** ribbon group keeps up to 15
+previous locations for the open project. **Back** and **Forward** return to
+tasks, selected activities, packages, connections, and schemas. Use **Recent
+locations** beside them to jump directly to a previous location or one still
+available through Forward. The dropdown lists the newest steps first and
+omits the current location and any deleted destinations. **Up** opens
+the selected Call Sub Task target. If a task calls several subtasks, select the
+call you want to follow. Connection and schema editors also have these history
+controls in their headers.
+
 MINA Studio supports interactive debugging for ordinary tasks and continuous event starters.
 
 ## Execution and logs pane

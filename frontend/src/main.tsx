@@ -10,6 +10,9 @@ import TaskEntryIcon from "./TaskEntryIcon";
 import ActivityIcon from "./ActivityIcon";
 import { activityIconAsset, connectionIconUrl } from "./studioIcons";
 import { resolveWorkspaceSubtask, schemaObjectName, studioNameKey, studioObjectName, workspaceNameConflict } from "./studioObjectName";
+import { isTaskSelectionChange, locationKey, navigationIndex, recentNavigationEntries, rememberLocation, type StudioLocation, type StudioNavigation } from "./studioNavigation";
+import { ArrowLeft, ArrowRight } from "lucide-react";
+import EditorNavigation, { RecentLocations } from "./EditorNavigation";
 import ExecutionAnalytics from "./ExecutionAnalytics";
 import { transitionLanes } from "./transitionIndex";
 import React, { Component, ErrorInfo, useEffect, useMemo, useRef, useState } from "react";
@@ -1552,6 +1555,7 @@ function App() {
     timer: number | null;
     restoring: boolean;
   }>({ past: [], future: [], current: structuredClone(initial), pendingBase: null, timer: null, restoring: false });
+  const observedProject = useRef(project);
   const latestProject = useRef(project);
   latestProject.current = project;
   const autosaveTimer = useRef<number | null>(null);
@@ -1766,7 +1770,7 @@ function App() {
     if (state.timer !== null) window.clearTimeout(state.timer);
     state.timer = null;
     if (!state.pendingBase) return;
-    if (JSON.stringify(state.pendingBase) !== JSON.stringify(latestProject.current)) {
+    if (JSON.stringify({ ...state.pendingBase, active_task_id: "" }) !== JSON.stringify({ ...latestProject.current, active_task_id: "" })) {
       state.past.push(structuredClone(state.pendingBase));
       if (state.past.length > 100) state.past.splice(0, state.past.length - 100);
       state.current = structuredClone(latestProject.current);
@@ -1804,7 +1808,13 @@ function App() {
   };
   useEffect(() => {
     const state = history.current;
+    const previous = observedProject.current;
+    observedProject.current = project;
     if (state.restoring) { state.restoring = false; state.current = structuredClone(project); return; }
+    if (isTaskSelectionChange(previous, project)) {
+      state.current = { ...state.current, active_task_id: project.active_task_id };
+      return;
+    }
     if (JSON.stringify(state.current) === JSON.stringify(project)) return;
     if (!state.pendingBase) state.pendingBase = structuredClone(state.current);
     if (state.timer !== null) window.clearTimeout(state.timer);
@@ -2074,17 +2084,131 @@ function App() {
       window.removeEventListener("pointercancel", up);
     };
   }, []);
-  const selectTask = (id: string) => {
+  const [navigation, setNavigation] = useState<StudioNavigation>({ entries: [], index: -1 });
+  const explorerTree = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const entries: StudioLocation[] = !closed && project.active_task_id ? [{ kind: "task", id: project.active_task_id }] : [];
+    setNavigation({ entries, index: entries.length - 1 });
+  }, [project.id, closed]);
+  const recordNavigation = (location: StudioLocation) => setNavigation(current => rememberLocation(current, location));
+  const revealExplorer = (location: StudioLocation, category?: PackageCategory, path?: string) => {
+    if (category) {
+      setOpen(current => ({
+        ...current, ...(category === "tasks" ? { Tasks: true } : category === "resources" ? { Resources: true, Connections: true } : { Schemas: true }),
+      }));
+      const segments = packagePath(path).split("/");
+      setCollapsedPackages(current => {
+        const next = { ...current };
+        segments.forEach((_, index) => delete next[`${project.id}:${category}:${segments.slice(0, index + 1).join("/")}`]);
+        return next;
+      });
+    }
+    requestAnimationFrame(() => explorerTree.current
+      ?.querySelector(`[data-navigation-key="${CSS.escape(locationKey(location))}"]`)
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" }));
+  };
+  const openTaskLocation = (id: string, activityId?: string) => {
     const t = project.tasks.find((t) => t.id === id);
-    if (!t || t.library_origin) return;
+    if (!t || t.library_origin) return false;
     setOpenTaskIds((current) => current.includes(id) ? current : [...current, id]);
-    setProject((p) => ({ ...p, active_task_id: id }));
-    const first = t?.activities[0]?.id || "";
+    setProject((p) => p.active_task_id === id ? p : { ...p, active_task_id: id });
+    const first = t.activities.find(item => item.id === activityId)?.id || t.activities[0]?.id || "";
     setSelected(first);
     setSelectedIds(first ? [first] : []);
     setSelectedEdge(null);
     setSelectedResource(null);
+    if (activityId) {
+      setExecutionPanelOpen(false); setMonitorMode("normal"); setActiveTab("configuration");
+      requestAnimationFrame(() => canvas.current?.querySelector(`[data-node-id="${CSS.escape(activityId)}"]`)
+        ?.scrollIntoView({ block: "nearest", inline: "nearest" }));
+    }
+    revealExplorer({ kind: "task", id }, "tasks", t.package_path);
+    return true;
   };
+  const selectTask = (id: string, activityId?: string) => {
+    if (openTaskLocation(id, activityId)) recordNavigation({ kind: "task", id, activityId });
+  };
+  const navigationLabel = React.useCallback((location: StudioLocation) => {
+    if (location.kind === "project") return `Project · ${project.name}`;
+    if (location.kind === "package") {
+      const exists = packagePaths(project.object_packages?.[location.category], project[location.category].filter(item => !item.library_origin))
+        .includes(location.path);
+      const categories = { tasks: "Tasks", resources: "Connections", schemas: "Schemas" };
+      return exists ? `Folder · ${categories[location.category]} / ${location.path}` : undefined;
+    }
+    if (location.kind === "task") {
+      const target = project.tasks.find(item => item.id === location.id && !item.library_origin);
+      if (!target) return;
+      const path = `${packagePath(target.package_path)}/${target.name}`;
+      if (!location.activityId) return `Task · ${path}`;
+      const activity = target.activities.find(item => item.id === location.activityId);
+      return activity ? `Activity · ${path} / ${activity.name}` : undefined;
+    }
+    const assets = location.kind === "resource" ? project.resources : project.schemas;
+    const asset = assets.find(item => item.id === location.id && !item.library_origin);
+    return asset ? `${location.kind === "resource" ? "Connection" : "Schema"} · ${packagePath(asset.package_path)}/${asset.name}` : undefined;
+  }, [project.name, project.tasks, project.resources, project.schemas, project.object_packages]);
+  const isNavigationAvailable = (location: StudioLocation) => navigationLabel(location) !== undefined;
+  const applyNavigation = (location: StudioLocation) => {
+    setEditingConnection(null);
+    setSchemaEditor(null);
+    if (location.kind === "task") { openTaskLocation(location.id, location.activityId); return; }
+    if (location.kind === "package") { revealExplorer(location, location.category, location.path); return; }
+    if (location.kind === "project") { revealExplorer(location); return; }
+    if (location.kind === "resource") {
+      const resource = project.resources.find(item => item.id === location.id && !item.library_origin);
+      if (!resource) return;
+      revealExplorer(location, "resources", resource.package_path);
+      setEditingConnection(resource);
+    } else {
+      const schema = project.schemas.find(item => item.id === location.id && !item.library_origin);
+      if (!schema) return;
+      revealExplorer(location, "schemas", schema.package_path);
+      setSchemaEditor(schema);
+    }
+  };
+  const navigateTo = (location: StudioLocation) => {
+    if (!isNavigationAvailable(location)) return;
+    applyNavigation(location);
+    recordNavigation(location);
+  };
+  const navigationBack = navigationIndex(navigation, -1, isNavigationAvailable);
+  const navigationForward = navigationIndex(navigation, 1, isNavigationAvailable);
+  const revisitLocation = (index: number) => {
+    const location = navigation.entries[index];
+    if (index === navigation.index || !location || !isNavigationAvailable(location)) return;
+    applyNavigation(location);
+    setNavigation({ ...navigation, index });
+  };
+  const recentLocations = useMemo(() => recentNavigationEntries(navigation, navigationLabel), [navigation, navigationLabel]);
+  const calledTask = (activity: Node) => {
+    if (activity.type !== "call_task") return undefined;
+    const dynamic = String(activity.config?.dynamicTaskId || "").trim();
+    const key = /^\$\{properties\.([^}]+)\}$/.exec(dynamic)?.[1];
+    const known = key ? project.properties[project.active_environment]?.find(item => item.key === key)?.value :
+      dynamic.includes("${") ? "" : dynamic;
+    return resolveWorkspaceSubtask(project.tasks, String(known || activity.config?.taskId || ""));
+  };
+  const selectedCall = task.activities.find(activity => activity.id === selected && activity.type === "call_task");
+  const calledTargets = editorOpen ? [...new Set(task.activities.map(activity => calledTask(activity)?.id).filter(Boolean))] : [];
+  const upTarget = editorOpen && (selectedCall ? calledTask(selectedCall) : calledTargets.length === 1 ?
+    project.tasks.find(item => item.id === calledTargets[0]) : undefined);
+  const navigationUp = upTarget && !upTarget.library_origin && upTarget.id !== task.id ? upTarget : undefined;
+  const navigationActions = {
+    back: navigationBack >= 0 ? () => revisitLocation(navigationBack) : undefined,
+    forward: navigationForward >= 0 ? () => revisitLocation(navigationForward) : undefined,
+    recent: recentLocations,
+    jump: revisitLocation,
+    up: navigationUp ? () => navigateTo({ kind: "task", id: navigationUp.id }) : undefined,
+    upLabel: navigationUp ? `Open called task ${navigationUp.name}` : "Select a Call Sub Task to open its target",
+  };
+  const currentLocation = navigation.entries[navigation.index];
+  const breadcrumbAsset = currentLocation?.kind === "resource" ? project.resources.find(item => item.id === currentLocation.id) :
+    currentLocation?.kind === "schema" ? project.schemas.find(item => item.id === currentLocation.id) : undefined;
+  const breadcrumbCategory = currentLocation?.kind === "package" ? currentLocation.category :
+    breadcrumbAsset ? currentLocation?.kind === "resource" ? "resources" : "schemas" : editorOpen ? "tasks" : undefined;
+  const breadcrumbPath = currentLocation?.kind === "package" ? currentLocation.path :
+    breadcrumbAsset ? packagePath(breadcrumbAsset.package_path) : editorOpen ? packagePath(task.package_path) : "";
   const closeTaskTabs = (taskId: string, mode: CloseEditorsMode) => {
     const {openIds, activeTaskId} = closeTaskEditors(openTaskIds, project.active_task_id, taskId, mode);
     setOpenTaskIds(openIds);
@@ -2817,7 +2941,7 @@ function App() {
       setLogs(out.logs || []);
       setEndpoints(out.endpoints || endpoints);
       if (openTaskIds.length && out.currentTaskId && out.currentTaskId !== project.active_task_id)
-        selectTask(out.currentTaskId);
+        openTaskLocation(out.currentTaskId);
       return out;
     };
   const loadSystemLogs = async () => {
@@ -2863,11 +2987,11 @@ function App() {
   const inspectActivity = (id: string, ids: string[] = [id]) => {
     setSelected(id); setSelectedIds(ids); setSelectedEdge(null); setSelectedResource(null);
     setExecutionPanelOpen(false); setMonitorMode("normal"); setActiveTab("configuration");
+    if (id && !task.library_origin) recordNavigation({ kind: "task", id: task.id, activityId: id });
   };
   const inspectDebugActivity = (taskId: string, activityId: string) => {
     if (!project.tasks.some(item => item.id === taskId && item.activities.some(activity => activity.id === activityId))) return;
-    if (taskId !== project.active_task_id || !editorOpen) selectTask(taskId);
-    inspectActivity(activityId);
+    selectTask(taskId, activityId);
     setDebugTraceTab(null);
   };
   // General Studio notices (open, save, copy, etc.) belong in the status area,
@@ -3163,18 +3287,25 @@ function App() {
     return paths.length ? paths : [DEFAULT_PACKAGE];
   };
   const packageTreeProps = (category: PackageCategory) => ({
+    category,
+    selectedPath: currentLocation?.kind === "package" && currentLocation.category === category ? currentLocation.path : undefined,
     paths: visiblePackagePaths(category),
     indent: category === "resources" ? 37 : 25,
     isCollapsed: (path: string) => !!collapsedPackages[`${project.id}:${category}:${path}`],
     toggle: (path: string) => {
       const key = `${project.id}:${category}:${path}`;
       setCollapsedPackages(current => ({...current, [key]: !current[key]}));
+      recordNavigation({ kind: "package", category, path });
     },
     onMenu: (event: React.MouseEvent, path: string) => setMenu({type: category, path, x: event.clientX, y: event.clientY}),
   });
   const packageDestinationConflict = (path: string) => {
     if (!objectPackageDialog) return "";
     const {category, itemId, renaming} = objectPackageDialog;
+    if (renaming) setNavigation(history => ({
+      ...history, entries: history.entries.map(entry => entry.kind === "package" && entry.category === category ?
+        { ...entry, path: renamedPackagePath(entry.path, renaming, path) } : entry),
+    }));
     for (const item of project[category]) {
       const previous = packagePath(item.package_path);
       const destination = item.id === itemId ? path : renaming ? renamedPackagePath(previous,renaming,path) : previous;
@@ -3369,6 +3500,7 @@ function App() {
         debug={debug}
         stop={stopExecution}
         executionAnalytics={() => setAnalyticsOpen(true)}
+        navigation={navigationActions}
         executionActive={executionActive}
         aiBuild={() => setAiBuilderOpen(true)}
         apiBlueprint={() => setApiBlueprintOpen(true)}
@@ -3389,12 +3521,22 @@ function App() {
       </div>
        <header>
          <IntegrationBrandArtwork className="studio-brand-art" />
-        <div className="crumb">
-          Projects <ChevronRight />
-          {project.name}
-          <ChevronRight />
-          <b>{editorOpen ? task.name : "No task editor open"}</b>
-        </div>
+        <nav className="crumb studio-breadcrumb" aria-label="Workspace location">
+          <button type="button" onClick={closeProject}>Projects</button><ChevronRight aria-hidden="true"/>
+          <button type="button" title={project.name} onClick={() => navigateTo({ kind: "project" })}>{project.name}</button>
+          {currentLocation?.kind !== "project" && breadcrumbCategory && breadcrumbPath && breadcrumbPath.split("/").map((part, index, parts) => {
+            const path = parts.slice(0, index + 1).join("/");
+            return <React.Fragment key={path}><ChevronRight aria-hidden="true"/>
+              <button type="button" title={path} onClick={() => navigateTo({ kind: "package", category: breadcrumbCategory, path })}>{part}</button>
+            </React.Fragment>;
+          })}
+          {breadcrumbAsset && currentLocation && <><ChevronRight aria-hidden="true"/>
+            <button type="button" className="current" title={breadcrumbAsset.name} onClick={() => navigateTo(currentLocation)}>{breadcrumbAsset.name}</button>
+          </>}
+          {!breadcrumbAsset && currentLocation?.kind !== "package" && currentLocation?.kind !== "project" && <><ChevronRight aria-hidden="true"/>
+            {editorOpen ? <button type="button" className="current" title={task.name} onClick={() => selectTask(task.id)}>{task.name}</button> : <b>No task editor open</b>}
+          </>}
+        </nav>
         <div className="environment">
           <small>ENVIRONMENT</small>
           <select
@@ -3412,9 +3554,10 @@ function App() {
       <aside className="explorer">
         <div className="explorer-width-splitter" title="Drag left or right to resize Project Explorer" onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); explorerSplit.current = { x: event.clientX, width: explorerWidth }; }}><span /></div>
          <div className="pane-title">PROJECT EXPLORER</div>
-        <div className="tree project-tree" style={{ height: treeHeight }}>
+        <div ref={explorerTree} className="tree project-tree" style={{ height: treeHeight }}>
           <button
             className="tree-row application-row"
+            data-navigation-key="project"
             title="Double-click or use the edit button to rename the application"
             onDoubleClick={() => setRenameOpen(true)}
             onContextMenu={(e) => { e.preventDefault(); setMenu({ type: "application", x: e.clientX, y: e.clientY }); }}
@@ -3452,6 +3595,7 @@ function App() {
               return (
                 <button
                   key={t.id}
+                  data-navigation-key={locationKey({ kind: "task", id: t.id })}
                   className={`tree-row explorer-task-row ${mode} ${editorOpen && t.id === task.id ? "active" : ""}`}
                   onClick={() => selectTask(t.id)}
                   onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setRenameExplorerItem({type:"task",id:t.id}); }}
@@ -3494,17 +3638,11 @@ function App() {
               {open.Connections &&
                 <PackageTree {...packageTreeProps("resources")} items={project.resources.filter(item => !item.library_origin)} renderItem={r => (
                   <button
-                    className={`tree-row ${selectedResource === r.id ? "active" : ""}`}
+                    className={`tree-row ${selectedResource === r.id || (currentLocation?.kind === "resource" && currentLocation.id === r.id) ? "active" : ""}`}
                     key={r.id}
+                    data-navigation-key={locationKey({ kind: "resource", id: r.id })}
                     onContextMenu={(e) => { e.preventDefault(); setMenu({ type: "resource", id: r.id, path: packagePath(r.package_path), x: e.clientX, y: e.clientY }); }}
-                     onClick={() => {
-                        setSelectedResource(null);
-                        setEditingConnection(r);
-                        setSelected("");
-                      setSelectedIds([]);
-                      setSelectedEdge(null);
-                      setActiveTab("configuration");
-                    }}
+                    onClick={() => navigateTo({ kind: "resource", id: r.id })}
                   >
                     <ResourceVendorIcon type={r.type}/>
                     <span className="explorer-item-name" title={r.name}>{r.name}</span>
@@ -3542,9 +3680,10 @@ function App() {
           {open.Schemas &&
             <PackageTree {...packageTreeProps("schemas")} items={project.schemas.filter(item => !item.library_origin)} renderItem={s => (
               <button
-                className="tree-row"
+                className={`tree-row ${currentLocation?.kind === "schema" && currentLocation.id === s.id ? "active" : ""}`}
                 key={s.id}
-                onClick={() => setSchemaEditor(s)}
+                data-navigation-key={locationKey({ kind: "schema", id: s.id })}
+                onClick={() => navigateTo({ kind: "schema", id: s.id })}
                 onContextMenu={(e) => { e.preventDefault(); setMenu({ type: "schema", id: s.id, path: packagePath(s.package_path), x: e.clientX, y: e.clientY }); }}
               >
                 <CodeXml />
@@ -3837,8 +3976,8 @@ function App() {
                   }}
                   onDoubleClick={() => {
                     if (n.type === "call_task") {
-                      const target = project.tasks.find((candidate) => candidate.kind === "subtask" && (candidate.id === n.config?.taskId || candidate.name === n.config?.taskId));
-                      if (target) { selectTask(target.id); return; }
+                      const target = calledTask(n);
+                      if (target && !target.library_origin) { selectTask(target.id); return; }
                     }
                     setBreakpoints((b) => b.includes(n.id) ? b.filter((x) => x !== n.id) : [...b, n.id]);
                   }}
@@ -3975,7 +4114,7 @@ function App() {
       </main>
       {libraryDialogOpen && <IntegrationLibraries project={project} onChange={updated => setProject(current => current.id === updated.id ? normalizeProject(updated) : current)}
         onClose={() => setLibraryDialogOpen(false)} />}
-      {analyticsOpen && <ExecutionAnalytics key={project.id} projectId={project.id} projectName={project.name} tasks={project.tasks} logs={logs} runtimeState={runtimeState} debugState={debugState} onClose={() => setAnalyticsOpen(false)} onInspect={(taskId: string, activityId: string) => { const target = project.tasks.find(item => item.id === taskId && item.activities.some(activity => activity.id === activityId)) || project.tasks.find(item => item.activities.some(activity => activity.id === activityId)); if (target) { selectTask(target.id); setSelected(activityId); setActiveTab("configuration"); setAnalyticsOpen(false); } }}/>}
+      {analyticsOpen && <ExecutionAnalytics key={project.id} projectId={project.id} projectName={project.name} tasks={project.tasks} logs={logs} runtimeState={runtimeState} debugState={debugState} onClose={() => setAnalyticsOpen(false)} onInspect={(taskId: string, activityId: string) => { const target = project.tasks.find(item => item.id === taskId && item.activities.some(activity => activity.id === activityId)) || project.tasks.find(item => item.activities.some(activity => activity.id === activityId)); if (target) { selectTask(target.id, activityId); setAnalyticsOpen(false); } }}/>}
       {debugLaunchOpen && <DebugLaunchDialog taskName={task.name} onClose={() => setDebugLaunchOpen(false)} onStart={(input, capture) => {
         setDebugLaunchOpen(false);
         if (!executionActive) void debug(task.id, false, { input, capture });
@@ -4021,7 +4160,7 @@ function App() {
             renameArtifact: () => setRenameArtifactOpen(true),
             moveToPackage: (category: PackageCategory) => setObjectPackageDialog({category, itemId:menu.id, moving:packagePath(menu.path)}),
             run: (id?: string) => run(id), debug: (id?: string) => debug(id), validate: (id?: string) => { const target = id ? project.tasks.find((item) => item.id === id) : null; if (!target) { runValidation("project"); return; } const issues = validateTaskDefinition(project, target); setValidation({ title: `Validate Task · ${target.name}`, issues }); selectTask(target.id); setLogs([{ level: issues.some((item) => item.severity === "error") ? "ERROR" : issues.length ? "WARN" : "INFO", message: issues.length ? `${target.name}: ${issues.length} validation finding${issues.length === 1 ? "" : "s"}.` : `${target.name}: validation successful.` }]); },
-            properties: (type: string, id?: string) => { if (type === "application") setRenameOpen(true); else if (type === "task" && id) selectTask(id); else if (type === "activity" && id) { setSelected(id); setSelectedIds([id]); setActiveTab("configuration"); } else if (type === "resource" && id) setEditingConnection(project.resources.find((item) => item.id === id) || null); else if (type === "schema" && id) setSchemaEditor(project.schemas.find((item) => item.id === id) || null); else if (type === "property" && id) setPropertyEditor(id); else if (type === "packaging" || type === "artifact") setPackageOpen(true); },
+            properties: (type: string, id?: string) => { if (type === "application") setRenameOpen(true); else if (type === "task" && id) selectTask(id); else if (type === "activity" && id) { inspectActivity(id); } else if (type === "resource" && id) navigateTo({ kind: "resource", id }); else if (type === "schema" && id) navigateTo({ kind: "schema", id }); else if (type === "property" && id) setPropertyEditor(id); else if (type === "packaging" || type === "artifact") setPackageOpen(true); },
             copyActivity: copySelection, cutActivity: cutSelection, pasteActivity: pasteSelection,
             deleteActivity: deleteSelectedActivity,
             toggleBreakpoint: (id: string) => setBreakpoints((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]),
@@ -4117,6 +4256,7 @@ function App() {
               active_task_id: id,
             }));
             setOpenTaskIds(current => [...current, id]);
+            recordNavigation({ kind: "task", id });
             setSelected(t.activities[0]?.id || "");
             setSelectedIds(t.activities[0] ? [t.activities[0].id] : []);
             setTaskDialog(null);
@@ -4151,12 +4291,14 @@ function App() {
             setProject((p) => ({ ...p, resources: [...p.resources, resource] }));
             setConnectionDialog(null);
             if (connectionDialog.select) connectionDialog.select(resource);
-            else setSelectedResource(r.id);
+            else { setSelectedResource(r.id); recordNavigation({ kind: "resource", id: r.id }); }
           }}
         />
       )}
       {editingConnection && (
         <SharedConnectionDialog
+          key={editingConnection.id}
+          navigation={navigationActions}
           type={editingConnection.type}
           initial={editingConnection}
           validateName={(name: string) => workspaceNameConflict(project, name, packagePath(editingConnection.package_path), {category:"resources",id:editingConnection.id})}
@@ -4172,6 +4314,8 @@ function App() {
       )}
       {schemaEditor && (
         <SchemaStudio
+          key={schemaEditor === "new" ? "new" : schemaEditor.id}
+          navigation={schemaEditor === "new" ? undefined : navigationActions}
           schema={schemaEditor === "new" ? undefined : schemaEditor}
           initialTab={schemaEditor === "new" ? "design" : "overview"}
           validateName={name => workspaceNameConflict(project, name, schemaEditor === "new" ? schemaPackage : packagePath(schemaEditor.package_path),
@@ -4186,6 +4330,7 @@ function App() {
                 package_path: schemaEditor === "new" ? schemaPackage : packagePath(schemaEditor.package_path),
               }],
             }));
+            recordNavigation({ kind: "schema", id: s.id });
             setSchemaEditor(null);
           }}
         />
@@ -4226,8 +4371,8 @@ function App() {
       }}/>}
       {helpDialog && <HelpDialog mode={helpDialog} onClose={() => setHelpDialog(null)}/>}
       {validation && <ValidationDialog result={validation} onClose={() => setValidation(null)} onOpen={(issue: ValidationIssue) => {
-        if (issue.taskId) selectTask(issue.taskId);
-        if (issue.activityId) { setSelected(issue.activityId); setSelectedIds([issue.activityId]); setSelectedEdge(null); setSelectedResource(null); setActiveTab("configuration"); }
+        if (issue.taskId) selectTask(issue.taskId, issue.activityId);
+        else if (issue.activityId) inspectActivity(issue.activityId);
         setValidation(null);
       }}/>}
       {catchAIOpen && <CatchAIDialog key={`${project.id}:${task.id}:${catchAIOpen}:${possibleTaskExceptions(task,project.tasks,project.schemas || []).join("|")}`} options={possibleTaskExceptions(task,project.tasks,project.schemas || [])} onClose={() => setCatchAIOpen(null)} onApply={(types: string[]) => { createExceptionHandlers(catchAIOpen, types); setCatchAIOpen(null); }}/>}
@@ -4554,10 +4699,16 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
   </div></ModalLayer>;
 }
 function StudioRibbon(props: any) {
-  const command = (label: string, Icon: any, action: () => void, disabled = false, emphasis = false) =>
-    <button type="button" className={emphasis ? "emphasis" : ""} disabled={disabled} onClick={(event) => { event.stopPropagation(); action(); }} title={label}><Icon/><span>{label}</span></button>;
+  const command = (label: string, Icon: any, action: (() => void) | undefined, disabled = false, emphasis = false, title = label) =>
+    <button type="button" className={emphasis ? "emphasis" : ""} disabled={disabled} onClick={(event) => { event.stopPropagation(); action?.(); }} title={title}><Icon/><span>{label}</span></button>;
   return <section className="studio-ribbon" aria-label="Studio ribbon">
     <div className="ribbon-group"><b>PROJECT</b><div>{command("New", IntegrationApplicationIcon, props.newProject)}{command("Open", FolderOpen, props.openProjectSource || props.importProject)}{command("Import", Download, props.importProject)}{command("Samples", BookOpen, props.sampleProjects)}{command("Save", Save, props.save)}{command("Export", Upload, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</div></div>
+    <div className="ribbon-group" role="group" aria-label="Navigation"><b>NAVIGATE</b><div>
+      {command("Back", ArrowLeft, props.navigation.back, !props.navigation.back)}
+      {command("Forward", ArrowRight, props.navigation.forward, !props.navigation.forward)}
+      <RecentLocations recent={props.navigation.recent} jump={props.navigation.jump}/>
+      {command("Up", ArrowUp, props.navigation.up, !props.navigation.up, props.navigation.upLabel)}
+    </div></div>
     <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("API Blueprint", Globe, props.apiBlueprint, props.executionActive)}{command("AI Build", WandSparkles, props.aiBuild)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Run", Zap, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Execution Analytics", Activity, props.executionAnalytics)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}</div></div>
     <div className="ribbon-group"><b>EDIT</b><div>{command("Undo", Undo2, props.undo)}{command("Cut", Scissors, props.cut, !props.selectedCount)}{command("Copy", ClipboardCopy, props.copy, !props.selectedCount)}{command("Paste", ClipboardPaste, props.paste)}</div></div>
     <div className="ribbon-group layout-group"><b>ARRANGE · {props.selectedCount} SELECTED</b><div>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</div></div>
@@ -5685,7 +5836,7 @@ function connectionDefaults(type: string) {
   if (type === "pubsub") Object.assign(values, { authenticationType: "Service Account JSON", projectId: "", serviceAccountJson: "", batchMaxMessages: 100, batchMaxBytes: 1048576, batchDelayThresholdMilliseconds: 10, flowControlMaxMessages: 1000, flowControlMaxBytes: 10485760 });
   return values;
 }
-function SharedConnectionDialog({ type, initial, initialRole, requireInitialRole, validateName, properties, onClose, onCreate, onSapSchemaFetched }: any) {
+function SharedConnectionDialog({ type, initial, initialRole, requireInitialRole, validateName, properties, onClose, onCreate, onSapSchemaFetched, navigation }: any) {
   const fields = connectionFieldSets[type] || [];
   const testOutputRef = useRef<HTMLDivElement>(null);
   const idocBrowserRef = useRef<HTMLElement>(null);
@@ -5699,6 +5850,7 @@ function SharedConnectionDialog({ type, initial, initialRole, requireInitialRole
     if (type === "pubsub" && !value.config.authenticationType) value.config.authenticationType = "Service Account JSON";
     return value;
   });
+  const originalDraft = useRef(draft);
   const [status, setStatus] = useState(""), [statusOk, setStatusOk] = useState<boolean | null>(null), [copied, setCopied] = useState(false), [testing, setTesting] = useState(false);
   const [target, setTarget] = useState<string | null>(null), [propertySearch, setPropertySearch] = useState("");
   const [idocs, setIdocs] = useState<any[]>([]), [idocSearch, setIdocSearch] = useState(""), [idocLoading, setIdocLoading] = useState(false), [idocError, setIdocError] = useState(""), [idocPickerOpen, setIdocPickerOpen] = useState(false);
@@ -5880,7 +6032,7 @@ function SharedConnectionDialog({ type, initial, initialRole, requireInitialRole
   const resolvedConfig = runtimeResource().config;
   const nameError = validateName?.(draft.name || "");
   return <ModalLayer className="modal-backdrop"><div className="runtime-modal connection-dialog" role="dialog" aria-modal="true">
-    <header><span className="connection-dialog-title"><Cable/><span><b>{initial ? "Edit" : "Create"} {type === "sap" ? "SAP ECC" : type === "snowflake" ? "Snowflake JDBC" : type.toUpperCase()} shared connection</b><small>{initial ? "Update the reusable project connection" : "Reusable across every task in this project"}</small></span></span><span className="connection-header-actions">{type === "sap" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button>}{type === "snowflake" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchSnowflakeEntities} disabled={snowflakeLoading}><Download/> {snowflakeLoading ? "Retrieving…" : "Retrieve entities"}</button>}<button aria-label="Close" onClick={onClose}>×</button></span></header>
+    <header><span className="connection-dialog-title"><Cable/><span><b>{initial ? "Edit" : "Create"} {type === "sap" ? "SAP ECC" : type === "snowflake" ? "Snowflake JDBC" : type.toUpperCase()} shared connection</b><small>{initial ? "Update the reusable project connection" : "Reusable across every task in this project"}</small></span></span><span className="connection-header-actions">{navigation && <EditorNavigation actions={navigation} isDirty={() => JSON.stringify(draft) !== JSON.stringify(originalDraft.current)}/>}{type === "sap" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button>}{type === "snowflake" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchSnowflakeEntities} disabled={snowflakeLoading}><Download/> {snowflakeLoading ? "Retrieving…" : "Retrieve entities"}</button>}<button aria-label="Close" onClick={onClose}>×</button></span></header>
     <main>
       <label>Name<input value={draft.name} aria-invalid={!!nameError} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/>{nameError && <small className="endpoint-setup-error" role="alert">{nameError}</small>}</label>
       {target && <section className="connection-property-picker">

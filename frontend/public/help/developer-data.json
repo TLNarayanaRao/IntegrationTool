@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "79e1b67c2fa3196ae4d1b6e6c3f04baa7eb53f11c31e79f248e3b99a87a9be96",
+  "fingerprint": "4e42d1ea82c1ee107b4e63f018b3af30256e2689e190c8a0b659f32bc93ddd68",
   "counts": {
     "activities": 104,
     "groups": 11,
@@ -70,13 +70,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -212,11 +212,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -361,13 +361,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -559,11 +559,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -704,13 +704,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -896,11 +896,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -1045,13 +1045,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -1243,11 +1243,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -1392,13 +1392,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -1590,11 +1590,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -1747,13 +1747,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -1957,11 +1957,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -2106,13 +2106,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -2304,11 +2304,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -2453,13 +2453,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -2651,11 +2651,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -2800,13 +2800,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -2998,11 +2998,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -3147,13 +3147,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -3345,11 +3345,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -3494,13 +3494,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -3692,11 +3692,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -3841,13 +3841,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -4039,11 +4039,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -4188,13 +4188,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -4386,11 +4386,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -4535,13 +4535,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -4733,11 +4733,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -4882,13 +4882,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -5080,11 +5080,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -5229,13 +5229,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -5427,11 +5427,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -5576,13 +5576,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -5774,11 +5774,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -5923,13 +5923,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -6121,11 +6121,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -6270,13 +6270,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -6468,11 +6468,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -6617,13 +6617,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -6815,11 +6815,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -6964,13 +6964,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -7162,11 +7162,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -7311,13 +7311,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -7509,11 +7509,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -7662,13 +7662,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -7866,11 +7866,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -8007,13 +8007,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -8193,11 +8193,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -8334,13 +8334,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -8520,11 +8520,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -8661,13 +8661,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -8847,11 +8847,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -8988,13 +8988,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -9174,11 +9174,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -9327,13 +9327,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -9531,11 +9531,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -9680,13 +9680,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -9878,11 +9878,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -10027,13 +10027,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -10225,11 +10225,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -10378,13 +10378,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -10582,11 +10582,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -10735,13 +10735,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -10939,11 +10939,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -11088,13 +11088,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -11286,11 +11286,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -11435,13 +11435,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -11633,11 +11633,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -11782,13 +11782,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -11980,11 +11980,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -12129,13 +12129,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -12327,11 +12327,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -12476,13 +12476,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -12674,11 +12674,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -12823,13 +12823,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -13021,11 +13021,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -13170,13 +13170,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -13368,11 +13368,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -13517,13 +13517,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -13715,11 +13715,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -13864,13 +13864,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -14062,11 +14062,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -14211,13 +14211,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -14409,11 +14409,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -14558,13 +14558,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -14756,11 +14756,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -14905,13 +14905,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -15103,11 +15103,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -15248,13 +15248,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -15440,11 +15440,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -15585,13 +15585,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -15777,11 +15777,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -15922,13 +15922,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -16114,11 +16114,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -16263,13 +16263,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -16461,11 +16461,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -16610,13 +16610,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -16808,11 +16808,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -16961,13 +16961,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -17165,11 +17165,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -17318,13 +17318,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -17522,11 +17522,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -17675,13 +17675,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -17879,11 +17879,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -18032,13 +18032,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -18236,11 +18236,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -18397,13 +18397,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -18613,11 +18613,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -18766,13 +18766,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -18970,11 +18970,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -19123,13 +19123,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -19327,11 +19327,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -19480,13 +19480,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -19684,11 +19684,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -19837,13 +19837,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -20041,11 +20041,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -20202,13 +20202,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -20418,11 +20418,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -20571,13 +20571,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -20775,11 +20775,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -20928,13 +20928,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -21132,11 +21132,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -21285,13 +21285,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -21489,11 +21489,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -21634,13 +21634,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -21826,11 +21826,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -21971,13 +21971,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -22163,11 +22163,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -22308,13 +22308,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -22500,11 +22500,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -22645,13 +22645,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -22837,11 +22837,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -22982,13 +22982,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -23174,11 +23174,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -23319,13 +23319,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -23511,11 +23511,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -23656,13 +23656,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -23848,11 +23848,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -23993,13 +23993,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -24185,11 +24185,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -24330,13 +24330,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -24522,11 +24522,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -24667,13 +24667,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -24859,11 +24859,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -25004,13 +25004,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -25196,11 +25196,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -25341,13 +25341,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -25533,11 +25533,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -25682,13 +25682,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -25880,11 +25880,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -26029,13 +26029,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -26227,11 +26227,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -26372,13 +26372,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -26564,11 +26564,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -26713,13 +26713,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -26911,11 +26911,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -27052,13 +27052,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -27238,11 +27238,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -27383,13 +27383,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -27575,11 +27575,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -27716,13 +27716,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -27902,11 +27902,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -28043,13 +28043,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -28229,11 +28229,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -28370,13 +28370,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -28556,11 +28556,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -28697,13 +28697,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -28883,11 +28883,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -29028,13 +29028,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -29220,11 +29220,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -29361,13 +29361,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -29547,11 +29547,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -29692,13 +29692,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -29884,11 +29884,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -30029,13 +30029,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -30221,11 +30221,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -30366,13 +30366,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -30558,11 +30558,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -30703,13 +30703,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -30895,11 +30895,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -31040,13 +31040,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -31232,11 +31232,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -31377,13 +31377,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -31569,11 +31569,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -31722,13 +31722,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -31926,11 +31926,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -32071,13 +32071,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -32263,11 +32263,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -32408,13 +32408,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -32600,11 +32600,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -32745,13 +32745,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -32937,11 +32937,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -33082,13 +33082,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -33274,11 +33274,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -33419,13 +33419,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -33611,11 +33611,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -33756,13 +33756,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -33948,11 +33948,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -34093,13 +34093,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -34285,11 +34285,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -34430,13 +34430,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -34622,11 +34622,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -34767,13 +34767,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -34959,11 +34959,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -35104,13 +35104,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -35296,11 +35296,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -35441,13 +35441,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -35633,11 +35633,11 @@
               "rows": [
                 [
                   "Palette labels, types, operations and icons",
-                  "frontend/src/main.tsx:364\nconst packs:"
+                  "frontend/src/main.tsx:367\nconst packs:"
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -35778,13 +35778,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 364,
+          "line": 367,
           "symbol": "const packs:",
           "role": "Palette labels, types, operations and icons"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -35966,11 +35966,11 @@
               "rows": [
                 [
                   "Loaded-project normalization",
-                  "frontend/src/main.tsx:1244\nconst normalizeProject ="
+                  "frontend/src/main.tsx:1247\nconst normalizeProject ="
                 ],
                 [
                   "Browser save API",
-                  "frontend/src/main.tsx:2502\nconst persistProject ="
+                  "frontend/src/main.tsx:2626\nconst persistProject ="
                 ],
                 [
                   "Task cloning",
@@ -36018,13 +36018,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 1244,
+          "line": 1247,
           "symbol": "const normalizeProject =",
           "role": "Loaded-project normalization"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2502,
+          "line": 2626,
           "symbol": "const persistProject =",
           "role": "Browser save API"
         },
@@ -36096,7 +36096,7 @@
               "rows": [
                 [
                   "Run action",
-                  "frontend/src/main.tsx:2686\nconst run = async"
+                  "frontend/src/main.tsx:2810\nconst run = async"
                 ],
                 [
                   "Run API",
@@ -36152,7 +36152,7 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 2686,
+          "line": 2810,
           "symbol": "const run = async",
           "role": "Run action"
         },
@@ -36236,19 +36236,19 @@
               "rows": [
                 [
                   "Start debug request",
-                  "frontend/src/main.tsx:2726\ndebug = async"
+                  "frontend/src/main.tsx:2850\ndebug = async"
                 ],
                 [
                   "Debug action transport",
-                  "frontend/src/main.tsx:2793\ndebugAction = async"
+                  "frontend/src/main.tsx:2917\ndebugAction = async"
                 ],
                 [
                   "Ribbon controls",
-                  "frontend/src/main.tsx:6703\nfunction DebugRibbon("
+                  "frontend/src/main.tsx:6855\nfunction DebugRibbon("
                 ],
                 [
                   "Test bench/tools",
-                  "frontend/src/main.tsx:6603\nfunction DebugToolsDialog("
+                  "frontend/src/main.tsx:6755\nfunction DebugToolsDialog("
                 ],
                 [
                   "Input/output/variables viewer",
@@ -36336,25 +36336,25 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 2726,
+          "line": 2850,
           "symbol": "debug = async",
           "role": "Start debug request"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2793,
+          "line": 2917,
           "symbol": "debugAction = async",
           "role": "Debug action transport"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 6703,
+          "line": 6855,
           "symbol": "function DebugRibbon(",
           "role": "Ribbon controls"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 6603,
+          "line": 6755,
           "symbol": "function DebugToolsDialog(",
           "role": "Test bench/tools"
         },
@@ -37026,23 +37026,23 @@
               "rows": [
                 [
                   "Palette drag source",
-                  "frontend/src/main.tsx:3621\nonDragStart={(e) =>"
+                  "frontend/src/main.tsx:3760\nonDragStart={(e) =>"
                 ],
                 [
                   "Canvas drop target",
-                  "frontend/src/main.tsx:3685\nonDrop={(e) =>"
+                  "frontend/src/main.tsx:3824\nonDrop={(e) =>"
                 ],
                 [
                   "Activity creation",
-                  "frontend/src/main.tsx:2099\nconst addActivity ="
+                  "frontend/src/main.tsx:2223\nconst addActivity ="
                 ],
                 [
                   "Editable-control shortcut guard",
-                  "frontend/src/main.tsx:115\nfunction editableControlFromEvent("
+                  "frontend/src/main.tsx:118\nfunction editableControlFromEvent("
                 ],
                 [
                   "Transition geometry",
-                  "frontend/src/main.tsx:200\nfunction activityWireGeometry("
+                  "frontend/src/main.tsx:203\nfunction activityWireGeometry("
                 ],
                 [
                   "Picker insertion",
@@ -37058,7 +37058,7 @@
                 ],
                 [
                   "Group condition drop target",
-                  "frontend/src/main.tsx:4280\nfunction GroupExpressionTarget("
+                  "frontend/src/main.tsx:4425\nfunction GroupExpressionTarget("
                 ],
                 [
                   "Selection visuals",
@@ -37086,31 +37086,31 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 3621,
+          "line": 3760,
           "symbol": "onDragStart={(e) =>",
           "role": "Palette drag source"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 3685,
+          "line": 3824,
           "symbol": "onDrop={(e) =>",
           "role": "Canvas drop target"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2099,
+          "line": 2223,
           "symbol": "const addActivity =",
           "role": "Activity creation"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 115,
+          "line": 118,
           "symbol": "function editableControlFromEvent(",
           "role": "Editable-control shortcut guard"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 200,
+          "line": 203,
           "symbol": "function activityWireGeometry(",
           "role": "Transition geometry"
         },
@@ -37134,7 +37134,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4280,
+          "line": 4425,
           "symbol": "function GroupExpressionTarget(",
           "role": "Group condition drop target"
         },
@@ -37176,15 +37176,15 @@
               "rows": [
                 [
                   "Create group",
-                  "frontend/src/main.tsx:2283\nconst addGroup ="
+                  "frontend/src/main.tsx:2407\nconst addGroup ="
                 ],
                 [
                   "Editor defaults",
-                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4439\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group configuration",
-                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4445\nfunction GroupEditor("
                 ],
                 [
                   "Group rendering",
@@ -37252,19 +37252,19 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 2283,
+          "line": 2407,
           "symbol": "const addGroup =",
           "role": "Create group"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4294,
+          "line": 4439,
           "symbol": "function groupConfigDefaults(",
           "role": "Editor defaults"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4300,
+          "line": 4445,
           "symbol": "function GroupEditor(",
           "role": "Group configuration"
         },
@@ -37370,11 +37370,11 @@
               "rows": [
                 [
                   "If defaults; match group type if",
-                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4439\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4445\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -37422,13 +37422,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4294,
+          "line": 4439,
           "symbol": "function groupConfigDefaults(",
           "role": "If defaults; match group type if"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4300,
+          "line": 4445,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -37510,11 +37510,11 @@
               "rows": [
                 [
                   "While True defaults; match group type while",
-                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4439\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4445\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -37562,13 +37562,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4294,
+          "line": 4439,
           "symbol": "function groupConfigDefaults(",
           "role": "While True defaults; match group type while"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4300,
+          "line": 4445,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -37650,11 +37650,11 @@
               "rows": [
                 [
                   "For Each defaults; match group type for-each",
-                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4439\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4445\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -37702,13 +37702,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4294,
+          "line": 4439,
           "symbol": "function groupConfigDefaults(",
           "role": "For Each defaults; match group type for-each"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4300,
+          "line": 4445,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -37790,11 +37790,11 @@
               "rows": [
                 [
                   "Iterate defaults; match group type iterate",
-                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4439\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4445\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -37842,13 +37842,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4294,
+          "line": 4439,
           "symbol": "function groupConfigDefaults(",
           "role": "Iterate defaults; match group type iterate"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4300,
+          "line": 4445,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -37930,11 +37930,11 @@
               "rows": [
                 [
                   "Repeat Until True defaults; match group type repeat",
-                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4439\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4445\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -37982,13 +37982,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4294,
+          "line": 4439,
           "symbol": "function groupConfigDefaults(",
           "role": "Repeat Until True defaults; match group type repeat"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4300,
+          "line": 4445,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -38070,11 +38070,11 @@
               "rows": [
                 [
                   "Repeat on Error Until True defaults; match group type repeat-on-error",
-                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4439\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4445\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -38122,13 +38122,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4294,
+          "line": 4439,
           "symbol": "function groupConfigDefaults(",
           "role": "Repeat on Error Until True defaults; match group type repeat-on-error"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4300,
+          "line": 4445,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -38210,11 +38210,11 @@
               "rows": [
                 [
                   "Scope defaults; match group type scope",
-                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4439\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4445\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -38262,13 +38262,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4294,
+          "line": 4439,
           "symbol": "function groupConfigDefaults(",
           "role": "Scope defaults; match group type scope"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4300,
+          "line": 4445,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -38350,11 +38350,11 @@
               "rows": [
                 [
                   "None defaults; match group type none",
-                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4439\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4445\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -38402,13 +38402,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4294,
+          "line": 4439,
           "symbol": "function groupConfigDefaults(",
           "role": "None defaults; match group type none"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4300,
+          "line": 4445,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -38490,11 +38490,11 @@
               "rows": [
                 [
                   "Critical Section defaults; match group type critical-section",
-                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4439\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4445\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -38542,13 +38542,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4294,
+          "line": 4439,
           "symbol": "function groupConfigDefaults(",
           "role": "Critical Section defaults; match group type critical-section"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4300,
+          "line": 4445,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -38630,11 +38630,11 @@
               "rows": [
                 [
                   "JDBC Transaction defaults; match group type transaction-jdbc",
-                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4439\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4445\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -38682,13 +38682,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4294,
+          "line": 4439,
           "symbol": "function groupConfigDefaults(",
           "role": "JDBC Transaction defaults; match group type transaction-jdbc"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4300,
+          "line": 4445,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -38770,11 +38770,11 @@
               "rows": [
                 [
                   "Pick First defaults; match group type pick-first",
-                  "frontend/src/main.tsx:4294\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4439\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4300\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4445\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -38822,13 +38822,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4294,
+          "line": 4439,
           "symbol": "function groupConfigDefaults(",
           "role": "Pick First defaults; match group type pick-first"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4300,
+          "line": 4445,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -38906,7 +38906,7 @@
               "rows": [
                 [
                   "Packaging UI",
-                  "frontend/src/main.tsx:4376\nfunction PackageDialog("
+                  "frontend/src/main.tsx:4521\nfunction PackageDialog("
                 ],
                 [
                   "Archive orchestration",
@@ -38966,7 +38966,7 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4376,
+          "line": 4521,
           "symbol": "function PackageDialog(",
           "role": "Packaging UI"
         },
