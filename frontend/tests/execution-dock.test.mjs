@@ -60,11 +60,14 @@ test('inspecting an activity restores its configuration without changing the deb
   const code=ts.transpileModule(declaration+'\nexports.inspect=inspectActivity;',{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
   const view={};
   const context=vm.createContext({exports:{},
+    task:{id:'main'}, recordNavigation:location=>{view.location=location;},
     ...Object.fromEntries(['Selected','SelectedIds','SelectedEdge','SelectedResource','ExecutionPanelOpen','MonitorMode','ActiveTab']
       .map(key=>['set'+key,value=>{view[key]=value;}]))});
   vm.runInContext(code,context);
   context.exports.inspect('Mapper');
   assert.equal(view.Selected,'Mapper');assert.deepEqual([...view.SelectedIds],['Mapper']);
+  assert.equal(view.location.id,'main');
+  assert.equal(view.location.activityId,'Mapper');
   assert.equal(view.ExecutionPanelOpen,false);assert.equal(view.MonitorMode,'normal');
   assert.equal(view.ActiveTab,'configuration');assert.equal(view.SelectedEdge,null);assert.equal(view.SelectedResource,null);
   context.exports.inspect('End',['Mapper','End']);

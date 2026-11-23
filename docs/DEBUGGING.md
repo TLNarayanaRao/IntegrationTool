@@ -11,7 +11,40 @@ the selected Call Sub Task target. If a task calls several subtasks, select the
 call you want to follow. Connection and schema editors also have these history
 controls in their headers.
 
+Open **Project Search** from the **Navigate** ribbon, the **Edit** menu, or
+with **Ctrl+Shift+F** (**Cmd+Shift+F** on macOS). Search by name, folder, or
+activity type, and select a result to open it. For a task, connection, schema,
+or property, choose **Find References** to see configured usages. You can
+also right-click a task, connection, or schema in Project Explorer. For
+property-driven targets, results show the matching environments.
+
 MINA Studio supports interactive debugging for ordinary tasks and continuous event starters.
+
+## Review validation findings
+
+Choose **Validate Task** or **Validate Project** on the ribbon to check the
+design. Filter findings by severity or search by location, message, or
+suggested fix. **Open** takes you to the affected activity, transition,
+connection, schema, or project setting. Mapping findings can open the activity's
+**Input** tab directly. Studio expands collapsed parents and focuses the
+affected mapping. For a child supplied through a whole-object mapping, Studio
+opens the closest visible target.
+
+Use **Find target field** in Input to search the destination tree by label or
+schema path. Results include their parent rows so you can tell similarly named
+fields apart. Use **Expand all** or **Collapse all** to browse the complete
+tree. Clear search to return to that tree.
+
+Validation reports missing required Input fields by path, including named JDBC
+parameters and required fields in the selected Mapper or task schema.
+Configured values and valid whole-object mappings can supply these fields. An
+optional object may be omitted. Once you map part of it, validation checks its
+required children. The runtime checks the actual values returned by dynamic
+expressions.
+
+After editing, choose **Review Findings** from the ribbon or the **Run** menu
+to recheck the same task or project with your search and severity filter still
+applied. Use **Revalidate** to rerun the checks while the list is open.
 
 ## Execution and logs pane
 

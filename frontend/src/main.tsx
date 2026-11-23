@@ -13,6 +13,10 @@ import { resolveWorkspaceSubtask, schemaObjectName, studioNameKey, studioObjectN
 import { isTaskSelectionChange, locationKey, navigationIndex, recentNavigationEntries, rememberLocation, type StudioLocation, type StudioNavigation } from "./studioNavigation";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import EditorNavigation, { RecentLocations } from "./EditorNavigation";
+import ProjectSearch from "./ProjectSearchDialog";
+import type { InputTargetRequest } from "./InputTargetSearch";
+import ValidationReview, { type ValidationIssue } from "./ValidationReview";
+import type { ReferenceTarget, SearchLocation } from "./projectSearch";
 import ExecutionAnalytics from "./ExecutionAnalytics";
 import { transitionLanes } from "./transitionIndex";
 import React, { Component, ErrorInfo, useEffect, useMemo, useRef, useState } from "react";
@@ -294,15 +298,6 @@ class StudioErrorBoundary extends Component<React.PropsWithChildren, { error: Er
 }
 type Def = { type: Kind; operation?: string; label: string; asset: string };
 type ActivityPlacement = { x: number; y: number; connectFrom?: string };
-type ValidationIssue = {
-  id: string;
-  severity: "error" | "warning" | "mapping";
-  category: string;
-  message: string;
-  remedy: string;
-  taskId?: string;
-  activityId?: string;
-};
 const themeOptions = [
   { value: "compact-workbench", label: "Compact Workbench", detail: "Tight explorer rows, a slimmer ribbon, and small square controls" },
   { value: "blueprint-board", label: "Blueprint Board", detail: "Ruled canvas, framed activities, and drafting-style labels" },
@@ -1317,8 +1312,8 @@ const propertyReferences = (value: any) => [...JSON.stringify(value ?? {}).match
 const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[] => {
   if (task.library_origin) return [];
   const issues: ValidationIssue[] = [], ids = new Set(task.activities.map((item) => item.id));
-  const add = (severity: ValidationIssue["severity"], category: string, message: string, remedy: string, activityId?: string) =>
-    issues.push({ id: `${task.id}-${issues.length}`, severity, category, message, remedy, taskId: task.id, activityId });
+  const add = (severity: ValidationIssue["severity"], category: string, message: string, remedy: string, activityId?: string, target?: ValidationIssue["target"]) =>
+    issues.push({ id: `${task.id}-${issues.length}`, severity, category, message, remedy, taskId: task.id, activityId, target });
   const events = task.activities.filter(isEventActivity);
   const activityNames = new Map<string, string[]>();
   task.activities.forEach((item) => {
@@ -1331,9 +1326,10 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
   if (events.length !== 1) add("error", "Flow", `${task.name} has ${events.length} event activities.`, "Each task must contain exactly one starter/event activity.");
   if (!task.activities.some(isTaskTerminal)) add("error", "Flow", `${task.name} has no terminal activity.`, "Connect successful paths to End or HTTP Send Response.");
   task.transitions.forEach((transition) => {
-    if (!ids.has(transition.source) || !ids.has(transition.target)) add("error", "Transition", "A transition references a missing activity.", "Reconnect or delete the invalid transition.");
-    if (transition.source === transition.target) add("warning", "Transition", "A transition connects an activity to itself.", "Connect it to the intended downstream activity.", transition.source);
-    if (transition.type === "success_condition" && !transition.condition?.trim()) add("error", "Transition", "A conditional transition has no executable condition.", "Enter and evaluate a boolean condition in the transition editor.", transition.source);
+    const target = { kind: "transition", id: transition.id } as const;
+    if (!ids.has(transition.source) || !ids.has(transition.target)) add("error", "Transition", "A transition references a missing activity.", "Reconnect or delete the invalid transition.", undefined, target);
+    if (transition.source === transition.target) add("warning", "Transition", "A transition connects an activity to itself.", "Connect it to the intended downstream activity.", transition.source, target);
+    if (transition.type === "success_condition" && !transition.condition?.trim()) add("error", "Transition", "A conditional transition has no executable condition.", "Enter and evaluate a boolean condition in the transition editor.", transition.source, target);
   });
   const startIds = events.map((item) => item.id), reachable = new Set(startIds), queue = [...startIds];
   while (queue.length) {
@@ -1380,7 +1376,7 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
   task.activities.forEach((item) => {
     const operation = item.config.operation || "";
     for (const issue of activityMappingIssues(item,task,project.tasks,project.schemas,project.resources)) {
-      add('error','Input mapping',`${item.name} / ${issue.path}: ${issue.error}`,'Correct the mapping in the Input tab before exporting or deploying.',item.id);
+      add('error','Input mapping',`${item.name} / ${issue.path}: ${issue.error}`,'Review this field in the Input tab before exporting or deploying.',item.id,{kind:"input",field:issue.target});
     }
     if (item.type === "timer") {
       const mode = item.config.scheduleMode || "dateTime";
@@ -1397,7 +1393,7 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
     }
     if (["mapper", "transform", "ai_transform"].includes(item.type)) {
       if (!Object.keys(item.config.targetSchema || {}).length && !String(item.config.targetSchemaText || "").trim() && !item.config.targetSchemaId) add("mapping", "Mapper", `${item.name} has no target schema.`, "Select an XSD from Project Schemas or define an inline target schema.", item.id);
-      if (!(item.config.mappings || []).length) add("mapping", "Mapper", `${item.name} has no field mappings.`, "Map execution-path fields to the target schema.", item.id);
+      if (!(item.config.mappings || []).length) add("mapping", "Mapper", `${item.name} has no field mappings.`, "Map execution-path fields to the target schema.", item.id, {kind:"input"});
     }
     if (item.type === "dataweave") {
       const script = String(item.config.script || "");
@@ -1417,7 +1413,7 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
     if (item.type === "amqp" && !item.config.resourceId) add("error", "AMQP", `${item.name} has no AMQP connection.`, "Select an AMQP shared connection.", item.id);
     if (item.type === "excel" && !String(item.config.filePath || item.config.inputMappings?.filePath || "").trim()) add("error", "Excel", `${item.name} has no workbook path.`, "Enter a workbook path or map filePath in Input.", item.id);
     if (item.type === "basic" && operation === "external_command" && !String(item.config.command || item.config.inputMappings?.command || "").trim()) add("error", "External Command", `${item.name} has no executable command.`, "Enter a command or map it in Input.", item.id);
-    if ((item.type === "file" || item.type === "ftp" || item.type === "sftp") && !String(item.config.path || item.config.remotePath || "").trim()) add("warning", "Configuration", `${item.name} has no file path.`, "Configure the source or target path.", item.id);
+    if (item.type === "file" && operation === "poll" && !String(item.config.path || item.config.filePath || "").trim()) add("warning", "Configuration", `${item.name} has no file path.`, "Configure the directory to watch.", item.id);
     if (item.type === "sap" && operation.includes("idoc")) {
       // Match the runtime's shared-connection inheritance. A fetched IDoc is
       // often selected on the connection, not copied into every activity.
@@ -1454,7 +1450,7 @@ const validateProjectDefinition = (project: Project) => {
   for (const category of ["tasks","resources","schemas"] as const) for (const item of project[category]) {
     const message = workspaceNameConflict(project,item.name,packagePath(item.package_path),{category,id:item.id});
     if (message) issues.push({id:`duplicate-name-${category}-${item.id}`,severity:"error",category:"Project Explorer",message,
-      remedy:"Rename the object or move it to a different package.", ...(category === "tasks" ? {taskId:item.id} : {})});
+      remedy:"Rename the object or move it to a different package.", ...(category === "tasks" ? {taskId:item.id} : {target:{kind:category === "resources" ? "resource" : "schema", id:item.id}})});
   }
   const sapRegistrations = new Map<string, { taskId: string; activityId: string; name: string }>();
   project.tasks.forEach((task) => task.activities.filter((activity) => activity.type === "sap" && activity.config.operation === "rfc_bapi_listener").forEach((activity) => {
@@ -1467,17 +1463,17 @@ const validateProjectDefinition = (project: Project) => {
   const canonical = new Set((project.properties.local || environments[0]?.[1] || []).map((item) => item.key));
   environments.forEach(([environment, properties]) => {
     const keys = new Set(properties.map((item) => item.key));
-    canonical.forEach((key) => { if (!keys.has(key)) issues.push({ id: `property-${environment}-${key}`, severity: "warning", category: "Properties", message: `${environment}.properties is missing ${key}.`, remedy: "Add the property so mappings behave consistently in every environment." }); });
+    canonical.forEach((key) => { if (!keys.has(key)) issues.push({ id: `property-${environment}-${key}`, severity: "warning", category: "Properties", message: `${environment}.properties is missing ${key}.`, remedy: "Add the property so mappings behave consistently in every environment.", target:{kind:"properties", id:environment} }); });
   });
   const referenced = new Set([
     ...project.tasks.flatMap((task) => task.activities.flatMap((activity) => propertyReferences(activity.config))),
     ...project.resources.flatMap((resource) => propertyReferences(resource.config)),
   ]);
   referenced.forEach((key) => environments.forEach(([environment, properties]) => {
-    if (!properties.some((item) => item.key === key)) issues.push({ id: `mapping-${environment}-${key}`, severity: "mapping", category: "Property mapping", message: `${key} is referenced but missing from ${environment}.properties.`, remedy: "Create the property or replace the expression with a valid project property." });
+    if (!properties.some((item) => item.key === key)) issues.push({ id: `mapping-${environment}-${key}`, severity: "mapping", category: "Property mapping", message: `${key} is referenced but missing from ${environment}.properties.`, remedy: "Create the property or replace the expression with a valid project property.", target:{kind:"properties", id:environment} });
   }));
-  if (!project.name.trim()) issues.push({ id: "project-name", severity: "error", category: "Project", message: "Application name is empty.", remedy: "Rename the application." });
-  if (!project.packaging?.artifact_name || !project.packaging?.version) issues.push({ id: "packaging", severity: "warning", category: "Packaging", message: "Packaging metadata is incomplete.", remedy: "Configure artifact name and version under Packaging." });
+  if (!project.name.trim()) issues.push({ id: "project-name", severity: "error", category: "Project", message: "Application name is empty.", remedy: "Rename the application.", target:{kind:"application"} });
+  if (!project.packaging?.artifact_name || !project.packaging?.version) issues.push({ id: "packaging", severity: "warning", category: "Packaging", message: "Packaging metadata is incomplete.", remedy: "Configure artifact name and version under Packaging.", target:{kind:"packaging"} });
   return issues;
 };
 function App() {
@@ -1531,7 +1527,8 @@ function App() {
     [busy, setBusy] = useState(false),
     [workStatus, setWorkStatus] = useState(""),
     [zoom, setZoom] = useState(1),
-    [validation, setValidation] = useState<{ title: string; issues: ValidationIssue[] } | null>(null),
+    [validation, setValidation] = useState<{ projectId: string; taskId?: string; title: string; issues: ValidationIssue[]; open: boolean } | null>(null),
+    [inputTarget, setInputTarget] = useState<(InputTargetRequest & { projectId: string; taskId: string; activityId: string }) | null>(null),
     [connectionDraft, setConnectionDraft] = useState<{ source: string; x: number; y: number } | null>(null),
     [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; x: number; y: number; pointerId: number; baseIds: string[] } | null>(null),
     [quickAddDrag, setQuickAddDrag] = useState<{ source: string; startClientX: number; startClientY: number; x: number; y: number; pointerId: number } | null>(null),
@@ -1545,6 +1542,8 @@ function App() {
   const executionAttempt = useRef(0);
   const debugActionRevision = useRef(0);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [projectSearch, setProjectSearch] = useState<{ target?: ReferenceTarget } | null>(null);
+  const propertySearchKey = useRef<string | undefined>(undefined);
   const [monitorMode, setMonitorMode] = useState<"normal" | "expanded" | "fullscreen">("normal");
   const [historyVersion, setHistoryVersion] = useState(0);
   const history = useRef<{
@@ -2172,6 +2171,17 @@ function App() {
     applyNavigation(location);
     recordNavigation(location);
   };
+  const openSearchLocation = (location: SearchLocation) => {
+    setProjectSearch(null);
+    if (location.kind === "property") {
+      propertySearchKey.current = location.key;
+      setPropertyEditor(location.environment);
+    } else if (location.kind === "library") {
+      setLibraryDialogOpen(true);
+    } else {
+      navigateTo(location);
+    }
+  };
   const navigationBack = navigationIndex(navigation, -1, isNavigationAvailable);
   const navigationForward = navigationIndex(navigation, 1, isNavigationAvailable);
   const revisitLocation = (index: number) => {
@@ -2540,11 +2550,63 @@ function App() {
     setLogs([{ level: "INFO", message: `Pasted ${pasted.length} activit${pasted.length === 1 ? "y" : "ies"} with internal transitions.` }]);
   };
   const cutSelection = () => { copySelection(); deleteSelectedActivity(); };
-  const runValidation = (scope: "task" | "project") => {
-    const issues = scope === "task" ? validateTaskDefinition(project, task) : validateProjectDefinition(project);
-    const title = scope === "task" ? `Validate Task · ${task.name}` : `Validate Project · ${project.name}`;
-    setValidation({ title, issues });
+  const showValidation = (issues: ValidationIssue[], target?: Task) => {
+    const title = target ? `Validate Task · ${target.name}` : `Validate Project · ${project.name}`;
+    setValidation({ projectId: project.id, taskId: target?.id, title, issues, open: true });
+    return title;
+  };
+  const runValidation = (scope: "task" | "project", taskId = task.id) => {
+    const target = scope === "task" ? project.tasks.find(item => item.id === taskId && !item.library_origin) : undefined;
+    const issues = target ? validateTaskDefinition(project, target) : validateProjectDefinition(project);
+    const title = showValidation(issues, target);
     setLogs([{ level: issues.some((item) => item.severity === "error") ? "ERROR" : issues.length ? "WARN" : "INFO", message: issues.length ? `${title}: ${issues.length} finding${issues.length === 1 ? "" : "s"}.` : `${title}: no errors or missing mappings.` }]);
+  };
+  const currentValidation = validation?.projectId === project.id ? validation : null;
+  const refreshValidation = () => currentValidation?.taskId
+    ? runValidation("task", currentValidation.taskId)
+    : runValidation("project");
+  const closeValidation = () => setValidation(current => current && { ...current, open: false });
+  const findingLocation = ({ taskId, activityId, target }: ValidationIssue) => {
+    if (target?.kind === "properties") return `${target.id}.properties`;
+    if (target?.kind === "packaging") return "Packaging";
+    if (target?.kind === "application") return "Application name";
+    if (target?.kind === "resource" || target?.kind === "schema") return navigationLabel({ kind: target.kind, id: target.id });
+    if (!taskId) return;
+    if (target?.kind === "transition") {
+      const owner = project.tasks.find(item => item.id === taskId);
+      const edge = owner?.transitions.find(item => item.id === target.id);
+      const label = navigationLabel({ kind: "task", id: taskId });
+      if (!edge || !label) return;
+      const source = owner?.activities.find(item => item.id === edge.source)?.name ?? edge.source;
+      const destination = owner?.activities.find(item => item.id === edge.target)?.name ?? edge.target;
+      return `${label} / ${source} → ${destination}`;
+    }
+    return navigationLabel({ kind: "task", id: taskId, activityId }) ?? navigationLabel({ kind: "task", id: taskId });
+  };
+  const openFinding = ({ taskId, activityId, target }: ValidationIssue) => {
+    closeValidation();
+    if (target?.kind === "properties") setPropertyEditor(target.id);
+    else if (target?.kind === "packaging") setPackageOpen(true);
+    else if (target?.kind === "application") setRenameOpen(true);
+    else if (target?.kind === "resource" || target?.kind === "schema") navigateTo({ kind: target.kind, id: target.id });
+    else if (taskId) {
+      selectTask(taskId, activityId);
+      if (target?.kind === "transition") {
+        setSelectedEdge(target.id);
+        setSelected("");
+        setSelectedIds([]);
+        setExecutionPanelOpen(false);
+        setMonitorMode("normal");
+        setActiveTab("configuration");
+      } else if (target?.kind === "input") {
+        setActiveTab("input");
+        if (activityId && target.field) {
+          const request = { ...target.field, projectId: project.id, taskId, activityId,
+            handled: () => setInputTarget(current => current === request ? null : current) };
+          setInputTarget(request);
+        }
+      }
+    }
   };
   const newProject = (requestedName?: string) => {
     const suppliedName = typeof requestedName === "string" ? requestedName : undefined;
@@ -2576,6 +2638,13 @@ function App() {
   }, [node, edge, nodes, byId]);
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
+      if (!closed && (event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "f" &&
+          !document.querySelector(".viewport-modal-layer")) {
+        event.preventDefault();
+        setMenu(null);
+        setProjectSearch({});
+        return;
+      }
       if (eventBelongsToEditableControl(event)) return;
       if (event.ctrlKey || event.metaKey) {
         const key = event.key.toLowerCase();
@@ -2588,7 +2657,7 @@ function App() {
     };
     window.addEventListener("keydown", shortcuts);
     return () => window.removeEventListener("keydown", shortcuts);
-  }, [project, selectedIds]);
+  }, [project, selectedIds, closed]);
   const projectFilename = (extension: string) => `${project.name.replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-|-$/g, "") || project.id}.${extension}`;
   const applyApiBlueprint = async (plan: any) => {
     const folder=packagePath(plan.packagePath);
@@ -2740,7 +2809,7 @@ function App() {
       const issues = validateProjectDefinition(project);
       const blocking = issues.filter((item) => item.severity === "error");
       if (blocking.length) {
-        setValidation({ title: `Validate Project · ${project.name}`, issues });
+        showValidation(issues);
         throw new Error(`Package blocked by ${blocking.length} project validation error${blocking.length === 1 ? "" : "s"}.`);
       }
       const { credential, secretsText, controlPlaneUrl, caCertificatePath, outputPath, format: requestedFormat, ...persistedSettings } = settings;
@@ -2774,7 +2843,7 @@ function App() {
     try {
       const issues = validateProjectDefinition(project), blocking = issues.filter((item) => item.severity === "error");
       if (blocking.length) {
-        setValidation({ title: `Validate Project · ${project.name}`, issues });
+        showValidation(issues);
         throw new Error(`Deployment blocked by ${blocking.length} project validation error${blocking.length === 1 ? "" : "s"}.`);
       }
       let secrets: Record<string, string> = {};
@@ -3156,11 +3225,12 @@ function App() {
       });
       if (r.ok) {
         setClosed(true);
+        setValidation(null);
         setLogs([]);
       }
     };
   const closeProject = () => {
-      const close = () => { setClosed(true); setMenu(null); };
+      const close = () => { setClosed(true); setMenu(null); setValidation(null); };
       if (projectDirty) { pendingLeaveAction.current = close; setUnsavedPrompt(true); return; }
       close();
     };
@@ -3438,6 +3508,7 @@ function App() {
         <div className="menu-root"><button className={menu === "file" ? "active" : ""} onClick={(e) => { e.stopPropagation(); setMenu(menu === "file" ? null : "file"); }}>File</button>
           {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} newProject={newProject} exitStudio={exitStudio} save={save} saveJson={saveJsonFile} exportProject={exportGenericProject} importProject={openGenericProject} importProjectFolder={importProjectFolder} openProjects={closeProject} sampleProjects={() => setSampleGalleryOpen(true)} catchAI={openCatchAI} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
         <TopMenu label="Edit" open={menu === "edit"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "edit" ? null : "edit"); }} commands={[
+          { label: "Project Search", detail: "Find project objects and their references", icon: Search, shortcut: "Ctrl+Shift+F", action: () => setProjectSearch({}) },
           { label: "Undo", detail: "Restore an earlier Studio change · up to 100 levels", icon: Undo2, shortcut: "Ctrl+Z", action: undoStudio, disabled: history.current.past.length === 0 && !history.current.pendingBase },
           { label: "Redo", detail: "Restore the most recently undone change", icon: Redo2, shortcut: "Ctrl+Y", action: redoStudio, disabled: history.current.future.length === 0 },
           { label: "Rename Application", detail: project.name, icon: Settings2, action: () => setRenameOpen(true) },
@@ -3459,6 +3530,7 @@ function App() {
           { label: "Start Activity Testing", detail: "Start paused; provide test data without automatically starting listeners", icon: Bug, action: () => debug(undefined, true), disabled: executionActive },
           { label: "Validate Current Task", detail: "Check flow, mappings, connections, and configuration", icon: ShieldCheck, action: () => runValidation("task") },
           { label: "Validate Project", detail: "Check every task, environment, mapping, and package", icon: ShieldCheck, action: () => runValidation("project") },
+          { label: "Review Findings", detail: "Recheck the last validation scope and resume the review", icon: ShieldCheck, action: refreshValidation, disabled: !currentValidation },
           { label: "Continue", detail: "Resume the paused debug session", icon: CirclePlay, action: () => debugAction("continue"), disabled: debugState?.status !== "paused" },
           { label: "Stop Execution", detail: "Stop the active run, listener deployment, or debug session", icon: Square, action: stopExecution, disabled: !executionActive },
         ]}/>
@@ -3501,12 +3573,14 @@ function App() {
         stop={stopExecution}
         executionAnalytics={() => setAnalyticsOpen(true)}
         navigation={navigationActions}
+        projectSearch={() => setProjectSearch({})}
         executionActive={executionActive}
         aiBuild={() => setAiBuilderOpen(true)}
         apiBlueprint={() => setApiBlueprintOpen(true)}
         catchAI={openCatchAI}
         validateTask={() => runValidation("task")}
         validateProject={() => runValidation("project")}
+        reviewValidation={currentValidation ? refreshValidation : undefined}
         undo={undoStudio}
         cut={cutSelection}
         copy={copySelection}
@@ -4051,6 +4125,7 @@ function App() {
             <ActivityEditor
               node={node}
               task={task}
+              inputTargetRequest={inputTarget?.projectId === project.id && inputTarget.taskId === task.id && inputTarget.activityId === node.id ? inputTarget : undefined}
               resources={project.resources.filter(item => !item.library_origin || item.library_origin.public)}
               tasks={project.tasks.filter(item => !item.library_origin || item.library_origin.public)}
               schemas={project.schemas.filter(item => !item.library_origin || item.library_origin.public)}
@@ -4112,6 +4187,8 @@ function App() {
           )}
         </section>}</> : <><div className="orchestrator-empty" role="status"><Workflow/><b>No task editors open</b><span>Select a task in Project Explorer to open it.</span></div>{executionConsole}</>}
       </main>
+      {projectSearch && <ProjectSearch key={project.id} project={project} initialTarget={projectSearch.target}
+        onOpen={openSearchLocation} onClose={() => setProjectSearch(null)}/>}
       {libraryDialogOpen && <IntegrationLibraries project={project} onChange={updated => setProject(current => current.id === updated.id ? normalizeProject(updated) : current)}
         onClose={() => setLibraryDialogOpen(false)} />}
       {analyticsOpen && <ExecutionAnalytics key={project.id} projectId={project.id} projectName={project.name} tasks={project.tasks} logs={logs} runtimeState={runtimeState} debugState={debugState} onClose={() => setAnalyticsOpen(false)} onInspect={(taskId: string, activityId: string) => { const target = project.tasks.find(item => item.id === taskId && item.activities.some(activity => activity.id === activityId)) || project.tasks.find(item => item.activities.some(activity => activity.id === activityId)); if (target) { selectTask(target.id, activityId); setAnalyticsOpen(false); } }}/>}
@@ -4152,6 +4229,7 @@ function App() {
           actions={{
             newProject, importProject: importFromFileSystem, exportProject, save, refresh: explorerRefresh,
             rename: explorerRename, copy: explorerCopy, paste: explorerPaste, remove: explorerRemove,
+            references: (kind: ReferenceTarget["kind"], id: string) => setProjectSearch({ target: { kind, id } }),
             newObjectPackage: (category: PackageCategory) => setObjectPackageDialog({category, parent:menu.path}),
             renameObjectPackage: (category: PackageCategory) => {
               const path = menu.path;
@@ -4159,7 +4237,7 @@ function App() {
             },
             renameArtifact: () => setRenameArtifactOpen(true),
             moveToPackage: (category: PackageCategory) => setObjectPackageDialog({category, itemId:menu.id, moving:packagePath(menu.path)}),
-            run: (id?: string) => run(id), debug: (id?: string) => debug(id), validate: (id?: string) => { const target = id ? project.tasks.find((item) => item.id === id) : null; if (!target) { runValidation("project"); return; } const issues = validateTaskDefinition(project, target); setValidation({ title: `Validate Task · ${target.name}`, issues }); selectTask(target.id); setLogs([{ level: issues.some((item) => item.severity === "error") ? "ERROR" : issues.length ? "WARN" : "INFO", message: issues.length ? `${target.name}: ${issues.length} validation finding${issues.length === 1 ? "" : "s"}.` : `${target.name}: validation successful.` }]); },
+            run: (id?: string) => run(id), debug: (id?: string) => debug(id), validate: (id?: string) => { if (id) selectTask(id); runValidation(id ? "task" : "project", id); },
             properties: (type: string, id?: string) => { if (type === "application") setRenameOpen(true); else if (type === "task" && id) selectTask(id); else if (type === "activity" && id) { inspectActivity(id); } else if (type === "resource" && id) navigateTo({ kind: "resource", id }); else if (type === "schema" && id) navigateTo({ kind: "schema", id }); else if (type === "property" && id) setPropertyEditor(id); else if (type === "packaging" || type === "artifact") setPackageOpen(true); },
             copyActivity: copySelection, cutActivity: cutSelection, pasteActivity: pasteSelection,
             deleteActivity: deleteSelectedActivity,
@@ -4337,14 +4415,16 @@ function App() {
       )}
       {propertyEditor && (
         <PropertyEditor
+          initialProperty={propertySearchKey.current}
           environment={propertyEditor}
           properties={project.properties[propertyEditor] || []}
-          onClose={() => setPropertyEditor(null)}
+          onClose={() => { propertySearchKey.current = undefined; setPropertyEditor(null); }}
           onSave={(items: Property[]) => {
             setProject((p) => ({
               ...p,
               properties: { ...p.properties, [propertyEditor]: items },
             }));
+            propertySearchKey.current = undefined;
             setPropertyEditor(null);
           }}
         />
@@ -4370,11 +4450,10 @@ function App() {
         setSelected(""); setSelectedIds([]); setSelectedEdge(null); setAiBuilderOpen(false); setLogs([{ level: "INFO", message: `Applied ${proposal.provider} AI design proposal. Validate the ${scope} before running.` }]);
       }}/>}
       {helpDialog && <HelpDialog mode={helpDialog} onClose={() => setHelpDialog(null)}/>}
-      {validation && <ValidationDialog result={validation} onClose={() => setValidation(null)} onOpen={(issue: ValidationIssue) => {
-        if (issue.taskId) selectTask(issue.taskId, issue.activityId);
-        else if (issue.activityId) inspectActivity(issue.activityId);
-        setValidation(null);
-      }}/>}
+      {currentValidation && <ValidationReview key={currentValidation.taskId ?? "project"}
+        title={currentValidation.title} open={currentValidation.open}
+        issues={currentValidation.open ? currentValidation.issues.map(issue => ({ issue, location: findingLocation(issue) })) : []}
+        onClose={closeValidation} onRefresh={refreshValidation} onOpen={openFinding}/>}
       {catchAIOpen && <CatchAIDialog key={`${project.id}:${task.id}:${catchAIOpen}:${possibleTaskExceptions(task,project.tasks,project.schemas || []).join("|")}`} options={possibleTaskExceptions(task,project.tasks,project.schemas || [])} onClose={() => setCatchAIOpen(null)} onApply={(types: string[]) => { createExceptionHandlers(catchAIOpen, types); setCatchAIOpen(null); }}/>}
       {openSourceOpen && <OpenProjectSourceDialog onClose={() => setOpenSourceOpen(false)} onFile={(type: any) => { setOpenSourceOpen(false); void importFromFileSystem(type); }} onFolder={() => { setOpenSourceOpen(false); void importProjectFolder(); }}/>}
       {exportSourceOpen && <OpenProjectSourceDialog title="Export MINA project" actionLabel="Export" onClose={() => setExportSourceOpen(false)} onFile={(type: any) => { setExportSourceOpen(false); exportGenericProject(type); }} onFolder={() => { setExportSourceOpen(false); exportGenericProject("folder"); }} exportMode/>}
@@ -4708,8 +4787,9 @@ function StudioRibbon(props: any) {
       {command("Forward", ArrowRight, props.navigation.forward, !props.navigation.forward)}
       <RecentLocations recent={props.navigation.recent} jump={props.navigation.jump}/>
       {command("Up", ArrowUp, props.navigation.up, !props.navigation.up, props.navigation.upLabel)}
+      {command("Project Search", Search, props.projectSearch)}
     </div></div>
-    <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("API Blueprint", Globe, props.apiBlueprint, props.executionActive)}{command("AI Build", WandSparkles, props.aiBuild)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Run", Zap, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Execution Analytics", Activity, props.executionAnalytics)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}</div></div>
+    <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("API Blueprint", Globe, props.apiBlueprint, props.executionActive)}{command("AI Build", WandSparkles, props.aiBuild)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Run", Zap, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Execution Analytics", Activity, props.executionAnalytics)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}{props.reviewValidation && command("Review Findings", ShieldCheck, props.reviewValidation)}</div></div>
     <div className="ribbon-group"><b>EDIT</b><div>{command("Undo", Undo2, props.undo)}{command("Cut", Scissors, props.cut, !props.selectedCount)}{command("Copy", ClipboardCopy, props.copy, !props.selectedCount)}{command("Paste", ClipboardPaste, props.paste)}</div></div>
     <div className="ribbon-group layout-group"><b>ARRANGE · {props.selectedCount} SELECTED</b><div>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</div></div>
   </section>;
@@ -4730,12 +4810,6 @@ function OpenProjectSourceDialog({ onClose, onFile, onFolder, title = "Open MINA
     <main><p>Select the project format, then browse for the matching file or folder.</p><div className="open-project-source-options">{choices.map(([value, label, detail]) => <label key={value}><input type="radio" name={exportMode ? "export-source" : "project-source"} checked={source === value} onChange={() => setSource(value)}/><span><b>{label}</b><small>{detail}</small></span></label>)}</div></main>
     <footer><button onClick={onClose}>Cancel</button><button className="primary" onClick={() => source === "folder" ? onFolder() : onFile(source)}>{source === "folder" ? "Browse folder" : `${actionLabel} file`}</button></footer>
   </div></ModalLayer>;
-}
-function ValidationDialog({ result, onClose, onOpen }: any) {
-  const counts = result.issues.reduce((value: any, issue: ValidationIssue) => ({ ...value, [issue.severity]: (value[issue.severity] || 0) + 1 }), {});
-  const [filter, setFilter] = useState<"all" | ValidationIssue["severity"]>("all");
-  const filtered = filter === "all" ? result.issues : result.issues.filter((issue: ValidationIssue) => issue.severity === filter);
-  return <ModalLayer className="modal-backdrop"><div className="runtime-modal validation-dialog"><header><span><ShieldCheck/><b>{result.title}</b></span><button aria-label="Close validation" onClick={onClose}>×</button></header><div className="validation-summary"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>{result.issues.length} all</button><button className={filter === "error" ? "active error" : "error"} onClick={() => setFilter("error")}>{counts.error || 0} errors</button><button className={filter === "warning" ? "active warning" : "warning"} onClick={() => setFilter("warning")}>{counts.warning || 0} warnings</button><button className={filter === "mapping" ? "active mapping" : "mapping"} onClick={() => setFilter("mapping")}>{counts.mapping || 0} mappings</button></div><main>{!result.issues.length ? <div className="validation-clean"><CheckCircle2/><h2>Validation successful</h2><p>No errors or missing mappings were found.</p></div> : !filtered.length ? <div className="validation-clean"><CheckCircle2/><h2>No findings in this category</h2><p>Select another validation filter.</p></div> : filtered.map((issue: ValidationIssue) => <button key={issue.id} className={`validation-issue ${issue.severity}`} onClick={() => onOpen(issue)}><span>{issue.severity === "error" ? "ERROR" : issue.severity === "mapping" ? "MAPPING" : "WARNING"}</span><div><b>{issue.category}</b><p>{issue.message}</p><small>{issue.remedy}</small></div>{(issue.taskId || issue.activityId) && <ChevronRight/>}</button>)}</main><footer><span>Click a finding to open its task and activity configuration.</span><button className="primary" onClick={onClose}>Close</button></footer></div></ModalLayer>;
 }
 function RenameApplication({ name, onClose, onSave, entity = "application", normalizeName = studioObjectName, validateName }: any) {
   const [value, setValue] = useState(name);
@@ -4782,11 +4856,16 @@ function RenameApplication({ name, onClose, onSave, entity = "application", norm
     </ModalLayer>
   );
 }
-function PropertyEditor({ environment, properties, onClose, onSave }: any) {
+function PropertyEditor({ environment, properties, initialProperty, onClose, onSave }: any) {
   const [draft, setDraft] = useState<Property[]>(properties),
     [mode, setMode] = useState<"table" | "json" | "plain">("table"),
     [text, setText] = useState(""),
     [error, setError] = useState("");
+  const focusedProperty = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    focusedProperty.current?.scrollIntoView({ block: "nearest" });
+    focusedProperty.current?.focus({ preventScroll: true });
+  }, [initialProperty]);
   const convertValue = (value: any, type: Property["data_type"]) => {
     if (type === "boolean") return typeof value === "boolean" ? value : ["true", "1", "yes", "on"].includes(String(value).toLowerCase());
     if (["integer", "long"].includes(type)) return value === "" ? "" : Number.parseInt(String(value), 10);
@@ -4918,6 +4997,7 @@ function PropertyEditor({ environment, properties, onClose, onSave }: any) {
             {draft.map((p, i) => (
               <div key={i}>
                 <input
+                  ref={p.key === initialProperty ? focusedProperty : undefined}
                   value={p.key}
                   placeholder="property.name"
                   onChange={(e) =>
@@ -5313,6 +5393,8 @@ function Context({
     </div>;
   }
   const fileCommands = <div className="explorer-context-commands">
+    {["task", "resource", "schema"].includes(menu.type) &&
+      item("Find References", "Show configured usages in this project", Search, () => actions.references(menu.type, menu.id))}
     {item("Copy", "Copy this explorer item", ClipboardCopy, () => actions.copy(menu.type, menu.id), !["task", "resource", "schema", "property"].includes(menu.type))}
     {item("Paste", `Paste into ${menu.path || targetFolder}`, ClipboardPaste, () => actions.paste(targetFolder, menu.path), !["tasks", "resources", "resources-root", "schemas", "properties"].includes(targetFolder))}
     {item("Rename", "Change the displayed name", Settings2, () => actions.rename(menu.type, menu.id), !["application", "task", "resource", "schema", "property"].includes(menu.type))}

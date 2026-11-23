@@ -1,0 +1,67 @@
+.validation-review {
+  display: flex;
+  flex-direction: column;
+  width: min(56rem, 100%);
+  height: min(42rem, calc(100dvh - 24px));
+  overflow: hidden;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.validation-review > :is(header, footer),
+.validation-review-controls,
+.validation-review-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+
+.validation-review > :is(header, footer),
+.validation-review-controls,
+.validation-review-results { padding: .6rem .8rem; }
+.validation-review > :is(header, footer),
+.validation-review-controls { flex-shrink: 0; }
+.validation-review > header,
+.validation-review-controls { border-bottom: 1px solid var(--line); }
+.validation-review h2 { margin: 0; font-size: 1.15em; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.validation-review svg { width: 1em; height: 1em; flex: none; }
+.validation-review input { flex: 1 1 14rem; min-width: 0; }
+.validation-review :is(button, input) {
+  padding: .35em .6em;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: inherit;
+}
+.validation-review button:enabled { cursor: pointer; }
+.validation-review button[aria-pressed="true"] { border-color: var(--accent); }
+.validation-review :focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.validation-review-results { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.validation-review-results p { margin: .35em 0; }
+.validation-review-results ul { list-style: none; margin: 0; padding: 0; }
+.validation-review-results li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+  padding: .55rem;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.validation-review-results li > div { min-width: 0; }
+.validation-review-results li > button { display: inline-flex; align-items: center; gap: .2em; flex: none; }
+.validation-review-results small { display: block; color: var(--muted); }
+.validation-review-severity { margin-inline-start: .6em; text-transform: capitalize; }
+.validation-review > footer { border-top: 1px solid var(--line); justify-content: flex-end; }
+.validation-review-pages { display: flex; align-items: center; gap: .5rem; margin-inline-end: auto; }
+
+@media (min-height: 241px) and (min-width: 331px), (min-height: 321px) {
+  .viewport-modal-layer > .validation-review { overflow-y: hidden !important; }
+}
+@media (max-height: 240px), (max-height: 320px) and (max-width: 330px) {
+  .validation-review-results { flex: 1 0 auto; overflow: visible; }
+}
