@@ -70,7 +70,7 @@ test('XPath builder tests and applies the same quoted expression',async()=>{
   button('Apply to ').props.onClick();
   assert.equal(applied,request.mappings[0].source);
   assert.equal(request.options.xpathVersion,'2.0');
-  assert.equal(request.input.xmlString,'<orders><order id="2">west</order></orders>');
+  assert.equal(request.input,'<orders><order id="2">west</order></orders>');
 });
 
 test('duplicating a repeating structure creates an independent empty occurrence even before mapping',async()=>{

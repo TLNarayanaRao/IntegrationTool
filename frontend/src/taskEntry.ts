@@ -23,15 +23,20 @@ export const taskEntryLabels = {
   unconfigured: "No start",
 } as const;
 
+export function taskEntryActivities<T extends EntryActivity & {id: string}>(activities: T[], transitions: {target: string}[] = []) {
+  const incoming = new Set(transitions.map(transition => transition.target));
+  const entries = activities.filter(activity => !incoming.has(activity.id));
+  const external = entries.filter(activity => activity.type !== "start" && isEventActivity(activity));
+  return external.length ? external : entries.filter(activity => activity.type === "start");
+}
+
 export function taskEntryMode(task: {
   kind: string;
   activities: (EntryActivity & { id: string })[];
   transitions?: { target: string }[];
 }): keyof typeof taskEntryLabels {
   if (task.kind === "subtask") return "subtask";
-  // Match the runtime's entry selection: receivers with incoming edges are ordinary activities.
-  const incoming = new Set(task.transitions?.map(transition => transition.target));
-  const entries = task.activities.filter(activity => !incoming.has(activity.id));
-  if (entries.some(activity => activity.type !== "start" && isEventActivity(activity))) return "starter";
-  return entries.some(activity => activity.type === "start") ? "subtask" : "unconfigured";
+  const entries = taskEntryActivities(task.activities, task.transitions);
+  if (entries.some(activity => activity.type !== "start")) return "starter";
+  return entries.length ? "subtask" : "unconfigured";
 }

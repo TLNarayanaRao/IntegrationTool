@@ -182,12 +182,14 @@ def xml_from_value(name, value, shape=None, *, badger=False, ignore=False, names
     return element
 
 
-def json_from_xml(element, shape=None, *, badger=False, infer=False, empty=None, inherited=None):
+def json_from_xml(element, shape=None, *, badger=False, infer=False, empty=None, inherited=None, tree_input=False):
     from lxml import etree
     def cast(text, field=None):
         kind = (field or {}).get('type')
         if kind == 'integer': return int(text)
-        if kind == 'number': return float(text)
+        if kind == 'number':
+            value = float(text)
+            return text if tree_input and not math.isfinite(value) else value
         if kind == 'boolean':
             text = text.strip()
             if text not in ('true','false','1','0'): raise ValueError('Invalid XML boolean: ' + text)
@@ -217,12 +219,14 @@ def json_from_xml(element, shape=None, *, badger=False, infer=False, empty=None,
         qname = etree.QName(key)
         local = qname.localname
         prefix = next((prefix for prefix, uri in element.nsmap.items() if prefix and uri == qname.namespace), None)
-        result[('@' if badger else '') + (f'{prefix}:{local}' if badger and prefix else local)] = cast(item, fields.get('@' + local))
+        result[('@' if badger or tree_input else '') + (f'{prefix}:{local}' if badger and prefix else local)] = cast(item, fields.get('@' + local))
     children = [child for child in element if isinstance(child.tag, str)]
     def convert(child, field=None):
-        return json_from_xml(child, field, badger=badger, infer=infer, empty=empty, inherited=element.nsmap)
+        return json_from_xml(child, field, badger=badger, infer=infer, empty=empty, inherited=element.nsmap, tree_input=tree_input)
     if element.get(JSON_KIND) == 'array': return [convert(child) for child in children]
     counts = {}
+    mixed = tree_input and children and (bool((element.text or '').strip()) or any((child.tail or '').strip() for child in children))
+    ordered = [{'#text': element.text}] if mixed and element.text else []
     for child in children:
         key = name(child)
         counts[key] = counts.get(key, 0) + 1
@@ -231,6 +235,10 @@ def json_from_xml(element, shape=None, *, badger=False, infer=False, empty=None,
         field = fields.get(etree.QName(child).localname, {})
         array = counts[key] > 1 or field.get('type') == 'array' or child.get(JSON_KIND) in ('array-item','empty-array')
         item = convert(child, field.get('items') if field.get('type') == 'array' else field)
+        if mixed:
+            ordered.append({key: item})
+            if child.tail:
+                ordered.append({'#text': child.tail})
         if array:
             if key in result and not isinstance(result[key], list): result[key] = [result[key]]
             if child.get(JSON_KIND) == 'empty-array': result.setdefault(key, [])
@@ -241,7 +249,10 @@ def json_from_xml(element, shape=None, *, badger=False, infer=False, empty=None,
         return cast(element.text or '', shape)
     value = ''.join(element.itertext()) if not children else (element.text or '') + ''.join(child.tail or '' for child in children)
     if value.strip() or badger and not children and not result or not children and (shape or {}).get('x-mina-textSchema'):
-        result['$'] = cast(value, (shape or {}).get('x-mina-textSchema') or (shape if not children else None))
+        text = (element.text or '') if mixed else value
+        result['#text' if tree_input else '$'] = cast(text, (shape or {}).get('x-mina-textSchema') or (shape if not children else None))
+    if mixed:
+        result['#content'] = ordered
     return result
 
 
@@ -276,18 +287,19 @@ class DataFormats:
         return raw
 
     @staticmethod
-    def validate_xml_document(value,schema,bundle=()):
+    def validate_xml_document(value,schema,bundle=(), *, expected_root=None):
         from lxml import etree
         from .xsd_catalog import schema_selection
         try:
             validator,lock=compiled_xsd(schema,bundle)
             parser=etree.XMLParser(resolve_entities=False,load_dtd=False,no_network=True,huge_tree=False)
             document=etree.fromstring(DataFormats.safe_xml(value),parser)
-            _,selected=schema_selection(schema)
+            selected=expected_root or schema_selection(schema)[1]
             if selected and document.tag!=(selected[2:] if selected.startswith('{}') else selected):
                 raise ValueError('Expected selected XSD root '+selected+'; found '+document.tag)
             with lock:
                 if not validator.validate(document):raise ValueError('; '.join(str(error.message) for error in list(validator.error_log)[:10]))
+            return document
         except (ValueError,etree.Error) as error:raise MinaFault('XSD validation failed: '+str(error),fault_type='ValidationException') from error
     @staticmethod
     def as_bool(value,default=False):

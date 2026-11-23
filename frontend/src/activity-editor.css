@@ -585,6 +585,11 @@ details:not([open])>summary>.tree-disclosure:after {
 .input-target-count { color: var(--muted, #a9bdca); }
 [data-input-jump] { outline: 2px solid var(--accent, #54d7fa); outline-offset: -2px; scroll-margin-block: .5rem; }
 .mapper-xpath-builder{margin:6px;padding:8px;border:1px solid #315a70;border-radius:6px}.mapper-xpath-builder textarea,.transform-policy-grid textarea{min-width:0;min-height:65px;resize:vertical}
+.mapper-xpath-builder summary{cursor:pointer}
+.mapper-xpath-builder summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.mapper-input-tool-hint{margin:8px 0 0;line-height:1.45;color:var(--muted);overflow-wrap:anywhere}
+.mapper-input-tool-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.mapper-xpath-builder output{grid-column:1/-1;overflow-wrap:anywhere}
 .mapper-xpath-arguments,.mapper-xpath-fields{display:flex;flex-direction:column;gap:6px;min-width:0}
 .mapper-xpath-fields{max-height:180px;overflow:auto}
 .mapper-xpath-fields button{text-align:left;overflow-wrap:anywhere}

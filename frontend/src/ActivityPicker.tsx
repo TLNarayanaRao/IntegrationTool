@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 import ActivityIcon from "./ActivityIcon";
+import { groupCatalog, groupTypes } from "./groupDesigner";
 
 type Entry = { label: string; asset?: string; type?: string; operation?: string; groupType?: string; children?: Entry[] };
 const icon = (asset?: string) => asset ? <ActivityIcon asset={asset} /> : null;
@@ -14,11 +15,7 @@ function flatten(entries: Entry[], parents: string[] = []): Array<Entry & { path
 }
 
 export default function ActivityPicker({ menu, packs, addActivity, addGroup, close }: any) {
-  const groupEntries: Entry[] = [
-    ["If", "if"], ["While", "while"], ["For Each", "for_each"], ["Iterate", "iterate"],
-    ["Repeat", "repeat"], ["Repeat on Error", "repeat_on_error"], ["Scope", "scope"],
-    ["None", "none"], ["Critical Section", "critical_section"], ["Transaction (JDBC)", "transaction_jdbc"], ["Pick First", "pick_first"],
-  ].map(([label, groupType]) => ({ label, groupType, type: "group" }));
+  const groupEntries: Entry[] = groupTypes.map(groupType => ({ label: groupCatalog[groupType].label, groupType, type: "group" }));
   const groups: Entry[] = useMemo(() => [{ label: "Groups", children: groupEntries }, ...packs.map((pack: any) => ({ label: pack.name, children: pack.items }))], [packs]);
   const [query, setQuery] = useState(""), [trail, setTrail] = useState<Entry[]>(groups.length ? [groups[0]] : []);
   const current = trail[trail.length - 1], entries = current?.children || groups;

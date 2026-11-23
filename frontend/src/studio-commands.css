@@ -1,0 +1,62 @@
+.menu-bar > .studio-commands-trigger { display: flex; align-items: center; gap: 0.35em; white-space: nowrap; }
+.studio-commands-trigger svg { width: 1em; height: 1em; }
+.orchestrator-empty > button { padding: 0.45em 0.8em; border: 1px solid var(--line); border-radius: 4px; color: var(--text); background: var(--panel); cursor: pointer; overflow-wrap: anywhere; }
+@media (max-width: 680px) {
+  .studio-commands-trigger span { display: none; }
+}
+.studio-commands {
+  display: flex;
+  flex-direction: column;
+  width: min(39rem, 100%);
+  height: min(30rem, calc(100dvh - 24px));
+  overflow: hidden;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.studio-commands :is(header, footer, .studio-command-filter) {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.65em 0.9em;
+  flex-shrink: 0;
+}
+.studio-commands header { justify-content: space-between; border-bottom: 1px solid var(--line); }
+.studio-commands h2 { margin: 0; font-size: 1.12em; }
+.studio-commands :is(button, input) {
+  padding: 0.4em 0.55em;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: inherit;
+}
+.studio-commands button { cursor: pointer; }
+.studio-commands svg { display: block; width: 1.2em; height: 1.2em; flex: none; }
+.studio-commands input { flex: 1; min-width: 0; }
+.studio-commands :focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.studio-command-scroll { min-height: 0; flex: 1 1 auto; overflow: auto; padding: 0 0.65em; }
+.studio-command-scroll p { color: var(--muted); margin: 0.4em; }
+.studio-command-scroll ul { margin: 0; padding: 0; list-style: none; }
+.studio-command-scroll li {
+  display: flex;
+  align-items: center;
+  gap: 0.65em;
+  min-height: 2.8em;
+  padding: 0.35em 0.6em;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.studio-command-scroll li:not([aria-disabled="true"]):is(:hover, [aria-selected="true"]) {
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  box-shadow: inset 3px 0 var(--accent);
+}
+.studio-command-scroll [aria-disabled="true"] { color: var(--muted); cursor: default; }
+.studio-command-scroll li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.studio-command-scroll li span small { display: block; color: var(--muted); }
+.studio-commands footer { flex-wrap: wrap; border-top: 1px solid var(--line); color: var(--muted); }
+.studio-commands kbd { white-space: nowrap; }
+@media (max-height: 280px) {
+  .studio-commands footer { display: none; }
+}

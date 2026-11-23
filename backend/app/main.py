@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders
 from pydantic import BaseModel, Field
-from .models import AIBuildRequest, DebugAction, DebugRequest, LibraryPin, Project, RunRequest, SharedResource, PackagePath, effective_event_activities, find_subtask
+from .models import AIBuildRequest, DebugAction, DebugRequest, LibraryPin, Project, RunRequest, SharedResource, SubtaskInputRequest, SubtaskRunRequest, PackagePath, effective_event_activities, find_subtask
 from . import integration_libraries as libraries
 from .store import delete_project, get_project, list_projects, project_dir, save_project, safe_component
 from .project_import import MAX_IMPORT_BYTES, project_payload
@@ -955,8 +955,25 @@ def project_json(project_id: str):
     filename = re.sub(r'[^A-Za-z0-9_.-]+','-',item.name).strip('-') or item.id
     return Response(json.dumps(libraries.studio_project(item, workspace=True), indent=2), media_type='application/json', headers={'Content-Disposition':f'attachment; filename="{filename}.json"','X-Project-Storage':str(project_dir(project_id))})
 
+@app.post('/api/projects/{project_id}/tasks/{task_id}/test-input')
+def validate_subtask_test_input(project_id: str, task_id: str, request: SubtaskInputRequest):
+    from .subtask_testing import subtask_input, subtask_start
+    from lxml.etree import Error as XmlError
+    item = get_project(project_id)
+    task = next((task for task in item.tasks if task.id == task_id), None) if item else None
+    if not task:
+        raise HTTPException(404, 'Subtask not found')
+    try:
+        report = subtask_input(item, task, subtask_start(task), request.input,
+                               describe='input' not in request.model_fields_set, input_format=request.input_format)
+        report.pop('input', None)
+        return report
+    except (ValueError, XmlError, MinaFault) as error:
+        raise HTTPException(422, str(error)) from None
+
+
 @app.post('/api/projects/{project_id}/run')
-async def run(project_id: str, http_request: Request, request: RunRequest):
+async def run(project_id: str, http_request: Request, request: SubtaskRunRequest | RunRequest):
     item = await asyncio.to_thread(get_project, project_id)
     if not item: raise HTTPException(404, 'Project not found')
     require_library_bindings(item, request.environment, request.task_id or item.active_task_id)
@@ -966,12 +983,31 @@ async def run(project_id: str, http_request: Request, request: RunRequest):
     task_id = request.task_id or item.active_task_id
     task = next((task for task in item.tasks if task.id == task_id), None)
     if not task: raise HTTPException(404, 'Task not found')
-    if task.kind != 'starter': raise HTTPException(400, 'Sub Tasks are invoked by a Call Sub Task activity; run a Starter Task')
-    events = effective_event_activities(task.activities, task.transitions)
-    if len(events) != 1: raise HTTPException(400, f'Starter Task requires exactly one event activity; found {len(events)}')
-    event = events[0]
-    diagnostics = _startup_diagnostics(item, task, resources, properties, request.environment, 'RUN')
-    endpoints = [endpoint for member,_ in _http_listener_members(item,task,event) for endpoint in _listener_endpoints(item, member, request.environment, str(http_request.base_url).rstrip('/'))]
+    initial_input = request.input
+    if request.test_subtask:
+        from .subtask_testing import subtask_input, subtask_start
+        from lxml.etree import Error as XmlError
+        try:
+            event = subtask_start(task)
+            validation = await asyncio.to_thread(subtask_input, item, task, event, request.input, input_format=request.input_format)
+            if validation['errors']:
+                raise ValueError('Start input validation failed: ' + ' · '.join(validation['errors']))
+            initial_input = validation.get('input', request.input)
+        except (ValueError, XmlError, MinaFault) as error:
+            raise HTTPException(422, str(error)) from None
+        running = active_runs.get(project_id)
+        if (running and not running.done()) or any(
+            state['project'].id == project_id and state.get('status') not in ('completed', 'failed', 'stopped')
+            for state in debugger.sessions.values()
+        ):
+            raise HTTPException(409, 'Stop the current project execution before testing a Subtask.')
+    else:
+        if task.kind != 'starter': raise HTTPException(400, 'Sub Tasks are invoked by a Call Sub Task activity; run a Starter Task')
+        events = effective_event_activities(task.activities, task.transitions)
+        if len(events) != 1: raise HTTPException(400, f'Starter Task requires exactly one event activity; found {len(events)}')
+        event = events[0]
+    diagnostics = _startup_diagnostics(item, task, resources, properties, request.environment, 'SUBTASK TEST' if request.test_subtask else 'RUN')
+    endpoints = [] if request.test_subtask else [endpoint for member,_ in _http_listener_members(item,task,event) for endpoint in _listener_endpoints(item, member, request.environment, str(http_request.base_url).rstrip('/'))]
     if endpoints:
         try:await _start_http_listener(item,task,event,request.environment)
         except Exception as error:raise HTTPException(400,f'HTTP listener startup failed: {error}')
@@ -992,7 +1028,9 @@ async def run(project_id: str, http_request: Request, request: RunRequest):
     if current_run: active_runs[project_id] = current_run
     runtime_states.setdefault(project_id, {})['environment'] = request.environment
     try:
-        result = await runtime.run(task, request.input, resources, properties, project=item, environment=request.environment)
+        result = await runtime.run(task, initial_input, resources, properties,
+                                   entry_activity_id=event.id if request.test_subtask else None,
+                                   project=item, environment=request.environment)
     except asyncio.CancelledError:
         now = log_timestamp()
         logs = list(runtime_states.get(project_id, {}).get('logs', [])) + [{'time': now, 'level': 'INFO', 'kind': 'lifecycle', 'message': f'Application {item.name} stopped by user', 'endedAt': now}]

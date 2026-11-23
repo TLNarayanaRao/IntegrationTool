@@ -1,12 +1,14 @@
 from __future__ import annotations
-import ast, asyncio, base64, copy, csv, ftplib, gzip, hashlib, importlib.util, io, json, os, re, shlex, shutil, sqlite3, sys, tempfile, threading, traceback, uuid
+import ast, asyncio, base64, copy, csv, ftplib, gzip, hashlib, importlib.util, io, json, logging, math, os, re, shlex, shutil, sqlite3, sys, tempfile, threading, traceback, uuid
 from datetime import datetime, timezone, timedelta
 from contextlib import nullcontext
 from pathlib import Path
+from weakref import WeakValueDictionary
 import httpx
 from time import perf_counter
 from concurrent.futures import ThreadPoolExecutor, Future as ConcurrentFuture
 from .models import Activity, GroupDefinition, ProcessDefinition, Project, RunResult, find_subtask
+from .group_execution import MULTI_ROUTE_GROUPS, ROUTED_GROUPS, iteration_items, partition_routes, scope_fault_action, scope_variables
 from .mapper import INPUT_OCCURRENCES, activity_occurrence_rules, _function_arguments, apply_function, evaluate_condition, get_path, rewrite_references, validate_output, execute as execute_mapping, execute_async as execute_mapping_async
 from .dataweave import DataWeaveError
 from .transform_engine import execute_activity_async as execute_transform_activity
@@ -35,6 +37,7 @@ class WorkflowRuntime(DataFormats):
         self.acknowledgements: dict[str, dict] = {}
         self.shared_variables: dict[str, Any] = {}
         self.group_locks: dict[str, asyncio.Lock] = {}
+        self.background_groups: WeakValueDictionary[tuple, asyncio.Semaphore] = WeakValueDictionary()
         self._publisher_lock = threading.Lock()
         self._publishers: dict[str, object] = {}
         self._publisher_operation_locks: dict[str, threading.Lock] = {}
@@ -196,34 +199,74 @@ class WorkflowRuntime(DataFormats):
         plans: dict[str, dict] = {}
         for group in process.groups:
             config = group.config or {}
-            if group.type == 'pick_first':
-                raise MinaFault(f'Group {group.name}: Pick First is not runtime-qualified; concurrent branch cancellation and cleanup are not supported', fault_type='GROUP_UNSUPPORTED')
             if group.type in ('if', 'while') and not str(config.get('condition') or '').strip():
                 raise MinaFault(f'Group {group.name} requires a boolean condition', fault_type='GROUP_VALIDATION')
-            if group.type in ('iterate', 'for_each') and config.get('source') in (None, '') and config.get('collection') in (None, '') and not (group.type == 'for_each' and config.get('start') is not None and config.get('end') is not None):
+            if group.type in ('iterate', 'for_each', 'parallel_for_each') and config.get('source') in (None, '') and config.get('collection') in (None, '') and not (group.type == 'for_each' and config.get('start') is not None and config.get('end') is not None):
                 raise MinaFault(f'Group {group.name} requires a collection expression', fault_type='GROUP_VALIDATION')
             if group.type == 'repeat' and not str(config.get('condition') or '').strip() and config.get('count') is None and config.get('iterations') is None:
                 raise MinaFault(f'Group {group.name} requires a Repeat Until True condition', fault_type='GROUP_VALIDATION')
-            if group.type == 'repeat_on_error' and not str(config.get('stopCondition') or '').strip():
+            if group.type == 'repeat_on_error' and not (str(config.get('stopCondition') or '').strip() or config.get('resetOnRetry') is True):
                 raise MinaFault(f'Group {group.name} requires a Repeat-on-Error stop condition', fault_type='GROUP_VALIDATION')
+            if group.type in ('scope', 'none', 'transaction_jdbc'):
+                try: scope_variables(config)
+                except ValueError as exc: raise MinaFault(f'{group.name}: {exc}', fault_type='GROUP_VALIDATION') from exc
+                handlers = config.get('faultHandlers', [])
+                if not isinstance(handlers, list) or any(not isinstance(handler, dict) or handler.get('action') not in ('continue', 'propagate')
+                    or not isinstance(handler.get('types', []), list) or any(not isinstance(value, str) for value in handler.get('types', []))
+                    for handler in handlers):
+                    raise MinaFault(f'{group.name} has invalid scope fault handlers', fault_type='GROUP_VALIDATION')
             members = descendants(group.id)
             if not members: raise MinaFault(f'Group {group.name} is empty', fault_type='GROUP_VALIDATION')
             internal_incoming = {edge.target for edge in process.transitions if edge.source in members and edge.target in members}
-            external_entries = {edge.target for edge in process.transitions if edge.source not in members and edge.target in members}
+            entry_edges = [edge for edge in process.transitions if edge.source not in members and edge.target in members]
+            external_entries = {edge.target for edge in entry_edges}
             entries = external_entries or (members - internal_incoming)
             exit_edges = [edge for edge in process.transitions if edge.source in members and edge.target not in members]
             for source_id in members:
                 fanout = [edge for edge in process.transitions if edge.source == source_id and edge.target in members and edge.type == 'success']
-                if len(fanout) > 1 and group.type != 'pick_first':
-                    raise MinaFault(f'Group {group.name} contains a parallel fan-out; use separate top-level branches until grouped branch joining is qualified', fault_type='GROUP_UNSUPPORTED')
+                if len(fanout) > 1 and group.type not in ROUTED_GROUPS | {'pick_first'}:
+                    targets = {edge.target for edge in fanout}
+                    if not any(candidate.type in MULTI_ROUTE_GROUPS | {'pick_first'} and candidate.id != group.id
+                               and targets <= descendants(candidate.id) <= members for candidate in process.groups):
+                        raise MinaFault(f'Group {group.name} contains an unscoped parallel fan-out; use a routing group', fault_type='GROUP_UNSUPPORTED')
             exit_sources = {edge.source for edge in exit_edges}
             terminal = {activity.id for activity in process.activities if activity.id in members and not any(edge.source == activity.id and edge.target in members for edge in process.transitions)}
             exits = exit_sources or terminal
-            if len(entries) != 1 and group.type != 'pick_first':
+            if group.type in ('scope', 'none', 'transaction_jdbc') and any(handler['action'] == 'continue' for handler in config.get('faultHandlers', [])):
+                if len(exit_edges) != 1 or exit_edges[0].type != 'success':
+                    raise MinaFault(f'{group.name}: a continuing fault handler needs one unconditional exit transition', fault_type='GROUP_VALIDATION')
+            if len(entries) != 1 and group.type not in MULTI_ROUTE_GROUPS | {'pick_first'}:
                 raise MinaFault(f'Group {group.name} must have exactly one entry activity; found {len(entries)}', fault_type='GROUP_VALIDATION')
-            if len(exits) != 1 and group.type != 'pick_first':
+            if len(exits) != 1 and group.type not in MULTI_ROUTE_GROUPS | {'pick_first'}:
                 raise MinaFault(f'Group {group.name} must have exactly one exit activity; found {len(exits)}', fault_type='GROUP_VALIDATION')
             plans[group.id] = {'group': group, 'members': members, 'entries': entries, 'entry': next(iter(entries)) if entries else None, 'exits': exits, 'exit': next(iter(exits)) if exits else None, 'exitEdges': exit_edges}
+            if group.type in ROUTED_GROUPS:
+                if any(activity.type == 'http_response' and activity.id in members for activity in process.activities):
+                    raise MinaFault(f'{group.name}: send the HTTP response after the routes join', fault_type='GROUP_VALIDATION')
+                if group.type == 'async' and group.parent_group_id:
+                    raise MinaFault(f'{group.name}: a background group must be top-level', fault_type='GROUP_VALIDATION')
+                parent_id = group.parent_group_id
+                while parent_id:
+                    parent = groups[parent_id]
+                    if parent.type in ('transaction_jdbc', 'critical_section'):
+                        raise MinaFault(f'{group.name}: routed groups cannot run inside a transaction or critical section', fault_type='GROUP_VALIDATION')
+                    parent_id = parent.parent_group_id
+                destinations = {edge.target for edge in exit_edges}
+                if len(destinations) != 1 or any(edge.type != 'success' for edge in exit_edges):
+                    raise MinaFault(f'{group.name}: routes need one common unconditional continuation outside the group', fault_type='GROUP_VALIDATION')
+                route_entries = list(dict.fromkeys(edge.target for edge in entry_edges))
+                if group.type in MULTI_ROUTE_GROUPS and (len(route_entries) < 2 or len({edge.source for edge in entry_edges}) != 1 or any(edge.type != 'success' for edge in entry_edges)):
+                    raise MinaFault(f'{group.name}: connect at least two routes from one preceding activity using unconditional transitions', fault_type='GROUP_VALIDATION')
+                try:
+                    routes = partition_routes(route_entries or list(entries), members, process.transitions)
+                    for _, route in routes:
+                        if any((nested := descendants(child)) & route and not nested <= route for child in children[group.id]):
+                            raise ValueError('Nested groups must stay within a single route')
+                except ValueError as exc:
+                    raise MinaFault(f'{group.name}: {exc}', fault_type='GROUP_VALIDATION') from exc
+                if any(exit_sources.isdisjoint(route) for _, route in routes):
+                    raise MinaFault(f'{group.name}: every route must connect to the continuation', fault_type='GROUP_VALIDATION')
+                plans[group.id].update(routes=routes, continuation=destinations.pop())
         return plans
 
     @staticmethod
@@ -257,8 +300,9 @@ class WorkflowRuntime(DataFormats):
         # Keep condition expressions intact for the condition evaluator. Exact
         # value fields are resolved individually below.
         group, cfg = plan['group'], dict(plan['group'].config)
-        state = {'id': group.id, 'iteration': 0, 'config': cfg}
+        state = {'id': group.id, 'iteration': 0, 'config': cfg, 'previousGroup': ctx['context'].get('group')}
         kind = group.type
+        local_values = [(variable['name'], self.resolve(variable.get('value'), ctx)) for variable in scope_variables(cfg)] if kind in ('scope', 'none', 'transaction_jdbc') else []
         should_run = True
         if kind in ('if', 'while'):
             expression = str(cfg.get('condition') or '')
@@ -270,12 +314,14 @@ class WorkflowRuntime(DataFormats):
         elif kind in ('for_each', 'iterate'):
             source_value = cfg.get('collection', cfg.get('source'))
             if kind == 'for_each' and source_value in (None, ''):
-                start, end, increment = int(self.resolve(cfg.get('start', 1), ctx)), int(self.resolve(cfg.get('end', 1), ctx)), int(self.resolve(cfg.get('increment', 1), ctx) or 1)
+                start, end, increment = (int(self.resolve(1 if cfg.get(key) is None else cfg[key], ctx)) for key in ('start', 'end', 'increment'))
                 if increment == 0: raise MinaFault(f'{group.name} increment cannot be zero', fault_type='GROUP_VALIDATION')
-                items = list(range(start, end + (1 if increment > 0 else -1), increment))
+                source = range(start, end + (1 if increment > 0 else -1), increment)
             else:
-                source = self.resolve(source_value or [], ctx)
-                items = list(source.values()) if isinstance(source, dict) else list(source or [])
+                source = self.resolve(source_value if source_value is not None else [], ctx)
+            try: items = iteration_items(source, self.resolve(cfg.get('batchSize', 1), ctx))
+            except (TypeError, ValueError, OverflowError) as exc: raise MinaFault(f'{group.name}: {exc}', fault_type='GROUP_VALIDATION') from exc
+            if self.as_bool(cfg.get('preservePayload', False)): state['entryPayload'] = copy.deepcopy(ctx['last'])
             state['items'] = items; should_run = bool(items)
             if should_run:
                 current_name = str(cfg.get('currentElementName') or cfg.get('itemVariable') or 'currentElement')
@@ -293,6 +339,8 @@ class WorkflowRuntime(DataFormats):
             self._set_group_variable(state, ctx, str(cfg.get('indexVariable') or 'index'), 1)
             self._set_group_variable(state, ctx, 'currentIndex', 1)
         elif kind == 'repeat_on_error':
+            if cfg.get('resetOnRetry') is True:
+                state['retryInput'], state['retryVars'] = copy.deepcopy((ctx['last'], ctx['vars']))
             state['retriesRemaining'] = max(0, int(self.resolve(cfg.get('retryCount', cfg.get('retries', 3)), ctx) or 0))
             self._set_group_variable(state, ctx, str(cfg.get('indexVariable') or 'index'), 1)
             self._set_group_variable(state, ctx, 'currentIndex', 1)
@@ -309,10 +357,14 @@ class WorkflowRuntime(DataFormats):
                 raise MinaFault(f'{group.name} must use one JDBC shared connection', fault_type='JDBCTransactionException')
             resource = ctx['resources'].get(resource_id)
             if not resource or resource.type != 'jdbc': raise MinaFault(f'{group.name} requires a valid JDBC connection', fault_type='JDBCTransactionException')
+            if resource_id in ctx.get('jdbcTransactions', {}):
+                raise MinaFault(f'{group.name}: a JDBC connection cannot start a second local transaction inside itself', fault_type='JDBCTransactionException')
             connection_config = self.resolve(resource.config, ctx)
             state['resourceId'] = resource_id
             state['connection'] = await asyncio.to_thread(jdbc_adapter.connect, connection_config)
             ctx.setdefault('jdbcTransactions', {})[resource_id] = state['connection']
+        for name, value in local_values:
+            self._set_group_variable(state, ctx, name, value)
         self._publish_group_context(state, group, ctx, state.get('items', [None])[0] if state.get('items') else None)
         self.log(ctx['logs'], 'DEBUG', f'Group entered: {group.name}', kind='group', groupId=group.id, groupType=group.type, iteration=0)
         return state, should_run
@@ -326,6 +378,8 @@ class WorkflowRuntime(DataFormats):
             ctx.setdefault('jdbcTransactions', {}).pop(state.get('resourceId'), None)
         if plan['group'].type == 'critical_section' and state.get('lock') and state['lock'].locked(): state['lock'].release()
         self._restore_group_variables(state, ctx)
+        if state.get('previousGroup') is None: ctx['context'].pop('group', None)
+        else: ctx['context']['group'] = state['previousGroup']
         self.log(ctx['logs'], 'DEBUG', f'Group {"completed" if success else "failed"}: {plan["group"].name}', kind='group', groupId=plan['group'].id, groupType=plan['group'].type, iteration=state.get('iteration', 0))
 
     async def enter_group_boundaries(self, activity_id: str, ctx: dict, plans: dict[str, dict]) -> str | None:
@@ -334,14 +388,138 @@ class WorkflowRuntime(DataFormats):
         candidates.sort(key=lambda plan: len(self._group_ancestors(plan['group'], plans)))
         for plan in candidates:
             if plan['group'].parent_group_id and plan['group'].parent_group_id not in {state['id'] for state in ctx['groupStack']}: continue
+            if plan['group'].type in ROUTED_GROUPS:
+                await self._execute_group_routes(plan, ctx, plans)
+                source = next((plans[state['id']]['exit'] for state in reversed(ctx['groupStack'])
+                    if plans[state['id']]['exit'] in plan['exits']), plan['exit'])
+                return await self.leave_group_boundaries(source, plan['continuation'], ctx, plans)
             state, should_run = await self._begin_group(plan, ctx)
             ctx['groupStack'].append(state)
             if not should_run:
                 await self._finish_group(state, plan, ctx, True); ctx['groupStack'].pop()
                 edges = plan['exitEdges']
                 eligible = self.select_group_transitions(self.eligible_success_transitions(edges, ctx), ctx, plans)
-                return eligible[0].target if eligible else None
+                return await self.leave_group_boundaries(plan['exit'], eligible[0].target if eligible else None, ctx, plans)
         return activity_id
+
+    async def _execute_group_routes(self, plan: dict, ctx: dict, plans: dict[str, dict]):
+        group = plan['group']
+        cfg, kind = group.config, group.type
+        process = ctx['_process']
+        route_processes = []
+        for entry, members in plan['routes']:
+            nested = [candidate['group'].model_copy(update={
+                'parent_group_id': None if candidate['group'].parent_group_id == group.id else candidate['group'].parent_group_id,
+            }) for candidate in plans.values() if candidate['group'].id != group.id and candidate['members'] <= members
+                and group.id in self._group_ancestors(candidate['group'], plans)]
+            route_processes.append((entry, process.model_copy(update={
+                'activities': [activity for activity in process.activities if activity.id in members],
+                'transitions': [edge for edge in process.transitions if edge.source in members and edge.target in members],
+                'groups': nested,
+            })))
+        snapshot = copy.deepcopy({key: ctx[key] for key in ('input', 'last', 'vars', 'context', 'activities', 'tasks')})
+        resources, properties, project = ctx['resources'], ctx['properties'], ctx.get('project')
+        logs = None if kind == 'async' else ctx['logs']
+        timeout = float(self.resolve(cfg.get('routeTimeoutSeconds', 0), ctx))
+        if not math.isfinite(timeout) or timeout < 0:
+            raise MinaFault(f'{group.name}: route timeout must be finite and nonnegative', fault_type='GROUP_VALIDATION')
+
+        async def run_route(entry, body, payload, index, item=False):
+            branch = {**snapshot, 'vars': {**snapshot['vars']}}
+            if item:
+                branch['vars'].update(currentElement=payload, currentIndex=index + 1)
+                branch['vars'][str(cfg.get('currentElementName') or 'currentElement')] = payload
+                branch['vars'][str(cfg.get('indexVariable') or 'index')] = index + 1
+            branch['context'] = {**snapshot['context'], 'group': {'id': group.id, 'name': group.name, 'type': kind, 'iteration': index + 1}}
+            output = {}
+            execution = self.run(body, copy.deepcopy(payload), resources=resources, properties=properties,
+                entry_activity_id=entry, project=project, branch_context=branch,
+                execution_state=copy.deepcopy({key: snapshot[key] for key in ('activities', 'tasks')}), branch_output=output,
+                capture_branch_variables=kind in MULTI_ROUTE_GROUPS)
+            try:
+                result = await asyncio.wait_for(execution, timeout=timeout) if timeout else await execution
+            except TimeoutError:
+                return {'route': index + 1, 'error': 'Route timed out'}, None
+            if logs is not None:
+                logs.extend(result.logs)
+            if result.status == 'completed':
+                route = {'route': index + 1, 'output': output['last']}
+                if 'vars' in output:
+                    route['variables'] = output['vars']
+                return route, result
+            fault = result.task_outputs.get(process.id, {}).get('error') or {'message': 'Route failed'}
+            return {'route': index + 1, 'error': fault}, result
+
+        concurrency = int(self.resolve(cfg.get('maxConcurrency', 4), ctx))
+        if not 1 <= concurrency <= 64:
+            raise MinaFault(f'{group.name}: maximum concurrency must be between 1 and 64', fault_type='GROUP_VALIDATION')
+        if kind == 'async':
+            entry, body = route_processes[0]
+            key = (getattr(project, 'id', None), process.id, group.id)
+            limiter = self.background_groups.setdefault(key, asyncio.Semaphore(concurrency))
+            await limiter.acquire()
+
+            async def background():
+                try:
+                    route, result = await run_route(entry, body, snapshot['last'], 0)
+                    if result and project and self.on_detached_result and not getattr(process, 'library_origin', None):
+                        await self.on_detached_result(project, process, snapshot['context'].get('environment'), result)
+                    elif 'error' in route:
+                        logging.getLogger(__name__).warning('Background group %s failed: %s', group.id, route['error'])
+                except Exception:
+                    logging.getLogger(__name__).exception('Background group %s failed', group.id)
+            detached = asyncio.create_task(background())
+            self._detached_runs.add(detached)
+            def finished(task):
+                limiter.release()
+                self._detached_runs.discard(task)
+            detached.add_done_callback(finished)
+            self.log(ctx['logs'], 'INFO', f'Background group scheduled: {group.name}', kind='group', groupId=group.id)
+            return
+
+        if kind == 'parallel_for_each':
+            source = self.resolve(cfg.get('collection', cfg.get('source')), ctx)
+            items = iteration_items(source, self.resolve(cfg.get('batchSize', 1), ctx))
+            limit = int(self.resolve(cfg.get('maxIterations', 10000), ctx))
+            if limit < 1 or len(items) > limit:
+                raise MinaFault(f'{group.name} exceeded its iteration limit', fault_type='GROUP_ITERATION_LIMIT')
+            entry, body = route_processes[0]
+            work = [(entry, body, payload) for payload in items]
+        else:
+            work = [(entry, body, snapshot['last']) for entry, body in route_processes]
+
+        if kind == 'first_successful':
+            results = []
+            for index, (entry, body, payload) in enumerate(work):
+                route, _ = await run_route(entry, body, payload, index)
+                if 'error' not in route:
+                    ctx['last'] = route['output']
+                    ctx['vars'].clear()
+                    ctx['vars'].update(route['variables'])
+                    return
+                results.append(route)
+        else:
+            results = [None] * len(work)
+            remaining = iter(enumerate(work))
+
+            async def worker():
+                for index, (entry, body, payload) in remaining:
+                    results[index], _ = await run_route(entry, body, payload, index, item=kind == 'parallel_for_each')
+            async with asyncio.TaskGroup() as tasks:
+                for _ in range(min(concurrency, len(work))):
+                    tasks.create_task(worker())
+            if not any('error' in route for route in results):
+                ctx['last'] = [route['output'] for route in results]
+                if kind == 'scatter_gather':
+                    changes = {}
+                    for route in results:
+                        for name, value in route['variables'].items():
+                            if name not in snapshot['vars'] or snapshot['vars'][name] != value:
+                                changes.setdefault(name, []).append(value)
+                    ctx['vars'].update({name: values[0] if len(values) == 1 else values for name, values in changes.items()})
+                return
+        raise MinaFault(f'{group.name} could not complete its routes', fault_type='GROUP_ROUTES_FAILED',
+                        details={'routes': [{key: value for key, value in route.items() if key != 'variables'} for route in results]})
 
     async def leave_group_boundaries(self, source_id: str, target_id: str | None, ctx: dict, plans: dict[str, dict], success: bool = True) -> str | None:
         while ctx.get('groupStack'):
@@ -370,36 +548,59 @@ class WorkflowRuntime(DataFormats):
                     self._publish_group_context(state, group, ctx, state['items'][state['iteration']] if group.type in ('for_each', 'iterate') else None)
                     self.log(ctx['logs'], 'DEBUG', f'Group iteration: {group.name} #{state["iteration"] + 1}', kind='group', groupId=group.id, groupType=group.type, iteration=state['iteration'])
                     return plan['entry']
+            if success and 'entryPayload' in state: ctx['last'] = state['entryPayload']
             await self._finish_group(state, plan, ctx, success); ctx['groupStack'].pop()
         return target_id
 
-    async def retry_failed_group(self, ctx: dict, plans: dict[str, dict]) -> str | None:
+    async def recover_group_fault(self, ctx: dict, plans: dict[str, dict], fault: dict) -> str | None:
+        """Try the nearest active handler first and unwind unhandled scopes."""
         stack = ctx.get('groupStack', [])
-        retry_index = next((index for index in range(len(stack) - 1, -1, -1) if plans[stack[index]['id']]['group'].type == 'repeat_on_error' and stack[index].get('retriesRemaining', 0) > 0), None)
-        if retry_index is None: return None
-        while len(stack) - 1 > retry_index:
-            child = stack.pop(); await self._finish_group(child, plans[child['id']], ctx, False)
-        state = stack[retry_index]; state['retriesRemaining'] -= 1; state['iteration'] += 1
-        if state['config'].get('stopCondition') and self.condition(str(state['config']['stopCondition']), ctx): return None
+        while stack:
+            state = stack[-1]
+            plan = plans[state['id']]
+            kind, cfg = plan['group'].type, state['config']
+            if kind == 'repeat_on_error' and state.get('retriesRemaining', 0) > 0:
+                condition = cfg.get('stopCondition')
+                if not condition or not self.condition(str(condition), ctx):
+                    return await self._retry_group(state, plan, ctx, fault)
+            handler = scope_fault_action(cfg, fault) if kind in ('scope', 'none', 'transaction_jdbc') else None
+            if handler and handler['action'] == 'continue':
+                ctx['last'] = self.resolve(handler['value'], ctx) if handler.get('value') not in (None, '') else fault
+                await self._finish_group(state, plan, ctx, True); stack.pop()
+                self.log(ctx['logs'], 'WARN', f'Group handled {fault["type"]}: {plan["group"].name}', kind='group', groupId=state['id'])
+                return await self.leave_group_boundaries(plan['exit'], plan['exitEdges'][0].target, ctx, plans)
+            stack.pop()
+            await self._finish_group(state, plan, ctx, False)
+        return None
+
+    async def _retry_group(self, state: dict, plan: dict, ctx: dict, fault: dict) -> str:
+        state['retriesRemaining'] -= 1
+        state['iteration'] += 1
+        if 'retryVars' in state:
+            ctx['last'], values = copy.deepcopy((state['retryInput'], state['retryVars']))
+            ctx['vars'].clear()
+            ctx['vars'].update(values, error=fault)
         self._set_group_variable(state, ctx, str(state['config'].get('indexVariable') or 'index'), state['iteration'] + 1)
         self._set_group_variable(state, ctx, 'currentIndex', state['iteration'] + 1)
-        group = plans[state['id']]['group']
+        group = plan['group']
         self._publish_group_context(state, group, ctx)
-        for activity_id in plans[state['id']]['members']:
+        for activity_id in plan['members']:
             ctx.get('activities', {}).pop(activity_id, None)
             task_id = ctx.get('context', {}).get('taskId')
             if task_id: ctx.get('tasks', {}).get(task_id, {}).get('activities', {}).pop(activity_id, None)
         delay = float(self.resolve(state['config'].get('retryIntervalSeconds', state['config'].get('retryDelaySeconds', 0)), ctx) or 0)
-        self.log(ctx['logs'], 'WARN', f'Group retry: {plans[state["id"]]["group"].name}; {state["retriesRemaining"]} retries remain', kind='group', groupId=state['id'], iteration=state['iteration'])
+        self.log(ctx['logs'], 'WARN', f'Group retry: {group.name}; {state["retriesRemaining"]} retries remain', kind='group', groupId=state['id'], iteration=state['iteration'])
         if delay: await asyncio.sleep(delay)
-        return plans[state['id']]['entry']
+        return plan['entry']
 
-    async def run(self, process: ProcessDefinition, initial: dict, resources=None, properties=None, entry_activity_id=None, project: Project | None=None, execution_state: dict | None=None, event_output: Any = _NO_EVENT_OUTPUT, transport: dict | None = None, jms_sender_scope: str | None = None, stop_activity_id=None, branch_context=None, branch_output=None, *, environment=None, debug_session_id=None) -> RunResult:
+    async def run(self, process: ProcessDefinition, initial: dict, resources=None, properties=None, entry_activity_id=None, project: Project | None=None, execution_state: dict | None=None, event_output: Any = _NO_EVENT_OUTPUT, transport: dict | None = None, jms_sender_scope: str | None = None, stop_activity_id=None, branch_context=None, branch_output=None, *, environment=None, debug_session_id=None, capture_branch_variables=False) -> RunResult:
         run_id, logs = str(uuid.uuid4()), []
         protected = bool(getattr(process, 'library_origin', None))
         started = datetime.now(timezone.utc)
         correlation_id = str(initial.get('correlationId') or initial.get('correlation_id') or run_id) if isinstance(initial, dict) else run_id
-        if branch_context is not None: correlation_id = branch_context['context']['correlationId']
+        if branch_context is not None:
+            meta = branch_context['context']
+            correlation_id = meta.get('correlationId') or meta.get('debugSessionId') or correlation_id
         execution_state = execution_state or {'activities': {}, 'tasks': {}}
         activity_outputs = execution_state.setdefault('activities', {})
         task_outputs = execution_state.setdefault('tasks', {})
@@ -424,7 +625,10 @@ class WorkflowRuntime(DataFormats):
         self.log(logs, 'INFO', f'Job started: {process.name}', kind='lifecycle', correlationId=correlation_id, runId=run_id, startedAt=log_timestamp(started))
         def finish(status: str, output: dict) -> RunResult:
             self._active_execution.pop(run_id, None)
-            if branch_output is not None: branch_output['last'] = context['last']
+            if branch_output is not None:
+                branch_output['last'] = context['last']
+                if capture_branch_variables:
+                    branch_output['vars'] = context['vars']
             ended = datetime.now(timezone.utc); duration = round((ended - started).total_seconds() * 1000, 3)
             self.log(logs, 'INFO' if status == 'completed' else 'ERROR', f'Job {status}: {process.name} in {duration:.3f} ms', kind='lifecycle', correlationId=correlation_id, runId=run_id, endedAt=log_timestamp(ended), durationMs=duration)
             for entry in logs:
@@ -451,7 +655,9 @@ class WorkflowRuntime(DataFormats):
                 step_count += 1
                 if step_count > max(100000, len(process.activities) * 10000):
                     raise MinaFault('Execution step limit exceeded; check group loop conditions', fault_type='GROUP_ITERATION_LIMIT')
-                entered = await self.enter_group_boundaries(current.id, context, group_plans)
+                boundary_error = None
+                try: entered = await self.enter_group_boundaries(current.id, context, group_plans)
+                except Exception as exc: entered, boundary_error = current.id, exc
                 if entered is None: break
                 if entered != current.id:
                     current = activity_by_id[entered]; continue
@@ -469,6 +675,8 @@ class WorkflowRuntime(DataFormats):
                         'activityId': current.id, 'activityName': current.name, 'startedAt': log_timestamp(),
                     }
                 try:
+                    if boundary_error:
+                        raise boundary_error
                     if triggered_event_pending:
                         context['last'] = event_output
                         activity_input = event_output
@@ -497,13 +705,10 @@ class WorkflowRuntime(DataFormats):
                     fault = self.fault_payload(error, current.id)
                     context['last'] = fault; context['context']['error'] = fault; context['vars']['error'] = fault
                     if not chosen:
-                        retry_target = await self.retry_failed_group(context, group_plans)
+                        retry_target = await self.recover_group_fault(context, group_plans, fault)
                         if retry_target:
                             current = activity_by_id[retry_target]
                             continue
-                        while context.get('groupStack'):
-                            failed_state = context['groupStack'].pop()
-                            await self._finish_group(failed_state, group_plans[failed_state['id']], context, False)
                         caught = self.route_catch(process.activities, context, fault)
                         if not caught: raise error
                         current = caught
@@ -620,12 +825,16 @@ class WorkflowRuntime(DataFormats):
                        if getattr(plans.get(state.get('id'), {}).get('group'), 'type', None) == 'pick_first'), None)
         if active:
             return edges[:1]
-        process = context.get('_process')
-        if not process:
-            return edges
-        pick_first_members = set().union(*(plan['members'] for plan in plans.values() if plan['group'].type == 'pick_first'))
-        candidates = [edge for edge in edges if edge.target in pick_first_members]
-        return edges[:1] if candidates else edges
+        pick_lists = [plan for plan in plans.values() if plan['group'].type in MULTI_ROUTE_GROUPS | {'pick_first'}]
+        chosen = set()
+        result = []
+        for edge in edges:
+            matches = [plan['group'].id for plan in pick_lists if edge.target in plan['entries']]
+            if any(group_id in chosen for group_id in matches):
+                continue
+            chosen.update(matches)
+            result.append(edge)
+        return result
 
     @staticmethod
     def record_activity_output(activity: Activity, result, ctx: dict, input_value: Any = _NO_EVENT_OUTPUT):

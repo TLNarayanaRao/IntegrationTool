@@ -202,7 +202,7 @@ class RawPythonTests(unittest.TestCase):
         self.assertEqual(missing, [])
         self.assertEqual(compiler.SUPPORTED_GROUP_TYPES, {
             'if', 'for_each', 'iterate', 'while', 'repeat', 'repeat_on_error',
-            'critical_section', 'transaction_jdbc',
+            'critical_section', 'transaction_jdbc', 'scope', 'none',
         })
 
     def test_future_supported_operation_cannot_be_silently_omitted(self):

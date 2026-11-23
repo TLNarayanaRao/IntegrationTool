@@ -988,14 +988,21 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
 
     def coercion_value(path):
         from .mapper_coercions import source_view
-        name, _, child = path.removeprefix('coerced.').partition('.')
+        name, *child = re.split(r'(?=[.\[])', path.removeprefix('coerced.'), maxsplit=1)
         if name not in source_coercions:
             raise ValueError(f'Mapper source coercion {name!r} was not found')
         if name not in coerced_values:
             rule = source_coercions[name]
-            coerced_values[name] = source_view(get_path(document, rule['path']), rule, name, tick,
+            source_path = rule['path']
+            value = get_path(document, source_path)
+            if options.get('_mapperSample') and isinstance(document, dict) and 'activities' not in document:
+                # Map & Test can take a plain sample of the referenced activity's output.
+                upstream = re.fullmatch(r'activities\.[^.]+\.output((?:\.|\[).*)?', source_path)
+                if upstream:
+                    value = get_path(document.get('last'), (upstream[1] or '').lstrip('.'))
+            coerced_values[name] = source_view(value, rule, name, tick,
                                                options.get('xmlSchemaDocuments'))
-        return get_path(coerced_values[name], child) if child else coerced_values[name]
+        return get_path(coerced_values[name], child[0].lstrip('.')) if child else coerced_values[name]
 
     def typed_source(path, value):
         kind = source_types.get(path)

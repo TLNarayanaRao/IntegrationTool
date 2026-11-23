@@ -1,7 +1,7 @@
 from __future__ import annotations
 from unicodedata import normalize
 from typing import Annotated, Any, Literal
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, JsonValue, model_validator
 
 ActivityKind = Literal[
     'start', 'http', 'http_listener', 'http_response', 'rest', 'soap',
@@ -28,7 +28,9 @@ class Activity(BaseModel):
 
 class GroupDefinition(BaseModel):
     id: str
-    type: Literal['if', 'while', 'for_each', 'iterate', 'repeat', 'repeat_on_error', 'scope', 'none', 'critical_section', 'transaction_jdbc', 'pick_first']
+    type: Literal['if', 'while', 'for_each', 'iterate', 'repeat', 'repeat_on_error', 'scope', 'none',
+                  'critical_section', 'transaction_jdbc', 'pick_first', 'parallel_for_each', 'scatter_gather',
+                  'first_successful', 'async']
     name: str
     member_activity_ids: list[str] = Field(default_factory=list)
     config: dict[str, Any] = Field(default_factory=dict)
@@ -247,6 +249,16 @@ class RunRequest(BaseModel):
     input: dict[str, Any] = Field(default_factory=dict)
     environment: str = 'local'
     task_id: str | None = None
+    test_subtask: Literal[False] = False
+
+class SubtaskRunRequest(RunRequest):
+    input: JsonValue = Field(default_factory=dict)
+    input_format: Literal['json', 'xml'] = 'json'
+    test_subtask: Literal[True]
+
+class SubtaskInputRequest(BaseModel):
+    input: JsonValue = None
+    input_format: Literal['json', 'xml'] = 'json'
 
 class AIBuildRequest(BaseModel):
     requirement: str = Field(min_length=10, max_length=20000)

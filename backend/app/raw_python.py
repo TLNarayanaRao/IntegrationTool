@@ -54,7 +54,7 @@ SUPPORTED = {
 STRUCTURAL = {'start', 'end', 'log', 'mapper', 'call_task', 'catch', 'throw', 'rethrow'}
 STRUCTURAL_ONLY = {'start', 'end', 'catch'}
 SUPPORTED_GROUP_TYPES = {'if', 'for_each', 'iterate', 'while', 'repeat', 'repeat_on_error',
-                         'critical_section', 'transaction_jdbc'}
+                         'critical_section', 'transaction_jdbc', 'scope', 'none'}
 ACTIVITY_CAPABILITY_BY_KIND = {
     'timer': 'timer', 'confirm': 'confirm', 'throw': 'faults', 'rethrow': 'faults',
     'log': 'log', 'basic': 'basic', 'mapper': 'mapper', 'call_task': 'call_task',
@@ -414,8 +414,13 @@ def _simple_group_plans(task: dict) -> list[dict]:
             plans.extend(compiled)
         return plans
     if len(groups) != 1 or groups[0].get('type') not in SUPPORTED_GROUP_TYPES or groups[0].get('parent_group_id'):
-        raise ValueError(f"{task['name']}: nested or unsupported groups are not yet supported by independent Python code")
+        raise ValueError(f"{task['name']}: this group requires the engine-backed Python export")
     group = groups[0]
+    cfg = group.get('config') or {}
+    if cfg.get('localVariables') or cfg.get('faultHandlers'):
+        raise ValueError(f"{task['name']}: local variables and scope fault handlers require the engine-backed Python export")
+    if group['type'] in {'scope', 'none'}:
+        return []
     members = set(group.get('member_activity_ids') or [])
     if not members: raise ValueError(f"{task['name']}: If group is empty")
     transitions = task.get('transitions') or []
@@ -437,12 +442,11 @@ def _simple_group_plans(task: dict) -> list[dict]:
         pending.extend(edge['target'] for edge in transitions if edge['source'] == member and edge['target'] in members)
     if reachable != members:
         raise ValueError(f"{task['name']}: direct group has disconnected members")
-    cfg = group.get('config') or {}
     expression = _condition_source(str(cfg.get('condition') or '')) if group['type'] in {'if', 'while'} or group['type'] == 'repeat' and cfg.get('condition') else ''
     if group['type'] == 'repeat' and not expression and cfg.get('count', cfg.get('iterations')) is None:
         raise ValueError(f"{task['name']}: Repeat group needs a condition or count")
     if group['type'] == 'repeat_on_error':
-        expression = _condition_source(str(cfg.get('stopCondition') or ''))
+        expression = _condition_source(str(cfg.get('stopCondition') or ('false' if cfg.get('resetOnRetry') is True else '')))
     if group['type'] in {'for_each', 'iterate'}:
         if cfg.get('collection', cfg.get('source')) in (None, '') and not (group['type'] == 'for_each' and cfg.get('start') is not None and cfg.get('end') is not None):
             raise ValueError(f"{task['name']}: collection group needs a source or numeric range")
@@ -714,6 +718,8 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     files = {f'application/{name}': (root / name).read_bytes()
              for name in ('__init__.py', 'diagnostics.py', 'qualification.py')}
     files['application/flow_graph.py'] = Path(__file__).with_name('flow_graph.py').read_bytes()
+    if any(group['type'] in {'for_each', 'iterate'} for task in project['tasks'] for group in task.get('groups') or []):
+        files['application/group_execution.py'] = Path(__file__).with_name('group_execution.py').read_bytes()
     core_source = _filter_capability_blocks((root / 'core.py').read_text(encoding='utf-8'), capabilities)
     core_source = core_source.replace('from .native.mapping_literals import parse_literal', Path(__file__).with_name('mapping_literals.py').read_text(encoding='utf-8'))
     core_source = core_source.replace('from .retry_policy import ActivityCircuits, CircuitPlan, RetryPlan, outbound_activity, retry_boolean', Path(__file__).with_name('retry_policy.py').read_text(encoding='utf-8'))
@@ -939,7 +945,9 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         lines = [
             '"""Direct async implementation of this MINA task."""',
             'import asyncio',
+            *(['from copy import deepcopy'] if any(plan['config'].get('resetOnRetry') or plan['config'].get('preservePayload') for plan in group_plans) else []),
             'from application.flow_graph import parallel_plan, execute_parallel',
+            *(['from application.group_execution import iteration_items'] if any(plan['type'] in {'for_each', 'iterate'} for plan in group_plans) else []),
             f'from application.core import {", ".join(core_imports)}',
             *(['from application.native.jdbc import jdbc_adapter'] if any(plan['type'] == 'transaction_jdbc' for plan in group_plans) else []),
             '',
@@ -964,6 +972,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
                 '    group_items = {}', '    group_indices = {}',
                 '    transaction_connections = {}', '    transaction_resources = {}',
                 '    critical_locks = {}', '    retry_remaining = {}', '    retry_iterations = {}',
+                '    group_payloads = {}', '    retry_snapshots = {}',
             ]
         if project.get('custom_functions'):
             lines.insert(lines.index('    while current is not None:'), f'    ctx.attributes["customFunctions"] = {project["custom_functions"]!r}')
@@ -1023,12 +1032,13 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
                 index_name = str(cfg.get('indexVariable') or 'index')
                 lines.extend([
                     f'        if current == {plan["entry"]!r} and {group_id!r} not in retry_remaining:',
+                    *([f'            retry_snapshots[{group_id!r}] = deepcopy((ctx.last, ctx.variables))'] if cfg.get('resetOnRetry') is True else []),
                     f'            retry_remaining[{group_id!r}] = max(0, int(resolve({_direct_literal(cfg.get("retryCount", cfg.get("retries", 3)))}, ctx)))',
                     f'            retry_iterations[{group_id!r}] = 1',
                     f'            ctx.variables[{index_name!r}] = retry_iterations[{group_id!r}]',
                     f"            ctx.variables['currentIndex'] = retry_iterations[{group_id!r}]",
                 ])
-            else:
+            elif plan['type'] in {'for_each', 'iterate'}:
                 cfg = plan['config']
                 group_id = plan['id']
                 source = cfg.get('collection', cfg.get('source'))
@@ -1044,7 +1054,8 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
                     f'        if current == {plan["entry"]!r}:',
                     f'            if {group_id!r} not in group_items:',
                     f'                group_source = {source_expr}',
-                    f'                group_items[{group_id!r}] = list(group_source.values()) if isinstance(group_source, dict) else list(group_source or [])',
+                    f'                group_items[{group_id!r}] = iteration_items(group_source, resolve({_direct_literal(cfg.get("batchSize", 1))}, ctx))',
+                    *([f'                group_payloads[{group_id!r}] = deepcopy(ctx.last)'] if cfg.get('preservePayload') is True else []),
                     f'                group_indices[{group_id!r}] = 0',
                 ])
                 if cfg.get('accumulateOutput'):
@@ -1053,6 +1064,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
                     f'            if group_indices[{group_id!r}] >= len(group_items[{group_id!r}]):',
                     f'                group_items.pop({group_id!r}, None)',
                     f'                group_indices.pop({group_id!r}, None)',
+                    *([f'                ctx.last = group_payloads.pop({group_id!r})'] if cfg.get('preservePayload') is True else []),
                     f'                current = {plan["exit_target"]!r}',
                     '                continue',
                     f'            if group_indices[{group_id!r}] >= int(resolve({_direct_literal(cfg.get("maxIterations", 10000))}, ctx)):',
@@ -1134,6 +1146,15 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
                         f"                    ctx.variables['currentIndex'] = retry_iterations[{group_id!r}]",
                         f'                    if not ({plan["expression"]}):',
                     ])
+                    if cfg.get('resetOnRetry') is True:
+                        lines.extend([
+                            "                        group_error = {'type': getattr(error, 'fault_type', type(error).__name__), 'code': str(getattr(error, 'code', '') or ''), 'message': str(error), 'details': getattr(error, 'details', {})}",
+                            f'                        ctx.last, group_variables = deepcopy(retry_snapshots[{group_id!r}])',
+                            '                        ctx.variables.clear()',
+                            "                        ctx.variables.update(group_variables, error=group_error)",
+                            f'                        ctx.variables[{index_name!r}] = retry_iterations[{group_id!r}]',
+                            f"                        ctx.variables['currentIndex'] = retry_iterations[{group_id!r}]",
+                        ])
                     for member in sorted(plan['members']):
                         lines.append(f'                        ctx.outputs.pop({member!r}, None)')
                     lines.extend([
@@ -1218,7 +1239,8 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
                 elif retry_exit:
                     group_id = retry_exit['id']
                     lines.extend([f'                retry_remaining.pop({group_id!r}, None)',
-                                  f'                retry_iterations.pop({group_id!r}, None)', f'                current = {ordinary!r}'])
+                                  f'                retry_iterations.pop({group_id!r}, None)',
+                                  f'                retry_snapshots.pop({group_id!r}, None)', f'                current = {ordinary!r}'])
                 else:
                     lines.append(f'                current = {ordinary!r}')
         lines.extend([

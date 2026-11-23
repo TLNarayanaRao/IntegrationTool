@@ -75,6 +75,19 @@ async def run_task(task_id: str, payload: Any = None, environment_name: str = 'l
     return result.output
 
 
+async def _drain_background() -> None:
+    # Finite command-line runs must allow scheduled background work to finish
+    # before asyncio closes their event loop.
+    while RUNTIME._detached_runs:
+        await asyncio.gather(*tuple(RUNTIME._detached_runs), return_exceptions=True)
+
+
+async def _run_cli_task(task_id, payload, environment):
+    result = await run_task(task_id, payload, environment)
+    await _drain_background()
+    return result
+
+
 def _event_available(output: Any) -> bool:
     if not isinstance(output, dict): return output is not None
     if output.get('scheduledTime'): return True
@@ -212,6 +225,7 @@ async def run_application(environment_name: str = 'local') -> None:
             jobs.append(_receive_forever(project, task, event, environment_name))
     if http_listeners: jobs.append(_serve_http(project, http_listeners, environment_name))
     await asyncio.gather(*jobs)
+    await _drain_background()
     if os.environ.get('MINA_DEPLOYMENT_ID'):
         await asyncio.Event().wait()
 
@@ -225,7 +239,7 @@ def main() -> int:
     logging.basicConfig(level=os.environ.get('MINA_LOG_LEVEL', 'INFO'), format='%(asctime)s %(levelname)s %(message)s')
     try:
         if args.task:
-            print(json.dumps(asyncio.run(run_task(args.task, json.loads(args.input), args.environment)), default=str))
+            print(json.dumps(asyncio.run(_run_cli_task(args.task, json.loads(args.input), args.environment)), default=str))
         else:
             asyncio.run(run_application(args.environment))
     except KeyboardInterrupt:

@@ -4,7 +4,7 @@ import test from 'node:test';
 import ts from 'typescript';
 const source=await readFile(new URL('../src/taskEditors.ts',import.meta.url),'utf8');
 const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText;
-const {closeTaskEditors}=await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+const {closeTaskEditors,rememberClosedTaskEditors}=await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
 
 test('closing the only editor leaves no active editor and does not reopen a task',()=>{
  assert.deepEqual(closeTaskEditors(['a'],'a','a','one'),{openIds:[],activeTaskId:null});
@@ -25,4 +25,11 @@ test('close left, right and others preserve their intended editors',()=>{
  assert.deepEqual(closeTaskEditors(ids,'a','b','left'),{openIds:['b','c'],activeTaskId:'b'});
  assert.deepEqual(closeTaskEditors(ids,'b','b','right'),{openIds:['a','b'],activeTaskId:'b'});
  assert.deepEqual(closeTaskEditors(ids,'a','b','others'),{openIds:['b'],activeTaskId:'b'});
+});
+test('recently closed tabs favor the active tab on bulk close and keep a bounded history',()=>{
+ const previous=Array.from({length:15},(_,i)=>`older-${i}`);
+ const history=rememberClosedTaskEditors(previous,['a','b','c'],[],'b');
+ assert.deepEqual(history.slice(0,4),['b','c','a','older-0']);
+ assert.equal(history.length,15);
+ assert.deepEqual(rememberClosedTaskEditors(['b','a'],['b','c'],['b'],'c'),['c','a']);
 });

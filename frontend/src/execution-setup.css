@@ -1,0 +1,82 @@
+.execution-setup {
+  width: min(48rem, 100%);
+  max-height: calc(100dvh - 24px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.execution-setup :is(header, footer, nav, .execution-setup-controls) {
+  display: flex;
+  align-items: center;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 0.55em;
+  padding: 0.65em 0.9em;
+}
+.execution-setup header { justify-content: space-between; border-bottom: 1px solid var(--line); }
+.execution-setup h2 { margin: 0; font-size: 1.15em; }
+.execution-setup header svg { display: block; width: 1em; height: 1em; }
+.execution-setup main { min-height: 0; overflow: auto; padding: 0.6em 0.9em; }
+.execution-setup label { display: grid; gap: 0.3em; min-width: 0; }
+.execution-setup-controls label { flex: 1 1 9em; }
+.execution-setup :is(select, textarea, button, input[type="file"]) {
+  max-width: 100%;
+  min-width: 0;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.4em 0.55em;
+  font: inherit;
+}
+.execution-setup textarea { min-height: 7em; resize: vertical; font-family: monospace; }
+.execution-setup button:not(:disabled) { cursor: pointer; }
+.execution-setup button[aria-pressed="true"], .execution-setup button.primary { border-color: var(--accent); }
+.execution-setup :focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.execution-setup .execution-setup-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 0.6em; margin-block: 0.6em; }
+.execution-setup .execution-setup-capture { display: flex; align-items: center; gap: 0.4em; }
+.execution-setup footer { justify-content: end; border-top: 1px solid var(--line); }
+.execution-setup ul { list-style: none; padding: 0; margin: 0 0 0.55em; }
+.execution-setup li { display: flex; gap: 0.45em; align-items: center; justify-content: space-between; flex-wrap: wrap; border-top: 1px solid var(--line); padding: 0.35em 0; }
+.execution-setup li small { display: block; color: var(--muted); }
+.execution-setup li span { flex: 1 1 13em; min-width: 0; overflow-wrap: anywhere; }
+.execution-setup :is(code, p) { overflow-wrap: anywhere; }
+.subtask-input-editor { display: grid; gap: 0.6em; margin-block: 0.7em; }
+.subtask-input-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 0.7em; }
+.subtask-input-field { display: flex; align-items: end; gap: 0.4em; min-width: 0; }
+.subtask-input-field > label { flex: 1; overflow-wrap: anywhere; }
+.subtask-input-field small { display: block; color: var(--muted); }
+.execution-setup .subtask-input-field :is(input, textarea) {
+  min-width: 0;
+  min-height: 0;
+  padding: 0.4em 0.55em;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: inherit;
+}
+.execution-setup .subtask-input-field textarea { min-height: 3.5em; font-family: monospace; }
+.subtask-test-output { min-width: 0; padding: 0.5em 0.75em; }
+.subtask-test-output label { display: grid; gap: 0.4em; }
+.subtask-test-output textarea {
+  width: 100%;
+  min-height: 4.5em;
+  padding: 0.35em 0.5em;
+  resize: vertical;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: monospace;
+}
+@media (max-height: 390px) {
+  .execution-setup main { flex: 0 0 auto; overflow: visible; }
+  .execution-setup header, .execution-setup footer { position: sticky; z-index: 1; background: var(--panel); }
+  .execution-setup header { top: 0; }
+  .execution-setup footer { bottom: 0; }
+}

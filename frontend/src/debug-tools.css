@@ -1,5 +1,5 @@
 .debug-bar { overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
-.debug-trace-dialog, .debug-launch-dialog {
+.debug-trace-dialog {
   width: min(1100px, calc(100vw - 24px));
   max-height: calc(100dvh - 24px);
   min-height: 0;
@@ -7,15 +7,13 @@
   flex-direction: column;
   overflow: hidden;
 }
-.debug-launch-dialog { width: min(550px, calc(100vw - 24px)); }
-.debug-trace-dialog > header, .debug-trace-dialog > footer,
-.debug-launch-dialog > header, .debug-launch-dialog > footer {
+.debug-trace-dialog > header, .debug-trace-dialog > footer {
   flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
-.debug-trace-dialog > main, .debug-launch-dialog > main {
+.debug-trace-dialog > main {
   min-height: 0;
   overflow: auto;
   padding: 12px;
@@ -37,8 +35,6 @@
 .debug-trace-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 8px; }
 .debug-trace-metrics > div { padding: 10px; border: 1px solid var(--line); border-radius: 6px; }
 .debug-trace-metrics dd { margin: 4px 0 0; font-weight: 600; }
-.debug-launch-dialog label { display: block; margin-block: 10px; }
-.debug-launch-dialog textarea { display: block; width: 100%; min-height: 95px; box-sizing: border-box; resize: vertical; font-family: monospace; }
 .debug-activity-test { grid-column: 1 / -1; }
 .debug-activity-test label { display: grid; gap: 5px; margin-top: 10px; }
 .debug-activity-test textarea { min-height: 90px; resize: vertical; font-family: Consolas, monospace; }

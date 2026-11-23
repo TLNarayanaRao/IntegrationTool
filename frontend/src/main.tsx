@@ -2,18 +2,22 @@ import ExecutionDock from "./ExecutionDock";
 import RuntimeStatus from "./RuntimeStatus";
 import ModalLayer from "./ModalLayer";
 import IntegrationLibraries, { type LibraryOrigin, type LibraryPin } from "./IntegrationLibraries";
-import DebugTraceDialog, { DebugLaunchDialog } from "./DebugTraceDialog";
+import DebugTraceDialog from "./DebugTraceDialog";
+import ExecutionSetupDialog from "./ExecutionSetupDialog";
+import { propertyReferences, type LaunchMode, type LaunchOptions, type SubtaskInputFormat } from "./executionSetup";
 import ApiBlueprint from "./ApiBlueprint";
-import { closeTaskEditors, type CloseEditorsMode } from "./taskEditors";
-import { isEventActivity, taskEntryLabels, taskEntryMode } from "./taskEntry";
+import { closeTaskEditors, rememberClosedTaskEditors, type CloseEditorsMode } from "./taskEditors";
+import StudioCommands, { type StudioCommand } from "./StudioCommands";
+import { isEventActivity, taskEntryActivities, taskEntryLabels, taskEntryMode } from "./taskEntry";
 import TaskEntryIcon from "./TaskEntryIcon";
 import ActivityIcon from "./ActivityIcon";
 import { activityIconAsset, connectionIconUrl } from "./studioIcons";
 import { resolveWorkspaceSubtask, schemaObjectName, studioNameKey, studioObjectName, workspaceNameConflict } from "./studioObjectName";
 import { isTaskSelectionChange, locationKey, navigationIndex, recentNavigationEntries, rememberLocation, type StudioLocation, type StudioNavigation } from "./studioNavigation";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, Focus, Maximize } from "lucide-react";
 import EditorNavigation, { RecentLocations } from "./EditorNavigation";
 import ProjectSearch from "./ProjectSearchDialog";
+import { describeGroupWiring, groupCatalog, groupCategories, groupTypes, type GroupType } from "./groupDesigner";
 import type { InputTargetRequest } from "./InputTargetSearch";
 import ValidationReview, { type ValidationIssue } from "./ValidationReview";
 import type { ReferenceTarget, SearchLocation } from "./projectSearch";
@@ -83,6 +87,7 @@ import { DEFAULT_PACKAGE, PackageDialog as ObjectPackageDialog, PackageTree, art
 import HomeRoutes from "./HomeRoutes";
 import ActivityPicker from "./ActivityPicker";
 import CanvasMagnifier from "./CanvasMagnifier";
+import { centeredCanvasScroll, fitCanvasView, MAX_CANVAS_ZOOM, MIN_MANUAL_CANVAS_ZOOM, type CanvasPoint } from "./canvasViewport";
 import DataNodeIcon from "./DataNodeIcon";
 import DebugActivityTree from "./DebugActivityTree";
 import DebugJobData from "./DebugJobData";
@@ -198,7 +203,7 @@ type Task = {
   groups?: GroupDefinition[];
   library_origin?: LibraryOrigin | null;
 };
-type GroupDefinition = { id: string; type: "if" | "while" | "for_each" | "iterate" | "repeat" | "repeat_on_error" | "scope" | "none" | "critical_section" | "transaction_jdbc" | "pick_first"; name: string; member_activity_ids: string[]; config: Record<string, any>; position: { x: number; y: number }; size?: { width: number; height: number }; parent_group_id?: string | null };
+type GroupDefinition = { id: string; type: GroupType; name: string; member_activity_ids: string[]; config: Record<string, any>; position: { x: number; y: number }; size?: { width: number; height: number }; parent_group_id?: string | null };
 
 // Route transitions from the nearest facing sides of each activity. For a
 // diagonal connection, the final Bézier tangent follows the overall approach
@@ -1308,13 +1313,18 @@ const normalizeProject = (value: any): Project => {
   next.properties = source.properties && typeof source.properties === "object" ? source.properties : structuredClone(envs);
   return normalizeObjectNames(next);
 };
-const propertyReferences = (value: any) => [...JSON.stringify(value ?? {}).matchAll(/\$\{properties\.([^}]+)\}/g)].map((match) => match[1]);
-const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[] => {
+const validateTaskDefinition = (project: Project, task: Task, environment = project.active_environment): ValidationIssue[] => {
   if (task.library_origin) return [];
   const issues: ValidationIssue[] = [], ids = new Set(task.activities.map((item) => item.id));
   const add = (severity: ValidationIssue["severity"], category: string, message: string, remedy: string, activityId?: string, target?: ValidationIssue["target"]) =>
     issues.push({ id: `${task.id}-${issues.length}`, severity, category, message, remedy, taskId: task.id, activityId, target });
-  const events = task.activities.filter(isEventActivity);
+  const events = taskEntryActivities(task.activities, task.transitions);
+  const properties = new Map((project.properties[environment] || []).map(property => [property.key, property.value]));
+  const configuredConnectionId = (value: unknown) => {
+    if (typeof value !== "string") return undefined;
+    const key = propertyBindingKey(value);
+    return key ? String(properties.get(key) ?? "").trim() || undefined : value.includes("${") ? undefined : value;
+  };
   const activityNames = new Map<string, string[]>();
   task.activities.forEach((item) => {
     const name = String(item.name || "").trim().toLowerCase();
@@ -1349,14 +1359,14 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
       memberships.set(activityId, group.id);
     });
     if (["if", "while"].includes(group.type) && !String(group.config.condition || "").trim()) add("error", "Group", `${group.name} requires a condition.`, "Configure a boolean condition expression.");
-    if (["for_each", "iterate"].includes(group.type) && group.config.source === undefined && group.config.collection === undefined && !(group.type === "for_each" && group.config.start !== undefined && group.config.end !== undefined)) add("error", "Group", `${group.name} requires an iteration source.`, "Map a collection expression or configure a For Each counter range.");
-    if (["for_each", "iterate"].includes(group.type) && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(String(group.config.currentElementName || group.config.itemVariable || "currentElement"))) add("error", "Group", `${group.name} has an invalid current element name.`, "Use a variable name beginning with a letter or underscore.");
+    if (["for_each", "iterate", "parallel_for_each"].includes(group.type) && !String(group.config.source ?? group.config.collection ?? "").trim() && !Array.isArray(group.config.source ?? group.config.collection) && !(group.type === "for_each" && group.config.start !== undefined && group.config.end !== undefined)) add("error", "Group", `${group.name} requires an iteration source.`, "Map a collection expression or configure a For Each counter range.");
+    if (["for_each", "iterate", "parallel_for_each"].includes(group.type) && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(String(group.config.currentElementName || group.config.itemVariable || "currentElement"))) add("error", "Group", `${group.name} has an invalid current element name.`, "Use a variable name beginning with a letter or underscore.");
     if (group.type === "repeat" && !String(group.config.condition || "").trim() && group.config.count === undefined) add("error", "Group", `${group.name} requires a stop condition.`, "Configure the Repeat Until True condition.");
-    if (group.type === "repeat_on_error" && !String(group.config.stopCondition || "").trim()) add("error", "Group", `${group.name} requires an error stop condition.`, "Map a boolean condition. False retries after an error; true propagates the error without another retry.");
+    if (group.type === "repeat_on_error" && !group.config.resetOnRetry && !String(group.config.stopCondition || "").trim()) add("error", "Group", `${group.name} requires an error stop condition.`, "Map a boolean stop condition or enable isolated retries.");
     if (group.type === "repeat_on_error" && (group.config.retryCount === undefined || group.config.retryIntervalSeconds === undefined)) add("error", "Group", `${group.name} requires retry policy expressions.`, "Map retry count and interval from environment properties or constants.");
     if (group.type === "transaction_jdbc") {
-      const resourceId = group.config.resourceId;
-      if (!resourceId || !project.resources.some((resource) => resource.id === resourceId && resource.type === "jdbc")) add("error", "Group", `${group.name} requires one JDBC connection.`, "Select the JDBC resource used by every JDBC activity in this transaction.");
+      const resourceId = configuredConnectionId(group.config.resourceId);
+      if (!group.config.resourceId || resourceId && !project.resources.some((resource) => resource.id === resourceId && resource.type === "jdbc")) add("error", "Group", `${group.name} requires one JDBC connection.`, "Select the JDBC resource used by every JDBC activity in this transaction.");
     }
     const descendantMembers = (groupId: string, seen = new Set<string>()): Set<string> => {
       if (seen.has(groupId)) return new Set(); seen.add(groupId);
@@ -1368,13 +1378,23 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
     const internalTargets = new Set(task.transitions.filter((edge) => members.has(edge.source) && members.has(edge.target)).map((edge) => edge.target));
     const externalEntries = new Set(task.transitions.filter((edge) => !members.has(edge.source) && members.has(edge.target)).map((edge) => edge.target));
     const entries = externalEntries.size ? externalEntries : new Set([...members].filter((id) => !internalTargets.has(id)));
-    const exits = new Set(task.transitions.filter((edge) => members.has(edge.source) && !members.has(edge.target)).map((edge) => edge.source));
-    if (members.size && entries.size !== 1) add("error", "Group", `${group.name} has ${entries.size} graph entries.`, "Connect the group as one single-entry execution region.");
-    if (members.size && exits.size !== 1) add("error", "Group", `${group.name} has ${exits.size} graph exits.`, "Connect the group as one single-exit execution region.");
+    const exits = task.transitions.filter(edge => members.has(edge.source) && !members.has(edge.target));
+    const entryEdges = task.transitions.filter(edge => !members.has(edge.source) && members.has(edge.target));
+    const multiRoute = group.type === "scatter_gather" || group.type === "first_successful";
+    const isRouted = multiRoute || group.type === "parallel_for_each" || group.type === "async";
+    if (multiRoute && (entries.size < 2 || new Set(entryEdges.map(edge => edge.source)).size !== 1 || entryEdges.some(edge => edge.type && edge.type !== "success"))) add("error", "Group", `${group.name} needs at least two routes from one preceding activity.`, "Use unconditional transitions into separate routes.");
+    if (isRouted && (new Set(exits.map(edge => edge.target)).size !== 1 || exits.some(edge => edge.type && edge.type !== "success"))) add("error", "Group", `${group.name} needs one common continuation.`, "Connect each route to the same activity outside the group using unconditional transitions.");
+    if (group.type === "async" && group.parent_group_id) add("error", "Group", `${group.name} must be top level.`, "Move the background group outside its parent.");
+    if (members.size && !multiRoute && group.type !== "pick_first" && entries.size !== 1) add("error", "Group", `${group.name} has ${entries.size} graph entries.`, "Connect the group as one single-entry execution region.");
+    const exitSources = new Set(exits.map(edge => edge.source));
+    if (!exitSources.size) for (const id of members) if (!task.transitions.some(edge => edge.source === id && members.has(edge.target))) exitSources.add(id);
+    if (members.size && !multiRoute && group.type !== "pick_first" && exitSources.size !== 1) add("error", "Group", `${group.name} has ${exitSources.size} graph exits.`, "Connect the group as one single-exit execution region.");
+    if (Array.isArray(group.config.faultHandlers) && group.config.faultHandlers.some(handler => handler.action === "continue") && (exits.length !== 1 || (exits[0].type && exits[0].type !== "success"))) add("error", "Group", `${group.name} needs one unconditional exit to continue after a fault.`, "Connect a single Success transition to the next activity.");
   });
   const connectionTypes = new Set(["jdbc", "snowflake", "amqp", "ftp", "sftp", "http", "ems", "jms", "kafka", "pubsub", "sap"]);
   task.activities.forEach((item) => {
     const operation = item.config.operation || "";
+    const connectionId = configuredConnectionId(item.config.resourceId);
     for (const issue of activityMappingIssues(item,task,project.tasks,project.schemas,project.resources)) {
       add('error','Input mapping',`${item.name} / ${issue.path}: ${issue.error}`,'Review this field in the Input tab before exporting or deploying.',item.id,{kind:"input",field:issue.target});
     }
@@ -1384,7 +1404,7 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
       if (mode === "cron" && !String(item.config.cronExpression || "").trim()) add("error", "Scheduler", `${item.name} has no cron expression.`, "Enter a five-field cron expression.", item.id);
     }
     if (connectionTypes.has(item.type) && !item.config.resourceId && !["http_listener", "start", "end"].includes(item.type)) add("error", "Connection", `${item.name} has no shared connection.`, "Select a compatible shared connection in Configuration.", item.id);
-    if (item.config.resourceId && !project.resources.some((resource) => resource.id === item.config.resourceId)) add("error", "Connection", `${item.name} references a missing shared connection.`, "Select an existing connection or create one under Resources.", item.id);
+    if (connectionId && !project.resources.some((resource) => resource.id === connectionId)) add("error", "Connection", `${item.name} references a missing shared connection.`, "Select an existing connection or create one under Resources.", item.id);
     if (item.type === "call_task") {
       const dynamic = String(item.config.dynamicTaskId || "").trim();
       const fallbackValid = project.tasks.some((candidate) => candidate.id === item.config.taskId && candidate.kind === "subtask");
@@ -1417,15 +1437,16 @@ const validateTaskDefinition = (project: Project, task: Task): ValidationIssue[]
     if (item.type === "sap" && operation.includes("idoc")) {
       // Match the runtime's shared-connection inheritance. A fetched IDoc is
       // often selected on the connection, not copied into every activity.
-      const connection = project.resources.find((resource) => resource.id === item.config.resourceId && resource.type === "sap");
+      const connection = project.resources.find((resource) => resource.id === connectionId && resource.type === "sap");
       const sapConfig = { ...(connection?.config || {}), ...item.config };
       const selectedIdoc = sapConfig.idocCatalog?.find((entry: any) => entry.idocType === sapConfig.idocType) || sapConfig.selectedIdoc;
       const idocType = sapConfig.idocType || selectedIdoc?.idocType;
       if (!String(idocType || "").trim()) add("error", "SAP IDoc configuration", `${item.name} has no IDoc type configured or inherited from its SAP connection.`, "Retrieve and select an IDoc type on the selected SAP shared connection, or select one in activity Configuration. Input mappings are not required for a listener; a parser can consume the previous activity output.", item.id);
     }
     if (item.type === "sap" && operation === "idoc_listener" && !["", "nomessaging", "direct"].includes(String(item.config.messagingSource || "NoMessaging").toLowerCase().replace(/\s/g, ""))) {
+      const messagingId = configuredConnectionId(item.config.messagingResourceId);
       if (!item.config.messagingResourceId) add("error", "SAP IDoc messaging", `${item.name} has no messaging shared connection.`, "Select the EMS, JMS, or Kafka connection used by the IDoc bridge.", item.id);
-      else if (project.resources.find((resource) => resource.id === item.config.messagingResourceId)?.type !== String(item.config.messagingSource).toLowerCase()) add("error", "SAP IDoc messaging", `${item.name} has a mismatched messaging connection.`, `Select a ${item.config.messagingSource} shared connection.`, item.id);
+      else if (messagingId && project.resources.find((resource) => resource.id === messagingId)?.type !== String(item.config.messagingSource).toLowerCase()) add("error", "SAP IDoc messaging", `${item.name} has a mismatched messaging connection.`, `Select a ${item.config.messagingSource} shared connection.`, item.id);
       if (!String(item.config.messagingDestination || "").trim()) add("error", "SAP IDoc messaging", `${item.name} has no queue or topic.`, "Configure the bridge queue/topic carrying the flat or XML IDoc.", item.id);
     }
     if (item.type === "sap" && ["post_idoc", "idoc_reader", "invoke_rfc_bapi"].includes(operation)) {
@@ -1497,6 +1518,7 @@ function App() {
     [connectionDialog, setConnectionDialog] = useState<{ kind: ConnectionKind; select?: (resource: Resource) => void; path?: string } | null>(null),
     [pendingEndpoint, setPendingEndpoint] = useState<{ definition: Def; position?: ActivityPlacement } | null>(null),
     [editingConnection, setEditingConnection] = useState<Resource | null>(null),
+    [connectionReviewProfile, setConnectionReviewProfile] = useState<{id: string; environment: string} | null>(null),
     [schemaEditor, setSchemaEditor] = useState<SchemaDoc | "new" | null>(null),
     [schemaPackage, setSchemaPackage] = useState(DEFAULT_PACKAGE),
     [objectPackageDialog, setObjectPackageDialog] = useState<{ category: PackageCategory; parent?: string; itemId?: string; moving?: string; renaming?: string } | null>(null),
@@ -1511,7 +1533,9 @@ function App() {
     [debugState, setDebugState] = useState<any>(null),
     [jobDataOpen, setJobDataOpen] = useState(false),
     [debugToolsOpen, setDebugToolsOpen] = useState(false),
-    [debugLaunchOpen, setDebugLaunchOpen] = useState(false),
+    [launchMode, setLaunchMode] = useState<LaunchMode | null>(null),
+    [launchTaskId, setLaunchTaskId] = useState<string>(),
+    [executionEnvironment, setExecutionEnvironment] = useState<string>(),
     [debugTraceTab, setDebugTraceTab] = useState<"threads" | "metrics" | null>(null),
     [debugReview, setDebugReview] = useState<{ projectId: string; sessionId: string } | null>(null),
     [debugCommandError, setDebugCommandError] = useState(""),
@@ -1534,6 +1558,7 @@ function App() {
     [quickAddDrag, setQuickAddDrag] = useState<{ source: string; startClientX: number; startClientY: number; x: number; y: number; pointerId: number } | null>(null),
     [edgeRewire, setEdgeRewire] = useState<{ edgeId: string; endpoint: "source" | "target"; fixedId: string; x: number; y: number } | null>(null),
     [groupEditor, setGroupEditor] = useState<string | "new" | null>(null),
+    [newGroup, setNewGroup] = useState<{ draft: GroupDefinition; children: string[] } | null>(null),
     [openTaskIds, setOpenTaskIds] = useState<string[]>([initial.active_task_id]),
     [taskTabMenu, setTaskTabMenu] = useState<{ taskId: string; x: number; y: number } | null>(null);
   const [utilityMode, setUtilityMode] = useState<UtilityMode | null>(null);
@@ -1543,6 +1568,8 @@ function App() {
   const debugActionRevision = useRef(0);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState<{ target?: ReferenceTarget } | null>(null);
+  const [commandsOpen, setCommandsOpen] = useState(false);
+  const [closedTaskIds, setClosedTaskIds] = useState<string[]>([]);
   const propertySearchKey = useRef<string | undefined>(undefined);
   const [monitorMode, setMonitorMode] = useState<"normal" | "expanded" | "fullscreen">("normal");
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -1596,6 +1623,50 @@ function App() {
       () => Object.fromEntries(nodes.map((n) => [n.id, n])),
       [nodes],
     );
+  const pendingCanvasView = useRef<{ surface: HTMLDivElement; center: CanvasPoint } | null>(null);
+  const setCanvasView = (surface: HTMLDivElement, nextZoom: number, center: CanvasPoint) => {
+    if (nextZoom === zoom) {
+      surface.scrollTo(centeredCanvasScroll(center, { width: surface.clientWidth, height: surface.clientHeight }, zoom));
+    } else {
+      pendingCanvasView.current = { surface, center };
+      setZoom(nextZoom);
+    }
+  };
+  React.useLayoutEffect(() => {
+    const view = pendingCanvasView.current;
+    pendingCanvasView.current = null;
+    if (!view || view.surface !== canvas.current) return;
+    const { surface, center } = view;
+    surface.scrollTo(centeredCanvasScroll(center, { width: surface.clientWidth, height: surface.clientHeight }, zoom));
+  }, [zoom]);
+  const zoomCanvas = (nextZoom: number) => {
+    const surface = canvas.current;
+    if (!surface) return;
+    setCanvasView(surface, nextZoom, {
+      x: (surface.scrollLeft + surface.clientWidth / 2) / zoom,
+      y: (surface.scrollTop + surface.clientHeight / 2) / zoom,
+    });
+  };
+  const fitCanvas = (selectionOnly: boolean) => {
+    const surface = canvas.current;
+    const content = surface?.querySelector(".canvas-content");
+    if (!surface || !content) return;
+    const selector = selectionOnly
+      ? ".node.selected, .node.selected strong, .transition-edge.selected .edge-line, .transition-edge.selected .edge-label"
+      : ".node, .node strong, .execution-group, .edge-line, .edge-label";
+    const origin = content.getBoundingClientRect();
+    const bounds = Array.from(content.querySelectorAll(selector), element => {
+      const rect = element.getBoundingClientRect();
+      return {
+        left: (rect.left - origin.left) / zoom, top: (rect.top - origin.top) / zoom,
+        right: (rect.right - origin.left) / zoom, bottom: (rect.bottom - origin.top) / zoom,
+      };
+    });
+    const view = fitCanvasView(bounds, { width: surface.clientWidth, height: surface.clientHeight }, 1);
+    if (view) setCanvasView(surface, view.zoom, view.center);
+  };
+  const canFitTask = !!(nodes.length || task.groups?.length);
+  const canFitSelection = !!(selectedIds.length || edge);
   const entryMode = taskEntryMode(task);
   const groupLayout = useMemo(() => {
     const groups = task.groups || [];
@@ -1651,17 +1722,7 @@ function App() {
     });
     return schemaId;
   };
-  const createGroup = () => {
-    if (!selectedIds.length) { setLogs([{ level: "WARN", message: "Select the connected activities that belong to the group first." }]); return; }
-    const id = `group-${Date.now()}`, existing = task.groups || [];
-    const selectedSet = new Set(selectedIds);
-    const childIds = existing.filter((group) => group.member_activity_ids.some((activityId) => selectedSet.has(activityId))).map((group) => group.id);
-    const owned = new Set(existing.flatMap((group) => group.member_activity_ids));
-    const directMembers = selectedIds.filter((activityId) => !owned.has(activityId) && byId[activityId] && !isEventActivity(byId[activityId]) && !["end", "catch"].includes(byId[activityId].type));
-    if (!directMembers.length && !childIds.length) { setLogs([{ level: "WARN", message: "Groups can contain executable activities, but not Start/event, End, or Catch boundaries." }]); return; }
-    mutateTask((current) => ({ ...current, groups: [...(current.groups || []).map((group) => childIds.includes(group.id) ? { ...group, parent_group_id: id } : group), { id, type: "scope", name: `Group ${(current.groups || []).length + 1}`, member_activity_ids: directMembers, config: {}, position: { x: 100, y: 100 }, size: { width: 420, height: 220 }, parent_group_id: null }] }));
-    setGroupEditor(id);
-  };
+  const createGroup = () => addGroup("scope", undefined, true);
   const [closed, setClosed] = useState(true),
     [theme, setTheme] = useState(
       () => {
@@ -1836,7 +1897,7 @@ function App() {
     localStorage.setItem("mina-theme", theme);
   }, [theme]);
   useEffect(() => localStorage.setItem("mina-explorer-width", String(explorerWidth)), [explorerWidth]);
-  useEffect(() => setSystemLogInfo(null), [project.id]);
+  useEffect(() => {setSystemLogInfo(null); setExecutionEnvironment(undefined);}, [project.id]);
   useEffect(() => {
     const missingEnd = project.tasks.some((item) => !item.activities.some(isTaskTerminal));
     if (missingEnd) setProject((current) => ({ ...current, tasks: current.tasks.map(ensureTaskEnd), process: undefined }));
@@ -1849,6 +1910,7 @@ function App() {
     setOpenTaskIds((current) => {
       return changedProject && available.has(project.active_task_id) ? [project.active_task_id] : current.filter((id) => available.has(id));
     });
+    setClosedTaskIds(current => changedProject ? [] : current.filter(id => available.has(id)));
   }, [project.id, project.active_task_id, project.tasks.map((item) => item.id).join("|")]);
   useEffect(() => {
     if (!taskTabMenu) return;
@@ -2110,6 +2172,7 @@ function App() {
     const t = project.tasks.find((t) => t.id === id);
     if (!t || t.library_origin) return false;
     setOpenTaskIds((current) => current.includes(id) ? current : [...current, id]);
+    setClosedTaskIds(current => current.includes(id) ? current.filter(item => item !== id) : current);
     setProject((p) => p.active_task_id === id ? p : { ...p, active_task_id: id });
     const first = t.activities.find(item => item.id === activityId)?.id || t.activities[0]?.id || "";
     setSelected(first);
@@ -2149,6 +2212,7 @@ function App() {
   }, [project.name, project.tasks, project.resources, project.schemas, project.object_packages]);
   const isNavigationAvailable = (location: StudioLocation) => navigationLabel(location) !== undefined;
   const applyNavigation = (location: StudioLocation) => {
+    setConnectionReviewProfile(null);
     setEditingConnection(null);
     setSchemaEditor(null);
     if (location.kind === "task") { openTaskLocation(location.id, location.activityId); return; }
@@ -2221,12 +2285,19 @@ function App() {
     breadcrumbAsset ? packagePath(breadcrumbAsset.package_path) : editorOpen ? packagePath(task.package_path) : "";
   const closeTaskTabs = (taskId: string, mode: CloseEditorsMode) => {
     const {openIds, activeTaskId} = closeTaskEditors(openTaskIds, project.active_task_id, taskId, mode);
+    setClosedTaskIds(current => rememberClosedTaskEditors(current, openTaskIds, openIds, project.active_task_id));
     setOpenTaskIds(openIds);
     if (activeTaskId && activeTaskId !== project.active_task_id) selectTask(activeTaskId);
     if (!activeTaskId) {
       setSelected(""); setSelectedIds([]); setSelectedEdge(null); setSelectedResource(null);
       setConnectionDraft(null); setSelectionBox(null); setQuickAddDrag(null); setEdgeRewire(null);
     }
+    setTaskTabMenu(null);
+  };
+  const lastClosedTaskId = closedTaskIds.find(id => !openTaskIds.includes(id) && project.tasks.some(item => item.id === id && !item.library_origin));
+  const lastClosedTask = lastClosedTaskId && project.tasks.find(item => item.id === lastClosedTaskId);
+  const reopenTaskTab = () => {
+    if (lastClosedTask) selectTask(lastClosedTask.id);
     setTaskTabMenu(null);
   };
   const createConnectionForField: CreateConnection = (kind, select) => setConnectionDialog({ kind, select });
@@ -2414,12 +2485,33 @@ function App() {
     setSelectedResource(null);
     setMenu(null);
   };
-  const addGroup = (groupType: GroupDefinition["type"], pos?: { x: number; y: number }) => {
-    const labels: Record<GroupDefinition["type"], string> = { if: "If", while: "While", for_each: "For Each", iterate: "Iterate", repeat: "Repeat", repeat_on_error: "Repeat on Error", scope: "Scope", none: "None", critical_section: "Critical Section", transaction_jdbc: "Transaction (JDBC)", pick_first: "Pick First" };
-    const memberIds = selectedIds.filter((id) => nodes.some((node) => node.id === id));
-    const group: GroupDefinition = { id: `group-${Date.now()}`, type: groupType, name: uniqueActivityName(studioObjectName(`${labels[groupType]} Group`), new Set((task.groups || []).map(group => studioNameKey(group.name)))), member_activity_ids: memberIds, config: {}, position: pos || { x: 100, y: 100 } };
-    mutateTask((current) => ({ ...current, groups: [...(current.groups || []), group] }));
-    setLogs([{ level: "INFO", message: `${group.name} created${memberIds.length ? ` around ${memberIds.length} selected activit${memberIds.length === 1 ? "y" : "ies"}` : "; select activities and edit membership in its configuration"}.` }]);
+  const addGroup = (groupType: GroupType, pos?: { x: number; y: number }, wrapSelected = false) => {
+    const existing = task.groups || [];
+    const owners = new Map(existing.flatMap(group => group.member_activity_ids.map(id => [id, group] as const)));
+    const selected = selectedIds.map(id => byId[id]).filter(item => item && !isEventActivity(item) && !["end", "catch", "http_response"].includes(item.type));
+    const members = selected.filter(item => !owners.has(item.id)).map(item => item.id);
+    const picked = wrapSelected ? existing.filter(group => group.type !== "async" && selected.some(item => owners.get(item.id)?.id === group.id)) : [];
+    const pickedIds = new Set(picked.map(group => group.id));
+    const roots = picked.filter(group => {
+      let parent = group.parent_group_id;
+      const seen = new Set([group.id]);
+      while (parent && !seen.has(parent)) {
+        seen.add(parent);
+        if (pickedIds.has(parent)) return false;
+        parent = existing.find(item => item.id === parent)?.parent_group_id;
+      }
+      return true;
+    });
+    const parents = new Set(roots.map(group => group.parent_group_id ?? null));
+    const children = parents.size === 1 && (!members.length || parents.has(null)) ? roots.map(group => group.id) : [];
+    const draft: GroupDefinition = {
+      id: `group-${Date.now()}`, type: groupType,
+      name: uniqueActivityName(studioObjectName(`${groupCatalog[groupType].label} Group`), new Set(existing.map(group => studioNameKey(group.name)))),
+      member_activity_ids: members, config: groupConfigDefaults(groupType), position: pos || { x: 100, y: 100 },
+      parent_group_id: children.length ? roots[0].parent_group_id : null,
+    };
+    setNewGroup({ draft, children });
+    setGroupEditor("new");
   };
   const createExceptionHandlers = (catchActivityId: string, exceptionTypes: string[]) => {
     const relevant = new Set(possibleTaskExceptions(task, project.tasks, project.schemas || []));
@@ -2638,6 +2730,13 @@ function App() {
   }, [node, edge, nodes, byId]);
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
+      if (!closed && !event.repeat && (event.ctrlKey || event.metaKey) && !event.altKey && event.shiftKey &&
+          event.key.toLowerCase() === "p" && !document.querySelector(".viewport-modal-layer")) {
+        event.preventDefault();
+        setMenu(null);
+        setCommandsOpen(true);
+        return;
+      }
       if (!closed && (event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "f" &&
           !document.querySelector(".viewport-modal-layer")) {
         event.preventDefault();
@@ -2678,6 +2777,7 @@ function App() {
     setDebugState(null); setRuntimeState({status:"starting"}); setBusy(true);
     setLogs([{level:"INFO",kind:"runtime",message:"Starting API host…"}]);setEndpoints([]);setExecutionOutputs({});
     try {
+      setExecutionEnvironment(project.active_environment);
       const response=await fetch(`/api/projects/${project.id}/run`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({task_id:taskId,environment:project.active_environment,input:{}})});
       const output=await response.json();
       if (attempt !== executionAttempt.current) return output;
@@ -2876,17 +2976,33 @@ function App() {
       throw error;
     } finally { setWorkStatus(""); }
   };
-  const run = async (requestedTaskId?: unknown) => {
+  const openExecutionSetup = (mode: LaunchMode, taskId = project.active_task_id) => {
+    setLaunchTaskId(taskId);
+    setLaunchMode(mode);
+  };
+  const checkSubtaskInput = async (taskId: string, input?: unknown, format?: SubtaskInputFormat, signal?: AbortSignal) => {
+    if (input === undefined) await persistProject();
+    const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/tasks/${encodeURIComponent(taskId)}/test-input`, {
+      method: "POST", headers: {"content-type": "application/json"}, signal,
+      body: JSON.stringify({input, input_format: format === "xml" ? format : undefined}),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "Could not validate Start input.");
+    return result;
+  };
+  const run = async (requestedTaskId?: unknown, launch?: LaunchOptions) => {
       if (!editorOpen && typeof requestedTaskId !== "string") { setLogs([{level: "INFO", message: "Open a task from Project Explorer before running it."}]); return; }
       const taskId = typeof requestedTaskId === "string" ? requestedTaskId : task.id;
+      const environment = launch?.environment || project.active_environment;
       const target = project.tasks.find(item => item.id === taskId);
-      if (target?.kind === "subtask") {
-        setLogs([{ level: "INFO", message: "Run a Starter Task to invoke this Subtask, or use Debug to test it directly." }]);
+      if (target?.kind === "subtask" && !launch?.testSubtask) {
+        openExecutionSetup("subtask", taskId);
         return;
       }
       const attempt = ++executionAttempt.current;
+      setExecutionEnvironment(environment);
       if (!editorOpen || project.active_task_id !== taskId) selectTask(taskId);
-      setAutoExecutionPanel(true); setExecutionPanelOpen(true); setMonitorMode("normal");
+      setAutoExecutionPanel(!launch?.testSubtask); setExecutionPanelOpen(true); setMonitorMode("normal");
       setDebugState(null); setEndpoints([]); setExecutionOutputs({});
       const startingLogs = [{level:"INFO",kind:"runtime",message:`Starting ${target?.name || taskId}…`}];
       setLogs(startingLogs); setRuntimeState({status:"starting",logs:startingLogs});
@@ -2898,9 +3014,10 @@ function App() {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            input: { orderId: "10001" },
-            environment: project.active_environment,
+            input: launch ? launch.input : {},
+            environment,
             task_id: taskId,
+            ...(launch?.testSubtask ? {test_subtask: true, input_format: launch.inputFormat === "xml" ? "xml" : undefined} : {}),
           }),
         }),
           out = await r.json();
@@ -2909,17 +3026,19 @@ function App() {
         setLogs(out.logs || [{ level: "ERROR", message: out.detail }]);
         setExecutionOutputs(out.activity_outputs || {});
         setEndpoints(out.endpoints || []);
-        setRuntimeState(out);
+        setRuntimeState(launch?.testSubtask ? {...out, subtaskTest: true} : out);
       } catch (error: any) {
         if (attempt !== executionAttempt.current) return;
         const entries = [{level:"ERROR",kind:"runtime",message:error?.message || "Run failed"}];
         setLogs(entries); setRuntimeState({status:"failed",logs:entries});
       } finally { if (attempt === executionAttempt.current) setBusy(false); }
     },
-    debug = async (requestedTaskId?: unknown, testMode = false, launch?: { input: Record<string, unknown>; capture: boolean }) => {
+    debug = async (requestedTaskId?: unknown, testMode = false, launch?: LaunchOptions) => {
       if (!editorOpen && typeof requestedTaskId !== "string") { setLogs([{level: "INFO", message: "Open a task from Project Explorer before debugging it."}]); return; }
       const attempt = ++executionAttempt.current;
       const taskId = typeof requestedTaskId === "string" ? requestedTaskId : task.id;
+      const environment = launch?.environment || project.active_environment;
+      setExecutionEnvironment(environment);
       if (!editorOpen || project.active_task_id !== taskId) selectTask(taskId);
       setAutoExecutionPanel(true); setExecutionPanelOpen(true); setMonitorMode("normal");
       setDebugState(null); setExecutionOutputs({});
@@ -2937,7 +3056,7 @@ function App() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             input: launch?.input ?? {},
-            environment: project.active_environment,
+            environment,
             task_id: taskId,
             breakpoints,
             breakpoint_conditions: breakpointConditions,
@@ -3013,10 +3132,11 @@ function App() {
         openTaskLocation(out.currentTaskId);
       return out;
     };
+  const logEnvironment = executionEnvironment || project.active_environment;
   const loadSystemLogs = async () => {
     setWorkStatus("Loading saved project logs…");
     try {
-      const response = await fetch(`/api/projects/${project.id}/logs?limit=2000&environment=${encodeURIComponent(project.active_environment)}`);
+      const response = await fetch(`/api/projects/${project.id}/logs?limit=2000&environment=${encodeURIComponent(logEnvironment)}`);
       const output = await response.json();
       if (!response.ok) throw new Error(output.detail || "Unable to load saved logs");
       setSystemLogInfo(output);
@@ -3027,12 +3147,12 @@ function App() {
   };
   const downloadSystemLogs = async () => {
     try {
-      const response = await fetch(`/api/projects/${project.id}/logs?limit=10000&environment=${encodeURIComponent(project.active_environment)}`);
+      const response = await fetch(`/api/projects/${project.id}/logs?limit=10000&environment=${encodeURIComponent(logEnvironment)}`);
       const output = await response.json();
       if (!response.ok) throw new Error(output.detail || "Unable to download saved logs");
       const blob = new Blob([(output.entries || []).map((entry: any) => JSON.stringify(entry)).join("\n") + "\n"], { type: "application/x-ndjson" });
       const logName = project.name.replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-|-$/g, "") || project.id;
-      browserDownload(blob, `${logName}-${project.active_environment}.log`);
+      browserDownload(blob, `${logName}-${logEnvironment}.log`);
       setLogs((current) => [...current, { level: "INFO", message: "Downloaded saved application logs to the browser Downloads folder." }]);
     } catch (error: any) {
       setLogs((current) => [...current, { level: "ERROR", message: error?.message || "Unable to download saved logs" }]);
@@ -3050,7 +3170,7 @@ function App() {
   useEffect(() => {
     executionAttempt.current++;
     setExecutionPanelOpen(false); setAutoExecutionPanel(false); setMonitorMode("normal");
-    setDebugLaunchOpen(false); setDebugTraceTab(null);
+    setLaunchMode(null); setDebugTraceTab(null);
     setBusy(false); setDebugState(null); setRuntimeState(null); setEndpoints([]); setExecutionOutputs({});
   }, [project.id]);
   const inspectActivity = (id: string, ids: string[] = [id]) => {
@@ -3123,6 +3243,7 @@ function App() {
         savedProjectSnapshot.current = JSON.stringify(normalized);
         setProject(seedAddedProtocols(undefined, normalized));
         setOpenTaskIds([normalized.active_task_id]);
+        setClosedTaskIds([]);
         setClosed(false);
         const first = normalized.tasks.find(task => task.id === normalized.active_task_id)?.activities[0]?.id || "";
         setSelected(first); setSelectedIds(first ? [first] : []);
@@ -3417,6 +3538,15 @@ function App() {
   };
   useEffect(() => {
     const projectFileShortcuts = (event: KeyboardEvent) => {
+      if (closed || document.querySelector(".viewport-modal-layer")) return;
+      if (editorOpen && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && ["F5", "F6"].includes(event.key)) {
+        event.preventDefault();
+        if (!executionActive && !event.repeat) {
+          if (event.key === "F5") void run();
+          else void debug();
+        }
+        return;
+      }
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") return;
       if (eventBelongsToEditableControl(event)) return;
       event.preventDefault();
@@ -3425,7 +3555,7 @@ function App() {
     };
     window.addEventListener("keydown", projectFileShortcuts);
     return () => window.removeEventListener("keydown", projectFileShortcuts);
-  }, [project]);
+  }, [project, closed, editorOpen, executionActive, breakpoints, breakpointConditions, debugWatches, pauseOnDebugError]);
   const executionConsole = executionPanelOpen ? <ExecutionDock mode={monitorMode}>
         <div className="pane-title"><span>EXECUTION / DEBUG</span><span className="monitor-actions">
           <button title="Execution analytics" aria-label="Execution analytics" onClick={() => setAnalyticsOpen(true)}><Activity/></button>
@@ -3439,10 +3569,13 @@ function App() {
         <div className="run-state">
           <span />{" "}
           {debugState
-            ? `${debugState.status} · stack ${debugState.callStack?.length || 0}`
-            : `${runtimeState?.status || (busy ? "starting" : "Runtime")} · ${project.active_environment}`}
+            ? `${debugState.status} · ${logEnvironment} · stack ${debugState.callStack?.length || 0}`
+            : `${runtimeState?.status || (busy ? "starting" : "Runtime")} · ${logEnvironment}`}
         </div>
         <div className="execution-console-content"><div className="execution-summary">
+        {runtimeState?.subtaskTest && runtimeState.status === "completed" && <section className="subtask-test-output">
+          <label>Subtask test output<textarea readOnly spellCheck={false} value={JSON.stringify(runtimeState.output ?? {}, null, 2)}/></label>
+        </section>}
         {systemLogInfo && <div className="system-log-info"><b>SYSTEM LOG · {String(systemLogInfo.environment || project.active_environment).toUpperCase()}</b><span title={systemLogInfo.path}>{systemLogInfo.path}</span><small>{systemLogInfo.configuredDirectory ? "Configured by runtime.logDirectory" : "Default Studio data directory"} · {(Number(systemLogInfo.maxBytes || 0) / 1024 / 1024).toFixed(0)} MB · {systemLogInfo.backupCount} rolling archives</small></div>}
         {runtimeState?.lastExecution && <section className="runtime-job-summary">
           <header><b>LAST EXECUTION</b><button title="Copy correlation ID" onClick={() => navigator.clipboard.writeText(runtimeState.lastExecution.correlationId)}><ClipboardCopy/></button></header>
@@ -3486,6 +3619,69 @@ function App() {
         </div></div>
   </ExecutionDock> : null;
 
+  const editCommands: StudioCommand[] = [
+      { label: "Project Search", detail: "Find project objects and their references", icon: Search, shortcut: "Ctrl+Shift+F", action: () => setProjectSearch({}) },
+      { label: "Undo", detail: "Restore an earlier Studio change · up to 100 levels", icon: Undo2, shortcut: "Ctrl+Z", action: undoStudio, disabled: history.current.past.length === 0 && !history.current.pendingBase },
+      { label: "Redo", detail: "Restore the most recently undone change", icon: Redo2, shortcut: "Ctrl+Y", action: redoStudio, disabled: history.current.future.length === 0 },
+      { label: "Rename Application", detail: project.name, icon: Settings2, action: () => setRenameOpen(true) },
+      { label: "Edit Environment Properties", detail: `${project.active_environment}.properties`, icon: Braces, action: () => setPropertyEditor(project.active_environment) },
+      { label: "Save Changes", detail: "Persist the complete project", icon: Save, shortcut: "Ctrl+S", action: save },
+  ];
+  const viewCommands: StudioCommand[] = [
+      { label: paletteOpen ? "Hide Activity Palette" : "Show Activity Palette", detail: "Toggle the draggable activity library", icon: Activity, action: () => setPaletteOpen((value) => !value) },
+      { label: "Expand Project Explorer", detail: "Open every project folder", icon: FolderOpen, action: () => setOpen((value) => Object.fromEntries(Object.keys(value).map((key) => [key, true]))) },
+      { label: "Collapse Project Explorer", detail: "Close every project folder", icon: Folder, action: () => setOpen((value) => Object.fromEntries(Object.keys(value).map((key) => [key, false]))) },
+      { label: "Fit Task", detail: "Show the entire task in the designer", icon: Maximize, action: () => fitCanvas(false), disabled: !editorOpen || !canFitTask },
+      { label: "Fit Selection", detail: "Frame the selected activities or transition", icon: Focus, action: () => fitCanvas(true), disabled: !editorOpen || !canFitSelection },
+      { label: "Reset Canvas Zoom", detail: "Return designer to 100%", icon: Workflow, action: () => zoomCanvas(1), disabled: !editorOpen },
+      ...themeOptions.map((option) => ({ label: `Theme · ${option.label}`, detail: option.detail, icon: option.value === theme ? CheckCircle2 : Workflow, action: () => setTheme(option.value) })),
+  ];
+  const runCommands: StudioCommand[] = [
+      { label: "Run Active Task", detail: task.kind === "subtask" ? "Open the Subtask test setup" : `${task.name} · ${project.active_environment}`, icon: Zap, shortcut: "F5", action: run, disabled: executionActive || !editorOpen },
+      { label: "Start Debugging", detail: "Honor configured breakpoints", icon: Bug, shortcut: "F6", action: debug, disabled: executionActive || !editorOpen },
+      { label: "Execution Analytics", detail: "Timings, bottlenecks and graph reports", icon: Activity, action: () => setAnalyticsOpen(true) },
+      { label: "Execution Setup", detail: "Choose a task and environment and review execution readiness", icon: Settings2, action: () => openExecutionSetup(editorOpen && task.kind === "subtask" ? "subtask" : "run"), disabled: executionActive },
+      { label: "Test Subtask", detail: "Validate Start input and run a Subtask directly", icon: CirclePlay, action: () => openExecutionSetup("subtask"), disabled: executionActive || !project.tasks.some(item => item.kind === "subtask" && !item.library_origin) },
+      { label: "Debug with Input", detail: "Start a task paused with a JSON payload", icon: Bug, action: () => openExecutionSetup("debug"), disabled: executionActive },
+      { label: "Start Activity Testing", detail: "Start paused; provide test data without automatically starting listeners", icon: Bug, action: () => debug(undefined, true), disabled: executionActive || !editorOpen },
+      { label: "Validate Current Task", detail: "Check flow, mappings, connections, and configuration", icon: ShieldCheck, action: () => runValidation("task"), disabled: !editorOpen },
+      { label: "Validate Project", detail: "Check every task, environment, mapping, and package", icon: ShieldCheck, action: () => runValidation("project") },
+      { label: "Review Findings", detail: "Recheck the last validation scope and resume the review", icon: ShieldCheck, action: refreshValidation, disabled: !currentValidation },
+      { label: "Continue", detail: "Resume the paused debug session", icon: CirclePlay, action: () => debugAction("continue"), disabled: debugState?.status !== "paused" },
+      { label: "Stop Execution", detail: "Stop the active run, listener deployment, or debug session", icon: Square, action: stopExecution, disabled: !executionActive },
+  ];
+  const windowCommands: StudioCommand[] = [
+      { label: "Project Explorer", detail: "Move focus to the project tree", icon: FolderOpen, action: () => focusStudioPanel(".explorer") },
+      { label: "Task Designer", detail: "Move focus to the orchestration canvas", icon: Workflow, action: () => focusStudioPanel(".canvas"), disabled: !editorOpen },
+      { label: "Configuration", detail: "Move focus to activity configuration", icon: Settings2, action: () => focusStudioPanel(".config"), disabled: !editorOpen || executionPanelOpen },
+      { label: "Reopen Closed Task Tab", detail: lastClosedTask ? lastClosedTask.name : "No recently closed task tabs", icon: Undo2, action: reopenTaskTab, disabled: !lastClosedTask },
+      { label: "Execution & Debug", detail: "Open runtime output", icon: Bug, action: () => { setExecutionPanelOpen(true); window.setTimeout(() => focusStudioPanel(".monitor"), 0); } },
+      { label: "Debug Trace & Metrics", detail: "Inspect the latest debug session's paths and timings", icon: Activity, action: () => setDebugTraceTab("threads"), disabled: !traceSessionId },
+      { label: "Execution Analytics", detail: "Timings, bottlenecks and graph reports", icon: Activity, action: () => setAnalyticsOpen(true) },
+      { label: "XML Viewer", detail: "Windowed large-file XML viewer and pretty printer", icon: CodeXml, action: () => setUtilityMode("xml") },
+      { label: "JSON Viewer", detail: "Windowed large-file JSON viewer and pretty printer", icon: Braces, action: () => setUtilityMode("json") },
+      { label: "Compare Files", detail: "Side-by-side text or binary file comparison", icon: Scissors, action: () => setUtilityMode("compare") },
+  ];
+  const helpCommands: StudioCommand[] = [
+      { label: "MINA Documentation", detail: "Searchable product reference, activity tabs and downloadable PDF", icon: BookOpen, action: () => window.open("/help/index.html", "_blank", "noopener") },
+      { label: "Keyboard Shortcuts", detail: "Designer and runtime commands", icon: Settings2, action: () => setHelpDialog("shortcuts") },
+      { label: "About MINA", detail: "Product and project information", icon: Workflow, action: () => setHelpDialog("about") },
+      { label: "Third-party licenses", detail: "Licenses, notices and software inventory", icon: BookOpen, action: () => window.open("/legal/index.html", "_blank", "noopener,noreferrer") },
+  ];
+  const commandGroups = commandsOpen ? [
+    { label: "Project", commands: [
+      { label: "New Project", detail: "Create a MINA application", icon: Plus, action: newProject },
+      { label: "Open Project", detail: "Browse a package or project folder", icon: FolderOpen, action: openGenericProject },
+      { label: "Explore Samples", detail: "Browse installed examples", icon: BookOpen, action: () => setSampleGalleryOpen(true) },
+      { label: "Package Project", detail: "Configure a deployment archive", icon: Package, action: () => setPackageOpen(true) },
+    ] },
+    { label: "Edit", commands: editCommands },
+    { label: "View", commands: viewCommands },
+    { label: "Run", commands: runCommands },
+    { label: "Window", commands: windowCommands.filter(command => command.label !== "Execution Analytics") },
+    { label: "Help", commands: helpCommands },
+  ] : [];
+
   if (closed)
     return (
       <><ProjectWelcome
@@ -3507,50 +3703,13 @@ function App() {
         </div>
         <div className="menu-root"><button className={menu === "file" ? "active" : ""} onClick={(e) => { e.stopPropagation(); setMenu(menu === "file" ? null : "file"); }}>File</button>
           {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} newProject={newProject} exitStudio={exitStudio} save={save} saveJson={saveJsonFile} exportProject={exportGenericProject} importProject={openGenericProject} importProjectFolder={importProjectFolder} openProjects={closeProject} sampleProjects={() => setSampleGalleryOpen(true)} catchAI={openCatchAI} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
-        <TopMenu label="Edit" open={menu === "edit"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "edit" ? null : "edit"); }} commands={[
-          { label: "Project Search", detail: "Find project objects and their references", icon: Search, shortcut: "Ctrl+Shift+F", action: () => setProjectSearch({}) },
-          { label: "Undo", detail: "Restore an earlier Studio change · up to 100 levels", icon: Undo2, shortcut: "Ctrl+Z", action: undoStudio, disabled: history.current.past.length === 0 && !history.current.pendingBase },
-          { label: "Redo", detail: "Restore the most recently undone change", icon: Redo2, shortcut: "Ctrl+Y", action: redoStudio, disabled: history.current.future.length === 0 },
-          { label: "Rename Application", detail: project.name, icon: Settings2, action: () => setRenameOpen(true) },
-          { label: "Edit Environment Properties", detail: `${project.active_environment}.properties`, icon: Braces, action: () => setPropertyEditor(project.active_environment) },
-          { label: "Save Changes", detail: "Persist the complete project", icon: Save, shortcut: "Ctrl+S", action: save },
-        ]}/>
-        <TopMenu label="View" open={menu === "view"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "view" ? null : "view"); }} commands={[
-          { label: paletteOpen ? "Hide Activity Palette" : "Show Activity Palette", detail: "Toggle the draggable activity library", icon: Activity, action: () => setPaletteOpen((value) => !value) },
-          { label: "Expand Project Explorer", detail: "Open every project folder", icon: FolderOpen, action: () => setOpen((value) => Object.fromEntries(Object.keys(value).map((key) => [key, true]))) },
-          { label: "Collapse Project Explorer", detail: "Close every project folder", icon: Folder, action: () => setOpen((value) => Object.fromEntries(Object.keys(value).map((key) => [key, false]))) },
-          { label: "Reset Canvas Zoom", detail: "Return designer to 100%", icon: Workflow, action: () => setZoom(1) },
-          ...themeOptions.map((option) => ({ label: `Theme · ${option.label}`, detail: option.detail, icon: option.value === theme ? CheckCircle2 : Workflow, action: () => setTheme(option.value) })),
-        ]}/>
-        <TopMenu label="Run" open={menu === "run"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "run" ? null : "run"); }} commands={[
-          { label: "Run Active Task", detail: `${task.name} · ${project.active_environment}`, icon: Zap, shortcut: "F5", action: run },
-          { label: "Start Debugging", detail: "Honor configured breakpoints", icon: Bug, shortcut: "F6", action: debug },
-          { label: "Execution Analytics", detail: "Timings, bottlenecks and graph reports", icon: Activity, action: () => setAnalyticsOpen(true) },
-          { label: "Debug with Input", detail: "Start the current task paused with a JSON payload", icon: Bug, action: () => setDebugLaunchOpen(true), disabled: executionActive || !editorOpen },
-          { label: "Start Activity Testing", detail: "Start paused; provide test data without automatically starting listeners", icon: Bug, action: () => debug(undefined, true), disabled: executionActive },
-          { label: "Validate Current Task", detail: "Check flow, mappings, connections, and configuration", icon: ShieldCheck, action: () => runValidation("task") },
-          { label: "Validate Project", detail: "Check every task, environment, mapping, and package", icon: ShieldCheck, action: () => runValidation("project") },
-          { label: "Review Findings", detail: "Recheck the last validation scope and resume the review", icon: ShieldCheck, action: refreshValidation, disabled: !currentValidation },
-          { label: "Continue", detail: "Resume the paused debug session", icon: CirclePlay, action: () => debugAction("continue"), disabled: debugState?.status !== "paused" },
-          { label: "Stop Execution", detail: "Stop the active run, listener deployment, or debug session", icon: Square, action: stopExecution, disabled: !executionActive },
-        ]}/>
-        <TopMenu label="Window" open={menu === "window"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "window" ? null : "window"); }} commands={[
-          { label: "Project Explorer", detail: "Move focus to the project tree", icon: FolderOpen, action: () => focusStudioPanel(".explorer") },
-          { label: "Task Designer", detail: "Move focus to the orchestration canvas", icon: Workflow, action: () => focusStudioPanel(".canvas") },
-          { label: "Configuration", detail: "Move focus to activity configuration", icon: Settings2, action: () => focusStudioPanel(".config") },
-          { label: "Execution & Debug", detail: "Open runtime output", icon: Bug, action: () => { setExecutionPanelOpen(true); window.setTimeout(() => focusStudioPanel(".monitor"), 0); } },
-          { label: "Debug Trace & Metrics", detail: "Inspect the latest debug session's paths and timings", icon: Activity, action: () => setDebugTraceTab("threads"), disabled: !traceSessionId },
-          { label: "Execution Analytics", detail: "Timings, bottlenecks and graph reports", icon: Activity, action: () => setAnalyticsOpen(true) },
-          { label: "XML Viewer", detail: "Windowed large-file XML viewer and pretty printer", icon: CodeXml, action: () => setUtilityMode("xml") },
-          { label: "JSON Viewer", detail: "Windowed large-file JSON viewer and pretty printer", icon: Braces, action: () => setUtilityMode("json") },
-          { label: "Compare Files", detail: "Side-by-side text or binary file comparison", icon: Scissors, action: () => setUtilityMode("compare") },
-        ]}/>
-        <TopMenu label="Help" open={menu === "help"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "help" ? null : "help"); }} commands={[
-          { label: "MINA Documentation", detail: "Searchable product reference, activity tabs and downloadable PDF", icon: BookOpen, action: () => window.open("/help/index.html", "_blank", "noopener") },
-          { label: "Keyboard Shortcuts", detail: "Designer and runtime commands", icon: Settings2, action: () => setHelpDialog("shortcuts") },
-          { label: "About MINA", detail: "Product and project information", icon: Workflow, action: () => setHelpDialog("about") },
-          { label: "Third-party licenses", detail: "Licenses, notices and software inventory", icon: BookOpen, action: () => window.open("/legal/index.html", "_blank", "noopener,noreferrer") },
-        ]}/>
+        <TopMenu label="Edit" open={menu === "edit"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "edit" ? null : "edit"); }} commands={editCommands}/>
+        <TopMenu label="View" open={menu === "view"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "view" ? null : "view"); }} commands={viewCommands}/>
+        <TopMenu label="Run" open={menu === "run"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "run" ? null : "run"); }} commands={runCommands}/>
+        <TopMenu label="Window" open={menu === "window"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "window" ? null : "window"); }} commands={windowCommands}/>
+        <TopMenu label="Help" open={menu === "help"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "help" ? null : "help"); }} commands={helpCommands}/>
+        <button className="studio-commands-trigger" type="button" title="Studio Commands (Ctrl+Shift+P)" aria-label="Studio Commands"
+          aria-haspopup="dialog" aria-keyshortcuts="Control+Shift+P Meta+Shift+P" onClick={() => setCommandsOpen(true)}><Search aria-hidden="true"/><span>Commands</span></button>
         <span className="menu-spacer" />
         <FontControl scope="Screen" value={screenFont} onChange={setScreenFont} />
         <ThemePicker theme={theme} setTheme={setTheme} plainMode={plainMode} setPlainMode={setPlainMode} />
@@ -3572,6 +3731,7 @@ function App() {
         debug={debug}
         stop={stopExecution}
         executionAnalytics={() => setAnalyticsOpen(true)}
+        executionSetup={() => openExecutionSetup(editorOpen && task.kind === "subtask" ? "subtask" : "run")}
         navigation={navigationActions}
         projectSearch={() => setProjectSearch({})}
         executionActive={executionActive}
@@ -3869,6 +4029,7 @@ function App() {
           <button onClick={() => closeTaskTabs(taskTabMenu.taskId, "all")}>Close All Tabs</button>
           <button disabled={openTaskIds.indexOf(taskTabMenu.taskId) === 0} onClick={() => closeTaskTabs(taskTabMenu.taskId, "left")}>Close Tabs to the Left</button>
           <button disabled={openTaskIds.indexOf(taskTabMenu.taskId) === openTaskIds.length - 1} onClick={() => closeTaskTabs(taskTabMenu.taskId, "right")}>Close Tabs to the Right</button>
+          {lastClosedTask && <button onClick={reopenTaskTab}>Reopen Closed Task Tab</button>}
         </div>}
         {editorOpen ? <><div className="canvas-toolbar">
           <span>
@@ -3878,13 +4039,17 @@ function App() {
             </small>
           </span>
           <button className="group-selected-button" disabled={!selectedIds.length} onClick={createGroup} title="Create an executable group from the selected activities"><Workflow/> Group selected</button>
-          <span className="zoom">
+          <span className="zoom canvas-view-tools" role="group" aria-label="Canvas view">
             <CanvasMagnifier canvas={canvas} zoom={zoom} taskId={task.id} />
-            <button onClick={() => setZoom((z) => Math.max(0.6, z - 0.1))}>
+            <button type="button" title="Fit task" aria-label="Fit task" disabled={!canFitTask} onClick={() => fitCanvas(false)}><Maximize/></button>
+            <button type="button" title="Fit selection" aria-label="Fit selection" disabled={!canFitSelection} onClick={() => fitCanvas(true)}><Focus/></button>
+            <button type="button" title="Zoom out" aria-label="Zoom out" disabled={zoom <= MIN_MANUAL_CANVAS_ZOOM} onClick={() => zoomCanvas(Math.max(MIN_MANUAL_CANVAS_ZOOM, zoom - 0.1))}>
               −
             </button>
-            {Math.round(zoom * 100)}%
-            <button onClick={() => setZoom((z) => Math.min(1.5, z + 0.1))}>
+            <button type="button" title="Reset zoom to 100%" aria-label={`Reset zoom to 100% (current ${(zoom * 100).toFixed(zoom < 0.1 ? 1 : 0)}%)`} onClick={() => zoomCanvas(1)}>
+              {(zoom * 100).toFixed(zoom < 0.1 ? 1 : 0)}%
+            </button>
+            <button type="button" title="Zoom in" aria-label="Zoom in" disabled={zoom >= MAX_CANVAS_ZOOM} onClick={() => zoomCanvas(Math.min(MAX_CANVAS_ZOOM, zoom + 0.1))}>
               +
             </button>
           </span>
@@ -3965,7 +4130,7 @@ function App() {
               const bounds = groupBounds[group.id];
               const {depth, members:memberIds} = groupLayout.get(group.id)!;
               return <section key={group.id} className={`execution-group depth-${Math.min(depth, 3)} ${debugState?.currentGroupIds?.includes(group.id) ? "debug-active" : ""}`} style={{ left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height }} onPointerDown={(event) => event.stopPropagation()}>
-                <div className="execution-group-header" title="Drag to move the group" onPointerDown={(event) => { if (event.button !== 0 || drag.current || (event.target as Element).closest(".group-edit")) return; event.preventDefault(); event.stopPropagation(); const ids = [...memberIds], positions = Object.fromEntries(nodes.filter((item) => memberIds.has(item.id)).map((item) => [item.id, { ...item.position }])); drag.current = { ids, positions, startX: event.clientX, startY: event.clientY, pointerId: event.pointerId, captureTarget: event.currentTarget }; event.currentTarget.setPointerCapture(event.pointerId); setSelectedIds(ids); setSelected(ids[0] || ""); }}><Workflow/><b>{group.name}</b><small>{group.type.replaceAll("_", " ")}</small>{debugState?.groupIterations?.[group.id] !== undefined && <em>iteration {Number(debugState.groupIterations[group.id]) + 1}</em>}<button className="group-edit" title="Edit group" onPointerDown={(event) => event.stopPropagation()} onClick={() => setGroupEditor(group.id)}><Settings2/></button></div>
+                <div className="execution-group-header" title="Drag to move the group" onPointerDown={(event) => { if (event.button !== 0 || drag.current || (event.target as Element).closest(".group-edit")) return; event.preventDefault(); event.stopPropagation(); const ids = [...memberIds], positions = Object.fromEntries(nodes.filter((item) => memberIds.has(item.id)).map((item) => [item.id, { ...item.position }])); drag.current = { ids, positions, startX: event.clientX, startY: event.clientY, pointerId: event.pointerId, captureTarget: event.currentTarget }; event.currentTarget.setPointerCapture(event.pointerId); setSelectedIds(ids); setSelected(ids[0] || ""); }}><Workflow/><b>{group.name}</b><small>{groupCatalog[group.type].label}</small>{debugState?.groupIterations?.[group.id] !== undefined && <em>iteration {Number(debugState.groupIterations[group.id]) + 1}</em>}<button className="group-edit" title="Edit group" onPointerDown={(event) => event.stopPropagation()} onClick={() => setGroupEditor(group.id)}><Settings2/></button></div>
               </section>;
             })}
             <svg className="wires" style={{ width: Math.max(1400, ...nodes.map((n) => n.position.x + 260)), height: Math.max(750, ...nodes.map((n) => n.position.y + 150)) }}>
@@ -4185,17 +4350,33 @@ function App() {
               Select an activity, transition, or shared connection.
             </div>
           )}
-        </section>}</> : <><div className="orchestrator-empty" role="status"><Workflow/><b>No task editors open</b><span>Select a task in Project Explorer to open it.</span></div>{executionConsole}</>}
+        </section>}</> : <><div className="orchestrator-empty"><Workflow/><b>No task editors open</b><span>Select a task in Project Explorer to open it.</span>
+          {lastClosedTask && <button type="button" onClick={reopenTaskTab}>Reopen {lastClosedTask.name}</button>}</div>{executionConsole}</>}
       </main>
+      {commandsOpen && <StudioCommands groups={commandGroups} onClose={() => setCommandsOpen(false)}/>}
       {projectSearch && <ProjectSearch key={project.id} project={project} initialTarget={projectSearch.target}
         onOpen={openSearchLocation} onClose={() => setProjectSearch(null)}/>}
       {libraryDialogOpen && <IntegrationLibraries project={project} onChange={updated => setProject(current => current.id === updated.id ? normalizeProject(updated) : current)}
         onClose={() => setLibraryDialogOpen(false)} />}
       {analyticsOpen && <ExecutionAnalytics key={project.id} projectId={project.id} projectName={project.name} tasks={project.tasks} logs={logs} runtimeState={runtimeState} debugState={debugState} onClose={() => setAnalyticsOpen(false)} onInspect={(taskId: string, activityId: string) => { const target = project.tasks.find(item => item.id === taskId && item.activities.some(activity => activity.id === activityId)) || project.tasks.find(item => item.activities.some(activity => activity.id === activityId)); if (target) { selectTask(target.id, activityId); setAnalyticsOpen(false); } }}/>}
-      {debugLaunchOpen && <DebugLaunchDialog taskName={task.name} onClose={() => setDebugLaunchOpen(false)} onStart={(input, capture) => {
-        setDebugLaunchOpen(false);
-        if (!executionActive) void debug(task.id, false, { input, capture });
-      }}/>}
+      {launchMode && <ExecutionSetupDialog key={project.id} project={project} initialTask={launchTaskId || project.active_task_id}
+        initialMode={launchMode} activeEnvironment={project.active_environment} busy={executionActive}
+        checkSubtaskInput={checkSubtaskInput}
+        validate={(taskIds, environment) => project.tasks.filter(item => taskIds.includes(item.id)).flatMap(item => validateTaskDefinition(project, item, environment))}
+        onFinding={issue => {setLaunchMode(null); openFinding(issue);}}
+        onConnection={(id, environment) => {
+          setLaunchMode(null);
+          navigateTo({kind:"resource", id});
+          setConnectionReviewProfile({id, environment});
+        }}
+        onProperties={environment => {setLaunchMode(null); setPropertyEditor(environment);}}
+        onClose={() => setLaunchMode(null)}
+        onStart={(mode, taskId, options) => {
+          if (executionActive) return;
+          setLaunchMode(null);
+          if (mode !== "debug") void run(taskId, options);
+          else void debug(taskId, false, options);
+        }}/>}
       {debugTraceTab && traceSessionId && <DebugTraceDialog key={traceSessionId} sessionId={traceSessionId}
         activeThreadId={debugState?.sessionId === traceSessionId ? debugState.activeThreadId : undefined}
         live={debugState?.sessionId === traceSessionId && !["completed", "failed", "stopped"].includes(debugState.status)}
@@ -4380,13 +4561,15 @@ function App() {
           type={editingConnection.type}
           initial={editingConnection}
           validateName={(name: string) => workspaceNameConflict(project, name, packagePath(editingConnection.package_path), {category:"resources",id:editingConnection.id})}
-          properties={project.properties[project.active_environment] || []}
+          reviewEnvironment={connectionReviewProfile?.id === editingConnection.id ? connectionReviewProfile.environment : undefined}
+          properties={project.properties[connectionReviewProfile?.id === editingConnection.id ? connectionReviewProfile.environment : project.active_environment] || []}
           onSapSchemaFetched={(idoc: any) => upsertSapIdocSchema(idoc)}
-          onClose={() => setEditingConnection(null)}
+          onClose={() => {setEditingConnection(null); setConnectionReviewProfile(null);}}
           onCreate={(updated: Resource) => {
             setProject((current) => ({ ...current, resources: current.resources.map((item) => item.id === editingConnection.id ? {...updated, package_path:packagePath(item.package_path)} : item) }));
             setSelectedResource(null);
             setEditingConnection(null);
+            setConnectionReviewProfile(null);
           }}
         />
       )}
@@ -4430,8 +4613,28 @@ function App() {
         />
       )}
       {packageOpen && <PackageDialog packaging={project.packaging} environments={Object.keys(project.properties)} properties={project.properties} tasks={project.tasks} onClose={() => setPackageOpen(false)} onPackage={buildDeploymentPackage} onDeploy={deployDeploymentPackage}/>}
-      {groupEditor && <GroupEditor group={groupEditor === "new" ? undefined : (task.groups || []).find((item) => item.id === groupEditor)} groups={task.groups || []} resources={project.resources} activities={nodes} task={task} tasks={project.tasks} schemas={project.schemas} properties={project.properties[project.active_environment] || []} customFunctions={project.custom_functions || []} onClose={() => setGroupEditor(null)} onSave={(updated: GroupDefinition) => { mutateTask((current) => ({ ...current, groups: [...(current.groups || []).filter((item) => item.id !== updated.id), updated] })); setGroupEditor(null); }} onDelete={(id: string) => { mutateTask((current) => ({ ...current, groups: (current.groups || []).filter((item) => item.id !== id).map((item) => item.parent_group_id === id ? { ...item, parent_group_id: null } : item) })); setGroupEditor(null); }}/>
-      }
+      {groupEditor && (groupEditor === "new" ? newGroup : task.groups?.some(item => item.id === groupEditor)) && <GroupEditor key={groupEditor === "new" ? newGroup?.draft.id : groupEditor}
+        isNew={groupEditor === "new"} group={groupEditor === "new" ? newGroup?.draft : (task.groups || []).find(item => item.id === groupEditor)}
+        groups={(task.groups || []).map(item => groupEditor === "new" && newGroup?.children.includes(item.id)
+          ? { ...item, parent_group_id: newGroup.draft.id } : item)}
+        resources={project.resources} activities={nodes} task={task} tasks={project.tasks} schemas={project.schemas}
+        properties={project.properties[project.active_environment] || []} customFunctions={project.custom_functions || []}
+        onClose={() => { setGroupEditor(null); setNewGroup(null); }}
+        onSave={(updated: GroupDefinition) => {
+          const children = groupEditor === "new" ? newGroup?.children ?? [] : [];
+          mutateTask(current => {
+            const groups = (current.groups || []).map(item => item.id === updated.id ? updated :
+              children.includes(item.id) ? { ...item, parent_group_id: updated.id } : item);
+            return { ...current, groups: groupEditor === "new" ? [...groups, updated] : groups };
+          });
+          setGroupEditor(null);
+          setNewGroup(null);
+        }}
+        onDelete={(id: string) => {
+          mutateTask(current => ({ ...current, groups: (current.groups || []).filter(item => item.id !== id)
+            .map(item => item.parent_group_id === id ? { ...item, parent_group_id: null } : item) }));
+          setGroupEditor(null);
+        }}/>}
       {sampleGalleryOpen && <SampleGallery
         onClose={() => setSampleGalleryOpen(false)}
         onImport={async (file) => { const imported = await importProject(file); if (imported) setSampleGalleryOpen(false); return imported; }}
@@ -4516,49 +4719,233 @@ function GroupExpressionTarget({ label, value, onChange, placeholder, help, kind
 }
 
 function groupConfigDefaults(type: GroupDefinition["type"]) {
-  if (type === "repeat_on_error") return { retryCount: "${properties.advanced.retryCount}", retryIntervalSeconds: "${properties.advanced.retryIntervalSeconds}", indexVariable: "index" };
-  if (["while", "repeat", "iterate", "for_each"].includes(type)) return { maxIterations: "${properties.advanced.groupMaxIterations}", indexVariable: "index", ...(["iterate", "for_each"].includes(type) ? { currentElementName: "currentElement", itemVariable: "currentElement", ...(type === "for_each" ? { iterationMode: "collection" } : {}) } : {}) };
+  if (type === "repeat_on_error") return { retryCount: 3, retryIntervalSeconds: 60, stopCondition: "false", indexVariable: "index" };
+  if (type === "parallel_for_each") return { maxConcurrency: 4, batchSize: 1, maxIterations: 10000, indexVariable: "index", currentElementName: "currentElement" };
+  if (type === "scatter_gather" || type === "async") return { maxConcurrency: 4 };
+  if (["while", "repeat", "iterate", "for_each"].includes(type)) return { maxIterations: 10000, indexVariable: "index", ...(["iterate", "for_each"].includes(type) ? { currentElementName: "currentElement", itemVariable: "currentElement", ...(type === "for_each" ? { iterationMode: "collection" } : {}) } : {}) };
   return {};
 }
 
-function GroupEditor({ group, groups, resources, activities, task, tasks, schemas, properties, customFunctions, onClose, onSave, onDelete }: any) {
-  const [draft, setDraft] = useState<GroupDefinition>(() => { const initial = structuredClone(group || { id: `group-${Date.now()}`, type: "scope", name: "Execution Group", member_activity_ids: [], config: {}, position: { x: 100, y: 100 }, size: { width: 420, height: 220 }, parent_group_id: null }); return { ...initial, config: { ...groupConfigDefaults(initial.type), ...(initial.config || {}) } }; });
+function GroupEditor({ group, isNew, groups, resources, activities, task, tasks, schemas, properties, customFunctions, onClose, onSave, onDelete }: any) {
+  const [draft, setDraft] = useState<GroupDefinition>(() => {
+    const initial: GroupDefinition = structuredClone(group);
+    const stored = initial.config || {};
+    const config: GroupDefinition["config"] = { ...groupConfigDefaults(initial.type), ...stored };
+    if (initial.type === "for_each") config.iterationMode = stored.collection != null || stored.source != null
+      ? "collection" : stored.iterationMode === "range" || (stored.start != null && stored.end != null) ? "range" : "collection";
+    return { ...initial, config };
+  });
+  const [section, setSection] = useState<"Setup" | "Activities" | "Advanced">("Setup");
+  const [memberQuery, setMemberQuery] = useState("");
+  const [showUnavailable, setShowUnavailable] = useState(false);
+  const [showSources, setShowSources] = useState(false);
+  const headingId = React.useId();
+  const dialog = useRef<HTMLDivElement>(null);
+  const configsByType = useRef<Partial<Record<GroupType, GroupDefinition["config"]>>>({});
+  const currentGroup = groupCatalog[draft.type];
   const nameConflict = groups.some((item: GroupDefinition) => item.id !== draft.id && studioNameKey(item.name) === studioNameKey(draft.name));
   const owners = new Map<string, string>(); groups.forEach((item: GroupDefinition) => item.member_activity_ids.forEach((id) => owners.set(id, item.id)));
-  const patchConfig = (key: string, value: any) => setDraft((current) => ({ ...current, config: { ...current.config, [key]: value } }));
+  const patchConfig = (key: string, value: any) => setDraft(current => {
+    const config = { ...current.config, [key]: value };
+    if (key === "source") delete config.collection;
+    return { ...current, config };
+  });
+  const localVariables: { name: string; value: any }[] = Array.isArray(draft.config.localVariables) ? draft.config.localVariables : [];
+  const faultHandlers: { action: string; types: string[]; value?: any }[] = Array.isArray(draft.config.faultHandlers) ? draft.config.faultHandlers : [];
+  const invalidLocals = localVariables.some(({ name }) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) ||
+    new Set(localVariables.map(({ name }) => name)).size !== localVariables.length;
+  const collectionGroup = ["iterate", "for_each", "parallel_for_each"].includes(draft.type);
+  const routedGroup = ["parallel_for_each", "scatter_gather", "first_successful", "async"].includes(draft.type);
+  const scopeGroup = ["scope", "none", "transaction_jdbc"].includes(draft.type);
+  const editLocal = (index: number, patch: Partial<typeof localVariables[number]>) =>
+    patchConfig("localVariables", localVariables.map((variable, i) => i === index ? { ...variable, ...patch } : variable));
+  const editHandler = (index: number, patch: Partial<typeof faultHandlers[number]>) =>
+    patchConfig("faultHandlers", faultHandlers.map((handler, i) => i === index ? { ...handler, ...patch } : handler));
+  const moveHandler = (index: number, offset: number) => {
+    const next = [...faultHandlers];
+    const [handler] = next.splice(index, 1);
+    next.splice(index + offset, 0, handler);
+    patchConfig("faultHandlers", next);
+  };
   const toggleMember = (id: string) => setDraft((current) => ({ ...current, member_activity_ids: current.member_activity_ids.includes(id) ? current.member_activity_ids.filter((item) => item !== id) : [...current.member_activity_ids, id] }));
   const nestedGroups = new Set([draft.id]); let changed = true; while (changed) { changed = false; groups.forEach((item: GroupDefinition) => { if (item.parent_group_id && nestedGroups.has(item.parent_group_id) && !nestedGroups.has(item.id)) { nestedGroups.add(item.id); changed = true; } }); }
-  const memberIds = new Set(groups.filter((item: GroupDefinition) => nestedGroups.has(item.id)).flatMap((item: GroupDefinition) => item.id === draft.id ? draft.member_activity_ids : item.member_activity_ids));
+  const memberIds = new Set<string>(groups.filter((item: GroupDefinition) => nestedGroups.has(item.id)).flatMap((item: GroupDefinition) => item.id === draft.id ? draft.member_activity_ids : item.member_activity_ids));
   draft.member_activity_ids.forEach((id) => memberIds.add(id));
-  const internalTargets = new Set((task.transitions || []).filter((edge: Edge) => memberIds.has(edge.source) && memberIds.has(edge.target)).map((edge: Edge) => edge.target));
-  const externalEntries = (task.transitions || []).filter((edge: Edge) => !memberIds.has(edge.source) && memberIds.has(edge.target)).map((edge: Edge) => edge.target);
-  const entryId = externalEntries[0] || [...memberIds].find((id) => !internalTargets.has(id));
-  const entry = activities.find((item: Node) => item.id === entryId);
-  const upstream = entry ? upstreamActivitySources(entry, task, tasks, schemas, resources) : [];
-  const memberSources = ["while", "repeat", "repeat_on_error", "iterate", "for_each"].includes(draft.type) ? activities.filter((item: Node) => memberIds.has(item.id)).map((activity: Node) => ({ activity, distance: 0, fields: activityContract(activity).output, scope: "Current group / prior iteration output" })) : [];
+  const wiring = describeGroupWiring(draft.type, memberIds, task.transitions || []);
+  if (scopeGroup && faultHandlers.some(handler => handler.action === "continue")) {
+    const exits = (task.transitions as Edge[]).filter(edge => memberIds.has(edge.source) && !memberIds.has(edge.target));
+    if (exits.length !== 1 || (exits[0].type && exits[0].type !== "success")) {
+      wiring.issues.push("Connect one Success transition out of the group to continue after a fault.");
+    }
+  }
+  const entry = activities.find((item: Node) => item.id === wiring.entryIds[0]);
+  const upstream = showSources && entry ? upstreamActivitySources(entry, task, tasks, schemas, resources) : [];
+  const memberSources = showSources && ["while", "repeat", "repeat_on_error", "iterate", "for_each"].includes(draft.type) ? activities.filter((item: Node) => memberIds.has(item.id)).map((activity: Node) => ({ activity, distance: 0, fields: activityContract(activity).output, scope: "Current group / prior iteration output" })) : [];
   const sourceIds = new Set(upstream.map((source: any) => source.activity.id));
   const dataSources = [...upstream, ...memberSources.filter((source: any) => !sourceIds.has(source.activity.id))];
-  return <ModalLayer className="modal-backdrop"><div className="runtime-modal group-editor-dialog"><header><span><Workflow/><span><b>Executable Group</b><small>Nested canvas and runtime execution boundary</small></span></span><button onClick={onClose}>×</button></header><main>
-    <label>Group name<input autoFocus value={draft.name} aria-invalid={nameConflict} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/>{nameConflict && <small className="endpoint-setup-error" role="alert">A group with this name already exists in this task.</small>}</label>
-    <label>Execution semantics<select value={draft.type} onChange={(event) => { const type = event.target.value as GroupDefinition["type"]; setDraft({ ...draft, type, config: groupConfigDefaults(type) }); }}><option value="scope">None / Scope (once)</option><option value="if">If</option><option value="while">While True</option><option value="iterate">Iterate collection</option><option value="for_each">For each</option><option value="repeat">Repeat Until True</option><option value="repeat_on_error">Repeat on Error Until True</option><option value="critical_section">Critical Section</option><option value="transaction_jdbc">JDBC transaction</option><option value="pick_first">Pick First (first eligible branch)</option></select></label>
-    <label>Parent group<select value={draft.parent_group_id || ""} onChange={(event) => setDraft({ ...draft, parent_group_id: event.target.value || null })}><option value="">Top level</option>{groups.filter((item: GroupDefinition) => item.id !== draft.id && item.parent_group_id !== draft.id).map((item: GroupDefinition) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+  const activityName = (id: string) => activities.find((item: Node) => item.id === id)?.name || id;
+  const childGroups = groups.filter((item: GroupDefinition) => item.parent_group_id === draft.id);
+  const visibleMembers = activities.filter((item: Node) => {
+    const unavailable = isEventActivity(item) || ["end", "catch"].includes(item.type) || owners.has(item.id) && owners.get(item.id) !== draft.id;
+    return (showUnavailable || !unavailable || draft.member_activity_ids.includes(item.id)) &&
+      `${item.name} ${item.type}`.toLowerCase().includes(memberQuery.trim().toLowerCase());
+  });
+  const optionalNumbers = ["batchSize", "maxConcurrency", "routeTimeoutSeconds", "maxIterations", "increment"];
+  const selectedConnection = draft.config.resourceId;
+  const configuredConnections = [...new Set(activities.filter((item: Node) => memberIds.has(item.id) && item.type === "jdbc").map((item: Node) => item.config.resourceId).filter(Boolean))];
+  const inferredConnection = configuredConnections.length === 1 ? configuredConnections[0] : undefined;
+  const rangeMode = draft.type === "for_each" && draft.config.iterationMode === "range";
+  const collection = draft.config.collection ?? draft.config.source;
+  const countMode = draft.type === "repeat" && !draft.config.condition && (draft.config.count != null || draft.config.iterations != null);
+  const needsCondition = ["if", "while"].includes(draft.type) || draft.type === "repeat" && draft.config.count == null && draft.config.iterations == null;
+  const setupError = needsCondition && !String(draft.config.condition ?? "").trim() ? "Enter a condition."
+    : collectionGroup && !rangeMode && (collection == null || collection === "") ? "Choose the collection to iterate."
+    : rangeMode && [draft.config.start, draft.config.end].some(value => value == null || value === "") ? "Enter the start and end counters."
+    : draft.type === "transaction_jdbc" && !selectedConnection && !inferredConnection ? "Select a JDBC shared connection."
+    : undefined;
+  const save = () => {
+    const config = { ...draft.config };
+    for (const key of optionalNumbers) if (typeof config[key] === "string" && !config[key].trim()) delete config[key];
+    if (draft.type === "transaction_jdbc" && !config.resourceId && inferredConnection) config.resourceId = inferredConnection;
+    onSave({ ...draft, name: studioObjectName(draft.name), config, parent_group_id: draft.type === "async" ? null : draft.parent_group_id });
+  };
+  return <ModalLayer className="modal-backdrop">
+    <div ref={dialog} className="runtime-modal group-editor-dialog" role="dialog" aria-modal="true" aria-labelledby={headingId}
+      onKeyDown={event => {
+        event.stopPropagation();
+        if (event.key === "Escape") { event.preventDefault(); onClose(); }
+        if (event.key !== "Tab") return;
+        const controls = [...(dialog.current?.querySelectorAll<HTMLElement>("button:enabled, input:enabled, select:enabled, textarea:enabled, summary, [tabindex='0']") ?? [])]
+          .filter(element => element.getClientRects().length > 0);
+        const first = controls[0], last = controls[controls.length - 1];
+        if (document.activeElement === (event.shiftKey ? first : last)) {
+          event.preventDefault();
+          (event.shiftKey ? last : first)?.focus();
+        }
+      }}>
+    <header><span><Workflow aria-hidden="true"/><b id={headingId}>{isNew ? "Create group" : "Edit group"}</b></span>
+      <button type="button" aria-label="Close group editor" onClick={onClose}>×</button></header>
+    <nav className="group-editor-nav" aria-label="Group settings">
+      {(["Setup", "Activities", "Advanced"] as const).map(label => <button type="button" key={label}
+        aria-pressed={section === label} onClick={() => setSection(label)}>{label}{label === "Activities" && <span> · {memberIds.size}</span>}</button>)}
+    </nav>
+    <main>
+    <section className="group-editor-panel" hidden={section !== "Setup"}>
+    <label>Group name<input autoFocus value={draft.name} aria-invalid={nameConflict} onChange={event => setDraft({ ...draft, name: event.target.value })}/>
+      {nameConflict && <small className="endpoint-setup-error" role="alert">A group with this name already exists in this task.</small>}</label>
+    <label>Group type<select value={draft.type} onChange={event => {
+      const type = event.target.value as GroupType;
+      configsByType.current[draft.type] = draft.config;
+      setDraft({ ...draft, type, config: configsByType.current[type] ?? groupConfigDefaults(type) });
+    }}>
+      {groupCategories.map(category => <optgroup key={category} label={category}>
+        {groupTypes.filter(type => groupCatalog[type].category === category).map(type => <option key={type} value={type}>{groupCatalog[type].label}</option>)}
+      </optgroup>)}
+    </select></label>
+    <p className="group-type-help">{currentGroup.help}</p>
+    {setupError && <p className="group-setup-status" role="status">{setupError}</p>}
     {draft.type === "for_each" && <label>For Each source<select value={draft.config.iterationMode || "collection"} onChange={(event) => setDraft((current) => { const config: Record<string, any> = { ...current.config, iterationMode: event.target.value }; if (event.target.value === "range") { delete config.source; delete config.collection; } else { delete config.start; delete config.end; delete config.increment; } return { ...current, config }; })}><option value="collection">Collection elements</option><option value="range">Counter range</option></select></label>}
-    {!["scope", "none", "critical_section", "transaction_jdbc"].includes(draft.type) && <section className="group-data-mapper"><DataSourcePane properties={properties} sources={dataSources} customFunctions={customFunctions} runtimeVariables={[...["iterate", "for_each"].includes(draft.type) ? [{ name: draft.config.currentElementName || draft.config.itemVariable || "currentElement", label: "Current iteration element", type: "any" }] : [], ...["while", "repeat", "repeat_on_error", "iterate", "for_each"].includes(draft.type) ? [{ name: draft.config.indexVariable || "index", label: "Current iteration index", type: "integer" }] : [], ...(draft.type === "repeat_on_error" ? [{ name: "error", label: "Current group error", type: "object" }] : [])]}/><div className="group-condition-targets"><header><DataNodeIcon/><span><b>Group data and condition</b><small>Drag data, functions, properties, or constants into the runtime field.</small></span></header>
+    {draft.type === "repeat" && <label>Repeat mode<select value={countMode ? "count" : "condition"} onChange={event => {
+      const config = { ...draft.config };
+      if (event.target.value === "count") {
+        delete config.condition;
+        config.count = config.count ?? config.iterations ?? 1;
+      } else {
+        delete config.count;
+        delete config.iterations;
+      }
+      setDraft({ ...draft, config });
+    }}><option value="condition">Until a condition is true</option><option value="count">Fixed number of times</option></select></label>}
+    {!["scope", "none", "critical_section", "transaction_jdbc", "pick_first"].includes(draft.type) && <div className={showSources ? "group-data-mapper" : "group-data-fields"}>
+      <button type="button" className="group-sources-toggle" aria-expanded={showSources} onClick={() => setShowSources(!showSources)}>{showSources ? "Hide data and functions" : "Show data and functions"}</button>
+      {showSources && <DataSourcePane properties={properties} sources={dataSources} customFunctions={customFunctions} runtimeVariables={[
+        ...(collectionGroup ? [{ name: draft.config.currentElementName || draft.config.itemVariable || "currentElement", label: "Current iteration element", type: "any" }] : []),
+        ...(["while", "repeat", "repeat_on_error", "iterate", "for_each", "parallel_for_each"].includes(draft.type) ? [{ name: draft.config.indexVariable || "index", label: "Current iteration index", type: "integer" }] : []),
+        ...(draft.type === "repeat_on_error" ? [{ name: "error", label: "Current group error", type: "object" }] : []),
+      ]}/>}
+      <div className="group-condition-targets">
       {["if", "while"].includes(draft.type) && <GroupExpressionTarget label={draft.type === "if" ? "If condition" : "While True condition"} kind="boolean" value={draft.config.condition} onChange={(value: any) => patchConfig("condition", value)} placeholder="${input.enabled} == true" help={draft.type === "if" ? "Evaluated before entering the group." : "Evaluated before every iteration; execution continues while true."}/>}
-      {(draft.type === "iterate" || (draft.type === "for_each" && draft.config.iterationMode !== "range")) && <GroupExpressionTarget label="Collection to iterate" kind="collection" value={draft.config.source} onChange={(value: any) => patchConfig("source", value)} placeholder="${Read.records}" help="Resolved at group entry. The group executes exactly once for each collection item and publishes the current element."/>}
+      {(collectionGroup && (draft.type !== "for_each" || draft.config.iterationMode !== "range")) && <GroupExpressionTarget label="Collection to iterate" kind="collection" value={collection} onChange={(value: any) => patchConfig("source", value)} placeholder="${Read.records}" help="Resolved at group entry. The group processes one item or batch at a time per iteration."/>}
       {draft.type === "for_each" && draft.config.iterationMode === "range" && <><GroupExpressionTarget label="Start counter" kind="number" value={draft.config.start} onChange={(value: any) => patchConfig("start", value)} placeholder="1" help="Inclusive first counter value."/><GroupExpressionTarget label="End counter" kind="number" value={draft.config.end} onChange={(value: any) => patchConfig("end", value)} placeholder="${properties.batch.end}" help="Inclusive final counter value."/><GroupExpressionTarget label="Increment" kind="number" value={draft.config.increment ?? 1} onChange={(value: any) => patchConfig("increment", value)} placeholder="1" help="Positive or negative counter step; zero is rejected."/></>}
-      {draft.type === "repeat" && <GroupExpressionTarget label="Repeat Until True condition" kind="boolean" value={draft.config.condition} onChange={(value: any) => patchConfig("condition", value)} placeholder="${Check.complete} == true" help="The group executes once, then repeats until this condition becomes true."/>}
+      {collectionGroup && <GroupExpressionTarget label="Batch size" kind="number" value={draft.config.batchSize ?? 1} onChange={(value: any) => patchConfig("batchSize", value)} help="Values above one pass an array of items to each iteration."/>}
+      {routedGroup && draft.type !== "first_successful" && <GroupExpressionTarget label="Maximum concurrency" kind="number" value={draft.config.maxConcurrency ?? 4} onChange={(value: any) => patchConfig("maxConcurrency", value)} help="Maximum simultaneous routes or background jobs, from 1 to 64."/>}
+      {routedGroup && <GroupExpressionTarget label="Route timeout (seconds)" kind="number" value={draft.config.routeTimeoutSeconds ?? 0} onChange={(value: any) => patchConfig("routeTimeoutSeconds", value)} help="Zero waits for the route to finish using its activity timeouts."/>}
+      {draft.type === "repeat" && (countMode
+        ? <GroupExpressionTarget label="Repeat count" kind="number" value={draft.config.count ?? draft.config.iterations} onChange={(value: any) => patchConfig("count", value)} help="Number of passes through the group."/>
+        : <GroupExpressionTarget label="Repeat Until True condition" kind="boolean" value={draft.config.condition} onChange={(value: any) => patchConfig("condition", value)} placeholder="${Check.complete} == true" help="The group executes once, then repeats until this condition becomes true."/>)}
       {draft.type === "repeat_on_error" && <GroupExpressionTarget label="Repeat-on-error stop condition" kind="boolean" value={draft.config.stopCondition} onChange={(value: any) => patchConfig("stopCondition", value)} placeholder="${vars.index} >= 3 or ${context.error.code} == 'NON_RETRYABLE'" help="Evaluated only after an unhandled activity error. False retries the complete group; true stops retrying and propagates the error."/>}
-      {["while", "repeat", "iterate", "for_each"].includes(draft.type) && <GroupExpressionTarget label="Maximum iterations" kind="number" value={draft.config.maxIterations} onChange={(value: any) => patchConfig("maxIterations", value)} placeholder="${properties.advanced.groupMaxIterations}" help="Environment-resolved runaway protection. This does not replace the condition or collection size."/>}
       {draft.type === "repeat_on_error" && <><GroupExpressionTarget label="Maximum retry count" kind="number" value={draft.config.retryCount} onChange={(value: any) => patchConfig("retryCount", value)} placeholder="${properties.advanced.retryCount}" help="Additional attempts after the first failure; accepts an environment property or expression."/><GroupExpressionTarget label="Retry interval (seconds)" kind="number" value={draft.config.retryIntervalSeconds} onChange={(value: any) => patchConfig("retryIntervalSeconds", value)} placeholder="${properties.advanced.retryIntervalSeconds}" help="Delay between attempts, resolved from the active runtime environment."/></>}
-    </div></section>}
-    {["iterate", "for_each", "while", "repeat", "repeat_on_error"].includes(draft.type) && <label>Index variable<input value={draft.config.indexVariable || "index"} onChange={(event) => patchConfig("indexVariable", event.target.value)}/></label>}
-    {["iterate", "for_each"].includes(draft.type) && <><label>Current element name<input value={draft.config.currentElementName || draft.config.itemVariable || "currentElement"} onChange={(event) => setDraft((current) => ({ ...current, config: { ...current.config, currentElementName: event.target.value, itemVariable: event.target.value } }))}/><small>Available to every enclosed activity as a group variable.</small></label><label className="group-check"><input type="checkbox" checked={draft.config.accumulateOutput === true} onChange={(event) => patchConfig("accumulateOutput", event.target.checked)}/><span><b>Accumulate iteration output</b><small>Collect the group exit output after every successful iteration.</small></span></label>{draft.config.accumulateOutput && <label>Accumulated output variable<input value={draft.config.accumulatorVariable || `${draft.id}Results`} onChange={(event) => patchConfig("accumulatorVariable", event.target.value)}/></label>}</>}
-    {draft.type === "critical_section" && <label className="wide">Shared lock name<input value={draft.config.lockName || ""} onChange={(event) => patchConfig("lockName", event.target.value)} placeholder="inventory-shared-lock"/></label>}
-    {draft.type === "transaction_jdbc" && <label className="wide">JDBC shared connection<select value={draft.config.resourceId || ""} onChange={(event) => patchConfig("resourceId", event.target.value)}><option value="">Select connection…</option>{resources.filter((item: Resource) => item.type === "jdbc").map((item: Resource) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
-    <section className="group-members"><b>DIRECT ACTIVITY MEMBERS</b><small>Use Parent group for nesting. An activity has one direct owner. Start/event, End, and Catch are Task boundaries.</small>{activities.map((item: Node) => { const owner = owners.get(item.id), boundary = isEventActivity(item) || ["end", "catch"].includes(item.type), disabled = boundary || (!!owner && owner !== draft.id); return <label key={item.id} className={disabled ? "disabled" : ""}><input type="checkbox" disabled={disabled} checked={draft.member_activity_ids.includes(item.id)} onChange={() => toggleMember(item.id)}/><span>{item.name}<small>{boundary ? "Task boundary" : disabled ? `Owned by ${groups.find((candidate: GroupDefinition) => candidate.id === owner)?.name}` : item.type}</small></span></label>; })}</section>
-    <aside className="group-runtime-status"><CheckCircle2/><span><b>Runtime-backed semantics</b><small>Conditions, loops, Pick First branch selection, whole-group retry, exception propagation, native and Java-driver JDBC commit/rollback, validation, archive persistence, and debugger iteration state are active.</small></span></aside>
-  </main><footer>{group && <button className="danger" onClick={() => onDelete(draft.id)}><Trash2/> Delete group</button>}<span/><button onClick={onClose}>Cancel</button><button className="primary" disabled={nameConflict || !draft.name.trim() || (!draft.member_activity_ids.length && !groups.some((item: GroupDefinition) => item.parent_group_id === draft.id))} onClick={() => onSave({...draft,name:studioObjectName(draft.name)})}><Save/> Save group</button></footer></div></ModalLayer>;
+      </div></div>}
+    {draft.type === "critical_section" && <label className="wide">Shared lock name<input value={draft.config.lockName || ""} onChange={event => patchConfig("lockName", event.target.value)} placeholder="Optional"/></label>}
+    {draft.type === "transaction_jdbc" && <label className="wide">JDBC shared connection<select value={selectedConnection || ""} onChange={event => patchConfig("resourceId", event.target.value)}>
+      <option value="">{inferredConnection ? `Use member connection (${resources.find((item: Resource) => item.id === inferredConnection)?.name ?? inferredConnection})` : "Select connection…"}</option>
+      {resources.filter((item: Resource) => item.type === "jdbc").map((item: Resource) => <option key={item.id} value={item.id}>{item.name}</option>)}
+    </select></label>}
+    </section>
+    <section className="group-editor-panel" hidden={section !== "Advanced"}>
+    <label>Parent group<select disabled={draft.type === "async"} value={draft.type === "async" ? "" : draft.parent_group_id || ""} onChange={event => setDraft({ ...draft, parent_group_id: event.target.value || null })}>
+      <option value="">Top level</option>{groups.filter((item: GroupDefinition) => !nestedGroups.has(item.id))
+        .map((item: GroupDefinition) => <option key={item.id} value={item.id}>{item.name}</option>)}
+    </select></label>
+      {["while", "repeat", "iterate", "for_each", "parallel_for_each"].includes(draft.type) && <GroupExpressionTarget label="Maximum iterations" kind="number" value={draft.config.maxIterations} onChange={(value: any) => patchConfig("maxIterations", value)} placeholder="${properties.advanced.groupMaxIterations}" help="Environment-resolved runaway protection. This does not replace the condition or collection size."/>}
+    {draft.type === "repeat_on_error" && <label className="group-check"><input type="checkbox" checked={draft.config.resetOnRetry === true} onChange={event => patchConfig("resetOnRetry", event.target.checked)}/><span><b>Restore input and variables on retry</b><small>Each attempt starts with the payload and variables captured on entry.</small></span></label>}
+    {collectionGroup && !routedGroup && <label className="group-check"><input type="checkbox" checked={draft.config.preservePayload === true} onChange={event => patchConfig("preservePayload", event.target.checked)}/><span><b>Preserve incoming payload</b><small>Send the original payload downstream after the last iteration.</small></span></label>}
+    {scopeGroup && <section className="group-members">
+      <b>Local variables</b>
+      {localVariables.map((variable, index) => <div className="group-rule-row" key={index}>
+        <label>Variable name<input value={variable.name} onChange={event => editLocal(index, { name: event.target.value })}/></label>
+        <GroupExpressionTarget label="Initial value" value={variable.value} onChange={(value: any) => editLocal(index, { value })} placeholder="${input.value}" help="Evaluated against the incoming scope data."/>
+        <button type="button" onClick={() => patchConfig("localVariables", localVariables.filter((_, i) => i !== index))}>Remove variable</button>
+      </div>)}
+      {invalidLocals && <p role="alert">Enter a unique identifier for each local variable.</p>}
+      <button type="button" onClick={() => patchConfig("localVariables", [...localVariables, { name: "", value: null }])}>Add local variable</button>
+      <b>Fault handlers</b><small>The first handler matching the fault type or code runs. Leave the filter empty to match any fault.</small>
+      {faultHandlers.map((handler, index) => <div className="group-rule-row" key={index}>
+        <label>Behavior<select value={handler.action} onChange={event => editHandler(index, { action: event.target.value })}><option value="continue">Continue after group</option><option value="propagate">Propagate fault</option></select></label>
+        <label>Fault types or codes<input value={handler.types.join(",")} placeholder="Optional, comma separated" onChange={event => editHandler(index, { types: event.target.value.split(",") })}/></label>
+        {handler.action === "continue" && <GroupExpressionTarget label="Continuation output" value={handler.value} onChange={(value: any) => editHandler(index, { value })} placeholder="Defaults to the fault document" help="Map an expression such as ${context.error}."/>}
+        <button type="button" disabled={index === 0} onClick={() => moveHandler(index, -1)}>Move handler up</button>
+        <button type="button" disabled={index === faultHandlers.length - 1} onClick={() => moveHandler(index, 1)}>Move handler down</button>
+        <button type="button" onClick={() => patchConfig("faultHandlers", faultHandlers.filter((_, i) => i !== index))}>Remove handler</button>
+      </div>)}
+      <button type="button" onClick={() => patchConfig("faultHandlers", [...faultHandlers, { action: "continue", types: [] }])}>Add fault handler</button>
+    </section>}
+    {["iterate", "for_each", "parallel_for_each", "while", "repeat", "repeat_on_error"].includes(draft.type) && <label>Index variable<input value={draft.config.indexVariable || "index"} onChange={(event) => patchConfig("indexVariable", event.target.value)}/></label>}
+    {collectionGroup && <><label>Current element name<input value={draft.config.currentElementName || draft.config.itemVariable || "currentElement"} onChange={(event) => setDraft((current) => ({ ...current, config: { ...current.config, currentElementName: event.target.value, itemVariable: event.target.value } }))}/><small>Available to every enclosed activity as a group variable.</small></label>{!routedGroup && <><label className="group-check"><input type="checkbox" checked={draft.config.accumulateOutput === true} onChange={(event) => patchConfig("accumulateOutput", event.target.checked)}/><span><b>Accumulate iteration output</b><small>Collect the group exit output after every successful iteration.</small></span></label>{draft.config.accumulateOutput && <label>Accumulated output variable<input value={draft.config.accumulatorVariable || `${draft.id}Results`} onChange={(event) => patchConfig("accumulatorVariable", event.target.value)}/></label>}</>}</>}
+    </section>
+    <section className="group-editor-panel" hidden={section !== "Activities"}>
+      <section className="group-wiring" aria-label="Group wiring">
+        <dl><div><dt>Entry activities</dt><dd>{wiring.entryIds.map(activityName).join(" · ") || "None"}</dd></div>
+        <div><dt>Next activities</dt><dd>{wiring.nextIds.map(activityName).join(" · ") || "None"}</dd></div></dl>
+        {wiring.issues.length > 0 && <ul role="status">{wiring.issues.map(issue => <li key={issue}>{issue}</li>)}</ul>}
+        {childGroups.length > 0 && <p>Included groups · {childGroups.map((item: GroupDefinition) => item.name).join(" · ")}</p>}
+      </section>
+      <div className="group-member-tools">
+        <label>Find activities<input type="search" value={memberQuery} onChange={event => setMemberQuery(event.target.value)} placeholder="Search by name or type"/></label>
+        <label className="group-check"><input type="checkbox" checked={showUnavailable} onChange={event => setShowUnavailable(event.target.checked)}/> Show unavailable activities</label>
+      </div>
+      <section className="group-members" aria-label="Direct activity members">
+        {!visibleMembers.length && <p role="status">{memberQuery.trim() ? "No matching activities." : "No activities are available to add."}</p>}
+        {visibleMembers.map((item: Node) => {
+          const owner = owners.get(item.id), boundary = isEventActivity(item) || ["end", "catch"].includes(item.type);
+          const checked = draft.member_activity_ids.includes(item.id);
+          const disabled = !checked && (boundary || (!!owner && owner !== draft.id));
+          return <label key={item.id} className={disabled ? "disabled" : ""}>
+            <input type="checkbox" disabled={disabled} checked={checked} onChange={() => toggleMember(item.id)}/>
+            <span><b>{item.name}</b><small>{boundary ? "Task boundary" : disabled ? `Owned by ${groups.find((candidate: GroupDefinition) => candidate.id === owner)?.name}` : item.type}</small></span>
+          </label>;
+        })}
+      </section>
+    </section>
+  </main>
+  <footer>
+    {!isNew && <button type="button" className="danger" onClick={() => onDelete(draft.id)}><Trash2/> Delete group</button>}
+    <span className="group-footer-status">{invalidLocals ? <button type="button" onClick={() => setSection("Advanced")}>Review local variable names</button>
+      : setupError ? <button type="button" onClick={() => setSection("Setup")}>{setupError}</button>
+      : wiring.issues.length ? <button type="button" onClick={() => setSection("Activities")}>Review wiring ({wiring.issues.length})</button> : null}</span>
+    <button type="button" onClick={onClose}>Cancel</button>
+    <button type="button" className="primary" disabled={nameConflict || invalidLocals || !draft.name.trim() || !memberIds.size} onClick={save}><Save/> {isNew ? "Create group" : "Save group"}</button>
+  </footer></div></ModalLayer>;
 }
 
 function CatchAIDialog({ options, onClose, onApply }: any) {
@@ -4789,7 +5176,7 @@ function StudioRibbon(props: any) {
       {command("Up", ArrowUp, props.navigation.up, !props.navigation.up, props.navigation.upLabel)}
       {command("Project Search", Search, props.projectSearch)}
     </div></div>
-    <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("API Blueprint", Globe, props.apiBlueprint, props.executionActive)}{command("AI Build", WandSparkles, props.aiBuild)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Run", Zap, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Execution Analytics", Activity, props.executionAnalytics)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}{props.reviewValidation && command("Review Findings", ShieldCheck, props.reviewValidation)}</div></div>
+    <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("API Blueprint", Globe, props.apiBlueprint, props.executionActive)}{command("AI Build", WandSparkles, props.aiBuild)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Execution Setup", Settings2, props.executionSetup, props.executionActive)}{command("Run", Zap, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Execution Analytics", Activity, props.executionAnalytics)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}{props.reviewValidation && command("Review Findings", ShieldCheck, props.reviewValidation)}</div></div>
     <div className="ribbon-group"><b>EDIT</b><div>{command("Undo", Undo2, props.undo)}{command("Cut", Scissors, props.cut, !props.selectedCount)}{command("Copy", ClipboardCopy, props.copy, !props.selectedCount)}{command("Paste", ClipboardPaste, props.paste)}</div></div>
     <div className="ribbon-group layout-group"><b>ARRANGE · {props.selectedCount} SELECTED</b><div>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</div></div>
   </section>;
@@ -5100,11 +5487,11 @@ function focusStudioPanel(selector: string) {
   element.classList.add("menu-focus-flash");
   window.setTimeout(() => element.classList.remove("menu-focus-flash"), 700);
 }
-function TopMenu({ label, open, toggle, commands }: any) {
-  return <div className="menu-root"><button className={open ? "active" : ""} onClick={toggle}>{label}</button>{open && <div className="menu-dropdown command-menu glossy-menu" onClick={(event) => event.stopPropagation()}>{commands.map((command: any) => { const Icon = command.icon; return <button key={command.label} disabled={command.disabled} onClick={() => { command.action(); toggle({ stopPropagation() {} }); }}><Icon/><span><b>{command.label}</b><small>{command.detail}</small></span>{command.shortcut && <kbd>{command.shortcut}</kbd>}</button>; })}</div>}</div>;
+function TopMenu({ label, open, toggle, commands }: {label: string; open: boolean; toggle: (event: React.MouseEvent) => void; commands: StudioCommand[]}) {
+  return <div className="menu-root"><button className={open ? "active" : ""} onClick={toggle}>{label}</button>{open && <div className="menu-dropdown command-menu glossy-menu" onClick={(event) => event.stopPropagation()}>{commands.map(command => <button key={command.label} disabled={command.disabled} onClick={(event) => { command.action(); toggle(event); }}><command.icon/><span><b>{command.label}</b><small>{command.detail}</small></span>{command.shortcut && <kbd>{command.shortcut}</kbd>}</button>)}</div>}</div>;
 }
 function HelpDialog({ mode, onClose }: any) {
-  return <ModalLayer className="modal-backdrop"><div className="runtime-modal help-dialog"><header><b>{mode === "shortcuts" ? "Keyboard Shortcuts" : "About MINA"}</b><button onClick={onClose}>×</button></header><main>{mode === "shortcuts" ? <div className="shortcut-grid"><kbd>Ctrl+Z</kbd><span>Undo Studio change (100 levels)</span><kbd>Ctrl+Y</kbd><span>Redo Studio change</span><kbd>Ctrl+Shift+Z</kbd><span>Redo Studio change</span><kbd>Delete</kbd><span>Delete selected activity or transition</span><kbd>Ctrl+S</kbd><span>Save project</span><kbd>F5</kbd><span>Run active task</span><kbd>F6</kbd><span>Start debugging</span><kbd>Right-click</kbd><span>Open context commands or activity search</span><kbd>Drag</kbd><span>Move activities on the canvas</span></div> : <AboutMina/>}</main><footer><button className="primary" onClick={onClose}>Close</button></footer></div></ModalLayer>;
+  return <ModalLayer className="modal-backdrop"><div className="runtime-modal help-dialog"><header><b>{mode === "shortcuts" ? "Keyboard Shortcuts" : "About MINA"}</b><button onClick={onClose}>×</button></header><main>{mode === "shortcuts" ? <div className="shortcut-grid"><kbd>Ctrl+Shift+P</kbd><span>Search Studio commands</span><kbd>Ctrl+Shift+F</kbd><span>Search project objects</span><kbd>Ctrl+Z</kbd><span>Undo Studio change (100 levels)</span><kbd>Ctrl+Y</kbd><span>Redo Studio change</span><kbd>Ctrl+Shift+Z</kbd><span>Redo Studio change</span><kbd>Delete</kbd><span>Delete selected activity or transition</span><kbd>Ctrl+S</kbd><span>Save project</span><kbd>F5</kbd><span>Run active starter task</span><kbd>F6</kbd><span>Start debugging</span><kbd>Right-click</kbd><span>Open context commands or activity search</span><kbd>Drag</kbd><span>Move activities on the canvas</span></div> : <AboutMina/>}</main><footer><button className="primary" onClick={onClose}>Close</button></footer></div></ModalLayer>;
 }
 function FileMenu({
   stop,
@@ -5918,7 +6305,7 @@ function connectionDefaults(type: string) {
   if (type === "pubsub") Object.assign(values, { authenticationType: "Service Account JSON", projectId: "", serviceAccountJson: "", batchMaxMessages: 100, batchMaxBytes: 1048576, batchDelayThresholdMilliseconds: 10, flowControlMaxMessages: 1000, flowControlMaxBytes: 10485760 });
   return values;
 }
-function SharedConnectionDialog({ type, initial, initialRole, requireInitialRole, validateName, properties, onClose, onCreate, onSapSchemaFetched, navigation }: any) {
+function SharedConnectionDialog({ type, initial, initialRole, requireInitialRole, validateName, properties, onClose, onCreate, onSapSchemaFetched, navigation, reviewEnvironment }: any) {
   const fields = connectionFieldSets[type] || [];
   const testOutputRef = useRef<HTMLDivElement>(null);
   const idocBrowserRef = useRef<HTMLElement>(null);
@@ -6114,7 +6501,7 @@ function SharedConnectionDialog({ type, initial, initialRole, requireInitialRole
   const resolvedConfig = runtimeResource().config;
   const nameError = validateName?.(draft.name || "");
   return <ModalLayer className="modal-backdrop"><div className="runtime-modal connection-dialog" role="dialog" aria-modal="true">
-    <header><span className="connection-dialog-title"><Cable/><span><b>{initial ? "Edit" : "Create"} {type === "sap" ? "SAP ECC" : type === "snowflake" ? "Snowflake JDBC" : type.toUpperCase()} shared connection</b><small>{initial ? "Update the reusable project connection" : "Reusable across every task in this project"}</small></span></span><span className="connection-header-actions">{navigation && <EditorNavigation actions={navigation} isDirty={() => JSON.stringify(draft) !== JSON.stringify(originalDraft.current)}/>}{type === "sap" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button>}{type === "snowflake" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchSnowflakeEntities} disabled={snowflakeLoading}><Download/> {snowflakeLoading ? "Retrieving…" : "Retrieve entities"}</button>}<button aria-label="Close" onClick={onClose}>×</button></span></header>
+    <header><span className="connection-dialog-title"><Cable/><span><b>{initial ? "Edit" : "Create"} {type === "sap" ? "SAP ECC" : type === "snowflake" ? "Snowflake JDBC" : type.toUpperCase()} shared connection</b><small>{reviewEnvironment ? `Test environment: ${reviewEnvironment}` : initial ? "Update the reusable project connection" : "Reusable across every task in this project"}</small></span></span><span className="connection-header-actions">{navigation && <EditorNavigation actions={navigation} isDirty={() => JSON.stringify(draft) !== JSON.stringify(originalDraft.current)}/>}{type === "sap" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchIdocs} disabled={idocLoading}><Download/> {idocLoading ? "Retrieving…" : "Retrieve IDoc types"}</button>}{type === "snowflake" && <button type="button" className="browse-properties retrieve-idocs" onClick={fetchSnowflakeEntities} disabled={snowflakeLoading}><Download/> {snowflakeLoading ? "Retrieving…" : "Retrieve entities"}</button>}<button aria-label="Close" onClick={onClose}>×</button></span></header>
     <main>
       <label>Name<input value={draft.name} aria-invalid={!!nameError} onChange={(event) => setDraft({ ...draft, name: event.target.value })}/>{nameError && <small className="endpoint-setup-error" role="alert">{nameError}</small>}</label>
       {target && <section className="connection-property-picker">

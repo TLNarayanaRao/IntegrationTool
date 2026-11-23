@@ -167,27 +167,3 @@ export default function DebugTraceDialog({ sessionId, live, activeThreadId, task
     <footer><a href={`${url}?download=true`} download>Download report (JSON)</a><button type="button" onClick={onClose}>Close</button></footer>
   </div></ModalLayer>;
 }
-
-export function DebugLaunchDialog({ taskName, onStart, onClose }: {
-  taskName: string; onStart: (input: Record<string, unknown>, capture: boolean) => void; onClose: () => void;
-}) {
-  const [input, setInput] = useState("{}");
-  const [capture, setCapture] = useState(true);
-  const [error, setError] = useState("");
-  return <ModalLayer className="modal-backdrop"><form className="runtime-modal debug-launch-dialog" role="dialog" aria-modal="true" aria-labelledby="debug-launch-title" onSubmit={event => {
-    event.preventDefault();
-    let data: unknown;
-    try { data = JSON.parse(input); } catch { setError("Enter a valid JSON object."); return; }
-    if (!data || typeof data !== "object" || Array.isArray(data)) { setError("Enter a JSON object."); return; }
-    onStart(data as Record<string, unknown>, capture);
-  }}>
-    <header><b id="debug-launch-title">Debug with Input</b><button type="button" onClick={onClose} aria-label="Close debug setup">×</button></header>
-    <main>
-      <p>{taskName} will pause before its first activity. This session does not open a live listener.</p>
-      <label>Initial task input (JSON)<textarea value={input} onChange={event => setInput(event.target.value)} spellCheck={false}/></label>
-      <label><input type="checkbox" checked={capture} onChange={event => setCapture(event.target.checked)}/> Record thread paths</label>
-      {error && <p role="alert">{error}</p>}
-    </main>
-    <footer><button type="button" onClick={onClose}>Cancel</button><button type="submit" className="primary">Start paused</button></footer>
-  </form></ModalLayer>;
-}

@@ -166,7 +166,7 @@ class GroupRuntimeTests(unittest.TestCase):
             self.assertEqual(connection.execute("select count(*) from events").fetchone()[0], 0)
             connection.close()
 
-    def test_invalid_group_boundary_and_pick_first_fail_explicitly(self):
+    def test_pick_first_runs_only_the_first_eligible_branch(self):
         process = ProcessDefinition(
             id="invalid", name="Invalid",
             activities=[activity("start", "start"), activity("one"), activity("two"), activity("end", "end")],
@@ -174,8 +174,9 @@ class GroupRuntimeTests(unittest.TestCase):
             groups=[GroupDefinition(id="pick", type="pick_first", name="Pick", member_activity_ids=["one", "two"])],
         )
         result = asyncio.run(WorkflowRuntime().run(process, {}))
-        self.assertEqual(result.status, "failed")
-        self.assertTrue(any("not runtime-qualified" in item.get("message", "") for item in result.logs))
+        self.assertEqual(result.status, "completed")
+        self.assertIn("one", result.activity_outputs)
+        self.assertNotIn("two", result.activity_outputs)
 
 
 if __name__ == "__main__":

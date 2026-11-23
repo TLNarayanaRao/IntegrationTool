@@ -262,7 +262,8 @@ class DebugManager:
             frame = state['frames'][-1]
             task_id = options.get('task_id') or frame['taskId']
             task = next((item for item in state['project'].tasks if item.id == task_id), None)
-            if not task or task.library_origin: raise ValueError('Select an editable project task in the debugger')
+            if not task: raise ValueError('The selected process was not found')
+            if task.library_origin: raise ValueError('Select an editable project task in the debugger')
             activity_id = options.get('activity_id') or frame['activityId']
             activity = next((item for item in task.activities if item.id == activity_id), None)
             if not activity: raise ValueError('Select an activity in the selected process')
@@ -490,12 +491,19 @@ class DebugManager:
             state['groupPlans'][task.id] = self.runtime.compile_groups(task)
         plans = state['groupPlans'][task.id]
         ctx = frame['context']; ctx.setdefault('_process', task); ctx.setdefault('groupStack', []); ctx.setdefault('jdbcTransactions', {})
-        entered = await self.runtime.enter_group_boundaries(frame['activityId'], ctx, plans)
+        try:
+            entered = await self.runtime.enter_group_boundaries(frame['activityId'], ctx, plans)
+        except Exception as error:
+            activity = next(item for item in task.activities if item.id == frame['activityId'])
+            if not await self._handle_fault(state, frame, task, activity, error, 0):
+                self._fail_frame_threads(state['trace'], frame)
+                state.update(status='failed', pauseReason='exception')
+            return
         if entered is None:
             await self._complete_frame(state, frame, task)
             return
         if entered != frame['activityId']:
-            self._redirect(state, frame, entered, 'group skipped')
+            self._redirect(state, frame, entered, 'group boundary')
             return
         activity = next(item for item in task.activities if item.id == frame['activityId'])
         if '_mockOutput' in state and state.get('_mockActivityId') != activity.id:
@@ -585,13 +593,10 @@ class DebugManager:
         if target:
             self._schedule_branches(state, frame, task, [edge], target)
         else:
-            target = await self.runtime.retry_failed_group(ctx, plans)
+            target = await self.runtime.recover_group_fault(ctx, plans, fault)
             if target:
-                self._redirect(state, frame, target, 'group retry')
+                self._redirect(state, frame, target, 'group fault handler')
         if not target:
-            while ctx.get('groupStack'):
-                group_state = ctx['groupStack'].pop()
-                await self.runtime._finish_group(group_state, plans[group_state['id']], ctx, False)
             caught = self.runtime.route_catch(task.activities, ctx, fault)
             if caught:
                 target = caught.id

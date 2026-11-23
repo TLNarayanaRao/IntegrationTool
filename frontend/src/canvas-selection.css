@@ -70,3 +70,9 @@
 .transition-editor .transition-label{display:flex;flex-direction:column;gap:5px;min-width:210px;flex:1;}
 .transition-editor .transition-label small{color:#7895a8;font:9px "DM Mono";}
 .transition-editor .transition-label input{width:100%;color:#d8eaf5;background:#081522;border:1px solid #31536c;border-radius:6px;padding:8px;}
+
+.canvas-toolbar .canvas-view-tools { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+.canvas-view-tools > button { display: inline-grid; place-items: center; min-width: 25px; min-height: 25px; padding: 0 5px; }
+.canvas-view-tools > button[title="Reset zoom to 100%"] { min-width: 46px; font-variant-numeric: tabular-nums; }
+.canvas-view-tools > button svg { width: 14px; height: 14px; }
+.canvas-view-tools > button:focus-visible { outline: 2px solid var(--accent, #54d7fa); outline-offset: -2px; }

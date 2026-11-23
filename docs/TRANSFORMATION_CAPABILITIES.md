@@ -92,7 +92,10 @@ output. Add namespace prefixes and variables as JSON objects. For example,
 In **Input**, enter an expression such as
 `xpath('string(/ord:orders/ord:order[@id=$minimum]/@id)')`.
 The **XPath expression builder** can test a raw formula against sample XML or
-a JSON envelope and apply it to the selected target. Choose a function to
+a JSON envelope. Select an editable target field or loop and choose
+**Apply to** to save the expression to that mapping. If the Mapper's XML source
+points to a field such as `${last.body}`, supply a JSON sample with a `body`
+field. Choose a function to
 display its arguments. Drag a sample XML field into an argument, or select the
 field and use the argument's button. In XPath 2.0, the target cast action wraps
 the current formula in the target's supported XML Schema constructor.
@@ -115,13 +118,21 @@ In **Configuration**, use **Source type overrides** to coerce specific source
 paths before formulas and XML parameter binding. For example,
 `{"input.order.amount":"decimal"}` converts the input amount to a number.
 
-In **Input → Source coercions and cardinality**, create named views of the same
-source path. Set optional, exactly one, repeating, or at least one. Select a
+In **Input → Source views**, create a named mapping source with its own
+occurrence rules. Choose or drop a source path from the Data pane, or enter it
+manually. Set optional, exactly one, repeating, or at least one. For example,
+set an order to **Repeating** to map it as a list whether the source holds one
+order or several. Select a
 project schema to copy its contract into the view, or enter an inline contract.
 For XML, a named complex type must be valid for the source element's declaration.
 For JSON, the selected contract validates each occurrence. Choose a view or one
-of its fields from Data Sources. Occurrence ranges and type validation apply
-when a rule reads that view. Source views run in visual mapping mode.
+of its fields under **Source views** in the Data pane. Occurrence ranges and
+type validation apply when a rule reads that view. Use **Map & Test** to run
+the mapping with sample data. A plain sample can represent the referenced
+activity's output. For several distinct activity outputs, provide an
+`activities` object keyed by activity ID, with each record's data under
+`output`. Both Input tools are available in visual mapping mode, including in
+**Edit mappings**. Apply the expanded editor's changes together or cancel them.
 
 In the XPath builder, use **Check XPath 1.0 quick fix** or **Check XPath 2.0
 quick fix** to compare the two evaluations. Apply a passing fix to the selected

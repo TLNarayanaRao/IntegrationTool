@@ -18,7 +18,59 @@ or property, choose **Find References** to see configured usages. You can
 also right-click a task, connection, or schema in Project Explorer. For
 property-driven targets, results show the matching environments.
 
+Choose **Commands** in the menu bar or press **Ctrl+Shift+P**
+(**Cmd+Shift+P** on macOS) to find actions such as Validate Project, Debug
+with Input, or Execution Analytics. Use the arrow keys to select an action,
+**Enter** to run it, and **Esc** to close the palette. Use the menu-bar button
+if your browser reserves the shortcut. **F5** runs the open Starter Task and
+**F6** starts debugging when the task editor is open and execution is idle.
+
+Use **Window → Reopen Closed Task Tab** or run the same command from the
+palette to bring back a task tab. With all tabs closed, the designer offers
+to reopen the last one. Studio keeps up to 15 recently closed tabs in the
+current project for the session.
+
+In the Task Designer toolbar or the **View** menu, choose **Fit Task** to
+bring the whole diagram into view, or **Fit Selection** to frame the
+selected activities or transition. The zoom controls keep the center of the
+current view in place. Click the zoom percentage to return to 100%.
+
 MINA Studio supports interactive debugging for ordinary tasks and continuous event starters.
+
+## Executable groups
+
+Select activities and choose **Group selected**, or pick a type from the
+activity picker's **Groups** list. **Setup** shows the options for the chosen
+group type. **Activities** lets you search the membership list and review the
+entry and next activities before saving. **Advanced** contains nesting, loop
+limits, local variables, and fault handlers where applicable. **Cancel** leaves
+an unsaved group off the canvas.
+
+**Scope** and **JDBC transaction** accept local
+variables and ordered fault handlers. A handler can continue at the group's
+unconditional exit with a mapped result, or propagate the fault. Existing
+activity error transitions take priority. Retry groups can restore their
+entry payload and variables on each attempt. External writes can still repeat.
+
+**For Each** and **Iterate** support batches, output accumulation, and optional
+preservation of the incoming payload. **Parallel For Each** runs a bounded
+number of isolated iterations and publishes the results in input order.
+
+For **Scatter-Gather** or **First Successful**, connect one preceding activity
+to two or more disjoint routes with unconditional transitions. Enclose those
+route activities in the group and connect their exits to the same activity
+outside it. Scatter-Gather waits for all routes. First Successful tries them
+in incoming transition order until one succeeds. Pick First selects the
+first eligible branch. Background Scope starts an independent job and passes
+the main payload through. At its concurrency limit it waits for a slot first.
+
+Debug steps over routed groups and shows their execution logs. Use the
+engine-backed Python archive for routed groups, Pick First, and configured
+scope variables or fault handlers. The direct Python archive supports plain
+scopes, sequential batching, and isolated retries on qualifying graphs.
+Critical sections coordinate within one runtime. JDBC transactions use one
+connection. Scope-local event handlers and distributed transactions are
+outside this group model.
 
 ## Review validation findings
 
@@ -66,7 +118,40 @@ When running Studio in a browser from a source checkout, the runtime serves `fro
 - **Break on Next Event** pauses after a live starter receives one event and before the downstream path executes. Continue to finish processing the delivery and re-arm the listener. For HTTP, a caller may time out while the debug session is paused.
 - **Stop** cancels the debug driver and listener, rolls back open transaction groups, and releases owned native processes.
 
-Choose **Run → Debug with Input** to enter a JSON object and start the selected task paused. This mode leaves live listeners unopened. Use the Activity Test Bench to preview the starter, supply mock output, or explicitly test the real activity. **Record thread paths** controls path detail for the session. Metrics are collected in either setting.
+Open **Execution Setup** from the ribbon or **Run** menu to choose a task and
+environment for one execution. The workspace environment stays selected for
+editing. The execution panel and saved-log controls use the launch
+environment. **Readiness** reviews the selected task and its statically
+referenced subtasks, shared connections, missing or empty environment
+properties, and flow and mapping findings. Open a finding to edit it or open
+a connection to run its connection test using the selected profile.
+
+To test a Subtask by itself, open it and click **Run**, or choose **Run →
+Test Subtask**. The setup shows the Start activity's selected input structure
+and offers four input sources. **Start fields** shows editable controls based on
+the input structure, including booleans and JSON editors for repeated values.
+**Paste or edit JSON** accepts a complete payload. **Load JSON file** previews
+a local fixture, with **Edit as JSON** available for changes. **No input**
+sends an empty object. Choose **Validate input** to check the selected source
+without running the flow. For an XSD-backed Start activity, **Paste or edit XML**
+and **Load XML file** accept an XML document. Studio shows the expected root
+and validates its namespace, root, and schema before running. The Subtask
+receives the validated document as a JSON object keyed by the selected root,
+with repeating elements represented as arrays. You can also supply that
+structure through the JSON options. **Run Subtask
+test** validates again before the first activity. The execution panel stays open
+with selectable output and logs. If Start has no input schema, leave the input empty to
+execute the task with an empty object. The Subtask uses the selected
+environment and its activities run with their configured connections.
+
+In **Run** mode, live receivers take input from their senders and schedules
+take input from the timer. For a one-shot entry, paste or load a JSON object.
+Quick Run starts with an empty input object. Choose **Run → Debug with Input**
+to start a Starter Task or Subtask paused with a sample JSON object. The
+paused launch leaves listeners unopened. Use the Activity Test Bench to
+preview the starter, supply mock output, or explicitly test the real activity.
+**Record thread paths** controls path detail for the session. Metrics are
+collected in either setting.
 
 ## Thread paths and metrics
 

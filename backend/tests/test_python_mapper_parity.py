@@ -445,6 +445,27 @@ class PythonMapperParityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Mapper source coercion 'Retail'"):
             execute({'input':{'order':'<o:order xmlns:o="urn:order"><o:id>01</o:id></o:order>'}}, rules, {'sourceCoercions':views})
 
+    def test_mapper_input_tools_use_the_same_source_views_and_xpath_in_preview_and_execution(self):
+        from app.main import mapper_test
+
+        payload = {'orders': {'id': '42'}, 'xmlString': '<order><region>West</region></order>'}
+        views = {'Orders': {'path': 'activities.Start.output.orders', 'cardinality': '+'}}
+        rules = [
+            {'target': 'id', 'source': '${coerced.Orders[1].id}'},
+            {'target': 'region', 'source': 'xpath1("string(/order/region)")'},
+        ]
+        options = {'sourceCoercions': views, 'xmlSource': '${last.xmlString}'}
+        expected = {'id': '42', 'region': 'West'}
+        for sample in (payload, {**payload, 'activities': {'Start': {'output': payload}}}):
+            self.assertEqual(mapper_test({'input': sample, 'mappings': rules, 'options': options})['output'], expected)
+        project = self.project(rules)
+        project['tasks'][0]['activities'][1]['config'].update(options)
+        self.assert_studio(project, payload, expected)
+        self.assert_exports(project, payload, expected)
+
+        self.assertEqual(mapper_test({'input': payload['xmlString'], 'mappings': rules[1:],
+                                      'options': {'xmlSource': '${last}'}})['output'], {'region': 'West'})
+
     def test_xpath_palette_and_per_expression_version_quick_fix(self):
         from app.mapper_xml import xpath_function_palette, xpath_value, transform_xml, parse_xml, BW_FUNCTIONS
 

@@ -7,17 +7,18 @@ import ts from 'typescript';
 const source = await readFile(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const ast = ts.createSourceFile('main.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const entrySource = await readFile(new URL('../src/taskEntry.ts', import.meta.url), 'utf8');
+const setupSource = await readFile(new URL('../src/executionSetup.ts', import.meta.url), 'utf8');
 const namingSource = await readFile(new URL('../src/studioObjectName.ts', import.meta.url), 'utf8');
 const packageSource = await readFile(new URL('../src/ProjectPackages.tsx', import.meta.url), 'utf8');
 const packageAst = ts.createSourceFile('packages.tsx', packageSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const packageNames = new Set(['DEFAULT_PACKAGE','packagePattern','packagePath']);
 const packageHelpers = packageAst.statements.filter(statement => packageNames.has(statement.name?.getText(packageAst)) ||
   statement.declarationList?.declarations.some(declaration => packageNames.has(declaration.name.getText(packageAst))));
-const names = new Set(['isTaskTerminal', 'propertyReferences', 'validateTaskDefinition', 'validateProjectDefinition']);
+const names = new Set(['isTaskTerminal', 'propertyBindingKey', 'validateTaskDefinition', 'validateProjectDefinition']);
 const declarations = ast.statements.filter(statement => ts.isVariableStatement(statement)
   && statement.declarationList.declarations.some(declaration => names.has(declaration.name.getText(ast))));
 assert.equal(declarations.length, names.size);
-const compiled = ts.transpileModule([entrySource, namingSource, ...packageHelpers.map(statement => statement.getText(packageAst)),
+const compiled = ts.transpileModule([entrySource, setupSource.replace(/^import[^\n]+\n/, ''), namingSource, ...packageHelpers.map(statement => statement.getText(packageAst)),
   'const activityMappingIssues = () => [];', ...declarations.map(statement => statement.getText(ast))].join('\n')
   + '\nexport { validateTaskDefinition, validateProjectDefinition };',
   { compilerOptions: { module: ts.ModuleKind.ESNext } }).outputText;
@@ -31,6 +32,13 @@ function fixture(connectionConfig = {}) {
   return { name: 'IDoc app', tasks: [task], resources: [{ id: 'sap', name: 'SAP', type: 'sap', config: connectionConfig }], schemas: [],
     properties: { local: [] }, packaging: { artifact_name: 'idoc', version: '1.0.0' } };
 }
+
+test('task validation resolves connection selection using the requested profile', () => {
+  const project = fixture({idocType: 'ORDERS05'});
+  project.properties.qa = [{key: 'sap.id', value: 'sap'}];
+  project.tasks[0].activities[0].config.resourceId = '${properties.sap.id}';
+  assert.deepEqual(validateTaskDefinition(project, project.tasks[0], 'qa'), []);
+});
 
 for (const [scope, validate] of [
   ['task', project => validateTaskDefinition(project, project.tasks[0])],
