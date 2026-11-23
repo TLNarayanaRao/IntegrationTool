@@ -19,34 +19,45 @@ def subtask_start(task):
     return starts[0]
 
 
-def subtask_input(project, task, start, payload=None, *, describe=False, input_format='json'):
+def configured_start_schema(project, task, start):
     config = start.config
     schema_id = config.get('interfaceSchemaId')
     snapshot = config.get('interfaceSchemaText') or task.input_schema
     contract = snapshot
+    asset = None
     if schema_id:
         asset = next((item for item in project.schemas if schema_id in (item.id, item.name)), None)
         if not asset:
             raise ValueError('The schema selected on Start was not found.')
         contract = inherit_schema_selection(asset.content, snapshot)
+    return contract, (asset.name if asset else 'Start input schema'), schema_id
+
+
+def start_xsd_definition(project, contract, schema_id):
+    bundle = DataFormats.schema_bundle({'schemaId': schema_id}, {'project': project}, contract)
+    selected = schema_selection(contract)[1]
+    shape = xsd_shape(contract, selected.removeprefix('{}'), bundle)
+    root = shape['xml']['name']
+    namespace = shape['xml'].get('namespace')
+    expected_root = selected or (f'{{{namespace}}}{root}' if namespace else root)
+    definition = {'type': 'object', 'properties': {root: shape}, 'required': [root], 'additionalProperties': False}
+    return definition, bundle, root, expected_root
+
+
+def subtask_input(project, task, start, payload=None, *, describe=False, input_format='json'):
+    contract, title, schema_id = configured_start_schema(project, task, start)
     xml = isinstance(contract, str) and contract.lstrip().startswith('<')
     if input_format == 'xml' and not xml:
         raise ValueError('XML input requires an XSD on the Subtask Start activity.')
     if contract is None or contract == {} or isinstance(contract, str) and not contract.strip():
         return {'format': 'none', 'example': {}, 'fields': [], 'errors': []}
 
-    title = asset.name if schema_id else 'Start input schema'
     errors = []
     result = {'format': 'xsd' if xml else 'json', 'name': title, 'errors': errors}
     if xml:
-        bundle = DataFormats.schema_bundle({'schemaId': schema_id}, {'project': project}, contract)
-        selected = schema_selection(contract)[1]
-        shape = xsd_shape(contract, selected.removeprefix('{}'), bundle)
-        root = shape['xml']['name']
-        namespace = shape['xml'].get('namespace')
-        expected_root = selected or (f'{{{namespace}}}{root}' if namespace else root)
+        definition, bundle, root, expected_root = start_xsd_definition(project, contract, schema_id)
+        shape = definition['properties'][root]
         result['root'] = expected_root.removeprefix('{}')
-        definition = {'type': 'object', 'properties': {root: shape}, 'required': [root], 'additionalProperties': False}
         if not describe and input_format == 'xml':
             if not isinstance(payload, str) or not payload.strip():
                 raise ValueError('Enter XML or select an XML file.')

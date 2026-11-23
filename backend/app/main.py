@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders
 from pydantic import BaseModel, Field
-from .models import AIBuildRequest, DebugAction, DebugRequest, LibraryPin, Project, RunRequest, SharedResource, SubtaskInputRequest, SubtaskRunRequest, PackagePath, effective_event_activities, find_subtask
+from .models import AIBuildRequest, DebugAction, DebugInputCasesRequest, DebugRequest, LibraryPin, Project, RunRequest, SharedResource, SubtaskInputRequest, SubtaskRunRequest, PackagePath, effective_event_activities, find_subtask
 from . import integration_libraries as libraries
 from .store import delete_project, get_project, list_projects, project_dir, save_project, safe_component
 from .project_import import MAX_IMPORT_BYTES, project_payload
@@ -2467,6 +2467,24 @@ async def start_debug(project_id: str, http_request: Request, request: DebugRequ
             debug_runs[session_id] = asyncio.create_task(finish_debug_session())
         return debugger.view(state)
     except (ValueError,RuntimeError,OSError) as exc: raise HTTPException(400, str(exc))
+
+@app.post('/api/debug/{session_id}/input-cases')
+async def debug_input_cases(session_id: str, request: DebugInputCasesRequest):
+    from lxml.etree import Error as XmlError
+    from .debug_fixtures import task_input_suite
+    state = debugger.sessions.get(session_id)
+    if not state:
+        raise HTTPException(404, 'Debug session not found')
+    project = state['project']
+    task = next((item for item in project.tasks if item.id == request.task_id), None)
+    if not task:
+        raise HTTPException(404, 'Task not found')
+    try:
+        saved = [case.model_dump() for case in request.cases] if request.cases is not None else None
+        return await asyncio.to_thread(task_input_suite, project, task, saved)
+    except (ValueError, TypeError, XmlError, MinaFault) as error:
+        raise HTTPException(422, str(error)) from None
+
 
 @app.post('/api/debug/{session_id}/action')
 async def debug_action(session_id: str, request: DebugAction):

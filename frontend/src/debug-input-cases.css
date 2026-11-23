@@ -1,0 +1,15 @@
+.debug-input-cases {
+  display: grid;
+  gap: 0.45em;
+  min-width: 0;
+  margin: 0.55em 0;
+  padding: 0.6em;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.debug-input-cases h4, .debug-input-cases p, .debug-input-cases ul { margin: 0; overflow-wrap: anywhere; }
+.debug-input-cases > label { display: grid; gap: 0.35em; min-width: 0; }
+.debug-input-cases select, .debug-input-cases input { max-width: 100%; }
+.debug-input-cases textarea { width: 100%; min-height: 4em; }
+.debug-input-case-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 0.5em; }
+.debug-input-case-actions label { min-width: 0; }

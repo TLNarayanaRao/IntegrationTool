@@ -275,7 +275,7 @@ class DebugRequest(RunRequest):
     pause_on_error: bool = True
 
 class DebugAction(BaseModel):
-    action: Literal['continue', 'continue_without_breakpoints', 'pause', 'step_in', 'step_over', 'step_out', 'jump_in', 'jump_out', 'run_to', 'break_next_event', 'configure', 'evaluate', 'set_value', 'preview_activity', 'test_activity', 'mock_step', 'stop']
+    action: Literal['continue', 'continue_without_breakpoints', 'pause', 'step_in', 'step_over', 'step_out', 'jump_in', 'jump_out', 'run_to', 'break_next_event', 'configure', 'evaluate', 'set_value', 'load_task_input', 'preview_activity', 'test_activity', 'mock_step', 'stop']
     activity_id: str | None = None
     task_id: str | None = None
     expression: str | None = None
@@ -288,6 +288,15 @@ class DebugAction(BaseModel):
     breakpoint_conditions: dict[str, str] | None = None
     watches: list[str] | None = None
     pause_on_error: bool | None = None
+
+class DebugInputCase(BaseModel):
+    name: str = Field(min_length=1, max_length=300)
+    input: JsonValue
+    expected: Literal['accept', 'reject']
+
+class DebugInputCasesRequest(BaseModel):
+    task_id: str
+    cases: list[DebugInputCase] | None = Field(default=None, max_length=24)
 
 class RunResult(BaseModel):
     run_id: str

@@ -3,6 +3,7 @@ import RuntimeStatus from "./RuntimeStatus";
 import ModalLayer from "./ModalLayer";
 import IntegrationLibraries, { type LibraryOrigin, type LibraryPin } from "./IntegrationLibraries";
 import DebugTraceDialog from "./DebugTraceDialog";
+import DebugInputCases from "./DebugInputCases";
 import ExecutionSetupDialog from "./ExecutionSetupDialog";
 import { propertyReferences, type LaunchMode, type LaunchOptions, type SubtaskInputFormat } from "./executionSetup";
 import ApiBlueprint from "./ApiBlueprint";
@@ -4055,7 +4056,7 @@ function App() {
           </span>
         </div>
         {debugState && jobDataOpen && <DebugJobData state={debugState} tasks={project.tasks} onClose={() => setJobDataOpen(false)} />}
-        {debugState && debugToolsOpen && <DebugToolsDialog tasks={project.tasks} initialSection={debugToolsSection} state={debugState} activities={nodes} breakpoints={breakpoints} conditions={breakpointConditions} watches={debugWatches} pauseOnError={pauseOnDebugError} act={debugAction} onApply={(next: any) => { setBreakpoints(next.breakpoints); setBreakpointConditions(next.conditions); setDebugWatches(next.watches); setPauseOnDebugError(next.pauseOnError); }} onClose={() => setDebugToolsOpen(false)} />}
+        {debugState && debugToolsOpen && <DebugToolsDialog tasks={project.tasks} onDownload={browserDownload} initialSection={debugToolsSection} state={debugState} activities={nodes} breakpoints={breakpoints} conditions={breakpointConditions} watches={debugWatches} pauseOnError={pauseOnDebugError} act={debugAction} onApply={(next: any) => { setBreakpoints(next.breakpoints); setBreakpointConditions(next.conditions); setDebugWatches(next.watches); setPauseOnDebugError(next.pauseOnError); }} onClose={() => setDebugToolsOpen(false)} />}
         <div
           className="canvas"
           ref={canvas}
@@ -7221,7 +7222,7 @@ function ConnectionConfig({ resource, update }: any) {
   );
 }
 
-function DebugToolsDialog({ state, tasks, activities, breakpoints, conditions, watches, pauseOnError, act, onApply, onClose, initialSection = 5 }: any) {
+function DebugToolsDialog({ state, tasks, activities, breakpoints, conditions, watches, pauseOnError, act, onApply, onClose, onDownload, initialSection = 5 }: any) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const section = dialogRef.current?.querySelectorAll<HTMLElement>(".debug-tool-section")[initialSection];
@@ -7275,7 +7276,7 @@ function DebugToolsDialog({ state, tasks, activities, breakpoints, conditions, w
       const result = await act(action, options);
       if (!result) throw new Error("Debugger action failed. Close this dialog to see the debugger message.");
       if (action === "test_activity" && ["failed", "assertion_failed"].includes(result.lastActivityTest?.status)) throw new Error(result.lastActivityTest.error || "Output assertion failed. See the test result below.");
-      setToolMessage(action === "set_value" ? "Value updated. Check Live Variables below." : "Debugger action completed.");
+      setToolMessage(action === "set_value" || action === "load_task_input" ? "Value updated. Check Live Variables below." : "Debugger action completed.");
     } catch (error: any) { setToolError(error.message || "Debugger action failed"); }
     finally { setToolBusy(false); }
   };
@@ -7304,6 +7305,11 @@ function DebugToolsDialog({ state, tasks, activities, breakpoints, conditions, w
         <DebugActivityTree tasks={tasks} taskId={testTask} activityId={testActivity} busy={toolBusy} onSelect={selectTestTarget}/>
         <div className="debug-test-inputs">
         <h3>{selectedProcess?.name || "Select a process"}{testActivity && selectedTestActivity ? ` / ${selectedTestActivity.name}` : " / Process input"}</h3>
+        <DebugInputCases key={JSON.stringify([state.sessionId, testTask])} sessionId={state.sessionId} taskId={testTask}
+          currentTaskId={state.currentTaskId} currentActivityId={state.currentActivityId} paused={state.status === "paused"}
+          liveListener={!!state.listenerMode} busy={toolBusy} onDownload={onDownload}
+          onLoad={input => {setPayloadFormat("json"); setTestInput(formatted(input)); setToolError(""); setToolMessage("Case loaded into the Test Bench.");}}
+          onApply={(action, task_id, activity_id, value) => {void runTool(action, {task_id, activity_id, value});}}/>
         {!testActivity && <p>{entryActivity ? `Process input is supplied to entry activity “${entryActivity.name}”. Run once tests that activity only; it does not run the entire process.` : "This process has no unique entry activity. Select an activity from the tree."}</p>}
         <label>Payload format<select value={payloadFormat} onChange={event => setPayloadFormat(event.target.value)}><option value="json">JSON (object, array, or scalar)</option><option value="text">Raw text / XML</option></select></label>
         <label>Test payload / mock output<textarea value={testInput} onChange={event => setTestInput(event.target.value)} spellCheck={false}/></label>
@@ -7356,6 +7362,7 @@ function DebugRibbon({ state, act, stop, openLogs, openJobData, openTools, runTo
       {command("Edit Payload", ClipboardPaste, () => openTools(4), !paused)}
       {command("Preview Inputs", Search, () => openTools(5), !paused, "Open the test bench to provide data and preview resolved inputs")}
       {command("Test Activity", CheckCircle2, () => openTools(5), !paused, "Open the test bench to configure and run a real activity test")}
+      {command("Input Cases", Braces, () => openTools(5), false, "Generate fixtures and check saved cases against the task contract")}
       {command("Mock Output", WandSparkles, () => openTools(5), !paused, "Open the test bench to supply mock output and step")}
     </div></div>
   </section>;

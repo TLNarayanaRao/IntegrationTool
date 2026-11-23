@@ -334,6 +334,20 @@ class DebugManager:
             try: state['lastEvaluation'] = {'expression': expression, 'value': self._evaluate(expression, frame['context']) if frame else None}
             except Exception as exc: state['lastEvaluation'] = {'expression': expression, 'error': str(exc)}
             return self.view(state)
+        if action == 'load_task_input':
+            frame = state['frames'][-1] if state.get('frames') else None
+            current = self.current_activity(state)
+            if (state.get('status') != 'paused' or not frame or not current or current.type != 'start'
+                    or options.get('task_id') != frame['taskId'] or options.get('activity_id') != current.id
+                    or current.id in frame['context'].get('activities', {}) or 'value' not in options):
+                raise ValueError('Pause on the selected task’s Start activity before loading task input')
+            context = frame['context']
+            context['input'] = deepcopy(options['value'])
+            context['last'] = deepcopy(options['value'])
+            record = context.get('tasks', {}).get(frame['taskId'])
+            if record is not None:
+                record['input'] = deepcopy(options['value'])
+            return self.view(state)
         if action == 'set_value':
             if state.get('status') != 'paused': raise ValueError('Runtime values can only be changed while the debugger is paused')
             frame = state.get('frames', [])[-1] if state.get('frames') else None

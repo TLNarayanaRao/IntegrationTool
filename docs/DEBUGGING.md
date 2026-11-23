@@ -177,6 +177,27 @@ Open **Debug Tools** from the debug bar to use the following features:
 - While paused, change a value under `input.*`, `last.*`, or `vars.*`. JSON values are typed; other input is stored as text.
 - Set the Run-once timeout from 0.1 to 60 seconds in the Activity Test Bench. Preview and mock actions leave external connectors untouched.
 
+### Generated input cases
+
+In the Debug ribbon, open **Input Cases** and choose a task in the Test Bench.
+**Generate and check cases** uses a Start JSON Schema or XSD, or the JSON
+request contract of an HTTP or REST starter. It checks representative inputs,
+supported boundaries, and invalid inputs such as missing required fields or
+wrong types. Tasks without an applicable schema show an unchecked fixture.
+Timer fixtures include a synthetic schedule event.
+
+Choose a case to inspect its payload and validation result. **Load in Test
+Bench** copies it into the activity test input. When paused at a plain Start,
+**Use as paused task input** loads a passing case into the task. For a
+supported event entry in an activity-testing session, **Mock starter and
+step** feeds the fixture into the downstream flow. These actions are
+separate from schema checks. Continuing a real Debug flow uses its configured
+activities and connections.
+
+**Download cases** saves a JSON suite with expected acceptance or rejection.
+Use **Check saved cases** in a later debug session to check the same payloads
+against the selected task's current schema and spot changed results.
+
 Environment properties and connector credentials are intentionally excluded from the live-variable editor.
 
 ## Continuous starters
