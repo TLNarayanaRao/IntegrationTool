@@ -16,7 +16,7 @@ import httpx
 from fastapi.testclient import TestClient
 
 from app.http_messages import response_message
-from app.models import Project
+from app.models import EnvironmentProperty, Project
 from app.raw_python import raw_python_files, engine_python_files
 from app.runtime import WorkflowRuntime
 
@@ -61,11 +61,90 @@ def assert_response(test,response):
 
 
 class ResponseTreeTests(unittest.TestCase):
+    def test_file_range_on_wire_in_run_debug_and_both_archives(self):
+        from app import main
+
+        def project_for_file(path, kind):
+            with socket.socket() as probe:
+                probe.bind(('127.0.0.1', 0))
+                port = probe.getsockname()[1]
+            project = fixture(port, kind)
+            project.resources[0].config.update(fileByteRanges=True, conditionalResponses=True)
+            project.tasks[0].activities[1].config = {
+                'fileName': str(path), 'headers': {'ETag': json.dumps('"fixture"')},
+                'HTTPHeaders': {'StatusLine': {'reasonPhrase': 'File ready'}},
+            }
+            return project, f'http://127.0.0.1:{port}/reply'
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'fixture.bin'
+            path.write_bytes(b'0123456789')
+            for kind in ('http_listener', 'rest'):
+                for mode in ('run', 'debug'):
+                    with self.subTest(kind=kind, mode=mode):
+                        project, url = project_for_file(path, kind)
+                        with patch.object(main, 'get_project', return_value=project), patch.object(main, 'append_project_logs'), TestClient(main.app) as studio:
+                            started = studio.post(f'/api/projects/{project.id}/{mode}', json={'task_id': 'main'})
+                            self.assertEqual(started.status_code, 200, started.text)
+                            try:
+                                with httpx.Client(trust_env=False, timeout=5) as live:
+                                    result = live.get(url, headers={'Range': 'bytes=2-4', 'If-Range': '"fixture"'})
+                                    self.assertEqual((result.status_code, result.content), (206, b'234'))
+                                    self.assertEqual(result.reason_phrase, 'Partial Content')
+                                    result = live.get(url, headers={'If-None-Match': '"fixture"'})
+                                    self.assertEqual((result.status_code, result.reason_phrase), (304, 'Not Modified'))
+                                    result = live.get(url, headers={'If-Match': '"old"', 'Range': 'bytes=-3'})
+                                    self.assertEqual((result.status_code, result.reason_phrase, result.content),
+                                                     (412, 'Precondition Failed', b''))
+                                    operation = live.get(url.replace('/reply', '/_mina/openapi.json')).json()['paths']['/reply']['get']
+                                    self.assertTrue({'206', '304', '412', '416'} <= operation['responses'].keys())
+                                    expected_headers = {'Range', 'If-Range', 'If-Match', 'If-Unmodified-Since', 'If-None-Match', 'If-Modified-Since'}
+                                    self.assertTrue(expected_headers <= {p['name'] for p in operation['parameters']})
+                                    collection = live.get(url.replace('/reply', '/_mina/postman.json')).json()
+                                    headers = collection['item'][0]['request']['header']
+                                    self.assertTrue(expected_headers <= {p['key'] for p in headers if p.get('disabled')})
+                            finally:
+                                if mode == 'debug':
+                                    studio.post(f"/api/debug/{started.json()['sessionId']}/action", json={'action': 'stop'})
+                                else:
+                                    studio.post(f'/api/projects/{project.id}/stop')
+                        main.runtime_states.pop(project.id, None)
+            for compiler in (raw_python_files, engine_python_files):
+                with self.subTest(archive=compiler.__name__), tempfile.TemporaryDirectory() as archive:
+                    project, url = project_for_file(path, 'rest')
+                    for name, data in compiler(project.model_dump(), {'local': []}).items():
+                        target = Path(archive) / name
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(data)
+                    with subprocess.Popen([sys.executable, '-m', 'application.main'], cwd=archive,
+                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as worker:
+                        try:
+                            with httpx.Client(trust_env=False, timeout=1) as live:
+                                deadline = time.monotonic() + 10
+                                while True:
+                                    self.assertIsNone(worker.poll(), 'The exported worker exited before listening')
+                                    try:
+                                        result = live.get(url, headers={'Range': 'bytes=-3'})
+                                        break
+                                    except httpx.TransportError:
+                                        if time.monotonic() >= deadline:
+                                            self.fail('The exported worker did not start')
+                                        time.sleep(.05)
+                                self.assertEqual((result.status_code, result.content), (206, b'789'))
+                                self.assertEqual(result.headers['content-range'], 'bytes 7-9/10')
+                                result = live.get(url, headers={'If-Match': 'W/"fixture"'})
+                                self.assertEqual((result.status_code, result.content), (412, b''))
+                        finally:
+                            worker.terminate()
+                            worker.wait(timeout=10)
+
     def test_container_entrypoint_binds_override_port_and_reads_mounted_secret(self):
         from app.main import build_deployment_archive
         from run_container import package_entrypoint
 
         project = fixture(1)
+        project.properties['qa'].append(EnvironmentProperty(key='qa.listener', value='server'))
+        project.tasks[0].activities[0].config.update(resourceId='${properties.qa.listener}', port=2)
         project.resources[0].config.update(authentication='Basic', username='order-fixture', password='removed-on-export')
         container_runner = Path(__file__).resolve().parents[1] / 'run_container.py'
         for mode in ('mpkg', 'python-direct', 'python-engine'):
@@ -205,6 +284,8 @@ class ResponseTreeTests(unittest.TestCase):
                 with self.subTest(kind=kind,mode=mode),socket.socket() as probe:
                     probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
                 project=fixture(port,kind)
+                project.properties['local'].append(EnvironmentProperty(key='local.listener', value='server'))
+                project.tasks[0].activities[0].config['resourceId'] = '${properties.local.listener}'
                 with patch.object(main,'get_project',return_value=project),patch.object(main,'append_project_logs'),TestClient(main.app) as client:
                     started=client.post(f'/api/projects/{project.id}/{mode}',json={'task_id':'main'})
                     self.assertEqual(started.status_code,200,started.text)

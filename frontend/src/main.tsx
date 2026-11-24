@@ -1,5 +1,6 @@
 import ExecutionDock from "./ExecutionDock";
 import ExecutionLogView, { type ExecutionLogEntry } from "./ExecutionLogView";
+import { endpointRequestFile } from "./endpointRequests";
 import RuntimeStatus from "./RuntimeStatus";
 import ModalLayer from "./ModalLayer";
 import IntegrationLibraries, { type LibraryOrigin, type LibraryPin } from "./IntegrationLibraries";
@@ -1569,6 +1570,7 @@ function App() {
   const [utilityMode, setUtilityMode] = useState<UtilityMode | null>(null);
   const [executionPanelOpen, setExecutionPanelOpen] = useState(false);
   const [autoExecutionPanel, setAutoExecutionPanel] = useState(false);
+  const [keepExecutionPanelOpen, setKeepExecutionPanelOpen] = useState(false);
   const executionAttempt = useRef(0);
   const debugActionRevision = useRef(0);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
@@ -3082,11 +3084,10 @@ function App() {
           return;
         }
         if (out.status === "stopped") {
-          setExecutionPanelOpen(false); setAutoExecutionPanel(false); setMonitorMode("normal");
           setDebugState(null);
           setExecutionOutputs({});
           setEndpoints([]);
-          setRuntimeState(null);
+          setRuntimeState({ status: "stopped", logs: out.logs || [] });
           setLogs(out.logs || []);
           return;
         }
@@ -3125,8 +3126,8 @@ function App() {
       if (attempt !== executionAttempt.current) return null;
       debugActionRevision.current++;
       if (out.status === "stopped") {
-        setExecutionPanelOpen(false); setAutoExecutionPanel(false); setMonitorMode("normal");
-        setDebugState(null); setExecutionOutputs({}); setEndpoints([]); setRuntimeState(null); setLogs(out.logs || []);
+        setDebugState(null); setExecutionOutputs({}); setEndpoints([]);
+        setRuntimeState({ status: "stopped", logs: out.logs || [] }); setLogs(out.logs || []);
         return out;
       }
       setDebugState(out);
@@ -3168,9 +3169,10 @@ function App() {
   const traceSessionId = debugReview?.projectId === project.id ? debugReview.sessionId : null;
   useEffect(() => {
     if (autoExecutionPanel && !busy && ["completed","failed","stopped"].includes(debugState?.status || runtimeState?.status)) {
-      setExecutionPanelOpen(false); setAutoExecutionPanel(false); setMonitorMode("normal");
+      if (!keepExecutionPanelOpen) { setExecutionPanelOpen(false); setMonitorMode("normal"); }
+      setAutoExecutionPanel(false);
     }
-  }, [autoExecutionPanel,busy,debugState?.status,runtimeState?.status]);
+  }, [autoExecutionPanel,busy,keepExecutionPanelOpen,debugState?.status,runtimeState?.status]);
   useEffect(() => {
     executionAttempt.current++;
     setExecutionPanelOpen(false); setAutoExecutionPanel(false); setMonitorMode("normal");
@@ -3212,7 +3214,8 @@ function App() {
     .map((id:string) => (project.tasks.find(item => item.id === debugState?.currentTaskId) || task).activities.find(item => item.id === id)?.name || id);
   const stopExecution = async () => {
     const attempt = ++executionAttempt.current;
-    setExecutionPanelOpen(false); setAutoExecutionPanel(false); setMonitorMode("normal");
+    if (!keepExecutionPanelOpen) { setExecutionPanelOpen(false); setMonitorMode("normal"); }
+    setAutoExecutionPanel(false);
     const sessionId = debugState?.sessionId;
     // Stop is optimistic in the UI so a busy connector cannot leave the
     // Windows renderer looking active while backend cleanup is in progress.
@@ -3231,12 +3234,18 @@ function App() {
       const projectResult = results[projectStopIndex];
       const response = projectResult.status === "fulfilled" ? projectResult.value : null;
       const stopped = response?.ok ? await response.json() : { status: "stopped", logs: [...logs, { level: "INFO", message: `Application ${project.name} stopped by user` }] };
+      const debugResult = sessionId ? results[0] : undefined;
+      const debugStop = debugResult?.status === "fulfilled" && debugResult.value.ok
+        ? await debugResult.value.json().catch(() => null) : null;
       if (attempt !== executionAttempt.current) return;
-      setDebugState(null); setBusy(false); setEndpoints([]); setExecutionOutputs({}); setRuntimeState(null); setLogs(stopped.logs || []);
+      const finalLogs = debugStop?.logs?.length ? debugStop.logs : stopped.logs || [];
+      setDebugState(null); setBusy(false); setEndpoints([]); setExecutionOutputs({});
+      setRuntimeState({ ...stopped, status: "stopped", logs: finalLogs }); setLogs(finalLogs);
     } catch (error: any) {
       if (attempt !== executionAttempt.current) return;
-      setBusy(false); setDebugState(null); setEndpoints([]); setExecutionOutputs({}); setRuntimeState(null);
-      setLogs((current) => [...current, { level: "ERROR", message: error?.message || "Unable to stop execution" }]);
+      const entries = [...executionLogEntries, { level: "ERROR", kind: "runtime", message: error?.message || "Unable to stop execution" }];
+      setBusy(false); setDebugState(null); setEndpoints([]); setExecutionOutputs({});
+      setRuntimeState({status:"failed",logs:entries}); setLogs(entries);
     } finally { if (attempt === executionAttempt.current) setWorkStatus(""); }
   };
   const importProject = async (file: File) => {
@@ -3569,6 +3578,7 @@ function App() {
     window.addEventListener("keydown", projectFileShortcuts);
     return () => window.removeEventListener("keydown", projectFileShortcuts);
   }, [project, closed, editorOpen, executionActive, breakpoints, breakpointConditions, debugWatches, pauseOnDebugError]);
+  const openExecutionMonitor = () => { setExecutionPanelOpen(true); setMonitorMode("normal"); };
   const executionConsole = executionPanelOpen ? <ExecutionDock mode={monitorMode}>
         <div className="pane-title"><span>EXECUTION / DEBUG</span><span className="monitor-actions">
           <button title="Execution analytics" aria-label="Execution analytics" onClick={() => setAnalyticsOpen(true)}><Activity/></button>
@@ -3585,6 +3595,10 @@ function App() {
           {debugState
             ? `${debugState.status} · ${logEnvironment} · stack ${debugState.callStack?.length || 0}`
             : `${runtimeState?.status || (busy ? "starting" : "Runtime")} · ${logEnvironment}`}
+          {debugState?.currentActivityId && executionActive && <button type="button"
+            onClick={() => inspectDebugActivity(debugState.currentTaskId, debugState.currentActivityId)}>Go to {debugActivityNames[0] || "current activity"}</button>}
+          <label className="keep-execution-panel"><input type="checkbox" checked={keepExecutionPanelOpen}
+            onChange={event => setKeepExecutionPanelOpen(event.target.checked)}/>Keep open after execution</label>
         </div>
         <div className="execution-console-content"><div className="execution-summary">
         {runtimeState?.subtaskTest && runtimeState.status === "completed" && <section className="subtask-test-output">
@@ -3597,10 +3611,14 @@ function App() {
         </section>}
         {!!endpoints.length && <section className="runtime-endpoints">
           <strong>{endpoints.some((endpoint: any) => endpoint.kind === "subscription") ? "LIVE EVENT RECEIVERS" : "LIVE ENDPOINTS"}</strong>
-          {endpoints.map((endpoint: any) => <article key={`${endpoint.taskId}:${endpoint.activityId}`}>
+          {endpoints.map((endpoint: any) => {
+            const requestFile = endpoint.kind === "subscription" ? null : endpointRequestFile(endpoint.url, endpoint.methods);
+            return <article key={`${endpoint.taskId}:${endpoint.activityId}`}>
             <span>{endpoint.kind === "subscription" ? `${String(endpoint.status || "ready").toUpperCase()} · ${endpoint.name}` : `${endpoint.methods?.join(", ")} · ${endpoint.name}`}</span>
             <code>{endpoint.url}</code>
             {endpoint.kind !== "subscription" && <button title="Copy endpoint URL" onClick={() => navigator.clipboard.writeText(endpoint.url)}><ClipboardCopy/> Copy</button>}
+            {requestFile && <button type="button" onClick={() => browserDownload(new Blob([requestFile], {type: "text/plain"}), "MINA-request.http")}>
+              Download HTTP requests</button>}
             {endpoint.docsUrl && <><a href={endpoint.docsUrl} target="_blank" rel="noopener noreferrer">Open Swagger · {endpoint.docsUrl}</a><button onClick={async () => {
               try {
                 const response = await fetch(endpoint.collectionDownloadUrl);
@@ -3610,7 +3628,7 @@ function App() {
             }}>Download Postman collection</button></>}
             {endpoint.kind === "subscription" && <small>Waiting continuously for events on {endpoint.destination}</small>}
             {endpoint.configuredUrl && endpoint.configuredUrl !== endpoint.url && <small>Configured public URL: {endpoint.configuredUrl}</small>}
-          </article>)}
+          </article>; })}
         </section>}
         {(() => {
           const visible = Object.values(executionOutputs).filter((record: any) => !["start", "end", "log"].includes(record.type));
@@ -3626,6 +3644,7 @@ function App() {
           entries={savedLogView ? savedLogView.entries || [] : executionLogEntries}
           active={executionActive && !savedLogView}
           resolveActivity={resolveLogActivity}
+          taskName={taskId => project.tasks.find(item => item.id === taskId)?.name}
           onOpenActivity={selectTask}
           onDownload={report => browserDownload(new Blob([report], { type: "application/x-ndjson" }), "MINA-execution-metadata.ndjson")}
         /></div>
@@ -3846,6 +3865,7 @@ function App() {
         run={run}
         debug={debug}
         stop={stopExecution}
+        executionMonitor={openExecutionMonitor}
         executionAnalytics={() => setAnalyticsOpen(true)}
         executionSetup={() => openExecutionSetup(editorOpen && task.kind === "subtask" ? "subtask" : "run")}
         navigation={navigationActions}
@@ -5294,7 +5314,7 @@ function StudioRibbon(props: any) {
       {command("Up", ArrowUp, props.navigation.up, !props.navigation.up, props.navigation.upLabel)}
       {command("Project Search", Search, props.projectSearch)}
     </div></div>
-    <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("API Blueprint", Globe, props.apiBlueprint, props.executionActive)}{command("AI Build", WandSparkles, props.aiBuild)}{command("Jira Story", Ticket, props.jiraStory, props.executionActive)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Execution Setup", Settings2, props.executionSetup, props.executionActive)}{command("Run", Zap, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Execution Analytics", Activity, props.executionAnalytics)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}{props.reviewValidation && command("Review Findings", ShieldCheck, props.reviewValidation)}</div></div>
+    <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("API Blueprint", Globe, props.apiBlueprint, props.executionActive)}{command("AI Build", WandSparkles, props.aiBuild)}{command("Jira Story", Ticket, props.jiraStory, props.executionActive)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Execution Setup", Settings2, props.executionSetup, props.executionActive)}{command("Run", Zap, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Execution Monitor", BookOpen, props.executionMonitor)}{command("Execution Analytics", Activity, props.executionAnalytics)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}{props.reviewValidation && command("Review Findings", ShieldCheck, props.reviewValidation)}</div></div>
     <div className="ribbon-group"><b>EDIT</b><div>{command("Undo", Undo2, props.undo)}{command("Cut", Scissors, props.cut, !props.selectedCount)}{command("Copy", ClipboardCopy, props.copy, !props.selectedCount)}{command("Paste", ClipboardPaste, props.paste)}</div></div>
     <div className="ribbon-group layout-group"><b>ARRANGE · {props.selectedCount} SELECTED</b><div>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</div></div>
   </section>;
@@ -6245,6 +6265,7 @@ const connectionFieldSets: Record<string, any[]> = {
     { key: "trustedProxyCidrs", label: "Trusted proxy IPs / CIDRs", when: (config: any) => config.connectorMode !== "client" },
     { key: "httpErrorFormat", label: "Listener error response format", options: ["json", "problem"], when: (config: any) => config.connectorMode !== "client" },
     { key: "conditionalResponses", label: "Conditional GET and HEAD", options: ["false", "true"], when: (config: any) => config.connectorMode !== "client" },
+    { key: "fileByteRanges", label: "File byte-range downloads", options: ["false", "true"], when: (config: any) => config.connectorMode !== "client" },
     { key: "propagateTraceContext", label: "Propagate HTTP trace context", options: ["false", "true"] },
     { key: "sharedHttpCache", label: "Shared public response cache", options: ["false", "true"], when: (config: any) => config.connectorMode !== "server" },
     { key: "callbackAllowedOrigins", label: "Allowed callback HTTPS origins", when: (config: any) => config.connectorMode !== "server" },

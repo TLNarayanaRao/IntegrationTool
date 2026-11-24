@@ -205,8 +205,14 @@ Environment properties and connector credentials are intentionally excluded from
 An EMS/JMS, Kafka, Pub/Sub, SAP, timer, or file listener displays **ready · waiting for event** until an event arrives. Breakpoints, watches, and pause-on-error remain active for every event. Stopping the session also stops the listener and prevents it from re-arming.
 ## Monitor Run and Debug logs
 
+Select **Execution Monitor** in the Studio ribbon to reopen the monitor during or after a run. Turn on **Keep open after execution** to inspect logs after a Run or Debug session completes, fails, or stops. During Debug, use the current activity button in the monitor to open its configuration.
+
 Open the execution panel to filter logs by severity or search messages and identifiers. Click a correlation ID to isolate that execution while a listener continues to receive events. Use **Open activity** on an entry with a matching task and activity to jump to its configuration.
 
 The panel initially shows the latest 200 matching entries. **Show older matches** reveals more entries from the available log buffer. Scroll back or turn off **Following latest** to inspect earlier entries. Open **Payload** on a row to view captured data. **Export metadata** downloads timing and identifiers for all matches as NDJSON, omitting log messages and payloads.
+
+Switch **Execution view** to **Activity timings** to compare invocation and failure counts, average and longest duration, and total time for matching activity logs. Sort by longest invocation, total time, or failures. **Show logs** filters the monitor to that activity and **Open activity** takes you to its configuration. Call setup and event handoff are shown as separate timing groups when the runtime records them.
+
+For a hosted HTTP or REST endpoint, **Download HTTP requests** creates a `.http` file with a request for each advertised method. Fill in path variables and any required query parameters, headers, authentication, and body in your HTTP client before sending.
 
 Select **Load saved project logs** to inspect saved logs for the current execution environment. Use **Return to execution logs** to switch back to the latest Run or Debug output.

@@ -19,7 +19,12 @@ class Echo(BaseHTTPRequestHandler):
             body,kind=mime_body({'mimePart':[{'mimeHeaders':{'content-type':'text/plain'},'textContent':'reply'},{'binaryContent':base64.b64encode(b'\x00\xff').decode()}]},100000)
         else:
             body=json.dumps({'path':self.path,'method':self.command,'headers':{key.lower():self.headers.get_all(key) for key in self.headers},'body':raw.decode()}).encode();kind='application/json'
-        self.send_response(200);self.send_header('Content-Type',kind);self.send_header('Set-Cookie','a=1');self.send_header('Set-Cookie','b=2');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+        self.send_response(200);self.send_header('Content-Type',kind)
+        if self.path == '/cache':
+            self.send_header('Cache-Control', 'public, max-age=120')
+        else:
+            self.send_header('Set-Cookie','a=1');self.send_header('Set-Cookie','b=2')
+        self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
 
 class RequestTreeTests(unittest.TestCase):
     @classmethod
@@ -27,6 +32,40 @@ class RequestTreeTests(unittest.TestCase):
         cls.server=ThreadingHTTPServer(('127.0.0.1',0),Echo);cls.worker=threading.Thread(target=cls.server.serve_forever,daemon=True);cls.worker.start();cls.base=f'http://127.0.0.1:{cls.server.server_port}'
     @classmethod
     def tearDownClass(cls):close_clients();cls.server.shutdown();cls.server.server_close();cls.worker.join()
+
+    def test_http_request_and_rest_invoke_share_fresh_responses_in_both_archives(self):
+        project = Project.model_validate({
+            'id': 'cache-flow', 'name': 'Cache Flow', 'active_task_id': 'main',
+            'resources': [{'id': 'client', 'name': 'Client', 'type': 'http', 'config': {
+                'connectorMode': 'client', 'baseUrl': self.base, 'sharedHttpCache': True}}],
+            'tasks': [{'id': 'main', 'name': 'Main', 'kind': 'starter', 'activities': [
+                {'id': 'start', 'name': 'Start', 'type': 'start'},
+                {'id': 'first', 'name': 'Populate', 'type': 'http', 'config': {
+                    'operation': 'request', 'resourceId': 'client', 'url': '/cache'}},
+                {'id': 'second', 'name': 'Read Cache', 'type': 'rest', 'config': {
+                    'operation': 'invoke', 'resourceId': 'client', 'url': '/cache', 'requestModel': 'tree',
+                    'headers': {'Cache-Control': 'only-if-cached, min-fresh=60'}}},
+                {'id': 'end', 'name': 'End', 'type': 'end'},
+            ], 'transitions': [
+                {'id': 'a', 'source': 'start', 'target': 'first'},
+                {'id': 'b', 'source': 'first', 'target': 'second'},
+                {'id': 'c', 'source': 'second', 'target': 'end'},
+            ]}],
+        })
+        result = asyncio.run(WorkflowRuntime().run(project.tasks[0], {}, {'client': project.resources[0]}, {}, project=project))
+        self.assertEqual(result.status, 'completed', result.logs)
+        self.assertIn('age', result.output['headers'])
+        for compiler in (raw_python_files, engine_python_files):
+            with self.subTest(compiler=compiler.__name__), tempfile.TemporaryDirectory() as folder:
+                for name, data in compiler(project.model_dump(), {'local': []}).items():
+                    path = Path(folder) / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(data)
+                command = [sys.executable, 'run.py'] if compiler is raw_python_files else [sys.executable, '-m', 'application.main']
+                run = subprocess.run([*command, '--task', 'main', '--input', '{}'], cwd=folder,
+                                     capture_output=True, text=True, timeout=30)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                self.assertIn('age', json.loads(run.stdout)['headers'])
     def test_config_headers_query_and_response_tree(self):
         root={'Config':{'host':'127.0.0.1','port':self.server.server_port,'Method':'POST','requestURI':'/echo?first=one','QueryString':'second=two%20words','RequestBody':False},'Headers':{'accept':'application/json','content-type':'application/json','Accept-Charset':'utf-8','Cookie':'a=1','DynamicHeaders':[{'name':'X-Custom','value':'one'},{'name':'X-Custom','value':'two'},{'name':'Accept','value':'text/plain'}]}}
         result=request({'RestInputRequest':root},{'baseUrl':'http://old.example:1234','headers':{'X-Shared':'default'},'timeout':2})
@@ -84,6 +123,38 @@ class RequestTreeTests(unittest.TestCase):
         self.assertEqual(response['body']['headers']['accept'], ['application/json'])
         with self.assertRaisesRegex(HTTPFault, 'header parameter X-Tenant is required'):
             request({'RestInputRequest': {'Config': config}})
+
+    def test_mapped_authority_preserves_saved_endpoint_path_and_query(self):
+        mapped = {'RestInputRequest': {'Config': {'host': '127.0.0.1', 'port': self.server.server_port}}}
+        relative = request({**mapped, 'url': '/orders?filter=new'}, {'baseUrl': 'http://unused.test/api?region=west'})
+        self.assertEqual(relative['body']['path'], '/api/orders?region=west&filter=new')
+        absolute = request({**mapped, 'url': 'http://unused.test:8080/orders?filter=new'},
+                           {'baseUrl': 'http://unused.test/api'})
+        self.assertEqual(absolute['body']['path'], '/orders?filter=new')
+        for invalid in ('http://[bad', 'http://example.test:99999', '//other.test/path'):
+            with self.subTest(invalid=invalid), self.assertRaises(HTTPFault) as faulty:
+                request({'url': invalid})
+            self.assertEqual(faulty.exception.fault_type, 'HTTP_CONFIGURATION')
+
+    def test_suppressed_body_does_not_open_or_send_mime_attachments(self):
+        for method, mode, streaming in [('POST','NEVER',False), ('POST','NEVER',True), ('GET','AUTO',False), ('GET','AUTO',True)]:
+            with self.subTest(method=method, mode=mode, streaming=streaming):
+                result = request({'RestInputRequest': {'Config': {
+                    'requestURI': self.base+'/echo', 'Method': method,
+                    'sendBodyMode': mode, 'streamRequest': streaming,
+                }, 'mimeEnvelopeElement': {'mimePart': [{'fileName': '/unavailable-attachment'}]}}})
+                self.assertEqual(result['body']['body'], '')
+                self.assertNotIn('content-type', result['body']['headers'])
+
+    def test_bad_upload_source_and_encoding_raise_configuration_faults(self):
+        with tempfile.TemporaryDirectory() as folder:
+            for source in (folder, str(Path(folder) / 'missing.txt')):
+                with self.subTest(source=source), self.assertRaises(HTTPFault) as faulty:
+                    request({'url': self.base, 'method':'POST', 'bodyType':'file', 'body': source})
+                self.assertEqual(faulty.exception.fault_type, 'HTTP_CONFIGURATION')
+        with self.assertRaises(HTTPFault) as faulty:
+            request({'url': self.base, 'method':'POST', 'bodyType':'text', 'body':'é', 'encoding':'ascii'})
+        self.assertEqual(faulty.exception.fault_type, 'HTTP_CONFIGURATION')
 
     def test_studio_and_both_archives_execute_tree_mappings(self):
         for kind in ('http','rest'):

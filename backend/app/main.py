@@ -175,9 +175,10 @@ def _project_log_directory(item: Project, environment: str) -> str:
     return str(_environment_values(item, environment).get('runtime.logDirectory') or '').strip()
 
 def _resolved_resource_config(item: Project, activity, properties: dict) -> dict:
-    resource = next((value for value in item.resources if value.id == activity.config.get('resourceId')), None)
-    if not resource: return {}
     context = {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}
+    resource_id = runtime.resolve(activity.config.get('resourceId'), context)
+    resource = next((value for value in item.resources if value.id == resource_id), None)
+    if not resource: return {}
     return runtime.resolve(resource.config,context)
 
 def _http_listener_members(item,task,event):

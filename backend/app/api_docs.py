@@ -77,6 +77,8 @@ def _security(cfg):
     return {},[]
 
 def generate_openapi(routes,base_url='/',title='MINA hosted APIs'):
+    from .http_transport import boolean
+
     """Routes contain resolved listener configs only; never serialize connection configs."""
     spec={'openapi':'3.1.0','info':{'title':title,'version':'1.0.0'},'servers':[{'url':base_url}],'paths':{},'components':{'schemas':{},'securitySchemes':{}}}
     schemas=spec['components']['schemas'];operation_ids=set()
@@ -158,6 +160,25 @@ def generate_openapi(routes,base_url='/',title='MINA hosted APIs'):
             declared={(p['in'],p['name']) for p in parameters}
             for name in re.findall(r'\{([^}]+)\}',path):
                 if ('path',name) not in declared:parameters.append({'in':'path','name':name,'required':True,'schema':{'type':'string'}})
+            file_ranges = method == 'GET' and boolean(cfg.get('fileByteRanges'))
+            conditional_reads = method in ('GET', 'HEAD') and boolean(cfg.get('conditionalResponses'))
+            optional_headers = []
+            if file_ranges:
+                optional_headers.extend((
+                    ('Range', 'Request one byte range when the workflow returns a file. Example: bytes=0-1023.'),
+                    ('If-Range', 'Return the range only if this strong ETag matches the file representation.'),
+                ))
+            if conditional_reads:
+                optional_headers.extend((
+                    ('If-Match', 'Return 412 unless a strong ETag matches.'),
+                    ('If-Unmodified-Since', 'Return 412 if the representation changed after this HTTP date.'),
+                    ('If-None-Match', 'Return 304 if an ETag matches.'),
+                    ('If-Modified-Since', 'Return 304 if the representation has not changed since this HTTP date.'),
+                ))
+            declared_headers = {p['name'].lower() for p in parameters if p['in'] == 'header'}
+            for name, description in optional_headers:
+                if name.lower() not in declared_headers:
+                    parameters.append({'in':'header','name':name,'description':description,'schema':{'type':'string'}})
             if parameters:entry['parameters']=parameters
             request_schema=cfg.get('requestSchema')
             request_body=operation.get('requestBody') or {};media=str(cfg.get('contentType') or inferred_media(request_schema))
@@ -227,6 +248,15 @@ def generate_openapi(routes,base_url='/',title='MINA hosted APIs'):
                         content[name]=definition
                 if content:response['content']=content
                 entry['responses'][str(code)]=response
+            if file_ranges:
+                for code, description in (('206', 'Requested file bytes'), ('416', 'Byte range is outside the file')):
+                    entry['responses'].setdefault(code, {
+                        'description': description,
+                        'headers': {'Content-Range': {'schema': {'type': 'string'}}},
+                    })
+            if conditional_reads:
+                entry['responses'].setdefault('304', {'description': 'Representation is unchanged'})
+                entry['responses'].setdefault('412', {'description': 'Read precondition failed'})
             entry['x-mina-authentication']=str(cfg.get('authentication') or 'None')
             entry['x-mina-hmac-algorithm']=str(cfg.get('hmacAlgorithm') or 'SHA256')
             if selected_request_types or selected_response_types:

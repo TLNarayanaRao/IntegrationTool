@@ -39,3 +39,19 @@ bash scripts/linux/deploy-application.sh dist/ear/orders-1.4.0-on-prem.ear qa
 ```
 
 Use the EAR path printed by the build command if the project artifact name differs. Repeat `--starter` with the desired task IDs to package a subset, including the Sub Tasks they call.
+
+## Verify with disposable Linux QA
+
+Run the workflow with **temporary_qa** enabled. Keep the project set to `scripts/ci/fixtures/ear-qa.json`, select **qa**, and leave **deploy** off. The QA job downloads the EAR from the build job and verifies its checksum on a fresh Ubuntu runner. It starts a loopback-only Control Plane and worker, deploys with the normal CI deployment script, and verifies the fixture's JSON response and HTTP 401 when credentials are absent. The job stops the worker and Control Plane afterward. It uses generated credentials and does not use your registered data plane or GitHub environment secrets. See [GitHub-hosted runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+
+To exercise the same build and deployment commands on a temporary Linux host, use Python 3.12 with the backend and Administrator requirements installed. The workflow dependency step excludes the optional Db2 adapter for this fixture. Run from the MINA checkout.
+
+```bash
+qa_artifact=$(mktemp -d)
+python scripts/ci/build-ear.py scripts/ci/fixtures/ear-qa.json \
+  --environment qa --version 1.0.0 --output-dir "$qa_artifact"
+(cd "$qa_artifact" && sha256sum -- *.ear > SHA256SUMS)
+python scripts/ci/smoke-ear.py "$qa_artifact"
+```
+
+A successful smoke test confirms that a real packaged task ran and returned `{"result":"mina-ear-qa-ok"}`. It qualifies the packaging and deployment path with the synthetic flow. Test your actual application against its providers in its own QA environment.

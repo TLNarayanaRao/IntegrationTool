@@ -16,8 +16,10 @@ class Handler(BaseHTTPRequestHandler):
     def respond(self):
         length=int(self.headers.get('content-length',0));body=self.rfile.read(length)
         if self.path=='/slow':time.sleep(.12)
-        if self.path=='/redirect':
-            self.send_response(302);self.send_header('Location','/reply');self.send_header('Content-Length','0');self.end_headers();return
+        path = self.path.split('?', 1)[0]
+        if path in ('/redirect', '/redirect-other'):
+            location = '/reply' if path == '/redirect' else self.server.redirect_other
+            self.send_response(302);self.send_header('Location',location);self.send_header('Content-Length','0');self.end_headers();return
         value={'path':self.path,'authorization':self.headers.get('Authorization'),'body':body.decode(),'cookie':self.headers.get('Cookie')}
         raw=json.dumps(value).encode();self.send_response(404 if self.path=='/missing' else 200);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(raw)));self.end_headers()
         try:self.wfile.write(raw)
@@ -46,6 +48,40 @@ class HTTPClientTests(unittest.TestCase):
         output=transport.request({'url':self.base+'/redirect','followRedirects':True});self.assertEqual(output['body']['path'],'/reply')
         with self.assertRaises(transport.HTTPFault):transport.request({'url':self.base+'/missing'})
         self.assertEqual(transport.request({'url':self.base+'/missing','successStatusCodes':'200-299,404'})['statusCode'],404)
+    def test_redirect_keeps_protected_requests_on_the_original_origin(self):
+        with ThreadingHTTPServer(('127.0.0.1', 0), Handler) as other:
+            worker = threading.Thread(target=other.serve_forever, daemon=True)
+            worker.start()
+            self.server.redirect_other = f'http://127.0.0.1:{other.server_port}/reply'
+            try:
+                config = {'url': self.base + '/redirect-other', 'followRedirects': True}
+                self.assertEqual(transport.request(config)['body']['path'], '/reply')
+                for protected in ({'headers': {'X-API-Key': 'test'}}, {'query': {'token': 'test'}},
+                                  {'headers': {'Cookie': 'session=test'}}, {'method': 'POST', 'body': 'private'}):
+                    with self.subTest(protected=protected), self.assertRaisesRegex(transport.HTTPFault, 'origin'):
+                        transport.request({**config, **protected})
+                same_origin = {**config, 'url': self.base + '/redirect', 'headers': {'X-API-Key': 'test'}}
+                self.assertEqual(transport.request(same_origin)['body']['path'], '/reply')
+            finally:
+                other.shutdown()
+                worker.join()
+    def test_redirect_hook_rejects_https_downgrade(self):
+        seen = []
+
+        def respond(request):
+            seen.append((request.url.scheme, request.url.path))
+            location = 'https://example.test/secure' if request.url.path == '/start' else 'http://example.test/reply'
+            return httpx.Response(302, headers={'Location': location})
+
+        with httpx.Client(transport=httpx.MockTransport(respond),
+                          event_hooks={'request': [transport._validate_redirect_target]}) as client:
+            client._mina_lock = threading.Lock()
+            client._mina_routes = {}
+            client._mina_route_limit = 8
+            with patch.object(transport, 'client_for', return_value=client):
+                with self.assertRaisesRegex(transport.HTTPFault, 'HTTPS'):
+                    transport.request({'url': 'http://example.test/start', 'followRedirects': True})
+        self.assertEqual(seen, [('http', '/start'), ('https', '/secure')])
     def test_confidentiality_and_client_role_are_enforced(self):
         for cfg in ({'defaultConfidentiality':True},{'confidentiality':True},{'connectorMode':'server'}):
             with self.assertRaises(transport.HTTPFault):transport.request({'url':self.base+'/reply'},cfg)

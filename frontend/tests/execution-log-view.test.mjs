@@ -10,7 +10,7 @@ const compiled = ts.transpileModule(source, {
 }).outputText;
 const moduleScope = { exports: {}, require: () => ({}) };
 vm.runInNewContext(compiled, moduleScope);
-const { filterExecutionLogs, executionLogReport } = moduleScope.exports;
+const { filterExecutionLogs, executionLogReport, summarizeActivityTimings } = moduleScope.exports;
 
 const entries = [
   { level: "WARNING", message: "Slow publish", correlationId: "id-1", taskId: "Outbound", durationMs: 50,
@@ -30,6 +30,26 @@ test("metadata export captures timing and identifiers without payloads or messag
   const report = executionLogReport(filterExecutionLogs(entries, "WARN", "Outbound", ""));
   assert.deepEqual(JSON.parse(report.trim()), { level: "WARNING", taskId: "Outbound", correlationId: "id-1", durationMs: 50 });
   assert.doesNotMatch(report, /fixture|password|publish/);
+});
+
+test("activity timings count finished invocations by task, activity and measurement scope", () => {
+  const first = { kind: "activity", taskId: "first", activityId: "Publish", level: "INFO", durationMs: 25 };
+  const second = { kind: "activity", taskId: "other", runtimeActivityId: "Publish", level: "ERROR", durationMs: 60 };
+  const rows = [
+    first, second, { ...first, level: "ERROR", durationMs: 50 },
+    { ...first, timingScope: "call_setup", durationMs: 1 },
+    { ...first, kind: "lifecycle", durationMs: 1000 },
+    { ...first, durationMs: NaN }, { ...first, durationMs: undefined },
+  ];
+  const timings = summarizeActivityTimings(rows);
+  assert.equal(timings.length, 3);
+  assert.deepEqual(JSON.parse(JSON.stringify(timings[0])), {
+    taskId: "first", activityId: "Publish", activityName: "Publish", taskName: "first", scope: "",
+    invocations: 2, failures: 1, totalMs: 75, maxMs: 50,
+  });
+  assert.equal(timings[1].failures, 1);
+  assert.equal(timings[2].totalMs, 1);
+  assert.equal(filterExecutionLogs(rows, "", "", "", { taskId: "other", activityId: "Publish" })[0], second);
 });
 
 test("live logs follow new rows until the user scrolls away, then can resume", () => {

@@ -190,11 +190,12 @@ async def _serve_http(project, listeners, environment: str) -> None:
     context = {'properties': properties, 'input': {}, 'last': {}, 'vars': {}, 'context': {}}
     routes=[]
     for task,event in listeners:
-        resource=resources.get(str(event.config.get('resourceId') or ''))
+        config=RUNTIME.resolve(event.config,context)
+        resource=resources.get(str(config.get('resourceId') or ''))
         connection=RUNTIME.resolve(resource.config,context) if resource else {}
-        if os.environ.get('MINA_HTTP_HOST'):connection['host']=os.environ['MINA_HTTP_HOST']
-        if os.environ.get('MINA_HTTP_PORT'):connection['port']=int(os.environ['MINA_HTTP_PORT'])
-        routes.append(((task,event),connection,RUNTIME.resolve(event.config,context)))
+        if os.environ.get('MINA_HTTP_HOST'):config['host']=os.environ['MINA_HTTP_HOST']
+        if os.environ.get('MINA_HTTP_PORT'):config['port']=int(os.environ['MINA_HTTP_PORT'])
+        routes.append(((task,event),connection,config))
     async def handle(metadata,payload):
         task,event=metadata;result=await RUNTIME.run(task,payload,resources,properties,event.id,project);_record(result)
         if result.status!='completed':raise RuntimeError('HTTP integration failed')

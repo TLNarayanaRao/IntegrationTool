@@ -5,6 +5,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address
 from pathlib import Path
+from unittest.mock import patch
 
 import httpx
 
@@ -15,6 +16,39 @@ from tests.test_http_activity_e2e import upstream
 
 
 class HTTPPoliciesTests(unittest.TestCase):
+    def test_cache_honors_freshness_reuses_response_metadata_and_partitions_transport(self):
+        calls = []
+
+        def respond(request):
+            calls.append(request.headers.get_list('x-variant'))
+            return httpx.Response(200, headers={'Cache-Control': 'public, s-maxage="120", max-age=1', 'Age': '20'},
+                                  json={'call': len(calls)}, extensions={'http_version': b'HTTP/1.1', 'reason_phrase': b'Custom OK'})
+
+        config = {'url': 'https://cache.test/freshness', 'sharedHttpCache': True, 'requestModel': 'tree',
+                  '_httpScope': 'freshness-check'}
+        variant = {'X-Variant': ['a', 'b']}
+        with upstream(respond):
+            transport.request({**config, 'headers': variant})
+            hit = transport.request({**config, 'headers': {**variant, 'Cache-Control': 'only-if-cached, max-age=30, min-fresh=50'}})
+            self.assertEqual(hit['body'], {'call': 1})
+            self.assertEqual(hit['RestOutputResponse']['statusLine']['reasonPhrase'], 'Custom OK')
+            for directive in ('max-age=5', 'min-fresh=110', 'max-age=90, max-age=100', 'max-age=0'):
+                with self.subTest(directive=directive), self.assertRaises(transport.HTTPFault) as miss:
+                    transport.request({**config, 'headers': {**variant, 'Cache-Control': f'only-if-cached, {directive}'}})
+                self.assertEqual(miss.exception.fault_type, 'HTTP_CACHE_MISS')
+            for changes in ({'verifyTls': False, 'headers': variant}, {'headers': {'X-Variant': ['b', 'a']}}):
+                result = transport.request({**config, **changes})
+                self.assertNotEqual(result['body'], hit['body'])
+        self.assertEqual(calls, [['a', 'b'], ['a', 'b'], ['b', 'a']])
+
+    def test_cache_only_miss_does_not_exchange_oauth_token(self):
+        with patch.object(transport, '_oauth') as token, self.assertRaises(transport.HTTPFault) as miss:
+            transport.request({'url': 'https://cache.test', 'authentication': 'oauth2',
+                               'oauthClientId': 'local-fixture', 'oauthTokenUrl': 'https://issuer.test/token',
+                               'sharedHttpCache': True, 'headers': {'Cache-Control': ['max-age=10', 'only-if-cached']}})
+        self.assertEqual(miss.exception.fault_type, 'HTTP_CACHE_MISS')
+        token.assert_not_called()
+
     def test_public_cache_is_partitioned_and_invalidated_after_write(self):
         calls = []
         def respond(request):

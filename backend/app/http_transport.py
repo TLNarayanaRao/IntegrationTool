@@ -6,7 +6,7 @@ import httpx
 from .rest_contract import encode_reserved_query, multipart_contract, multipart_form_bytes, operation_config, reserved_query_keys, validate_parameters, wire_parameters
 from .http_messages import request_config, mime_body, response_tree, multi_values, object_value as message_object_value
 from .http_contracts import schema_errors, response_schema,request_schema,media_schema,response_content,parse_json
-from .http_policy import (cached_http_response, circuit_enter, circuit_result, invalidate_shared_cache, outbound_trace,
+from .http_policy import (cache_only_request, cached_http_response, circuit_enter, circuit_result, invalidate_shared_cache, outbound_trace,
                           retry_delay, retryable, shared_cache_request, store_http_response)
 
 class HTTPFault(ValueError):
@@ -156,11 +156,37 @@ def validate_authentication(cfg,server=False):
         if not str(cfg['ldapUrl']).startswith('ldaps://') and not boolean(cfg.get('ldapStartTls'),True):raise HTTPFault('LDAP requires LDAPS or StartTLS','HTTP_CONFIGURATION',400)
     elif scheme=='certificate' and not server and not (cfg.get('identityStoreFile') or cfg.get('clientCertificateFile') or cfg.get('certificateFile')):raise HTTPFault('Client identity certificate is required','HTTP_CONFIGURATION',400)
 
+def split_http_url(url):
+    try:
+        parts = urllib.parse.urlsplit(url)
+        # urlsplit validates the port lazily.
+        _ = parts.port
+        return parts
+    except ValueError:
+        raise HTTPFault('HTTP URL contains an invalid host or port','HTTP_CONFIGURATION',400) from None
+
 def secure_url(url,cfg):
-    parts=urllib.parse.urlsplit(url)
+    parts=split_http_url(url)
     if parts.scheme not in ('http','https') or not parts.hostname or parts.username or parts.password or parts.fragment: raise HTTPFault('HTTP URL must have a host, no embedded credentials or fragment','HTTP_CONFIGURATION',400)
     if (str(cfg.get('authentication') or '').lower()=='certificate' or boolean(cfg.get('defaultConfidentiality')) or boolean(cfg.get('confidentiality')) or boolean(cfg.get('tlsEnabled'))) and parts.scheme!='https': raise HTTPFault('Confidentiality requires HTTPS','HTTP_CONFIGURATION',400)
     return url
+
+def _origin(url):
+    return url.scheme, url.host, url.port or (443 if url.scheme == 'https' else 80)
+
+def _validate_redirect_target(request):
+    policy = request.extensions.get('mina_redirect_policy')
+    if policy is None:
+        return
+    initial, protected, previous_scheme = policy
+    target = _origin(request.url)
+    if request.url.scheme not in ('http','https') or request.url.userinfo or not request.url.host:
+        raise HTTPFault('HTTP redirect target is not a valid HTTP endpoint','HTTP_SECURITY',403)
+    if previous_scheme == 'https' and target[0] != 'https':
+        raise HTTPFault('HTTPS requests cannot redirect to an insecure endpoint','HTTP_SECURITY',403)
+    if protected and target != initial:
+        raise HTTPFault('Cross-origin redirect blocked for a protected HTTP request','HTTP_SECURITY',403)
+    request.extensions['mina_redirect_policy'] = initial, protected, target[0]
 
 def _seconds(cfg,ms,seconds,default):
     value=number(cfg,ms,default*1000)/1000 if ms in cfg and cfg[ms] not in ('',None) else number(cfg,seconds,default)
@@ -254,8 +280,9 @@ def client_for(cfg):
         class RejectCookies(http.cookiejar.DefaultCookiePolicy):
             def set_ok(self,cookie,request):return False
         cookies=None if boolean(cfg.get('enableCookies')) else http.cookiejar.CookieJar(policy=RejectCookies())
-        client=httpx.Client(cookies=cookies,verify=tls_context(cfg),proxy=proxy or None,http2=version=='2',transport=transport,trust_env=False,limits=httpx.Limits(max_connections=total,max_keepalive_connections=total if persistent else 0,keepalive_expiry=number(cfg,'idleConnectionTimeoutMs',30000)/1000),timeout=30)
+        client=httpx.Client(cookies=cookies,verify=tls_context(cfg),proxy=proxy or None,http2=version=='2',transport=transport,trust_env=False,limits=httpx.Limits(max_connections=total,max_keepalive_connections=total if persistent else 0,keepalive_expiry=number(cfg,'idleConnectionTimeoutMs',30000)/1000),timeout=30,event_hooks={'request':[_validate_redirect_target]})
         client._mina_route_limit=per;client._mina_routes={};client._mina_lock=threading.Lock();client._mina_scope=cfg.get('_httpScope');_POOL[key]=client
+        client._mina_network_fingerprint = key
         return client
 
 def _jwt_key(cfg,sign=False):
@@ -358,13 +385,23 @@ def request(cfg,connection=None):
     if str(cfg.get('httpVersion')) == '3' and (cfg.get('streamRequest') or cfg.get('responseFile') or cfg.get('bodyType') == 'file' or operation in ('sse_read','websocket_exchange')):
         raise HTTPFault('HTTP/3 client currently supports buffered HTTP requests only','HTTP_CONFIGURATION',400)
     url=str(cfg.get('url') or cfg.get('path') or '')
-    if not urllib.parse.urlsplit(url).scheme:
+    parts=split_http_url(url)
+    if not parts.scheme:
+        if parts.netloc:
+            raise HTTPFault('Use an absolute HTTP URL or a relative path','HTTP_CONFIGURATION',400)
         effective_scheme='https' if boolean(cfg.get('defaultConfidentiality')) or boolean(cfg.get('confidentiality')) or boolean(cfg.get('tlsEnabled')) else cfg.get('scheme') or 'http'
-        base=str(cfg.get('baseUrl') or f'{effective_scheme}://{cfg.get("host") or "localhost"}:{cfg.get("port") or (443 if effective_scheme=="https" else 80)}')
-        url=base.rstrip('/')+'/'+('/'.join(part for part in (str(cfg.get('basePath') or '').strip('/'),url.lstrip('/')) if part))
+        host=str(cfg.get('host') or 'localhost')
+        if ':' in host and not host.startswith('['):host=f'[{host}]'
+        base=split_http_url(str(cfg.get('baseUrl') or f'{effective_scheme}://{host}:{cfg.get("port") or (443 if effective_scheme=="https" else 80)}'))
+        base_path=str(cfg.get('basePath') or '').strip('/')
+        relative_path=parts.path.lstrip('/')
+        path='/'+('/'.join(part for part in (base.path.strip('/'),base_path,relative_path) if part))
+        if path != '/' and not base_path and not relative_path:path+='/'
+        query='&'.join(part for part in (base.query,parts.query) if part)
+        parts=base._replace(path=path,query=query,fragment=parts.fragment or base.fragment)
+        url=urllib.parse.urlunsplit(parts)
     path_parameters = {name: value for name, value in object_value(cfg.get('pathParameters'), 'URI parameters').items()
                        if value is not None}
-    parts = urllib.parse.urlsplit(url)
     path = parts.path
     for name, value in wire_parameters(cfg, 'path', path_parameters).items():
         style = next((p.get('style') for p in cfg.get('_restParameters', [])
@@ -399,7 +436,9 @@ def request(cfg,connection=None):
     body=None if operation == 'sse_read' else cfg.get('body')
     mode=str(cfg.get('sendBodyMode') or 'ALWAYS').upper()
     if mode not in ('ALWAYS','AUTO','NEVER'):raise HTTPFault('Invalid send body mode','HTTP_CONFIGURATION',400)
-    if mode=='NEVER' or mode=='AUTO' and method in ('GET','HEAD','OPTIONS'):body=None
+    send_body=operation!='sse_read' and not (mode=='NEVER' or mode=='AUTO' and method in ('GET','HEAD','OPTIONS'))
+    mime_envelope=cfg.get('_mimeEnvelope') if send_body else None
+    if not send_body:body=None
     errors=validate_parameters(cfg,path_parameters,{**url_query, **mapped_query},headers,body)
     if errors:raise HTTPFault('; '.join(errors),'REST_VALIDATION',400)
     headers=wire_parameters(cfg,'header',headers)
@@ -418,12 +457,12 @@ def request(cfg,connection=None):
     inferred_type='form' if media_type=='application/x-www-form-urlencoded' else 'bytes' if isinstance(body,(bytes,bytearray,memoryview)) else 'text' if media_type.startswith('text/') or media_type.endswith(('/xml','+xml')) else 'json'
     body_type=str(cfg.get('bodyType') or inferred_type).lower()
     content_factory=None
-    if '_mimeEnvelope' in cfg and boolean(cfg.get('streamRequest')):
+    if mime_envelope is not None and boolean(cfg.get('streamRequest')):
         from .http_streams import multipart_stream
-        content_factory,mime_type=multipart_stream(cfg['_mimeEnvelope'],int(number(cfg,'maxRequestBodyBytes',64*1024**2,1)),body,str(headers.get('content-type') or 'application/json'))
+        content_factory,mime_type=multipart_stream(mime_envelope,int(number(cfg,'maxRequestBodyBytes',64*1024**2,1)),body,str(headers.get('content-type') or 'application/json'))
         raw=b'';headers['content-type']=mime_type
-    elif '_mimeEnvelope' in cfg:
-        try:raw,mime_type=mime_body(cfg['_mimeEnvelope'],int(number(cfg,'maxRequestBodyBytes',64*1024**2,1)),body,str(headers.get('content-type') or headers.get('Content-Type') or cfg.get('contentType') or 'application/json'))
+    elif mime_envelope is not None:
+        try:raw,mime_type=mime_body(mime_envelope,int(number(cfg,'maxRequestBodyBytes',64*1024**2,1)),body,str(headers.get('content-type') or headers.get('Content-Type') or cfg.get('contentType') or 'application/json'))
         except (ValueError,TypeError,OSError) as error:raise HTTPFault(str(error),'HTTP_CONFIGURATION',400) from None
         headers={key:value for key,value in headers.items() if key.lower()!='content-type'};headers['content-type']=mime_type
     elif body is None:raw=b''
@@ -434,8 +473,13 @@ def request(cfg,connection=None):
             raise HTTPFault(str(error),'REST_VALIDATION',400) from None
     elif body_type=='form':raw=urllib.parse.urlencode(object_value(body,'Form body'),doseq=True).encode();headers.setdefault('content-type','application/x-www-form-urlencoded')
     elif body_type=='file':
-        source=Path(str(body))
-        if source.stat().st_size>number(cfg,'maxRequestBodyBytes',64*1024**2,1):raise HTTPFault('HTTP request body limit exceeded','HTTP_BAD_REQUEST',413)
+        source=Path(str(body)).expanduser()
+        try:
+            if not source.is_file():raise OSError()
+            size=source.stat().st_size
+        except OSError:
+            raise HTTPFault('HTTP upload source must be a readable file','HTTP_CONFIGURATION',400) from None
+        if size>number(cfg,'maxRequestBodyBytes',64*1024**2,1):raise HTTPFault('HTTP request body limit exceeded','HTTP_BAD_REQUEST',413)
         from .http_streams import file_chunks
         content_factory=lambda:file_chunks(source,int(number(cfg,'maxRequestBodyBytes',64*1024**2,1)))
         raw=b''
@@ -444,9 +488,16 @@ def request(cfg,connection=None):
         try:raw=json.dumps(body,ensure_ascii=False,separators=(',',':'),allow_nan=False).encode()
         except (ValueError,TypeError):raise HTTPFault('Request body is not valid JSON','HTTP_CONFIGURATION',400) from None
         headers.setdefault('content-type','application/json')
-    else:raw=str(body).encode(str(cfg.get('encoding') or 'utf-8'))
+    else:
+        try:raw=str(body).encode(str(cfg.get('encoding') or 'utf-8'))
+        except (LookupError, UnicodeError):raise HTTPFault('HTTP request body cannot be represented in the selected encoding','HTTP_CONFIGURATION',400) from None
     if len(raw)>number(cfg,'maxRequestBodyBytes',64*1024**2,1):raise HTTPFault('HTTP request body limit exceeded','HTTP_BAD_REQUEST',413)
-    client=client_for(cfg);auth=None;scheme=str(cfg.get('authentication') or 'None').lower()
+    scheme=str(cfg.get('authentication') or 'None').lower()
+    use_shared_cache = boolean(cfg.get('sharedHttpCache'))
+    cache_only = use_shared_cache and cache_only_request(headers)
+    if cache_only and scheme != 'none':
+        raise HTTPFault('No fresh cached response is available','HTTP_CACHE_MISS',504)
+    client=client_for(cfg);auth=None
     if scheme in ('basic','digest'):
         if not cfg.get('username') or not cfg.get('password'):raise HTTPFault('Authentication credentials are required','HTTP_CONFIGURATION',400)
         auth=(NonPreemptiveBasic(str(cfg['username']),str(cfg['password'])) if boolean(cfg.get('nonPreemptiveAuthentication')) else httpx.BasicAuth(str(cfg['username']),str(cfg['password']))) if scheme=='basic' else httpx.DigestAuth(str(cfg['username']),str(cfg['password']))
@@ -473,13 +524,12 @@ def request(cfg,connection=None):
     gate=_acquire_route(client,route,timeout.pool)
     circuit=None;failed=False
     try:
-        circuit=circuit_enter(cfg,route)
         for attempt in range(retries+1):
             try:
                 if time.monotonic()>=deadline:raise HTTPFault('HTTP activity timeout','HTTP_TIMEOUT',504)
                 pairs=[(key,item) for key,value in headers.items() for item in (value if isinstance(value,list) else [value])]
                 from .http_streams import ReplayStream
-                content=ReplayStream(content_factory) if content_factory else raw if body is not None or '_mimeEnvelope' in cfg else None
+                content=ReplayStream(content_factory) if content_factory else raw if body is not None or mime_envelope is not None else None
                 req=client.build_request(method,url,params=query,headers=pairs,content=content,timeout=timeout)
                 if not boolean(cfg.get('enableCookies')) and not any(key.lower()=='cookie' for key in headers):req.headers.pop('cookie',None)
                 if scheme=='hmac':
@@ -491,15 +541,28 @@ def request(cfg,connection=None):
                         for chunk in content_factory():digest.update(chunk)
                         signing_body=HashedBody(digest.hexdigest())
                     req.headers['X-MINA-Timestamp']=stamp;req.headers['X-MINA-Nonce']=nonce;req.headers['X-MINA-Key-Id']=str(cfg.get('hmacKeyId') or 'default');req.headers['Authorization']='HMAC '+hmac_signature(cfg,method,req.url.raw_path.decode('ascii'),signing_body,stamp,nonce)
-                if str(cfg.get('requestEntityProcessing') or 'BUFFERED').upper()=='CHUNKED' and str(cfg.get('httpVersion') or '1.1')=='1.1' and (body is not None or '_mimeEnvelope' in cfg):
+                follow=boolean(cfg.get('followRedirects'))
+                if follow:
+                    protected=(scheme!='none' or boolean(cfg.get('enableCookies')) or bool(req.url.query) or content is not None
+                               or any(key not in ('accept','content-type') for key in headers)
+                               or any(cfg.get(key) for key in ('identityStoreFile','certificateFile','clientCertificateFile')))
+                    req.extensions['mina_redirect_policy']=(_origin(req.url),protected,req.url.scheme)
+                if str(cfg.get('requestEntityProcessing') or 'BUFFERED').upper()=='CHUNKED' and str(cfg.get('httpVersion') or '1.1')=='1.1' and content is not None:
                     req.headers.pop('content-length',None);req.headers['Transfer-Encoding']='chunked'
                 temporary=None
-                cache = None if operation == 'sse_read' else shared_cache_request(cfg, req)
+                cache = None
+                if use_shared_cache and operation != 'sse_read':
+                    network = getattr(client, '_mina_network_fingerprint', None) or _fingerprint(cfg)
+                    cache = shared_cache_request(cfg, req, network)
                 cached = cached_http_response(cache, req)
-                if cached is None and boolean(cfg.get('sharedHttpCache')) and any(
-                        directive.strip().lower() == 'only-if-cached' for directive in req.headers.get('cache-control','').split(',')):
+                if cached is None and cache_only:
                     raise HTTPFault('No fresh cached response is available','HTTP_CACHE_MISS',504)
-                response=cached if cached is not None else client.send(req,auth=auth,follow_redirects=boolean(cfg.get('followRedirects')),stream=True)
+                if cached is None:
+                    if attempt == 0:
+                        circuit=circuit_enter(cfg,route)
+                    response=client.send(req,auth=auth,follow_redirects=follow,stream=True)
+                else:
+                    response=cached
                 try:
                     if operation == 'sse_read':
                         from .http_streams import read_sse
@@ -519,17 +582,25 @@ def request(cfg,connection=None):
                     destination=cfg.get('responseFile') if has_body else None
                     temporary=None;sink=None
                     if destination:
+                        if response.status_code == 206 and 'range' not in req.headers:
+                            raise HTTPFault('HTTP provider returned partial content without a Range request','HTTP_BAD_RESPONSE',502)
                         if cfg.get('responseSchema') or cfg.get('_restResponseSchemas'):raise HTTPFault('File download mode cannot bypass configured response schemas','HTTP_CONFIGURATION',400)
                         target=Path(destination).expanduser()
                         if target.exists() and not boolean(cfg.get('overwriteResponseFile')):raise HTTPFault('Response file already exists','HTTP_CONFIGURATION',400)
-                        handle=tempfile.NamedTemporaryFile(prefix='.mina-download-',dir=target.parent,delete=False);temporary=Path(handle.name);sink=handle
+                        try:
+                            sink=tempfile.NamedTemporaryFile(prefix='.mina-download-',dir=target.parent,delete=False)
+                            temporary=Path(sink.name)
+                        except OSError:
+                            raise HTTPFault('HTTP download destination directory is unavailable','HTTP_CONFIGURATION',400) from None
                     chunks=[];size=0
                     try:
                         for chunk in response.iter_bytes(chunk_size=int(number(cfg,'responseBufferSize',65536,1024,1024**2))) if has_body else ():
                             size+=len(chunk)
                             if size>maximum:raise HTTPFault('HTTP response body limit exceeded','HTTP_BAD_RESPONSE',502)
                             if time.monotonic()>deadline:raise HTTPFault('HTTP activity timeout','HTTP_TIMEOUT',504)
-                            if sink:sink.write(chunk)
+                            if sink:
+                                try:sink.write(chunk)
+                                except OSError:raise HTTPFault('HTTP download could not write to disk','HTTP_FILE_IO',500) from None
                             else:chunks.append(chunk)
                     except BaseException:
                         if sink:sink.close();temporary.unlink(missing_ok=True)
@@ -553,14 +624,17 @@ def request(cfg,connection=None):
                         if temporary:temporary.unlink(missing_ok=True)
                         raise HTTPFault(f'HTTP response status {response.status_code}','HTTP_CLIENT_ERROR' if response.status_code<500 else 'HTTP_SERVER_ERROR',response.status_code)
                     if temporary:
-                        if boolean(cfg.get('overwriteResponseFile')):temporary.replace(target)
-                        else:
-                            try:os.link(temporary,target)
-                            finally:temporary.unlink(missing_ok=True)
+                        try:
+                            if boolean(cfg.get('overwriteResponseFile')):temporary.replace(target)
+                            else:os.link(temporary,target)
+                        except FileExistsError:
+                            raise HTTPFault('Response file already exists','HTTP_CONFIGURATION',400) from None
+                        except OSError:
+                            raise HTTPFault('HTTP download could not publish the destination file','HTTP_FILE_IO',500) from None
                         value={'fileName':str(target),'size':size}
                     result={'statusCode':response.status_code,'headers':{key:response.headers.get_list(key) if len(response.headers.get_list(key))>1 else val for key,val in response.headers.items()},'body':value,'elapsedMs':round((time.monotonic()-started)*1000),'httpVersion':response.http_version}
-                    if not destination and (cfg.get('_structuredRequest') or cfg.get('requestModel')=='tree'):
-                        try:tree=response_tree(response,data)
+                    if cfg.get('_structuredRequest') or cfg.get('requestModel')=='tree':
+                        try:tree=response_tree(response,None if destination else data,has_body=has_body)
                         except (ValueError,LookupError) as error:raise HTTPFault(str(error),'HTTP_BAD_RESPONSE',502) from None
                         tree['body']=value;result['RestOutputResponse']=tree
                     failed=response.status_code>=500

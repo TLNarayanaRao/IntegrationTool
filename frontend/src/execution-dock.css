@@ -20,6 +20,16 @@
 .execution-log-links { display:flex; flex-wrap:wrap; gap:5px; }
 .execution-log-links button { overflow-wrap:anywhere; min-width:0; }
 .execution-log-view > .execution-log-list { flex:1; }
+.execution-timing-list { flex:1; min-height:0; min-width:0; overflow:auto; padding:5px 10px; }
+.execution-timing-list p, .execution-timing-list small { color:var(--muted); }
+.execution-timing-list table { width:100%; border-collapse:collapse; font-size:inherit; }
+.execution-timing-list th, .execution-timing-list td { padding:6px; text-align:left; border-bottom:1px solid var(--line); }
+.execution-timing-list thead th { position:sticky; top:0; background:var(--panel); z-index:1; }
+.execution-timing-list th small { display:block; font-weight:normal; }
+.execution-timing-list td.execution-log-links { display:table-cell; min-width:7em; }
+.execution-timing-list td button { margin:2px; }
+.execution-console > .run-state { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.execution-console .keep-execution-panel { display:inline-flex; align-items:center; gap:5px; margin-inline-start:auto; }
 .execution-log-list { min-width:0; min-height:0; overflow:auto; padding:5px 10px; }
 .execution-log-list > .log { border-bottom:1px solid var(--line); padding:5px 2px; overflow-wrap:anywhere; }
 .execution-log-list > .log small { color:var(--muted); }

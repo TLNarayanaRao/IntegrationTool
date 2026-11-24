@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib, ipaddress, json, math, random, re, secrets, threading, time, urllib.parse
 from collections import OrderedDict
 from contextvars import ContextVar
+from datetime import timezone
 from email.utils import parsedate_to_datetime
+from urllib.request import parse_http_list
 
 _LOCK=threading.RLock();_CIRCUITS={};_RATES={};_JWKS={};_REDIS={}
 trace_context = ContextVar('mina_http_trace', default=None)
@@ -12,30 +14,45 @@ _HTTP_CACHE_GENERATION = {}
 
 
 def _cache_directives(value):
-    return {key.strip().lower(): argument.strip().strip('"')
-            for item in value.split(',') for key, _, argument in [item.partition('=')] if key.strip()}
+    directives = {}
+    for item in parse_http_list(value):
+        key, _, argument = item.partition('=')
+        key = key.strip().lower()
+        if key:
+            directives[key] = None if key in directives else argument.strip().strip('"')
+    return directives
 
 
-def shared_cache_request(cfg, request):
+def cache_only_request(headers):
+    value = headers.get('cache-control', '')
+    return 'only-if-cached' in _cache_directives(','.join(value) if isinstance(value, list) else value)
+
+
+def _cache_seconds(value):
+    return int(value) if isinstance(value, str) and re.fullmatch(r'[0-9]{1,10}', value) else None
+
+
+def shared_cache_request(cfg, request, network):
     """Cache only explicitly public, unconditional GETs. No stale serving."""
     from .http_transport import boolean
     if not boolean(cfg.get('sharedHttpCache')) or boolean(cfg.get('enableCookies')):
         return None
-    if str(cfg.get('authentication') or 'none').lower() != 'none' or boolean(cfg.get('followRedirects')):
+    if (str(cfg.get('authentication') or 'none').lower() != 'none' or boolean(cfg.get('followRedirects'))
+            or any(cfg.get(key) for key in ('identityStoreFile', 'certificateFile', 'clientCertificateFile'))):
         return None
     prohibited = ('authorization', 'cookie', 'range', 'if-match', 'if-none-match',
-                  'if-modified-since', 'if-unmodified-since', 'if-range')
+                  'if-modified-since', 'if-unmodified-since', 'if-range', 'transfer-encoding')
     directives = _cache_directives(request.headers.get('cache-control', ''))
     if (request.method != 'GET' or cfg.get('responseFile') or request.headers.get('content-length', '0') != '0'
             or any(name in request.headers for name in prohibited)
-            or 'no-store' in directives or 'no-cache' in directives or 'max-age' in directives
-            or 'min-fresh' in directives or request.headers.get('pragma')):
+            or {'no-store', 'no-cache'} & directives.keys() or request.headers.get('pragma')):
         return None
     scope = _http_cache_scope(cfg, request)
     with _LOCK:
         generation = _HTTP_CACHE_GENERATION.get(scope, '')
-    headers = sorted((key, value) for key, value in request.headers.multi_items() if key != 'cache-control')
-    fingerprint = json.dumps([scope, str(generation), str(request.url), cfg.get('httpVersion'), headers])
+    headers = [(key, value) for key, value in request.headers.multi_items() if key != 'cache-control']
+    headers.sort(key=lambda pair: pair[0])
+    fingerprint = json.dumps([scope, str(generation), str(request.url), network, headers])
     return hashlib.sha256(fingerprint.encode()).hexdigest()
 
 
@@ -63,12 +80,23 @@ def cached_http_response(cache, request):
         return None
     with _LOCK:
         record = _HTTP_CACHE.get(cache)
-    if not record or time.time() >= record['expires']:
+    now = time.monotonic()
+    if not record or now >= record['expires']:
         return None
+    age = now - record['created']
+    directives = _cache_directives(request.headers.get('cache-control', ''))
+    if 'max-age' in directives:
+        max_age = _cache_seconds(directives['max-age'])
+        if max_age is None or max_age == 0 or age > max_age:
+            return None
+    if 'min-fresh' in directives:
+        min_fresh = _cache_seconds(directives['min-fresh'])
+        if min_fresh is None or record['expires'] - now < min_fresh:
+            return None
     headers = [(name, value) for name, value in record['headers'] if name != 'age']
-    headers.append(('age', str(max(0, int(time.time() - record['created'])))))
+    headers.append(('age', str(max(0, int(age)))))
     return httpx.Response(200, headers=headers, content=record['content'],
-                          request=request, extensions={'http_version':record['version'].encode()})
+                          request=request, extensions=record['extensions'].copy())
 
 
 def store_http_response(cache, response, content):
@@ -78,20 +106,25 @@ def store_http_response(cache, response, content):
     vary = {name.strip().lower() for name in response.headers.get('vary', '').split(',')}
     if (('public' not in directives and 's-maxage' not in directives)
             or {'private', 'no-cache', 'no-store'} & directives.keys()
-            or {'*', 'cache-control'} & vary or 'set-cookie' in response.headers):
+            or {'*', 'cache-control'} & vary or 'set-cookie' in response.headers
+            or response.headers.get('content-encoding', 'identity').lower() != 'identity'):
         return
-    now = time.time()
+    freshness = _cache_seconds(directives.get('s-maxage', directives.get('max-age')))
+    age = _cache_seconds(response.headers.get('age', '0'))
+    if freshness is None or age is None:
+        return
     try:
-        age = max(0, int(response.headers.get('age', '0')))
         if response.headers.get('date'):
-            age = max(age, int(now - parsedate_to_datetime(response.headers['date']).timestamp()))
-        lifetime = min(3600, int(directives.get('s-maxage', directives.get('max-age', '0')))) - age
+            age = max(age, time.time() - parsedate_to_datetime(response.headers['date']).timestamp())
     except (ValueError, TypeError, OverflowError):
         return
+    lifetime = min(3600, freshness) - age
     if lifetime <= 0:
         return
+    now = time.monotonic()
+    extensions = {key: response.extensions[key] for key in ('http_version', 'reason_phrase') if key in response.extensions}
     record = {'created':now - age, 'expires':now + lifetime, 'content':content,
-              'version':response.http_version, 'headers':[(name, value) for name, value in response.headers.multi_items()
+              'extensions':extensions, 'headers':[(name, value) for name, value in response.headers.multi_items()
                   if name not in ('content-encoding', 'transfer-encoding', 'content-length')]}
     with _LOCK:
         _HTTP_CACHE[cache] = record
@@ -139,24 +172,51 @@ def client_address(cfg, peer, headers):
     return str(address)
 
 
-def representation_unchanged(request_headers, response_headers):
-    headers = {str(name).lower(): value for name, value in response_headers.items()}
-    condition = request_headers.get('if-none-match')
-    if condition is not None:
-        condition = ','.join(condition) if isinstance(condition, list) else condition
-        if condition.strip() == '*':
-            return True
-        tag = headers.get('etag')
-        if not isinstance(tag, str):
-            return False
-        matches = re.findall(r'(?:W/)?"[\x21\x23-\x7e\x80-\xff]*"', condition)
-        return tag.removeprefix('W/') in [value.removeprefix('W/') for value in matches]
+def _entity_tags(condition):
+    value = ','.join(map(str, condition)) if isinstance(condition, list) else str(condition)
+    if value.strip() == '*':
+        return ['*']
+    pattern = r'(?:W/)?"[\x21\x23-\x7e\x80-\xff]*"'
+    if not re.fullmatch(rf'\s*{pattern}(?:\s*,\s*{pattern})*\s*', value):
+        return []
+    return re.findall(pattern, value)
+
+
+def _http_date(value):
+    if not isinstance(value, str):
+        return None
     try:
-        since = parsedate_to_datetime(request_headers.get('if-modified-since', ''))
-        modified = parsedate_to_datetime(headers.get('last-modified', ''))
-        return modified <= since
+        date = parsedate_to_datetime(value)
+        return date if date.tzinfo is not None else date.replace(tzinfo=timezone.utc)
     except (ValueError, TypeError, OverflowError):
-        return False
+        return None
+
+
+def read_precondition_status(request_headers, response_headers):
+    """Evaluate validators for an existing GET or HEAD representation in HTTP order."""
+    headers = {str(name).lower(): value for name, value in response_headers.items()}
+    tag = headers.get('etag')
+    if_match = request_headers.get('if-match')
+    if if_match is not None:
+        candidates = _entity_tags(if_match)
+        if '*' not in candidates and (not isinstance(tag, str) or tag.startswith('W/') or tag not in candidates):
+            return 412
+    else:
+        limit = _http_date(request_headers.get('if-unmodified-since'))
+        modified = _http_date(headers.get('last-modified')) if limit is not None else None
+        if modified is not None and modified > limit:
+            return 412
+    none_match = request_headers.get('if-none-match')
+    if none_match is not None:
+        candidates = _entity_tags(none_match)
+        if '*' in candidates or isinstance(tag, str) and tag.removeprefix('W/') in [value.removeprefix('W/') for value in candidates]:
+            return 304
+    else:
+        limit = _http_date(request_headers.get('if-modified-since'))
+        modified = _http_date(headers.get('last-modified')) if limit is not None else None
+        if modified is not None and modified <= limit:
+            return 304
+    return 200
 
 
 def write_precondition(cfg):
@@ -167,36 +227,22 @@ def write_precondition(cfg):
     if_match = headers.get('if-match')
     none_match = headers.get('if-none-match')
     since = headers.get('if-unmodified-since')
-    def tags(condition):
-        text = ','.join(condition) if isinstance(condition, list) else str(condition)
-        if text.strip() == '*':
-            return ['*']
-        tag_pattern = r'(?:W/)?"[\x21\x23-\x7e\x80-\xff]*"'
-        if not re.fullmatch(rf'\s*{tag_pattern}(?:\s*,\s*{tag_pattern})*\s*', text):
-            return []
-        return re.findall(tag_pattern, text)
     def result(status):
         return {'allowed': status == 200, 'statusCode': status}
     if all(value is None for value in (if_match, none_match, since)) and boolean(cfg.get('requireWritePrecondition')):
         return result(428)
     if if_match is not None:
-        candidates = tags(if_match)
+        candidates = _entity_tags(if_match)
         if not exists or ('*' not in candidates and (not tag or tag.startswith('W/') or tag not in candidates)):
             return result(412)
     elif since is not None and exists:
-        try:
-            limit = parsedate_to_datetime(since)
-        except (TypeError, ValueError, OverflowError):
-            limit = None  # An invalid request date is ignored.
+        limit = _http_date(since)
         if limit is not None:
-            try:
-                modified = parsedate_to_datetime(cfg.get('currentLastModified', ''))
-                if modified > limit:
-                    return result(412)
-            except (TypeError, ValueError, OverflowError):
+            modified = _http_date(cfg.get('currentLastModified'))
+            if modified is None or modified > limit:
                 return result(412)
     if none_match is not None and exists:
-        candidates = tags(none_match)
+        candidates = _entity_tags(none_match)
         if not candidates or '*' in candidates or tag and tag.removeprefix('W/') in [value.removeprefix('W/') for value in candidates]:
             return result(412)
     return result(200)

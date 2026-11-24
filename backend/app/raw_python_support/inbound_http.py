@@ -14,9 +14,9 @@ async def serve_http(task_ids,environment_name):
         resource = resources.get(str(config.get('resourceId') or ''))
         connection=resolve(resource.config,context) if resource else {}
         if os.environ.get('MINA_HTTP_HOST'):
-            connection['host'] = os.environ['MINA_HTTP_HOST']
+            config['host'] = os.environ['MINA_HTTP_HOST']
         if os.environ.get('MINA_HTTP_PORT'):
-            connection['port'] = int(os.environ['MINA_HTTP_PORT'])
+            config['port'] = int(os.environ['MINA_HTTP_PORT'])
         routes.append(((task_id,activity_id),connection,config))
     async def handle(metadata,payload):
         task_id,activity_id=metadata

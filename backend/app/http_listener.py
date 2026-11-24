@@ -1,13 +1,13 @@
 """Protocol handling for dedicated listeners; shared by Studio and archives."""
 from __future__ import annotations
-import asyncio, base64, hashlib, ipaddress, json, tempfile, urllib.parse
+import asyncio, base64, hashlib, ipaddress, json, os, re, stat, tempfile, urllib.parse
 from pathlib import Path
 from http import HTTPStatus
 from xml.etree import ElementTree
 from .http_contracts import (response_schema, schema_errors, request_schema, media_schema, response_content,
                              parse_json, hosted_response_content, media_family, negotiate_media)
 from .http_messages import multi_values
-from .http_policy import client_address, cors_headers, rate_limit, representation_unchanged, trace_context, trace_headers
+from .http_policy import client_address, cors_headers, rate_limit, read_precondition_status, trace_context, trace_headers
 from .rest_contract import authorize_contract, decode_multipart_form, multipart_contract, validate_parameters,typed_form_body
 
 class HashedBody:
@@ -46,6 +46,30 @@ def wire_status_line(response,scope):
     return line
 
 
+def requested_byte_range(headers, response_headers, size):
+    """Return byte offsets, None for a full response, or an empty tuple for 416."""
+    value = headers.get('range')
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(r'bytes=([0-9]{0,20})-([0-9]{0,20})', value.strip(), re.IGNORECASE)
+    if not match or not any(match.groups()):
+        return None
+    validator = headers.get('if-range')
+    if validator is not None:
+        etag = response_headers.get('etag')
+        if not isinstance(validator, str) or not re.fullmatch(r'"[^"\s]*"', validator) or validator != etag:
+            return None
+    first, last = match.groups()
+    if not first:
+        suffix = int(last)
+        return (max(0, size - suffix), size - 1) if size and suffix else ()
+    start = int(first)
+    end = int(last) if last else size - 1
+    if last and end < start:
+        return None
+    return (start, min(end, size - 1)) if start < size else ()
+
+
 def mapped_xml_response(value, schema):
     """Render a mapped body whose top-level key names a global XSD element."""
     if not isinstance(value, dict) or len(value) != 1 or not isinstance(schema, str) or not schema.lstrip().startswith('<'):
@@ -80,12 +104,14 @@ async def handle_request(app,scope,receive,send):
     finally:
         if state.get('acquired'):app.gate.release()
         if state.get('admitted'):app.queued-=1
+        if state.get('response_file'):state['response_file'].close()
         if state.get('upload'):
             state['upload'].close();Path(state['upload'].name).unlink(missing_ok=True)
 
 async def _handle_request(app,scope,receive,send,state):
     from .http_transport import HTTPFault, authorize, boolean, number
     acquired=False;upload=None;stream_path=None;cors={};extra={};response_headers={};method=scope['method'];status=500;body=b''
+    stream_offset=0
     pairs=[(k.decode('latin1').lower(),v.decode('latin1')) for k,v in scope.get('headers',[])]
     headers=multi_values(pairs)
     try:
@@ -230,12 +256,9 @@ async def _handle_request(app,scope,receive,send,state):
             if trace_token is not None:
                 trace_context.reset(trace_token)
         response=output if isinstance(output,dict) and any(key in output for key in ('__httpResponse','statusCode','sent','fileName','binaryContent')) else {'body':output}
-        status=int(response.get('statusCode',200));value=response.get('body')
+        original_status=status=int(response.get('statusCode',200));value=response.get('body')
         wire_line=wire_status_line(response,scope)
         if not 200<=status<=599:raise HTTPFault('Invalid response status','HTTP_RESPONSE',500)
-        if status == 200 and method in ('GET', 'HEAD') and boolean(cfg.get('conditionalResponses')):
-            if representation_unchanged(headers, response.get('headers') or {}):
-                status = 304
         bodyless = status in (204, 205, 304)
         explicit_media = next((str(value) for key,value in (response.get('headers') or {}).items() if str(key).lower()=='content-type'), None)
         selected_media = cfg.get('responseContentTypes') or []
@@ -281,7 +304,20 @@ async def _handle_request(app,scope,receive,send,state):
             size = 0
         elif response.get('fileName'):
             if schema is not None and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))):raise HTTPFault('File responses cannot bypass configured schema validation','REST_VALIDATION',500)
-            stream_path=Path(response['fileName']).expanduser();size=stream_path.stat().st_size
+            stream_path=Path(response['fileName']).expanduser()
+            try:
+                if not stream_path.is_file():
+                    raise OSError('Expected a regular file')
+                if method == 'HEAD':
+                    size = stream_path.stat().st_size
+                else:
+                    source = state['response_file'] = stream_path.open('rb')
+                    details = os.fstat(source.fileno())
+                    if not stat.S_ISREG(details.st_mode):
+                        raise OSError('Expected a regular file')
+                    size = details.st_size
+            except OSError:
+                raise HTTPFault('HTTP response file must be a readable regular file','HTTP_RESPONSE',500) from None
         else:
             if 'binaryContent' in response:
                 try:body=base64.b64decode(response['binaryContent'],validate=True)
@@ -293,8 +329,33 @@ async def _handle_request(app,scope,receive,send,state):
             else:body=('' if value is None else str(value)).encode()
             if method!='HEAD' and schema is not None and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and schema_errors(value,schema):raise HTTPFault('Response schema validation failed','REST_VALIDATION',500)
             size=len(body)
-        if size>number(cfg,'maxResponseBodyBytes',64*1024**2,1):raise HTTPFault('Response body too large','HTTP_BAD_RESPONSE',500)
         response_headers={str(k).lower():v for k,v in (response.get('headers') or {}).items() if str(k).lower() not in ('content-length','transfer-encoding','connection')}
+        if status == 200 and method in ('GET', 'HEAD') and boolean(cfg.get('conditionalResponses')):
+            status = read_precondition_status(headers, response_headers)
+            if status != original_status:
+                body = b''
+                size = 0
+                stream_path = None
+                response_headers.pop('content-range', None)
+                if status == 412:
+                    response_headers.pop('content-encoding', None)
+        if (status == 200 and stream_path and method in ('GET','HEAD') and boolean(cfg.get('fileByteRanges'))
+                and str(response_headers.get('content-encoding') or 'identity').lower() == 'identity'):
+            response_headers['accept-ranges'] = 'bytes'
+            byte_range = requested_byte_range(headers, response_headers, size) if method == 'GET' else None
+            if byte_range == ():
+                status = 416
+                response_headers['content-range'] = f'bytes */{size}'
+                size = 0
+                stream_path = None
+            elif byte_range is not None:
+                status = 206
+                stream_offset, end = byte_range
+                response_headers['content-range'] = f'bytes {stream_offset}-{end}/{size}'
+                size = end - stream_offset + 1
+        if size>number(cfg,'maxResponseBodyBytes',64*1024**2,1) and method!='HEAD':raise HTTPFault('Response body too large','HTTP_BAD_RESPONSE',500)
+        if status != original_status:
+            wire_line.pop('reasonPhrase', None)
         if negotiated:
             vary = ', '.join(map(str, response_headers['vary'])) if isinstance(response_headers.get('vary'), list) else str(response_headers.get('vary') or '')
             if not {'accept', '*'}.intersection(item.strip().lower() for item in vary.split(',')):
@@ -335,13 +396,14 @@ async def _handle_request(app,scope,receive,send,state):
         start['mina.http.response.status_line']=wire_line
     await send(start)
     if stream_path:
-        with stream_path.open('rb') as source:
-            remaining=int(response_headers['content-length'])
-            while remaining:
-                chunk=await asyncio.to_thread(source.read,min(65536,remaining))
-                if not chunk:raise RuntimeError('HTTP response file changed while streaming')
-                remaining-=len(chunk)
-                await asyncio.wait_for(send({'type':'http.response.body','body':chunk,'more_body':True}),number(cfg,'writeTimeoutMs',60000,1)/1000)
+        source=state['response_file']
+        source.seek(stream_offset)
+        remaining=int(response_headers['content-length'])
+        while remaining:
+            chunk=await asyncio.to_thread(source.read,min(65536,remaining))
+            if not chunk:raise RuntimeError('HTTP response file changed while streaming')
+            remaining-=len(chunk)
+            await asyncio.wait_for(send({'type':'http.response.body','body':chunk,'more_body':True}),number(cfg,'writeTimeoutMs',60000,1)/1000)
     await send({'type':'http.response.body','body':b'' if stream_path or method=='HEAD' else body})
 
 

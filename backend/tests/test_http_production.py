@@ -26,6 +26,83 @@ class ListenerProductionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(base64.b64decode(seen[0]['binaryContent']),b'\x00\xff')
         await self.exercise(handle,action)
 
+    async def test_file_range_and_conditions_use_the_selected_representation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'artifact.bin'
+            path.write_bytes(b'0123456789')
+
+            async def handle(_, payload):
+                return {'fileName': str(path), 'headers': {'ETag': '"release-1"'}}
+
+            async def action(client, app):
+                for header, expected, content_range in (
+                    ('bytes=2-4', b'234', 'bytes 2-4/10'),
+                    ('bytes=7-', b'789', 'bytes 7-9/10'),
+                    ('bytes=-3', b'789', 'bytes 7-9/10'),
+                    ('bytes=9-99', b'9', 'bytes 9-9/10'),
+                ):
+                    response = await client.get('/echo', headers={'Range': header, 'If-Range': '"release-1"'})
+                    self.assertEqual((response.status_code, response.content), (206, expected))
+                    self.assertEqual(response.headers['content-range'], content_range)
+                    self.assertEqual(response.headers['accept-ranges'], 'bytes')
+                for headers in ({'Range': 'bytes=0-1,3-4'}, {'Range': 'bytes=9-2'}, {'Range': 'words=2-4'},
+                                {'Range': 'bytes=2-4', 'If-Range': 'W/"release-1"'},
+                                {'Range': 'bytes=2-4', 'If-Range': '"release-2"'}):
+                    response = await client.get('/echo', headers=headers)
+                    self.assertEqual((response.status_code, response.content), (200, b'0123456789'))
+                    self.assertNotIn('content-range', response.headers)
+                unsatisfied = await client.get('/echo', headers={'Range': 'bytes=10-'})
+                self.assertEqual((unsatisfied.status_code, unsatisfied.content), (416, b''))
+                self.assertEqual(unsatisfied.headers['content-range'], 'bytes */10')
+                head = await client.head('/echo', headers={'Range': 'bytes=2-4'})
+                self.assertEqual((head.status_code, head.content, head.headers['content-length']), (200, b'', '10'))
+                unchanged = await client.get('/echo', headers={'Range': 'bytes=2-4', 'If-None-Match': '"release-1"'})
+                self.assertEqual((unchanged.status_code, unchanged.content), (304, b''))
+                self.assertNotIn('content-range', unchanged.headers)
+
+            await self.exercise(handle, action, {'fileByteRanges': True, 'conditionalResponses': True})
+
+    async def test_read_preconditions_follow_header_order_and_use_response_validators(self):
+        async def handle(_, payload):
+            return {'statusCode': 200, 'body': 'representation', 'headers': {
+                'ETag': '"current"', 'Last-Modified': 'Wed, 21 Oct 2015 07:28:00 GMT', 'Content-Type': 'text/plain'}}
+
+        async def action(client, app):
+            past = 'Tue, 20 Oct 2015 07:28:00 GMT'
+            future = 'Thu, 22 Oct 2015 07:28:00 GMT'
+            cases = [
+                ({'If-Match': 'W/"current"', 'If-None-Match': '*'}, 412),
+                ({'If-Match': '"current"', 'If-Unmodified-Since': past}, 200),
+                ({'If-Unmodified-Since': past, 'If-None-Match': '*'}, 412),
+                ({'If-Unmodified-Since': 'invalid', 'If-None-Match': 'W/"current"'}, 304),
+                ({'If-Modified-Since': future}, 304),
+                ({'If-None-Match': '"stale"', 'If-Modified-Since': future}, 200),
+                ({'If-None-Match': 'garbage "current"'}, 200),
+                ({'If-Match': '*'}, 200),
+            ]
+            for headers, status in cases:
+                response = await client.get('/echo', headers=headers)
+                self.assertEqual((response.status_code, response.content),
+                                 (status, b'representation' if status == 200 else b''), headers)
+                self.assertEqual(response.headers['etag'], '"current"')
+            response = await client.head('/echo', headers={'If-Match': '"old"'})
+            self.assertEqual((response.status_code, response.content), (412, b''))
+            response = await client.post('/echo', headers={'If-Match': '"old"'})
+            self.assertEqual(response.status_code, 200)
+
+        await self.exercise(handle, action, {'conditionalResponses': True})
+
+        async def negotiate(client, app):
+            headers = {'If-None-Match': '"current"'}
+            unacceptable = await client.get('/echo', headers={**headers, 'Accept': 'application/json'})
+            self.assertEqual(unacceptable.status_code, 406)
+            unchanged = await client.get('/echo', headers={**headers, 'Accept': 'text/plain'})
+            self.assertEqual(unchanged.status_code, 304)
+            self.assertEqual(unchanged.headers['vary'], 'Accept')
+
+        await self.exercise(handle, negotiate, {'conditionalResponses': True,
+                                                'responseContentTypes': ['text/plain', 'application/json']})
+
     async def test_method_head_options_and_boolean_response(self):
         async def handle(_,payload):return {'statusCode':200,'body':False}
         async def action(client,app):
@@ -177,12 +254,36 @@ class TransportProductionTests(unittest.TestCase):
             source=Path(folder)/'in';source.write_bytes(b'\xff'*200000);target=Path(folder)/'out';seen=[]
             def handler(request):seen.append(request.read());return httpx.Response(200,content=b'\x00\xff',headers={'Content-Type':'application/octet-stream'})
             with self.client(handler) as client,patch.object(transport,'client_for',return_value=client):
-                output=transport.request({'url':'https://api.test/upload','method':'POST','body':str(source),'bodyType':'file','responseFile':str(target)})
+                output=transport.request({'url':'https://api.test/upload','method':'POST','body':str(source),'bodyType':'file','responseFile':str(target),'requestModel':'tree'})
                 self.assertEqual(seen,[source.read_bytes()]);self.assertEqual(target.read_bytes(),b'\x00\xff');self.assertEqual(output['body']['size'],2)
+                self.assertEqual(output['RestOutputResponse']['body'], output['body'])
+                self.assertEqual(output['RestOutputResponse']['statusLine']['statusCode'], 200)
+                self.assertEqual(output['RestOutputResponse']['Headers']['Content-Type'], 'application/octet-stream')
+                self.assertNotIn('binaryContent', output['RestOutputResponse'])
                 with self.assertRaises(transport.HTTPFault):transport.request({'url':'https://api.test','responseFile':str(target)})
                 target.unlink()
                 with self.assertRaises(transport.HTTPFault):transport.request({'url':'https://api.test','responseFile':str(target),'maxResponseBodyBytes':1})
                 self.assertFalse(target.exists());self.assertFalse(list(Path(folder).glob('.mina-download-*')))
+
+    def test_file_download_rejects_unsolicited_partial_response_and_reports_io_errors(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder) / 'out'
+            config = {'url': 'https://api.test', 'responseFile': str(target), 'overwriteResponseFile': True}
+            target.write_bytes(b'original')
+            with self.client(lambda req: httpx.Response(206, content=b'chunk')) as client, patch.object(transport,'client_for',return_value=client):
+                with self.assertRaisesRegex(transport.HTTPFault, 'without a Range request'):
+                    transport.request(config)
+                self.assertEqual(target.read_bytes(), b'original')
+            with self.client(lambda req: httpx.Response(200, content=b'full')) as client, patch.object(transport,'client_for',return_value=client):
+                with self.assertRaisesRegex(transport.HTTPFault, 'destination directory') as unavailable:
+                    transport.request({**config, 'responseFile': str(target / 'missing' / 'out')})
+                self.assertEqual(unavailable.exception.fault_type, 'HTTP_CONFIGURATION')
+                with patch.object(Path, 'replace', side_effect=PermissionError):
+                    with self.assertRaisesRegex(transport.HTTPFault, 'publish') as locked:
+                        transport.request(config)
+                self.assertEqual(locked.exception.fault_type, 'HTTP_FILE_IO')
+                self.assertEqual(target.read_bytes(), b'original')
+                self.assertEqual(list(Path(folder).glob('.mina-download-*')), [])
 
     def test_streaming_multipart_hmac_matches_actual_wire_body(self):
         seen=[]

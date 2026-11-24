@@ -1,0 +1,37 @@
+{
+  "id": "mina-ear-qa",
+  "name": "MINA-EAR-QA",
+  "packaging": {"artifact_name": "mina-ear-qa"},
+  "properties": {
+    "qa": [
+      {"key": "qa.port", "data_type": "integer", "value": 0},
+      {"key": "qa.password", "data_type": "password", "value": "synthetic-placeholder"}
+    ]
+  },
+  "resources": [
+    {"id": "qa-http", "name": "QA-HTTP", "type": "http", "config": {
+      "connectorMode": "server",
+      "host": "127.0.0.1",
+      "port": "${properties.qa.port}",
+      "authentication": "Basic",
+      "username": "mina-qa",
+      "password": "${properties.qa.password}"
+    }}
+  ],
+  "tasks": [
+    {
+      "id": "qa-http",
+      "name": "QA-HTTP-Starter",
+      "kind": "starter",
+      "activities": [
+        {"id": "Receive", "name": "Receive", "type": "http_listener", "config": {
+          "operation": "listen", "resourceId": "qa-http", "path": "/mina/ear-qa", "method": "GET"
+        }},
+        {"id": "Reply", "name": "Reply", "type": "http_response", "config": {
+          "statusCode": 200, "contentType": "application/json", "body": {"result": "mina-ear-qa-ok"}
+        }}
+      ],
+      "transitions": [{"id": "reply", "source": "Receive", "target": "Reply"}]
+    }
+  ]
+}

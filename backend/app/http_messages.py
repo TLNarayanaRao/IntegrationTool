@@ -152,15 +152,21 @@ def request_config(cfg):
     if 'QueryString' in config:
         result['query']={**object_value(result.get('query'), 'Query parameters'),**multi_values(urllib.parse.parse_qsl(str(config['QueryString'] or '').lstrip('?'),keep_blank_values=True))}
     if any(key in config for key in ('host','Host','port','Port','scheme')):
-        base=urllib.parse.urlsplit(str(result.get('baseUrl') or result.get('url') or ''))
+        endpoint=urllib.parse.urlsplit(str(result.get('url') or ''))
+        shared=urllib.parse.urlsplit(str(result.get('baseUrl') or ''))
+        base=endpoint if endpoint.scheme else shared
         host=str(config.get('host') or config.get('Host') or base.hostname or result.get('host') or 'localhost')
         port=config.get('port',config.get('Port',base.port or result.get('port')))
         if port is not None:
             if isinstance(port,bool) or not str(port).isdigit() or not 1<=int(port)<=65535:raise ValueError('Port must be an integer between 1 and 65535')
         scheme=str(config.get('scheme') or base.scheme or ('https' if str(result.get('tlsEnabled')).lower()=='true' else result.get('scheme') or 'http'))
         if ':' in host and not host.startswith('['):host='['+host+']'
-        result['baseUrl']=f'{scheme}://{host}'+(f':{int(port)}' if port else '')+(base.path.rstrip('/') if cfg.get('baseUrl') else '')
-        if 'requestURI' not in config and 'RequestURI' not in config and base.scheme:result['url']=base.path+('?' + base.query if base.query else '')
+        netloc=host+(f':{int(port)}' if port else '')
+        if endpoint.scheme and 'requestURI' not in config and 'RequestURI' not in config:
+            # Rewrite the authority of the saved absolute URL and keep its path.
+            result['url']=urllib.parse.urlunsplit(endpoint._replace(scheme=scheme, netloc=netloc))
+        else:
+            result['baseUrl']=urllib.parse.urlunsplit(shared._replace(scheme=scheme, netloc=netloc))
     if 'Headers' in root or 'CustomHeaders' in root:
         mapped_headers = root.get('Headers') or {}
         if 'CustomHeaders' in root:
@@ -228,13 +234,16 @@ def parse_mime_entity(content_type, raw):
     )
 
 
-def response_tree(response,raw,*,mime=None):
+def response_tree(response,raw,*,mime=None,has_body=True):
     headers=response.headers;group={key.lower():headers.get_list(key) if len(headers.get_list(key))>1 else value for key,value in headers.items()}
     for name in ('Allow','Content-Type','Content-Length','Content-Encoding','Date','Location','Set-Cookie','Pragma'):
         if name.lower() in group:group[name]=headers.get_list(name) if name in ('Allow','Set-Cookie') else group[name.lower()]
     group['DynamicHeaders']=[{'name':key,'value':value} for key,value in headers.multi_items()]
-    result={'statusLine':{'httpVersion':response.http_version,'statusCode':response.status_code,'reasonPhrase':response.reason_phrase},'Headers':group,'body':None,'asciiContent':raw.decode(response.encoding or 'utf-8',errors='replace'),'binaryContent':base64.b64encode(raw).decode()}
-    if 'multipart/' in headers.get('content-type','').lower():
+    result={'statusLine':{'httpVersion':response.http_version,'statusCode':response.status_code,'reasonPhrase':response.reason_phrase},'Headers':group,'body':None}
+    if raw is None:
+        return result
+    result.update(asciiContent=raw.decode(response.encoding or 'utf-8',errors='replace'),binaryContent=base64.b64encode(raw).decode())
+    if has_body and 'multipart/' in headers.get('content-type','').lower():
         message=mime if mime is not None else parse_mime_entity(headers['content-type'],raw);count=[0]
         def unpack(message,depth=0):
             if depth>8:raise ValueError('MIME response nesting exceeds 8 levels')
