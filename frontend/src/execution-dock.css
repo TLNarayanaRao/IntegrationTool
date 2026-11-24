@@ -12,6 +12,14 @@
 .execution-console-content:has(> .execution-summary:empty) { grid-template-columns:minmax(0,1fr); }
 .execution-summary { min-width:0; overflow:auto; border-right:1px solid var(--line); }
 .execution-summary:empty { display:none; }
+.execution-log-view { display:flex; flex-direction:column; min-height:0; min-width:0; }
+.execution-log-controls { display:flex; flex-wrap:wrap; align-items:center; gap:5px; padding:5px 10px; border-bottom:1px solid var(--line); }
+.execution-log-controls input { min-width:7em; flex:1; }
+.execution-log-controls button[aria-pressed="true"], .execution-log-links button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); }
+.execution-log-controls small { color:var(--muted); }
+.execution-log-links { display:flex; flex-wrap:wrap; gap:5px; }
+.execution-log-links button { overflow-wrap:anywhere; min-width:0; }
+.execution-log-view > .execution-log-list { flex:1; }
 .execution-log-list { min-width:0; min-height:0; overflow:auto; padding:5px 10px; }
 .execution-log-list > .log { border-bottom:1px solid var(--line); padding:5px 2px; overflow-wrap:anywhere; }
 .execution-log-list > .log small { color:var(--muted); }

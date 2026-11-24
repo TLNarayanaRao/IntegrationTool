@@ -12,6 +12,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import signal
 import sys
 from threading import Lock
 from pathlib import Path
@@ -51,20 +52,62 @@ def load_project(application: Path):
     return project
 
 
+def apply_deployment_values(project, environment: str) -> None:
+    """Overlay packaged properties and config fields with deployment values."""
+    overrides = dict(os.environ)
+    for variable in ('MINA_SECRET_FILE', 'MINA_SECRET_VALUES'):
+        source = os.environ.get(variable)
+        if not source:
+            continue
+        try:
+            values = json.loads(Path(source).read_text(encoding='utf-8') if variable == 'MINA_SECRET_FILE' else source)
+        except (OSError, ValueError):
+            raise ValueError(f'{variable} must provide a readable JSON object') from None
+        if not isinstance(values, dict):
+            raise ValueError(f'{variable} must provide a readable JSON object')
+        overrides.update(values)
+    for prop in project.properties[environment]:
+        if prop.key in overrides:
+            prop.value = overrides[prop.key]
+
+    def apply_config(value, paths):
+        for path in paths:
+            if path in overrides:
+                return overrides[path]
+        if isinstance(value, dict):
+            return {key: apply_config(child, [f'{path}.{key}' for path in paths]) for key, child in value.items()}
+        if isinstance(value, list):
+            return [apply_config(child, [f'{path}[{index}]' for path in paths]) for index, child in enumerate(value)]
+        return value
+
+    for index, resource in enumerate(project.resources):
+        resource.config = apply_config(resource.config, [f'resources.{resource.id}.config', f'resources[{index}].config'])
+    for index, task in enumerate(project.tasks):
+        for category in ('activities', 'groups'):
+            for offset, member in enumerate(getattr(task, category)):
+                member.config = apply_config(member.config, [f'tasks[{index}].{category}[{offset}].config'])
+
+
 async def run_deployment(application: Path, environment: str) -> None:
     from app.main import (
         _continuous_event_loop,
         _continuous_sap_event_loop,
         _environment_values,
         _event_subscription,
-        _publish_runtime_state,
         append_project_logs as persist_logs,
         effective_event_activities,
         runtime,
     )
     import app.main as runtime_api
+    from app.http_server import serve
 
     project = load_project(application)
+    manifest_file = application.parent / 'manifest.json'
+    if manifest_file.is_file():
+        manifest = json.loads(manifest_file.read_text(encoding='utf-8'))
+        packaged = manifest.get('environments') or ([manifest['environment']] if manifest.get('environment') else [])
+        if packaged and environment not in packaged:
+            raise ValueError(f"Environment {environment!r} is not present in the packaged application")
     profile_file = application.parent / "environments" / f"{environment}.json"
     if profile_file.is_file():
         try:
@@ -78,12 +121,7 @@ async def run_deployment(application: Path, environment: str) -> None:
         raise ValueError(f"Environment {environment!r} is not present in the packaged application")
     project.active_environment = environment
 
-    # Secrets are injected by the Control Plane into the worker environment.
-    # Overlay them onto the sanitized package profile without writing them to
-    # disk or altering the package.
-    for prop in project.properties[environment]:
-        if prop.key in os.environ:
-            prop.value = os.environ[prop.key]
+    apply_deployment_values(project, environment)
 
     # The Control Plane redirects stdout/stderr to the per-instance log. Also
     # persist structured records using the same bounded logger as Studio and
@@ -113,9 +151,7 @@ async def run_deployment(application: Path, environment: str) -> None:
     startup = {"time": runtime_api.log_timestamp(), "level": "INFO", "kind": "lifecycle", "message": f"Deployment worker started: {project.name}", "environment": environment}
     record_logs(project.id, project.name, [startup], str(_environment_values(project, environment).get("runtime.logDirectory") or ""))
 
-    async def run_one(task):
-        events = effective_event_activities(task.activities, task.transitions)
-        event = events[0] if events and events[0].type != "start" else None
+    async def run_one(task, event):
         if event is not None:
             subscription = _event_subscription(project, task, event, environment)
             print(json.dumps({"projectId": project.id, "project": project.name, "level": "INFO", "kind": "endpoint", "message": f"{event.name} listener ready", "subscription": subscription}, ensure_ascii=False, default=str), flush=True)
@@ -129,9 +165,57 @@ async def run_deployment(application: Path, environment: str) -> None:
         if result.status != "completed":
             raise RuntimeError(f"Starter Task {task.name} finished with status {result.status}")
 
-    await asyncio.gather(*(run_one(task) for task in tasks))
+    properties = _environment_values(project, environment)
+    context = {'input': {}, 'last': {}, 'vars': {}, 'properties': properties}
+    routes = []
+    other_tasks = []
+    http_host = os.environ.get('MINA_HTTP_HOST')
+    http_port = os.environ.get('MINA_HTTP_PORT')
+    for task in tasks:
+        events = effective_event_activities(task.activities, task.transitions)
+        event = events[0] if events and events[0].type != 'start' else None
+        if event and event.type in ('http_listener', 'rest', 'soap'):
+            config = runtime.resolve(event.config, context)
+            resource = resources.get(str(config.get('resourceId') or ''))
+            connection = runtime.resolve(resource.config, context) if resource else {}
+            if http_host:
+                config['host'] = http_host
+            if http_port:
+                config['port'] = int(http_port)
+            routes.append(((task, event), connection, config))
+        else:
+            other_tasks.append((task, event))
+
+    async def handle_http(metadata, payload):
+        task, event = metadata
+        result = await runtime.run(task, payload, resources, properties, event.id, project, environment=environment)
+        await runtime_api._write_runtime_logs(project, environment, result.logs)
+        if result.status != 'completed':
+            raise RuntimeError('HTTP integration failed')
+        return result.output
+
+    async with asyncio.TaskGroup() as jobs:
+        for task, event in other_tasks:
+            jobs.create_task(run_one(task, event))
+        if routes:
+            jobs.create_task(serve(routes, handle_http))
     # A one-shot application remains managed until Control Plane stops it.
     await asyncio.Event().wait()
+
+
+async def run_until_stopped(application: Path, environment: str) -> None:
+    if os.name == 'nt':
+        await run_deployment(application, environment)
+        return
+    loop = asyncio.get_running_loop()
+    worker = asyncio.current_task()
+    loop.add_signal_handler(signal.SIGTERM, worker.cancel)
+    try:
+        await run_deployment(application, environment)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        loop.remove_signal_handler(signal.SIGTERM)
 
 
 def main() -> int:
@@ -145,7 +229,7 @@ def main() -> int:
     args = parser.parse_args()
     environment = args.environment or args.environment_positional or os.environ.get("MINA_ENVIRONMENT", "local")
     try:
-        asyncio.run(run_deployment(Path(args.application).resolve(), environment))
+        asyncio.run(run_until_stopped(Path(args.application).resolve(), environment))
     except KeyboardInterrupt:
         return 0
     except Exception as exc:

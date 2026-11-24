@@ -1,0 +1,87 @@
+.runtime-modal.jira-story-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 800px;
+  max-height: calc(100dvh - 24px);
+  color: var(--text);
+}
+.jira-story-dialog > header,
+.jira-story-dialog > footer {
+  flex: 0 0 auto;
+  height: auto;
+  flex-wrap: wrap;
+}
+.jira-story-dialog > header {
+  min-height: 46px;
+  align-items: center;
+}
+.jira-story-dialog > header span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.jira-story-dialog > main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 12px;
+  overflow: auto;
+}
+.jira-story-dialog fieldset {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.jira-story-selectors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 235px), 1fr));
+  gap: 12px;
+}
+.jira-story-dialog label {
+  display: block;
+  min-width: 0;
+  font-size: inherit;
+}
+.jira-story-dialog label.jira-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.jira-story-dialog .jira-checkbox input {
+  width: auto;
+  margin: 0;
+}
+.jira-story-preview label { margin-block: 8px; }
+.jira-story-dialog textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 8em;
+  margin-top: 6px;
+  padding: 8px;
+  resize: vertical;
+  font: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+}
+.jira-story-dialog p {
+  margin: 6px 0;
+  color: var(--muted);
+}
+.jira-story-dialog .jira-story-error { color: var(--danger, #e87982); }
+.jira-story-preview {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+.jira-story-preview h3 { margin: 0; }
+.jira-story-preview pre {
+  max-height: 16em;
+  overflow: auto;
+  white-space: pre-wrap;
+}

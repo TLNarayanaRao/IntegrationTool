@@ -1,10 +1,14 @@
 import json
 import asyncio
+import io
+import os
 import socket
 import subprocess
 import sys
 import tempfile
 import unittest
+import time
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -57,6 +61,90 @@ def assert_response(test,response):
 
 
 class ResponseTreeTests(unittest.TestCase):
+    def test_container_entrypoint_binds_override_port_and_reads_mounted_secret(self):
+        from app.main import build_deployment_archive
+        from run_container import package_entrypoint
+
+        project = fixture(1)
+        project.resources[0].config.update(authentication='Basic', username='order-fixture', password='removed-on-export')
+        container_runner = Path(__file__).resolve().parents[1] / 'run_container.py'
+        for mode in ('mpkg', 'python-direct', 'python-engine'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
+                payload, _, _, manifest = build_deployment_archive(project, 'cloud', ['qa'], ['main'], mode, None)
+                key = 'resources.server.config.password'
+                self.assertIn(key, manifest['secretKeys'])
+                with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                    archive.extractall(folder)
+                    self.assertTrue(all(b'removed-on-export' not in archive.read(name) for name in archive.namelist()))
+                secret_file = Path(folder) / 'mounted-secrets.json'
+                secret_file.write_text(json.dumps({key: 'container-fixture'}), encoding='utf-8')
+                with socket.socket() as probe:
+                    probe.bind(('127.0.0.1', 0))
+                    port = probe.getsockname()[1]
+                environment = {**os.environ, 'MINA_HTTP_HOST': '0.0.0.0', 'MINA_HTTP_PORT': str(port),
+                               'MINA_SECRET_FILE': str(secret_file), 'MINA_SECRET_VALUES': ''}
+                url = f'http://127.0.0.1:{port}/reply?status=201'
+                checked = subprocess.run([sys.executable, str(container_runner), '--check-package'], cwd=folder,
+                                         capture_output=True, text=True, timeout=10)
+                self.assertEqual(checked.returncode, 0, checked.stderr)
+                # POSIX replaces the launcher with execv. On Windows execv
+                # creates a child, so start the exact resolved command directly.
+                if os.name == 'nt':
+                    arguments, profile = package_entrypoint(Path(folder))
+                    self.assertEqual(profile, 'qa')
+                    environment['MINA_ENVIRONMENT'] = profile
+                    command = [sys.executable, *arguments]
+                else:
+                    environment.pop('MINA_ENVIRONMENT', None)
+                    command = [sys.executable, str(container_runner)]
+                with subprocess.Popen(command, cwd=folder, env=environment, stdout=subprocess.DEVNULL,
+                                      stderr=subprocess.DEVNULL) as worker, httpx.Client(trust_env=False, timeout=.5) as client:
+                    try:
+                        deadline = time.monotonic() + 10
+                        while True:
+                            self.assertIsNone(worker.poll(), 'The exported worker exited before listening')
+                            try:
+                                denied = client.get(url)
+                                break
+                            except httpx.TransportError:
+                                if time.monotonic() >= deadline:
+                                    self.fail('The exported worker did not bind the deployment port')
+                                time.sleep(.05)
+                        self.assertEqual(denied.status_code, 401)
+                        response = client.get(url, auth=('order-fixture', 'container-fixture'),
+                                              headers={'X-Trace': 'first', 'X-Response-Type': 'application/vnd.mina.reply+json',
+                                                       'X-Version': '1.1', 'X-Reason': 'Container launch'})
+                        assert_response(self, response)
+                    finally:
+                        worker.terminate()
+                        worker.wait(timeout=10)
+
+    def test_cloud_mpkg_manifests_use_container_worker_and_secret_file(self):
+        import yaml
+        from app.main import build_deployment_archive
+
+        project = fixture(8787)
+        project.resources[0].config.update(authentication='Basic', username='fixture', password='removed-on-export')
+        project.tasks[0].activities[1].config['apiToken'] = 'task-secret-to-remove'
+        payload, _, _, _ = build_deployment_archive(project, 'cloud', ['qa', 'production'], ['main'], 'mpkg', None)
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            recipe = archive.read('deployment/cloud/Dockerfile').decode()
+            self.assertIn('/opt/mina-runtime/run_container.py', recipe)
+            self.assertIn('COPY manifest.json', recipe)
+            self.assertNotIn('ENV MINA_ENVIRONMENT=', recipe)
+            root = 'deployment/cloud/profiles/qa/'
+            deployment = yaml.safe_load(archive.read(root + 'deployment.yaml'))
+            secret = yaml.safe_load(archive.read(root + 'secret.yaml'))
+            pod = deployment['spec']['template']['spec']
+            runtime = pod['containers'][0]
+            self.assertIn({'name': 'MINA_SECRET_FILE', 'value': '/run/mina/secrets.json'}, runtime['env'])
+            self.assertEqual(pod['volumes'][0]['secret']['secretName'], secret['metadata']['name'])
+            self.assertEqual(runtime['readinessProbe']['tcpSocket']['port'], 'http')
+            paths = json.loads(secret['stringData']['secrets.json'])
+            self.assertEqual(paths['tasks[0].activities[1].config.apiToken'], '')
+            self.assertEqual(paths['resources.server.config.password'], '')
+            self.assertTrue(all(b'task-secret-to-remove' not in archive.read(name) for name in archive.namelist()))
+
     def test_optional_defaults_and_legacy_fields(self):
         self.assertEqual(response_message({},'last'),{'statusCode':200,'headers':{},'body':'last'})
         result=response_message({'statusCode':202,'contentType':'text/plain','headers':{'X-Old':'ok'},

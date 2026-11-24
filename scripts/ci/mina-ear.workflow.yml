@@ -1,0 +1,131 @@
+name: Build and deploy MINA EAR
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: Path to the Studio .mpackage or JSON in Git
+        type: string
+        required: true
+      environment:
+        description: MINA profile and matching GitHub deployment environment
+        type: choice
+        options:
+          - qa
+          - production
+        default: qa
+      deploy:
+        description: Start a Linux deployment after building the artifact
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Require a protected ref for deployment
+        if: ${{ inputs.deploy && !github.ref_protected }}
+        run: |
+          echo 'Choose a protected branch or tag to deploy.' >&2
+          exit 1
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Install MINA packaging dependencies
+        shell: bash
+        run: |
+          sed '/^[[:space:]]*ibm-db[<=>!~]/d' backend/requirements.txt > "$RUNNER_TEMP/mina-requirements.txt"
+          python -m pip install -r "$RUNNER_TEMP/mina-requirements.txt"
+          python -m pip check
+      - name: Build the EAR and checksum
+        shell: bash
+        env:
+          MINA_PROJECT: ${{ inputs.project }}
+          MINA_PROFILE: ${{ inputs.environment }}
+          MINA_DATA_DIR: ${{ runner.temp }}/mina-build
+        run: |
+          python scripts/ci/build-ear.py --environment "$MINA_PROFILE" \
+            --version "$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT" --output-dir dist/ear -- "$MINA_PROJECT"
+          cd dist/ear
+          sha256sum -- *.ear > SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: mina-ear
+          path: dist/ear
+          if-no-files-found: error
+          overwrite: true
+
+  deploy:
+    if: inputs.deploy && github.ref_protected
+    needs: build
+    runs-on: [self-hosted, Linux, mina-deploy]
+    timeout-minutes: 15
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: mina-ear-${{ inputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: mina-ear
+          path: dist/ear
+      - name: Deploy through the Linux Control Plane
+        shell: bash
+        env:
+          MINA_PROFILE: ${{ inputs.environment }}
+          MINA_CONTROL_PLANE_URL: ${{ vars.MINA_CONTROL_PLANE_URL }}
+          MINA_DATA_PLANE: ${{ vars.MINA_DATA_PLANE }}
+          MINA_CAPABILITY_ID: ${{ vars.MINA_CAPABILITY_ID }}
+          MINA_NAMESPACE: ${{ vars.MINA_NAMESPACE }}
+          MINA_TEAM_ID: ${{ vars.MINA_TEAM_ID }}
+          MINA_CONTROL_PLANE_KEY: ${{ secrets.MINA_CONTROL_PLANE_KEY }}
+          MINA_DEPLOYMENT_SECRETS_JSON: ${{ secrets.MINA_DEPLOYMENT_SECRETS_JSON }}
+        run: |
+          : "${MINA_CONTROL_PLANE_URL:?Set the Control Plane URL in the GitHub environment}"
+          : "${MINA_CONTROL_PLANE_KEY:?Set the deployment credential in the GitHub environment}"
+          : "${MINA_DATA_PLANE:?Set the data-plane ID in the GitHub environment}"
+          : "${MINA_CAPABILITY_ID:?Set the capability ID in the GitHub environment}"
+          : "${MINA_NAMESPACE:?Set the namespace in the GitHub environment}"
+          (cd dist/ear && sha256sum --check SHA256SUMS)
+          shopt -s nullglob
+          archives=(dist/ear/*.ear)
+          [[ ${#archives[@]} -eq 1 ]]
+          umask 077
+          secrets_file=$(mktemp)
+          trap 'rm -f -- "$secrets_file"' EXIT
+          deployment_secrets="${MINA_DEPLOYMENT_SECRETS_JSON:-}"
+          if [[ -z "$deployment_secrets" ]]; then deployment_secrets='{}'; fi
+          printf '%s' "$deployment_secrets" > "$secrets_file"
+          unset deployment_secrets
+          export MINA_SECRETS_FILE="$secrets_file" MINA_START_AFTER_DEPLOY=true MINA_INSTANCES=1
+          unset MINA_DEPLOYMENT_SECRETS_JSON
+          if ! deployment=$(bash scripts/linux/deploy-application.sh "${archives[0]}" "$MINA_PROFILE"); then
+            printf '%s\n' "$deployment" >&2
+            exit 1
+          fi
+          printf '%s\n' "$deployment"
+          deployment_id=$(sed -n 's/^Deployment ID: //p' <<< "$deployment")
+          [[ "$deployment_id" =~ ^[A-Za-z0-9_-]+$ ]]
+          for ((attempt=1; attempt<=24; attempt++)); do
+            response=$(curl --fail --silent --show-error --max-time 10 \
+              -H "X-Admin-Key: $MINA_CONTROL_PLANE_KEY" \
+              "${MINA_CONTROL_PLANE_URL%/}/api/deployments/$deployment_id/health") || response='{}'
+            status=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("status","UNKNOWN"))' <<< "$response")
+            if [[ "$status" == HEALTHY ]]; then
+              echo "MINA deployment $deployment_id reports HEALTHY"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "MINA deployment $deployment_id did not become healthy. Last status: $status" >&2
+          exit 1

@@ -9,39 +9,27 @@ const code = ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.Co
   jsx:ts.JsxEmit.React,jsxFactory:'create',jsxFragmentFactory:'Fragment'}}).outputText;
 
 function render(mode) {
-  const effects=[],frames=new Map(); let changed,scroll,focused=false;
-  const log={scrollHeight:500,clientHeight:100,scrollTop:0,
-    addEventListener(_event,fn){scroll=fn;},removeEventListener(){}};
-  const element={focus(){focused=true;},querySelector(){return log;}};
+  const effects=[]; let focused=false;
+  const element={focus(){focused=true;}};
   const context=vm.createContext({exports:{},Fragment:'fragment',
     create:(type,props,...children)=>({type,props:props||{},children:children.flat(Infinity)}),
     require:name=>name==='react' ? {useRef:()=>({current:element}),useEffect:fn=>effects.push(fn)} : {__esModule:true,default:'ModalLayer'},
-    requestAnimationFrame:fn=>{const id=Symbol();frames.set(id,fn);return id;},cancelAnimationFrame:id=>frames.delete(id),
-    MutationObserver:class {constructor(fn){changed=fn;} observe(){} disconnect(){}},
   });
   vm.runInContext(code,context);
   const tree=context.exports.default({mode,children:'execution logs'});
-  const cleanup=effects.map(effect=>effect());
-  const flush=()=>{for(const [key,fn] of [...frames]){frames.delete(key);fn();}};
-  return {tree,log,flush,changed:()=>changed(),scrolled:()=>scroll(),focused:()=>focused,cleanup:()=>cleanup.forEach(fn=>fn?.())};
+  effects.forEach(effect=>effect());
+  return {tree,focused};
 }
 
-test('execution logs follow new entries until the user scrolls away from the bottom',()=>{
-  const app=render('normal');app.flush();
-  assert(app.focused());assert.equal(app.log.scrollTop,500);
-  app.log.scrollTop=400;app.scrolled();app.log.scrollHeight=700;app.changed();app.flush();
-  assert.equal(app.log.scrollTop,700);
-  app.log.scrollTop=100;app.scrolled();app.log.scrollHeight=900;app.changed();app.flush();
-  assert.equal(app.log.scrollTop,100);
-  app.cleanup();
+test('opening the execution dock focuses its root',()=>{
+  assert.equal(render('normal').focused,true);
 });
 
 test('expanded execution views use the viewport modal layer; normal execution stays in the lower pane',()=>{
-  const normal=render('normal');assert.equal(normal.tree.type,'section');normal.cleanup();
+  const normal=render('normal');assert.equal(normal.tree.type,'section');
   for(const mode of ['expanded','fullscreen']) {
     const app=render(mode);assert.equal(app.tree.type,'ModalLayer');
     assert.equal(app.tree.children[0].props.role,'dialog');assert.equal(app.tree.children[0].props['aria-modal'],true);
-    app.cleanup();
   }
 });
 

@@ -314,7 +314,9 @@ The runtime receives `MINA_APPLICATION_DIR`, `MINA_ENVIRONMENT`, `MINA_DEPLOYMEN
 3. Alternatively, upload an exported archive in **Applications**. Administrator rejects traversal paths, links/devices, duplicate paths, oversized expansion, unsupported formats, missing project/task artifacts, and invalid manifests.
 4. Review checksum, target, profiles, selected task metadata, and secret requirements.
 5. For local on-premises deployment, **Start** uses `MINA_ADMIN_RUNTIME_COMMAND`. Generated packages contain Linux `install.sh`/`deploy.sh` and Windows `install.ps1`/`deploy.ps1`/`start.ps1` assets. If the command adapter is not configured, startup fails visibly rather than reporting a false running state.
-6. For cloud deployment, the Control Plane records the desired application, environment, replicas, namespace, and capability. The registered Kubernetes data-plane agent applies the generated Dockerfile, ConfigMap, Secret, Deployment, Service, HPA, and Kustomize assets; Studio does not incorrectly invoke the local command adapter for cloud targets.
+6. See the [container deployment guide](CONTAINER_DEPLOYMENT.md) to build standalone images from standard `.mpkg` or Python archives. A Cloud `.mpkg` also includes templates for self-managed Kubernetes. The registered Kubernetes Python agent reconciles Cloud Python exports into Deployments, Services and Secrets.
+
+For GitHub Actions, see [Build and deploy a MINA EAR](GITHUB_ACTIONS_EAR.md) for the headless build, workflow template, and Linux deployment settings.
 7. Use **Details** for instance PIDs and logs. **Stop** performs normal termination; **Kill** is forced; **Restart** stops and recreates desired instances; **Undeploy** removes deployment secrets and the active inventory record.
 
 For a private CA, keep TLS verification enabled and supply the CA PEM path in Studio. Disabling verification is provided only for isolated development systems.

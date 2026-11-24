@@ -32,6 +32,7 @@ from .amqp import amqp_adapter
 from .java_bridge import JavaBridgeError, terminate_execution_processes, test_jms
 from .google_pubsub import client_configuration as pubsub_client_configuration, create_client as create_pubsub_client, credential_summary as pubsub_credential_summary
 from .ai_builder import generate as generate_ai_design
+from .jira_story import router as jira_story_router
 from .project_logging import append_project_logs, project_log_info, read_project_logs
 from .observability import telemetry_status, span
 from .time_utils import log_timestamp
@@ -711,6 +712,8 @@ async def runtime_progress(project_id: str):
 def ai_status():
     return {'available': True, 'provider': 'openai' if os.getenv('OPENAI_API_KEY') else 'local-blueprint', 'model': os.getenv('MINA_AI_MODEL', 'gpt-5') if os.getenv('OPENAI_API_KEY') else None, 'credentialsStoredInProject': False}
 
+app.include_router(jira_story_router)
+
 @app.post('/api/ai/generate')
 async def ai_generate(request: AIBuildRequest):
     try: return await generate_ai_design(request.requirement, request.scope, request.current_task)
@@ -1380,7 +1383,8 @@ def deployment_package_files(item: Project, target: str, environment: str, artif
         f'environments/{environment}.json': json.dumps(properties, indent=2).encode(),
         'deployment/secrets.required.json': json.dumps({'required': secret_keys}, indent=2).encode(),
     }
-    for task in item.tasks: files[f'application/tasks/{task.id}.json'] = task.model_dump_json(indent=2).encode()
+    for task, payload in zip(item.tasks, sanitized_project['tasks']):
+        files[f'application/tasks/{task.id}.json'] = json.dumps(payload, indent=2).encode()
     for resource, payload in zip(item.resources, sanitized_resources): files[f'application/resources/{resource.type}/{resource.id}.json'] = json.dumps(payload, indent=2).encode()
     for schema in item.schemas: files[f'application/schemas/{schema.name}'] = schema.content.encode()
     if str(item.packaging.get('sourceFormat') or '').lower() == 'python':
@@ -1406,16 +1410,19 @@ def deployment_package_files(item: Project, target: str, environment: str, artif
         container_port = int(item.packaging.get('containerPort') or (discovered_ports[0] if discovered_ports else 8787))
         public_properties = [value for value in properties if value.get('data_type') != 'password']
         config_data = '\n'.join(f'  {value["key"]}: {json.dumps(str(value.get("value", "")))}' for value in public_properties) or '  {}'
-        secret_data = '\n'.join(f'  {key}: ""' for key in secret_keys) or '  {}'
+        secret_data = json.dumps(json.dumps(dict.fromkeys(secret_keys, '')))
         if 'dockerfile' in selected_artifacts:
-            files['deployment/cloud/Dockerfile'] = (f'''FROM mina-runtime:latest
+            files['deployment/cloud/Dockerfile'] = (f'''ARG MINA_RUNTIME_IMAGE=mina-runtime:local
+FROM ${{MINA_RUNTIME_IMAGE}}
 LABEL org.opencontainers.image.title="{artifact}" org.opencontainers.image.version="{version}"
-COPY application /opt/mina/application
-COPY environments /opt/mina/environments
-ENV MINA_ENVIRONMENT={environment} MINA_APPLICATION_DIR=/opt/mina/application
+WORKDIR /opt/mina-app
+COPY application ./application
+COPY environments ./environments
+COPY manifest.json ./
+RUN python /opt/mina-runtime/run_container.py --check-package
 EXPOSE {container_port}
 USER 10001
-ENTRYPOINT ["mina-runtime"]
+ENTRYPOINT ["python", "/opt/mina-runtime/run_container.py"]
 ''').encode()
         if 'configmap' in selected_artifacts:
             files['deployment/cloud/configmap.yaml'] = f'''apiVersion: v1
@@ -1435,15 +1442,28 @@ metadata:
   name: {deployment_name}-secrets
 type: Opaque
 stringData:
-{secret_data}
+  secrets.json: {secret_data}
 '''.encode()
         if 'deployment' in selected_artifacts:
-            env_from = ''
-            if 'configmap' in selected_artifacts: env_from += f'            - configMapRef:\n                name: {deployment_name}-config\n'
-            if 'secret' in selected_artifacts: env_from += f'            - secretRef:\n                name: {deployment_name}-secrets\n'
-            # Keep escape sequences outside the replacement field so this
-            # module remains valid on the Python 3.11 desktop build runtime.
-            env_from_yaml = env_from or '            []\n'
+            env_from = f'          envFrom:\n            - configMapRef:\n                name: {deployment_name}-config\n' if 'configmap' in selected_artifacts else ''
+            secret_env = secret_mount = secret_volume = ''
+            if 'secret' in selected_artifacts:
+                secret_env = '            - name: MINA_SECRET_FILE\n              value: /run/mina/secrets.json\n'
+                secret_mount = '          volumeMounts:\n            - name: mina-secrets\n              mountPath: /run/mina\n              readOnly: true\n'
+                secret_volume = f'      volumes:\n        - name: mina-secrets\n          secret:\n            secretName: {deployment_name}-secrets\n'
+            has_http = any(
+                event.type in ('http_listener', 'rest', 'soap')
+                for task in item.tasks if task.kind == 'starter' for event in effective_event_activities(task.activities, task.transitions)
+            )
+            probes = '''          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+''' if has_http else ''
             files['deployment/cloud/deployment.yaml'] = f'''apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1471,19 +1491,13 @@ spec:
             - name: MINA_ENVIRONMENT
               value: {json.dumps(environment)}
             - name: MINA_APPLICATION_DIR
-              value: /opt/mina/application
-          envFrom:
-{env_from_yaml}          readinessProbe:
-            tcpSocket:
-              port: http
-            initialDelaySeconds: 5
-          livenessProbe:
-            tcpSocket:
-              port: http
-            initialDelaySeconds: 15
-          resources:
+              value: /opt/mina-app/application
+            - name: MINA_HTTP_HOST
+              value: "0.0.0.0"
+{secret_env}{env_from}{secret_mount}{probes}          resources:
             requests: {{cpu: 100m, memory: 256Mi}}
             limits: {{cpu: "1", memory: 1Gi}}
+{secret_volume}
 '''.encode()
         if 'service' in selected_artifacts:
             files['deployment/cloud/service.yaml'] = f'''apiVersion: v1

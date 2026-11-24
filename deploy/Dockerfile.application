@@ -1,0 +1,14 @@
+ARG MINA_RUNTIME_IMAGE=mina-runtime:local
+FROM ${MINA_RUNTIME_IMAGE} AS unpack
+ARG MINA_PACKAGE_FILE=application.pympkg
+USER root
+COPY ${MINA_PACKAGE_FILE} /tmp/mina-package.zip
+WORKDIR /opt/mina-app
+RUN python -m zipfile -e /tmp/mina-package.zip . \
+    && python /opt/mina-runtime/run_container.py --check-package
+
+FROM ${MINA_RUNTIME_IMAGE}
+COPY --from=unpack /opt/mina-app /opt/mina-app
+WORKDIR /opt/mina-app
+USER 10001
+ENTRYPOINT ["python", "/opt/mina-runtime/run_container.py"]

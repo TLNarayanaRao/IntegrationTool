@@ -52,7 +52,7 @@ print(json.dumps(d,separators=(",",":")))
 
 # Step 4: create the deployment and capture its deployment ID.
 echo "Creating deployment"
-CREATED="$(curl --fail-with-body --silent --show-error -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$DEPLOYMENT" "$BASE_URL/api/deployments")" || die "Deployment creation failed"
+CREATED="$(curl --fail-with-body --silent --show-error -X POST "${AUTH[@]}" -H 'Content-Type: application/json' --data-binary @- "$BASE_URL/api/deployments" <<< "$DEPLOYMENT")" || die "Deployment creation failed"
 DEPLOYMENT_ID="$(printf '%s' "$CREATED" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')" || die "Deployment response has no id: $CREATED"
 echo "Deployment ID: $DEPLOYMENT_ID"
 

@@ -47,14 +47,9 @@ npm run desktop:installer
 The complete Studio, Administrator, Linux, Windows, and deployment-package instructions are in [docs/BUILDING_AND_DISTRIBUTION.md](docs/BUILDING_AND_DISTRIBUTION.md).
 Control Plane installation, data-plane and capability management, access, security, package validation, runtime adapters, lifecycle operations, observability, and recovery are documented in [docs/ADMINISTRATOR_GUIDE.md](docs/ADMINISTRATOR_GUIDE.md).
 
-## Kubernetes runtime
+## Container deployment
 
-```bash
-docker build -t mina:0.1.0 .
-kubectl apply -f deploy/kubernetes/
-```
-
-Configure connector credentials with Kubernetes Secrets; do not put them in project definitions.
+Use the [Container deployment guide](docs/CONTAINER_DEPLOYMENT.md) to build a MINA runtime image, package a Studio Python export as an application image, and run it with Docker or Kubernetes. The guide also covers the browser Studio image and the Control Plane-managed Kubernetes agent.
 
 ## Architecture
 

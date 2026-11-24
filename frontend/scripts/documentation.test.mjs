@@ -17,7 +17,15 @@ test('all topics have unique, linkable IDs and populated sections', () => {
 test('every activity has all six reference tabs', () => {
  const activities = model.pages.filter(p => p.id.startsWith('activity-'));
  assert.equal(activities.length, model.counts.activities);
- for (const p of activities) assert.deepEqual(p.sections.map(s=>s.title), ['Overview','Configuration','Input','Output','Advanced','Errors']);
+ for (const p of activities) {
+  const tabs = p.sections.map(s => s.title);
+  const circuitBreaker = tabs.indexOf('Activity circuit breaker');
+  if (circuitBreaker !== -1) {
+   assert.equal(tabs[circuitBreaker - 1], 'Advanced', p.id);
+   tabs.splice(circuitBreaker, 1);
+  }
+  assert.deepEqual(tabs, ['Overview','Configuration','Input','Output','Advanced','Errors'], p.id);
+ }
 });
 
 test('every activity bundles its Studio icon for web and PDF documentation', () => {

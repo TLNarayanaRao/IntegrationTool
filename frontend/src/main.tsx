@@ -1,4 +1,5 @@
 import ExecutionDock from "./ExecutionDock";
+import ExecutionLogView, { type ExecutionLogEntry } from "./ExecutionLogView";
 import RuntimeStatus from "./RuntimeStatus";
 import ModalLayer from "./ModalLayer";
 import IntegrationLibraries, { type LibraryOrigin, type LibraryPin } from "./IntegrationLibraries";
@@ -7,6 +8,7 @@ import DebugInputCases from "./DebugInputCases";
 import ExecutionSetupDialog from "./ExecutionSetupDialog";
 import { propertyReferences, type LaunchMode, type LaunchOptions, type SubtaskInputFormat } from "./executionSetup";
 import ApiBlueprint from "./ApiBlueprint";
+import JiraStoryDialog, { jiraInsertionTransitions, type JiraStoryChange } from "./JiraStoryDialog";
 import { closeTaskEditors, rememberClosedTaskEditors, type CloseEditorsMode } from "./taskEditors";
 import StudioCommands, { type StudioCommand } from "./StudioCommands";
 import { isEventActivity, taskEntryActivities, taskEntryLabels, taskEntryMode } from "./taskEntry";
@@ -71,6 +73,7 @@ import {
   ShieldAlert,
   SkipForward,
   Square,
+  Ticket,
   Trash2,
   Undo2,
   Upload,
@@ -190,7 +193,7 @@ type Edge = {
   bw_xpath?: { version: string; variables: Record<string, string>; namespaces: Record<string, string> } | null;
   color?: string;
 };
-type Task = {
+export type Task = {
   id: string;
   name: string;
   kind: "starter" | "subtask";
@@ -260,7 +263,7 @@ type Property = {
     | "password"
     | "json";
 };
-type Project = {
+export type Project = {
   id: string;
   name: string;
   description: string;
@@ -1526,6 +1529,7 @@ function App() {
     [renameArtifactOpen, setRenameArtifactOpen] = useState(false),
     [collapsedPackages, setCollapsedPackages] = useState<Record<string, boolean>>({}),
     [aiBuilderOpen, setAiBuilderOpen] = useState(false),
+    [jiraStoryOpen, setJiraStoryOpen] = useState(false),
     [apiBlueprintOpen, setApiBlueprintOpen] = useState(false),
     [catchAIOpen, setCatchAIOpen] = useState<string | null>(null),
     [packageOpen, setPackageOpen] = useState(false),
@@ -3140,8 +3144,7 @@ function App() {
       const response = await fetch(`/api/projects/${project.id}/logs?limit=2000&environment=${encodeURIComponent(logEnvironment)}`);
       const output = await response.json();
       if (!response.ok) throw new Error(output.detail || "Unable to load saved logs");
-      setSystemLogInfo(output);
-      setLogs(output.entries || []);
+      setSystemLogInfo({ ...output, projectId: project.id, requestedEnvironment: logEnvironment });
     } catch (error: any) {
       setLogs((current) => [...current, { level: "ERROR", message: error?.message || "Unable to load saved logs" }]);
     } finally { setWorkStatus(""); }
@@ -3189,6 +3192,15 @@ function App() {
   const executionLogEntries: any[] = debugState?.logs || runtimeState?.logs || logs.filter((entry) =>
     ["activity", "listener", "lifecycle", "debug", "call", "runtime", "packaging"].includes(String(entry.kind || "").toLowerCase()) || !!entry.correlationId || !!entry.runtimeActivityId,
   );
+  const savedLogView = systemLogInfo?.projectId === project.id && systemLogInfo.requestedEnvironment === logEnvironment ? systemLogInfo : null;
+  const logActivityIndex = useMemo(() => new Map(project.tasks.filter(item => !item.library_origin).map(item => [
+    item.id, new Set(item.activities.map(activity => activity.id)),
+  ])), [project.tasks]);
+  const resolveLogActivity = (entry: ExecutionLogEntry) => {
+    const activityId = entry.runtimeActivityId || entry.activityId;
+    const taskId = entry.taskId;
+    return activityId && taskId && logActivityIndex.get(taskId)?.has(activityId) ? { taskId, activityId } : undefined;
+  };
   const executedTransitionIds = new Set<string>(debugState
     ? (debugState.recentTransitions || []).filter(([taskId]: string[]) => taskId === task.id).map(([, id]: string[]) => id)
     : executionLogEntries.filter((entry: any) => entry?.transitionId).map((entry: any) => String(entry.transitionId)));
@@ -3563,6 +3575,7 @@ function App() {
           <button title="Stop execution" aria-label="Stop execution" disabled={!executionActive} onClick={stopExecution}><Square/></button>
           <button title="Close execution panel" onClick={() => { setExecutionPanelOpen(false); setMonitorMode("normal"); }}>×</button>
           <button title="Load saved project logs" onClick={loadSystemLogs}><HardDrive/></button>
+          {savedLogView && <button type="button" onClick={() => setSystemLogInfo(null)}>Return to execution logs</button>}
           <button title="Download saved project logs" onClick={downloadSystemLogs}><Download/></button>
           <button title={monitorMode === "expanded" ? "Restore execution panel" : "Expand execution panel"} onClick={() => setMonitorMode((mode) => mode === "expanded" ? "normal" : "expanded")}><Maximize2/></button>
           <button title={monitorMode === "fullscreen" ? "Exit full screen" : "Open execution panel full screen"} onClick={() => setMonitorMode((mode) => mode === "fullscreen" ? "normal" : "fullscreen")}>{monitorMode === "fullscreen" ? <Minimize2/> : <Square/>}</button>
@@ -3577,7 +3590,7 @@ function App() {
         {runtimeState?.subtaskTest && runtimeState.status === "completed" && <section className="subtask-test-output">
           <label>Subtask test output<textarea readOnly spellCheck={false} value={JSON.stringify(runtimeState.output ?? {}, null, 2)}/></label>
         </section>}
-        {systemLogInfo && <div className="system-log-info"><b>SYSTEM LOG · {String(systemLogInfo.environment || project.active_environment).toUpperCase()}</b><span title={systemLogInfo.path}>{systemLogInfo.path}</span><small>{systemLogInfo.configuredDirectory ? "Configured by runtime.logDirectory" : "Default Studio data directory"} · {(Number(systemLogInfo.maxBytes || 0) / 1024 / 1024).toFixed(0)} MB · {systemLogInfo.backupCount} rolling archives</small></div>}
+        {savedLogView && <div className="system-log-info"><b>SYSTEM LOG · {String(savedLogView.environment || project.active_environment).toUpperCase()}</b><span title={savedLogView.path}>{savedLogView.path}</span><small>{savedLogView.configuredDirectory ? "Configured by runtime.logDirectory" : "Default Studio data directory"} · {(Number(savedLogView.maxBytes || 0) / 1024 / 1024).toFixed(0)} MB · {savedLogView.backupCount} rolling archives</small></div>}
         {runtimeState?.lastExecution && <section className="runtime-job-summary">
           <header><b>LAST EXECUTION</b><button title="Copy correlation ID" onClick={() => navigator.clipboard.writeText(runtimeState.lastExecution.correlationId)}><ClipboardCopy/></button></header>
           <dl><div><dt>Correlation ID</dt><dd>{runtimeState.lastExecution.correlationId}</dd></div><div><dt>Started</dt><dd>{runtimeState.lastExecution.startedAt || "—"}</dd></div><div><dt>Ended</dt><dd>{runtimeState.lastExecution.endedAt || "—"}</dd></div><div><dt>Duration</dt><dd>{Number(runtimeState.lastExecution.durationMs || 0).toFixed(1)} ms</dd></div></dl>
@@ -3608,16 +3621,14 @@ function App() {
             <pre>{formatRuntimeOutput(record)}</pre>
           </details>)}
         </details>})()}
-        </div><div className="execution-log-list" role="log" aria-label="Execution logs" aria-live="polite">
-        {!executionLogEntries.length && <p className="execution-log-empty">{executionActive ? "Waiting for execution logs…" : "No runtime logs recorded."}</p>}
-        {executionLogEntries.map((l, i) => (
-          <div className={`log ${(l.level || "info").toLowerCase()}`} key={i}>
-            <small>{l.time ? new Date(l.time).toLocaleTimeString() : ""} {l.level}{l.correlationId ? ` · ${l.correlationId}` : ""}</small>
-            <p>{l.message}</p>
-            {l.payload !== undefined && l.payload !== "" && l.payload !== null && <pre>{JSON.stringify(l.payload, null, 2)}</pre>}
-          </div>
-        ))}
-        </div></div>
+        </div><ExecutionLogView
+          key={savedLogView ? "saved" : "execution"}
+          entries={savedLogView ? savedLogView.entries || [] : executionLogEntries}
+          active={executionActive && !savedLogView}
+          resolveActivity={resolveLogActivity}
+          onOpenActivity={selectTask}
+          onDownload={report => browserDownload(new Blob([report], { type: "application/x-ndjson" }), "MINA-execution-metadata.ndjson")}
+        /></div>
   </ExecutionDock> : null;
 
   const editCommands: StudioCommand[] = [
@@ -3669,9 +3680,111 @@ function App() {
       { label: "About MINA", detail: "Product and project information", icon: Workflow, action: () => setHelpDialog("about") },
       { label: "Third-party licenses", detail: "Licenses, notices and software inventory", icon: BookOpen, action: () => window.open("/legal/index.html", "_blank", "noopener,noreferrer") },
   ];
+  const applyJiraStory = (change: JiraStoryChange) => {
+    if (executionActive) throw new Error("Stop the active execution before changing the design.");
+    if (change.scope === "project") {
+      const name = studioObjectName(change.draft.name);
+      const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "jira-integration";
+      const suffix = Array.from(crypto.getRandomValues(new Uint8Array(8)), byte => byte.toString(16).padStart(2, "0")).join("");
+      const next = seedAddedProtocols(undefined, normalizeProject({
+        ...change.draft, id: `${base}-${suffix}`, packaging: { ...change.draft.packaging, artifact_name: base },
+      }));
+      const replace = () => {
+        setJiraStoryOpen(false);
+        projectFileHandle.current = null;
+        savedProjectSnapshot.current = "";
+        setProject(next);
+        setOpenTaskIds([next.active_task_id]);
+        setClosedTaskIds([]);
+        setSelected(""); setSelectedIds([]); setSelectedEdge(null); setSelectedResource(null);
+        setClosed(false);
+        setLogs([{ level: "INFO", message: `Created ${name} from a Jira story. Validate the project and save it.` }]);
+      };
+      if (!closed && projectDirty) { pendingLeaveAction.current = replace; setUnsavedPrompt(true); }
+      else replace();
+      return;
+    }
+
+    const target = project.tasks.find(item => item.id === change.taskId);
+    const transition = jiraInsertionTransitions(target).find(item => item.id === change.transitionId);
+    if (project !== change.baseline || !target || !transition) throw new Error("The flow changed. Generate a new preview.");
+    const fragment = change.draft.tasks[0];
+    if (!fragment?.activities.length) throw new Error("The draft contains no activities to insert.");
+
+    const resourceNames = new Set(project.resources.map(item => item.name.toLowerCase()));
+    const resourceIds = new Set(project.resources.map(item => item.id.toLowerCase()));
+    const connectionIds = new Map<string, string>();
+    const resources: Resource[] = [];
+    for (const item of change.draft.resources) {
+      const binding = change.connectionBindings[item.id];
+      if (binding) {
+        const existing = project.resources.find(resource => resource.id === binding && resource.type === item.type && !resource.library_origin);
+        if (!existing) throw new Error("The selected connection is unavailable. Generate a new preview.");
+        connectionIds.set(item.id, existing.id);
+        continue;
+      }
+      const id = uniqueActivityName(`jira-${item.id}`, resourceIds);
+      connectionIds.set(item.id, id);
+      resources.push({ ...item, id, name: uniqueActivityName(studioObjectName(item.name), resourceNames) });
+    }
+    const schemas = change.draft.schemas;
+    const sameSchemaName = (left: SchemaDoc, right: SchemaDoc) =>
+      packagePath(left.package_path).toLowerCase() === packagePath(right.package_path).toLowerCase() &&
+      studioNameKey(left.name) === studioNameKey(right.name);
+    if (schemas.some((schema, index) =>
+      [...project.schemas, ...schemas.slice(0, index)].some(item => item.id === schema.id || sameSchemaName(item, schema))
+    )) throw new Error("A draft schema conflicts with a workspace schema. Refine the story to avoid adding that schema.");
+
+    const used = new Set(target.activities.flatMap(item => [item.id.toLowerCase(), item.name.toLowerCase()]));
+    const draftNames = new Set(fragment.activities.flatMap(item => [item.id.toLowerCase(), item.name.toLowerCase()]));
+    const aliases = new Map<string, string>();
+    const names = fragment.activities.map(item => {
+      const base = activityReferenceName(item.name);
+      const name = uniqueActivityName(used.has(base.toLowerCase()) ? `Jira-${base}` : base, used);
+      const finalName = name !== item.id && draftNames.has(name.toLowerCase())
+        ? uniqueActivityName(`Jira-${name}`, new Set([...used, ...draftNames])) : name;
+      used.add(finalName.toLowerCase());
+      aliases.set(item.id, finalName);
+      aliases.set(item.name, finalName);
+      return finalName;
+    });
+    const rewriteConfig = (value: unknown): any => {
+      if (typeof value === "string") {
+        const migrate = value.replace(/\$\{activities\.([^.}]+)\.output(?=\.|\})/g, (_match, id) => `\${${id}`);
+        return Array.from(aliases).reduce((result, [from, to]) => rewriteActivityReference(result, from, to), migrate);
+      }
+      if (Array.isArray(value)) return value.map(rewriteConfig);
+      if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+        key, key === "resourceId" && typeof item === "string" && connectionIds.has(item) ? connectionIds.get(item) : rewriteConfig(item),
+      ]));
+      return value;
+    };
+    const y = target.activities.reduce((bottom, item) => Math.max(bottom, item.position.y + 140), 120);
+    const activities = fragment.activities.map((item, index) => ({
+      ...item, id: names[index], name: names[index], position: { x: 80 + 190 * index, y }, config: rewriteConfig(item.config),
+    }));
+    const transitionIds = new Set(target.transitions.map(item => item.id.toLowerCase()));
+    const insertedEdges: Edge[] = activities.map((item, index) => ({
+      id: uniqueActivityName(`${transition.id}-jira-${index + 1}`, transitionIds),
+      source: item.id, target: activities[index + 1]?.id ?? transition.target, type: "success", color: transition.color,
+    }));
+    const next = seedAddedProtocols(project, {
+      ...project, active_task_id: target.id, resources: [...project.resources, ...resources], schemas: [...project.schemas, ...schemas],
+      tasks: project.tasks.map(item => item.id === target.id ? {
+        ...target, activities: [...target.activities, ...activities],
+        transitions: [...target.transitions.map(edge => edge.id === transition.id ? { ...edge, target: activities[0].id } : edge), ...insertedEdges],
+      } : item),
+    });
+    setProject(next);
+    setOpenTaskIds(current => [...new Set([...current, target.id])]);
+    setSelected(activities[0].id); setSelectedIds([activities[0].id]); setSelectedResource(null); setSelectedEdge(null);
+    setJiraStoryOpen(false);
+    setLogs([{ level: "INFO", message: `Inserted ${activities.length} activities from a Jira story into ${target.name}. Validate the task before running.` }]);
+  };
   const commandGroups = commandsOpen ? [
     { label: "Project", commands: [
       { label: "New Project", detail: "Create a MINA application", icon: Plus, action: newProject },
+      { label: "Jira Story", detail: "Draft an integration from a Jira issue or pasted story", icon: Ticket, action: () => setJiraStoryOpen(true), disabled: executionActive },
       { label: "Open Project", detail: "Browse a package or project folder", icon: FolderOpen, action: openGenericProject },
       { label: "Explore Samples", detail: "Browse installed examples", icon: BookOpen, action: () => setSampleGalleryOpen(true) },
       { label: "Package Project", detail: "Configure a deployment archive", icon: Package, action: () => setPackageOpen(true) },
@@ -3687,6 +3800,7 @@ function App() {
     return (
       <><ProjectWelcome
         createProject={newProject}
+        jiraStory={() => setJiraStoryOpen(true)}
         importProject={importProject}
         importFromFileSystem={importFromFileSystem}
         importProjectFolder={importProjectFolder}
@@ -3694,7 +3808,8 @@ function App() {
         setTheme={setTheme}
         plainMode={plainMode}
         setPlainMode={setPlainMode}
-      /><div className="welcome-runtime-status"><RuntimeStatus work={workStatus}/></div></>
+      /><div className="welcome-runtime-status"><RuntimeStatus work={workStatus}/></div>
+      {jiraStoryOpen && <JiraStoryDialog onClose={() => setJiraStoryOpen(false)} onApply={applyJiraStory} onDownload={browserDownload}/>}</>
     );
   return (
     <div className="app monitor-hidden" style={{ "--explorer-width": `${explorerWidth}px` } as React.CSSProperties} onClick={() => setMenu(null)}>
@@ -3737,6 +3852,7 @@ function App() {
         projectSearch={() => setProjectSearch({})}
         executionActive={executionActive}
         aiBuild={() => setAiBuilderOpen(true)}
+        jiraStory={() => setJiraStoryOpen(true)}
         apiBlueprint={() => setApiBlueprintOpen(true)}
         catchAI={openCatchAI}
         validateTask={() => runValidation("task")}
@@ -4641,6 +4757,7 @@ function App() {
         onImport={async (file) => { const imported = await importProject(file); if (imported) setSampleGalleryOpen(false); return imported; }}
       />}
       {apiBlueprintOpen && <ApiBlueprint resources={project.resources} packages={explorerPackagePaths("tasks")} projectId={project.id} onPrepareUpdate={persistProject} onUpdated={updated=>{const saved=normalizeProject(updated);savedProjectSnapshot.current=JSON.stringify(saved);lastRuntimeWrite.current={id:saved.id,body:JSON.stringify(saved)};setProject(saved);}} onClose={() => setApiBlueprintOpen(false)} onApply={applyApiBlueprint} onHost={hostApiBlueprint}/>}
+      {jiraStoryOpen && <JiraStoryDialog project={project} preferredTransition={selectedEdge || undefined} onClose={() => setJiraStoryOpen(false)} onApply={applyJiraStory} onDownload={browserDownload}/>}
       {aiBuilderOpen && <AIBuilderDialog currentTask={task} onClose={() => setAiBuilderOpen(false)} onApply={(proposal: any) => {
         const generated = proposal.project, scope = proposal.scope;
         setOpenTaskIds(scope === "task" ? [...new Set([...openTaskIds, project.active_task_id])] : generated.tasks?.[0] ? [generated.tasks[0].id] : []);
@@ -5177,7 +5294,7 @@ function StudioRibbon(props: any) {
       {command("Up", ArrowUp, props.navigation.up, !props.navigation.up, props.navigation.upLabel)}
       {command("Project Search", Search, props.projectSearch)}
     </div></div>
-    <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("API Blueprint", Globe, props.apiBlueprint, props.executionActive)}{command("AI Build", WandSparkles, props.aiBuild)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Execution Setup", Settings2, props.executionSetup, props.executionActive)}{command("Run", Zap, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Execution Analytics", Activity, props.executionAnalytics)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}{props.reviewValidation && command("Review Findings", ShieldCheck, props.reviewValidation)}</div></div>
+    <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("API Blueprint", Globe, props.apiBlueprint, props.executionActive)}{command("AI Build", WandSparkles, props.aiBuild)}{command("Jira Story", Ticket, props.jiraStory, props.executionActive)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Execution Setup", Settings2, props.executionSetup, props.executionActive)}{command("Run", Zap, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Execution Analytics", Activity, props.executionAnalytics)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}{props.reviewValidation && command("Review Findings", ShieldCheck, props.reviewValidation)}</div></div>
     <div className="ribbon-group"><b>EDIT</b><div>{command("Undo", Undo2, props.undo)}{command("Cut", Scissors, props.cut, !props.selectedCount)}{command("Copy", ClipboardCopy, props.copy, !props.selectedCount)}{command("Paste", ClipboardPaste, props.paste)}</div></div>
     <div className="ribbon-group layout-group"><b>ARRANGE · {props.selectedCount} SELECTED</b><div>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</div></div>
   </section>;
@@ -5668,7 +5785,7 @@ function IntegrationBrandArtwork({ className = "" }: { className?: string }) {
     </svg>
   </div>;
 }
-function ProjectWelcome({ createProject, importProject, importFromFileSystem, importProjectFolder, theme, setTheme, plainMode, setPlainMode }: any) {
+function ProjectWelcome({ createProject, jiraStory, importProject, importFromFileSystem, importProjectFolder, theme, setTheme, plainMode, setPlainMode }: any) {
   const input = useRef<HTMLInputElement>(null), [createOpen, setCreateOpen] = useState(false), [samplesOpen, setSamplesOpen] = useState(false), [sourceOpen, setSourceOpen] = useState(false), [name, setName] = useState("New Integration Application"), [importing, setImporting] = useState(false);
   const beginImport = async () => {
     if (!window.minaDesktop && !(window as any).showOpenFilePicker) { input.current?.click(); return; }
@@ -5707,6 +5824,7 @@ function ProjectWelcome({ createProject, importProject, importFromFileSystem, im
         <h1 className="mina-home-title"><span className="mina-name">MINA —</span><span>Mediation,</span><span>Integration &amp;</span><span>Automation</span></h1>
         <div className="launch-buttons">
           <button className="create-project" onClick={() => setCreateOpen(true)}><span><IntegrationApplicationIcon/></span><b>Create new project<small>Start with the standard project structure</small></b><ChevronRight/></button>
+          <button onClick={jiraStory}><span><Ticket/></span><b>Build from Jira story<small>Review a draft integration before creating the project</small></b><ChevronRight/></button>
           <button className="import-project" onClick={beginImport} disabled={importing}><span><Download/></span><b>{importing ? "Opening project…" : "Import existing project"}<small>Choose .mpackage, .mpkg, ZIP, JSON, or a legacy MINA package</small></b><ChevronRight/></button>
           <button className="sample-projects" onClick={() => setSamplesOpen(true)}><span><BookOpen/></span><b>Explore sample projects<small>Editable, installed examples for mapping, APIs, data, JDBC, and messaging</small></b><ChevronRight/></button>
           <button className="installed-guide" onClick={() => window.open("/help/index.html", "_blank", "noopener")}><span><BookOpen/></span><b>Open MINA documentation<small>Searchable tree, activity reference, guides and PDF manual</small></b><ChevronRight/></button>

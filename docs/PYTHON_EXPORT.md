@@ -7,6 +7,8 @@ Studio exposes two distinct Python exports. Both contain Python application file
 
 The standard `.mpkg` and `.ear` exports remain available. Python archives require separately licensed vendor drivers where the underlying connection needs them (for example SAP JCo or JMS/EMS). A Python source package does not replace those vendor libraries. Legacy `.ifpkg` packages remain importable.
 
+For Docker or Kubernetes, follow the [Container deployment guide](CONTAINER_DEPLOYMENT.md). Both current Python archive formats start from an extracted directory with `python -m application.main`. Re-export a direct Python archive to use `MINA_SECRET_FILE` and the HTTP bind overrides with existing projects.
+
 ## File and AMQP starters
 
 Both Python archive modes keep File Poller and AMQP Receive Message starter tasks

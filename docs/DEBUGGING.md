@@ -203,3 +203,10 @@ Environment properties and connector credentials are intentionally excluded from
 ## Continuous starters
 
 An EMS/JMS, Kafka, Pub/Sub, SAP, timer, or file listener displays **ready · waiting for event** until an event arrives. Breakpoints, watches, and pause-on-error remain active for every event. Stopping the session also stops the listener and prevents it from re-arming.
+## Monitor Run and Debug logs
+
+Open the execution panel to filter logs by severity or search messages and identifiers. Click a correlation ID to isolate that execution while a listener continues to receive events. Use **Open activity** on an entry with a matching task and activity to jump to its configuration.
+
+The panel initially shows the latest 200 matching entries. **Show older matches** reveals more entries from the available log buffer. Scroll back or turn off **Following latest** to inspect earlier entries. Open **Payload** on a row to view captured data. **Export metadata** downloads timing and identifiers for all matches as NDJSON, omitting log messages and payloads.
+
+Select **Load saved project logs** to inspect saved logs for the current execution environment. Use **Return to execution logs** to switch back to the latest Run or Debug output.
