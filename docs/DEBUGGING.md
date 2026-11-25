@@ -207,6 +207,8 @@ An EMS/JMS, Kafka, Pub/Sub, SAP, timer, or file listener displays **ready · wai
 
 Select **Execution Monitor** in the Studio ribbon to reopen the monitor during or after a run. Turn on **Keep open after execution** to inspect logs after a Run or Debug session completes, fails, or stops. During Debug, use the current activity button in the monitor to open its configuration.
 
+When the Studio or Debug ribbon runs out of space, sections collapse into dropdowns. Select a section to see its commands, or widen the window to expand the sections that fit.
+
 Open the execution panel to filter logs by severity or search messages and identifiers. Click a correlation ID to isolate that execution while a listener continues to receive events. Use **Open activity** on an entry with a matching task and activity to jump to its configuration.
 
 The panel initially shows the latest 200 matching entries. **Show older matches** reveals more entries from the available log buffer. Scroll back or turn off **Following latest** to inspect earlier entries. Open **Payload** on a row to view captured data. **Export metadata** downloads timing and identifiers for all matches as NDJSON, omitting log messages and payloads.

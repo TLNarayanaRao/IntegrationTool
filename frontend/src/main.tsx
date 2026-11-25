@@ -119,6 +119,7 @@ import "./popup-enhancements.css";
 import "./mapping-fixes.css";
 import "./messaging-enhancements.css";
 import "./studio-ribbon.css";
+import ResponsiveRibbon from "./ResponsiveRibbon";
 import "./packaging-target.css";
 import "./home-screen.css";
 import "./groups.css";
@@ -5307,19 +5308,19 @@ function PackageDialog({ packaging, environments, properties, tasks, onClose, on
 function StudioRibbon(props: any) {
   const command = (label: string, Icon: any, action: (() => void) | undefined, disabled = false, emphasis = false, title = label) =>
     <button type="button" className={emphasis ? "emphasis" : ""} disabled={disabled} onClick={(event) => { event.stopPropagation(); action?.(); }} title={title}><Icon/><span>{label}</span></button>;
-  return <section className="studio-ribbon" aria-label="Studio ribbon">
-    <div className="ribbon-group"><b>PROJECT</b><div>{command("New", IntegrationApplicationIcon, props.newProject)}{command("Open", FolderOpen, props.openProjectSource || props.importProject)}{command("Import", Download, props.importProject)}{command("Samples", BookOpen, props.sampleProjects)}{command("Save", Save, props.save)}{command("Export", Upload, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</div></div>
-    <div className="ribbon-group" role="group" aria-label="Navigation"><b>NAVIGATE</b><div>
+  return <ResponsiveRibbon label="Studio ribbon" sections={[
+    {label:"Project", icon:FolderOpen, commands:<>{command("New", IntegrationApplicationIcon, props.newProject)}{command("Open", FolderOpen, props.openProjectSource || props.importProject)}{command("Import", Download, props.importProject)}{command("Samples", BookOpen, props.sampleProjects)}{command("Save", Save, props.save)}{command("Export", Upload, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</>},
+    {label:"Navigate", icon:ArrowLeft, commands:<>
       {command("Back", ArrowLeft, props.navigation.back, !props.navigation.back)}
       {command("Forward", ArrowRight, props.navigation.forward, !props.navigation.forward)}
       <RecentLocations recent={props.navigation.recent} jump={props.navigation.jump}/>
-      {command("Up", ArrowUp, props.navigation.up, !props.navigation.up, props.navigation.upLabel)}
+      {command("Up", ArrowUp, props.navigation.up, !props.navigation.up, false, props.navigation.upLabel)}
       {command("Project Search", Search, props.projectSearch)}
-    </div></div>
-    <div className="ribbon-group"><b>EXECUTE & VALIDATE</b><div>{command("API Blueprint", Globe, props.apiBlueprint, props.executionActive)}{command("AI Build", WandSparkles, props.aiBuild)}{command("Jira Story", Ticket, props.jiraStory, props.executionActive)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Execution Setup", Settings2, props.executionSetup, props.executionActive)}{command("Run", Zap, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Execution Monitor", BookOpen, props.executionMonitor)}{command("Execution Analytics", Activity, props.executionAnalytics)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}{props.reviewValidation && command("Review Findings", ShieldCheck, props.reviewValidation)}</div></div>
-    <div className="ribbon-group"><b>EDIT</b><div>{command("Undo", Undo2, props.undo)}{command("Cut", Scissors, props.cut, !props.selectedCount)}{command("Copy", ClipboardCopy, props.copy, !props.selectedCount)}{command("Paste", ClipboardPaste, props.paste)}</div></div>
-    <div className="ribbon-group layout-group"><b>ARRANGE · {props.selectedCount} SELECTED</b><div>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</div></div>
-  </section>;
+    </>},
+    {label:"Execute", caption:"Execute & Validate", icon:Zap, commands:<>{command("API Blueprint", Globe, props.apiBlueprint, props.executionActive)}{command("AI Build", WandSparkles, props.aiBuild)}{command("Jira Story", Ticket, props.jiraStory, props.executionActive)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Execution Setup", Settings2, props.executionSetup, props.executionActive)}{command("Run", Zap, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Execution Monitor", BookOpen, props.executionMonitor)}{command("Execution Analytics", Activity, props.executionAnalytics)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}{props.reviewValidation && command("Review Findings", ShieldCheck, props.reviewValidation)}</>},
+    {label:"Edit", icon:Scissors, commands:<>{command("Undo", Undo2, props.undo)}{command("Cut", Scissors, props.cut, !props.selectedCount)}{command("Copy", ClipboardCopy, props.copy, !props.selectedCount)}{command("Paste", ClipboardPaste, props.paste)}</>},
+    {label:"Arrange", caption:"Arrange " + props.selectedCount + " selected", icon:AlignVerticalSpaceAround, commands:<>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</>},
+  ]}/>;
 }
 function OpenProjectSourceDialog({ onClose, onFile, onFolder, title = "Open MINA project", actionLabel = "Browse", exportMode = false }: any) {
   type ProjectSource = "mpackage" | "mpkg" | "legacy" | "zip" | "json" | "bwp" | "folder";
@@ -7473,23 +7474,22 @@ function DebugRibbon({ state, act, stop, openLogs, openJobData, openTools, runTo
   const stopping = state.status === "stopping";
   const command = (label: string, Icon: any, action: () => void, disabled = false, title = label) =>
     <button type="button" disabled={disabled} onClick={action} title={title} aria-label={label}><Icon/><span>{label}</span></button>;
-  return <section className="studio-ribbon debug-ribbon" aria-label="Debug ribbon">
-    <div className="debug-ribbon-status"><Bug/><b>DEBUG</b><span role="status">{state.pauseRequested ? "Pausing…" : state.status === "listening" ? "Waiting for event" : state.status}</span></div>
-    <div className="ribbon-group"><b>EXECUTION</b><div>
+  return <ResponsiveRibbon label="Debug ribbon" status={<div className="debug-ribbon-status"><Bug/><b>DEBUG</b><span role="status">{state.pauseRequested ? "Pausing…" : state.status === "listening" ? "Waiting for event" : state.status}</span></div>} sections={[
+    {label:"Execution", icon:CirclePlay, commands:<>
       {command("Continue", CirclePlay, () => act("continue"), !paused)}
       {command("Ignore Breakpoints", SkipForward, () => act("continue_without_breakpoints"), !paused, "Continue without breakpoints for this command")}
       {command("Pause", Pause, () => act("pause"), state.status !== "running" || state.pauseRequested, "Pause before the next activity")}
       {state.listenerMode && command(state.breakOnNextEvent ? "Cancel Next Event Break" : "Break on Next Event", Bug, () => act("break_next_event"), stopping)}
       {command("Stop", Square, stop, stopping, "Stop debugging and clean up resources")}
-    </div></div>
-    <div className="ribbon-group"><b>STEP & NAVIGATE</b><div>
+    </>},
+    {label:"Step", caption:"Step & Navigate", icon:SkipForward, commands:<>
       {command("Step In", ArrowDown, () => act("step_in"), !paused)}
       {command("Step Over", SkipForward, () => act("step_over"), !paused)}
       {command("Step Out", ArrowUp, () => act("step_out"), !paused || state.callStack?.length < 2)}
       {command("Run to Selected", CirclePlay, runToSelected, !paused || !canRunTo)}
       {command("Go to Current Activity", Workflow, inspectCurrent, !state.currentActivityId || stopping)}
-    </div></div>
-    <div className="ribbon-group"><b>INSPECT & CONFIGURE</b><div>
+    </>},
+    {label:"Inspect", caption:"Inspect & Configure", icon:Search, commands:<>
       {command("Execution Logs", BookOpen, openLogs)}
       {command("Thread Paths", Workflow, () => openTrace("threads"))}
       {command("Debug Metrics", Activity, () => openTrace("metrics"))}
@@ -7498,14 +7498,14 @@ function DebugRibbon({ state, act, stop, openLogs, openJobData, openTools, runTo
       {command("Variables", Database, () => openTools(2), stopping)}
       {command("Evaluate", CodeXml, () => openTools(3), !paused)}
       {command("Job Data", BookOpen, openJobData)}
-    </div></div>
-    <div className="ribbon-group"><b>DATA & ACTIVITY TESTING</b><div>
+    </>},
+    {label:"Test", caption:"Data & Activity Testing", icon:CheckCircle2, commands:<>
       {command("Edit Payload", ClipboardPaste, () => openTools(4), !paused)}
       {command("Preview Inputs", Search, () => openTools(5), !paused, "Open the test bench to provide data and preview resolved inputs")}
       {command("Test Activity", CheckCircle2, () => openTools(5), !paused, "Open the test bench to configure and run a real activity test")}
       {command("Input Cases", Braces, () => openTools(5), false, "Generate fixtures and check saved cases against the task contract")}
       {command("Mock Output", WandSparkles, () => openTools(5), !paused, "Open the test bench to supply mock output and step")}
-    </div></div>
-  </section>;
+    </>},
+  ]}/>;
 }
 createRoot(document.getElementById("root")!).render(<StudioErrorBoundary><App /></StudioErrorBoundary>);
