@@ -1,4 +1,4 @@
-# Messaging and Mapper throughput qualification
+# Messaging and DataCompose throughput qualification
 
 The acceptance target is **100,000 records per direction within 600 seconds**, or at least 166.67 records/second. Lower elapsed time is better. Results are workload- and environment-specific; this is not a universal performance guarantee.
 
@@ -10,7 +10,7 @@ For the subsequent **complete-flow** qualification, including task orchestration
 
 These activity benchmarks exclude the Studio UI, whole-task graph orchestration, execution-log collection, downstream business work and network latency beyond the local broker. They do not measure persistent receiver-starter dispatch, individual-record latency, failover or TLS authentication overhead. A batch Get result is not a measurement of 100,000 independently launched Get activities.
 
-Mapper uses eight mappings, including trim/uppercase, sum, direct paths and nested targets, on approximately 1 KiB records. Every result is checked. Target XSD validation is not enabled in that workload; complex schemas, loops, XSLT and larger documents require separate capacity tests.
+DataCompose uses eight mappings, including trim/uppercase, sum, direct paths and nested targets, on approximately 1 KiB records. Every result is checked. Target XSD validation is not enabled in that workload; complex schemas, loops, XSLT and larger documents require separate capacity tests.
 
 ## Runtime changes
 
@@ -26,7 +26,7 @@ Machine-readable reports are in `docs/validation/throughput-*-2026-11-15.json`. 
 
 The JMS pre-change baseline of 20 single-message Gets took 32.03 seconds. That small baseline is diagnostic evidence, not an acceptance test. The 1,000-record Kafka baseline is likewise not the 100,000-record qualification.
 
-Mapper completed a continuous 600-second soak, processing and checking 4,995,087 records. Its first 100,000 took 11.491 seconds (8,702.7 records/second). Final process RSS was essentially unchanged (-0.016 MiB); this endpoint comparison alone does not prove absence of all leaks.
+DataCompose completed a continuous 600-second soak, processing and checking 4,995,087 records. Its first 100,000 took 11.491 seconds (8,702.7 records/second). Final process RSS was essentially unchanged (-0.016 MiB); this endpoint comparison alone does not prove absence of all leaks.
 
 Kafka's 100,000 confirmed publishes took 24.036 seconds (4,160.5/second). Receiving and checking those records took 3.208 seconds (31,176.8/second). See the separate paced-soak report for sustained cycling; a paced soak is not an unpaced maximum-capacity measurement.
 

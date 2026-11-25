@@ -22,6 +22,32 @@ CFG = {'idocType': 'CUSTOM01', 'selectedIdoc': {'idocType': 'CUSTOM01', 'schema'
 
 
 class IdocArrayTests(unittest.TestCase):
+    def test_corrupt_parent_references_fail_without_silently_losing_segments(self):
+        adapter = SapAdapter()
+        cases = [
+            ([{'SEGNUM':'1','PSGNUM':'2'}, {'SEGNUM':'2','PSGNUM':'1'}], 'cycle'),
+            ([{'SEGNUM':'1','PSGNUM':'99'}], 'missing parent'),
+            ([{'SEGNUM':'1'}, {'SEGNUM':'000001'}], 'duplicate segment'),
+            ([{'SEGNUM':'1','HLEVEL':'03'}], 'no preceding level 2 parent'),
+        ]
+        for rows, message in cases:
+            with self.subTest(rows=rows), self.assertRaisesRegex(RuntimeError, message):
+                adapter.execute('idoc_parser', {'idocType':'CUSTOM01', 'mode':'mock'}, {'data':rows})
+
+    def test_listener_rejects_corrupt_hierarchy_and_signals_rollback(self):
+        adapter = SapAdapter()
+        cfg = {**CFG, 'mode': 'external', 'operation': 'idoc_listener', 'programId': 'test',
+               'gatewayHost': 'test', 'gatewayService': 'sapgw00'}
+        listener = Mock()
+        listener.process.poll.return_value = None
+        listener.next_event = AsyncMock(return_value={'deliveryId': 'bad-hierarchy', 'payload': {
+            'tables': {'IDOC_DATA_REC_40': [{'SEGNAM':'ROW','SEGNUM':'1','PSGNUM':'1'}]},
+        }})
+        adapter.listeners[adapter._listener_key(cfg)] = listener
+        with self.assertRaisesRegex(RuntimeError, 'cycle'):
+            asyncio.run(adapter.receive_idoc(cfg))
+        listener.acknowledge.assert_called_once_with('bad-hierarchy', False)
+
     def test_parser_xml_singleton_and_nested_segments_stay_arrays(self):
         result = SapAdapter().execute('idoc_parser', CFG, XML)['SAPIDoc']
         for data in (result['IDOC'], result['CUSTOM01']['IDOC']):

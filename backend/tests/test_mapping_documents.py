@@ -125,8 +125,8 @@ class MappingDocumentTests(unittest.TestCase):
         normalized = [{**rule, 'source': rule['source'][2:-1] if rule['source'].startswith('${') and rule['source'].endswith('}') else rule['source']} for rule in rules]
         result = execute({'input': {'document': {'id': 3, 'password': 'secret'}}}, normalized)
         self.assertEqual(result, {'id': 3, 'safe': {'id': 3, 'password': '[REDACTED]'}})
-        from app.dataweave import execute as transform
-        self.assertEqual(transform('%dw 2.0\nimport jsonPointer from mina::Documents\noutput application/json\n---\njsonPointer(payload, "/id")', payload={'id': 3}), 3)
+        from app.script_transform import execute as transform
+        self.assertEqual(transform('%mina 2.0\nimport jsonPointer from mina::Documents\noutput application/json\n---\njsonPointer(payload, "/id")', payload={'id': 3}), 3)
 
     def test_new_functions_in_preview_run_debug_and_both_archives(self):
         from app.main import mapper_test

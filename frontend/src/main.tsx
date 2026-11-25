@@ -160,7 +160,7 @@ type Kind =
   | "json"
   | "flat"
   | "mapper"
-  | "dataweave"
+  | "script_transform"
   | "transform"
   | "ai_transform"
   | "log"
@@ -631,8 +631,8 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
     name: "General",
     icon: Activity,
     items: [
-      { type: "mapper", operation: "map", label: "Mapper", asset: "mapper-symbol.svg" },
-      { type: "dataweave", operation: "transform", label: "Transform", asset: "dataweave-transform.svg" },
+      { type: "mapper", operation: "map", label: "DataCompose", asset: "mapper-symbol.svg" },
+      { type: "script_transform", operation: "transform", label: "Transform", asset: "script-transform.svg" },
       { type: "log", operation: "write", label: "Log", asset: "log" },
       { type: "catch", operation: "catch", label: "Catch Exception", asset: "catch-exception.svg" },
       { type: "throw", operation: "throw", label: "Throw Exception", asset: "throw-exception.svg" },
@@ -1268,7 +1268,7 @@ const normalizeProject = (value: any): Project => {
         return {
           ...activity,
           id: String(activity.id || `activity-${taskIndex + 1}-${activityIndex + 1}`),
-          type: String(activity.type || "log"),
+          type: /^data(?:weave)$/.test(String(activity.type || "")) ? "script_transform" : String(activity.type || "log"),
           name: uniqueActivityName(activityReferenceName(activity.name), usedActivityNames),
           position: {
             x: Number.isFinite(Number(position.x)) ? Number(position.x) : 80 + activityIndex * 190,
@@ -1417,10 +1417,10 @@ const validateTaskDefinition = (project: Project, task: Task, environment = proj
       if (dynamic.startsWith("${") && !dynamic.endsWith("}")) add("error", "Task", `${item.name} has an incomplete dynamic Sub Task expression.`, "Close the expression with } or enter a literal Sub Task ID/name.", item.id);
     }
     if (["mapper", "transform", "ai_transform"].includes(item.type)) {
-      if (!Object.keys(item.config.targetSchema || {}).length && !String(item.config.targetSchemaText || "").trim() && !item.config.targetSchemaId) add("mapping", "Mapper", `${item.name} has no target schema.`, "Select an XSD from Project Schemas or define an inline target schema.", item.id);
-      if (!(item.config.mappings || []).length) add("mapping", "Mapper", `${item.name} has no field mappings.`, "Map execution-path fields to the target schema.", item.id, {kind:"input"});
+      if (!Object.keys(item.config.targetSchema || {}).length && !String(item.config.targetSchemaText || "").trim() && !item.config.targetSchemaId) add("mapping", "DataCompose", `${item.name} has no target schema.`, "Select an XSD from Project Schemas or define an inline target schema.", item.id);
+      if (!(item.config.mappings || []).length) add("mapping", "DataCompose", `${item.name} has no field mappings.`, "Map execution-path fields to the target schema.", item.id, {kind:"input"});
     }
-    if (item.type === "dataweave") {
+    if (item.type === "script_transform") {
       const script = String(item.config.script || "");
       if (!script.trim()) add("error", "Transform", `${item.name} has no transform script.`, "Enter or AI-generate an executable transform script.", item.id);
       else if (!script.includes("---")) add("error", "Transform", `${item.name} is missing the script header/body separator.`, "Add --- before the transform expression.", item.id);
@@ -2402,9 +2402,9 @@ function App() {
         mappings: [],
         threshold: 70,
       });
-    if (d.type === "dataweave")
+    if (d.type === "script_transform")
       Object.assign(config, {
-        script: "%dw 2.0\noutput application/json\n---\npayload",
+        script: "%mina 2.0\noutput application/json\n---\npayload",
         inputMimeType: "application/json",
         outputMimeType: "application/json",
         outputTarget: "payload",
@@ -4409,7 +4409,7 @@ function App() {
             <b>
               <Settings2 /> {edge ? "Transition" : resource ? "Connection" : "Activity"}
             </b>
-            {node ? (["configuration", "input", "map_test", "output", "advanced", "errors", "documentation"] as const).filter((tab) => tab !== "map_test" || ["mapper", "transform", "ai_transform", "dataweave"].includes(node.type)).map(
+            {node ? (["configuration", "input", "map_test", "output", "advanced", "errors", "documentation"] as const).filter((tab) => tab !== "map_test" || ["mapper", "transform", "ai_transform", "script_transform"].includes(node.type)).map(
               (tab) => (
                 <button
                   key={tab}
@@ -5329,7 +5329,7 @@ function OpenProjectSourceDialog({ onClose, onFile, onFolder, title = "Open MINA
     ["json", "JSON", "Project JSON descriptor"],
     ["folder", "Structured project folder", "Folder containing project.json and project content"],
   ];
-  if (!exportMode) choices.splice(2, 0, ["bwp", "Legacy process file", "Import compatible activity bindings as Mapper tasks"], ["legacy", "Legacy MINA packages", ".ifproject, .ifpackage, and .ifpkg remain importable"]);
+  if (!exportMode) choices.splice(2, 0, ["bwp", "Legacy process file", "Import compatible activity bindings as DataCompose tasks"], ["legacy", "Legacy MINA packages", ".ifproject, .ifpackage, and .ifpkg remain importable"]);
   return <ModalLayer className="modal-backdrop"><div className="runtime-modal" role="dialog" aria-modal="true" aria-labelledby="open-project-title">
     <header><b id="open-project-title">{title}</b><button onClick={onClose} aria-label="Close">×</button></header>
     <main><p>Select the project format, then browse for the matching file or folder.</p><div className="open-project-source-options">{choices.map(([value, label, detail]) => <label key={value}><input type="radio" name={exportMode ? "export-source" : "project-source"} checked={source === value} onChange={() => setSource(value)}/><span><b>{label}</b><small>{detail}</small></span></label>)}</div></main>

@@ -59,7 +59,7 @@
       "report": "transform-stream-mapper-python-engine-2026-11-16.json"
     },
     {
-      "family": "dataweave",
+      "family": "script_transform",
       "mode": "run",
       "passed": true,
       "records": 100000,
@@ -70,10 +70,10 @@
       "peakRssMiB": 70.4453125,
       "scope": "Start -> streamed transform with source/target schema validation -> End; generated archive startup/import, output readback and cleanup included",
       "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak",
-      "report": "transform-stream-dataweave-run-2026-11-16.json"
+      "report": "transform-stream-script_transform-run-2026-11-16.json"
     },
     {
-      "family": "dataweave",
+      "family": "script_transform",
       "mode": "debug",
       "passed": true,
       "records": 100000,
@@ -84,10 +84,10 @@
       "peakRssMiB": 70.43359375,
       "scope": "Start -> streamed transform with source/target schema validation -> End; generated archive startup/import, output readback and cleanup included",
       "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak",
-      "report": "transform-stream-dataweave-debug-2026-11-16.json"
+      "report": "transform-stream-script_transform-debug-2026-11-16.json"
     },
     {
-      "family": "dataweave",
+      "family": "script_transform",
       "mode": "python-direct",
       "passed": true,
       "records": 100000,
@@ -98,10 +98,10 @@
       "peakRssMiB": 37.88671875,
       "scope": "Start -> streamed transform with source/target schema validation -> End; generated archive startup/import, output readback and cleanup included",
       "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak",
-      "report": "transform-stream-dataweave-python-direct-2026-11-16.json"
+      "report": "transform-stream-script_transform-python-direct-2026-11-16.json"
     },
     {
-      "family": "dataweave",
+      "family": "script_transform",
       "mode": "python-engine",
       "passed": true,
       "records": 100000,
@@ -112,7 +112,7 @@
       "peakRssMiB": 56.0234375,
       "scope": "Start -> streamed transform with source/target schema validation -> End; generated archive startup/import, output readback and cleanup included",
       "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak",
-      "report": "transform-stream-dataweave-python-engine-2026-11-16.json"
+      "report": "transform-stream-script_transform-python-engine-2026-11-16.json"
     }
   ],
   "date": "2026-11-16",

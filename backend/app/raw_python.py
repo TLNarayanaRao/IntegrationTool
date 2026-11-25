@@ -14,6 +14,18 @@ from pathlib import Path
 from pprint import pformat
 
 
+def _normalize_transform_project(project):
+    if __package__:
+        from .transform_compat import normalize_transform_project
+    else:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('_mina_transform_compat', Path(__file__).with_name('transform_compat.py'))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        normalize_transform_project = module.normalize_transform_project
+    return normalize_transform_project(project)
+
+
 def _archive_legal_files(files,project,kind,checks,external_files):
     # Preserve this compiler's supported standalone/importlib use.
     import importlib.util
@@ -35,7 +47,7 @@ SUPPORTED = {
     ('http', 'sse_read'), ('http', 'websocket_exchange'), ('http', 'write_precondition'),
     ('soap', 'service'), ('soap', 'request_reply'), ('http_response', 'response'), ('http_response', ''),
     ('xml', 'parse'), ('xml', 'render'), ('json', 'parse'), ('json', 'render'),
-    ('flat', 'parse'), ('flat', 'render'), ('excel', 'read'), ('dataweave', 'transform'), ('dataweave', ''),
+    ('flat', 'parse'), ('flat', 'render'), ('excel', 'read'), ('script_transform', 'transform'), ('script_transform', ''),
     ('python', 'invoke'), ('java', 'invoke'),
     *((('snowflake', operation) for operation in ('insert', 'query', 'update', 'delete', 'bulk_load'))),
     *((('amqp', operation) for operation in ('send', 'get', 'receive', 'dead_letter'))),
@@ -59,7 +71,7 @@ ACTIVITY_CAPABILITY_BY_KIND = {
     'timer': 'timer', 'confirm': 'confirm', 'throw': 'faults', 'rethrow': 'faults',
     'log': 'log', 'basic': 'basic', 'mapper': 'mapper', 'call_task': 'call_task',
     'file': 'file', 'excel': 'excel', 'ftp': 'transfer', 'sftp': 'transfer',
-    'http_response': 'http_response', 'dataweave': 'dataweave', 'python': 'python',
+    'http_response': 'http_response', 'script_transform': 'script_transform', 'python': 'python',
     'java': 'java', 'kafka': 'kafka', 'pubsub': 'pubsub', 'sap': 'sap',
     'ems': 'jms', 'jms': 'jms', 'jdbc': 'jdbc', 'snowflake': 'snowflake', 'amqp': 'amqp',
 }
@@ -591,15 +603,15 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
                 for prop in profile if prop.get('key') == binding.group(1)}
     if any(kind in {'xml','json'} for kind,_ in activity_pairs):add('Data schema validation',['jsonschema','regex'],'python -m pip install jsonschema regex')
     if any(kind=='xml' for kind,_ in activity_pairs):add('XML schema validation',['lxml.etree'],'python -m pip install lxml')
-    if any(kind=='dataweave' for kind,_ in activity_pairs) or any(a.get('config',{}).get('streamEnabled') for t in project.get('tasks',[]) for a in t.get('activities',[])):
+    if any(kind=='script_transform' for kind,_ in activity_pairs) or any(a.get('config',{}).get('streamEnabled') for t in project.get('tasks',[]) for a in t.get('activities',[])):
         add('Transformation contracts',['lxml.etree','jsonschema','regex'],'python -m pip install lxml jsonschema regex')
     xml_dependencies = mapper_xml_dependencies(project)
     if xml_dependencies:
-        add('Mapper XML binding', ['lxml.etree'], 'python -m pip install lxml')
+        add('DataCompose XML binding', ['lxml.etree'], 'python -m pip install lxml')
     if any(item.startswith('elementpath') for item in xml_dependencies):
-        add('Mapper XPath 2.0', ['elementpath'], 'python -m pip install "elementpath>=5.1.4,<6"')
+        add('DataCompose XPath 2.0', ['elementpath'], 'python -m pip install "elementpath>=5.1.4,<6"')
     if any(item.startswith('saxonche') for item in xml_dependencies):
-        add('Mapper XSLT 2.0', ['saxonche'], 'python -m pip install "saxonche>=13.1.1,<14"')
+        add('DataCompose XSLT 2.0', ['saxonche'], 'python -m pip install "saxonche>=13.1.1,<14"')
     if any(kind in {'http','http_listener','rest','soap'} for kind,_ in activity_pairs):
         add('HTTP transport', ['httpx'], 'python -m pip install httpx')
         add('HTTP contracts', ['jsonschema','yaml','regex','lxml.etree'], 'python -m pip install jsonschema PyYAML regex lxml')
@@ -704,6 +716,7 @@ def validate_export_mappings(project: dict) -> None:
 
 
 def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str, bytes]:
+    project = _normalize_transform_project(project)
     validate_export_mappings(project)
     validate_raw_python(project)
     linked_resources, linked_schemas = _project_artifact_closure(project)
@@ -838,8 +851,8 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     if 'jdbc' in capabilities: native_modules.update({'jdbc.py', 'java_bridge.py','snowflake.py'})
     if 'snowflake' in capabilities: native_modules.add('snowflake.py')
     if 'amqp' in capabilities: native_modules.add('amqp.py')
-    if 'dataweave' in capabilities or any(a.get('config',{}).get('streamEnabled') for t in project.get('tasks',[]) for a in t.get('activities',[])):
-        native_modules.update({'dataweave.py','transform_libraries.py','transform_engine.py','transform_stream.py','mapper.py','schema_validation.py','data_formats.py','faults.py','xsd_catalog.py','xsd_openapi.py','retry_policy.py'})
+    if 'script_transform' in capabilities or any(a.get('config',{}).get('streamEnabled') for t in project.get('tasks',[]) for a in t.get('activities',[])):
+        native_modules.update({'script_transform.py','transform_libraries.py','transform_engine.py','transform_stream.py','mapper.py','schema_validation.py','data_formats.py','faults.py','xsd_catalog.py','xsd_openapi.py','retry_policy.py'})
     if any(activity.get('type') == 'json' and any(activity.get('config', {}).get(flag) for flag in ('validateInput', 'validateOutput')) for task in project.get('tasks', []) for activity in task.get('activities', [])):
         native_modules.add('mapper.py')
     if 'mapper' in capabilities or any(task.get('groups') or any(edge.get('type') == 'success_condition' for edge in task.get('transitions', [])) for task in project.get('tasks', [])) or any(
@@ -1292,7 +1305,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
 
 ENGINE_CAPABILITY_MODULES = {
     'file': 'file_operations', 'ftp': 'transfer', 'sftp': 'transfer',
-    'dataweave': 'dataweave', 'sap': 'sap', 'snowflake': 'snowflake',
+    'script_transform': 'script_transform', 'sap': 'sap', 'snowflake': 'snowflake',
     'jdbc': 'jdbc', 'amqp': 'amqp', 'ems': 'java_bridge',
     'http': 'http_transport', 'rest': 'http_transport', 'soap': 'http_transport', 'http_listener': 'http_server',
     'http_response': 'http_messages',
@@ -1357,7 +1370,7 @@ def _engine_module_files(project: dict, source_root: Path) -> dict[str, bytes]:
     optional = set(ENGINE_CAPABILITY_MODULES.values()) | {'transform_engine'}
     pending = {'runtime', 'models', 'mapper', 'time_utils'}
     pending.update(module for kind, module in ENGINE_CAPABILITY_MODULES.items() if kind in kinds)
-    transform_pipeline = 'dataweave' in kinds or any(a.get('config',{}).get('streamEnabled') for t in project.get('tasks',[]) for a in t.get('activities',[]))
+    transform_pipeline = 'script_transform' in kinds or any(a.get('config',{}).get('streamEnabled') for t in project.get('tasks',[]) for a in t.get('activities',[]))
     if transform_pipeline: pending.add('transform_engine')
     xsd_projection = transform_pipeline or bool(kinds & {'xml', 'json', 'flat'}) or _has_mapper_binding(project) or _has_selected_source_schema(project)
     if any(a['type']=='http_listener' or a['type']=='rest' and a.get('config',{}).get('operation')=='receiver' or a['type']=='soap' and a.get('config',{}).get('operation')=='service' for t in project.get('tasks',[]) for a in t.get('activities',[])):pending.add('http_server')
@@ -1425,7 +1438,7 @@ def _mapper_schema_config(config, schemas, activity_name):
     if config.get('targetSchemaId'):
         schema_id = config['targetSchemaId']
         selected = next((asset for asset in schemas if schema_id in (asset.get('id'), asset.get('name'))), None)
-        if not selected: raise ValueError(f'{activity_name}: selected Mapper target schema was not found')
+        if not selected: raise ValueError(f'{activity_name}: selected DataCompose target schema was not found')
         config.update(targetSchema={}, targetSchemaText=_selected_asset_schema(selected['content'],config.get('targetSchemaText')),
                       xmlTargetSchemaPath=selected.get('source_path') or selected['name'])
     if config.get('xmlStylesheet') or config.get('generatedXmlBinding') or config.get('sourceCoercions'):
@@ -1455,7 +1468,7 @@ print(json.dumps(results, ensure_ascii=False, indent=2))
 raise SystemExit(0 if results and all(result['passed'] for result in results.values()) else 1)
 """).encode()
     files['transform_jsonl.py'] = (prefix + """import argparse, json, sys
-parser = argparse.ArgumentParser(description='Stream JSON Lines through a saved Mapper without running connectors')
+parser = argparse.ArgumentParser(description='Stream JSON Lines through a saved DataCompose without running connectors')
 parser.add_argument('--activity', required=True, choices=sorted(ASSETS))
 parser.add_argument('--batch-size', type=int, default=100)
 arguments = parser.parse_args()
@@ -1483,6 +1496,7 @@ def engine_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[
     Studio, including its SAP JCo and EMS/JMS bridges. Vendor runtimes/JARs
     remain external licensed dependencies of the target data plane.
     """
+    project = _normalize_transform_project(project)
     validate_export_mappings(project)
     source_root = Path(__file__).parent
     support = source_root / 'raw_python_support'

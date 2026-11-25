@@ -1,12 +1,12 @@
 [
   {
     "id": "mapper-foundations",
-    "name": "Mapper Foundations",
+    "name": "DataCompose Foundations",
     "category": "Transformation",
     "description": "Manual field mappings, typed constants, functions, target schema, Map & Test, logging, and task output.",
     "activities": [
       "Start",
-      "Mapper",
+      "DataCompose",
       "Log",
       "End"
     ],
@@ -20,7 +20,7 @@
     "description": "Named lookups, saved transformation suites, bounded execution and both Python archive formats.",
     "activities": [
       "Start",
-      "Mapper",
+      "DataCompose",
       "End"
     ],
     "file": "/samples/transformation-regression.json",
@@ -34,7 +34,7 @@
     "activities": [
       "Start",
       "Parse XML",
-      "Mapper",
+      "DataCompose",
       "Render JSON",
       "End"
     ],
@@ -48,7 +48,7 @@
     "description": "Continuous REST receiver, request mapping, structured logging, and HTTP response.",
     "activities": [
       "REST Receiver",
-      "Mapper",
+      "DataCompose",
       "Log",
       "HTTP Response"
     ],
@@ -78,7 +78,7 @@
       "EMS Receiver",
       "Kafka Receive",
       "Pub/Sub Subscribe",
-      "Mapper",
+      "DataCompose",
       "Confirm Message"
     ],
     "file": "/samples/event-messaging.json",
@@ -112,17 +112,17 @@
     "ready": true
   },
   {
-    "id": "dataweave-orders",
+    "id": "script-transform-orders",
     "name": "Transform Order Collection",
     "category": "Transformation",
-    "description": "Use the executable DataWeave-compatible Transform language to normalize and enrich an order collection.",
+    "description": "Use a MINA transform script to normalize and enrich an order collection.",
     "activities": [
       "Start",
       "Transform",
       "Log",
       "End"
     ],
-    "file": "/samples/dataweave-orders.json",
+    "file": "/samples/script-transform-orders.json",
     "ready": true
   },
   {
@@ -133,7 +133,7 @@
     "activities": [
       "Start",
       "Call Sub Task",
-      "Mapper",
+      "DataCompose",
       "End"
     ],
     "file": "/samples/subtask-composition.json",
@@ -176,7 +176,7 @@
     "activities": [
       "Start",
       "HTTP Request",
-      "Mapper",
+      "DataCompose",
       "End"
     ],
     "file": "/samples/outbound-rest-client.json",

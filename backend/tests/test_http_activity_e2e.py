@@ -6,7 +6,7 @@ import httpx
 from fastapi.testclient import TestClient
 from app import http_transport as transport
 from app.http_server import ListenerApp,listener_config,serve,server_tls
-from app.http_contracts import media_schema
+from app.http_contracts import media_schema, negotiate_media
 from app.api_docs import generate_openapi
 from app.models import Project
 from app.runtime import WorkflowRuntime
@@ -22,6 +22,28 @@ def upstream(respond):
         with patch.object(transport,'client_for',return_value=client):yield
 
 class OutboundContractTests(unittest.TestCase):
+    def test_openapi_default_does_not_override_explicit_success_statuses(self):
+        cfg = {'baseUrl': 'http://test', 'openApiDocument': SPEC, 'operationId': 'echo', 'body': {'name': 'Mina'}}
+        with upstream(lambda request: httpx.Response(409, json={'conflict': True})):
+            with self.assertRaises(transport.HTTPFault) as rejected:
+                transport.request(cfg)
+            self.assertEqual(rejected.exception.status, 409)
+            accepted = transport.request({**cfg, 'RestInputRequest': {'Config': {'successStatusCodes': '200,409'}}})
+            self.assertEqual((accepted['statusCode'], accepted['body']), (409, {'conflict': True}))
+
+    def test_parameterized_contract_selects_the_response_schema_on_the_wire(self):
+        profiled = 'application/json; profile="Order, v2; public"'
+        content = {profiled: {'schema': SCHEMA}, 'application/json': {'schema': {'type': 'integer'}}}
+        spec = {'openapi': '3.1.0', 'paths': {'/echo': {'get': {'operationId': 'profiled',
+                 'responses': {'200': {'description': 'Sample response', 'content': content}}}}}}
+        cfg = {'baseUrl': 'http://test', 'openApiDocument': spec, 'operationId': 'profiled'}
+        self.assertEqual(negotiate_media([profiled, 'text/plain'], [profiled, 'text/plain;q=0.4']), profiled)
+        self.assertIsNone(negotiate_media([profiled], 'application/json; profile="order, v2; public"'))
+        with upstream(lambda request: httpx.Response(200, headers={'Content-Type': profiled}, json={'name': 'Mina'})):
+            self.assertEqual(transport.request(cfg)['body'], {'name': 'Mina'})
+        with upstream(lambda request: httpx.Response(200, json=42)):
+            self.assertEqual(transport.request(cfg)['body'], 42)
+
     def test_xml_and_form_serialization_are_inferred_from_content_type(self):
         for media,body,expected in [('application/xml','<hello/>',b'<hello/>'),('application/x-www-form-urlencoded',{'a':[1,2]},b'a=1&a=2')]:
             seen=[]
@@ -194,6 +216,36 @@ class InboundContractTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(bad.status_code,400,bad.text)
         finally:
             app.executor.shutdown(wait=True)
+
+    async def test_head_returns_the_metadata_of_the_rendered_xml_representation(self):
+        schema = '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">' \
+                 '<xs:element name="Message" type="xs:string"/></xs:schema>'
+        for operation in ('listen', 'receiver'):
+            for offered in ([], ['application/xml']):
+                with self.subTest(operation=operation, offered=offered):
+                    cfg = listener_config({}, {
+                        'operation': operation, 'path': '/message', 'methods': 'GET',
+                        'responseSchema': schema, 'validateResponse': True,
+                        'responseContentTypes': offered,
+                    })
+
+                    async def handler(metadata, payload):
+                        body = {'Wrong': 'café'} if payload['headers'].get('x-invalid') else {'Message': 'café'}
+                        return {'__httpResponse': True, 'body': body}
+
+                    app = ListenerApp([(None, cfg)], handler, cfg, warm_workers=False)
+                    try:
+                        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+                            get = await client.get('/message')
+                            head = await client.head('/message')
+                            self.assertEqual((get.status_code, get.content), (200, '<Message>café</Message>'.encode()))
+                            self.assertEqual((head.status_code, head.content), (200, b''))
+                            self.assertEqual(head.headers['content-type'], get.headers['content-type'])
+                            self.assertEqual(head.headers['content-length'], str(len(get.content)))
+                            invalid = await client.head('/message', headers={'X-Invalid': 'true'})
+                            self.assertEqual((invalid.status_code, invalid.content), (500, b''))
+                    finally:
+                        app.executor.shutdown(wait=True)
 
     async def test_configured_xml_media_types_take_precedence_for_listener_and_receiver(self):
         schema = '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="Message" type="xs:string"/></xs:schema>'
@@ -413,6 +465,30 @@ class StudioPreviewTests(unittest.TestCase):
             self.assertEqual(client.get(prefix+'/orders/42').status_code,200)
         main.runtime_states.pop(project.id,None)
 
+    def test_preview_uses_literal_route_before_the_method_even_across_bindings(self):
+        from app import main
+        from app.models import Project
+
+        def listener(identifier, route, method, port):
+            return {'id': identifier, 'name': identifier, 'kind': 'starter', 'activities': [
+                {'id': 'receive', 'name': 'Receive', 'type': 'http_listener',
+                 'config': {'path': route, 'methods': method, 'port': port}},
+                {'id': 'reply', 'name': 'Reply', 'type': 'http_response', 'config': {'body': identifier}},
+            ], 'transitions': [{'id': 'next', 'source': 'receive', 'target': 'reply'}]}
+
+        project = Project.model_validate({'id': 'precedence-preview', 'name': 'Precedence preview', 'tasks': [
+            listener('template', '/orders/{id}', 'POST', 18801),
+            listener('literal', '/orders/status', 'GET', 18802),
+        ]})
+        try:
+            with patch.object(main, 'get_project', return_value=project), patch.object(main, 'append_project_logs'), TestClient(main.app) as client:
+                prefix = f'/api/listeners/{project.id}'
+                self.assertEqual(client.get(prefix + '/orders/status').text, 'literal')
+                self.assertEqual(client.post(prefix + '/orders/status').status_code, 405)
+                self.assertEqual(client.post(prefix + '/orders/42').text, 'template')
+        finally:
+            main.runtime_states.pop(project.id, None)
+
     def test_https_shared_connection_cannot_be_bypassed_with_plain_http_preview(self):
         from tests.test_api_blueprint import plan_project
         from app import main
@@ -590,7 +666,8 @@ class ExportContractTests(unittest.TestCase):
                 with socket.socket() as probe:probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
                 plan=blueprint_plan(SPEC,['echo'],{'type':'http','config':{'host':'127.0.0.1','port':port,'minimumQtpThreads':1,'maximumQtpThreads':4}})
                 types = ['text/plain', 'application/json']
-                plan['tasks'][0]['activities'][0]['config'].update(requestContentTypes=types, responseContentTypes=types)
+                responses = ['text/plain; charset=iso-8859-1', 'application/json']
+                plan['tasks'][0]['activities'][0]['config'].update(requestContentTypes=types, responseContentTypes=responses)
                 plan['tasks'][0]['activities'][1]['config']={'statusCode':200,'inputMappings':{'body':'${input.body}'}}
                 project=Project.model_validate({'id':'export-contracts','name':'Export contracts','resources':[plan['resource']],'tasks':plan['tasks']})
                 for name,data in compiler(project.model_dump(),{'local':[]}).items():
@@ -610,15 +687,18 @@ async def check():
      break
     except (httpx.ConnectError,httpx.TimeoutException):await asyncio.sleep(.05)
    else:raise AssertionError('Listener did not start')
-   response=await client.post('http://127.0.0.1:{port}/echo',content='hello',headers={{'Content-Type':'text/plain'}})
-   assert response.status_code==200 and response.text=='hello',response.text
-   assert response.headers['content-type']=='text/plain'
+   response=await client.post('http://127.0.0.1:{port}/echo',content='café',headers={{'Content-Type':'text/plain','Accept':'text/plain;charset=iso-8859-1'}})
+   assert response.status_code==200 and response.content=='café'.encode('iso-8859-1'),response.text
+   assert response.headers['content-type']=='text/plain; charset=iso-8859-1'
+   rejected=await client.post('http://127.0.0.1:{port}/echo',content='hello',headers={{'Content-Type':'text/plain','Accept':'text/plain;charset=utf-8'}})
+   assert rejected.status_code==406 and rejected.headers['vary']=='Accept',rejected.text
    response=await client.post('http://127.0.0.1:{port}/echo',json={{'name':'hello'}},headers={{'Accept':'application/json'}})
    assert response.status_code==200 and response.json()=={{'name':'hello'}},response.text
    assert response.headers['content-type']=='application/json'
    spec=ready.json()
    assert set(spec['paths']['/echo']['post']['requestBody']['content'])=={{'text/plain','application/json'}}
-   assert set(spec['paths']['/echo']['post']['responses']['200']['content'])=={{'text/plain','application/json'}}
+   assert set(spec['paths']['/echo']['post']['responses']['200']['content'])=={{'text/plain; charset=iso-8859-1','application/json'}}
+   assert '406' in spec['paths']['/echo']['post']['responses']
  finally:
   job.cancel()
   try:await job

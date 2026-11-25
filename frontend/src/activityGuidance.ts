@@ -33,12 +33,12 @@ export const activityGuidance: Record<string, string[]> = {
     "Five fields: minute, hour, day-of-month, month, day-of-week. Supports *, values, ranges, lists, and */step.",
     "Executes immediately during local testing without waiting for the scheduled instant. Production packaging still honors the configured schedule."
   ],
-  "DataWeaveScriptEditor": [
+  "ScriptTransformScriptEditor": [
     "Executable MINA transform scripts",
     "Embedded engine: Nested & wildcard selectors; Objects & arrays; default / if-else; Custom functions; as type coercion; map / flatMap / filter; mapObject / pluck; groupBy / orderBy / distinctBy; read / write; JSON / XML / CSV / text.",
     "Common integration transformations execute locally in Run, Debug, and Test. Namespaces, type declarations, pattern matching, annotations, and external runtime modules are rejected explicitly."
   ],
-  "DataWeaveTestEditor": [
+  "ScriptTransformTestEditor": [
     "Execute representative payload data before running the Task."
   ],
   "TransformSchemaEditor": [

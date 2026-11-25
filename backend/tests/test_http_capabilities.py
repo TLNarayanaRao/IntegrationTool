@@ -48,6 +48,13 @@ class HTTPClientTests(unittest.TestCase):
         output=transport.request({'url':self.base+'/redirect','followRedirects':True});self.assertEqual(output['body']['path'],'/reply')
         with self.assertRaises(transport.HTTPFault):transport.request({'url':self.base+'/missing'})
         self.assertEqual(transport.request({'url':self.base+'/missing','successStatusCodes':'200-299,404'})['statusCode'],404)
+    def test_invalid_status_policy_fails_before_opening_a_connection(self):
+        with patch.object(transport, 'client_for') as client:
+            for policy in ('junk', '299-200', '600', '200,,404'):
+                with self.subTest(policy=policy), self.assertRaises(transport.HTTPFault) as caught:
+                    transport.request({'url': self.base + '/reply', 'method': 'POST', 'successStatusCodes': policy})
+                self.assertEqual(caught.exception.fault_type, 'HTTP_CONFIGURATION')
+            client.assert_not_called()
     def test_redirect_keeps_protected_requests_on_the_original_origin(self):
         with ThreadingHTTPServer(('127.0.0.1', 0), Handler) as other:
             worker = threading.Thread(target=other.serve_forever, daemon=True)

@@ -47,8 +47,8 @@ def project_for(family, connection):
     activities = [{'id': 'start', 'name': 'Start', 'type': 'start'},
                   {'id': 'map', 'name': 'Transform', 'type': 'mapper', 'config': {'mappings': rules}}]
     if family == 'transformer':
-        activities[1].update(type='dataweave', config={'payload': '${vars.currentElement}',
-            'script': '%dw 2.0\noutput application/json\n---\n{run: payload.run, seq: payload.seq, text: payload.text, '
+        activities[1].update(type='script_transform', config={'payload': '${vars.currentElement}',
+            'script': '%mina 2.0\noutput application/json\n---\n{run: payload.run, seq: payload.seq, text: payload.text, '
                       'name: upper(trim(payload.name)), country: payload.country, sku: payload.sku, qty: payload.qty, total: sum(payload.amounts)}'})
     members = ['map']
     if family not in TRANSFORM_ONLY:

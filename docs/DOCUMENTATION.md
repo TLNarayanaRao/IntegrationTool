@@ -16,7 +16,7 @@ New projects start with a Sub Task containing Start and End. Use a Starter Task 
 
 Subtasks and **Call Sub Task** use the same process-network-and-bent-arrow symbol in Project Explorer, task tabs, creation menus, the activity picker, and the canvas. Starter tasks use the process network with a play symbol.
 
-The canvas, activity palette, and activity picker share one activity icon catalog. Shared connections use the same protocol or vendor artwork in Project Explorer and connection creation menus. Imported legacy Mapper activities retain the Mapper symbol; an unrecognized activity uses a neutral process symbol instead of a Start or End icon.
+The canvas, activity palette, and activity picker share one activity icon catalog. Shared connections use the same protocol or vendor artwork in Project Explorer and connection creation menus. Imported legacy DataCompose activities retain the DataCompose symbol; an unrecognized activity uses a neutral process symbol instead of a Start or End icon.
 
 Tasks, shared connections, and schemas belong to packages. Right-click their category or an existing package and choose **New Package** to create a top-level or nested folder. Choose the package when creating an item. **Default** is available for each category. Right-click an existing item and choose **Move to Package** to organize it without changing its references. Studio replaces spaces with hyphens in object names.
 

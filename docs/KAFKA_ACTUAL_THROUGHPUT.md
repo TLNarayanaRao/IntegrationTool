@@ -14,7 +14,7 @@ Each of Run, Debug, direct Python archive and engine Python archive must finish
 100,000 records in at most 600 seconds. Four concurrent task workers each use a
 separate fresh single-partition topic, with approximately 1 KiB per record and
 1,000 records per task batch. Every record passes through a For-Each group and
-an eight-field Mapper, including trim, uppercase and sum transformations, then
+an eight-field DataCompose, including trim, uppercase and sum transformations, then
 through a Kafka publish activity with delivery confirmation. A receive task reads
 the records back. Full payloads and unique sequence numbers are checked, including
 cross-branch isolation and missing/duplicate detection. Normal Run/Debug logging

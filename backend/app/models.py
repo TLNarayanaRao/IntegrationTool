@@ -2,11 +2,12 @@ from __future__ import annotations
 from unicodedata import normalize
 from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, JsonValue, model_validator
+from .transform_compat import normalize_transform_activity
 
 ActivityKind = Literal[
     'start', 'http', 'http_listener', 'http_response', 'rest', 'soap',
     'file', 'ftp', 'sftp', 'jdbc', 'snowflake', 'amqp', 'excel', 'xml', 'json', 'flat',
-    'mapper', 'dataweave', 'transform', 'ai_transform', 'log', 'confirm', 'catch', 'throw', 'rethrow', 'timer', 'call_task', 'ems', 'jms', 'kafka', 'pubsub', 'sap', 'java', 'python', 'basic', 'end'
+    'mapper', 'script_transform', 'transform', 'ai_transform', 'log', 'confirm', 'catch', 'throw', 'rethrow', 'timer', 'call_task', 'ems', 'jms', 'kafka', 'pubsub', 'sap', 'java', 'python', 'basic', 'end'
 ]
 PackagePath = Annotated[str, Field(max_length=1024, pattern=r'^[\p{L}\p{N}_-]+(?:/[\p{L}\p{N}_-]+){0,15}$')]
 PackageCategory = Literal['tasks', 'resources', 'schemas']
@@ -25,6 +26,11 @@ class Activity(BaseModel):
     name: str
     position: dict[str, float] = Field(default_factory=lambda: {'x': 100, 'y': 100})
     config: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode='before')
+    @classmethod
+    def normalize_transform_identifiers(cls, activity):
+        return normalize_transform_activity(activity)
 
 class GroupDefinition(BaseModel):
     id: str

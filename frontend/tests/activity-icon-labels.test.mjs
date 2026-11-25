@@ -25,11 +25,11 @@ test('shared icon loader chooses bundled artwork and preserves legacy PNGs', asy
   const ast = ts.createSourceFile('icons.ts', source, ts.ScriptTarget.Latest, true);
   const declaration = ast.statements.find(statement => statement.name?.text === 'activityIconUrl');
   const context = vm.createContext({bundledIcons: {
-    './assets/activity-icons/dataweave-transform.svg': '/assets/transform-content-hash.svg',
+    './assets/activity-icons/script-transform.svg': '/assets/transform-content-hash.svg',
     './assets/activity-icons/mapper-symbol.svg': 'data:image/svg+xml,caption-free',
   }});
   vm.runInContext(ts.transpileModule(declaration.getText(ast).replace('export ', ''), {}).outputText, context);
-  assert.equal(context.activityIconUrl('dataweave-transform.svg'), '/assets/transform-content-hash.svg');
+  assert.equal(context.activityIconUrl('script-transform.svg'), '/assets/transform-content-hash.svg');
   assert.equal(context.activityIconUrl('mapper-symbol.svg'), 'data:image/svg+xml,caption-free');
   assert.equal(context.activityIconUrl('FileRead'), '/activity-icons/FileRead.png');
 });

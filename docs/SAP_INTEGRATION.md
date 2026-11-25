@@ -100,6 +100,23 @@ are an accepted business rule. When SDATA may contain CR/LF, configure a unique
 `idocRecordDelimiter`; that delimiter is authoritative and embedded line breaks
 remain data. With no delimiter, canonical 1063-byte records are split by width.
 
+Flat input must contain one document per call. The parser rejects a second
+control record, mixed `DOCNUM` values, or a control document number that differs
+from the data records. Send an XML batch through the listener or split it into
+individual documents before rendering or posting.
+
+When rendering XML for Post IDoc, MINA emits data rows for segments and maps
+simple field elements into their segment's SDATA using the selected metadata.
+Existing SDATA is retained when field metadata is unavailable. Nested segments
+carry their parent number and hierarchy level, and the renderer copies `MANDT`
+and `DOCNUM` from the control record when present. Multiple `IDOC` elements in a
+single rendering or posting call are rejected before submission.
+
+When parsing flat or structured segment records, MINA uses `PSGNUM` to restore
+the parent links. If `PSGNUM` is empty and `HLEVEL` is supplied, the preceding
+segment one level higher supplies the parent. Duplicate `SEGNUM` values, missing
+parents, skipped inferred levels, and cycles fail the parse with a diagnostic.
+
 If the separately licensed `sapidoc3.jar` is installed, Test Connection reports
 its presence and version. Selecting the SAP JIDocLib parser engine validates
 IDoc XML with SAP's repository-backed `IDocXMLProcessor`; flat EDI_DD40 input

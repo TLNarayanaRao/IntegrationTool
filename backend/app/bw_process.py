@@ -77,7 +77,7 @@ def _link_options(link, variables):
         raise ValueError('unsupported transition XPath')
     names = set(re.findall(r'\$([A-Za-z_][\w.-]*)', expression))
     if any(name in variables and variables[name] is None for name in names):
-        raise ValueError('conditional link refers to a connector output requiring a BW XML shape adapter')
+        raise ValueError('conditional link refers to a connector output requiring a legacy XML shape adapter')
     return {'type': kind, 'condition': expression,
             'bw_xpath': {'version': version, 'variables': {name: variables.get(name, 'input.' + name).removeprefix('${').removesuffix('}') for name in sorted(names)},
                          'namespaces': {key: value for key, value in source.nsmap.items() if key}}}
@@ -105,7 +105,7 @@ def mapper_config(binding, known_variables=None):
         if not re.fullmatch(r'[A-Za-z_][\w.-]*', name):
             raise ValueError(f'unsupported XSLT parameter {name!r}')
         if known_variables is not None and name in known_variables and known_variables[name] is None:
-            raise ValueError(f'connector output {name} requires a BW XML shape adapter')
+            raise ValueError(f'connector output {name} requires a legacy XML shape adapter')
         variables[name] = (known_variables or {}).get(name, '${input.' + name + '}')
     config = {'xmlStylesheet': etree.tostring(binding, encoding='unicode')}
     if variables:
@@ -131,11 +131,11 @@ def jdbc_resource(document, name, resource_id):
     jndi = named_resource_namespace(document)
     settings = document.find(jndi + 'configuration') if jndi else None
     if settings is None:
-        raise ValueError('expected a BW JDBC named resource')
+        raise ValueError('expected a legacy JDBC named resource')
     prefix, _, kind = settings.get(XSI_TYPE, '').partition(':')
     connection = settings.find('connectionConfig')
     if not legacy_namespace(settings.nsmap.get(prefix), '/amf/models/sharedresource/jdbc') or kind != 'JdbcDataSource' or connection is None:
-        raise ValueError('expected a BW JDBC data source')
+        raise ValueError('expected a legacy JDBC data source')
     prefix, _, kind = connection.get(XSI_TYPE, '').partition(':')
     if not legacy_namespace(connection.nsmap.get(prefix), '/amf/models/sharedresource/jdbc') or kind != 'NonXaConnection':
         raise ValueError('XA JDBC resources require review')
@@ -188,12 +188,12 @@ def jms_resource(document, name, resource_id):
         if node is None or len(document) != 1 or len(node) or set(node.attrib) - fields - {XSI_TYPE, XMI + 'id'}:
             raise ValueError('unsupported JMS resource configuration or external policy')
         if node.get(XSI_TYPE, '').split(':')[-1] not in {'JMSConnection', 'JMSConnectionConfiguration', 'JmsConnectionConfiguration'}:
-            raise ValueError('expected a BW JMS connection')
+            raise ValueError('expected a legacy JMS connection')
         config = {key: node.get(key) for key in fields if key in node.attrib}
     elif etree.QName(document).localname in {'JMSConnection', 'JmsConnection'}:
         config = _settings(document, fields)
     else:
-        raise ValueError('expected a BW JMS connection')
+        raise ValueError('expected a legacy JMS connection')
     mode = config.get('connectionFactoryType', 'JNDI' if config.get('jndiProviderUrl') else 'Direct')
     if mode.lower() not in {'direct', 'jndi'}:
         raise ValueError('unsupported JMS connection factory type')
@@ -271,10 +271,10 @@ def http_server_resource(document, name, resource_id):
     jndi = named_resource_namespace(document)
     configuration = document.find(jndi + 'configuration') if jndi else None
     if configuration is None or len(document) != 1:
-        raise ValueError('expected a BW HTTP server named resource')
+        raise ValueError('expected a legacy HTTP server named resource')
     prefix, _, kind = configuration.get(XSI_TYPE, '').partition(':')
     if not legacy_namespace(configuration.nsmap.get(prefix), '/bw/models/sharedresource/httpconnector') or kind != 'HttpConnectorConfiguration':
-        raise ValueError('expected a BW HTTP server connector')
+        raise ValueError('expected a legacy HTTP server connector')
     mapping = {'host': 'host', 'port': 'port', 'minThreads': 'minimumQtpThreads', 'maxThreads': 'maximumQtpThreads',
                'idleTimeout': 'idleConnectionTimeoutMs', 'maxHeaderSize': 'maxHeaderBytes'}
     if set(configuration.attrib) - set(mapping) - {XSI_TYPE, XMI + 'id'}:
@@ -482,10 +482,10 @@ class ProcessConverter:
             kind, output = 'jms', 'body'
         elif legacy_name(event.tag, 'BWActivity', '/bw/model/core/bwext') and event.get('activityTypeID', '').lower() == 'bw.generalactivities.timer':
             value = event.find("activityConfig/properties[@name='config']/value")
-            if value is None: raise ValueError(f'{label}: missing BW timer configuration')
+            if value is None: raise ValueError(f'{label}: missing legacy timer configuration')
             cron, date = value.get('cronExpression'), value.get('startTime')
             if not cron and (value.get('runOnce', '').lower() != 'true' or not date):
-                raise ValueError(f'{label}: repeating BW timers require review')
+                raise ValueError(f'{label}: repeating legacy timers require review')
             config = {'operation': 'schedule', 'runOnceOnLocalStart': False,
                       'scheduleMode': 'cron' if cron else 'dateTime'}
             config['cronExpression' if cron else 'scheduledDateTime'] = cron or date
@@ -570,7 +570,7 @@ class ProcessConverter:
                 name = expanded_name(value, value.get('inputQName'))
                 schema = self.resolve_schema(name)
                 if schema:
-                    # BW Mapper has no Parse/Render validation switch. Attach
+                    # legacy Mapper has no Parse/Render validation switch. Attach
                     # its design contract without adding runtime validation.
                     self.activities[-1]['config'].update(targetSchemaId=schema, validateOutput=False)
             self.variables[output_variable] = '${activities.' + activity + '.output.xmlString}'
@@ -581,7 +581,7 @@ class ProcessConverter:
         elif kind in XML_JSON_FORMATS:
             family, operation = XML_JSON_FORMATS[kind]
             parsing = operation == 'parse'
-            if value is None: raise ValueError(f'{label}: missing BW format configuration')
+            if value is None: raise ValueError(f'{label}: missing legacy format configuration')
             config = {'operation': operation}
             flag = 'validateOutput' if parsing else 'validateInput'
             if family == 'xml':
@@ -698,7 +698,7 @@ class ProcessConverter:
             if binding is not None:
                 root, fields = _binding_fields(binding)
                 if parsing and not fields:
-                    self.diagnostics.append(f'{label}: the BW input binding is empty; map the text or file in MINA Input.')
+                    self.diagnostics.append(f'{label}: the legacy input binding is empty; map the text or file in MINA Input.')
                 else:
                     mapped = map_binding()
                     previous = self.connect(previous, mapped)
@@ -792,10 +792,10 @@ class ProcessConverter:
                 raise ValueError(f'{label}: dynamic JMS receive bindings require review')
             activity = self.node('jms', label, config)
         else:
-            raise ValueError(f'{label}: unsupported BW activity {kind or "(unspecified)"}')
+            raise ValueError(f'{label}: unsupported legacy activity {kind or "(unspecified)"}')
         if kind not in {'bw.generalactivities.mapper', 'bw.generalactivities.map', 'bw.generalactivities.callprocess',
                         'bw.parse.parsedata', 'bw.parse.renderdata', 'bw.dataconversion.parsedata', 'bw.dataconversion.renderdata',
                         'bw.internal.end', *XML_JSON_FORMATS}:
-            # Connector result shapes differ from the BW variable XML; demand an explicit adapter.
+            # Connector result shapes differ from the legacy variable XML; demand an explicit adapter.
             self.variables[output_variable] = None
         return self.connect(previous, activity)

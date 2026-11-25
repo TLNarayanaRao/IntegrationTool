@@ -15,6 +15,9 @@ const mediaTypes = [
 ];
 const customOption = "@custom";
 const mappedOption = "@mapped";
+const mediaBase = (value: string) => value.split(";", 1)[0].trim().toLowerCase();
+const concreteMedia = /^[a-z0-9!#$%&'+.^_`|~-]+\/[a-z0-9!#$%&'+.^_`|~-]+$/i;
+const parameterizedMedia = /^[a-z0-9!#$%&'+.^_`|~-]+\/[a-z0-9!#$%&'+.^_`|~-]+(?:\s*;\s*[a-z0-9!#$%&'+.^_`|~-]+\s*=\s*(?:[a-z0-9!#$%&'+.^_`|~-]+|"(?:[\x20-\x21\x23-\x5b\x5d-\x7e]|\\[\x20-\x7e])*"))*$/i;
 
 export function savedContentTypes(value: unknown, legacy?: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && !!item.trim())
@@ -27,17 +30,23 @@ export function HttpContentTypeCheckboxes({ label, value, onChange, response = f
   const [custom, setCustom] = useState("");
   const [error, setError] = useState("");
   const add = () => {
-    const type = custom.trim().toLowerCase();
-    if (!/^[a-z0-9!#$%&'+.^_`|~-]+\/[a-z0-9!#$%&'+.^_`|~-]+$/.test(type)) {
+    const type = custom.trim();
+    if (!(response ? parameterizedMedia : concreteMedia).test(type) || /[\r\n]/.test(type)) {
       setError("Enter a media type such as application/vnd.example+json."); return;
     }
-    if (!value.some(item => item.toLowerCase() === type)) onChange([...value, type]);
+    const base = mediaBase(type);
+    const delimiter = type.indexOf(";");
+    const normalized = delimiter < 0 ? base : base + type.slice(delimiter);
+    const existing = value.findIndex(item => mediaBase(item) === base);
+    if (existing < 0) onChange([...value, normalized]);
+    else if (response && delimiter >= 0) onChange(value.map((item, index) => index === existing ? normalized : item));
     setCustom(""); setError("");
   };
   return <fieldset className="endpoint-media-checkboxes">
     <legend>{label}</legend>
     <div className="endpoint-media-options">
-      {[...mediaTypes, ...value.filter(type => !mediaTypes.includes(type))].map(type => <label key={type}>
+      {[...mediaTypes.filter(type => !value.some(item => item !== type && mediaBase(item) === type)),
+        ...value.filter(type => !mediaTypes.includes(type))].map(type => <label key={type}>
         <input type="checkbox" checked={value.includes(type)} onChange={event => onChange(
           event.target.checked ? [...value, type] : value.filter(item => item !== type))}/>
         <span>{type}</span>
@@ -46,7 +55,7 @@ export function HttpContentTypeCheckboxes({ label, value, onChange, response = f
     <label>Custom type
       <input value={custom} onChange={event => { setCustom(event.target.value); setError(""); }}
         onKeyDown={event => { if (event.key === "Enter" && custom.trim()) { event.preventDefault(); add(); } }}
-        placeholder="application/vnd.example+json" spellCheck={false}/>
+        placeholder={response ? "text/plain; charset=utf-8" : "application/vnd.example+json"} spellCheck={false}/>
     </label>
     <button type="button" onClick={add} disabled={!custom.trim()}>Add custom type</button>
     {error && <p role="alert" className="endpoint-setup-error">{error}</p>}

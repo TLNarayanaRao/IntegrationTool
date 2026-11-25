@@ -6,8 +6,9 @@ import ipaddress
 import time as clock
 import asyncio
 import threading
-from decimal import Decimal, ROUND_HALF_EVEN
+from decimal import Decimal, ROUND_HALF_EVEN, localcontext
 from difflib import SequenceMatcher
+from fractions import Fraction
 from typing import Any
 from xml.etree import ElementTree
 
@@ -67,6 +68,32 @@ def _tokens(value: str) -> set[str]:
             if word == key or word in values: expanded |= {key, *values}
     return expanded
 
+def local_schema_target(root, reference):
+    """Resolve a URI-fragment JSON Pointer within an already loaded schema."""
+    if not isinstance(reference, str) or not reference.startswith('#'):
+        raise ValueError('only local JSON schema references are supported')
+    fragment = reference[1:]
+    if re.search(r'%(?![0-9A-Fa-f]{2})', fragment):
+        raise ValueError('invalid percent escape in schema reference')
+    pointer = urllib.parse.unquote(fragment, errors='strict')
+    if not pointer:
+        return root
+    if not pointer.startswith('/'):
+        raise ValueError('local schema reference must be a JSON Pointer')
+    value = root
+    for token in pointer[1:].split('/'):
+        if re.search(r'~(?![01])', token):
+            raise ValueError('invalid JSON Pointer escape in schema reference')
+        token = token.replace('~1', '/').replace('~0', '~')
+        if isinstance(value, list):
+            if not re.fullmatch(r'0|[1-9][0-9]*', token):
+                raise ValueError('invalid array index in schema reference')
+            value = value[int(token)]
+        else:
+            value = value[token]
+    return value
+
+
 def flatten_schema(schema: Any, path: str = '', repeating: bool = False, repeat_path: str = '', _root=None, _active=()) -> list[dict[str, Any]]:
     """Accept JSON Schema, a sample JSON value, or a compact field-list schema."""
     fields: list[dict[str, Any]] = []
@@ -121,12 +148,10 @@ def flatten_schema(schema: Any, path: str = '', repeating: bool = False, repeat_
     def resolve(node, active):
         while isinstance(node, dict) and '$ref' in node:
             reference = node['$ref']
-            if not isinstance(reference, str) or (reference != '#' and not reference.startswith('#/')) or reference in active: return {}, active
-            resolved = _root
+            if reference in active: return {}, active
             try:
-                for part in reference[2:].split('/') if reference.startswith('#/') else []:
-                    resolved = resolved[part.replace('~1', '/').replace('~0', '~')]
-            except (KeyError, TypeError): return {}, active
+                resolved = local_schema_target(_root, reference)
+            except (KeyError, IndexError, TypeError, ValueError): return {}, active
             if not isinstance(resolved, dict): return {}, active
             node = {**resolved, **{key: value for key, value in node.items() if key != '$ref'}}
             active = (*active, reference)
@@ -159,7 +184,7 @@ def recommend(source_schema: Any, target_schema: Any, threshold: float = 0.7, we
     weights = weights or {'linguistic': .5, 'type': .2, 'ancestor': .2, 'cardinality': .1}
     def fields(schema, scope, level):
         if not isinstance(scope, str) or type(level) is not int or not 1 <= level <= 10:
-            raise ValueError('Mapper matching levels must be whole numbers from 1 to 10')
+            raise ValueError('DataCompose matching levels must be whole numbers from 1 to 10')
         rows = flatten_schema(schema)
         if not scope:
             return rows
@@ -502,6 +527,45 @@ def validate_xsd_output(document: Any, schema: str, _budget=None) -> list[str]:
     local = lambda node: node.tag.rsplit('}', 1)[-1]
     types = {node.attrib.get('name'): node for node in root if local(node) in ('complexType', 'simpleType')}
     elements = {node.attrib.get('name'): node for node in root if local(node) == 'element'}
+    groups = {node.get('name'): node for node in root if local(node) == 'group'}
+    particles = ('element', 'choice', 'sequence', 'all', 'group')
+
+    def children(node, seen=()):
+        ref = node.get('ref', '').split(':')[-1] if local(node) == 'group' else ''
+        if not ref:
+            return [child for child in node if local(child) in particles]
+        if ref in seen or ref not in groups:
+            return []
+        return children(groups[ref], (*seen, ref))
+
+    def populated(value, name):
+        return value.get(name) is not None and value[name] != []
+
+    def names(node, depth=0):
+        if _budget: _budget()
+        if depth >= 64: raise ValueError('XSD model group nesting exceeds 64 levels')
+        if local(node) == 'element':
+            return {node.get('name') or node.get('ref', '').split(':')[-1]}
+        return set().union(*(names(child, depth + 1) for child in children(node)))
+
+    def can_be_empty(node):
+        if node.get('minOccurs') == '0':
+            return True
+        if local(node) == 'element':
+            return False
+        checks = map(can_be_empty, children(node))
+        return any(checks) if local(node) == 'choice' else all(checks)
+
+    def unit_alternatives(node):
+        if node.get('minOccurs', '1') != '1' or node.get('maxOccurs', '1') != '1':
+            return []
+        if local(node) == 'element':
+            return [node]
+        if local(node) == 'choice':
+            branches = [unit_alternatives(child) for child in children(node)]
+            if branches and all(branches):
+                return [element for branch in branches for element in branch]
+        return []
 
     def scalar(value, name):
         name = name.split(':')[-1].lower()
@@ -515,25 +579,77 @@ def validate_xsd_output(document: Any, schema: str, _budget=None) -> list[str]:
         for child in container:
             tag = local(child)
             if tag in ('element', 'attribute'): field(child, value, path, active)
-            elif tag == 'choice':
-                choices = [node for node in child if local(node) == 'element']
-                present = [node for node in choices if (node.attrib.get('name') or node.attrib.get('ref', '').split(':')[-1]) in value]
-                if not present and child.attrib.get('minOccurs', '1') != '0': errors.append(f'{path}: a choice element is required')
-                for node in present: field(node, value, path, active)
+            elif tag in particles: particle(child, value, path, active)
             elif tag == 'extension':
                 base = child.attrib.get('base', '').split(':')[-1]
                 if base in types and base not in active: contents(types[base], value, path, (*active, base))
                 contents(child, value, path, active)
-            elif tag in ('sequence', 'all', 'complexContent', 'simpleContent'): contents(child, value, path, active)
+            elif tag in ('complexContent', 'simpleContent'): contents(child, value, path, active)
 
-    def field(node, parent, prefix, active=()):
+    def particle(node, value, path, active, depth=0):
+        if _budget: _budget()
+        if depth >= 64: raise ValueError('XSD model group nesting exceeds 64 levels')
+        if local(node) == 'element':
+            field(node, value, path, active)
+            return
+        if local(node) != 'choice':
+            if node.get('minOccurs') != '0' or any(populated(value, name) for name in names(node)):
+                for child in children(node):
+                    particle(child, value, path, active, depth + 1)
+            return
+
+        branches = children(node)
+        branch_names = [names(branch) for branch in branches]
+        present = {name for name in set().union(*branch_names) if populated(value, name)}
+        minimum = int(node.get('minOccurs', '1'))
+        maximum = node.get('maxOccurs', '1')
+        bounds_error = f'{path}: choice occurrence count is outside {minimum}..{maximum}'
+        flat = [unit_alternatives(branch) for branch in branches]
+        if flat and all(flat):
+            alternatives = {next(iter(names(leaf))): leaf for branch in flat for leaf in branch}
+            occurrences = sum(len(value[name]) if isinstance(value[name], list) else 1 for name in present)
+            if occurrences < minimum or maximum != 'unbounded' and occurrences > int(maximum):
+                errors.append(bounds_error)
+            for name, leaf in alternatives.items():
+                if name in present:
+                    field(leaf, value, path, active, choice_maximum='unbounded')
+            return
+        if not present:
+            if minimum and not any(can_be_empty(branch) for branch in branches):
+                errors.append(bounds_error)
+            return
+        if maximum == '0':
+            errors.append(bounds_error)
+            return
+
+        # Validate a selected composite branch independently. Overlapping
+        # field names can occur in alternatives, so try each possible branch.
+        failures = []
+        for branch, keys in zip(branches, branch_names):
+            if not present <= keys:
+                continue
+            start = len(errors)
+            particle(branch, value, path, active, depth + 1)
+            if len(errors) == start:
+                if minimum > 1 and not any(can_be_empty(option) for option in branches):
+                    errors.append(bounds_error)
+                return
+            failures.append(errors[start:])
+            del errors[start:]
+        if failures:
+            errors.extend(min(failures, key=len))
+        else:
+            errors.append(bounds_error if all(local(branch) == 'element' for branch in branches)
+                          else f'{path}: mapped fields do not match a single XSD choice alternative')
+
+    def field(node, parent, prefix, active=(), *, choice_maximum=None):
         if _budget: _budget()
         name = node.attrib.get('name') or node.attrib.get('ref', '').split(':')[-1]
         if not name: return
         if local(node) == 'attribute': name = '@' + name
         path = f'{prefix}.{name}'.strip('.')
         minimum = 1 if node.attrib.get('use') == 'required' else 0 if local(node) == 'attribute' else int(node.attrib.get('minOccurs', '1'))
-        maximum = node.attrib.get('maxOccurs', '1')
+        maximum = choice_maximum or node.attrib.get('maxOccurs', '1')
         value = parent.get(name) if isinstance(parent, dict) else None
         if value is None:
             if minimum: errors.append(f'{path}: required field is not mapped')
@@ -565,15 +681,21 @@ def validate_xsd_output(document: Any, schema: str, _budget=None) -> list[str]:
                             if (facet == 'length' and length != bound or facet == 'minLength' and length < bound or facet == 'maxLength' and length > bound): errors.append(f'{item_path}: violates {facet}')
                     for pattern in facets.get('pattern', []):
                         if not pattern_matches(pattern, lexical, full=True): errors.append(f'{item_path}: does not match XSD pattern')
-                    if not isinstance(item, bool) and isinstance(item, (int, float)):
+                    numeric_facets = {'minInclusive', 'maxInclusive', 'minExclusive', 'maxExclusive', 'fractionDigits', 'totalDigits'}
+                    if not isinstance(item, bool) and isinstance(item, (int, float)) and numeric_facets.intersection(facets):
                         numeric = Decimal(str(item))
+                        if not numeric.is_finite():
+                            errors.append(f'{item_path}: numeric restrictions require a finite value')
+                            continue
                         for facet in ('minInclusive', 'maxInclusive', 'minExclusive', 'maxExclusive'):
                             if facet in facets:
                                 bound = Decimal(facets[facet][0])
                                 if {'minInclusive': numeric < bound, 'maxInclusive': numeric > bound, 'minExclusive': numeric <= bound, 'maxExclusive': numeric >= bound}[facet]: errors.append(f'{item_path}: violates {facet}')
-                        digits = numeric.normalize().as_tuple()
-                        if 'fractionDigits' in facets and max(0, -digits.exponent) > int(facets['fractionDigits'][0]): errors.append(f'{item_path}: violates fractionDigits')
-                        if 'totalDigits' in facets and len(digits.digits) + max(0, digits.exponent) > int(facets['totalDigits'][0]): errors.append(f'{item_path}: violates totalDigits')
+                        if 'fractionDigits' in facets or 'totalDigits' in facets:
+                            with localcontext(prec=len(numeric.as_tuple().digits)):
+                                digits = numeric.normalize().as_tuple()
+                            if 'fractionDigits' in facets and max(0, -digits.exponent) > int(facets['fractionDigits'][0]): errors.append(f'{item_path}: violates fractionDigits')
+                            if 'totalDigits' in facets and len(digits.digits) + max(0, digits.exponent) > int(facets['totalDigits'][0]): errors.append(f'{item_path}: violates totalDigits')
 
     selected=root.get('{urn:mina:schema-selection}element')
     top = next((node for node in root if local(node) == 'element' and (not selected or node.get('name')==selected.rsplit('}',1)[-1])), None)
@@ -595,7 +717,11 @@ def validate_output(document: Any, schema: Any, _budget=None) -> list[str]:
         except (ValueError, TypeError): return validate_xsd_output(document, schema, budget)
     if schema is None or schema == '': return []
     if isinstance(schema, dict) and schema and not any(key in schema for key in
-            ('type', 'properties', '$ref', '$defs', 'definitions', 'enum', 'const', 'allOf', 'anyOf', 'oneOf', 'not', 'items', 'required', 'pattern', 'format', 'patternProperties', 'if', 'dependentRequired', 'contains')):
+            ('type', 'properties', '$ref', '$defs', 'definitions', 'enum', 'const', 'allOf', 'anyOf', 'oneOf', 'not',
+             'items', 'prefixItems', 'required', 'pattern', 'format', 'patternProperties', 'if', 'dependentRequired',
+             'dependentSchemas', 'dependencies', 'contains', 'additionalProperties', 'propertyNames', 'minProperties',
+             'maxProperties', 'minItems', 'maxItems', 'uniqueItems', 'minLength', 'maxLength', 'minimum', 'maximum',
+             'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf')):
         return [f'{field["path"]}: required field is not mapped' for field in flatten_schema(schema)
                 if field.get('required') and get_path(document, field['path']) is None]
     def fingerprint(value):
@@ -623,13 +749,10 @@ def validate_output(document: Any, schema: Any, _budget=None) -> list[str]:
         if not isinstance(definition, dict): return [f'{label}: invalid schema definition']
         if '$ref' in definition:
             reference = definition['$ref']
-            if not isinstance(reference, str) or not (reference == '#' or reference.startswith('#/')):
+            if not isinstance(reference, str) or not reference.startswith('#'):
                 return [f'{label}: only local JSON schema references are supported']
-            resolved = schema
             try:
-                for part in reference[2:].split('/') if reference != '#' else []:
-                    part = part.replace('~1', '/').replace('~0', '~')
-                    resolved = resolved[int(part)] if isinstance(resolved, list) else resolved[part]
+                resolved = local_schema_target(schema, reference)
             except (KeyError, IndexError, TypeError, ValueError): return [f'{label}: unresolved schema reference {reference}']
             errors.extend(walk(value, resolved, path, depth + 1))
         expected = definition.get('type')
@@ -657,6 +780,16 @@ def validate_output(document: Any, schema: Any, _budget=None) -> list[str]:
                 if trigger in value:
                     for dependency in dependencies:
                         if dependency not in value: errors.append(f'{label}: {trigger} requires {dependency}')
+            for trigger, dependency in definition.get('dependentSchemas', {}).items():
+                if trigger in value:
+                    errors.extend(walk(value, dependency, path, depth + 1))
+            for trigger, dependency in definition.get('dependencies', {}).items():
+                if trigger in value:
+                    if isinstance(dependency, list):
+                        for field in dependency:
+                            if field not in value: errors.append(f'{label}: {trigger} requires {field}')
+                    else:
+                        errors.extend(walk(value, dependency, path, depth + 1))
             for key, item in value.items():
                 matched = []
                 for pattern, child in patterns.items():
@@ -689,13 +822,31 @@ def validate_output(document: Any, schema: Any, _budget=None) -> list[str]:
         elif not isinstance(value, bool) and isinstance(value, (int, float)):
             if isinstance(value, float) and not math.isfinite(value): errors.append(f'{label}: number must be finite')
             else:
-                for keyword, failed in (('minimum', value < definition.get('minimum', value)), ('maximum', value > definition.get('maximum', value)),
-                                        ('exclusiveMinimum', value <= definition.get('exclusiveMinimum', value - 1)), ('exclusiveMaximum', value >= definition.get('exclusiveMaximum', value + 1))):
-                    if keyword in definition and failed: errors.append(f'{label}: violates {keyword}')
+                for inclusive, exclusive, lower in (('minimum', 'exclusiveMinimum', True), ('maximum', 'exclusiveMaximum', False)):
+                    if inclusive in definition:
+                        bound = definition[inclusive]
+                        if not matches(bound, 'number'):
+                            errors.append(f'{label}: {inclusive} must be a number')
+                        elif (value < bound if lower else value > bound):
+                            errors.append(f'{label}: violates {inclusive}')
+                    if exclusive not in definition:
+                        continue
+                    bound = definition.get(exclusive)
+                    if isinstance(bound, bool):
+                        if inclusive not in definition:
+                            errors.append(f'{label}: {exclusive} requires {inclusive} when used as a boolean')
+                        elif bound and value == definition[inclusive]:
+                            errors.append(f'{label}: violates {exclusive}')
+                    elif not matches(bound, 'number'):
+                        errors.append(f'{label}: {exclusive} must be a number or a legacy boolean')
+                    elif (value <= bound if lower else value >= bound):
+                        errors.append(f'{label}: violates {exclusive}')
                 if 'multipleOf' in definition:
-                    divisor = Decimal(str(definition['multipleOf']))
-                    if divisor <= 0: errors.append(f'{label}: multipleOf must be positive')
-                    elif Decimal(str(value)) % divisor != 0: errors.append(f'{label}: violates multipleOf')
+                    divisor = definition['multipleOf']
+                    if not matches(divisor, 'number') or divisor <= 0:
+                        errors.append(f'{label}: multipleOf must be a positive number')
+                    elif (Fraction(Decimal(str(value))) / Fraction(Decimal(str(divisor)))).denominator != 1:
+                        errors.append(f'{label}: violates multipleOf')
         return errors
     return walk(document, schema)
 
@@ -990,7 +1141,7 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
         from .mapper_coercions import source_view
         name, *child = re.split(r'(?=[.\[])', path.removeprefix('coerced.'), maxsplit=1)
         if name not in source_coercions:
-            raise ValueError(f'Mapper source coercion {name!r} was not found')
+            raise ValueError(f'DataCompose source coercion {name!r} was not found')
         if name not in coerced_values:
             rule = source_coercions[name]
             source_path = rule['path']
@@ -1029,7 +1180,7 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
             source = options.get('xmlSource')
             if isinstance(source, str) and not source.lstrip().startswith('<'):
                 source = xml_path(_clean_path(source))
-                if source is None: raise ValueError('The configured Mapper XML source is missing')
+                if source is None: raise ValueError('The configured DataCompose XML source is missing')
             if source is None:
                 from .mapper_xml import xpath_context_source
                 source = xpath_context_source(document.get('last', document) if isinstance(document, dict) else document)

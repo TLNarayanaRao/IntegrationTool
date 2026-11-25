@@ -194,6 +194,10 @@ Set **Circuit breaker failures** above zero to open a runtime-local circuit afte
 
 Listeners preserve binary request bytes and expose base64 `binaryContent`, complete repeated `headerPairs`, and scalar-or-list query/header values. `?tag=a&tag=b` preserves both tags. Ambiguous duplicate Authorization/Host/Content-Type/Content-Length/Origin headers are rejected. Existing routes return 405 with `Allow` for unsupported methods; GET routes support HEAD and listeners answer OPTIONS automatically.
 
+MINA selects the most specific matching path before it selects an HTTP method. For example, `GET /orders/status` takes precedence over `/orders/{id}`. If the literal path lacks POST, requesting `POST /orders/status` returns 405 instead of executing the parameterized POST workflow. Among overlapping templates, a literal segment takes priority over a placeholder at the same position. [OpenAPI path matching](https://spec.openapis.org/oas/v3.1.1.html#path-templating-matching)
+
+In HTTP Request and REST Invoke, set **Success status codes** to individual codes or ascending ranges such as `200-299,404`. A mapped list overrides the success codes inferred from the OpenAPI contract. Invalid values fail with `HTTP_CONFIGURATION` before MINA contacts the provider.
+
 File request bodies (`Config.FilePath`) stream from disk. Set `Config.streamRequest = true` to stream MIME attachments; streaming MIME supports base64/binary/7bit/8bit transfer encoding and bounded nested envelopes. Streamed uploads require authentication that does not internally buffer the body: preemptive Basic, Bearer, OAuth2, JWT, HMAC or certificates. Challenge-authentication modes that require buffering reject streaming requests explicitly.
 
 `Config.sendBodyMode = "NEVER"` suppresses both the request body and its MIME attachments. `"AUTO"` also suppresses them for GET, HEAD and OPTIONS. When sending a body, a missing upload file or unsupported text encoding raises `HTTP_CONFIGURATION`.
@@ -205,6 +209,18 @@ For large inbound bodies, select **Inbound body storage = file** and an existing
 HTTP Response can map either `body`, base64 `binaryContent`, or `fileName` for streamed output. Repeating response-header values such as `Set-Cookie` remain separate headers. Size bounds still apply in all storage modes.
 
 Enable **File byte-range downloads** on the HTTP server connection for a GET endpoint that returns a file. Map `fileName` in HTTP Send Response. Callers can request one closed, open-ended or suffix byte range and receive `206` with `Content-Range`. A valid range outside the file returns `416`. HEAD ignores Range and reports the full file length. A matching strong ETag enables `If-Range` resume. Weak, date-based or mismatched validators, multiple ranges, and unsupported range units fall back to a full response. When conditional responses are enabled, a `304` takes precedence. The payload limit applies to the bytes sent, and the workflow still runs for each request. For a contract-backed file endpoint, declare the file content and the range outcomes in the contract and use file mode only where body schema validation is unnecessary. [HTTP Semantics, RFC 9110 §14](https://www.rfc-editor.org/rfc/rfc9110.html#name-range-requests)
+
+For a HEAD request served by a GET route, MINA prepares and validates the
+same mapped response representation before sending its headers. For XML
+rendered from a mapped object, the content type and byte length describe
+the serialized XML. The HEAD response body is empty.
+[HTTP Semantics, RFC 9110 §9.3.2](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.3.2)
+
+When HTTP Send Response maps an object to an XSD-backed XML reply, MINA
+serializes elements in schema order and applies the schema's element and
+attribute namespaces. Map XML attributes with names such as `@id`.
+Binary replies with no configured or mapped content type use
+`application/octet-stream`.
 
 ## Swagger documentation and Postman
 
@@ -254,6 +270,8 @@ Outbound query parameters with OpenAPI `allowReserved: true` preserve URI-safe r
 
 Select protocol **3** for native HTTP/3. Hosting binds UDP and TCP on the configured port and needs an HTTPS PEM certificate plus unencrypted PEM private key. TCP also serves HTTP/2 and HTTP/1.1. Native outbound HTTP/3 requires direct, verified HTTPS and supports buffered requests and replies. Proxies, file streaming, mutual TLS, custom CRLs and custom cipher suites are outside the HTTP/3 implementation.
 
+The listener reports readiness after setting up its QUIC endpoint and advertises HTTP/3 to TCP clients via `Alt-Svc`. On Stop, MINA explicitly closes the UDP transport and waits for its close callback so the same port can be reused immediately.
+
 Use **Read Server-Sent Events** to read a bounded batch with an optional Last-Event-ID. Use **WebSocket Exchange** with a `ws://` or `wss://` URL to send an optional message and collect bounded replies. Binary replies are base64. These activities close their connection when finished. They do not publish SSE streams, host WebSocket endpoints, or reconnect automatically.
 
 API Blueprint imports OpenAPI webhooks as selectable listeners under `/_webhooks/<name>`. Configure authentication on the server connection before hosting them. Callbacks on selected operations generate reusable Sub Tasks. Call one explicitly with `callbackUrl` and `body` and set the `connections.http.callbackAllowedOrigins` property to the approved HTTPS origins. Use the contract expression shown in the task description to map the URL. MINA validates the callback contract, verifies TLS, and disables redirects. The generated task performs one workflow-managed delivery rather than creating an automatic subscription or durable delivery queue.
@@ -264,11 +282,15 @@ The activity-level suite `tests.test_http_activity_e2e` exercises HTTP Listener 
 
 REST contracts retain all declared request/response content types and validate against the actual Content-Type, using exact media types before type wildcards and `*/*`. Swagger exposes all declared formats. Set HTTP Response's content type explicitly when returning a representation other than the configured default; the workflow chooses the response representation. Explicit request-schema overrides remain effective. Optional absent request bodies are accepted; required bodies cannot be bypassed with Send Body Mode = NEVER/AUTO.
 
+When the endpoint has configured response content types, including a single type, MINA negotiates against `Accept` and sends `Vary: Accept`. Media parameters such as `charset` and `profile` participate in matching. A more specific matching range controls eligibility before a wildcard. If no configured representation is acceptable, MINA returns `406`. To serve a text encoding from Studio, add a custom response content type such as `text/plain; charset=iso-8859-1`. String bodies for ordinary `text/*` responses use the declared charset. [HTTP content negotiation](https://www.rfc-editor.org/rfc/rfc9110.html#section-12.5.1)
+
 In HTTP Listener and REST Receiver setup or Configuration, check one or more **Request content types** and **Response content types**. You can add custom types alongside the common ones. No selection keeps automatic behavior. With multiple response types, MINA uses the caller's `Accept` header and its quality values; the first checked format is the default. An explicitly mapped HTTP Send Response content type must be one of the offered types and acceptable to the client. For XML output, map an XML document or an object with one root element. With mixed media types, a standalone XSD applies to XML and a standalone JSON Schema applies to JSON; use an OpenAPI contract for separate schemas by media type. Swagger lists each selected format, and the Postman export includes a request for each selected request format.
 
 URL-encoded form fields use declared primitive schema types before validation, including repeated primitive arrays. Direct archives also accept the default HTTP Response operation, matching runtime behavior.
 
 When body format is omitted, outbound text/XML content is sent as text and URL-encoded form content is encoded as form data. Explicit body format settings retain precedence. Text responses such as `42` remain strings. Malformed nonempty JSON and NaN/Infinity are rejected; binary response mode retains raw content. HEAD, 204, 205 and 304 responses skip body schema validation because they have no response content. TRACE is supported as an optional API operation; CONNECT proxy tunneling is not offered as an API method.
+
+An upstream response with invalid compressed data raises `HTTP_BAD_RESPONSE`. Streamed downloads remove the temporary file on this failure and preserve any existing destination.
 
 Studio preview resolves methods and paths from the selected API contract, including HEAD, OPTIONS and 405 behavior. Signed previews use the actual encoded public request target. A connection requiring HTTPS must use an HTTPS endpoint; plain HTTP preview cannot bypass confidentiality.
 

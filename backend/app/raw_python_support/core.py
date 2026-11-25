@@ -493,15 +493,15 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
         from .native.http_messages import response_message
         return {'sent': True, **response_message(cfg,ctx.last)}
     # CAPABILITY http_response END
-    # CAPABILITY dataweave START
-    if kind == 'dataweave':
+    # CAPABILITY script_transform START
+    if kind == 'script_transform':
         from .native.transform_engine import execute_activity_async
         from .config import SCHEMAS
         plan = await execute_activity_async(cfg, ctx.last, ctx.attributes, ctx.variables, [vars(a) | {'id': key} for key, a in SCHEMAS.items()])
         if plan['attributesChanged']: ctx.attributes = plan['attributes']
         ctx.variables.update(plan['variables'])
         return plan['output']
-    # CAPABILITY dataweave END
+    # CAPABILITY script_transform END
     # CAPABILITY python START
     if kind == 'python':
         from . import activities

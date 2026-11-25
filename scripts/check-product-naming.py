@@ -1,15 +1,20 @@
 """Prevent competing product branding from re-entering maintained MINA content."""
+import io
 import re
 from pathlib import Path
 from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
-FORBIDDEN = re.compile(r't[i]bco|business[w]orks|mule[ -]?s[o]ft|muel[s]oft|\bb[o]omi\b', re.I)
-AREAS = ['frontend/src', 'frontend/public', 'frontend/scripts', 'frontend/electron',
+FORBIDDEN = re.compile(
+    r't[i]bco|business[ -]?[w]orks|mule[ -]?s[o]ft|muel[s]oft|\bb[o]omi\b|'
+    r'data[ _-]?w[e]ave|\bany[p]oint\b|web[m]ethods|inform[a]tica|biz[t]alk', re.I,
+)
+AREAS = ['frontend/src', 'frontend/public', 'frontend/scripts', 'frontend/electron', 'frontend/dist',
          'backend/app', 'backend/tests', 'administrator/app', 'administrator/tests',
-         'java-bridge/src', 'docs', 'scripts', 'drivers', 'output/documentation-preview']
+         'java-bridge/src', 'docs', 'scripts', 'drivers', 'samples', 'output/documentation-preview']
 TEXT = {'.py', '.java', '.ts', '.tsx', '.js', '.mjs', '.cjs', '.json', '.md', '.html',
-        '.css', '.svg', '.sh', '.ps1', '.ini', '.txt', '.yaml', '.yml', '.xml', '.xsd', '.xsl', '.xslt'}
+        '.css', '.svg', '.sh', '.ps1', '.ini', '.txt', '.yaml', '.yml', '.xml', '.xsd', '.xsl', '.xslt', '.nsi'}
+ARCHIVES = {'.zip', '.mpackage', '.mpkg', '.mlib'}
 
 
 def violations(name, data):
@@ -20,19 +25,31 @@ def violations(name, data):
             if FORBIDDEN.search(line)]
 
 
+def archive_violations(source, name, depth=0):
+    with ZipFile(source) as archive:
+        for member in archive.infolist():
+            suffix = Path(member.filename).suffix.lower()
+            label = f'{name}!{member.filename}'
+            data = archive.read(member) if suffix in TEXT else b''
+            yield from violations(label, data)
+            if suffix in ARCHIVES and depth < 2:
+                yield from archive_violations(io.BytesIO(archive.read(member)), label, depth + 1)
+
+
 def main():
     errors = []
     paths = {p for area in AREAS for p in (ROOT / area).rglob('*')
-             if p.is_file() and p.suffix in TEXT and '__pycache__' not in p.parts}
+             if p.is_file() and '__pycache__' not in p.parts}
     paths.update(ROOT.glob('*.md'))
     for path in sorted(paths):
-        errors.extend(violations(path.relative_to(ROOT).as_posix(), path.read_bytes()))
-    bundle = ROOT / 'release/MinaLinuxSetup.zip'
-    if bundle.is_file():
-        with ZipFile(bundle) as archive:
-            for member in archive.namelist():
-                data = archive.read(member) if Path(member).suffix in TEXT else b''
-                errors.extend(violations(f'{bundle.relative_to(ROOT).as_posix()}!{member}', data))
+        data = path.read_bytes() if path.suffix.lower() in TEXT else b''
+        errors.extend(violations(path.relative_to(ROOT).as_posix(), data))
+    bundles = {ROOT / 'release/MinaLinuxSetup.zip'}
+    for area in ('samples', 'frontend/public/samples', 'output/documentation-preview/samples'):
+        bundles.update(p for p in (ROOT / area).rglob('*') if p.is_file() and p.suffix.lower() in ARCHIVES)
+    for bundle in sorted(bundles):
+        if bundle.is_file():
+            errors.extend(archive_violations(bundle, bundle.relative_to(ROOT).as_posix()))
     if errors:
         raise SystemExit('Unexpected product branding:\n' + '\n'.join(errors))
     print('MINA product naming checks passed.')

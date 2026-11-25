@@ -370,6 +370,19 @@ class NonPreemptiveBasic(httpx.Auth):
             request.headers['Authorization']=self.header
             yield request
 
+def success_status_ranges(value):
+    ranges = []
+    for item in str(value or '200-299').split(','):
+        match = re.fullmatch(r'\s*([1-5][0-9]{2})(?:\s*-\s*([1-5][0-9]{2}))?\s*', item)
+        if not match:
+            raise HTTPFault('Success status codes must contain HTTP codes or ranges such as 200-299,404','HTTP_CONFIGURATION',400)
+        start, end = int(match[1]), int(match[2] or match[1])
+        if end < start:
+            raise HTTPFault('A success status range must start at or below its end','HTTP_CONFIGURATION',400)
+        ranges.append((start, end))
+    return ranges
+
+
 def request(cfg,connection=None):
     cfg=merged(connection,cfg)
     try:cfg=request_config(cfg)
@@ -433,6 +446,7 @@ def request(cfg,connection=None):
         headers['accept'] = 'text/event-stream'
         if cfg.get('lastEventId'):
             headers['last-event-id'] = str(cfg['lastEventId'])
+    accepted_status_ranges = success_status_ranges(cfg.get('successStatusCodes')) if operation != 'sse_read' else ()
     body=None if operation == 'sse_read' else cfg.get('body')
     mode=str(cfg.get('sendBodyMode') or 'ALWAYS').upper()
     if mode not in ('ALWAYS','AUTO','NEVER'):raise HTTPFault('Invalid send body mode','HTTP_CONFIGURATION',400)
@@ -608,17 +622,17 @@ def request(cfg,connection=None):
                     finally:
                         if sink:sink.close()
                     data=b''.join(chunks);text=data.decode(response.encoding or 'utf-8',errors='replace')
-                    response_type=response.headers.get('content-type','').split(';',1)[0].lower()
+                    actual_media = response.headers.get('content-type', '')
+                    response_type=actual_media.split(';',1)[0].strip().lower()
                     value=text
                     if str(cfg.get('responseBodyMode') or '')!='binary' and (not response_type or response_type.endswith(('/json','+json'))):
                         try:value=parse_json(text)
                         except ValueError:
                             if data and response_type:raise HTTPFault('Invalid JSON response body','HTTP_BAD_RESPONSE',502) from None
-                    if str(cfg.get('responseBodyMode') or '')=='binary' or response.headers.get('content-type','').split(';')[0].lower()=='application/octet-stream':value=data
-                    valid=str(cfg.get('successStatusCodes') or '200-299')
-                    accepted=any(int(part.split('-')[0])<=response.status_code<=int(part.split('-')[-1]) for part in valid.replace(' ','').split(','))
-                    schema=response_schema(cfg,response.status_code,response.headers.get('content-type',''))
-                    if has_body and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and response_content(cfg,response.status_code) and media_schema(response_content(cfg,response.status_code),response_type)[0] is None:raise HTTPFault('Undeclared response content type','REST_VALIDATION',502)
+                    if str(cfg.get('responseBodyMode') or '')=='binary' or response_type=='application/octet-stream':value=data
+                    accepted=any(start <= response.status_code <= end for start, end in accepted_status_ranges)
+                    schema=response_schema(cfg,response.status_code,actual_media)
+                    if has_body and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and response_content(cfg,response.status_code) and media_schema(response_content(cfg,response.status_code),actual_media)[0] is None:raise HTTPFault('Undeclared response content type','REST_VALIDATION',502)
                     if has_body and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and schema is not None and schema_errors(value,schema):raise HTTPFault('Response schema validation failed','REST_VALIDATION',502)
                     if boolean(cfg.get('raiseForStatus'),True) and not accepted:
                         if temporary:temporary.unlink(missing_ok=True)
@@ -650,6 +664,7 @@ def request(cfg,connection=None):
                 if time.monotonic()+delay>=deadline:raise HTTPFault('HTTP retry exceeds activity timeout','HTTP_TIMEOUT',504)
                 time.sleep(delay)
             except httpx.TimeoutException:raise HTTPFault('HTTP request timed out','HTTP_TIMEOUT',504) from None
+            except httpx.DecodingError:raise HTTPFault('HTTP response content encoding could not be decoded','HTTP_BAD_RESPONSE',502) from None
             except httpx.HTTPError:raise HTTPFault('HTTP transport failed','HTTP_CONNECTIVITY',502) from None
             finally:
                 if 'content' in locals() and hasattr(content,'close'):content.close()

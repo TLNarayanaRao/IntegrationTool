@@ -5,7 +5,7 @@ from pathlib import Path
 from http import HTTPStatus
 from xml.etree import ElementTree
 from .http_contracts import (response_schema, schema_errors, request_schema, media_schema, response_content,
-                             parse_json, hosted_response_content, media_family, negotiate_media)
+                             parse_json, hosted_response_content, media_family, negotiate_media, text_response_encoding)
 from .http_messages import multi_values
 from .http_policy import client_address, cors_headers, rate_limit, read_precondition_status, trace_context, trace_headers
 from .rest_contract import authorize_contract, decode_multipart_form, multipart_contract, validate_parameters,typed_form_body
@@ -74,7 +74,9 @@ def mapped_xml_response(value, schema):
     """Render a mapped body whose top-level key names a global XSD element."""
     if not isinstance(value, dict) or len(value) != 1 or not isinstance(schema, str) or not schema.lstrip().startswith('<'):
         return None
-    from .data_formats import DataFormats
+    from .data_formats import DataFormats, render_xsd_value, xsd_shape
+    from .faults import MinaFault
+    from .http_transport import HTTPFault
     schema_namespace = '{http://www.w3.org/2001/XMLSchema}'
     try:
         document = ElementTree.fromstring(DataFormats.safe_xml(schema))
@@ -83,19 +85,10 @@ def mapped_xml_response(value, schema):
         name, payload = next(iter(value.items()))
         if not any(element.get('name') == name for element in document.findall(schema_namespace + 'element')):
             return None
-        namespace = document.get('targetNamespace')
-        if namespace and document.get('elementFormDefault') == 'qualified':
-            if isinstance(payload, dict):
-                content = dict(payload)
-            elif payload is None:
-                content = {}
-            else:
-                content = {'#text': str(payload).lower() if isinstance(payload, bool) else payload}
-            content['@xmlns'] = namespace
-            return DataFormats().render_xml(content, name)
-        root = f'{{{namespace}}}{name}' if namespace else name
-        return DataFormats().render_xml(payload, root)
-    except (ElementTree.ParseError, ValueError, TypeError) as error:
+        shape = xsd_shape(schema, name)
+        # Match the XML Render activity's ordering, qualified fields, and attributes.
+        return render_xsd_value(shape, payload, default_namespace=document.get('elementFormDefault') == 'qualified')
+    except (ElementTree.ParseError, MinaFault, ValueError, TypeError) as error:
         raise HTTPFault('Mapped XML response could not be rendered', 'HTTP_RESPONSE', 500) from error
 
 async def handle_request(app,scope,receive,send):
@@ -119,21 +112,21 @@ async def _handle_request(app,scope,receive,send,state):
             raise HTTPFault('Ambiguous HTTP headers','HTTP_BAD_REQUEST',400)
         if isinstance(headers.get('cookie'),list):headers['cookie']='; '.join(headers['cookie'])
         matches=[]
-        for pattern,names,metadata,cfg in app.compiled:
-            match=pattern.match(scope['path'])
+        matched_shape = None
+        for pattern,names,shape,metadata,cfg,methods in app.compiled:
+            if matched_shape is not None and shape != matched_shape:
+                continue
+            match=pattern.fullmatch(scope['path'])
             if match:
-                from .api_docs import methods_for
-                methods=set(methods_for(cfg))
-                if 'GET' in methods:methods.add('HEAD')
+                matched_shape = shape
                 matches.append((metadata,cfg,dict(zip(names,match.groups())),methods))
         if not matches:raise HTTPFault('No matching listener','HTTP_NOT_FOUND',404)
         allowed_methods=set().union(*(match[3] for match in matches));allowed_methods.add('OPTIONS')
+        if 'GET' in allowed_methods:allowed_methods.add('HEAD')
         requested=headers.get('access-control-request-method') if method=='OPTIONS' else None
         selected=next((item for item in matches if (requested or method) in item[3]),None)
-        if (requested or method)=='HEAD':
-            # A declared HEAD operation overrides the automatic GET fallback.
-            for item in matches:
-                if 'HEAD' in methods_for(item[1]):selected=item;break
+        if (requested or method)=='HEAD' and selected is None:
+            selected=next((item for item in matches if 'GET' in item[3]),None)
         if selected is None and method!='OPTIONS':
             extra['Allow']=', '.join(sorted(allowed_methods));raise HTTPFault('Method not allowed','HTTP_METHOD_NOT_ALLOWED',405)
         metadata,cfg,parameters,methods=selected or matches[0]
@@ -180,9 +173,10 @@ async def _handle_request(app,scope,receive,send,state):
             claims=await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(app.executor,lambda:authorize(cfg,method,target,headers,HashedBody(digest.hexdigest()) if upload else raw,app.verified_mtls)),number(cfg,'activityTimeoutSeconds',180,1))
         query=multi_values(urllib.parse.parse_qsl(scope.get('query_string',b'').decode('utf-8'),keep_blank_values=True))
         authorize_contract(cfg, headers, query, claims, app.verified_mtls)
-        content_type=str(headers.get('content-type','')).split(';')[0].strip().lower();expected=str(cfg.get('contentType') or '').split(';')[0].strip().lower()
+        actual_media = str(headers.get('content-type', ''))
+        content_type=actual_media.split(';',1)[0].strip().lower();expected=str(cfg.get('contentType') or '').split(';')[0].strip().lower()
         formats=cfg.get('_restRequestSchemas') or {}
-        if size and (media_schema(formats,content_type)[0] is None if formats else expected and content_type!=expected):raise HTTPFault('Unsupported content type','REST_UNSUPPORTED_MEDIA',415)
+        if size and (media_schema(formats,actual_media)[0] is None if formats else expected and content_type!=expected):raise HTTPFault('Unsupported content type','REST_UNSUPPORTED_MEDIA',415)
         textual=not content_type or content_type.startswith('text/') or content_type.endswith(('/json','+json','/xml','+xml')) or content_type=='application/x-www-form-urlencoded'
         text=''
         if textual and not upload:
@@ -212,7 +206,7 @@ async def _handle_request(app,scope,receive,send,state):
         decoded = {'path': {}, 'query': {}, 'header': {}}
         errors=validate_parameters(cfg,parameters,query,headers,body_value if size else None,decoded)
         if errors:raise HTTPFault('; '.join(errors),'REST_VALIDATION',400)
-        schema=request_schema(cfg,content_type)
+        schema=request_schema(cfg,actual_media)
         validate_request = boolean(cfg.get('validateRequest'), bool(cfg.get('openApiDocument')))
         if size and validate_request and schema is not None and schema_errors(body_value,schema):raise HTTPFault('Request schema validation failed','REST_VALIDATION',400)
         payload={'body':body_value,'headers':{**headers, **decoded['header']},'headerPairs':[{'name':k,'value':v} for k,v in pairs],
@@ -263,7 +257,7 @@ async def _handle_request(app,scope,receive,send,state):
         explicit_media = next((str(value) for key,value in (response.get('headers') or {}).items() if str(key).lower()=='content-type'), None)
         selected_media = cfg.get('responseContentTypes') or []
         offered = hosted_response_content(cfg, status)
-        negotiated = len(selected_media) > 1 and str(status).startswith('2') and not bodyless
+        negotiated = bool(selected_media) and 200 <= status < 300 and not bodyless
         if negotiated:
             available = list(offered)
             if not available:
@@ -278,12 +272,12 @@ async def _handle_request(app,scope,receive,send,state):
                 error.headers = {'Vary': 'Accept'}
                 raise error
         else:
-            response_media = explicit_media or str(cfg.get('responseType') or ('application/octet-stream' if response.get('fileName') or isinstance(value,(bytes,bytearray,memoryview)) else 'application/json' if isinstance(value,(dict,list,bool,int,float)) else 'text/plain; charset=utf-8'))
+            response_media = explicit_media or str(cfg.get('responseType') or ('application/octet-stream' if response.get('fileName') or 'binaryContent' in response or isinstance(value,(bytes,bytearray,memoryview)) else 'application/json' if isinstance(value,(dict,list,bool,int,float)) else 'text/plain; charset=utf-8'))
         match, schema = media_schema(offered, response_media) if selected_media else (None, None)
         if match is None:
             schema = response_schema(cfg,status,response_media)
         rendered_xml = None
-        if not bodyless and method != 'HEAD' and not response.get('fileName') and 'binaryContent' not in response:
+        if not bodyless and not response.get('fileName') and 'binaryContent' not in response:
             rendered_xml = mapped_xml_response(value, schema)
             if rendered_xml is None and selected_media and media_family(response_media) == 'xml' and value is not None:
                 from .data_formats import DataFormats
@@ -299,7 +293,7 @@ async def _handle_request(app,scope,receive,send,state):
                         raise HTTPFault('Response body is not an XML document','HTTP_RESPONSE',500) from error
             if rendered_xml is not None:
                 value = rendered_xml
-        if not bodyless and method!='HEAD' and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and response_content(cfg,status) and media_schema(response_content(cfg,status),response_media)[0] is None:raise HTTPFault('Undeclared response content type','REST_VALIDATION',500)
+        if not bodyless and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and response_content(cfg,status) and media_schema(response_content(cfg,status),response_media)[0] is None:raise HTTPFault('Undeclared response content type','REST_VALIDATION',500)
         if bodyless:
             size = 0
         elif response.get('fileName'):
@@ -326,8 +320,11 @@ async def _handle_request(app,scope,receive,send,state):
             elif isinstance(value,(bytes,bytearray,memoryview)):body=bytes(value)
             elif media_family(response_media)=='json' and boolean(response.get('jsonValue')):body=json.dumps(value,ensure_ascii=False,allow_nan=False).encode()
             elif isinstance(value,(dict,list,bool,int,float)):body=json.dumps(value,ensure_ascii=False,allow_nan=False).encode()
-            else:body=('' if value is None else str(value)).encode()
-            if method!='HEAD' and schema is not None and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and schema_errors(value,schema):raise HTTPFault('Response schema validation failed','REST_VALIDATION',500)
+            else:
+                try:body=('' if value is None else str(value)).encode(text_response_encoding(response_media))
+                except (LookupError, UnicodeError):
+                    raise HTTPFault('HTTP response text cannot be represented in the selected charset','HTTP_RESPONSE',500) from None
+            if schema is not None and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and schema_errors(value,schema):raise HTTPFault('Response schema validation failed','REST_VALIDATION',500)
             size=len(body)
         response_headers={str(k).lower():v for k,v in (response.get('headers') or {}).items() if str(k).lower() not in ('content-length','transfer-encoding','connection')}
         if status == 200 and method in ('GET', 'HEAD') and boolean(cfg.get('conditionalResponses')):
@@ -364,7 +361,7 @@ async def _handle_request(app,scope,receive,send,state):
             isinstance(schema, str) and schema.lstrip().startswith('<')
             and isinstance(value, str) and value.lstrip().startswith('<')
         )
-        response_headers.setdefault('content-type',response_media if negotiated else str(cfg.get('responseType') or ('application/xml' if xml_response else 'application/octet-stream' if stream_path or isinstance(value,(bytes,bytearray,memoryview)) else 'application/json' if isinstance(value,(dict,list,bool,int,float)) else 'text/plain; charset=utf-8')))
+        response_headers.setdefault('content-type', 'application/xml' if xml_response and not (negotiated or explicit_media or cfg.get('responseType')) else response_media)
         if not boolean(cfg.get('usePersistentConnections'),True) and scope.get('http_version')!='2':response_headers['connection']='close'
         response_headers['content-length']=str(size)
         if wire_line.get('httpVersion')=='HTTP/1.0':response_headers['connection']='close'

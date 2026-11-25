@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 import psutil
 from openpyxl import Workbook
 from app.data_formats import execute_format
-from app.dataweave import execute as dataweave
+from app.script_transform import execute as script_transform
 from app.mapper import execute as mapper
 from app.runtime import WorkflowRuntime
 from app.raw_python_support.activities import excel_read, python_invoke
@@ -59,7 +59,7 @@ def run(seconds, warmup, output):
         def mapping():
             value = mapper({'name': 'customer'}, [{'target': 'name', 'source': '${name}'}])
             assert value['name'] == 'customer'
-            result = dataweave('%dw 2.0\noutput application/json\n---\n{ name: upper(payload.name) }', payload={'name': 'customer'})
+            result = script_transform('%mina 2.0\noutput application/json\n---\n{ name: upper(payload.name) }', payload={'name': 'customer'})
             assert result['name'] == 'CUSTOMER'
 
         def excel():
@@ -98,7 +98,7 @@ def run(seconds, warmup, output):
         started = time.monotonic()
         with ThreadPoolExecutor(max_workers=8, thread_name_prefix='mina-activity-soak') as pool:
             futures = [pool.submit(worker, name, action) for name, action in
-                [('formats', formats)] * 2 + [('mapper-dataweave', mapping)] * 2 + [('excel', excel)] * 2]
+                [('formats', formats)] * 2 + [('mapper-script_transform', mapping)] * 2 + [('excel', excel)] * 2]
             futures += [pool.submit(python_worker) for _ in range(2)]
             try:
                 while time.monotonic() - started < warmup + seconds and not stop.is_set():
@@ -122,11 +122,11 @@ def run(seconds, warmup, output):
     gates = {'noErrors': not errors, 'duration': final['seconds'] >= seconds - 1,
         'rssGrowth': growth['rssMiB'] <= 64, 'heapGrowth': growth['heapMiB'] <= 8,
         'handles': growth['handles'] <= 8, 'threads': growth['threads'] <= 2,
-        'lateRssSlope': slope('rssMiB') <= .5, 'allFamilies': all(counts[name] for name in ('formats', 'mapper-dataweave', 'excel', 'python'))}
+        'lateRssSlope': slope('rssMiB') <= .5, 'allFamilies': all(counts[name] for name in ('formats', 'mapper-script_transform', 'excel', 'python'))}
     report = {'passed': all(gates.values()), 'gates': gates, 'measuredSeconds': final['seconds'], 'warmupSeconds': warmup,
         'workers': 8, 'counts': dict(counts), 'errors': errors, 'growth': growth,
         'lateRssMiBPerMinute': slope('rssMiB'), 'final': final, 'samples': samples,
-        'scope': 'Local XML/JSON/flat parse-render, Mapper, DataWeave, source/Direct Excel and Python. No remote provider claims.'}
+        'scope': 'Local XML/JSON/flat parse-render, Mapper, ScriptTransform, source/Direct Excel and Python. No remote provider claims.'}
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     Path(output).write_text(json.dumps(report, indent=2), encoding='utf-8')
     print(json.dumps({key: value for key, value in report.items() if key != 'samples'}, indent=2), flush=True)

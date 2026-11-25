@@ -1,6 +1,6 @@
 # Root-level mapping deletion verification
 
-The shared Input editor and Mapper editor enable **Delete mapping** when the
+The shared Input editor and DataCompose editor enable **Delete mapping** when the
 selected target has either its own binding or descendant bindings. Deletion
 clears that target subtree in the selected occurrence, including nested
 duplicate occurrences. The schema stays available for remapping. Independent
@@ -11,14 +11,14 @@ sibling targets and sibling duplicate occurrences retain their bindings.
 - `frontend/tests/mapping-subtree-activities.test.mjs` evaluates every current
   activity-picker definition using the actual editor deletion action and saved
   configuration callback. This includes Call Sub Task, End, HTTP Send Response,
-  Parse/Render activities and Mapper. Legacy Mapper aliases are covered too.
+  Parse/Render activities and DataCompose. Legacy DataCompose aliases are covered too.
 - `backend/tests/test_mapping_subtree_e2e.py` invokes Studio's TypeScript deletion
   helper through `frontend/tests/fixtures/clear-mapping-subtree.mjs`. It checks
   input resolution for every backend activity kind using the resulting saved
   mappings, including removal of nested repeating occurrence metadata.
 - A parallel flow is saved with mappings, run, saved again after clearing, then
   executed through the Run and Debug API routes. The test checks the child task's
-  input, child End output, parent End output and untouched sibling Mapper output.
+  input, child End output, parent End output and untouched sibling DataCompose output.
 - Both `python-direct` and `python-engine` archives are downloaded through the
   packaging API, extracted and executed in separate Python processes. Their
   outputs must match Run and Debug, including the untouched parallel branch.

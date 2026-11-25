@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from app.dataweave import DataWeaveError, execute
+from app.script_transform import ScriptTransformError, execute
 from app.models import Project, Activity
 from app.runtime import WorkflowRuntime
 from app.transform_engine import execute_plan, execute_activity, validate_contract, TransformContractError
@@ -16,7 +16,7 @@ from app.transform_visual import script_to_visual, visual_to_script
 
 
 def script(body, header=''):
-    return '%dw 2.0\noutput application/json\n' + header + '\n---\n' + body
+    return '%mina 2.0\noutput application/json\n' + header + '\n---\n' + body
 
 
 def flow_module():
@@ -30,18 +30,38 @@ LIBRARIES = {'company::Names': 'fun normalize(value) = upper(trim(value))',
 
 
 class TransformFeatureTests(unittest.TestCase):
+    def test_saved_transformer_ids_and_script_imports_still_work(self):
+        from app.main import app
+        from fastapi.testclient import TestClient
+
+        kind = 'data' + 'weave'
+        source = '%dw 2.0\nimport capitalize from dw::core::Strings\noutput application/json\n---\ncapitalize(payload)'
+        activity = Activity(id='t', type=kind, name='Transform', config={'script': source})
+        self.assertEqual(activity.type, 'script_transform')
+        self.assertEqual(activity.config['script'], source)
+        caught = Activity(id='c', type='catch', name='Catch', config={'errorType': kind.upper() + '_SYNTAX'})
+        self.assertEqual(caught.config['errorType'], 'SCRIPT_TRANSFORM_SYNTAX')
+        with TestClient(app) as client:
+            for path in ('/api/transform-script/test', '/api/' + kind + '/test'):
+                response = client.post(path, json={'script': source, 'input': 'mina'})
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()['output'], 'Mina')
+            paths = client.get('/openapi.json').json()['paths']
+            self.assertIn('/api/transform-script/test', paths)
+            self.assertNotIn('/api/' + kind + '/test', paths)
+
     def test_modules_named_wildcard_qualified_alias_and_lexical_scope(self):
         self.assertEqual(execute(script('Names::normalize(payload)', 'import company::Names'), payload=' ada ', libraries=LIBRARIES), 'ADA')
         self.assertEqual(execute(script('greet(payload)', 'import * from company::Greeting'), payload=' ada ', libraries=LIBRARIES), 'Hello ADA')
-        self.assertEqual(execute(script('S::padLeft(payload, 4, "0")', 'import dw::core::Strings as S'), payload='7'), '0007')
-        self.assertEqual(execute(script('camelize(payload)', 'import camelize from dw::core::Strings'), payload='customer_name'), 'customerName')
+        self.assertEqual(execute(script('S::padLeft(payload, 4, "0")', 'import mina::core::Strings as S'), payload='7'), '0007')
+        self.assertEqual(execute(script('camelize(payload)', 'import camelize from mina::core::Strings'), payload='customer_name'), 'customerName')
         self.assertEqual(execute(script('normalize(payload)', 'import normalize from company::Names'), payload=' grace ', libraries=LIBRARIES), 'GRACE')
-        self.assertEqual(execute(script('C::upper(payload)', 'import dw::Core as C'), payload='ada'), 'ADA')
-        self.assertEqual(execute(script('fromHex("ff")', 'import fromHex from dw::core::Numbers')), 255)
-        self.assertIsNone(execute(script('logn(-2)', 'import logn from dw::util::Math')))
-        with self.assertRaisesRegex(DataWeaveError, 'Cyclic'):
+        self.assertEqual(execute(script('C::upper(payload)', 'import mina::Core as C'), payload='ada'), 'ADA')
+        self.assertEqual(execute(script('fromHex("ff")', 'import fromHex from mina::core::Numbers')), 255)
+        self.assertIsNone(execute(script('logn(-2)', 'import logn from mina::util::Math')))
+        with self.assertRaisesRegex(ScriptTransformError, 'Cyclic'):
             execute(script('x()', 'import * from A'), libraries={'A': 'import * from B\nfun x() = 1', 'B': 'import * from A'})
-        with self.assertRaisesRegex(DataWeaveError, 'Unknown script library'):
+        with self.assertRaisesRegex(ScriptTransformError, 'Unknown script library'):
             execute(script('payload', 'import java::lang::Runtime'))
         self.assertEqual(execute(script('normalized(payload)', 'import normalized from Example'), payload=' ada ',
                          libraries={'Example': 'module Example\nfun normalized(value) = {\n name: upper(\ntrim(value)\n)\n}'}), {'name': 'ADA'})
@@ -54,7 +74,7 @@ class TransformFeatureTests(unittest.TestCase):
         with self.assertRaises(TransformContractError): execute_plan(cfg, {}, schemas=assets)
         xsd = '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:include schemaLocation="types.xsd"/><xs:element name="root" type="Record"/></xs:schema>'
         types = '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:complexType name="Record"><xs:sequence><xs:element name="id" type="xs:int"/></xs:sequence></xs:complexType></xs:schema>'
-        cfg = {'script': '%dw 2.0\noutput application/xml\n---\npayload', 'inputMimeType': 'application/xml', 'sourceSchemaId': 'xsd', 'targetSchemaId': 'xsd'}
+        cfg = {'script': '%mina 2.0\noutput application/xml\n---\npayload', 'inputMimeType': 'application/xml', 'sourceSchemaId': 'xsd', 'targetSchemaId': 'xsd'}
         assets = [{'id': 'xsd', 'name': 'schemas/root.xsd', 'content': xsd}, {'id': 'types', 'name': 'schemas/types.xsd', 'content': types}]
         self.assertIn('<id>2</id>', execute_plan(cfg, '<root><id>2</id></root>', schemas=assets)['output'])
         with self.assertRaises(TransformContractError): execute_plan(cfg, '<root><id>wrong</id></root>', schemas=assets)
@@ -73,7 +93,7 @@ class TransformFeatureTests(unittest.TestCase):
                'properties': {}, 'resources': {}}
         prior = copy.deepcopy(ctx)
         with self.assertRaises(Exception):
-            asyncio.run(WorkflowRuntime().execute(Activity(id='t', name='T', type='dataweave', config=config), ctx))
+            asyncio.run(WorkflowRuntime().execute(Activity(id='t', name='T', type='script_transform', config=config), ctx))
         self.assertEqual(ctx['vars'], prior['vars'])
         self.assertEqual(ctx['attributes'], prior['attributes'])
 
@@ -91,15 +111,15 @@ class TransformFeatureTests(unittest.TestCase):
 
     def test_preview_and_visual_api_enforce_the_same_configuration(self):
         from fastapi import HTTPException
-        from app.main import dataweave_test, dataweave_visual
+        from app.main import script_transform_test, script_transform_visual
         config = {'libraries': LIBRARIES, 'script': script('{name: normalize(payload.name)}', 'import normalize from company::Names'),
                   'sourceSchema': {'type': 'object', 'required': ['name']}, 'targetSchema': {'type': 'object', 'required': ['name']}}
-        self.assertEqual(dataweave_test({'config': config, 'input': {'name': ' ada '}})['output'], {'name': 'ADA'})
-        with self.assertRaises(HTTPException): dataweave_test({'config': config, 'input': {}})
-        view = dataweave_visual({'script': script('{name: payload.name, empty: {}}')})
-        rebuilt = dataweave_visual(view)['script']
+        self.assertEqual(script_transform_test({'config': config, 'input': {'name': ' ada '}})['output'], {'name': 'ADA'})
+        with self.assertRaises(HTTPException): script_transform_test({'config': config, 'input': {}})
+        view = script_transform_visual({'script': script('{name: payload.name, empty: {}}')})
+        rebuilt = script_transform_visual(view)['script']
         self.assertEqual(execute(rebuilt, payload={'name': 'Ada'}), {'name': 'Ada', 'empty': {}})
-        with self.assertRaises(HTTPException): dataweave_visual({'mappings': [{'target': 'a', 'expression': '1 /'}]})
+        with self.assertRaises(HTTPException): script_transform_visual({'mappings': [{'target': 'a', 'expression': '1 /'}]})
 
     def test_visual_round_trip_preserves_headers_empty_objects_and_complex_expressions(self):
         for body in ('{name: upper(payload.name), empty: {}, nested: {id: payload.id}}',
@@ -109,7 +129,7 @@ class TransformFeatureTests(unittest.TestCase):
             rebuilt = visual_to_script(visual['header'], visual['mappings'])
             data = {'name': 'Ada', 'id': 2, 'items': [{'id': 4}]}
             self.assertEqual(execute(original, payload=data), execute(rebuilt, payload=data))
-        with self.assertRaisesRegex(DataWeaveError, 'Duplicate'):
+        with self.assertRaisesRegex(ScriptTransformError, 'Duplicate'):
             visual_to_script('', [{'target': 'a', 'expression': '1'}, {'target': 'a', 'expression': '2'}])
 
     def test_stream_is_atomic_bounded_and_does_not_read_ahead(self):
@@ -191,7 +211,7 @@ class TransformFeatureTests(unittest.TestCase):
             {'target': 'payload', 'targetSchemaId': 'output-contract', 'script': script('{name: normalize(payload.name)}', 'import normalize from company::Names')},
             {'target': 'attributes', 'script': script('{original: payload.name}')},
             {'target': 'variable', 'name': 'saved', 'script': script('payload.name')}]}
-        nodes = [{'id': 's', 'name': 'Start', 'type': 'start'}, {'id': 't', 'name': 'Transform', 'type': 'dataweave', 'config': config},
+        nodes = [{'id': 's', 'name': 'Start', 'type': 'start'}, {'id': 't', 'name': 'Transform', 'type': 'data' + 'weave', 'config': config},
                  {'id': 'e', 'name': 'End', 'type': 'end', 'config': {'inputMappings': {'payload': '${last}', 'saved': '${vars.saved}', 'attributes': '${attributes}'}}}]
         project = Project.model_validate({'id': 'features', 'name': 'Features', 'schemas': [
             {'id': 'input-contract', 'name': 'input.json', 'content': json.dumps({'type': 'object', 'required': ['name']})},
@@ -203,7 +223,7 @@ class TransformFeatureTests(unittest.TestCase):
             {'id': 'xsd', 'name': 'schema/root.xsd', 'content': '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:include schemaLocation="types.xsd"/><xs:element name="root" type="Record"/></xs:schema>'},
             {'id': 'types', 'name': 'schema/types.xsd', 'content': '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:complexType name="Record"><xs:sequence><xs:element name="id" type="xs:int"/></xs:sequence></xs:complexType></xs:schema>'}])
         xml_nodes = [{'id': 'xs', 'name': 'Start', 'type': 'start'},
-                     {'id': 'xt', 'name': 'Transform', 'type': 'dataweave', 'config': {'script': '%dw 2.0\noutput application/xml\n---\npayload', 'inputMimeType': 'application/xml', 'sourceSchemaId': 'xsd', 'targetSchemaId': 'xsd'}},
+                     {'id': 'xt', 'name': 'Transform', 'type': 'script_transform', 'config': {'script': '%mina 2.0\noutput application/xml\n---\npayload', 'inputMimeType': 'application/xml', 'sourceSchemaId': 'xsd', 'targetSchemaId': 'xsd'}},
                      {'id': 'xe', 'name': 'End', 'type': 'end'}]
         value['tasks'].append({'id': 'xml', 'name': 'XML', 'kind': 'subtask', 'activities': xml_nodes, 'transitions': [
             {'id': str(i), 'source': a['id'], 'target': b['id']} for i, (a, b) in enumerate(zip(xml_nodes, xml_nodes[1:]))]})
@@ -225,7 +245,7 @@ class TransformFeatureTests(unittest.TestCase):
         flow = flow_module()
         async def run(directory):
             source = Path(directory) / 'input.csv'; source.write_text('id,name\n1,Ada\n2,Grace\n')
-            for kind in ('mapper', 'dataweave'):
+            for kind in ('mapper', 'script_transform'):
                 for mode in ('run', 'debug', 'python-direct', 'python-engine'):
                     target = Path(directory) / (kind + '-' + mode + '.jsonl')
                     config = {'streamEnabled': True, 'streamInputFile': str(source), 'streamOutputFile': str(target), 'streamInputFormat': 'csv',

@@ -362,6 +362,19 @@ class SapMapperTests(unittest.TestCase):
         encoded = rendered['rawIDoc']['data'][0]['SDATA'].encode('windows-1252')
         self.assertEqual(encoded[:3], b'005')
         self.assertEqual(encoded[3:7], b'Caf\xe9')
+        self.assertEqual([row['SEGNAM'] for row in rendered['rawIDoc']['data']], ['E2TEST001'])
+        other = record(3, 'other')[:33] + b'0000000000000043' + record(3, 'other')[49:]
+        with self.assertRaisesRegex(RuntimeError, 'different document numbers'):
+            adapter.execute('idoc_parser', {'mode':'mock', 'idocType':'ARTMAS05', 'idocEncoding':'windows-1252'},
+                            record(1, 'first') + other)
+
+    def test_idoc_renderer_rejects_multiple_documents_before_posting(self):
+        adapter = SapAdapter()
+        xml = '<ORDERS05><IDOC><ITEM/></IDOC><IDOC><ITEM/></IDOC></ORDERS05>'
+        with patch.object(adapter, '_jco_call') as send:
+            with self.assertRaisesRegex(RuntimeError, 'one IDOC document'):
+                adapter.execute('post_idoc', {'mode':'external', 'idocType':'ORDERS05'}, xml)
+            send.assert_not_called()
 
     def test_dynamic_connection_keeps_one_worker_context_until_commit_boundary(self):
         adapter = SapAdapter()
@@ -514,9 +527,9 @@ class SapMapperTests(unittest.TestCase):
         recommendations = response.json()['recommendations']
         self.assertTrue(any(item['target'].endswith('book.title') and item['sourceRepeating'] for item in recommendations))
         self.assertTrue(any(item['target'].endswith('book.@id') for item in recommendations))
-        generated = self.client.post('/api/dataweave/generate', json={'sourceSchema':xsd, 'targetSchema':xsd, 'threshold':50})
+        generated = self.client.post('/api/transform-script/generate', json={'sourceSchema':xsd, 'targetSchema':xsd, 'threshold':50})
         self.assertEqual(generated.status_code, 200, generated.text)
-        tested = self.client.post('/api/dataweave/test', json={'script':generated.json()['script'], 'input':{'catalog':{'book':[{'title':'A','@id':'1'},{'title':'B','@id':'2'}]}}})
+        tested = self.client.post('/api/transform-script/test', json={'script':generated.json()['script'], 'input':{'catalog':{'book':[{'title':'A','@id':'1'},{'title':'B','@id':'2'}]}}})
         self.assertEqual(tested.status_code, 200, tested.text)
         self.assertEqual(len(tested.json()['output']['catalog']['book']), 2)
 

@@ -1,6 +1,6 @@
 # Recent activity regression verification — 2026-11-17
 
-The checked-out Mapper, Transformer, Data, Kafka, Pub/Sub and EMS/JMS changes were exercised with automated regression tests and complete flows. A JMS credential/default-factory inconsistency was found and fixed. This is a bounded regression qualification, not a guarantee of every provider, workload or deployment.
+The checked-out DataCompose, Transformer, Data, Kafka, Pub/Sub and EMS/JMS changes were exercised with automated regression tests and complete flows. A JMS credential/default-factory inconsistency was found and fixed. This is a bounded regression qualification, not a guarantee of every provider, workload or deployment.
 
 ## Verification matrix
 
@@ -8,7 +8,7 @@ Each flow below ran in **Run, Debug, Python direct archive and Python engine arc
 
 | Area | Fresh workload per mode | Environment and result |
 |---|---|---|
-| Mapper | 10,000 streamed records | Source/target validation and output auditing passed |
+| DataCompose | 10,000 streamed records | Source/target validation and output auditing passed |
 | Transformer | 10,000 streamed records | Scripting-library transformation and schema-validated output passed |
 | Parse/Render Data | 35,000 records / 72,963,904 bytes | Nested streaming round-trip and byte/hash audit passed |
 | Grouped Parse/Render Data | 1,000 header/detail/trailer groups, 2,000 details | Grouping, totals, uniqueness, XSD identity constraints and invalid-EOF output preservation passed |

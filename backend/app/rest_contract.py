@@ -90,7 +90,8 @@ def operation_config(config, *, document=None):
     cfg['_restResponseSchemas']=responses
     cfg['_restResponseContentSchemas']=response_content
     codes=[str(code) for code in (operation.get('responses') or {}) if str(code).startswith('2')]
-    cfg['successStatusCodes']=','.join(codes) if codes and all(key.isdigit() for key in codes) else cfg.get('successStatusCodes','200-299')
+    if cfg.get('successStatusCodes') in (None, ''):
+        cfg['successStatusCodes']=','.join(codes) if codes and all(key.isdigit() for key in codes) else '200-299'
     servers=operation.get('servers') or path_item.get('servers') or supplied.get('servers') or []
     if servers:
         server=servers[0];url=str(server.get('url') or '')

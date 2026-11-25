@@ -162,7 +162,7 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
         return matching[0]
 
     def schema_resolver(name, document, extension):
-        # BW stores generated activity/process interfaces inside tibex:Types.
+        # Legacy packages store generated activity/process interfaces inside tibex:Types.
         # Publish only referenced schemas so internal fault/timer contracts do
         # not clutter the project or introduce unrelated import candidates.
         embedded = document.findall(f"{extension}Types/{{http://www.w3.org/2001/XMLSchema}}schema")
@@ -177,10 +177,10 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
             matches = schema_declarations.get((qname.namespace, qname.localname), [])
             scoped = [asset for asset in matches if module and asset.get('source_path','').startswith(module + '/')]
             matches = scoped or matches
-            if len(matches) > 1: raise ValueError(f'ambiguous BW schema element {qname}')
+            if len(matches) > 1: raise ValueError(f'ambiguous legacy schema element {qname}')
             if matches: return matches[0]['id']
             inside = [index for index, root in enumerate(embedded) if declares(root)]
-            if len(inside) > 1: raise ValueError(f'ambiguous embedded BW schema element {qname}')
+            if len(inside) > 1: raise ValueError(f'ambiguous embedded legacy schema element {qname}')
             if not inside: return None
             index = inside[0]
             if index not in embedded_assets:
@@ -257,11 +257,11 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
                     if activity['type'] == 'flat' and config.get('dataFormatId') in format_mappings:
                         config['inputMappings'] = {**format_mappings[config['dataFormatId']], **config.get('inputMappings', {})}
                 tasks.append({'id': converter.task_id, 'name': converter.name, 'kind':'subtask',
-                              'description': f'Recovered native BW activity from {path.as_posix()}. Supply its original BW input variables by name.',
+                              'description': f'Recovered legacy activity from {path.as_posix()}. Supply its original legacy input variables by name.',
                               'activities': converter.activities, 'transitions': converter.transitions})
                 continue
             for binding in bindings(inputs):
-                activity_name = owner.get('name') or 'Mapper'
+                activity_name = owner.get('name') or 'DataCompose'
                 try:
                     config = mapper_config(binding)
                     if owner.tag == extension + 'activityExtension':
@@ -279,7 +279,7 @@ def bw_project(files: dict[str, bytes], filename: str) -> bytes:
         schemas.extend(embedded_assets.values())
     if not tasks and not formats and (pending_layouts or processes or not schemas):
         raise ValueError('No executable processes or activity bindings were converted. ' + ' | '.join(diagnostics[:20]))
-    description = f'Converted {len(ready)} processes, imported {len(formats)} Data Formats, and recovered {len(tasks) - len(ready)} independent activities or Mapper bindings.'
+    description = f'Converted {len(ready)} processes, imported {len(formats)} Data Formats, and recovered {len(tasks) - len(ready)} independent activities or DataCompose bindings.'
     from .models import default_environment_properties
     properties = {item.key: item.model_dump() for item in default_environment_properties()}
     for resource_id in sorted(used_resources):

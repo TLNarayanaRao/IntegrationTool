@@ -1,4 +1,4 @@
-"""Run generated archives outside Studio to verify Mapper/Input execution parity."""
+"""Run generated archives outside Studio to verify DataCompose/Input execution parity."""
 import asyncio
 import json
 import subprocess
@@ -25,7 +25,7 @@ class PythonMapperParityTests(unittest.TestCase):
     def project(self, mappings=None, input_mappings=None):
         activities = [dict(id='Start', name='Start', type='start', config={})]
         if mappings is not None:
-            activities.append(dict(id='Mapper', name='Mapper', type='mapper', config={'mappings': mappings}))
+            activities.append(dict(id='DataCompose', name='DataCompose', type='mapper', config={'mappings': mappings}))
         activities.append(dict(id='End', name='End', type='end', config={'inputMappings': input_mappings or {}}))
         return dict(id='parity', name='Parity', resources=[], tasks=[dict(
             id='main', name='Main', kind='starter', groups=[], activities=activities,
@@ -305,7 +305,7 @@ class PythonMapperParityTests(unittest.TestCase):
             <b:empty name="Right"><b:sources><b:source linkName="right"/></b:sources></b:empty>
           </b:flow>''')
         child = process('Child', f'''
-          <b:sequence><b:extensionActivity><t:extActivity type="bw.generalactivities.mapper" name="Mapper">
+          <b:sequence><b:extensionActivity><t:extActivity type="bw.generalactivities.mapper" name="DataCompose">
             <t:inputBindings><x:stylesheet xmlns:x="{XSL[1:-1]}" version="2.0"
                xmlns:tib="http://example.test/bw/xslt/custom-functions" exclude-result-prefixes="#all">
               <x:param name="name"/>
@@ -442,7 +442,7 @@ class PythonMapperParityTests(unittest.TestCase):
         self.assert_exports(project, payload, expected)
         with self.assertRaisesRegex(ValueError, 'cardinality 1 rejects 2'):
             execute({'input':{'order':[payload['order'], payload['order']]}}, rules, {'sourceCoercions':views})
-        with self.assertRaisesRegex(ValueError, "Mapper source coercion 'Retail'"):
+        with self.assertRaisesRegex(ValueError, "DataCompose source coercion 'Retail'"):
             execute({'input':{'order':'<o:order xmlns:o="urn:order"><o:id>01</o:id></o:order>'}}, rules, {'sourceCoercions':views})
 
     def test_mapper_input_tools_use_the_same_source_views_and_xpath_in_preview_and_execution(self):
@@ -519,7 +519,7 @@ class PythonMapperParityTests(unittest.TestCase):
 
         for binding in (stylesheet, legacy):
             restored = reopen_binding(binding)
-            project = self.project(restored['mappings'], {'result.value':'${Mapper.value}'})
+            project = self.project(restored['mappings'], {'result.value':'${DataCompose.value}'})
             project['tasks'][0]['activities'][1]['config'].update(restored, xmlSource='<input/>')
             self.assert_studio(project, {}, {'value':'MINA'})
             self.assert_exports(project, {}, {'value':'MINA'})
@@ -1178,6 +1178,169 @@ class PythonMapperParityTests(unittest.TestCase):
                 compiler(project, {'local': []})
         project['tasks'][0]['activities'][1]['config']['mappings'][0]['source'] = '"Ada"'
         self.assert_exports(project, {}, {'person': {'name': 'Ada'}})
+
+    def test_numeric_schema_validation_uses_exact_multiples_and_legacy_bounds(self):
+        from app.mapper import validate_output
+
+        big = 10 ** 35
+        schema = {'type': 'object', 'properties': {'number': {'type': 'integer', 'multipleOf': 0.25,
+            'minimum': 10, 'exclusiveMinimum': True, 'maximum': big, 'exclusiveMaximum': False}}}
+        project = self.project([dict(target='number', source='${input.number}')])
+        project['tasks'][0]['activities'][1]['config']['targetSchema'] = schema
+        self.assert_studio(project, {'number': big}, {'number': big})
+        self.assert_exports(project, {'number': big}, {'number': big})
+        self.assertEqual(validate_output({'number': 10}, schema), ['number: violates exclusiveMinimum'])
+        self.assertEqual(validate_output(23, {'minimum': 20, 'exclusiveMinimum': 23}), ['result: violates exclusiveMinimum'])
+        self.assertEqual(validate_output(0.3, {'multipleOf': 0.1}), [])
+        self.assertEqual(validate_output(0.31, {'multipleOf': 0.1}), ['result: violates multipleOf'])
+        self.assertEqual(validate_output(1, {'multipleOf': True}), ['result: multipleOf must be a positive number'])
+        xsd = '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="number">' \
+              '<xs:simpleType><xs:restriction base="xs:decimal"><xs:totalDigits value="30"/>' \
+              '<xs:fractionDigits value="0"/></xs:restriction></xs:simpleType></xs:element></xs:schema>'
+        self.assertEqual(validate_output({'number': 10**30 - 1}, xsd), [])
+        self.assertEqual(validate_output({'number': 10**30}, xsd), ['number: violates totalDigits'])
+
+    def test_xsd_choice_validates_alternatives_and_repeated_occurrences(self):
+        from app.mapper import validate_output
+
+        template = '''<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+          <xs:element name="contact"><xs:complexType><xs:choice {occurs}>
+            <xs:element name="email" type="xs:string"/>
+            <xs:choice>
+              <xs:element name="extension" type="xs:int"/>
+              <xs:element name="mobile" type="xs:string"/>
+            </xs:choice>
+          </xs:choice></xs:complexType></xs:element>
+        </xs:schema>'''
+        single = template.format(occurs='')
+        self.assertEqual(validate_output({'contact': {'email': 'team@example.test', 'extension': 14}}, single),
+                         ['contact: choice occurrence count is outside 1..1'])
+        self.assertEqual(validate_output({'contact': {'email': []}}, single),
+                         ['contact: choice occurrence count is outside 1..1'])
+        self.assertEqual(validate_output({'contact': {}}, template.format(occurs='minOccurs="0"')), [])
+
+        repeated = template.format(occurs='minOccurs="2" maxOccurs="3"')
+        self.assertEqual(validate_output({'contact': {'email': ['a', 'b', 'c', 'd']}}, repeated),
+                         ['contact: choice occurrence count is outside 2..3'])
+        self.assertEqual(validate_output({'contact': {'email': 'a', 'extension': ['wrong']}}, repeated),
+                         ['contact.extension[1]: expected int'])
+        project = self.project([dict(target='contact', source='${input.contact}')])
+        project['tasks'][0]['activities'][1]['config']['targetSchema'] = repeated
+        payload = {'contact': {'email': ['a', 'b'], 'extension': 14}}
+        self.assert_studio(project, payload, payload)
+        self.assert_exports(project, payload, payload)
+
+    def test_xsd_nested_choices_and_sequences_match_only_the_selected_branch(self):
+        from app.main import mapper_test
+        from app.mapper import validate_output
+        from xml.etree import ElementTree
+
+        schema = '''<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+          <xs:group name="Address"><xs:sequence>
+            <xs:element name="street" type="xs:string"/>
+            <xs:choice>
+              <xs:element name="postal" type="xs:string"/>
+              <xs:element name="locker" type="xs:int"/>
+            </xs:choice>
+            <xs:sequence minOccurs="0">
+              <xs:element name="unit" type="xs:string"/>
+              <xs:element name="floor" type="xs:int"/>
+            </xs:sequence>
+          </xs:sequence></xs:group>
+          <xs:element name="delivery"><xs:complexType><xs:choice>
+            <xs:group ref="Address"/>
+            <xs:element name="email" type="xs:string"/>
+          </xs:choice></xs:complexType></xs:element>
+        </xs:schema>'''
+        valid = {'delivery': {'locker': 12, 'street': 'Main'}}
+        self.assertEqual(validate_output(valid, schema), [])
+        self.assertEqual(validate_output({'delivery': {'email': 'test@example.test'}}, schema), [])
+        self.assertEqual(validate_output({'delivery': {'locker': '12'}}, schema),
+                         ['delivery.street: required field is not mapped', 'delivery.locker: expected int'])
+        self.assertEqual(validate_output({'delivery': {'street': 'Main', 'locker': 12, 'postal': '12345'}}, schema),
+                         ['delivery: choice occurrence count is outside 1..1'])
+        self.assertEqual(validate_output({'delivery': {'street': 'Main', 'locker': 12, 'unit': '2B'}}, schema),
+                         ['delivery.floor: required field is not mapped'])
+        self.assertIn('single XSD choice alternative', validate_output({'delivery': {'email': 'x', 'street': 'Main'}}, schema)[0])
+
+        rules = [dict(target='delivery', source='${input.delivery}')]
+        preview = mapper_test({'input': valid, 'targetSchemaText': schema, 'mappings': rules})
+        self.assertTrue(preview['valid'], preview)
+        self.assertEqual([child.tag for child in ElementTree.fromstring(preview['outputText'])], ['street', 'locker'])
+        invalid = mapper_test({'input': {'delivery': {'locker': 12}}, 'targetSchemaText': schema, 'mappings': rules})
+        self.assertEqual(invalid['validationErrors'], ['delivery.street: required field is not mapped'])
+
+        project = self.project(rules)
+        project['tasks'][0]['activities'][1]['config']['targetSchema'] = schema
+        self.assert_studio(project, valid, valid)
+        self.assert_exports(project, valid, valid)
+
+    def test_percent_encoded_schema_references_are_consistent_in_all_mapper_paths(self):
+        from app.mapper import flatten_schema, validate_output
+        from app.mapper_assistant import fields
+
+        schema = {'type': 'object', 'properties': {'code': {'$ref': '#/$defs/r%C3%A9sum%C3%A9~1item/anyOf/0'}},
+                  '$defs': {'résumé/item': {'anyOf': [{'type': 'integer'}]}}}
+        self.assertEqual(flatten_schema(schema)[0]['type'], 'integer')
+        self.assertEqual(fields(schema)[0]['type'], 'integer')
+        self.assertEqual(validate_output({'code': '7'}, schema), ['code: expected integer'])
+        for malformed in ('#/$defs/r%C3%A9sum%C3%A9~1item/anyOf/-1', '#/$defs/r%C3%A9sum%C3%A9~1item/anyOf/00', '#/%GG'):
+            self.assertIn('unresolved schema reference', validate_output(7, {'$ref': malformed, '$defs': schema['$defs']})[0])
+        project = self.project([dict(target='code', source='${input.code}')])
+        project['tasks'][0]['activities'][1]['config']['targetSchema'] = schema
+        self.assert_studio(project, {'code': 7}, {'code': 7})
+        self.assert_exports(project, {'code': 7}, {'code': 7})
+
+    def test_sap_parser_rebuilds_level_only_hierarchy_in_all_runtimes(self):
+        from app.sap import SapAdapter
+
+        project = self.project([])
+        cfg = {'operation': 'idoc_parser', 'resourceId': 'sap', 'mode': 'mock', 'idocType': 'ORDERS05'}
+        project['resources'] = [dict(id='sap', name='Local fixture', type='sap', config={'mode': 'mock'})]
+        project['tasks'][0]['activities'][1].update(type='sap', config=cfg)
+        payload = {'data': [{'SEGNAM': 'HEADER', 'SEGNUM': '001', 'HLEVEL': '01', 'SDATA': 'A'},
+                            {'SEGNAM': 'ITEM', 'SEGNUM': '002', 'HLEVEL': '02', 'SDATA': 'B'}]}
+        expected = SapAdapter().execute('idoc_parser', cfg, payload)
+        self.assertEqual(expected['SAPIDoc']['IDOC']['HEADER']['ITEM']['SDATA'], 'B')
+        self.assert_studio(project, payload, expected)
+        self.assert_exports(project, payload, expected)
+
+    def test_keyword_only_json_schema_and_conditional_dependencies_match_runtimes(self):
+        from app.mapper import validate_output
+
+        schema = {'dependentSchemas': {'billing': {'required': ['postalCode']}},
+                  'dependencies': {'international': ['country']}}
+        project = self.project([dict(target='billing', source='${input.billing}'),
+                                dict(target='postalCode', source='${input.postalCode}'),
+                                dict(target='international', source='${input.international}'),
+                                dict(target='country', source='${input.country}')])
+        project['tasks'][0]['activities'][1]['config']['targetSchema'] = schema
+        payload = {'billing': True, 'postalCode': '97201', 'international': True, 'country': 'US'}
+        self.assert_studio(project, payload, payload)
+        self.assert_exports(project, payload, payload)
+        self.assertEqual(validate_output({'billing': True, 'international': True}, schema),
+                         ['postalCode: required field is not mapped', 'result: international requires country'])
+        self.assertTrue(validate_output(['invalid'], {'prefixItems': [{'type': 'integer'}]}))
+        self.assertTrue(validate_output('oversized', {'maxLength': 2}))
+        self.assertTrue(validate_output({'unexpected': 'field'}, {'additionalProperties': False}))
+
+    def test_sap_renderer_keeps_sdata_hierarchy_and_control_identity_in_all_runtimes(self):
+        from app.sap import SapAdapter
+
+        project = self.project([])
+        cfg = {'operation': 'idoc_renderer', 'resourceId': 'sap', 'mode': 'mock', 'idocType': 'ORDERS05'}
+        project['resources'] = [dict(id='sap', name='Local fixture', type='sap', config={'mode': 'mock'})]
+        project['tasks'][0]['activities'][1].update(type='sap', config=cfg)
+        payload = '<ORDERS05><IDOC><EDI_DC40><MANDT>100</MANDT><DOCNUM>42</DOCNUM></EDI_DC40>' \
+                  '<E1HEADER SEGMENT="1"><SDATA>HEAD</SDATA><E1ITEM SEGMENT="1"><SDATA>ITEM</SDATA>' \
+                  '</E1ITEM></E1HEADER></IDOC></ORDERS05>'
+        expected = SapAdapter().execute('idoc_renderer', cfg, payload)
+        self.assertEqual(expected['rawIDoc']['data'], [
+            {'SEGNAM': 'E1HEADER', 'SEGNUM': '1', 'PSGNUM': '0', 'HLEVEL': '01', 'MANDT': '100', 'DOCNUM': '42', 'SDATA': 'HEAD'},
+            {'SEGNAM': 'E1ITEM', 'SEGNUM': '2', 'PSGNUM': '1', 'HLEVEL': '02', 'MANDT': '100', 'DOCNUM': '42', 'SDATA': 'ITEM'},
+        ])
+        self.assert_studio(project, payload, expected)
+        self.assert_exports(project, payload, expected)
 
     def test_generic_literal_types_and_quoted_references_survive_export(self):
         project = self.project(input_mappings={'result.text': "'${input.missing}'", 'result.number':'-1.25e2', 'result.enabled':'false', 'result.items':'[1,2]', 'result.object':'{"text":"${input.missing}"}'})

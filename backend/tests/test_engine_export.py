@@ -13,7 +13,7 @@ SPEC.loader.exec_module(compiler)
 
 
 class EngineExportTests(unittest.TestCase):
-    BASE = {'runtime', 'models', 'mapper', 'mapping_literals', 'time_utils', 'flow_graph', 'group_execution', 'data_formats',
+    BASE = {'runtime', 'models', 'transform_compat', 'mapper', 'mapping_literals', 'time_utils', 'flow_graph', 'group_execution', 'data_formats',
             'faults', 'schema_validation', 'retry_policy', 'mapper_binding', 'mapper_coercions', 'mapper_xml', 'xml_names', 'xsd_catalog', 'mapping_documents', 'mapper_document_xslt'}
 
     def project(self, kind='log'):
@@ -36,7 +36,7 @@ class EngineExportTests(unittest.TestCase):
             ('sap', {'sap', 'java_bridge'}), ('jdbc', {'jdbc', 'java_bridge', 'snowflake'}),
             ('ems', {'java_bridge'}), ('jms', {'java_bridge'}),
             ('pubsub', {'google_pubsub'}), ('amqp', {'amqp'}),
-            ('snowflake', {'snowflake'}), ('dataweave', {'dataweave','transform_libraries','transform_engine','transform_stream','xsd_openapi'}), ('kafka', set()),
+            ('snowflake', {'snowflake'}), ('script_transform', {'script_transform','transform_libraries','transform_engine','transform_stream','xsd_openapi'}), ('kafka', set()),
             ('file', {'file_operations'}), ('ftp', {'transfer','sftp','file_operations'}), ('sftp', {'transfer','sftp','file_operations'}),
         ]:
             with self.subTest(kind=kind):
@@ -68,7 +68,7 @@ class EngineExportTests(unittest.TestCase):
                 'import asyncio, sys; from application.main import run_task; '
                 'asyncio.run(run_task("main", {"value": 42})); '
                 'assert not any("application.engine." + m in sys.modules for m in '
-                '["sap", "jdbc", "amqp", "snowflake", "java_bridge", "google_pubsub", "dataweave"])'],
+                '["sap", "jdbc", "amqp", "snowflake", "java_bridge", "google_pubsub", "script_transform"])'],
                 cwd=directory, capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 

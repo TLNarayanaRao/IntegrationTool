@@ -1283,6 +1283,22 @@ export function activityContract(n: any): Contract {
               ...(n.config?.idocOutputMode === "XML" ? [d("IDocXML", "Parsed IDoc XML", "string")] : [d("SAPIDoc", "Parsed IDoc JSON", "object")]),
               d("format", "Output format"),
             ]
+          : op === "idoc_renderer"
+            ? [
+                d("rawIDoc", "Rendered IDoc", "object"),
+                d("rawIDoc.control", "Control record", "object"),
+                d("rawIDoc.data", "Segment records", "object[]"),
+                d("rawIDoc.data.SEGNAM", "Segment name"),
+                d("rawIDoc.data.SEGNUM", "Segment number"),
+                d("rawIDoc.data.PSGNUM", "Parent segment number"),
+                d("rawIDoc.data.HLEVEL", "Hierarchy level"),
+                d("rawIDoc.data.MANDT", "SAP client"),
+                d("rawIDoc.data.DOCNUM", "Document number"),
+                d("rawIDoc.data.SDATA", "Segment data"),
+                d("SAPIDoc", "Rendered IDoc envelope", "object"),
+                d("format", "Output format"),
+                d("idocType", "IDoc basic type"),
+              ]
           : op === "read_table"
             ? [
                 d("rows", "SAP table rows", "array"),
@@ -1338,15 +1354,15 @@ export function activityContract(n: any): Contract {
         },
       ],
     };
-  if (n.type === "dataweave")
+  if (n.type === "script_transform")
     return {
       configuration: [],
       input: [d("payload", "Payload", "object"), d("attributes", "Input attributes", "object"), d("variables", "Transform variables", "object")],
       output: [d("result", "Transformed payload", "object")],
       errors: [
-        { type: "DATAWEAVE_SYNTAX", description: "The transform script could not be parsed." },
-        { type: "DATAWEAVE_EXECUTION", description: "A selector, function, coercion, or collection operation failed." },
-        { type: "DATAWEAVE_OUTPUT", description: "The transformed value cannot be rendered in the requested MIME type." },
+        { type: "SCRIPT_TRANSFORM_SYNTAX", description: "The transform script could not be parsed." },
+        { type: "SCRIPT_TRANSFORM_EXECUTION", description: "A selector, function, coercion, or collection operation failed." },
+        { type: "SCRIPT_TRANSFORM_OUTPUT", description: "The transformed value cannot be rendered in the requested MIME type." },
       ],
     };
   if (n.type === "log")
@@ -1699,9 +1715,9 @@ const activityDocumentation: Record<string, { summary: string; behavior: string 
   pubsub: { summary: "Publishes, receives, or acknowledges Google Cloud Pub/Sub messages.", behavior: "Project and credential defaults come from the shared connection. Message data, attributes, ordering keys, and acknowledgement handles remain available on the execution path." },
   sap: { summary: "Executes the selected SAP ECC operation.", behavior: "The shared SAP connection supplies system and authentication settings. IDoc metadata selected from SAP defines listener, parser, renderer, and sender structures." },
   mapper: { summary: "Maps execution-path data into a selected target schema.", behavior: "In Input, drop a repeating complex source onto a repeating complex target. Copy-Of copies the whole collection and hides child bindings. For-Each creates editable child bindings for matching names; SmartMap also matches names that differ by underscores or hyphens. The loop shows the collection expression once and child expressions relative to the current item. Run Map & Test to check the output." },
-  transform: { summary: "Legacy Mapper activity retained for project compatibility.", behavior: "Existing Transform nodes continue to execute with Mapper behavior. New projects should use Mapper for visual/XPath mappings or Transform for scripts." },
-  ai_transform: { summary: "Legacy AI Mapper activity retained for project compatibility.", behavior: "Existing AI Transform nodes continue to use the consolidated Mapper and its AI recommendation/review workflow." },
-  dataweave: { summary: "Transforms payloads with MINA's embedded transform language.", behavior: "Supports configured script libraries, atomic payload/attribute/variable outputs, visual/script expression synchronization, JSON Schema/XSD contracts and bounded JSON/JSONL/CSV file streaming. Each output reads the original message snapshot. Streaming returns file metadata and validates each record. Map & Test uses the same contracts and engine as Run, Debug and Python exports. See Help for supported module exports and syntax limits." },
+  transform: { summary: "Legacy DataCompose activity retained for project compatibility.", behavior: "Existing Transform nodes continue to execute with DataCompose behavior. New projects should use DataCompose for visual/XPath mappings or Transform for scripts." },
+  ai_transform: { summary: "Legacy AI Mapping activity retained for project compatibility.", behavior: "Existing AI Transform nodes continue to use the consolidated DataCompose and its AI recommendation/review workflow." },
+  script_transform: { summary: "Transforms payloads with MINA's embedded transform language.", behavior: "Supports configured script libraries, atomic payload/attribute/variable outputs, visual/script expression synchronization, JSON Schema/XSD contracts and bounded JSON/JSONL/CSV file streaming. Each output reads the original message snapshot. Streaming returns file metadata and validates each record. Map & Test uses the same contracts and engine as Run, Debug and Python exports. See Help for supported module exports and syntax limits." },
   call_task: { summary: "Invokes a reusable Sub Task and waits for its result.", behavior: "Mapped values become the Sub Task Start input. Dynamic Sub Task ID/name is resolved per invocation; the selected Sub Task is its design-time schema and runtime fallback. The Sub Task End output returns to this activity." },
   confirm: { summary: "Acknowledges one or more client-managed messages.", behavior: "Map the acknowledgement handle emitted by an EMS, Kafka, Pub/Sub, or compatible future receiver. The runtime dispatches confirmation to the originating connector." },
   start: { summary: "Defines the task input boundary.", behavior: "For Sub Tasks, the Start schema is the callable input contract. Starter Tasks normally use one external event activity instead." },
@@ -1738,8 +1754,8 @@ function ActivityDocumentation({ node, contract }: { node: any; contract: Contra
 
 function ActivityEditorGuidance({ type }: { type: string }) {
   const groups = ["ActivityEditor", "InputEditor", "MappingContextMenu", "ExpandedInputMappingDialog", "OutputEditor", "AdvancedEditor", "ErrorEditor"];
-  if (["mapper", "transform", "ai_transform", "dataweave"].includes(type)) groups.push("TransformSchemaEditor", "TransformPoliciesEditor", "AIMappingAssistance", "TransformInputEditor", "TransformOutputEditor", "TransformMapTestEditor");
-  if (type === "dataweave") groups.push("DataWeaveScriptEditor", "DataWeaveTestEditor");
+  if (["mapper", "transform", "ai_transform", "script_transform"].includes(type)) groups.push("TransformSchemaEditor", "TransformPoliciesEditor", "AIMappingAssistance", "TransformInputEditor", "TransformOutputEditor", "TransformMapTestEditor");
+  if (type === "script_transform") groups.push("ScriptTransformScriptEditor", "ScriptTransformTestEditor");
   if (type === "timer") groups.push("SchedulerEditor");
   if (type === "jdbc") groups.push("JdbcDesigner");
   if (type === "call_task") groups.push("CallTaskRoutingEditor");
@@ -2027,7 +2043,7 @@ export default function ActivityEditor({
 
           </>
         )}
-        {node.type === "dataweave" && <DataWeaveScriptEditor config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>}
+        {node.type === "script_transform" && <ScriptTransformScriptEditor config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>}
         {(node.type === "start" || node.type === "end") && (
           <TaskBoundarySchemaEditor node={node} config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>
         )}
@@ -2037,8 +2053,8 @@ export default function ActivityEditor({
   if (tab === "input")
     return isMapperActivity(node.type) ? (
       <TransformInputEditor key={`${task?.id}:${node.id}`} actions={<>
-        <button type="button" className="edit-input-mapping ai-mapper-launcher" aria-label="Open visual AI Mapper" onClick={() => setMapperOpen(true)}>
-              <WandSparkles /> AI Mapper
+        <button type="button" className="edit-input-mapping ai-mapper-launcher" aria-label="Open AI-assisted DataCompose" onClick={() => setMapperOpen(true)}>
+              <WandSparkles /> AI Mapping
             </button>
         {mapperOpen && (
           <MapperStudio
@@ -2079,8 +2095,8 @@ export default function ActivityEditor({
     );
   if (tab === "map_test" && isMapperActivity(node.type))
     return <TransformMapTestEditor node={node} config={cfg} schemas={schemas || []} customFunctions={customFunctions} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>;
-  if (tab === "map_test" && node.type === "dataweave")
-    return <DataWeaveTestEditor config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>;
+  if (tab === "map_test" && node.type === "script_transform")
+    return <ScriptTransformTestEditor config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>;
   if (tab === "output")
     return isMapperActivity(node.type) ? <TransformOutputEditor config={cfg} schemas={schemas}/> : <OutputEditor fields={contract.output} config={cfg} set={set} before={(["xml", "json", "flat"].includes(node.type) && cfg.operation === "parse" && !(node.type === "json" && cfg.schemaType === "Generic")) ? <DataContractSchemaEditor node={node} config={cfg} schemas={schemas || []} direction="output" setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/> : null}/>;
   if (tab === "advanced")
@@ -2146,15 +2162,15 @@ function SchedulerEditor({ config, set }: any) {
   </section>;
 }
 
-function DataWeaveScriptEditor({ config, schemas, setConfig }: any) {
+function ScriptTransformScriptEditor({ config, schemas, setConfig }: any) {
   const [status, setStatus] = useState("");
   const templates = [
-    { name: "Map collection", script: `%dw 2.0\noutput application/json\nfun normalize(value) = upper(trim(value))\n---\npayload.items map (item) -> {\n  id: item.id as String,\n  name: normalize(item.name default "")\n}` },
-    { name: "Group records", script: `%dw 2.0\noutput application/json\n---\npayload.items groupBy (item) -> item.category default "unclassified"` },
-    { name: "Enrich message", script: `%dw 2.0\noutput application/json\n---\n{\n  data: payload,\n  requestId: attributes.requestId default "",\n  region: vars.region default "global"\n}` },
-    { name: "CSV to JSON", script: `%dw 2.0\ninput payload text/csv\noutput application/json\n---\npayload` },
-    { name: "Filter object", script: `%dw 2.0\noutput application/json\n---\npayload filterObject (value, key, index) -> value != null` },
-    { name: "Highest score", script: `%dw 2.0\noutput application/json\n---\npayload.items maxBy (item) -> item.score` },
+    { name: "Map collection", script: `%mina 2.0\noutput application/json\nfun normalize(value) = upper(trim(value))\n---\npayload.items map (item) -> {\n  id: item.id as String,\n  name: normalize(item.name default "")\n}` },
+    { name: "Group records", script: `%mina 2.0\noutput application/json\n---\npayload.items groupBy (item) -> item.category default "unclassified"` },
+    { name: "Enrich message", script: `%mina 2.0\noutput application/json\n---\n{\n  data: payload,\n  requestId: attributes.requestId default "",\n  region: vars.region default "global"\n}` },
+    { name: "CSV to JSON", script: `%mina 2.0\ninput payload text/csv\noutput application/json\n---\npayload` },
+    { name: "Filter object", script: `%mina 2.0\noutput application/json\n---\npayload filterObject (value, key, index) -> value != null` },
+    { name: "Highest score", script: `%mina 2.0\noutput application/json\n---\npayload.items maxBy (item) -> item.score` },
   ];
   const chooseSchema = (key: "sourceSchemaId" | "targetSchemaId", id: string) => {
     const schema = schemas.find((item: any) => item.id === id);
@@ -2163,16 +2179,16 @@ function DataWeaveScriptEditor({ config, schemas, setConfig }: any) {
   const generate = async () => {
     setStatus("Generating a reviewable transform draft…");
     try {
-      const response = await fetch("/api/dataweave/generate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sourceSchema: config.sourceSchema || {}, targetSchema: config.targetSchema || {}, threshold: config.threshold || 70 }) });
+      const response = await fetch("/api/transform-script/generate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sourceSchema: config.sourceSchema || {}, targetSchema: config.targetSchema || {}, threshold: config.threshold || 70 }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || "AI transform generation failed");
       setConfig({ script: result.script, aiRecommendations: result.recommendations, aiReviewRequired: true });
       setStatus(`${result.recommendations?.length || 0} schema recommendations generated. Review and test the script before saving the project.`);
     } catch (error: any) { setStatus(error.message || "AI generation failed"); }
   };
-  return <section className="dataweave-editor">
+  return <section className="script_transform-editor">
     <header><Braces/><span><b>TRANSFORM SCRIPT</b></span><button type="button" onClick={generate}><Sparkles/> AI generate</button></header>
-    <div className="dataweave-contracts">
+    <div className="script_transform-contracts">
       <label>Source schema<select value={config.sourceSchemaId || ""} onChange={(event) => chooseSchema("sourceSchemaId", event.target.value)}><option value="">Runtime payload / no schema</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></label>
       <label>Single-output target schema<select disabled={!!config.outputs?.length} value={config.targetSchemaId || ""} onChange={(event) => chooseSchema("targetSchemaId", event.target.value)}><option value="">Dynamic output / no schema</option>{schemas.map((schema: any) => <option key={schema.id} value={schema.id}>{schema.name}</option>)}</select></label>
       <label>Input MIME type<select value={config.inputMimeType || "application/json"} onChange={(event) => setConfig({ inputMimeType: event.target.value })}><option>application/json</option><option>application/xml</option><option>text/plain</option><option>text/csv</option></select></label>
@@ -2185,15 +2201,15 @@ function DataWeaveScriptEditor({ config, schemas, setConfig }: any) {
     </div>
     <XsdStructurePicker label="Source structure" text={selectedSchemaText(schemas.find((schema:any)=>schema.id===config.sourceSchemaId)?.content || (typeof config.sourceSchema === "string" ? config.sourceSchema : ""),config.sourceSchemaText)} onChange={sourceSchemaText=>setConfig({sourceSchemaText})}/>
     {!config.outputs?.length && <XsdStructurePicker label="Target structure" text={selectedSchemaText(schemas.find((schema:any)=>schema.id===config.targetSchemaId)?.content || (typeof config.targetSchema === "string" ? config.targetSchema : ""),config.targetSchemaText)} onChange={targetSchemaText=>setConfig({targetSchemaText})}/>}
-    <div className="dataweave-templates"><b>STARTING POINTS</b>{templates.map((template) => <button type="button" disabled={!!config.outputs?.length} key={template.name} onClick={() => { setConfig({ script: template.script, outputMimeType: "application/json", inputMimeType: template.name === "CSV to JSON" ? "text/csv" : config.inputMimeType || "application/json", aiReviewRequired: false }); setStatus(`${template.name} template loaded. Use Map & Test with representative data before Run.`); }}>{template.name}</button>)}</div>
-    <label className="dataweave-script"><span>Transform script <i>{config.outputs?.length ? "Multiple targets enabled: edit each output script below" : "runtime executable"}</i></span><textarea readOnly={!!config.outputs?.length} value={config.script || "%dw 2.0\noutput application/json\n---\npayload"} onChange={(event) => setConfig({ script: event.target.value, aiReviewRequired: false })} spellCheck={false}/></label>
+    <div className="script_transform-templates"><b>STARTING POINTS</b>{templates.map((template) => <button type="button" disabled={!!config.outputs?.length} key={template.name} onClick={() => { setConfig({ script: template.script, outputMimeType: "application/json", inputMimeType: template.name === "CSV to JSON" ? "text/csv" : config.inputMimeType || "application/json", aiReviewRequired: false }); setStatus(`${template.name} template loaded. Use Map & Test with representative data before Run.`); }}>{template.name}</button>)}</div>
+    <label className="script_transform-script"><span>Transform script <i>{config.outputs?.length ? "Multiple targets enabled: edit each output script below" : "runtime executable"}</i></span><textarea readOnly={!!config.outputs?.length} value={config.script || "%mina 2.0\noutput application/json\n---\npayload"} onChange={(event) => setConfig({ script: event.target.value, aiReviewRequired: false })} spellCheck={false}/></label>
     <TransformerFeatures config={config} schemas={schemas} setConfig={setConfig}/>
 
-    {status && <p className="dataweave-status">{status}</p>}
+    {status && <p className="script_transform-status">{status}</p>}
   </section>;
 }
 
-function DataWeaveTestEditor({ config, schemas, setConfig }: any) {
+function ScriptTransformTestEditor({ config, schemas, setConfig }: any) {
   const initial = typeof config.sampleInput === "string" ? config.sampleInput : JSON.stringify(config.sampleInput || {}, null, 2);
   const [input, setInput] = useState(initial || "{}");
   const [attributes, setAttributes] = useState(JSON.stringify(config.sampleAttributes || {}, null, 2));
@@ -2204,15 +2220,15 @@ function DataWeaveTestEditor({ config, schemas, setConfig }: any) {
     setState("running"); setMessage("Executing transform script…");
     try {
       const mime = config.streamEnabled ? "application/json" : config.inputMimeType || "application/json";
-      const parsed = mime.split(";")[0].trim() === "application/json" ? JSON.parse(input) : input, parsedAttributes = JSON.parse(attributes || "{}"), parsedVariables = JSON.parse(variables || "{}"), response = await fetch("/api/dataweave/test", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ script: config.script, config:{...config,streamEnabled:false,inputMimeType:mime}, schemas, input: parsed, attributes: parsedAttributes, variables: parsedVariables, inputMimeType:mime }) }), result = await response.json();
+      const parsed = mime.split(";")[0].trim() === "application/json" ? JSON.parse(input) : input, parsedAttributes = JSON.parse(attributes || "{}"), parsedVariables = JSON.parse(variables || "{}"), response = await fetch("/api/transform-script/test", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ script: config.script, config:{...config,streamEnabled:false,inputMimeType:mime}, schemas, input: parsed, attributes: parsedAttributes, variables: parsedVariables, inputMimeType:mime }) }), result = await response.json();
       if (!response.ok) throw new Error(result.detail || "Transform test failed");
       setOutput(result.outputs?.length > 1 ? JSON.stringify({payload:result.output,outputs:result.outputs},null,2) : typeof result.output === "string" ? result.output : JSON.stringify(result.output, null, 2));
       setState("valid"); setMessage(`Valid ${result.version} transform · ${result.mimeType}`); setConfig({ sampleInput: input, sampleAttributes: parsedAttributes, sampleVariables: parsedVariables, lastTestOutput: result.output, outputMimeType: result.mimeType });
     } catch (error: any) { setState("error"); setMessage(error.message || "Transform test failed"); setOutput(""); }
   };
-  return <div className="activity-tab dataweave-test">
+  return <div className="activity-tab script_transform-test">
     <header><FlaskConical/><span><b>Transform · Test</b></span></header>
-    <main><section className="dataweave-test-inputs"><label><span>INPUT PAYLOAD · {config.inputMimeType || "application/json"}</span><textarea value={input} onChange={(event) => { setInput(event.target.value); setState("idle"); }} spellCheck={false}/></label><details><summary>Message attributes</summary><textarea aria-label="Sample message attributes" value={attributes} onChange={(event) => { setAttributes(event.target.value); setState("idle"); }} spellCheck={false}/></details><details><summary>Flow variables</summary><textarea aria-label="Sample flow variables" value={variables} onChange={(event) => { setVariables(event.target.value); setState("idle"); }} spellCheck={false}/></details></section><label><span>GENERATED OUTPUT · {config.outputTarget || "payload"}</span><pre>{output || "Run the transform to generate output."}</pre></label></main>
+    <main><section className="script_transform-test-inputs"><label><span>INPUT PAYLOAD · {config.inputMimeType || "application/json"}</span><textarea value={input} onChange={(event) => { setInput(event.target.value); setState("idle"); }} spellCheck={false}/></label><details><summary>Message attributes</summary><textarea aria-label="Sample message attributes" value={attributes} onChange={(event) => { setAttributes(event.target.value); setState("idle"); }} spellCheck={false}/></details><details><summary>Flow variables</summary><textarea aria-label="Sample flow variables" value={variables} onChange={(event) => { setVariables(event.target.value); setState("idle"); }} spellCheck={false}/></details></section><label><span>GENERATED OUTPUT · {config.outputTarget || "payload"}</span><pre>{output || "Run the transform to generate output."}</pre></label></main>
     <footer className={state}><span>{state === "valid" ? <CheckCircle2/> : state === "error" ? <AlertTriangle/> : <FlaskConical/>}{message}</span><button type="button" disabled={state === "running"} onClick={run}>{state === "running" ? "Running…" : "Run transform"}</button></footer>
   </div>;
 }
@@ -2902,8 +2918,8 @@ function ExpandedInputMappingDialog({ title, mappingCount, onClose, onApply, chi
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [onClose]);
   return createPortal(<ModalLayer className="modal-backdrop input-mapper-backdrop" role="presentation">
-    <div className="input-mapper-dialog" role="dialog" aria-modal="true" aria-label={`${title} input mapper`}>
-      <header><div><Pencil/><span><b>{title}</b></span></div><i>{mappingCount} MAPPED</i><button type="button" aria-label="Close input mapper" title="Close" onClick={onClose}><X/></button></header>
+    <div className="input-mapper-dialog" role="dialog" aria-modal="true" aria-label={`${title} input mapping`}>
+      <header><div><Pencil/><span><b>{title}</b></span></div><i>{mappingCount} MAPPED</i><button type="button" aria-label="Close input mapping" title="Close" onClick={onClose}><X/></button></header>
       <div className="input-mapper-content">{children}</div>
       <footer><span>Changes remain local until you apply the mappings.</span><button type="button" onClick={onClose}>Cancel</button><button type="button" className="primary" onClick={onApply}><CheckCircle2/> Apply mappings</button></footer>
     </div>
@@ -3091,7 +3107,7 @@ function InputEditor({ node, fields, mappings, set, properties, sources, runtime
       duplicate={() => contextMenu && duplicateRow(contextMenu.path,contextMenu.occurrenceId)}
       close={() => setContextMenu(null)} change={(value: any) => contextMenu && setRowValue(contextMenu.path,value,contextMenu.occurrenceId)}
       remove={() => contextMenu && deleteRule(contextMenu.path,contextMenu.occurrenceId,contextMenu.duplicateRoot)}/>
-  </div>{repeatingDrop && <RepeatingDropDialog drop={repeatingDrop} close={() => setRepeatingDrop(null)} finish={finishDrop}/>}{dialogOpen && <ExpandedInputMappingDialog title={`${node.name} · Input Mapper`} mappingCount={Object.keys(draftMappings).length} onClose={() => setDialogOpen(false)} onApply={() => {set(draftMappings);setDialogOpen(false);}}><InputEditor node={node} fields={fields} mappings={draftMappings} set={setDraftMappings} properties={properties} sources={sources} runtimeVariables={runtimeVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} before={before} expanded/></ExpandedInputMappingDialog>}</>;
+  </div>{repeatingDrop && <RepeatingDropDialog drop={repeatingDrop} close={() => setRepeatingDrop(null)} finish={finishDrop}/>}{dialogOpen && <ExpandedInputMappingDialog title={`${node.name} · Input Mapping`} mappingCount={Object.keys(draftMappings).length} onClose={() => setDialogOpen(false)} onApply={() => {set(draftMappings);setDialogOpen(false);}}><InputEditor node={node} fields={fields} mappings={draftMappings} set={setDraftMappings} properties={properties} sources={sources} runtimeVariables={runtimeVariables} customFunctions={customFunctions} updateCustomFunctions={updateCustomFunctions} before={before} expanded/></ExpandedInputMappingDialog>}</>;
 }
 
 function FormatCdataPicker({ fields, expression, set }: { fields: DataField[]; expression: unknown; set: (value: string) => void }) {
@@ -3126,9 +3142,28 @@ function transformSchemaFields(config: any): SchemaTreeField[] {
   try {
     const schema = mappingSchemaDefinition(JSON.parse(text)), fields: SchemaTreeField[] = [];
     const resolve = (node: any) => {
-      if (!node?.$ref?.startsWith("#/")) return node;
-      const resolved = node.$ref.slice(2).split("/").reduce((value: any, key: string) => value?.[key.replaceAll("~1", "/").replaceAll("~0", "~")], schema);
-      return resolved ? { ...resolved, ...Object.fromEntries(Object.entries(node).filter(([key]) => key !== "$ref")) } : node;
+      const visited = new Set<string>();
+      while (typeof node?.$ref === "string" && node.$ref.startsWith("#") && !visited.has(node.$ref) && visited.size < 32) {
+        const { $ref: reference, ...annotations } = node;
+        let pointer: string;
+        try { pointer = decodeURIComponent(reference.slice(1)); }
+        catch { break; }
+        if (pointer && !pointer.startsWith("/")) break;
+        let resolved: any = schema;
+        for (const token of pointer ? pointer.slice(1).split("/") : []) {
+          const key = token.replaceAll("~1", "/").replaceAll("~0", "~");
+          if (/~(?![01])/.test(token) || !resolved || !Object.prototype.hasOwnProperty.call(resolved, key) ||
+              (Array.isArray(resolved) && !/^(0|[1-9][0-9]*)$/.test(key))) {
+            resolved = undefined;
+            break;
+          }
+          resolved = resolved[key];
+        }
+        if (!resolved || typeof resolved !== "object" || Array.isArray(resolved)) break;
+        visited.add(reference);
+        node = { ...resolved, ...annotations };
+      }
+      return node;
     };
     const walk = (raw: any, prefix = "", depth = 0, active: string[] = []) => {
       if (depth > 32 || raw?.$ref && active.includes(raw.$ref)) return;
@@ -3206,15 +3241,17 @@ function transformSchemaFields(config: any): SchemaTreeField[] {
         const fallback = segments.length ? undefined : scope.get(node.ownerDocument);
         return globals.get(`${namespace || ""}\0${kind}\0${name}`) || (fallback ? globals.get(`${fallback}\0${kind}\0${name}`) : undefined);
       };
-      const declarations = (container: Element, kind: string, active: Element[] = []): Element[] => {
+      const declarations = (container: Element, kind: string, active: Element[] = [], optional = false): {node: Element; optional: boolean}[] => {
         if (active.includes(container)) return [];
         return Array.from(container.children).flatMap(child => {
-          if (local(child) === kind) return [child];
+          if (local(child) === kind) return [{node: child, optional}];
           if (!["complextype", "complexcontent", "simplecontent", "sequence", "all", "choice", "group", "extension", "restriction", "attributegroup"].includes(local(child))) return [];
           const tag = local(child);
           const base = tag === "extension" ? resolve(child,"complextype",child.getAttribute("base"))
             : ["group","attributegroup"].includes(tag) ? resolve(child,tag,child.getAttribute("ref")) : undefined;
-          return [...(base ? declarations(base, kind, [...active, container]) : []), ...declarations(child, kind, [...active, container])];
+          const childOptional = optional || tag === "choice" || child.getAttribute("minOccurs") === "0";
+          const next = [...active, container];
+          return [...(base ? declarations(base, kind, next, childOptional) : []), ...declarations(child, kind, next, childOptional)];
         });
       };
       const directElements = (container: Element) => declarations(container, "element");
@@ -3235,27 +3272,43 @@ function transformSchemaFields(config: any): SchemaTreeField[] {
         return complex ? textType(complex,[...active,container]) : primitiveTextType(derivation,base);
       };
       const fields: SchemaTreeField[] = [];
-      const walkElement = (element: Element, prefix = "", depth = 0, active: Element[] = []) => {
+      const unitChoices = new Map<Element, boolean>();
+      const isUnitChoice = (choice: Element, depth = 0): boolean => {
+        if (depth >= 64) return false;
+        const cached = unitChoices.get(choice);
+        if (cached !== undefined) return cached;
+        const result = Array.from(choice.children).every(branch => local(branch) === "annotation" ||
+          (branch.getAttribute("minOccurs") || "1") === "1" && (branch.getAttribute("maxOccurs") || "1") === "1" &&
+          (local(branch) === "element" || local(branch) === "choice" && isUnitChoice(branch, depth + 1)));
+        unitChoices.set(choice, result);
+        return result;
+      };
+      const walkElement = (element: Element, prefix = "", depth = 0, active: Element[] = [], optional = false) => {
         const occurrence = element;
         element = resolve(element,"element",element.getAttribute("ref")) || element;
-        const name = element.getAttribute("name") || element.getAttribute("ref")?.split(":").pop() || "element", rawType = element.getAttribute("type") || "complex", baseType = rawType.split(":").pop() || rawType, maxOccurs = occurrence.getAttribute("maxOccurs") || "1", repeating = maxOccurs === "unbounded" || Number(maxOccurs) > 1, type = repeating ? `${baseType}[]` : baseType, path = prefix ? `${prefix}.${name}` : name;
-        const minOccurs = occurrence.getAttribute("minOccurs") || "1";
-        let required = Number(minOccurs) > 0;
-        for (let group = occurrence.parentElement; required && group && !['complextype', 'element', 'schema'].includes(local(group)); group = group.parentElement) {
-          if (local(group) === 'choice' || group.getAttribute('minOccurs') === '0') required = false;
+        const name = element.getAttribute("name") || element.getAttribute("ref")?.split(":").pop() || "element", rawType = element.getAttribute("type") || "complex", baseType = rawType.split(":").pop() || rawType, path = prefix ? `${prefix}.${name}` : name;
+        const minOccurs = optional ? "0" : occurrence.getAttribute("minOccurs") || "1";
+        let maxOccurs = occurrence.getAttribute("maxOccurs") || "1";
+        const parent = occurrence.parentElement;
+        for (let choice = parent; choice && local(choice) === "choice" && isUnitChoice(choice); choice = choice.parentElement) {
+          maxOccurs = choice.getAttribute("maxOccurs") || "1";
+          if (maxOccurs !== "1" || choice.getAttribute("minOccurs") === "0") break;
         }
+        const required = Number(minOccurs) > 0;
+        const repeating = maxOccurs === "unbounded" || Number(maxOccurs) > 1;
+        const type = repeating ? `${baseType}[]` : baseType;
         const ownField = { path, name, type, depth, repeating, required, minOccurs, maxOccurs };
         fields.push(ownField);
         const inline = Array.from(element.children).find((child) => local(child) === "complextype"), referenced = resolve(element,"complextype",rawType);
         const container = inline || referenced || element;
         if (depth >= 32 || active.includes(container) || fields.length >= 16000) return;
-        declarations(container, "attribute").forEach((attribute) => { const attributeName = attribute.getAttribute("name") || attribute.getAttribute("ref")?.split(":").pop() || "attribute", required = attribute.getAttribute("use") === "required"; fields.push({ path: `${path}.@${attributeName}`, name: `@${attributeName}`, type: (attribute.getAttribute("type") || "string").split(":").pop() || "string", depth: depth + 1, repeating: false, required, minOccurs: required ? "1" : "0", maxOccurs: "1" }); });
+        declarations(container, "attribute").forEach(({node: attribute}) => { const attributeName = attribute.getAttribute("name") || attribute.getAttribute("ref")?.split(":").pop() || "attribute", required = attribute.getAttribute("use") === "required"; fields.push({ path: `${path}.@${attributeName}`, name: `@${attributeName}`, type: (attribute.getAttribute("type") || "string").split(":").pop() || "string", depth: depth + 1, repeating: false, required, minOccurs: required ? "1" : "0", maxOccurs: "1" }); });
         const text = textType(container);
         if (text) {
           if (declarations(container,"attribute").length) fields.push({path:`${path}.#text`,name:'#text',type:text,depth:depth+1,repeating:false,required:true,minOccurs:'1',maxOccurs:'1'});
           else ownField.type = repeating ? `${text}[]` : text;
         }
-        directElements(container).forEach((child) => walkElement(child, path, depth + 1, [...active, container]));
+        directElements(container).forEach((child) => walkElement(child.node, path, depth + 1, [...active, container], child.optional));
       };
       const selected = document.documentElement.getAttributeNS("urn:mina:schema-selection","element");
       const entries = selected ? roots.filter(element => `{${scope.get(element.ownerDocument) || ""}}${element.getAttribute("name")}` === selected) : roots.slice(0,1);
@@ -3585,7 +3638,7 @@ function RepeatingDropDialog({ drop, close, finish }: { drop: RepeatingDrop; clo
   </ModalLayer>;
 }
 
-function TransformInputEditor({ config, properties, sources, schemas = [], setSourceCoercions, runtimeVariables = [], setMappings, saveInputDraft, customFunctions, updateCustomFunctions, expanded = false, actions, editorTitle = "Mapper · Expanded Input Editor", inputTargetRequest }: any) {
+function TransformInputEditor({ config, properties, sources, schemas = [], setSourceCoercions, runtimeVariables = [], setMappings, saveInputDraft, customFunctions, updateCustomFunctions, expanded = false, actions, editorTitle = "DataCompose · Expanded Input Editor", inputTargetRequest }: any) {
   const sourcePaths=useMemo(()=>{
     const asset=schemas.find((schema:any)=>schema.id===config.sourceSchemaId);
     return transformSchemaFields({targetSchemaText:asset ? selectedSchemaText(asset.content,config.sourceSchemaText) : config.sourceSchemaText,
@@ -3786,7 +3839,7 @@ function TransformMapTestEditor({ node: _node, config, schemas = [], customFunct
     }
   };
   return <div className="activity-tab transform-map-test">
-    <header><FlaskConical/><span><b>Mapper · Map &amp; Test</b></span><i>{mappings.length} RULE{mappings.length === 1 ? "" : "S"}</i></header>
+    <header><FlaskConical/><span><b>DataCompose · Map &amp; Test</b></span><i>{mappings.length} RULE{mappings.length === 1 ? "" : "S"}</i></header>
     <main>
       <section className="map-test-input"><header><span><b>TEST INPUT</b></span><button type="button" onClick={() => { setInputText(JSON.stringify(initialInput, null, 2)); setStatus("idle"); }}>Reset</button></header><textarea aria-label="Transform test input" value={inputText} onChange={(event) => { setInputText(event.target.value); setStatus("idle"); }} spellCheck={false}/></section>
       <section className="map-test-rules"><header><span><b>APPLIED MAPPINGS &amp; FORMULAS</b></span></header><div>{mappings.map((rule: any, index: number) => <article key={`${rule.target}-${index}`} className={rule.enabled === false ? "disabled" : ""}><em>{index + 1}</em><span><code>{rule.source ?? ("constant" in rule ? JSON.stringify(rule.constant) : "No source")}</code><ArrowRight/><b>{rule.target || "result"}</b><small>{[rule.operator, ...(rule.functions || []).map((fn: any) => typeof fn === "string" ? fn : fn.name)].filter(Boolean).join(" → ") || "Direct mapping"}</small></span></article>)}{!mappings.length && <p>No mappings are saved. Configure target mappings in the Input tab first.</p>}</div></section>

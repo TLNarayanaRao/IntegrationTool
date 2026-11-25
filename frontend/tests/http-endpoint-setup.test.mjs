@@ -31,6 +31,28 @@ const resources = [
 ];
 const schemas = [{ id: "payload", name: "payload.schema.json", content: '{"type":"object"}' }];
 
+test("custom response content type retains media parameters and replaces a bare selection", async () => {
+  const source = await readFile(new URL("../src/HttpContentTypePicker.tsx", import.meta.url), "utf8");
+  const ast = ts.createSourceFile("picker.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const names = ["mediaTypes", "mediaBase", "concreteMedia", "parameterizedMedia", "HttpContentTypeCheckboxes"];
+  const definitions = ast.statements.filter(statement => names.includes(statement.name?.text) ||
+    statement.declarationList?.declarations.some(declaration => names.includes(declaration.name.text)))
+    .map(statement => statement.getText(ast).replace(/^export /, ""));
+  const custom = 'TEXT/PLAIN; charset=iso-8859-1; profile="Order, v2"';
+  const context = vm.createContext({
+    useState: initial => [initial === "" ? custom : initial, () => {}],
+    React: {createElement: (type, props, ...children) => ({type, props, children: children.flat(Infinity)})},
+  });
+  vm.runInContext(ts.transpileModule(definitions.join("\n"), {compilerOptions: {
+    target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React,
+  }}).outputText, context);
+  let selected;
+  const picker = context.HttpContentTypeCheckboxes({label: "Response Content Types", response: true,
+    value: ["text/plain", "application/json"], onChange: next => selected = Array.from(next)});
+  picker.children.find(child => child.type === "button").props.onClick();
+  assert.deepEqual(selected, ['text/plain; charset=iso-8859-1; profile="Order, v2"', "application/json"]);
+});
+
 test("a configured HTTP starter replaces its default End with a response that survives normalization", () => {
   for (const type of ["http_listener", "rest"]) {
     const task = {

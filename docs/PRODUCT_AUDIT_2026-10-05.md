@@ -7,7 +7,7 @@ for current behavior and limits; the baseline limitations below are historical.
 
 This pass covered Studio mapping and schema handling, transformation execution,
 Python Direct and Engine archives, project persistence/import, SFTP configuration,
-and Control Plane authentication/package inspection. Mapper remains the
+and Control Plane authentication/package inspection. DataCompose remains the
 transformation activity; the removed Mediation activity was not restored.
 
 ## Fixes and added capabilities

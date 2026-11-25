@@ -1,6 +1,6 @@
-# Mapper document operations and record enrichment
+# DataCompose document operations and record enrichment
 
-Mapper includes document and record functions for API updates, record matching,
+DataCompose includes document and record functions for API updates, record matching,
 snapshot reconciliation, grouped summaries
 and explicit output masking. They use the same implementation in preview, Run,
 Debug, generic activity Input mappings and both Python archives. Source values
@@ -13,7 +13,7 @@ and change generation. **Collection** includes indexed joins, deduplication,
 `aggregateRecords` rollups and `reconcileRecords` snapshot comparison.
 **Privacy** contains explicit key redaction and text masking. Drag a function
 onto a target or type its name for suggestions, then supply the intended source
-and arguments. The Visual Mapper function library exposes the same entries.
+and arguments. The Visual DataCompose function library exposes the same entries.
 
 | Function | Purpose |
 | --- | --- |
@@ -72,7 +72,7 @@ Root add/replace/remove are supported. A remove with `"path":""` deletes the
 document. Inside that patch, a subsequent test, replace, copy/move from, nested
 add or second remove fails because the root no longer exists. A subsequent root
 add recreates the document. If it remains removed at the end, the function returns
-JSON null at MINA's value boundary. Mapper's **Null and missing values** policy
+JSON null at MINA's value boundary. DataCompose's **Null and missing values** policy
 then applies: the default omits the target field; **Preserve null / xsi:nil**
 retains null. This representation does not turn the absent root into an existing
 null during patch evaluation. Patch paths
@@ -96,8 +96,8 @@ An empty operation array means there is no change.
 These are local document transformations. To send generated operations to an API,
 map them to the request body and choose the provider's supported content type,
 such as `application/json-patch+json` or `application/merge-patch+json`. The remote
-API must implement the corresponding update behavior; Mapper does not change it.
-These functions execute in native Mapper rules and generated XSLT bindings.
+API must implement the corresponding update behavior; DataCompose does not change it.
+These functions execute in native DataCompose rules and generated XSLT bindings.
 
 ## XSLT bindings for document functions
 
@@ -248,12 +248,12 @@ complete snapshots, not an incomplete page or failed source fetch.
 
 Map `jsonPointer(${last.changes}, "/inserted")` (or the corresponding result
 path) into downstream database, messaging or other activity inputs. These are
-change classifications only: the Mapper does not issue writes, retain durable
+change classifications only: the DataCompose does not issue writes, retain durable
 CDC state, enforce transactions or guarantee delivery. Keep those responsibilities
 in the appropriate integration activities.
 
 Both functions are available in the shared Input-tab drag/drop and suggestion
-palette, Visual Mapper pipelines/expressions, `mina::Records` script imports,
+palette, Visual DataCompose pipelines/expressions, `mina::Records` script imports,
 preview, Run, Debug and both Python archives. Generated XSLT embeds standalone
 XSLT 3.0 implementations; downloaded bindings need no MINA callbacks. XML fields
 carry JSON text at that boundary. Inputs and results are bounded to 8 MiB,
@@ -294,7 +294,7 @@ configured input/execution logs.
 Transformer scripts can import these same implementations:
 
 ```text
-%dw 2.0
+%mina 2.0
 import jsonMergePatch from mina::Documents
 import redactKeys from mina::Privacy
 output application/json
@@ -324,7 +324,7 @@ outputs. These limits are JSON-size/work guards, not an operating-system RSS quo
 
 An additional fix makes terminal End/HTTP Send Response mapping failures fail the
 task instead of being reported as successful completion. Generic Input function
-arguments now parse JSON arrays/objects consistently with Mapper expressions.
+arguments now parse JSON arrays/objects consistently with DataCompose expressions.
 
 Tests cover all patch operations, pointer escapes/defaults, immutable sources,
 typed equality, diff round-trips, six join modes, deduplication, redaction/masking,
@@ -340,7 +340,7 @@ The repeatable bulk benchmark is:
 python scripts/mapper-standards-qa.py --records 100000 --output-dir tmp/mapper-standards-qa-new
 ```
 
-This executes Start → one Mapper joining two record collections → End. Every
+This executes Start → one DataCompose joining two record collections → End. Every
 joined row is audited; archive generation/startup/IPC and cleanup are included.
 It measures bulk collection processing rather than per-message orchestration,
 broker throughput or a long-duration soak. Actual interpreter RSS samples include

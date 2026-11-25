@@ -1,6 +1,6 @@
 # Assisted mapping and automatic repeating structures
 
-Open a Mapper's **Input → AI Mapper**, then select **AI Map**. The assistant
+Open a DataCompose's **Input → AI Mapping**, then select **AI Map**. The assistant
 builds an executable mapping plan from schemas, contract metadata or JSON samples.
 It does not require an external AI account or send payloads to an external model.
 The confidence score is a local matching rank, not a probability of correctness.
@@ -75,7 +75,7 @@ Open **AI mapping options** to choose a vocabulary:
 | Finance / payments | transaction/payment, acct/account, amt/amount |
 
 Add project-specific source/target term pairs when domain names differ. These
-settings are saved with the Mapper. Case, camel case, underscores and hyphens
+settings are saved with the DataCompose. Case, camel case, underscores and hyphens
 are normalized for name comparison; generated paths preserve original spelling.
 
 Matching checks data types, parent context and all repeating ancestors. Balanced
@@ -167,8 +167,8 @@ and [changed files](MAPPER_ASSISTANT_CHANGED_FILES.md).
 The 2026-11-16 browser retest used the supported Chromium in-app browser with
 an isolated synthetic project. It exercised nested repeats, ambiguous matches,
 existing authored constants and loop reuse, Discard, Undo, manual source edits,
-sample edits, Save mapper and Input validation. Studio toolbar Run and Debug
-both delivered a scheduler event through Call Sub Task into the saved Mapper
+sample edits, Save mappings and Input validation. Studio toolbar Run and Debug
+both delivered a scheduler event through Call Sub Task into the saved DataCompose
 and completed the flow. Popup controls remained reachable at 1024 × 600 with
 150% screen font as well as the normal 1280 × 720 view.
 

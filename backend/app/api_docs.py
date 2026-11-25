@@ -257,6 +257,8 @@ def generate_openapi(routes,base_url='/',title='MINA hosted APIs'):
             if conditional_reads:
                 entry['responses'].setdefault('304', {'description': 'Representation is unchanged'})
                 entry['responses'].setdefault('412', {'description': 'Read precondition failed'})
+            if selected_response_types and any(code.startswith('2') and code not in ('204', '205') for code in entry['responses']):
+                entry['responses'].setdefault('406', {'description': 'No configured response representation matches Accept'})
             entry['x-mina-authentication']=str(cfg.get('authentication') or 'None')
             entry['x-mina-hmac-algorithm']=str(cfg.get('hmacAlgorithm') or 'SHA256')
             if selected_request_types or selected_response_types:

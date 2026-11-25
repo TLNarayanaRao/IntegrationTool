@@ -61,6 +61,86 @@ def assert_response(test,response):
 
 
 class ResponseTreeTests(unittest.TestCase):
+    def test_xsd_reply_order_and_namespaces_in_preview_run_debug_and_archives(self):
+        from app import main
+        from xml.etree import ElementTree
+
+        schema = '''<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+            targetNamespace="urn:reply" elementFormDefault="qualified">
+          <xs:element name="Reply"><xs:complexType><xs:sequence>
+            <xs:element name="label" form="unqualified" type="xs:string"/>
+            <xs:element name="code" type="xs:int"/>
+            <xs:element name="note" type="xs:string"/>
+          </xs:sequence><xs:attribute name="id" use="required"/></xs:complexType></xs:element>
+        </xs:schema>'''
+
+        def make_project(kind):
+            with socket.socket() as probe:
+                probe.bind(('127.0.0.1', 0))
+                port = probe.getsockname()[1]
+            project = fixture(port, kind)
+            project.tasks[0].activities[0].config.update(responseSchema=schema, validateResponse=True)
+            project.tasks[0].activities[1].config = {
+                'inputMappings': {'body': json.dumps({'Reply': {'note': None, 'code': 42, '@id': 'A', 'label': 'café'}})}
+            }
+            return project, f'http://127.0.0.1:{port}/reply'
+
+        def check(client, url):
+            reply = client.get(url)
+            self.assertEqual(reply.status_code, 200, reply.text)
+            self.assertEqual(reply.headers['content-type'], 'application/xml')
+            root = ElementTree.fromstring(reply.content)
+            self.assertEqual((root.tag, root.attrib), ('{urn:reply}Reply', {'id': 'A'}))
+            self.assertEqual([(child.tag, child.text) for child in root],
+                             [('label', 'café'), ('{urn:reply}code', '42'), ('{urn:reply}note', None)])
+            head = client.head(url)
+            self.assertEqual((head.status_code, head.content), (200, b''))
+            self.assertEqual(head.headers['content-length'], str(len(reply.content)))
+
+        for kind in ('http_listener', 'rest'):
+            for mode in ('run', 'debug'):
+                with self.subTest(kind=kind, mode=mode):
+                    project, url = make_project(kind)
+                    with patch.object(main, 'get_project', return_value=project), patch.object(main, 'append_project_logs'), TestClient(main.app) as studio:
+                        if mode == 'run':
+                            check(studio, f'/api/listeners/{project.id}/reply')
+                        started = studio.post(f'/api/projects/{project.id}/{mode}', json={'task_id': 'main'})
+                        self.assertEqual(started.status_code, 200, started.text)
+                        try:
+                            with httpx.Client(trust_env=False, timeout=5) as live:
+                                check(live, url)
+                        finally:
+                            if mode == 'debug':
+                                studio.post(f"/api/debug/{started.json()['sessionId']}/action", json={'action': 'stop'})
+                            else:
+                                studio.post(f'/api/projects/{project.id}/stop')
+                            main.runtime_states.pop(project.id, None)
+
+        for compiler in (raw_python_files, engine_python_files):
+            with self.subTest(archive=compiler.__name__), tempfile.TemporaryDirectory() as directory:
+                project, url = make_project('rest')
+                for name, data in compiler(project.model_dump(), {'local': []}).items():
+                    target = Path(directory) / name
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(data)
+                with subprocess.Popen([sys.executable, '-m', 'application.main'], cwd=directory,
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as worker:
+                    try:
+                        with httpx.Client(trust_env=False, timeout=1) as live:
+                            deadline = time.monotonic() + 15
+                            while True:
+                                self.assertIsNone(worker.poll(), 'Archive exited before listening')
+                                try:
+                                    check(live, url)
+                                    break
+                                except (httpx.ConnectError, httpx.ConnectTimeout):
+                                    if time.monotonic() >= deadline:
+                                        raise
+                                    time.sleep(.05)
+                    finally:
+                        worker.terminate()
+                        worker.wait(timeout=10)
+
     def test_file_range_on_wire_in_run_debug_and_both_archives(self):
         from app import main
 

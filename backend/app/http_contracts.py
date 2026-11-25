@@ -1,6 +1,8 @@
 """Bounded OpenAPI document loading and offline schema validation."""
 from __future__ import annotations
 import copy, json, re, urllib.parse
+from email.message import Message
+from urllib.request import parse_http_list
 from .schema_validation import schema_errors
 
 LIMIT = 8 * 1024**2
@@ -106,11 +108,22 @@ def bundle_document(value, cfg):
 
 def media_schema(schemas, content_type):
     """Return the most specific OpenAPI media range and its schema."""
-    media=str(content_type or '').split(';',1)[0].strip().lower()
-    normalized={str(key).lower():value for key,value in schemas.items()}
-    for key in (media,media.split('/')[0]+'/*' if '/' in media else '', '*/*'):
-        if key and key in normalized:return key,normalized[key]
-    return None,None
+    value = str(content_type or '')
+    media = media_name(value)
+    ranks = {'*/*': 0}
+    if '/' in media:
+        ranks.update({media.split('/')[0] + '/*': 1, media: 2})
+    parameters = dict(_media_parameters(value))
+    best, match = (-1, -1), (None, None)
+    for key, schema in schemas.items():
+        name = media_name(key)
+        if name not in ranks:
+            continue
+        required = dict(_media_parameters(str(key)))
+        rank = (ranks[name], len(required))
+        if rank > best and required.items() <= parameters.items():
+            best, match = rank, (key, schema)
+    return match
 
 def media_name(value):
     return str(value or '').split(';', 1)[0].strip().lower()
@@ -141,6 +154,21 @@ def listener_media_types(config, key):
         result.setdefault(media_name(value), value.strip())
     return list(result.values())
 
+def _media_parameters(value):
+    if ';' not in value:
+        return []
+    message = Message()
+    message['Content-Type'] = value
+    return [(name.strip().lower(), param.lower() if name.strip().lower() == 'charset' else param)
+            for name, param in message.get_params()[1:] if isinstance(param, str)]
+
+
+def text_response_encoding(media):
+    if media_name(media).startswith('text/') and media_family(media) != 'xml':
+        return dict(_media_parameters(media)).get('charset', 'utf-8')
+    return 'utf-8'
+
+
 def negotiate_media(available, accept):
     """Select by client quality, then specificity and configured server order."""
     if not available:
@@ -150,12 +178,11 @@ def negotiate_media(available, accept):
     if isinstance(accept, list):
         accept = ','.join(accept)
     ranges = []
-    for item in accept.split(','):
-        name, *params = item.lower().split(';')
+    for item in parse_http_list(accept):
         quality = 1.0
-        for param in params:
-            key, _, value = param.partition('=')
-            if key.strip() == 'q':
+        parameters = {}
+        for key, value in _media_parameters(item):
+            if key == 'q':
                 try:
                     quality = float(value)
                 except ValueError:
@@ -163,15 +190,18 @@ def negotiate_media(available, accept):
                 if not 0 <= quality <= 1:
                     quality = 0
                 break
-        ranges.append((name.strip(), quality))
+            parameters[key] = value
+        ranges.append((media_name(item), parameters, quality))
     candidates = []
     for index, media in enumerate(available):
         name = media_name(media)
         masks = ('*/*', name.split('/')[0]+'/*', name)
-        matches = [(masks.index(mask), quality) for mask, quality in ranges if mask in masks]
-        specificity, quality = max(matches, default=(-1, 0))
+        parameters = dict(_media_parameters(media))
+        matches = [(masks.index(mask), len(required), quality) for mask, required, quality in ranges
+                   if mask in masks and required.items() <= parameters.items()]
+        specificity, parameter_count, quality = max(matches, default=(-1, -1, 0))
         if quality:
-            candidates.append((quality, specificity, -index, media))
+            candidates.append((quality, specificity, parameter_count, -index, media))
     return max(candidates)[-1] if candidates else None
 
 def request_schema(cfg,content_type):

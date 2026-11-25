@@ -24,7 +24,8 @@ from .debugger import DebugManager
 from .mapper import execute as execute_mapping, recommend, rewrite_references, validate_output
 from .mapper_learning import shared_paths
 from .mapper_binding import generate_binding, reopen_binding
-from .dataweave import DataWeaveError, execute_details as execute_dataweave
+from .script_transform import ScriptTransformError, execute_details as execute_script_transform
+from .transform_compat import LEGACY_SCRIPT_KIND
 from .sap import idoc_delivery_details, sap_adapter
 from .snowflake import snowflake_adapter
 from .jdbc import jdbc_adapter
@@ -2160,7 +2161,7 @@ def mapper_matching_schemas(payload):
     from .data_formats import xsd_shape
     documents = payload.get('xmlSchemaDocuments') or {}
     if not isinstance(documents, dict):
-        raise ValueError('Mapper schema documents must be keyed by project path')
+        raise ValueError('DataCompose schema documents must be keyed by project path')
     assets = None
     def matching_schema(side):
         nonlocal assets
@@ -2168,7 +2169,7 @@ def mapper_matching_schemas(payload):
         if isinstance(schema, str) and schema.lstrip().startswith('<') and re.search(r'<(?:[\w.-]+:)?(?:import|include)\b', schema):
             if assets is None:
                 if any(not isinstance(value, str) for value in documents.values()):
-                    raise ValueError('Mapper schema documents must contain XSD text')
+                    raise ValueError('DataCompose schema documents must contain XSD text')
                 assets = tuple(sorted(documents.items()))
             shape = xsd_shape(schema, bundle=(payload.get(side + 'SchemaPath') or '', assets))
             name = shape['xml']['name']
@@ -2243,7 +2244,7 @@ def mapper_test(payload: dict):
         if not xml_binding: options['validateOutput'] = False
         if payload.get('targetSchema'): options = {**options, 'targetSchema': payload.get('targetSchema')}
         if payload.get('targetSchemaText'): options = {**options, 'targetSchemaText': payload.get('targetSchemaText')}
-        # Mapper expressions use the same aliases as the runtime.  In
+        # DataCompose expressions use the same aliases as the runtime.  In
         # particular, the function palette creates expressions such as
         # ``render-xml(${last})``.  The test endpoint previously passed the
         # sample document directly, so ``last`` was missing and render-xml
@@ -2269,22 +2270,11 @@ def mapper_test(payload: dict):
             output_text = output
             output_format = 'xml' if output.lstrip().startswith('<') else 'text'
         elif isinstance(schema, str) and '<' in schema and 'schema' in schema:
-            from .mapper import _render_xml
-            from xml.etree import ElementTree as ET
-            contract = ET.fromstring(schema)
-            declarations = [element for element in contract if element.tag.rsplit('}', 1)[-1] == 'element']
-            root_name = declarations[0].get('name', 'root') if declarations else 'root'
+            from .data_formats import render_xsd_value, xsd_shape
+            shape = xsd_shape(schema)
+            root_name = shape['xml']['name']
             value = output.get(root_name, output) if isinstance(output, dict) else output
-            rendered = ET.fromstring(_render_xml(value, root_name))
-            namespace = contract.get('targetNamespace')
-            if namespace:
-                rendered.tag = '{' + namespace + '}' + rendered.tag
-                if contract.get('elementFormDefault') == 'qualified':
-                    for element in list(rendered.iter())[1:]:
-                        element.tag = '{' + namespace + '}' + element.tag
-                ET.register_namespace('', namespace)
-            ET.indent(rendered, space='  ')
-            output_text = ET.tostring(rendered, encoding='unicode')
+            output_text = render_xsd_value(shape, value, pretty=True, default_namespace=True)
             output_format = 'xml'
         return {'output': output, 'outputText': output_text, 'outputFormat': output_format, 'valid': not errors, 'validationErrors': errors, 'mappingCount': len(active), 'mappedTargets': mapped_targets, 'diagnostics': {'mappedTargetCount': len(mapped_targets), 'loopCount': len([rule for rule in active if rule.get('operator') in ('for-each', 'for-each-group')]), 'conditionalCount': len([rule for rule in active if rule.get('operator') in ('if', 'when-otherwise', 'choose')])}}
     except Exception as exc: raise HTTPException(400, f'Mapping failed: {exc}')
@@ -2312,37 +2302,40 @@ def mapper_template(payload: dict):
     except (ValueError, TypeError, KeyError) as error: raise HTTPException(400, str(error))
 
 
-@app.post('/api/dataweave/test')
-def dataweave_test(payload: dict):
+@app.post('/api/' + LEGACY_SCRIPT_KIND + '/test', include_in_schema=False)
+@app.post('/api/transform-script/test')
+def script_transform_test(payload: dict):
     try:
         if payload.get('config'):
             from .transform_engine import execute_plan
             config = {**payload['config'], 'script': payload.get('script') or payload['config'].get('script') or ''}
-            if config.get('streamEnabled'): raise DataWeaveError('Use a sample record in Map & Test; streaming files run through Run or Debug')
+            if config.get('streamEnabled'): raise ScriptTransformError('Use a sample record in Map & Test; streaming files run through Run or Debug')
             plan = execute_plan(config, payload.get('input'), payload.get('attributes'), payload.get('variables'), payload.get('schemas') or [])
             return {'output': plan['output'], 'outputs': plan['outputs'], 'mimeType': plan['outputs'][0]['mimeType'] if plan['outputs'] else 'application/json', 'version': '2.0'}
-        return execute_dataweave(
+        return execute_script_transform(
             str(payload.get('script') or ''), payload=payload.get('input'),
             attributes=payload.get('attributes') or {}, variables=payload.get('variables') or {},
             input_mime_type=str(payload.get('inputMimeType') or ''),
             libraries=payload.get('libraries') or {},
         )
-    except DataWeaveError as exc:
+    except ScriptTransformError as exc:
         raise HTTPException(400, f'Transform script validation failed: {exc}')
 
-@app.post('/api/dataweave/visual')
-def dataweave_visual(payload: dict):
+@app.post('/api/' + LEGACY_SCRIPT_KIND + '/visual', include_in_schema=False)
+@app.post('/api/transform-script/visual')
+def script_transform_visual(payload: dict):
     from .transform_visual import script_to_visual, visual_to_script
     try:
         if 'mappings' in payload:
             return {'script': visual_to_script(payload.get('header'), payload['mappings'])}
         return script_to_visual(str(payload.get('script') or ''))
-    except (DataWeaveError, ValueError, SyntaxError, IndexError) as exc:
+    except (ScriptTransformError, ValueError, SyntaxError, IndexError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
 
-@app.post('/api/dataweave/generate')
-def dataweave_generate(payload: dict):
+@app.post('/api/' + LEGACY_SCRIPT_KIND + '/generate', include_in_schema=False)
+@app.post('/api/transform-script/generate')
+def script_transform_generate(payload: dict):
     """Generate a reviewable starter script from mapper recommendations."""
     source, target = payload.get('sourceSchema') or {}, payload.get('targetSchema') or {}
     recommendations = recommend(source, target, float(payload.get('threshold', 70)) / 100, payload.get('weights'))
@@ -2381,7 +2374,7 @@ def dataweave_generate(payload: dict):
         return ',\n'.join(lines)
     body = '{\n' + (render(tree) if tree else '  result: payload') + '\n}'
     return {
-        'script': '%dw 2.0\noutput application/json\n---\n' + body,
+        'script': '%mina 2.0\noutput application/json\n---\n' + body,
         'recommendations': recommendations,
         'reviewRequired': True,
     }
@@ -2570,15 +2563,23 @@ async def invoke_listener(project_id: str, listener_path: str, request: Request,
         connection={**_resolved_resource_config(item,activity,properties),'_httpScope':item.id}
         configured=runtime.resolve(activity.config,{'properties':properties,'input':{},'last':{},'vars':{},'context':{}})
         return listener_config(connection,configured)
-    def match_path(template: str):
-        from .http_server import route_pattern
-        pattern,names=route_pattern(str(template))
-        match=pattern.match(request_path)
-        return dict(zip(names,match.groups())) if match else None
     from .api_docs import methods_for
+    from .http_server import route_pattern, route_priority, route_shape
     resolved=[(task,activity,configured_listener(activity)) for task,activity in candidates]
-    matching=[(task,activity,cfg,match_path(cfg['path'])) for task,activity,cfg in resolved if match_path(cfg['path']) is not None]
-    matched=next((entry for entry in matching if request.method in methods_for(entry[2]) or request.method=='HEAD' and 'GET' in methods_for(entry[2]) or entry[1].type=='soap' and request.method=='GET' and 'wsdl' in request.query_params),next((entry for entry in matching if entry[1].type!='soap'),None))
+    matching=[]
+    for task,activity,cfg in resolved:
+        pattern,names=route_pattern(cfg['path'])
+        match=pattern.fullmatch(request_path)
+        if match:
+            matching.append((task,activity,cfg,dict(zip(names,match.groups()))))
+    if matching:
+        best_shape=min((route_shape(entry[2]['path']) for entry in matching),key=route_priority)
+        matching=[entry for entry in matching if route_shape(entry[2]['path'])==best_shape]
+    matched=next((entry for entry in matching if request.method in methods_for(entry[2]) or entry[1].type=='soap' and request.method=='GET' and 'wsdl' in request.query_params),None)
+    if matched is None and request.method=='HEAD':
+        matched=next((entry for entry in matching if 'GET' in methods_for(entry[2])),None)
+    if matched is None:
+        matched=next((entry for entry in matching if entry[1].type!='soap'),None)
     task, listener, effective, path_parameters = matched if matched else (None, None, {}, {})
     if not listener: raise HTTPException(404, f'No listener configured for {request.method} {request_path}')
     properties = {prop.key: prop.value for prop in item.properties.get(environment, [])}

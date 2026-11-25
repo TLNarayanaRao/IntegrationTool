@@ -25,7 +25,7 @@ async def main(args):
         writer = csv.writer(handle); writer.writerow(['seq', 'name'])
         for index in range(args.records): writer.writerow([str(index), ' name-' + str(index) + ' '])
     reports = []
-    for kind in ('mapper', 'dataweave'):
+    for kind in ('mapper', 'script_transform'):
         for mode in ('run', 'debug', 'python-direct', 'python-engine'):
             target = out / (kind + '-' + mode + '.jsonl')
             config = {'streamEnabled': True, 'streamInputFile': str(source), 'streamOutputFile': str(target),
@@ -33,7 +33,7 @@ async def main(args):
                 'mappings': [{'target': 'seq', 'source': '${input.seq}'},
                              {'target': 'name', 'source': '${input.name}', 'functions': ['trim', 'upperCase']}],
                 'libraries': {'qa::Names': 'fun normalize(value) = upper(trim(value))'},
-                'script': '%dw 2.0\nimport normalize from qa::Names\noutput application/json\n---\n{seq: payload.seq, name: normalize(payload.name)}',
+                'script': '%mina 2.0\nimport normalize from qa::Names\noutput application/json\n---\n{seq: payload.seq, name: normalize(payload.name)}',
                 'sourceSchemaId': 'contract', 'targetSchemaId': 'contract'}
             schema = {'type': 'object', 'required': ['seq', 'name'], 'properties': {'seq': {'type': 'string'}, 'name': {'type': 'string'}}, 'additionalProperties': False}
             nodes = [{'id': 's', 'name': 'Start', 'type': 'start'}, {'id': 'work', 'name': 'Transform', 'type': kind, 'config': config}, {'id': 'e', 'name': 'End', 'type': 'end'}]

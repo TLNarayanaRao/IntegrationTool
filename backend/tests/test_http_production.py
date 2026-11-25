@@ -26,6 +26,52 @@ class ListenerProductionTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(base64.b64decode(seen[0]['binaryContent']),b'\x00\xff')
         await self.exercise(handle,action)
 
+    async def test_single_configured_representation_honors_charset_and_accept_quality(self):
+        async def handle(_, payload):
+            return {'statusCode': 200, 'body': 'café', 'headers': {'Content-Type': 'text/plain; charset=iso-8859-1'}}
+
+        async def action(client, app):
+            accepted = await client.get('/echo', headers={'Accept': 'text/plain; charset="ISO-8859-1"'})
+            self.assertEqual((accepted.status_code, accepted.content), (200, b'caf\xe9'))
+            self.assertEqual(accepted.headers['vary'], 'Accept')
+            self.assertEqual(accepted.headers['content-type'], 'text/plain; charset=iso-8859-1')
+            for accept in ('application/json', 'text/plain; charset=utf-8',
+                           'text/plain;charset=iso-8859-1;q=0, text/plain;q=0.8'):
+                response = await client.get('/echo', headers={'Accept': accept})
+                self.assertEqual((response.status_code, response.headers['vary']), (406, 'Accept'), accept)
+            fallback = await client.get('/echo', headers={'Accept': 'text/plain;charset=utf-8;q=0, text/*;q=1'})
+            self.assertEqual(fallback.status_code, 200)
+
+        await self.exercise(handle, action, {'responseContentTypes': ['text/plain; charset=iso-8859-1']})
+
+    async def test_route_specificity_is_resolved_before_method_dispatch(self):
+        routes = [(name, listener_config({}, {'path': path, 'methods': method})) for name, path, method in (
+            ('wildcard', '/items/{veryLongParameterName}', 'GET,POST,HEAD'),
+            ('status', '/items/status', 'GET'),
+            ('template-first', '/{name}/latest', 'GET'),
+            ('leading-literal', '/reports/{id}', 'GET'),
+            ('template-delete', '/reports/{reportId}', 'DELETE'),
+        )]
+        seen = []
+
+        async def handle(route, payload):
+            seen.append(route)
+            return {'statusCode': 200, 'body': {'route': route, 'pathParameters': payload['pathParameters']}}
+
+        async def action(client, app):
+            self.assertEqual((await client.get('/items/status')).json()['route'], 'status')
+            response = await client.post('/items/status')
+            self.assertEqual(response.status_code, 405)
+            self.assertEqual(set(response.headers['allow'].split(', ')), {'GET', 'HEAD', 'OPTIONS'})
+            self.assertEqual((await client.head('/items/status')).status_code, 200)
+            self.assertEqual((await client.post('/items/101')).json()['route'], 'wildcard')
+            self.assertEqual((await client.get('/reports/latest')).json(), {
+                'route': 'leading-literal', 'pathParameters': {'id': 'latest'}})
+            self.assertEqual((await client.delete('/reports/latest')).json()['pathParameters'], {'reportId': 'latest'})
+
+        await self.exercise(handle, action, routes=routes)
+        self.assertEqual(seen, ['status', 'status', 'wildcard', 'leading-literal', 'template-delete'])
+
     async def test_file_range_and_conditions_use_the_selected_representation(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'artifact.bin'
@@ -54,6 +100,7 @@ class ListenerProductionTests(unittest.IsolatedAsyncioTestCase):
                 unsatisfied = await client.get('/echo', headers={'Range': 'bytes=10-'})
                 self.assertEqual((unsatisfied.status_code, unsatisfied.content), (416, b''))
                 self.assertEqual(unsatisfied.headers['content-range'], 'bytes */10')
+                self.assertEqual(unsatisfied.headers['content-type'], 'application/octet-stream')
                 head = await client.head('/echo', headers={'Range': 'bytes=2-4'})
                 self.assertEqual((head.status_code, head.content, head.headers['content-length']), (200, b'', '10'))
                 unchanged = await client.get('/echo', headers={'Range': 'bytes=2-4', 'If-None-Match': '"release-1"'})
@@ -61,6 +108,19 @@ class ListenerProductionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn('content-range', unchanged.headers)
 
             await self.exercise(handle, action, {'fileByteRanges': True, 'conditionalResponses': True})
+
+    async def test_binary_response_infers_the_contract_media_type(self):
+        async def handle(_, payload):
+            return {'binaryContent': 'AAH/'}
+
+        async def action(client, app):
+            response = await client.get('/echo')
+            self.assertEqual((response.status_code, response.content), (200, bytes([0, 1, 255])))
+            self.assertEqual(response.headers['content-type'], 'application/octet-stream')
+
+        await self.exercise(handle, action, {'validateResponse': True, '_restResponseContentSchemas': {
+            '200': {'application/octet-stream': {'type': 'string', 'format': 'binary'}},
+        }})
 
     async def test_read_preconditions_follow_header_order_and_use_response_validators(self):
         async def handle(_, payload):
@@ -248,6 +308,17 @@ class TransportProductionTests(unittest.TestCase):
     def tearDown(self):transport.close_clients();policy._CIRCUITS.clear();policy._JWKS.clear()
     def client(self,handler):
         client=httpx.Client(transport=httpx.MockTransport(handler));client._mina_route_limit=2;client._mina_routes={};client._mina_lock=__import__('threading').Lock();return client
+
+    def test_invalid_response_encoding_is_reported_and_download_is_cleaned_up(self):
+        def respond(_):
+            return httpx.Response(200, headers={'Content-Encoding': 'gzip'}, stream=httpx.ByteStream(b'bad gzip'))
+
+        with tempfile.TemporaryDirectory() as folder, self.client(respond) as client, patch.object(transport, 'client_for', return_value=client):
+            target = Path(folder) / 'download.bin'
+            with self.assertRaises(transport.HTTPFault) as fault:
+                transport.request({'url': 'http://localhost', 'responseFile': str(target)})
+            self.assertEqual(fault.exception.fault_type, 'HTTP_BAD_RESPONSE')
+            self.assertEqual(list(Path(folder).iterdir()), [])
 
     def test_file_upload_and_download_atomic_failure_cleanup(self):
         with tempfile.TemporaryDirectory() as folder:

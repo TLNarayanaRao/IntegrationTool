@@ -479,33 +479,33 @@ class TaskRuntimeTests(unittest.TestCase):
         self.assertEqual(receive_advanced, {'logPayload':False})
         self.client.delete('/api/projects/task-runtime-test')
 
-    def test_dataweave_transform_executes_selectors_defaults_collections_and_xml(self):
-        script = '''%dw 2.0
+    def test_script_transform_transform_executes_selectors_defaults_collections_and_xml(self):
+        script = '''%mina 2.0
 output application/json
 var fallback = "Unknown"
 ---
 { customer: upper(payload.name default fallback), ids: payload.lines map (line) -> line.id }'''
-        response = self.client.post('/api/dataweave/test', json={'script':script, 'input':{'name':'ada','lines':[{'id':1},{'id':2}]}})
+        response = self.client.post('/api/transform-script/test', json={'script':script, 'input':{'name':'ada','lines':[{'id':1},{'id':2}]}})
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()['output'], {'customer':'ADA','ids':[1,2]})
-        xml = self.client.post('/api/dataweave/test', json={'script':'%dw 2.0\noutput application/xml\n---\n{ order: { id: payload.id } }', 'input':{'id':7}})
+        xml = self.client.post('/api/transform-script/test', json={'script':'%mina 2.0\noutput application/xml\n---\n{ order: { id: payload.id } }', 'input':{'id':7}})
         self.assertEqual(xml.status_code, 200, xml.text)
         self.assertEqual(xml.json()['output'], '<order><id>7</id></order>')
-        metadata = self.client.post('/api/dataweave/test', json={
-            'script':'%dw 2.0\noutput application/json\n---\n{ requestId: attributes.requestId, region: vars.region }',
+        metadata = self.client.post('/api/transform-script/test', json={
+            'script':'%mina 2.0\noutput application/json\n---\n{ requestId: attributes.requestId, region: vars.region }',
             'input':{}, 'attributes':{'requestId':'req-7'}, 'variables':{'region':'west'}
         })
         self.assertEqual(metadata.status_code, 200, metadata.text)
         self.assertEqual(metadata.json()['output'], {'requestId':'req-7','region':'west'})
-        csv_output = self.client.post('/api/dataweave/test', json={
-            'script':'%dw 2.0\noutput text/csv\n---\npayload',
+        csv_output = self.client.post('/api/transform-script/test', json={
+            'script':'%mina 2.0\noutput text/csv\n---\npayload',
             'input':[{'id':1,'name':'Ada'},{'id':2,'name':'Lin'}]
         })
         self.assertEqual(csv_output.status_code, 200, csv_output.text)
         self.assertEqual(csv_output.json()['output'], 'id,name\n1,Ada\n2,Lin\n')
 
-    def test_dataweave_custom_functions_coercions_and_extended_collections(self):
-        script = '''%dw 2.0
+    def test_script_transform_custom_functions_coercions_and_extended_collections(self):
+        script = '''%mina 2.0
 output application/json
 fun normalize(value: String) = upper(trim(value))
 ---
@@ -517,7 +517,7 @@ fun normalize(value: String) = upper(trim(value))
   wildcard: payload.labels.*,
   entries: payload.labels pluck (value, key) -> { name: key, value: value }
 }'''
-        response = self.client.post('/api/dataweave/test', json={'script': script, 'input': {
+        response = self.client.post('/api/transform-script/test', json={'script': script, 'input': {
             'name': ' ada ', 'id': 7, 'groups': [{'values': [1, 2]}, {'values': [3]}], 'labels': {'a': 'A', 'b': 'B'},
         }})
         self.assertEqual(response.status_code, 200, response.text)

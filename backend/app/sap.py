@@ -33,6 +33,10 @@ class _IdocMapping(dict):
         except KeyError:
             return default
 
+class _IdocIntegrityError(RuntimeError):
+    pass
+
+
 class SapAdapter:
     """SAP ECC adapter. External mode uses SAP's separately licensed Java Connector (JCo)."""
     def __init__(self):
@@ -339,6 +343,8 @@ class SapAdapter:
         rows: list[dict[str, Any]] = []
         for index, record in enumerate(records):
             if record[:10].rstrip(b' ').upper() in (b'EDI_DC40', b'EDI_DC30'):
+                if control:
+                    raise _IdocIntegrityError('Flat IDoc input contains multiple control records; provide one IDoc per call')
                 offset = 0
                 for name, width in control_names:
                     control[name] = record[offset:offset + width].rstrip(b' ').decode(encoding, errors=errors)
@@ -363,6 +369,12 @@ class SapAdapter:
         if not control:
             supplied = cfg.get('controlRecord') or cfg.get('SAPIDoc') or {}
             control = dict(supplied) if isinstance(supplied, dict) else {}
+        document_numbers = {str(row['DOCNUM']).strip().lstrip('0') or '0' for row in rows if str(row['DOCNUM']).strip()}
+        if len(document_numbers) > 1:
+            raise _IdocIntegrityError('Flat IDoc data records contain different document numbers; provide one IDoc per call')
+        control_number = str(control.get('DOCNUM') or '').strip()
+        if control_number and document_numbers and (control_number.lstrip('0') or '0') not in document_numbers:
+            raise _IdocIntegrityError('Flat IDoc control and data document numbers do not match')
         return {'control': control, 'data': rows, 'encoding': encoding, 'recordCount': len(records)}
 
     @classmethod
@@ -498,9 +510,14 @@ class SapAdapter:
         field_index = cls._segment_field_definitions(fields, segments)
         logical_names = cls._segment_logical_names(segments)
         definition_lengths: dict[str, int] = {}
+        physical_names: dict[str, str] = {}
         for segment in segments or []:
             if not isinstance(segment, dict):
                 continue
+            logical = str(segment.get('SEGMENTTYP') or segment.get('SEGMENTTYPE') or '').strip().upper()
+            physical = str(segment.get('SEGMENTDEF') or segment.get('SEGMENTDEFN') or '').strip()
+            if logical and physical:
+                physical_names.setdefault(logical, physical)
             names = [str(segment.get(key) or '').strip().upper() for key in ('SEGMENTTYP', 'SEGMENTTYPE', 'SEGMENTDEF', 'SEGMENTDEFN')]
             try:
                 length = int(str(segment.get('SEGLEN') or segment.get('SEGMENT_LENGTH') or '').strip())
@@ -511,48 +528,60 @@ class SapAdapter:
                     if name:
                         definition_lengths[name] = length
 
+        xml_document = None
+        if isinstance(value, str):
+            try:
+                xml_document = ET.fromstring(value)
+            except ET.ParseError:
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    return {'control': {}, 'data': [], 'rawIDoc': value}
         if isinstance(value, dict) and ('control' in value or 'data' in value):
             document = value
+        elif xml_document is not None:
+            document = {'xml': xml_document}
         else:
             if isinstance(value, dict) and idoc_type in value:
                 value = value[idoc_type]
-            if isinstance(value, str):
-                try:
-                    document = {'xml': ET.fromstring(value)}
-                except ET.ParseError:
-                    try:
-                        value = json.loads(value)
-                    except ValueError:
-                        return {'control': {}, 'data': [], 'rawIDoc': value}
-            if isinstance(value, dict) and 'xml' not in locals():
-                xml_text = cls._json_to_xml(value, idoc_type or 'IDoc')
-                document = {'xml': ET.fromstring(xml_text)}
+            document = {'xml': ET.fromstring(cls._json_to_xml(value, idoc_type or 'IDoc'))}
         if isinstance(document, dict) and 'xml' in document:
             xml_root = document['xml']
-            idoc_node = next((node for node in xml_root.iter() if cls._xml_name(node.tag) == 'IDOC'), xml_root)
+            idoc_nodes = [node for node in xml_root.iter() if cls._xml_name(node.tag) == 'IDOC']
+            if len(idoc_nodes) > 1:
+                raise RuntimeError('IDoc renderer and posting require one IDOC document per call')
+            idoc_node = idoc_nodes[0] if idoc_nodes else xml_root
             control_node = next((node for node in list(idoc_node) if cls._xml_name(node.tag) == 'EDI_DC40'), None)
             control = {cls._xml_name(child.tag): (child.text or '') for child in list(control_node or [])}
             segment_nodes = []
-            def walk(parent: ET.Element, parent_number: str = '0') -> None:
+            def walk(parent: ET.Element, parent_number: str = '0', level: int = 1) -> None:
                 for child in list(parent):
                     name = cls._xml_name(child.tag)
-                    if name == 'EDI_DC40':
+                    if name.upper() in ('EDI_DC40', 'SDATA'):
                         continue
+                    if level > 1 and not (child.get('SEGMENT') == '1' or name.upper() in logical_names
+                                          or name.upper() in field_index or len(child)):
+                        continue
+                    if level > 99:
+                        raise RuntimeError('IDoc segment hierarchy exceeds 99 levels')
                     number = str(len(segment_nodes) + 1)
-                    segment_nodes.append((number, parent_number, child))
-                    walk(child, number)
+                    segment_nodes.append((number, parent_number, level, child))
+                    walk(child, number, level + 1)
             walk(idoc_node)
             rows = []
-            for number, parent_number, node in segment_nodes:
+            for number, parent_number, level, node in segment_nodes:
                 logical = cls._xml_name(node.tag)
-                physical = next((str(segment.get('SEGMENTDEF') or segment.get('SEGMENTDEFN')).strip() for segment in segments or [] if str(segment.get('SEGMENTTYP') or segment.get('SEGMENTTYPE') or '').strip().upper() == logical.upper() and (segment.get('SEGMENTDEF') or segment.get('SEGMENTDEFN'))), logical)
+                physical = physical_names.get(logical.upper(), logical)
                 definitions = field_index.get(logical.upper()) or field_index.get(physical.upper()) or []
                 max_end = max([int(str(field.get('BYTE_LAST') or '0')) - 63 for field in definitions if str(field.get('BYTE_LAST') or '').isdigit()] or [0])
-                segment_length = definition_lengths.get(physical.upper()) or definition_lengths.get(logical.upper()) or max_end
-                bytes_out = bytearray(b' ' * max(0, segment_length))
                 supplied_sdata = next((child.text or '' for child in list(node) if cls._xml_name(child.tag) == 'SDATA'), '')
-                if supplied_sdata:
-                    supplied = supplied_sdata.encode(encoding, errors='strict')[:len(bytes_out)]
+                supplied = supplied_sdata.encode(encoding, errors='strict')
+                segment_length = definition_lengths.get(physical.upper()) or definition_lengths.get(logical.upper()) or max_end or len(supplied)
+                if segment_length > 1000:
+                    raise RuntimeError(f'IDoc segment {logical} exceeds the 1000-byte SDATA limit')
+                bytes_out = bytearray(b' ' * segment_length)
+                if supplied:
+                    supplied = supplied[:segment_length]
                     while supplied:
                         try: supplied.decode(encoding, errors='strict'); break
                         except UnicodeDecodeError: supplied = supplied[:-1]
@@ -576,7 +605,9 @@ class SapAdapter:
                         try: encoded.decode(encoding, errors='strict'); break
                         except UnicodeDecodeError: encoded = encoded[:-1]
                     bytes_out[start:start + width] = encoded.ljust(width, b' ')
-                rows.append({'SEGNAM': physical, 'SEGNUM': number, 'PSGNUM': parent_number, 'SDATA': bytes(bytes_out).decode(encoding, errors='strict')})
+                rows.append({'SEGNAM': physical, 'SEGNUM': number, 'PSGNUM': parent_number, 'HLEVEL': f'{level:02d}',
+                             **{key: control[key] for key in ('MANDT', 'DOCNUM') if control.get(key)},
+                             'SDATA': bytes(bytes_out).decode(encoding, errors='strict')})
             return {'control': control, 'data': rows}
         return {'control': document.get('control') or {}, 'data': document.get('data') or []}
 
@@ -610,7 +641,8 @@ class SapAdapter:
         if not isinstance(rows, list):
             rows = [rows]
         nodes: dict[str, ET.Element] = {}
-        pending: list[tuple[ET.Element, str]] = []
+        parents: dict[str, str] = {}
+        level_stack: list[str] = []
         if not fields or not segments:
             schema_fields, schema_segments = cls._schema_metadata(schema)
             fields, segments = fields or schema_fields, segments or schema_segments
@@ -623,8 +655,21 @@ class SapAdapter:
             name = str(row.get('SEGNAM') or row.get('SEGMENT') or row.get('SEGMENTNAME') or 'SEGMENT').strip()
             logical_name = logical_names.get(name.upper(), name)
             tag = re.sub(r'[^A-Za-z0-9_.-]', '_', logical_name) or 'SEGMENT'
-            number = str(row.get('SEGNUM') or index + 1).strip()
-            parent_number = str(row.get('PSGNUM') or '').strip().lstrip('0') or '0'
+            number = str(row.get('SEGNUM') or '').strip().lstrip('0') or str(index + 1)
+            if number in nodes:
+                raise _IdocIntegrityError(f'IDoc contains duplicate segment number {number}')
+            parent_value = row.get('PSGNUM')
+            parent = '' if parent_value is None else str(parent_value).strip()
+            level_text = str(row.get('HLEVEL') or '').strip().lstrip('0')
+            level = int(level_text) if re.fullmatch(r'[0-9]{1,2}', level_text) else None
+            if not parent and level and level > 1:
+                if level > len(level_stack) + 1:
+                    raise _IdocIntegrityError(f'IDoc segment {number} has no preceding level {level - 1} parent')
+                parent = level_stack[level - 2]
+            if level and level <= len(level_stack) + 1:
+                level_stack[level - 1:] = [number]
+            else:
+                level_stack.clear()
             node = ET.Element(tag, {'SEGMENT': '1'})
             sdata = row.get('SDATA')
             decoded = cls._decode_segment_fields(name, sdata, row, field_index, layouts, encoding)
@@ -635,11 +680,22 @@ class SapAdapter:
             elif sdata is not None and str(sdata) != '':
                 data_node = ET.SubElement(node, 'SDATA')
                 data_node.text = str(sdata)
-            nodes[number.lstrip('0') or str(index + 1)] = node
-            pending.append((node, parent_number))
-        for node, parent_number in pending:
-            parent = nodes.get(parent_number)
-            (parent if parent is not None else idoc_node).append(node)
+            nodes[number] = node
+            parents[number] = parent.lstrip('0') or '0'
+        verified = {'0'}
+        for number in parents:
+            chain: set[str] = set()
+            parent = number
+            while parent not in verified:
+                if parent in chain:
+                    raise _IdocIntegrityError(f'IDoc segment hierarchy contains a cycle at segment {parent}')
+                if parent not in parents:
+                    raise _IdocIntegrityError(f'IDoc segment hierarchy references missing parent {parent}')
+                chain.add(parent)
+                parent = parents[parent]
+            verified.update(chain)
+        for number, node in nodes.items():
+            nodes.get(parents[number], idoc_node).append(node)
         return ET.tostring(root, encoding='unicode')
 
     @staticmethod
@@ -1228,6 +1284,8 @@ class SapAdapter:
                             xml_text = self._idoc_structured_to_xml(flat, str(cfg.get('idocType') or selected_idoc.get('idocType') or 'IDoc'), metadata_fields, metadata_segments, selected_idoc.get('schema'), encoding)
                             xml_root = ET.fromstring(xml_text)
                             json_value = self._xml_to_json(xml_root)
+                        except _IdocIntegrityError:
+                            raise
                         except RuntimeError:
                             if self._mode(cfg) != 'mock': raise
                             json_value = {'rawIDoc': textual, 'segments': [line for line in textual.splitlines() if line]}

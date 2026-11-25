@@ -107,7 +107,7 @@ FORMAT_INPUT_OPTIONS = FORMAT_FIELDS - {'schemaId'} | frozenset(
     'streamMaxRecordBytes maxRecordLines quoteRecovery groupRecords recordLayouts wholeFileValidation wholeFileXsd wholeFileRules'.split())
 
 
-def xml_from_value(name, value, shape=None, *, badger=False, ignore=False, namespaces=None, tree_input=False, generic=False):
+def xml_from_value(name, value, shape=None, *, badger=False, ignore=False, namespaces=None, tree_input=False, generic=False, nil_for_null=True):
     from lxml import etree
     namespaces = dict(namespaces or {})
     declarations = (value.get('@xmlns') or {}) if badger and isinstance(value, dict) else {}
@@ -125,7 +125,8 @@ def xml_from_value(name, value, shape=None, *, badger=False, ignore=False, names
         return '{' + uri + '}' + key if uri else key
     element = etree.Element(tag(name, xml if shape else None), nsmap=local_ns or None)
     if value is None:
-        element.set(XSI_NIL, 'true')
+        if nil_for_null:
+            element.set(XSI_NIL, 'true')
     elif isinstance(value, dict):
         fields = (shape or {}).get('properties', {})
         ranks = {field: rank for rank, field in enumerate(fields)}
@@ -144,7 +145,7 @@ def xml_from_value(name, value, shape=None, *, badger=False, ignore=False, names
                             if last is None: element.text = (element.text or '') + str(text)
                             else: last.tail = (last.tail or '') + str(text)
                         else:
-                            last = xml_from_value(child, text, tree_input=True)
+                            last = xml_from_value(child, text, tree_input=True, nil_for_null=nil_for_null)
                             element.append(last)
                 continue
             raw_key = key.removeprefix('@')
@@ -171,15 +172,24 @@ def xml_from_value(name, value, shape=None, *, badger=False, ignore=False, names
                 element.append(child)
             for entry in item if is_array else [item]:
                 child_shape = field.get('items') if field and field.get('type') == 'array' else field
-                child = xml_from_value(key, entry, child_shape, badger=badger, ignore=ignore, namespaces=namespaces, tree_input=tree_input, generic=generic)
+                child = xml_from_value(key, entry, child_shape, badger=badger, ignore=ignore, namespaces=namespaces, tree_input=tree_input, generic=generic, nil_for_null=nil_for_null)
                 if generic and is_array and len(item) == 1: child.set(JSON_KIND, 'array-item')
                 element.append(child)
     elif isinstance(value, list):
         element.set(JSON_KIND, 'array')
-        for item in value: element.append(xml_from_value('item', item, badger=badger, namespaces=namespaces, generic=True))
+        for item in value: element.append(xml_from_value('item', item, badger=badger, namespaces=namespaces, generic=True, nil_for_null=nil_for_null))
     else:
         element.text = str(value).lower() if isinstance(value, bool) else str(value)
     return element
+
+
+def render_xsd_value(shape, value, *, pretty=False, default_namespace=False):
+    """Render a mapped XSD object using the same names and order as its contract."""
+    element = xml_from_value(shape['xml']['name'], value, shape, tree_input=True, nil_for_null=False)
+    if default_namespace:
+        content = etree.tostring(element, encoding='unicode')
+        return format_xml(content, pretty, True, None)
+    return etree.tostring(element, encoding='unicode', pretty_print=pretty).rstrip('\n')
 
 
 def json_from_xml(element, shape=None, *, badger=False, infer=False, empty=None, inherited=None, tree_input=False):

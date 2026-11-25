@@ -1,7 +1,7 @@
 """Lossless expression boundaries for the script editor's object mapping view."""
 import ast
 import json
-from .dataweave import DataWeaveError, Parser, _tokens, parse_script
+from .script_transform import ScriptTransformError, Parser, _tokens, parse_script
 
 
 def script_to_visual(script):
@@ -45,24 +45,24 @@ def script_to_visual(script):
 
 def visual_to_script(header, mappings):
     if not isinstance(mappings, list) or any(not isinstance(item, dict) for item in mappings):
-        raise DataWeaveError('Visual mappings must be an array of field definitions')
+        raise ScriptTransformError('Visual mappings must be an array of field definitions')
     if len(mappings) == 1 and mappings[0].get('target') == '$payload':
         body = str(mappings[0].get('expression') or '')
     else:
         tree = {}
         for mapping in mappings:
             path = str(mapping.get('target') or '').split('.')
-            if any(not part or part == '$payload' for part in path): raise DataWeaveError('A visual mapping requires a target path')
+            if any(not part or part == '$payload' for part in path): raise ScriptTransformError('A visual mapping requires a target path')
             branch = tree
             for part in path[:-1]:
                 branch = branch.setdefault(part, {})
-                if not isinstance(branch, dict): raise DataWeaveError('Conflicting visual target paths')
-            if path[-1] in branch: raise DataWeaveError('Duplicate visual target path')
+                if not isinstance(branch, dict): raise ScriptTransformError('Conflicting visual target paths')
+            if path[-1] in branch: raise ScriptTransformError('Duplicate visual target path')
             branch[path[-1]] = str(mapping.get('expression') or 'null')
         def render(node):
             return '{' + ', '.join(json.dumps(name, ensure_ascii=False) + ': ' + (render(value) if isinstance(value, dict) else value) for name, value in node.items()) + '}'
         body = render(tree)
     parser = Parser(body, {}); parser.evaluating = False; parser.parse()
-    script = str(header or '%dw 2.0\noutput application/json') + '\n---\n' + body
+    script = str(header or '%mina 2.0\noutput application/json') + '\n---\n' + body
     parse_script(script)
     return script

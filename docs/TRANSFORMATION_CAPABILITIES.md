@@ -1,9 +1,9 @@
 # Transformation and mediation capabilities
 
-The Mapper remains the transformation activity. General activities provide
+The DataCompose remains the transformation activity. General activities provide
 durable message composition and recovery without reintroducing Mediation.
 
-## Mapper schemas and suggestions
+## DataCompose schemas and suggestions
 
 ### Select one XSD structure
 
@@ -29,14 +29,14 @@ validation compiles the selected declaration and its dependencies. Unselected
 entry roots are excluded from the mapping tree and generated API schema.
 Missing types used by the selected structure remain validation errors.
 
-The Mapper supports multiple named views of one source, each with its own
+The DataCompose supports multiple named views of one source, each with its own
 schema, optional XSD complex type, and occurrence range. Keep schema files
 at their project-relative paths when importing or editing the contract.
-The Mapper resolves imports and includes from project assets. A repeating element
+The DataCompose resolves imports and includes from project assets. A repeating element
 stays an array in the structured result even when the generated XML has one
 occurrence; the XML itself retains the original element structure.
 
-In **Visual AI Mapper → AI mapping options**, choose **Exact names** or a
+In **AI-assisted DataCompose → AI mapping options**, choose **Exact names** or a
 similarity strategy. Select a source or target branch to limit matching to
 that branch, then set each side's search depth from 1 to 10 (default 4).
 Leave a side on **Entire schema** to search all fields on that side. Existing
@@ -44,7 +44,7 @@ manual mappings are preserved.
 
 ### Drop a repeating structure
 
-On Mapper **Input**, drag a repeating complex source onto a repeating complex target and choose **Finish** after selecting a mapping mode:
+On DataCompose **Input**, drag a repeating complex source onto a repeating complex target and choose **Finish** after selecting a mapping mode:
 
 - **Make a copy of each** copies the whole collection. The target shows one **[Copy-Of]** row with its source expression and hides the children. Existing child mappings in that occurrence are replaced. Clear the copy to show the children again. Use this when the source items already match the target structure.
 - **For each** adds a **[For-Each]** row for the collection and keeps the item and its children visible. Matching paths are filled in without regard to case. Children display expressions relative to the current item, such as `Name` or `Address.City`, and remain editable.
@@ -52,9 +52,9 @@ On Mapper **Input**, drag a repeating complex source onto a repeating complex ta
 
 The same three choices are available on other activity **Input** tabs and in **Edit mappings** when both structures expose repeating records. This includes **Call Sub Task** inputs and **End** return mappings when the task has a schema. Drops onto simple fields still map the value directly.
 
-To add another source for a repeating target, right-click the row and choose **Duplicate mapping**. This works in Mapper and other activity Input editors, including **Call Sub Task** and **End**. You can duplicate an unmapped repeating field too. The new occurrence starts with empty bindings. Drop a different collection onto it and choose a mapping mode for complex records. The original keeps its source and child bindings. At runtime the original items come first, followed by the configured duplicates in order. An occurrence with no source adds no items.
+To add another source for a repeating target, right-click the row and choose **Duplicate mapping**. This works in DataCompose and other activity Input editors, including **Call Sub Task** and **End**. You can duplicate an unmapped repeating field too. The new occurrence starts with empty bindings. Drop a different collection onto it and choose a mapping mode for complex records. The original keeps its source and child bindings. At runtime the original items come first, followed by the configured duplicates in order. An occurrence with no source adds no items.
 
-Right-click a complex element and choose **Delete mapping** to clear its binding and all mappings below it, even when only its children are mapped. Nested repeating occurrences within that branch are cleared too. The schema structure stays available for remapping. This works in Mapper and other activity Input editors, including HTTP responses, Call Sub Task and End. Deleting a duplicate occurrence keeps the original and sibling occurrences unchanged.
+Right-click a complex element and choose **Delete mapping** to clear its binding and all mappings below it, even when only its children are mapped. Nested repeating occurrences within that branch are cleared too. The schema structure stays available for remapping. This works in DataCompose and other activity Input editors, including HTTP responses, Call Sub Task and End. Deleting a duplicate occurrence keeps the original and sibling occurrences unchanged.
 
 Use **Map & Test** to check the generated result before running or exporting the flow.
 
@@ -64,14 +64,14 @@ In any activity's **Input → Functions → XPath functions**, choose XPath 1.0 
 expand a category, select a function and fill its XPath arguments. Quote text
 arguments, for example `'text'`; XML paths and numeric expressions need no text
 quotes. Drag the prepared expression onto a target. Type a function prefix in a
-field for XPath suggestions. Mapper has additional XML source/namespace settings;
+field for XPath suggestions. DataCompose has additional XML source/namespace settings;
 other inputs can pass an explicit XML source with `xpath2("expression", ${input.xmlString})`.
 
 The designer includes the complete supported catalog even when the runtime
 palette request is unavailable: 49 XPath 1.0 signatures and 201 XPath 2.0
 signatures, including overloads. Categories include strings, regular
 expressions, numbers, sequences, booleans, date/time, nodes/namespaces, URI
-encoding and XML Schema constructors. The general Mapper functions remain
+encoding and XML Schema constructors. The general DataCompose functions remain
 available in the same Functions tab.
 
 The **XPath expression builder** offers the same categorized inventory, search,
@@ -82,7 +82,7 @@ Use operators such as `+`, `-`, `*`, `div`, `mod`, `=`, `!=`, `<` and `>` direct
 in the expression. Functions that retrieve external documents or collections
 are not exposed by this offline runtime.
 
-In Mapper **Configuration**, choose the XPath version and expand **XML
+In DataCompose **Configuration**, choose the XPath version and expand **XML
 expressions and runtime binding**. Set the XML source to a mapping path such as
 `${last.xmlString}`, or leave it empty to use the previous activity's XML
 output. Add namespace prefixes and variables as JSON objects. For example,
@@ -93,7 +93,7 @@ In **Input**, enter an expression such as
 `xpath('string(/ord:orders/ord:order[@id=$minimum]/@id)')`.
 The **XPath expression builder** can test a raw formula against sample XML or
 a JSON envelope. Select an editable target field or loop and choose
-**Apply to** to save the expression to that mapping. If the Mapper's XML source
+**Apply to** to save the expression to that mapping. If the DataCompose's XML source
 points to a field such as `${last.body}`, supply a JSON sample with a `body`
 field. Choose a function to
 display its arguments. Drag a sample XML field into an argument, or select the
@@ -139,7 +139,7 @@ quick fix** to compare the two evaluations. Apply a passing fix to the selected
 visual mapping. Other mappings keep their existing XPath version. A matching
 sample result does not establish equivalence for every possible input.
 
-In **Input → Open visual AI Mapper**, use **Download XSLT** to save the active
+In **Input → Open AI-assisted DataCompose**, use **Download XSLT** to save the active
 stylesheet or generate XSLT 2.0 from direct rules. Generation supports XML element
 paths, scalar constants, If, Choose, For-Each, For-Each-Group, nested loops,
 and duplicate loop occurrences with mapped children. It supports trim,
@@ -166,7 +166,7 @@ extensions, and custom Java XPath functions require a separate migration.
 
 Open a compatible process file or ZIP through Studio's project
 import. Supported sequences, simple scopes, conditional XPath links,
-no-match links, error links, static subtask calls, Mapper bindings, XML render,
+no-match links, error links, static subtask calls, DataCompose bindings, XML render,
 file activities, and basic outbound HTTP requests become MINA activities.
 Supported HTTP, JMS and Timer event definitions become native starters.
 HTTP XML reply bindings become response activities. The importer also reads
@@ -174,15 +174,15 @@ supported HTTP client and server settings, non-XA JDBC resources and static
 SQL activities, and JMS text-message activities with direct or JNDI connections.
 Passwords are represented by empty deployment properties. Project XSDs are included. Check the
 import messages in Studio for processes and settings that need review.
-Unsupported processes can contribute standalone Mapper tasks for their
+Unsupported processes can contribute standalone DataCompose tasks for their
 recoverable bindings. Supply original activity variables as task input for
 these standalone tasks. REST/SOAP service descriptors, explicit BPEL join
 expressions, XA transactions, vendor-specific JDBC/JMS features, and proprietary
 transport policies still need manual conversion.
 
-### Shared Smart Mapper learning
+### Shared Smart Mapping learning
 
-Use **Share reviewed mappings** in Visual AI Mapper after reviewing direct
+Use **Share reviewed mappings** in AI-assisted DataCompose after reviewing direct
 field mappings. The Studio server stores field paths and schema fingerprints.
 Recommendations for the same source and target schema rank shared field pairs
 first. Disabled rules, pending suggestions, formulas, and literal values
@@ -193,7 +193,7 @@ Both Python archive formats include `requirements-mapper.txt` when they use
 XML bindings. Install those dependencies in the target runtime before running
 the archive.
 
-## Mapper tests, templates and contracts
+## DataCompose tests, templates and contracts
 
 Open **Map & Test** and expand **Saved transformation tests**. Give each case a
 name, an input JSON value and an independently reviewed expected JSON value.
@@ -205,7 +205,7 @@ survive project save/export/import. They do not call connectors.
 containing schemas, mapping rules, lookup tables, execution policies, custom
 functions and test cases. Templates have a format version and content checksum;
 the checksum detects corruption, not authenticity. Import a template into another
-Mapper. Project schema IDs are cleared because IDs are project-specific. Local
+DataCompose. Project schema IDs are cleared because IDs are project-specific. Local
 history retains the last 20 exported versions; changed content requires a new
 version. Restore a version, review its contract and rerun its tests.
 
@@ -233,7 +233,7 @@ Save named JSON lookup tables under **Lookup tables and execution limits**:
 {"countries": {"US": "United States", "IN": "India"}}
 ```
 
-Use `lookupTable(${input.country}, "countries", "Unknown")` in Mapper, or
+Use `lookupTable(${input.country}, "countries", "Unknown")` in DataCompose, or
 append a `lookupTable("countries", "Unknown")` pipeline step. Keys are
 case-sensitive. `lookup(value, table, default)` accepts an object table directly;
 `enrich(record, fields)` merges objects with enrichment fields taking precedence;
@@ -243,7 +243,7 @@ match. Many-to-many joins stop at 100,000 result records.
 
 ## Large data and cancellation
 
-Mapper has evaluation-step, execution-time and output-size limits. Defaults are
+DataCompose has evaluation-step, execution-time and output-size limits. Defaults are
 100,000 evaluation steps and 30 seconds. Execution runs in a worker thread;
 workflow cancellation signals the evaluator at subsequent evaluation checks.
 These are cooperative limits, not preemption of every individual function or
@@ -259,7 +259,7 @@ Get-Content records.jsonl | python transform_jsonl.py --activity main/map --batc
 
 `run_tests.py` runs saved suites and exits nonzero when any case fails or no
 saved suites exist. `transform_jsonl.py` processes one JSON record per line and
-prints one mapped JSON record per line. It runs Mapper alone, without connectors.
+prints one mapped JSON record per line. It runs DataCompose alone, without connectors.
 Records are limited to 1 MB; batches default to 16 MB of serialized input/output
 and mapped records default to a 1 MB output limit. Use a smaller batch if the
 batch quota is exceeded. Output written before an error remains written; stage
@@ -304,6 +304,6 @@ Live broker/provider qualification remains necessary for production deployment.
 
 ## Visual mapper and generated previews
 
-Open Visual AI Mapper from Mapper Configuration. The left pane contains editable source test data and available source paths, the middle pane contains saved mappings and the complete selected target schema field list, and the right pane displays generated output after Run mapping test. Named XSD types and local JSON Schema references use the same field parser as the Input tab. Source expressions remain editable, including upstream activity references and functions. Schema text is available under the collapsed schema sections.
+Open AI-assisted DataCompose from DataCompose Configuration. The left pane contains editable source test data and available source paths, the middle pane contains saved mappings and the complete selected target schema field list, and the right pane displays generated output after Run mapping test. Named XSD types and local JSON Schema references use the same field parser as the Input tab. Source expressions remain editable, including upstream activity references and functions. Schema text is available under the collapsed schema sections.
 
-Map & Test also displays generated output directly after running. JSON targets show formatted JSON; XSD targets show an XML preview with repeating elements and the target namespace. The preview does not change the Mapper runtime object or exported archive behavior; use Render XML or render-xml when the downstream activity requires a serialized XML value. Test data and the latest output are retained when saving the visual mapper.
+Map & Test also displays generated output directly after running. JSON targets show formatted JSON; XSD targets show an XML preview with repeating elements and the target namespace. The preview does not change the DataCompose runtime object or exported archive behavior; use Render XML or render-xml when the downstream activity requires a serialized XML value. Test data and the latest output are retained when saving the visual mapper.

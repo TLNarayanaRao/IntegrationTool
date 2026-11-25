@@ -1,11 +1,11 @@
 """Documented transformation semantics, not a substitute vendor runtime."""
 import unittest
 
-from app.dataweave import DataWeaveError, execute
+from app.script_transform import ScriptTransformError, execute
 
 
 def transform(body, payload=None):
-    return execute('%dw 2.0\noutput application/json\n---\n' + body, payload=payload)
+    return execute('%mina 2.0\noutput application/json\n---\n' + body, payload=payload)
 
 
 class TransformSemanticsTests(unittest.TestCase):
@@ -49,37 +49,37 @@ class TransformSemanticsTests(unittest.TestCase):
         self.assertEqual(transform('1e3 + -2'), 998)
 
     def test_xml_leaf_attributes_and_mime_parameters(self):
-        result = execute('%dw 2.0\noutput application/json\n---\npayload',
+        result = execute('%mina 2.0\noutput application/json\n---\npayload',
                          payload='<root><entry id="A">value</entry></root>', input_mime_type='application/xml; charset=UTF-8')
         self.assertEqual(result, {'root': {'entry': {'@id': 'A', '#text': 'value'}}})
 
     def test_bad_arithmetic_is_a_transform_error(self):
-        with self.assertRaises(DataWeaveError):
+        with self.assertRaises(ScriptTransformError):
             transform('1 / 0')
-        with self.assertRaises(DataWeaveError):
+        with self.assertRaises(ScriptTransformError):
             transform('payload map (item) -> item', 4)
 
     def test_unsupported_language_features_fail_explicitly(self):
-        for script in ('%dw 1.0\noutput application/json\n---\npayload',
-                       '%dw 2.0\nimport * from unknown::Library\n---\npayload',
-                       '%dw 2.0\noutput application/xml writeNilOnNull=true\n---\n{root: null}',
-                       '%dw 2.0\noutput application/pdf\n---\npayload'):
-            with self.subTest(script=script), self.assertRaises(DataWeaveError):
+        for script in ('%mina 1.0\noutput application/json\n---\npayload',
+                       '%mina 2.0\nimport * from unknown::Library\n---\npayload',
+                       '%mina 2.0\noutput application/xml writeNilOnNull=true\n---\n{root: null}',
+                       '%mina 2.0\noutput application/pdf\n---\npayload'):
+            with self.subTest(script=script), self.assertRaises(ScriptTransformError):
                 execute(script, payload={})
-        with self.assertRaisesRegex(DataWeaveError, 'Unknown transform identifier'):
+        with self.assertRaisesRegex(ScriptTransformError, 'Unknown transform identifier'):
             transform('paylod.name', {'name': 'Ada'})
 
     def test_unselected_branch_is_still_checked_for_valid_syntax(self):
-        with self.assertRaises(DataWeaveError):
+        with self.assertRaises(ScriptTransformError):
             transform('if (true) 1 else {broken: }')
-        with self.assertRaises(DataWeaveError):
+        with self.assertRaises(ScriptTransformError):
             transform('{a: [1, 2] map (item) -> item as Unknown}')
 
     def test_xml_rejects_entities_and_preserves_leaf_attributes_on_write(self):
-        with self.assertRaises(DataWeaveError):
-            execute('%dw 2.0\noutput application/json\n---\npayload',
+        with self.assertRaises(ScriptTransformError):
+            execute('%mina 2.0\noutput application/json\n---\npayload',
                     payload='<!DOCTYPE x [<!ENTITY e "expanded">]><x>&e;</x>', input_mime_type='application/xml')
-        result = execute('%dw 2.0\ninput payload application/xml\noutput application/xml\n---\npayload',
+        result = execute('%mina 2.0\ninput payload application/xml\noutput application/xml\n---\npayload',
                          payload='<root><entry id="A">value</entry></root>')
         self.assertIn('id="A"', result)
         self.assertIn('>value<', result)

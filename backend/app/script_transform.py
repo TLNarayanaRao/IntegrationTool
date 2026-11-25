@@ -19,7 +19,7 @@ from typing import Any
 from xml.etree import ElementTree as ET
 
 
-class DataWeaveError(ValueError):
+class ScriptTransformError(ValueError):
     pass
 
 
@@ -32,7 +32,7 @@ TOKEN = re.compile(
 
 @lru_cache(maxsize=128)
 def _tokens(text: str) -> tuple[tuple[str, str], ...]:
-    if len(text) > 65536: raise DataWeaveError('Transform expression exceeds the 64 KiB limit')
+    if len(text) > 65536: raise ScriptTransformError('Transform expression exceeds the 64 KiB limit')
     result, position = [], 0
     while position < len(text):
         match = TOKEN.match(text, position)
@@ -42,7 +42,7 @@ def _tokens(text: str) -> tuple[tuple[str, str], ...]:
                 position = text.find('\n', position)
                 if position < 0: break
                 continue
-            raise DataWeaveError(f'Unexpected token near {text[position:position + 24]!r}')
+            raise ScriptTransformError(f'Unexpected token near {text[position:position + 24]!r}')
         kind, value = next((key, value) for key, value in match.groupdict().items() if value is not None)
         result.append((kind, value)); position = match.end()
     result.append(('eof', ''))
@@ -87,13 +87,13 @@ class Parser:
 
     def take(self, value: str | None = None):
         token = self.peek()
-        if value is not None and token[1] != value: raise DataWeaveError(f'Expected {value!r}, found {token[1]!r}')
+        if value is not None and token[1] != value: raise ScriptTransformError(f'Expected {value!r}, found {token[1]!r}')
         self.index += 1
         return token
 
     def parse(self):
         value = self.expression()
-        if self.peek()[0] != 'eof': raise DataWeaveError(f'Unexpected token {self.peek()[1]!r}')
+        if self.peek()[0] != 'eof': raise ScriptTransformError(f'Unexpected token {self.peek()[1]!r}')
         return value
 
     def expression(self):
@@ -177,8 +177,8 @@ class Parser:
                 elif target in ('boolean', 'bool'): value = value if isinstance(value, bool) else str(value).lower() in ('true', '1', 'yes', 'on')
                 elif target == 'array': value = value if isinstance(value, list) else ([] if value is None else [value])
                 elif target == 'object':
-                    if not isinstance(value, dict): raise DataWeaveError(f'Cannot coerce {type(value).__name__} to Object')
-                else: raise DataWeaveError(f'Unsupported coercion type {target!r}')
+                    if not isinstance(value, dict): raise ScriptTransformError(f'Cannot coerce {type(value).__name__} to Object')
+                else: raise ScriptTransformError(f'Unsupported coercion type {target!r}')
             elif self.peek()[1] in ('map', 'flatMap', 'filter', 'filterObject', 'groupBy', 'orderBy', 'distinctBy', 'pluck', 'mapObject', 'minBy', 'maxBy'):
                 operation = self.take()[1]; self.take('('); name = self.take()[1]
                 index_name = ordinal_name = None
@@ -188,7 +188,7 @@ class Parser:
                 object_input = isinstance(value, dict)
                 if self.evaluating and value is not None:
                     expected = dict if operation in ('filterObject', 'mapObject', 'pluck') else list
-                    if not isinstance(value, expected): raise DataWeaveError(f'{operation} requires {expected.__name__} or null')
+                    if not isinstance(value, expected): raise ScriptTransformError(f'{operation} requires {expected.__name__} or null')
                 items = list(value.items()) if object_input and self.evaluating else list(value or []) if self.evaluating else []
                 results = []
                 start = self.index
@@ -214,7 +214,7 @@ class Parser:
                     value = {}
                     for _, key, result in results:
                         if isinstance(result, dict): value.update(result)
-                        else: raise DataWeaveError('mapObject mapper must return an object')
+                        else: raise ScriptTransformError('mapObject mapper must return an object')
                 elif operation == 'filter': value = [item for item, _, result in results if result]
                 elif operation == 'filterObject': value = {key: item for item, key, result in results if result}
                 elif operation in ('minBy', 'maxBy'):
@@ -271,15 +271,15 @@ class Parser:
                     self.take(',')
                 self.take(')'); return self.call(value, args) if self.evaluating else None
             if self.evaluating and value not in self.environment:
-                raise DataWeaveError(f'Unknown transform identifier {value!r}')
+                raise ScriptTransformError(f'Unknown transform identifier {value!r}')
             return self.environment.get(value)
-        raise DataWeaveError(f'Expected expression, found {value!r}')
+        raise ScriptTransformError(f'Expected expression, found {value!r}')
 
     def call(self, name: str, args: list[Any]):
         custom = (self.environment.get('__functions__') or {}).get(name)
         if custom:
             parameters, expression = custom[:2]
-            if len(args) != len(parameters): raise DataWeaveError(f'Function {name} expects {len(parameters)} arguments, received {len(args)}')
+            if len(args) != len(parameters): raise ScriptTransformError(f'Function {name} expects {len(parameters)} arguments, received {len(args)}')
             child = dict(custom[2] if len(custom) > 2 else self.environment); child.update(dict(zip(parameters, args)))
             return Parser(expression, child).parse()
         library = (self.environment.get('__library_functions__') or {}).get(name)
@@ -311,7 +311,7 @@ class Parser:
         if name in ('asString', 'string'): return '' if value is None else str(value)
         if name in ('asNumber', 'number'): return float(value) if value not in (None, '') else None
         if name in ('asBoolean', 'boolean'): return value if isinstance(value, bool) else str(value).lower() in ('true', '1', 'yes')
-        if name not in functions: raise DataWeaveError(f'Unsupported transform function {name!r}')
+        if name not in functions: raise ScriptTransformError(f'Unsupported transform function {name!r}')
         return functions[name]()
 
 
@@ -329,49 +329,49 @@ def _header_statements(header):
             token = match[0]
             if token in ('(', '{', '['): depth += 1
             elif token in (')', '}', ']'): depth -= 1
-        if depth < 0: raise DataWeaveError('Unbalanced transform header')
-    if depth: raise DataWeaveError('Unbalanced transform header')
+        if depth < 0: raise ScriptTransformError('Unbalanced transform header')
+    if depth: raise ScriptTransformError('Unbalanced transform header')
     if current: yield current
 
 
 def parse_script(script: str) -> tuple[dict[str, Any], str]:
-    if '---' not in script: raise DataWeaveError('A transform script requires the --- header/body separator')
+    if '---' not in script: raise ScriptTransformError('A transform script requires the --- header/body separator')
     header, body = script.split('---', 1)
     metadata: dict[str, Any] = {'version': '2.0', 'outputMimeType': 'application/json', 'variables': [], 'functions': {}}
     for raw in _header_statements(header):
         line = raw.strip()
         if not line or line.startswith('//'): continue
-        if line.startswith('%dw '):
-            metadata['version'] = line[4:].strip()
-            if metadata['version'] != '2.0': raise DataWeaveError('Only the %dw 2.0 language header is supported')
+        if line.startswith(('%mina ', '%dw ')):
+            metadata['version'] = line.partition(' ')[2].strip()
+            if metadata['version'] != '2.0': raise ScriptTransformError('Only the %mina 2.0 language header is supported')
         elif line.startswith('module '):
-            if not re.fullmatch(r'module\s+[\w$]+', line): raise DataWeaveError('Invalid module declaration')
+            if not re.fullmatch(r'module\s+[\w$]+', line): raise ScriptTransformError('Invalid module declaration')
         elif line.startswith('output '):
             parts = line[7:].split()
-            if len(parts) != 1: raise DataWeaveError('Output writer properties are not supported by the embedded transform engine')
+            if len(parts) != 1: raise ScriptTransformError('Output writer properties are not supported by the embedded transform engine')
             metadata['outputMimeType'] = parts[0]
         elif line.startswith('input '):
             parts = line.split();
             if len(parts) >= 3: metadata.setdefault('inputs', {})[parts[1]] = parts[2]
         elif line.startswith('var '):
             match = re.match(r'var\s+([A-Za-z_$][\w$-]*)\s*=\s*(.+)', line, re.S)
-            if not match: raise DataWeaveError(f'Invalid variable declaration: {line}')
+            if not match: raise ScriptTransformError(f'Invalid variable declaration: {line}')
             metadata['variables'].append((match.group(1), match.group(2)))
         elif line.startswith('fun '):
             match = re.match(r'fun\s+([A-Za-z_$][\w$-]*)\s*\(([^)]*)\)\s*=\s*(.+)', line, re.S)
-            if not match: raise DataWeaveError(f'Invalid function declaration: {line}')
+            if not match: raise ScriptTransformError(f'Invalid function declaration: {line}')
             parameters = [value.strip().split(':', 1)[0].strip() for value in match.group(2).split(',') if value.strip()]
             metadata['functions'][match.group(1)] = (parameters, match.group(3).strip())
         elif line.startswith('import '):
             metadata.setdefault('imports', []).append(line[7:].strip())
         elif line.startswith(('ns ', 'type ')):
-            raise DataWeaveError(f'{line.split()[0]} declarations are unsupported by the transform engine')
-        else: raise DataWeaveError(f'Unsupported header directive: {line}')
+            raise ScriptTransformError(f'{line.split()[0]} declarations are unsupported by the transform engine')
+        else: raise ScriptTransformError(f'Unsupported header directive: {line}')
     return metadata, body.strip()
 
 
 def _xml(value: Any) -> str:
-    if not isinstance(value, dict) or len(value) != 1: raise DataWeaveError('XML output requires one root object, for example { order: { id: payload.id } }')
+    if not isinstance(value, dict) or len(value) != 1: raise ScriptTransformError('XML output requires one root object, for example { order: { id: payload.id } }')
     def build(name: str, item: Any):
         element = ET.Element(name)
         if isinstance(item, dict):
@@ -391,7 +391,7 @@ def _csv(value: Any) -> str:
     rows = value if isinstance(value, list) else [value]
     if not rows: return ''
     if not all(isinstance(row, dict) for row in rows):
-        raise DataWeaveError('CSV output requires an object or an array of objects')
+        raise ScriptTransformError('CSV output requires an object or an array of objects')
     fields: list[str] = []
     for row in rows:
         for key in row:
@@ -422,13 +422,13 @@ def _decode_payload(value: Any, mime_type: str) -> Any:
                 if child.tag in result: result[child.tag] = result[child.tag] if isinstance(result[child.tag], list) else [result[child.tag]]; result[child.tag].append(item)
                 else: result[child.tag] = item
             return result
-        if len(text.encode('utf-8')) > 8 * 1024 * 1024: raise DataWeaveError('XML input exceeds the 8 MiB limit')
+        if len(text.encode('utf-8')) > 8 * 1024 * 1024: raise ScriptTransformError('XML input exceeds the 8 MiB limit')
         from lxml import etree
         parser = etree.XMLParser(resolve_entities=False, load_dtd=False, no_network=True,
                                  huge_tree=False, remove_comments=True, remove_pis=True, encoding='UTF-8')
         try: root = etree.fromstring(text.encode('utf-8'), parser)
-        except etree.XMLSyntaxError as exc: raise DataWeaveError(f'Invalid XML input: {exc}') from exc
-        if root.getroottree().docinfo.doctype: raise DataWeaveError('XML DTDs are disabled in transforms')
+        except etree.XMLSyntaxError as exc: raise ScriptTransformError(f'Invalid XML input: {exc}') from exc
+        if root.getroottree().docinfo.doctype: raise ScriptTransformError('XML DTDs are disabled in transforms')
         return {root.tag: convert(root)}
     if mime in ('text/csv', 'application/csv'): return list(csv.DictReader(io.StringIO(text)))
     return text
@@ -439,7 +439,7 @@ def _execute_details(script: str, *, payload: Any = None, attributes: Any = None
     payload = _decode_payload(payload, input_mime_type or (metadata.get('inputs') or {}).get('payload', ''))
     environment = {'payload': payload, 'attributes': attributes or {}, 'vars': variables or {}, '__functions__': {}}
     from .transform_libraries import install_imports
-    install_imports(metadata, environment, libraries or {}, parse_script, Parser, DataWeaveError)
+    install_imports(metadata, environment, libraries or {}, parse_script, Parser, ScriptTransformError)
     environment['__functions__'].update(metadata.get('functions', {}))
     environment.update(variables or {})
     for name, expression in metadata['variables']:
@@ -447,7 +447,7 @@ def _execute_details(script: str, *, payload: Any = None, attributes: Any = None
     result = Parser(body, environment).parse()
     mime = metadata['outputMimeType'].lower()
     if mime not in ('application/json', 'application/java', 'application/xml', 'text/xml', 'text/plain', 'text/csv', 'application/csv'):
-        raise DataWeaveError(f'Unsupported transform output MIME type {mime!r}')
+        raise ScriptTransformError(f'Unsupported transform output MIME type {mime!r}')
     if mime in ('application/xml', 'text/xml'): result = _xml(result)
     elif mime in ('application/csv', 'text/csv'): result = _csv(result)
     elif mime.startswith('text/'): result = '' if result is None else str(result)
@@ -457,10 +457,10 @@ def _execute_details(script: str, *, payload: Any = None, attributes: Any = None
 def execute_details(script: str, **kwargs) -> dict[str, Any]:
     try:
         return _execute_details(script, **kwargs)
-    except DataWeaveError:
+    except ScriptTransformError:
         raise
     except (ArithmeticError, TypeError, ValueError, LookupError, RecursionError, SyntaxError, ET.ParseError) as exc:
-        raise DataWeaveError(f'Transform evaluation failed: {exc}') from exc
+        raise ScriptTransformError(f'Transform evaluation failed: {exc}') from exc
 
 
 def execute(script: str, *, payload: Any = None, attributes: Any = None, variables: dict[str, Any] | None = None, input_mime_type: str = '', libraries=None) -> Any:

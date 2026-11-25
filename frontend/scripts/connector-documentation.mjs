@@ -194,7 +194,7 @@ const recipes = {
   'Select the exact metadata and map the complete document. The saved field offsets, lengths and encoding govern SDATA construction. This operation renders locally; it does not post to SAP.',
   'payload = ${SAP-Parser.SAPIDoc}\nPost IDoc payload = ${SAP-Renderer.rawIDoc}',
   '{"rawIDoc":{"control":{"IDOCTYP":"<basic-type>"},"data":[{"SEGNAM":"<segment>","SDATA":"<encoded-fields>"}]},"format":"RAW"}',
-  'rawIDoc is a structured control/data envelope, not necessarily a flat text file. The base editor advertises generic result/successful fields; use actual rawIDoc output. Ensure input fits the fetched field lengths and test encoding before dispatch.',
+  'Use rawIDoc.control and the repeating rawIDoc.data records in the Output tab. Each segment exposes its name, number, parent, hierarchy level, and SDATA. Client and document numbers are available when supplied in the control record. Check the selected encoding and segment field lengths before posting.',
   'Acceptance: render and parse back a fixture with repeating segments, blank fields and non-ASCII text; compare every business field.'],
  'sap/rfc_bapi_listener': ['Start a flow for an inbound RFC/BAPI call','Use as an event starter registered with the SAP gateway for a selected function.',
   'Set functionName, programId and gateway settings. Provision the matching SAP destination and registration rules. Bound maximumConnections/maxPendingEvents and choose a reply timeout long enough for the flow. Fetch the function metadata.',

@@ -15,7 +15,7 @@
   "workers": 8,
   "counts": {
     "formats": 19839,
-    "mapper-dataweave": 527647,
+    "mapper-script_transform": 527647,
     "python": 6275,
     "excel": 416
   },

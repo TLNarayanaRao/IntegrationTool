@@ -98,17 +98,17 @@ class MappingRecordsTests(unittest.TestCase):
 
     def test_preview_run_debug_and_both_archives(self):
         from app.main import mapper_test
-        from app.dataweave import execute as transform
+        from app.script_transform import execute as transform
         payload, metrics, mappings, expected = fixture()
         self.assertEqual(mapper_test({'input': payload, 'mappings': mappings})['output'], expected)
-        self.assertEqual(transform('%dw 2.0\nimport reconcileRecords from mina::Records\noutput application/json\n---\nreconcileRecords(payload.before, payload.after, ["/id"])', payload=payload), expected['changes'])
-        script = ('%dw 2.0\nimport aggregateRecords, reconcileRecords from mina::Records\noutput application/json\n---\n'
+        self.assertEqual(transform('%mina 2.0\nimport reconcileRecords from mina::Records\noutput application/json\n---\nreconcileRecords(payload.before, payload.after, ["/id"])', payload=payload), expected['changes'])
+        script = ('%mina 2.0\nimport aggregateRecords, reconcileRecords from mina::Records\noutput application/json\n---\n'
                   '{changes: reconcileRecords(payload.before, payload.after, ["/id"]), '
                   'totals: aggregateRecords(payload.records, ["/region"], payload.metrics)}')
         self.assertEqual(transform(script, payload={**payload, 'metrics': metrics}), expected)
         tasks = []
         for name, activity in [('mapper', {'id': 'm', 'name': 'Mapper', 'type': 'mapper', 'config': {'mappings': mappings}}),
-                               ('script', {'id': 'm', 'name': 'Transform', 'type': 'dataweave', 'config': {'payload': '${input}', 'script': script}}),
+                               ('script', {'id': 'm', 'name': 'Transform', 'type': 'script_transform', 'config': {'payload': '${input}', 'script': script}}),
                                ('generic', {'id': 'm', 'name': 'End', 'type': 'end', 'config': {'inputMappings': {
                                    'changes': mappings[0]['source'],
                                    'totals': 'aggregateRecords(${input.records}, ["/region"], ${input.metrics})'}}})]:

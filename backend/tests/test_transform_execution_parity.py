@@ -35,7 +35,7 @@ class TransformExecutionParityTests(unittest.TestCase):
         from app.raw_python import raw_python_files, engine_python_files
         project = {'id': 'xml-reader', 'name': 'XML-reader', 'resources': [], 'tasks': [
             {'id': 'main', 'name': 'Main', 'kind': 'subtask', 'activities': [
-                {'id': 'transform', 'name': 'Transform', 'type': 'dataweave', 'config': {}}
+                {'id': 'transform', 'name': 'Transform', 'type': 'script_transform', 'config': {}}
             ], 'transitions': []}]}
         for compiler in (raw_python_files, engine_python_files):
             with self.subTest(archive=compiler.__name__):
@@ -44,16 +44,16 @@ class TransformExecutionParityTests(unittest.TestCase):
                 self.assertTrue(any(item['name'] == 'lxml.etree' for item in requirements))
 
     def test_preview_run_debug_and_both_generated_archives(self):
-        from app.main import dataweave_test
+        from app.main import script_transform_test
         spec = importlib.util.spec_from_file_location('flow_transform_parity', Path(__file__).parents[2] / 'scripts/flow-throughput.py')
         flow = importlib.util.module_from_spec(spec); spec.loader.exec_module(flow)
         tasks = []
         for name, body, payload, expected, options in CASES:
-            script = '%dw 2.0\noutput application/json\n---\n' + body
-            result = dataweave_test({'script': script, 'input': payload, **options})
+            script = '%mina 2.0\noutput application/json\n---\n' + body
+            result = script_transform_test({'script': script, 'input': payload, **options})
             self.assertEqual(result['output'], expected, ('preview', name))
             nodes = [{'id': name + '-start', 'type': 'start', 'name': 'Start'},
-                     {'id': name + '-transform', 'type': 'dataweave', 'name': 'Transform',
+                     {'id': name + '-transform', 'type': 'script_transform', 'name': 'Transform',
                       'config': {'script': script, 'payload': '${input}', **options}},
                      {'id': name + '-end', 'type': 'end', 'name': 'End'}]
             tasks.append({'id': name, 'name': name, 'kind': 'subtask', 'activities': nodes,
@@ -84,7 +84,7 @@ class TransformExecutionParityTests(unittest.TestCase):
                 if not release.wait(3): raise AssertionError('Event loop was blocked by the transform')
                 return {'output': {'done': True}, 'mimeType': 'application/json', 'version': '2.0'}
             runtime = WorkflowRuntime()
-            activity = Activity(id='work', name='Work', type='dataweave', config={})
+            activity = Activity(id='work', name='Work', type='script_transform', config={})
             ctx = {'last': {}, 'input': {}, 'vars': {}, 'properties': {}, 'resources': {}}
             with patch('app.transform_engine.execute_details', side_effect=blocking):
                 task = asyncio.create_task(runtime.execute(activity, ctx))

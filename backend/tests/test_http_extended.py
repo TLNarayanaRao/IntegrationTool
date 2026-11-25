@@ -1,5 +1,6 @@
 import asyncio
 import socket
+import ssl
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -162,22 +163,51 @@ class HTTPExtendedLiveTests(unittest.IsolatedAsyncioTestCase):
                 return response_message({'body':payload['body'],'HTTPHeaders':{'StatusLine':{
                     'httpVersion':payload['headers'].get('x-response-version','3'),
                     'reasonPhrase':payload['headers'].get('x-reason','')}}})
+            routes = [(None, server, {'path': '/echo', 'methods': 'POST'})]
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as blocked:
+                blocked.bind(('127.0.0.1', port))
+                failed_ready = asyncio.Event()
+                with self.assertRaises(OSError):
+                    await asyncio.wait_for(serve(routes, echo, failed_ready), 5)
+                self.assertFalse(failed_ready.is_set())
+                with socket.socket() as candidate:
+                    candidate.bind(('127.0.0.1', port))
             ready = asyncio.Event()
-            task = asyncio.create_task(serve([(None,server,{'path':'/echo','methods':'POST'})], echo, ready))
+            loop = asyncio.get_running_loop()
+            native_endpoint = loop.create_datagram_endpoint
+            udp_transports = []
+
+            async def track_udp(*args, **kwargs):
+                endpoint = await native_endpoint(*args, **kwargs)
+                udp_transports.append(endpoint[0])
+                return endpoint
+
+            task = None
             try:
-                await asyncio.wait_for(ready.wait(), 10)
+                with patch.object(loop, 'create_datagram_endpoint', side_effect=track_udp):
+                    task = asyncio.create_task(serve(routes, echo, ready))
+                    await asyncio.wait_for(ready.wait(), 10)
                 result = await asyncio.to_thread(transport.request, {'httpVersion':'3',
                     'url':f'https://127.0.0.1:{port}/echo','method':'POST','certificateAuthorityFile':str(cert),
                     'body':{'protocol':3},'activityTimeoutSeconds':5})
                 self.assertEqual((result['httpVersion'],result['body']),('HTTP/3',{'protocol':3}))
+                trust = ssl.create_default_context(cafile=str(cert))
+                async with httpx.AsyncClient(http2=True, verify=trust, trust_env=False) as client:
+                    fallback = await client.post(f'https://127.0.0.1:{port}/echo', json={'protocol': 2},
+                                                 headers={'X-Response-Version': '2'})
+                self.assertEqual((fallback.http_version, fallback.json()), ('HTTP/2', {'protocol': 2}))
+                self.assertIn(f'h3=":{port}"', fallback.headers['alt-svc'])
                 for headers in ({'X-Response-Version':'1.1'},{'X-Response-Version':'3','X-Reason':'Unavailable reason'}):
                     rejected=await asyncio.to_thread(transport.request,{'httpVersion':'3',
                         'url':f'https://127.0.0.1:{port}/echo','method':'POST','certificateAuthorityFile':str(cert),
                         'body':{'protocol':3},'headers':headers,'raiseForStatus':False,'activityTimeoutSeconds':5})
                     self.assertEqual(rejected['statusCode'],500,rejected)
             finally:
-                task.cancel()
-                with self.assertRaises(asyncio.CancelledError):await task
+                if task is not None:
+                    task.cancel()
+                    with self.assertRaises(asyncio.CancelledError):await task
+            self.assertEqual(len(udp_transports), 1)
+            self.assertTrue(udp_transports[0].is_closing())
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
                 if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
                     probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)

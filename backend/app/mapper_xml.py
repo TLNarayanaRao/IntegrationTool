@@ -1,4 +1,4 @@
-"""Offline XML bindings for the portable Mapper."""
+"""Offline XML bindings for the portable DataCompose."""
 import base64
 import json
 import os
@@ -207,14 +207,14 @@ def parse_xml(value, documents=None):
         raise ValueError('Select an XML source or supply XML text')
     raw = value.encode('utf-8') if isinstance(value, str) else value
     if len(raw) > MAX_XML_BYTES:
-        raise ValueError('Mapper XML input exceeds 8 MiB')
+        raise ValueError('DataCompose XML input exceeds 8 MiB')
     parser = etree.XMLParser(resolve_entities=False, load_dtd=False, no_network=True, huge_tree=False,
                              encoding='UTF-8' if isinstance(value, str) else None,
                              remove_comments=True, remove_pis=True)
     parser.resolvers.add(ProjectResolver(documents))
     root = etree.fromstring(raw, parser)
     if root.getroottree().docinfo.doctype:
-        raise ValueError('XML DTDs are disabled in Mapper')
+        raise ValueError('XML DTDs are disabled in DataCompose')
     return root
 
 
@@ -575,7 +575,7 @@ def transform_xml(root, stylesheet, timeout=30, variables=None, *, properties=No
     binding = parse_xml(stylesheet)
     version = binding.get('version')
     if binding.tag not in (XSL + 'stylesheet', XSL + 'transform') or version not in ('1.0', '2.0', '3.0'):
-        raise ValueError('Mapper binding requires an XSLT 1.0, 2.0 or 3.0 stylesheet')
+        raise ValueError('DataCompose binding requires an XSLT 1.0, 2.0 or 3.0 stylesheet')
     parameters = {}
     for name, value in (variables or {}).items():
         if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z_][\w.-]*', name):
@@ -598,7 +598,7 @@ def transform_xml(root, stylesheet, timeout=30, variables=None, *, properties=No
                                 ('true()' if value else 'false()') if kind == 'boolean' else str(value)
                                 for name, (kind, value) in parameters.items()})
     if result.getroot() is None:
-        raise ValueError('Mapper binding must produce an XML document element')
+        raise ValueError('DataCompose binding must produce an XML document element')
     return parse_xml(bytes(result))
 
 

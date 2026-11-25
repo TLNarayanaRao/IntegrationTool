@@ -13,7 +13,7 @@ MODULES = {
     'mina::Records': {'joinRecords': join_records, 'deduplicateRecords': deduplicate_records,
                       'reconcileRecords': reconcile_records, 'aggregateRecords': aggregate_records},
     'mina::Privacy': {'redactKeys': redact_keys, 'maskText': mask_text},
-    'dw::core::Strings': {
+    'mina::core::Strings': {
         'capitalize': lambda value: None if value is None else ' '.join(word.capitalize() for word in str(value).split(' ')),
         'camelize': lambda value: None if value is None else ''.join(word.lower() if index == 0 else word.capitalize() for index, word in enumerate(words(value))),
         'underscore': lambda value: None if value is None else '_'.join(words(value)).lower(),
@@ -24,23 +24,23 @@ MODULES = {
         'substringAfter': lambda value, separator: str(value).partition(str(separator))[2],
         'reverse': lambda value: value[::-1],
     },
-    'dw::core::Arrays': {
+    'mina::core::Arrays': {
         'divideBy': lambda values, size: divide_by(values, size),
         'take': lambda values, count: values[:max(0, int(count))],
         'drop': lambda values, count: values[max(0, int(count)):],
     },
-    'dw::core::Numbers': {
+    'mina::core::Numbers': {
         'fromBinary': lambda value: int(str(value), 2), 'fromHex': lambda value: int(str(value), 16),
         'fromRadixNumber': lambda value, radix: int(str(value), int(radix)),
         'toBinary': lambda value: radix_number(value, 2), 'toHex': lambda value: radix_number(value, 16),
         'toRadixNumber': lambda value, radix: radix_number(value, radix),
     },
-    'dw::util::Coercions': {
+    'mina::util::Coercions': {
         'toNumber': lambda value: float(value),
         'toBoolean': lambda value: boolean(value),
         'toArray': lambda value: list(str(value)),
     },
-    'dw::util::Math': {
+    'mina::util::Math': {
         'acos': lambda value: math.acos(value) if -1 <= value <= 1 else None,
         'asin': lambda value: math.asin(value) if -1 <= value <= 1 else None,
         'atan': math.atan, 'cos': math.cos, 'sin': math.sin, 'tan': math.tan,
@@ -88,9 +88,13 @@ def install_imports(metadata, environment, libraries, parse_script, parser, erro
         match = re.fullmatch(r'(?:(\*|[\w$]+(?:\s*,\s*[\w$]+)*)\s+from\s+)?([\w$]+(?:::[\w$]+)*)(?:\s+as\s+([\w$]+))?', directive)
         if not match: raise error('Invalid module import: ' + directive)
         names, module, alias = match.groups()
+        if module.startswith('dw::'):
+            candidate = 'mina::' + module.removeprefix('dw::')
+            if candidate == 'mina::Core' or candidate in MODULES:
+                module = candidate
         if module in stack: raise error('Cyclic script library import: ' + ' -> '.join((*stack, module)))
         if len(stack) >= 16: raise error('Script library import depth exceeds 16')
-        if module == 'dw::Core':
+        if module == 'mina::Core':
             exports = {name: (lambda *args, name=name: parser('', {}).call(name, list(args))) for name in CORE_NAMES}
             custom = False
         elif module in MODULES:

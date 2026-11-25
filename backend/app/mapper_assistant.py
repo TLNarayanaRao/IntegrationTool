@@ -5,6 +5,8 @@ import math
 import re
 from collections import defaultdict
 
+from .mapper import local_schema_target
+
 PROFILES = {
     'general': [('identifier', 'id'), ('telephone', 'phone'), ('zip', 'postal'), ('surname', 'lastname'), ('givenname', 'firstname')],
     'commerce': [('client', 'customer'), ('buyer', 'customer'), ('purchase', 'order'), ('product', 'item'), ('sku', 'productcode'), ('qty', 'quantity')],
@@ -67,11 +69,11 @@ def fields(schema):
         if not isinstance(node, dict): return
         if '$ref' in node:
             ref = node['$ref']
-            if not isinstance(ref,str) or not ref.startswith('#/') or ref in refs: return
-            resolved = root
+            if ref in refs: return
             try:
-                for part in ref[2:].split('/'): resolved = resolved[part.replace('~1','/').replace('~0','~')]
-            except (KeyError, TypeError): return
+                resolved = local_schema_target(root, ref)
+            except (KeyError, IndexError, TypeError, ValueError): return
+            if not isinstance(resolved, dict): return
             walk({**resolved, **{k:v for k,v in node.items() if k != '$ref'}},path,repeats,required,(*refs,ref),depth+1); return
         kind = node.get('type', 'object' if 'properties' in node else 'any')
         if isinstance(kind,list): kind = next((k for k in kind if k != 'null'),'any') if len([k for k in kind if k != 'null']) == 1 else 'any'

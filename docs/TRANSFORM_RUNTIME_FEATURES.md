@@ -1,9 +1,12 @@
 # Transformation libraries, outputs, streaming and contracts
 
-Mapper and Transformer share portable runtime support for these features in Run,
+DataCompose and Transformer share portable runtime support for these features in Run,
 Debug and both Python archive formats. Existing single-output projects retain
 their behavior. These additions extend MINA's embedded language; they do not
 install another vendor runtime or claim compatibility with every external script.
+
+Scripts created in Studio use the `%mina 2.0` header and MINA module names.
+Existing project packages and saved scripts still open and run in MINA.
 
 ## Reusable script libraries
 
@@ -20,7 +23,7 @@ fun label(value) = prefix ++ normalize(value)
 Import the module in any output script:
 
 ```text
-%dw 2.0
+%mina 2.0
 import company::Names as Names
 output application/json
 ---
@@ -40,17 +43,17 @@ Built-in module inventory:
 
 | Module | Supported exports |
 | --- | --- |
-| `dw::Core` | Explicit imports of existing core built-ins: upper/lower/trim, sizeOf/isEmpty, flatten, keysOf/valuesOf, sum/min/max/avg, joinBy/splitBy/contains/startsWith/endsWith, abs/floor/ceil/mod/pow, zip/unzip, uuid/now/typeOf/read/write |
-| `dw::core::Strings` | capitalize, camelize, underscore, dasherize, padLeft, padRight, substringBefore, substringAfter, reverse |
-| `dw::core::Arrays` | divideBy, take, drop |
-| `dw::core::Numbers` | fromBinary, fromHex, fromRadixNumber, toBinary, toHex, toRadixNumber |
-| `dw::util::Math` | acos, asin, atan, cos, sin, tan, log10, logn, toDegrees, toRadians |
-| `dw::util::Coercions` | Basic string toNumber/toBoolean/toArray conversions |
+| `mina::Core` | Explicit imports of existing core built-ins: upper/lower/trim, sizeOf/isEmpty, flatten, keysOf/valuesOf, sum/min/max/avg, joinBy/splitBy/contains/startsWith/endsWith, abs/floor/ceil/mod/pow, zip/unzip, uuid/now/typeOf/read/write |
+| `mina::core::Strings` | capitalize, camelize, underscore, dasherize, padLeft, padRight, substringBefore, substringAfter, reverse |
+| `mina::core::Arrays` | divideBy, take, drop |
+| `mina::core::Numbers` | fromBinary, fromHex, fromRadixNumber, toBinary, toHex, toRadixNumber |
+| `mina::util::Math` | acos, asin, atan, cos, sin, tan, log10, logn, toDegrees, toRadians |
+| `mina::util::Coercions` | Basic string toNumber/toBoolean/toArray conversions |
 | `mina::Documents` | jsonPointer, jsonPatch, jsonMergePatch, jsonDiff |
 | `mina::Records` | joinRecords, deduplicateRecords, aggregateRecords (grouped metrics), reconcileRecords (snapshot change sets) |
 | `mina::Privacy` | redactKeys, maskText |
 
-See [Mapper document operations](MAPPER_DOCUMENT_OPERATIONS.md) for standards,
+See [DataCompose document operations](MAPPER_DOCUMENT_OPERATIONS.md) for standards,
 examples and limits for the MINA modules.
 
 Only the listed overloads and the embedded expression syntax are supported; locale
@@ -91,7 +94,7 @@ flattened appears as a whole-payload expression node. Editing that node updates
 the complete body without discarding it. Syntax outside the embedded parser's
 supported grammar reports an error and preserves the script. This view is an
 expression graph, not a promise to infer detailed field connections from arbitrary
-code. The existing Mapper visual/XSLT binding round-trip remains available for
+code. The existing DataCompose visual/XSLT binding round-trip remains available for
 its documented mapping subset.
 
 ## Source and target schema validation
@@ -112,9 +115,9 @@ against the selected structure for validation. Failures identify source or targe
 and prevent output-state commit. Exports include the selected assets, transitive
 dependencies and deployment dependency declarations.
 
-## Record streaming for Mapper and Transformer
+## Record streaming for DataCompose and Transformer
 
-Expand **Streaming record transformation** in Mapper policies or Transformer
+Expand **Streaming record transformation** in DataCompose policies or Transformer
 configuration. Enable streaming, choose input/output formats and provide file
 paths. Paths can be dynamic expressions, for example `${input.sourceFile}` and
 `${properties.outputFile}`. Both paths refer to the machine running the flow;
@@ -163,7 +166,7 @@ The repeatable large-file qualification is:
 python scripts/transform-stream-qa.py --records 100000 --output-dir tmp/stream-qa-new
 ```
 
-It runs Start → streaming Mapper/Transformer → End for each execution mode,
+It runs Start → streaming DataCompose/Transformer → End for each execution mode,
 validates source and target schemas, audits every output, and samples the actual
 interpreter's RSS. Its timings include archive startup/import, readback and cleanup.
 Use a fresh output directory. These measurements are a bounded workload test,
@@ -176,7 +179,7 @@ target validation enabled:
 
 | Activity | Run seconds | Debug seconds | Direct archive seconds | Engine archive seconds |
 | --- | ---: | ---: | ---: | ---: |
-| Mapper | 26.98 | 28.08 | 28.41 | 28.78 |
+| DataCompose | 26.98 | 28.08 | 28.41 | 28.78 |
 | Transformer | 27.56 | 29.22 | 28.19 | 30.42 |
 
 Sampled interpreter RSS peaks were 37.89–70.45 MiB across these cases, including

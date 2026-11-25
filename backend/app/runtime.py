@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, Future as ConcurrentFuture
 from .models import Activity, GroupDefinition, ProcessDefinition, Project, RunResult, find_subtask
 from .group_execution import MULTI_ROUTE_GROUPS, ROUTED_GROUPS, iteration_items, partition_routes, scope_fault_action, scope_variables
 from .mapper import INPUT_OCCURRENCES, activity_occurrence_rules, _function_arguments, apply_function, evaluate_condition, get_path, rewrite_references, validate_output, execute as execute_mapping, execute_async as execute_mapping_async
-from .dataweave import DataWeaveError
+from .script_transform import ScriptTransformError
 from .transform_engine import execute_activity_async as execute_transform_activity
 from .sap import sap_adapter
 from .snowflake import snowflake_adapter
@@ -992,7 +992,7 @@ class WorkflowRuntime(DataFormats):
         if activity.type in ('mapper', 'transform', 'ai_transform') and cfg.get('targetSchemaId'):
             schema_id = cfg['targetSchemaId']
             asset = next((item for item in getattr(ctx.get('project'), 'schemas', ()) if schema_id in (item.id, item.name)), None)
-            if not asset or not asset.content: raise MinaFault('Selected Mapper target schema was not found', fault_type='ValidationException')
+            if not asset or not asset.content: raise MinaFault('Selected DataCompose target schema was not found', fault_type='ValidationException')
             from .xsd_catalog import inherit_schema_selection
             cfg.update(targetSchema={}, targetSchemaText=inherit_schema_selection(asset.content,cfg.get("targetSchemaText")), xmlTargetSchemaPath=asset.source_path or asset.name)
         mapped_input = {}
@@ -1237,14 +1237,14 @@ class WorkflowRuntime(DataFormats):
                 rules.append(normalized)
             functions = list({item['name']: item for item in [*cfg.get('customFunctions', []), *[item.model_dump() for item in getattr(ctx.get('project'), 'custom_functions', [])]]}.values())
             return await execute_mapping_async(source, rules, {**cfg, 'customFunctions': functions})
-        if activity.type == 'dataweave':
+        if activity.type == 'script_transform':
             try:
                 plan = await execute_transform_activity(cfg, ctx.get('last'), ctx.get('attributes'), ctx.get('vars'), getattr(ctx.get('project'), 'schemas', ()))
                 if plan['attributesChanged']: ctx['attributes'] = plan['attributes']
                 ctx.setdefault('vars', {}).update(plan['variables'])
                 return plan['output']
-            except DataWeaveError as exc:
-                raise MinaFault(str(exc), fault_type=getattr(exc, 'fault_type', 'DATAWEAVE_SYNTAX'), cause=exc.__class__.__name__) from exc
+            except ScriptTransformError as exc:
+                raise MinaFault(str(exc), fault_type=getattr(exc, 'fault_type', 'SCRIPT_TRANSFORM_SYNTAX'), cause=exc.__class__.__name__) from exc
         if activity.type == 'sap':
             resource = ctx['resources'].get(cfg.get('resourceId'))
             if not resource or resource.type != 'sap': raise RuntimeError('SAP activity requires an SAP ECC shared connection')

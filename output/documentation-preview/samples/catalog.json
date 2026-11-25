@@ -1,10 +1,10 @@
 [
   {
     "id": "mapper-foundations",
-    "name": "Mapper Foundations",
+    "name": "DataCompose Foundations",
     "category": "Transformation",
     "description": "Manual field mappings, typed constants, functions, target schema, Map & Test, logging, and task output.",
-    "activities": ["Start", "Mapper", "Log", "End"],
+    "activities": ["Start", "DataCompose", "Log", "End"],
     "file": "/samples/mapper-foundations.json",
     "ready": true
   },
@@ -13,7 +13,7 @@
     "name": "XML and JSON Mediation",
     "category": "Data formats",
     "description": "Parse an XML order, map its fields, and render a JSON response.",
-    "activities": ["Start", "Parse XML", "Mapper", "Render JSON", "End"],
+    "activities": ["Start", "Parse XML", "DataCompose", "Render JSON", "End"],
     "file": "/samples/xml-json-mediation.json",
     "ready": true
   },
@@ -22,7 +22,7 @@
     "name": "REST Service Mediation",
     "category": "APIs",
     "description": "Continuous REST receiver, request mapping, structured logging, and HTTP response.",
-    "activities": ["REST Receiver", "Mapper", "Log", "HTTP Response"],
+    "activities": ["REST Receiver", "DataCompose", "Log", "HTTP Response"],
     "file": "/samples/rest-service.json",
     "ready": true
   },
@@ -40,7 +40,7 @@
     "name": "Event Messaging Patterns",
     "category": "Messaging",
     "description": "Separate EMS, Kafka, and Pub/Sub starter tasks with automatic continuous receiving and acknowledgement patterns.",
-    "activities": ["EMS Receiver", "Kafka Receive", "Pub/Sub Subscribe", "Mapper", "Confirm Message"],
+    "activities": ["EMS Receiver", "Kafka Receive", "Pub/Sub Subscribe", "DataCompose", "Confirm Message"],
     "file": "/samples/event-messaging.json",
     "ready": false
   },
@@ -63,12 +63,12 @@
     "ready": true
   },
   {
-    "id": "dataweave-orders",
+    "id": "script-transform-orders",
     "name": "Transform Order Collection",
     "category": "Transformation",
-    "description": "Use the executable DataWeave-compatible Transform language to normalize and enrich an order collection.",
+    "description": "Use a MINA transform script to normalize and enrich an order collection.",
     "activities": ["Start", "Transform", "Log", "End"],
-    "file": "/samples/dataweave-orders.json",
+    "file": "/samples/script-transform-orders.json",
     "ready": true
   },
   {
@@ -76,7 +76,7 @@
     "name": "Reusable Sub Task Composition",
     "category": "Orchestration",
     "description": "Map input into a reusable Sub Task, execute it synchronously, and return the child task output to the caller.",
-    "activities": ["Start", "Call Sub Task", "Mapper", "End"],
+    "activities": ["Start", "Call Sub Task", "DataCompose", "End"],
     "file": "/samples/subtask-composition.json",
     "ready": true
   },
@@ -103,7 +103,7 @@
     "name": "Outbound REST Client",
     "category": "APIs",
     "description": "Invoke an environment-configured HTTP API, map its response, and retain request/response diagnostics.",
-    "activities": ["Start", "HTTP Request", "Mapper", "End"],
+    "activities": ["Start", "HTTP Request", "DataCompose", "End"],
     "file": "/samples/outbound-rest-client.json",
     "ready": false
   },

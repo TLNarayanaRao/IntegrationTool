@@ -1,13 +1,13 @@
 {
-  "family": "dataweave",
-  "mode": "run",
+  "family": "script_transform",
+  "mode": "debug",
   "passed": true,
   "records": 100000,
-  "elapsedSeconds": 27.56299999996554,
+  "elapsedSeconds": 29.21899999998277,
   "deadlineSeconds": 600,
   "actualInterpreterIdentified": true,
-  "baselineRssMiB": 70.32421875,
-  "peakRssMiB": 70.4453125,
+  "baselineRssMiB": 70.3828125,
+  "peakRssMiB": 70.43359375,
   "scope": "Start -> streamed transform with source/target schema validation -> End; generated archive startup/import, output readback and cleanup included",
   "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak"
 }

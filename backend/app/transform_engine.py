@@ -4,27 +4,27 @@ import json
 import asyncio
 import threading
 
-from .dataweave import DataWeaveError, _decode_payload, execute_details, _xml
+from .script_transform import ScriptTransformError, _decode_payload, execute_details, _xml
 from .schema_validation import schema_errors
 from .retry_policy import retry_boolean
 
 
-class TransformContractError(DataWeaveError):
+class TransformContractError(ScriptTransformError):
     fault_type = 'ValidationException'
 
 
 def resolved_contracts(config, schemas=()):
-    if not isinstance(config, dict): raise DataWeaveError('Transform configuration must be an object')
+    if not isinstance(config, dict): raise ScriptTransformError('Transform configuration must be an object')
     config = copy.deepcopy(config)
     if config.get('outputs') is not None and (not isinstance(config['outputs'], list) or any(not isinstance(item, dict) for item in config['outputs'])):
-        raise DataWeaveError('Transform outputs must be an array of target definitions')
-    if not isinstance(config.get('libraries') or {}, dict): raise DataWeaveError('Transform libraries must be a module/source object')
+        raise ScriptTransformError('Transform outputs must be an array of target definitions')
+    if not isinstance(config.get('libraries') or {}, dict): raise ScriptTransformError('Transform libraries must be a module/source object')
     assets = [item if isinstance(item, dict) else item.model_dump() for item in schemas]
     def resolve(item, prefix):
         identifier = item.get(prefix + 'SchemaId')
         if identifier and identifier != 'inline':
             asset = next((a for a in assets if identifier in (a.get('id'), a.get('name'))), None)
-            if not asset: raise DataWeaveError('Selected ' + prefix + ' schema was not found: ' + identifier)
+            if not asset: raise ScriptTransformError('Selected ' + prefix + ' schema was not found: ' + identifier)
             from .xsd_catalog import inherit_schema_selection
             text = asset.get('content') or ''
             if text.lstrip().startswith('<'):
@@ -72,7 +72,7 @@ def validate_contract(value, config, prefix, mime=''):
         if isinstance(schema, dict) and '$id' not in schema and config.get(prefix + 'SchemaPath'):
             schema = {**schema, '$id': uri(config[prefix + 'SchemaPath'])}
         errors = schema_errors(document, schema, registry=registry)
-        if errors: raise DataWeaveError('; '.join(errors[:10]))
+        if errors: raise ScriptTransformError('; '.join(errors[:10]))
     except Exception as exc:
         raise TransformContractError(prefix.capitalize() + ' schema validation failed: ' + str(exc)) from exc
 
@@ -80,7 +80,7 @@ def validate_contract(value, config, prefix, mime=''):
 def execute_plan(config, payload, attributes=None, variables=None, schemas=()):
     """Compute every result against the same snapshot; callers commit on success."""
     config = resolved_contracts(config, schemas)
-    if not isinstance(config.get('variables') or {}, dict): raise DataWeaveError('Transform variables must be an object')
+    if not isinstance(config.get('variables') or {}, dict): raise ScriptTransformError('Transform variables must be an object')
     variables = {**(variables or {}), **(config.get('variables') or {})}
     source = config.get('payload', payload)
     attributes = config.get('attributes', attributes or {})
@@ -90,7 +90,7 @@ def execute_plan(config, payload, attributes=None, variables=None, schemas=()):
     if legacy:
         outputs = [{'target': config.get('outputTarget') or 'payload',
                     'name': config.get('outputVariable') or 'transformResult',
-                    'script': config.get('script') or '%dw 2.0\noutput application/json\n---\npayload'}]
+                    'script': config.get('script') or '%mina 2.0\noutput application/json\n---\npayload'}]
     plan = {'output': source, 'variables': {}, 'attributesChanged': False, 'outputs': []}
     targets = set()
     for output in outputs:
@@ -98,8 +98,8 @@ def execute_plan(config, payload, attributes=None, variables=None, schemas=()):
         name = str(output.get('name') or '').strip()
         key = (target, name if target == 'variable' else '')
         if target not in ('payload', 'attributes', 'variable') or target == 'variable' and not name:
-            raise DataWeaveError('Each output requires payload, attributes or a named variable target')
-        if key in targets: raise DataWeaveError('Duplicate transform output target: ' + str(key))
+            raise ScriptTransformError('Each output requires payload, attributes or a named variable target')
+        if key in targets: raise ScriptTransformError('Duplicate transform output target: ' + str(key))
         targets.add(key)
         result = execute_details(str(output.get('script') or config.get('script') or ''),
             payload=copy.deepcopy(source), attributes=copy.deepcopy(attributes), variables=copy.deepcopy(variables),
@@ -112,7 +112,7 @@ def execute_plan(config, payload, attributes=None, variables=None, schemas=()):
         validate_contract(result['output'], contract, 'target', result['mimeType'])
         value = result['output']
         if target == 'attributes':
-            if not isinstance(value, dict): raise DataWeaveError('Attributes output must be an object')
+            if not isinstance(value, dict): raise ScriptTransformError('Attributes output must be an object')
             plan.update(attributes=value, attributesChanged=True)
         elif target == 'variable': plan['variables'][name] = value
         if target == 'payload' or legacy: plan['output'] = value
@@ -120,15 +120,15 @@ def execute_plan(config, payload, attributes=None, variables=None, schemas=()):
     return plan
 
 
-def execute_activity(config, payload, attributes=None, variables=None, schemas=(), kind='dataweave', cancel=None, mapping_context=None):
+def execute_activity(config, payload, attributes=None, variables=None, schemas=(), kind='script_transform', cancel=None, mapping_context=None):
     if retry_boolean(config.get('streamEnabled', False)):
         if config.get('outputs') and config.get('streamOutputFormat') == 'csv':
-            raise DataWeaveError('Multiple streamed targets require JSON or JSON Lines output envelopes')
+            raise ScriptTransformError('Multiple streamed targets require JSON or JSON Lines output envelopes')
         from .transform_stream import execute_file
         settings = {**config}
         # Stream contracts and scripts describe one record, never the complete file.
         def transform(record):
-            if kind == 'dataweave':
+            if kind == 'script_transform':
                 local = {**settings, 'payload': record, 'streamEnabled': False}
                 plan = execute_plan(local, record, attributes, variables, schemas)
                 if settings.get('outputs'):

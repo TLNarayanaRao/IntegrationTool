@@ -49,8 +49,10 @@ test('field reference tables contain authored guidance rather than missing-help 
  }
 });
 
-test('Mapper configuration documents its custom schema and policy controls', () => {
+test('DataCompose configuration documents its custom schema and policy controls', () => {
  const mapper=model.pages.find(p=>p.type==='mapper');
+ assert.equal(mapper.title,'DataCompose');
+ assert.equal(mapper.id,'activity-mapper-map');
  const rows=mapper.sections.find(s=>s.title==='Configuration').blocks.find(b=>b.kind==='table').rows;
  for (const key of ['targetSchemaId','targetSchemaText','nullPolicy','typeCoercion','onMappingError','maxOutputSizeKb','validateOutput','trimStrings','removeEmptyStructures','copyNil']) {
   assert.ok(rows.some(row=>row[0].endsWith(`\n${key}`)),key);

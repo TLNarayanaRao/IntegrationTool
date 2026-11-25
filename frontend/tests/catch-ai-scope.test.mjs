@@ -38,13 +38,13 @@ test('AI dialog options and selection lifecycle are scoped to process analysis',
  assert(source.includes('[nodeId, exceptionKey]'));
  assert(main.includes('exceptionTypes.filter(type => relevant.has(type))'));
 });
-test('Mapper assistance and visual mapper entry point belong to Input',()=>{
+test('DataCompose assistance and visual mapper entry point belong to Input',()=>{
  const editor=ast.statements.find(statement=>statement.name?.text==='ActivityEditor').getText(ast);
  const input=editor.slice(editor.indexOf('if (tab === "input")'));
  const configuration=editor.slice(0,editor.indexOf('if (tab === "input")'));
  assert(!input.includes('<AIMappingAssistance'));
  assert(input.includes('ai-mapper-launcher'));
- assert(input.includes('Open visual AI Mapper'));
- assert(!configuration.includes('Open visual AI Mapper'));
+ assert(input.includes('Open AI-assisted DataCompose'));
+ assert(!configuration.includes('Open AI-assisted DataCompose'));
  assert(!configuration.includes('<AIMappingAssistance'));
 });

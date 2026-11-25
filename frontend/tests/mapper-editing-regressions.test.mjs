@@ -9,6 +9,65 @@ const ast=ts.createSourceFile('editor.tsx',source,ts.ScriptTarget.Latest,true,ts
 const compile=text=>ts.transpileModule(text,{compilerOptions:{jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2022}}).outputText;
 function all(node) {return node && typeof node==='object' ? [node,...(node.children||[]).flatMap(all)] : [];}
 
+test('Mapper schema tree follows encoded local references and rejects negative indices', () => {
+  const fn = ast.statements.find(statement => statement.name?.text === 'transformSchemaFields');
+  const context = vm.createContext({mappingSchemaDefinition: schema => schema});
+  vm.runInContext(compile(fn.getText(ast)), context);
+  const schema = {type:'object', properties:{
+    code: {$ref:'#/$defs/alias'},
+    invalid: {$ref:'#/$defs/r%C3%A9sum%C3%A9~1item/anyOf/-1'},
+  }, $defs:{alias:{$ref:'#/$defs/r%C3%A9sum%C3%A9~1item/anyOf/0'},
+            'résumé/item':{anyOf:[{type:'integer'}]}}};
+  const result = context.transformSchemaFields({targetSchema: schema});
+  assert.equal(result.find(field => field.path === 'code').type, 'integer');
+  assert.equal(result.find(field => field.path === 'invalid').type, 'any');
+});
+
+test('Mapper schema tree exposes choice alternatives as optional and repeating when permitted', () => {
+  const element = (localName, attributes, children = []) => ({
+    localName, children, getAttribute: key => attributes[key] ?? null,
+    getAttributeNS: () => null, lookupNamespaceURI: () => null,
+    namespaceURI: 'http://www.w3.org/2001/XMLSchema',
+  });
+  const buildDocument = (maxOccurs, namedGroup) => {
+    const alternatives = [
+      element('element', {name: 'email', type: 'xs:string'}),
+      element('choice', {}, [
+        element('element', {name: 'extension', type: 'xs:int'}),
+        element('element', {name: 'mobile', type: 'xs:string'}),
+      ]),
+    ];
+    const groups = [];
+    if (namedGroup) {
+      alternatives.push(element('group', {ref: 'Office'}));
+      groups.push(element('group', {name: 'Office'}, [element('sequence', {}, [
+        element('element', {name: 'building', type: 'xs:string'}),
+      ])]));
+    }
+    const choice = element('choice', {maxOccurs}, alternatives);
+    const root = element('schema', {}, [...groups, element('element', {name: 'contact'}, [element('complexType', {}, [choice])])]);
+    const document = {documentElement: root, querySelector: () => null};
+    const connect = (node, parent) => {
+      Object.assign(node, {parentElement: parent, ownerDocument: document});
+      node.children.forEach(child => connect(child, node));
+    };
+    connect(root, null);
+    return document;
+  };
+  const fn = ast.statements.find(statement => statement.name?.text === 'transformSchemaFields');
+  const context = vm.createContext({mappingSchemaDefinition: JSON.parse,
+    DOMParser: class { parseFromString(value) { return buildDocument(value.includes('unbounded') ? 'unbounded' : '1', value.includes('group')); } }});
+  vm.runInContext(compile(fn.getText(ast)), context);
+  for (const maxOccurs of ['1', 'unbounded']) {
+    const fields = context.transformSchemaFields({targetSchema: `<choice maxOccurs="${maxOccurs}"/>`});
+    assert.deepEqual(Array.from(fields.slice(1), field => [field.path, field.required, field.minOccurs, field.maxOccurs, field.repeating]),
+      ['email', 'extension', 'mobile'].map(name => [`contact.${name}`, false, '0', maxOccurs, maxOccurs === 'unbounded']));
+  }
+  const groupField = context.transformSchemaFields({targetSchema: '<group/>'}).find(field => field.path === 'contact.building');
+  assert.equal(groupField.required, false);
+  assert.equal(groupField.minOccurs, '0');
+});
+
 test('selected project schema renders only its selector; inline schema remains editable',()=>{
   const fn=ast.statements.find(s=>s.name?.text==='TransformSchemaEditor');
   const context=vm.createContext({React:{createElement:(type,props,...children)=>({type,props,children:children.flat(Infinity)})},Braces:'icon',SchemaHierarchyPreview:'preview',InlineMapperFields:'fields',XsdStructurePicker:'structure-picker',selectedSchemaText:(value,snapshot)=>snapshot||value,selectXsdStructure:value=>value});

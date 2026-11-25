@@ -88,7 +88,7 @@ fields apart. Use **Expand all** or **Collapse all** to browse the complete
 tree. Clear search to return to that tree.
 
 Validation reports missing required Input fields by path, including named JDBC
-parameters and required fields in the selected Mapper or task schema.
+parameters and required fields in the selected DataCompose or task schema.
 Configured values and valid whole-object mappings can supply these fields. An
 optional object may be omitted. Once you map part of it, validation checks its
 required children. The runtime checks the actual values returned by dynamic

@@ -28,7 +28,7 @@ context. Supply explicit XML for path-based expressions; an explicit invalid XML
 source raises an error.
 
 Declare namespace prefixes in the XML document for namespace-qualified paths.
-Mapper's additional XML binding configuration remains available for Mapper.
+DataCompose's additional XML binding configuration remains available for DataCompose.
 XPath sequences become lists; exact decimal results may be strings to retain
 precision. Existing restrictions on XML size, external documents, DTDs and regex
 execution apply to activity Inputs. Run, Debug and both Python formats use these

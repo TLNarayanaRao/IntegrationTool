@@ -26,7 +26,7 @@ function VisualScript({config, setConfig}: any) {
     const controller=new AbortController();
     const timer=setTimeout(async()=>{
       try {
-        const response=await fetch('/api/dataweave/visual',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({script:config.script || '%dw 2.0\noutput application/json\n---\npayload'}),signal:controller.signal});
+        const response=await fetch('/api/transform-script/visual',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({script:config.script || '%mina 2.0\noutput application/json\n---\npayload'}),signal:controller.signal});
         const result=await response.json();
         if (current!==revision.current) return;
         if (!response.ok) throw new Error(result.detail || 'Unable to read visual mappings');
@@ -39,7 +39,7 @@ function VisualScript({config, setConfig}: any) {
     const current=++revision.current;
     setView({...view,mappings});
     try {
-      const response=await fetch('/api/dataweave/visual',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({header:view.header,mappings})});
+      const response=await fetch('/api/transform-script/visual',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({header:view.header,mappings})});
       const result=await response.json();
       if(current!==revision.current)return;
       if(!response.ok)throw new Error(result.detail || 'Visual mapping error');
@@ -63,15 +63,15 @@ export default function TransformerFeatures({config,schemas,setConfig}: any) {
   const outputs=config.outputs || [];
   const updateOutput=(index:number,change:any)=>setConfig({outputs:outputs.map((row:any,i:number)=>i===index?{...row,...change}:row)});
   const addOutput=()=>{
-    const initial=outputs.length ? outputs : [{target:config.outputTarget || 'payload',name:config.outputVariable || '',script:config.script || '%dw 2.0\noutput application/json\n---\npayload'}];
+    const initial=outputs.length ? outputs : [{target:config.outputTarget || 'payload',name:config.outputVariable || '',script:config.script || '%mina 2.0\noutput application/json\n---\npayload'}];
     const names=new Set(initial.filter((row:any)=>row.target==='variable').map((row:any)=>row.name));
     let suffix=1;while(names.has(`result${suffix}`))suffix++;
-    setConfig({outputs:[...initial,{target:'variable',name:`result${suffix}`,script:'%dw 2.0\noutput application/json\n---\npayload'}]});
+    setConfig({outputs:[...initial,{target:'variable',name:`result${suffix}`,script:'%mina 2.0\noutput application/json\n---\npayload'}]});
   };
   return <>
     {!outputs.length && <VisualScript config={config} setConfig={setConfig}/>}
     <details className="mapper-xpath-builder"><summary>Reusable script libraries</summary>
-      <p>Built-in modules: dw::Core, dw::core::Strings, Arrays, Numbers, dw::util::Math and Coercions. Import named functions, all listed exports, or qualified module functions. See Help for the supported inventory.</p>
+      <p>Built-in modules: mina::Core, mina::core::Strings, Arrays, Numbers, mina::util::Math and Coercions. Import named functions, all listed exports, or qualified module functions. See Help for the supported inventory.</p>
       <label>Module name<input value={moduleName} onChange={event=>setModuleName(event.target.value)}/></label>
       <button type="button" disabled={!/^[\w$]+(?:::[\w$]+)*$/.test(moduleName) || !!config.libraries?.[moduleName]} onClick={()=>setConfig({libraries:{...config.libraries,[moduleName]:'fun normalize(value) = upper(trim(value))'}})}>Add library</button>
       {Object.entries(config.libraries || {}).map(([name,source])=><section key={name}>

@@ -1,6 +1,46 @@
 """HTTP/2 and HTTP/3 hosting using Hypercorn's programmatic ASGI API."""
 from __future__ import annotations
 import asyncio
+import socket
+
+
+async def _serve_with_quic(serve, app, config, sockets, stop):
+    from hypercorn.asyncio.udp_server import UDPServer
+    from hypercorn.asyncio.worker_context import WorkerContext
+    from hypercorn.utils import wrap_app
+
+    loop = asyncio.get_running_loop()
+    wrapped = wrap_app(app, config.wsgi_max_body_size, 'asgi')
+    context = WorkerContext(None)
+    endpoints = []
+
+    class ManagedUDPServer(UDPServer):
+        def connection_lost(self, exc):
+            self.closed.set()
+
+        def __init__(self):
+            super().__init__(wrapped, loop, config, context, {})
+            self.closed = asyncio.Event()
+
+    try:
+        async with asyncio.TaskGroup() as group:
+            jobs = []
+            try:
+                for sock in sockets:
+                    transport, protocol = await loop.create_datagram_endpoint(ManagedUDPServer, sock=sock)
+                    endpoints.append((transport, protocol))
+                    jobs.append(group.create_task(protocol.run()))
+                await serve(app, config, shutdown_trigger=stop.wait, mode='asgi')
+            finally:
+                for job in jobs:
+                    job.cancel()
+    finally:
+        # Hypercorn 0.17–0.18 leaves its UDP transports to the loop. The
+        # listener owns them explicitly so Stop can wait for the socket close.
+        for transport, _ in endpoints:
+            transport.close()
+        await asyncio.gather(*(protocol.closed.wait() for _, protocol in endpoints))
+
 
 async def serve_http2(routes,handler,ready):
     from hypercorn.asyncio import serve
@@ -11,7 +51,7 @@ async def serve_http2(routes,handler,ready):
     http3 = str(connection.get('httpVersion')) == '3'
     if http3:
         try:
-            import aioquic  # noqa: F401
+            from aioquic.h3.connection import H3_ALPN
         except ImportError:
             raise HTTPFault('Install aioquic to host HTTP/3','HTTP_CONFIGURATION',400) from None
     transport_keys=('host','port','httpVersion','scheme','tlsEnabled','defaultConfidentiality','confidentiality','certificateFile','privateKeyFile','privateKeyPassword','identityStoreFile','identityStoreType','identityStorePassword','trustStoreFile','trustStoreType','trustStorePassword','certificateAuthorityFile','trustedCertificateFolder','clientAuthentication','tlsVersion','maximumTlsVersion','cipherSuites','crlFile','maximumQtpThreads','minimumQtpThreads','maxQueueSize','maxHeaderBytes','acceptQueueSize','idleConnectionTimeoutMs','readTimeoutMs')
@@ -26,20 +66,21 @@ async def serve_http2(routes,handler,ready):
             identities.add(identity)
     context=tls_context(connection,server=True);context.set_alpn_protocols(['h2','http/1.1'])
     bound_sockets = []
+    prepared = None
     class HTTP2Config(Config):
         @property
         def ssl_enabled(self):return True
         def create_ssl_context(self):
             return context
         def create_sockets(self):
-            sockets=super().create_sockets()
-            bound_sockets.extend([*sockets.secure_sockets, *sockets.insecure_sockets, *sockets.quic_sockets])
+            sockets = prepared if prepared is not None else super().create_sockets()
+            if prepared is None:
+                bound_sockets.extend([*sockets.secure_sockets, *sockets.insecure_sockets])
             for sock in sockets.secure_sockets:sock.listen(self.backlog)
             ready.set();return sockets
     config=HTTP2Config();host=str(connection.get('host') or '0.0.0.0');host='['+host+']' if ':' in host else host
     config.bind=[f"{host}:{int(connection.get('port') or 8080)}"]
     if http3:
-        config.quic_bind = config.bind
         config.certfile = str(connection['certificateFile'])
         config.keyfile = str(connection['privateKeyFile'])
     config.backlog=int(number(connection,'acceptQueueSize',128,1,65535))
@@ -50,7 +91,22 @@ async def serve_http2(routes,handler,ready):
     config.graceful_timeout=10;config.accesslog=None;config.errorlog=None
     app=ListenerApp(routes,handler,connection,verified_mtls=connection.get('clientAuthentication')=='required')
     stop=asyncio.Event()
-    try:await serve(app,config,shutdown_trigger=stop.wait,mode='asgi')
+    try:
+        if http3:
+            prepared = Config.create_sockets(config)
+            bound_sockets.extend([*prepared.secure_sockets, *prepared.insecure_sockets])
+            quic_sockets = []
+            for tcp_socket in prepared.secure_sockets:
+                udp_socket = socket.socket(tcp_socket.family, socket.SOCK_DGRAM)
+                bound_sockets.append(udp_socket)
+                udp_socket.bind(tcp_socket.getsockname())
+                udp_socket.setblocking(False)
+                quic_sockets.append(udp_socket)
+            config.alt_svc_headers = [f'{alpn}=\":{sock.getsockname()[1]}\"; ma=3600'
+                                      for sock in quic_sockets for alpn in H3_ALPN]
+            await _serve_with_quic(serve, app, config, quic_sockets, stop)
+        else:
+            await serve(app,config,shutdown_trigger=stop.wait,mode='asgi')
     finally:
         for sock in bound_sockets:
             sock.close()

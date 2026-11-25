@@ -229,7 +229,7 @@
           "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak"
         },
         {
-          "family": "dataweave",
+          "family": "script_transform",
           "mode": "run",
           "passed": true,
           "records": 10000,
@@ -242,7 +242,7 @@
           "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak"
         },
         {
-          "family": "dataweave",
+          "family": "script_transform",
           "mode": "debug",
           "passed": true,
           "records": 10000,
@@ -255,7 +255,7 @@
           "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak"
         },
         {
-          "family": "dataweave",
+          "family": "script_transform",
           "mode": "python-direct",
           "passed": true,
           "records": 10000,
@@ -268,7 +268,7 @@
           "limitations": "RSS samples describe this bounded workload, not proof of no leaks or a long-duration soak"
         },
         {
-          "family": "dataweave",
+          "family": "script_transform",
           "mode": "python-engine",
           "passed": true,
           "records": 10000,

@@ -4,13 +4,25 @@ import asyncio, ipaddress, json, re, threading, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 from .http_transport import HTTPFault, authorize, boolean, number, tls_context, validate_authentication
 from .rest_contract import compatible_security, listener_parameters, operation_config
-from .http_contracts import listener_media_types, media_name, media_schema, schema_for_media
+from .http_contracts import listener_media_types, media_schema, schema_for_media
+
+_ROUTE_PARAMETER = re.compile(r'\{([^\s/{}]+)\}')
+
 
 def route_pattern(path):
     names=[];parts=[];start=0
-    for match in re.finditer(r'\{([^\s/{}]+)\}',path):
+    for match in _ROUTE_PARAMETER.finditer(path):
         parts.append(re.escape(path[start:match.start()]));parts.append('([^/]+)');names.append(match[1]);start=match.end()
     parts.append(re.escape(path[start:]));return re.compile('^'+''.join(parts).rstrip('/')+'/?$'),names
+
+
+def route_priority(shape):
+    segments=shape.strip('/').split('/')
+    return ('{}' in shape, tuple(('{}' in segment, -len(segment.replace('{}', ''))) for segment in segments))
+
+
+def route_shape(path):
+    return _ROUTE_PARAMETER.sub('{}', path).rstrip('/')
 
 def listener_config(connection,activity):
     cfg={**connection,**activity}
@@ -34,7 +46,7 @@ def listener_config(connection,activity):
                 raise HTTPFault(f'Request media type {media} is not declared by the OpenAPI operation', 'HTTP_CONFIGURATION', 400)
             if cfg.get('_explicitRequestSchema') or not declared:
                 schema = schema_for_media(cfg.get('requestSchema'), media, len(request_types) > 1)
-            selected[media_name(media)] = schema
+            selected[media] = schema
         cfg['_restRequestSchemas'] = selected
     elif configured_type:
         cfg['contentType'] = configured_type
@@ -43,7 +55,7 @@ def listener_config(connection,activity):
             matched, schema = media_schema(formats, configured_type)
             if matched is None:
                 raise HTTPFault('Configured request content type is not declared by the OpenAPI operation', 'HTTP_CONFIGURATION', 400)
-            cfg['_restRequestSchemas'] = {media_name(configured_type): schema}
+            cfg['_restRequestSchemas'] = {configured_type: schema}
     if response_types:
         declared = [formats for code, formats in (cfg.get('_restResponseContentSchemas') or {}).items()
                     if code.startswith('2') and formats]
@@ -95,11 +107,15 @@ def server_tls(cfg):return str(cfg.get('scheme') or '').lower()=='https' or bool
 class ListenerApp:
     def __init__(self,routes,handler,connection,verified_mtls=False,warm_workers=True):
         self.verified_mtls=verified_mtls
-        from .api_docs import HostedAPIDocs
+        from .api_docs import HostedAPIDocs, methods_for
         self.docs=HostedAPIDocs(routes,connection)
         self.routes=routes;self.handler=handler;self.connection=connection;maximum=int(number(connection,'maximumQtpThreads',75,1,10000))
         self.gate=asyncio.Semaphore(maximum);self.queued=0;self.executor=ThreadPoolExecutor(max_workers=maximum,thread_name_prefix='mina-http')
-        self.compiled=[(*route_pattern(cfg['path']),metadata,cfg) for metadata,cfg in sorted(routes,key=lambda item:('{' in item[1]['path'],-len(item[1]['path'])))]
+        self.compiled=[]
+        for metadata,cfg in routes:
+            shape = route_shape(cfg['path'])
+            self.compiled.append((*route_pattern(cfg['path']), shape, metadata, cfg, set(methods_for(cfg))))
+        self.compiled.sort(key=lambda item: route_priority(item[2]))
         # Anonymous routes have no authentication work to offload. Warming
         # those pools multiplies idle threads across shared-host listeners.
         needs_workers = any(str(cfg.get('authentication') or 'none').lower() != 'none' for _, cfg in routes)
