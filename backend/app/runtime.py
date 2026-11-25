@@ -989,7 +989,7 @@ class WorkflowRuntime(DataFormats):
         resolve_settings = self._resolve_sap_settings if activity.type == 'sap' else self.resolve
         cfg = resolve_settings({key: value for key, value in activity.config.items() if key not in literal_keys}, ctx)
         cfg.update({key: value for key, value in activity.config.items() if key in literal_keys})
-        if activity.type in ('mapper', 'transform', 'ai_transform') and cfg.get('targetSchemaId'):
+        if activity.type in ('mapper', 'native_map', 'transform', 'ai_transform') and cfg.get('targetSchemaId'):
             schema_id = cfg['targetSchemaId']
             asset = next((item for item in getattr(ctx.get('project'), 'schemas', ()) if schema_id in (item.id, item.name)), None)
             if not asset or not asset.content: raise MinaFault('Selected DataCompose target schema was not found', fault_type='ValidationException')
@@ -1205,11 +1205,13 @@ class WorkflowRuntime(DataFormats):
                     raise RuntimeError('Confirm Message requires an acknowledgement handle from a client/manual receiver')
                 return {'confirmed': False, 'count': 0, 'ackIds': [], 'technologies': []}
             return await self.confirm_messages(handles)
-        if activity.type in ('mapper', 'transform', 'ai_transform'):
+        if activity.type in ('mapper', 'native_map', 'transform', 'ai_transform'):
+            if activity.type == 'native_map':
+                cfg = {**cfg, 'nativeOnly': True}
             if self.as_bool(cfg.get('streamEnabled', False)):
                 plan = await execute_transform_activity(cfg, ctx.get('last'), ctx.get('attributes'), ctx.get('vars'), getattr(ctx.get('project'), 'schemas', ()), kind='mapper', mapping_context={key: ctx.get(key, {}) for key in ('properties', 'activities', 'context', 'tasks', 'attributes')})
                 return plan['output']
-            if cfg.get('xmlStylesheet') or cfg.get('generatedXmlBinding') or cfg.get('sourceCoercions'):
+            if cfg.get('xmlStylesheet') or cfg.get('generatedXmlBinding') or cfg.get('sourceCoercions') or cfg.get('nativeXmlOutput'):
                 cfg['xmlSchemaDocuments'] = {**(activity.config.get('xmlSchemaDocuments') or {}),
                     **{asset.source_path or asset.name: asset.content for asset in getattr(ctx.get('project'), 'schemas', [])
                        if (asset.source_path or asset.name).lower().endswith('.xsd')}}

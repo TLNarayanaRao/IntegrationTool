@@ -8,6 +8,21 @@ install another vendor runtime or claim compatibility with every external script
 Scripts created in Studio use the `%mina 2.0` header and MINA module names.
 Existing project packages and saved scripts still open and run in MINA.
 
+## Native Mapping
+
+Add **Native Mapping** from the **General** activity group. Use the Input tab or
+AI Mapping to build the same declarative field rules, functions, conditions,
+and repeating structures as DataCompose. Existing visual rules can be reused.
+Run **Map & Test** to check representative data. Run, Debug, and both Python
+archive formats execute the same native rule evaluator.
+
+For XML output, select a target XSD and its root, then enable **Render XML
+from target XSD** under **Configuration → XML expressions and output**. Map
+fields under that root and use `xmlString` downstream. The renderer follows
+the XSD field order and namespaces. XPath expressions are available for
+reading structured XML input. Stylesheet-based flows must be expressed as
+visual rules before they can run as Native Mapping.
+
 ## Reusable script libraries
 
 In Transformer Configuration, expand **Reusable script libraries**. Add a module

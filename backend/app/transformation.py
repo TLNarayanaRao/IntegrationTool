@@ -32,7 +32,7 @@ def normalize_rules(mappings):
 def test_mapping(config, value):
     # Tests emulate the selected upstream output, without invoking connectors.
     document = {**(value if isinstance(value, dict) else {}), 'input': value, 'last': value}
-    xml_binding = bool(config.get('xmlStylesheet'))
+    xml_binding = bool(config.get('xmlStylesheet') or config.get('nativeOnly') and config.get('nativeXmlOutput'))
     options = {**config, '_mapperSample': True}
     if not xml_binding: options['validateOutput'] = False
     result = execute(document, normalize_rules(config.get('mappings', [])), options)
@@ -102,7 +102,7 @@ def schema_impact(previous, current, mappings=None):
             'affectedTargets': sorted(set(affected)), 'contractChanges': contract_changes}
 
 
-ASSET_KEYS = ('mappings', 'targetSchema', 'targetSchemaText', 'sourceSchema', 'sourceSchemaText', 'lookupTables', 'testCases', 'maxIterations', 'maxExecutionMs', 'maxOutputSizeKb', 'nullPolicy', 'typeCoercion', 'customFunctions', 'copyNil', 'removeEmptyStructures', 'trimStrings', 'defaultValue', 'onMappingError', 'validateOutput', 'maxSuiteMs', 'maxBatchSizeKb', 'xmlSource', 'xmlStylesheet', 'xmlNamespaces', 'xmlVariables', 'sourceTypeOverrides', 'xpathVersion')
+ASSET_KEYS = ('mappings', 'targetSchema', 'targetSchemaText', 'sourceSchema', 'sourceSchemaText', 'lookupTables', 'testCases', 'maxIterations', 'maxExecutionMs', 'maxOutputSizeKb', 'nullPolicy', 'typeCoercion', 'customFunctions', 'copyNil', 'removeEmptyStructures', 'trimStrings', 'defaultValue', 'onMappingError', 'validateOutput', 'maxSuiteMs', 'maxBatchSizeKb', 'xmlSource', 'xmlStylesheet', 'xmlNamespaces', 'xmlVariables', 'sourceTypeOverrides', 'xpathVersion', 'nativeXmlOutput')
 
 
 def template(config, name, version):

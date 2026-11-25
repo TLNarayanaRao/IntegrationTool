@@ -82,6 +82,51 @@ class PythonMapperParityTests(unittest.TestCase):
 
         asyncio.run(run())
 
+    def test_native_mapping_shares_rules_and_renders_xml_without_a_stylesheet(self):
+        from app.main import mapper_test
+        from app.mapper import execute
+        from xml.etree import ElementTree
+
+        payload = {'rows': [{'label': ' first '}, {'label': ' second '}]}
+        rules = [
+            dict(operator='for-each', source='${input.rows}', target='report.row'),
+            dict(source='${input.rows.label}', target='report.row.label', functions=['trim', 'upperCase']),
+        ]
+        expected = {'report': {'row': [{'label': 'FIRST'}, {'label': 'SECOND'}]}}
+        project = self.project(rules)
+        activity = project['tasks'][0]['activities'][1]
+        self.assertEqual(execute({'input': payload}, rules), expected)
+        activity['type'] = 'native_map'
+        self.assert_studio(project, payload, expected)
+        self.assert_exports(project, payload, expected)
+
+        xsd = ('<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">'
+               '<xs:element name="report"><xs:complexType><xs:sequence>'
+               '<xs:element name="row" maxOccurs="unbounded"><xs:complexType><xs:sequence>'
+               '<xs:element name="label" type="xs:string"/>'
+               '</xs:sequence></xs:complexType></xs:element>'
+               '</xs:sequence></xs:complexType></xs:element></xs:schema>')
+        activity['config'].update(targetSchema=xsd, nativeXmlOutput=True)
+        preview = mapper_test({'input': payload, 'mappings': rules, 'targetSchemaText': xsd,
+                               'options': {'nativeOnly': True, 'nativeXmlOutput': True}})
+        self.assertTrue(preview['valid'], preview)
+        self.assertEqual(preview['outputFormat'], 'xml')
+        self.assertEqual([node.text for node in ElementTree.fromstring(preview['outputText']).findall('row/label')],
+                         ['FIRST', 'SECOND'])
+        self.assert_studio(project, payload, preview['output'])
+        self.assert_exports(project, payload, preview['output'])
+        for compiler in (raw_python_files, engine_python_files):
+            files = compiler(project, {'local': []})
+            self.assertNotIn(b'saxonche', files.get('requirements-mapper.txt', b''))
+            activity['config']['generatedXmlBinding'] = True
+            try:
+                with self.assertRaisesRegex(ValueError, 'remove the stylesheet binding'):
+                    compiler(project, {'local': []})
+            finally:
+                activity['config'].pop('generatedXmlBinding')
+        with self.assertRaisesRegex(ValueError, 'Remove the stylesheet binding'):
+            execute({'input': payload}, rules, {'nativeOnly': True, 'generatedXmlBinding': True})
+
     def test_grouped_conditions_preserve_literals_in_archives(self):
         expressions = ['${input.text} = "A and B > C"',
                        'not (${input.n} < 3 or ${input.n} >= 9)',

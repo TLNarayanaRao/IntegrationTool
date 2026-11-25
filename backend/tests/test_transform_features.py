@@ -245,7 +245,7 @@ class TransformFeatureTests(unittest.TestCase):
         flow = flow_module()
         async def run(directory):
             source = Path(directory) / 'input.csv'; source.write_text('id,name\n1,Ada\n2,Grace\n')
-            for kind in ('mapper', 'script_transform'):
+            for kind in ('mapper', 'native_map', 'script_transform'):
                 for mode in ('run', 'debug', 'python-direct', 'python-engine'):
                     target = Path(directory) / (kind + '-' + mode + '.jsonl')
                     config = {'streamEnabled': True, 'streamInputFile': str(source), 'streamOutputFile': str(target), 'streamInputFormat': 'csv',

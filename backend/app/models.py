@@ -7,7 +7,7 @@ from .transform_compat import normalize_transform_activity
 ActivityKind = Literal[
     'start', 'http', 'http_listener', 'http_response', 'rest', 'soap',
     'file', 'ftp', 'sftp', 'jdbc', 'snowflake', 'amqp', 'excel', 'xml', 'json', 'flat',
-    'mapper', 'script_transform', 'transform', 'ai_transform', 'log', 'confirm', 'catch', 'throw', 'rethrow', 'timer', 'call_task', 'ems', 'jms', 'kafka', 'pubsub', 'sap', 'java', 'python', 'basic', 'end'
+    'mapper', 'native_map', 'script_transform', 'transform', 'ai_transform', 'log', 'confirm', 'catch', 'throw', 'rethrow', 'timer', 'call_task', 'ems', 'jms', 'kafka', 'pubsub', 'sap', 'java', 'python', 'basic', 'end'
 ]
 PackagePath = Annotated[str, Field(max_length=1024, pattern=r'^[\p{L}\p{N}_-]+(?:/[\p{L}\p{N}_-]+){0,15}$')]
 PackageCategory = Literal['tasks', 'resources', 'schemas']

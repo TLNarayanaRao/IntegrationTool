@@ -2240,7 +2240,8 @@ def mapper_test(payload: dict):
                 } for branch in rule['whens']]
             normalized.append(rule)
         options = {**(payload.get('options') or {}), '_mapperSample': True}
-        xml_binding = bool(options.get('xmlStylesheet') or options.get('generatedXmlBinding'))
+        xml_binding = bool(options.get('xmlStylesheet') or options.get('generatedXmlBinding') or
+                           options.get('nativeOnly') and options.get('nativeXmlOutput'))
         if not xml_binding: options['validateOutput'] = False
         if payload.get('targetSchema'): options = {**options, 'targetSchema': payload.get('targetSchema')}
         if payload.get('targetSchemaText'): options = {**options, 'targetSchemaText': payload.get('targetSchemaText')}

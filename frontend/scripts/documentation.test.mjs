@@ -58,6 +58,13 @@ test('DataCompose configuration documents its custom schema and policy controls'
   assert.ok(rows.some(row=>row[0].endsWith(`\n${key}`)),key);
  }
 });
+test('Native Mapping appears as a separate activity with its XML output option', () => {
+ const native = model.pages.find(page => page.type === 'native_map');
+ assert.equal(native?.title, 'Native Mapping');
+ const rows = native.sections.find(section => section.title === 'Configuration').blocks.find(block => block.kind === 'table').rows;
+ assert.ok(rows.some(row => row[0].endsWith('\nnativeXmlOutput')));
+ assert.ok(rows.some(row => row[0].endsWith('\ntargetSchemaId')));
+});
 test('function, connection and group coverage matches generated counts', () => {
  for (const [prefix,key] of [['group-','groups'],['function-','functions'],['connection-','connections']]) {
   assert.equal(model.pages.filter(p=>p.id.startsWith(prefix)).length,model.counts[key]);

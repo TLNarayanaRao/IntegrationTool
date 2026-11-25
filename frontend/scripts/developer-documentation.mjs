@@ -96,6 +96,7 @@ export function developerPages(activities,groups,functions,sources){
   json:[formats,'def json_activity(','JSON parse/render and validation',acts,'def data_activity('],
   flat:[formats,'def flat_data(','Flat record parse/render',acts,'def data_activity('],
   excel:[rt,'def read_excel(','Workbook reading',acts,'def excel_read('],
+  native_map:['backend/app/mapper.py','def execute(','Native rule evaluation and XML rendering',core,'async def execute('],
   mapper:['backend/app/mapper.py','def execute(','Schema mapping engine',core,'async def execute('],
   script_transform:['backend/app/script_transform.py','def execute_details(','Transformation script parser and evaluator',core,'async def execute('],
   java:[rt,'async def java_worker(','Java invocation worker',acts,'async def java_invoke('],

@@ -1196,6 +1196,8 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
 
     stylesheet = options.get('xmlStylesheet')
     schema = options.get('targetSchema') or options.get('targetSchemaText')
+    if options.get('nativeOnly') and (stylesheet or options.get('generatedXmlBinding')):
+        raise ValueError('Native Mapping runs visual mapping rules. Remove the stylesheet binding from this activity.')
     if options.get('generatedXmlBinding'):
         from .mapper_binding import generate_binding
         source_schema = options.get('sourceSchemaText') or ''
@@ -1429,6 +1431,28 @@ def execute(document: Any, mappings: Any, options: dict | None = None) -> dict:
     tick()
     if options.get('removeEmptyStructures'): result = _clean_empty(result)
     schema = options.get('targetSchema') or options.get('targetSchemaText')
+    if options.get('nativeOnly') and options.get('nativeXmlOutput'):
+        from .data_formats import DataFormats, render_xsd_value, xsd_shape
+        from .mapper_xml import element_value, parse_xml, xml_result_shape
+        if not isinstance(schema, str) or not schema.lstrip().startswith('<'):
+            raise ValueError('Native Mapping XML output requires an XSD target schema')
+        config = {'_formatSchemaPath': options.get('xmlTargetSchemaPath', ''),
+                  '_formatSchemaAssets': (options.get('xmlSchemaDocuments') or {}).items()}
+        bundle = DataFormats.schema_bundle(config, {}, schema)
+        shape = xsd_shape(schema, bundle=bundle)
+        name = shape['xml']['name']
+        if set(result) != {name}:
+            raise ValueError(f'Map the XML output under the selected XSD root {name}')
+        xml = render_xsd_value(shape, result[name], default_namespace=True, nil_for_null=options.get('copyNil', True))
+        root = parse_xml(xml)
+        shape = xml_result_shape(root, schema, options.get('xmlSchemaDocuments'),
+                                 options.get('xmlTargetSchemaPath', ''), validate=options.get('validateOutput', True))
+        tick()
+        maximum_kb = int(options.get('maxOutputSizeKb') or 0)
+        if maximum_kb and len(xml.encode('utf-8')) > maximum_kb * 1024:
+            raise ValueError(f'Mapped output exceeds {maximum_kb} KB limit')
+        return {name: element_value(root, local_names=True, shape=shape),
+                'xmlString': xml, 'xml': xml, 'root': root.tag, 'value': element_value(root, shape=shape)}
     validation_errors = validate_output(result, schema, tick) if options.get('validateOutput', True) else []
     if validation_errors: raise ValueError('Target schema validation failed: ' + '; '.join(validation_errors))
     maximum_kb = int(options.get('maxOutputSizeKb') or 0)

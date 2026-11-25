@@ -397,7 +397,9 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
             return await activities.external_command(cfg)
     # CAPABILITY basic END
     # CAPABILITY mapper START
-    if kind == 'mapper':
+    if kind in ('mapper', 'native_map'):
+        if kind == 'native_map':
+            cfg = {**cfg, 'nativeOnly': True}
         if retry_boolean(cfg.get('streamEnabled', False)):
             from .native.transform_engine import execute_activity_async
             from .config import SCHEMAS

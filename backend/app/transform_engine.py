@@ -121,6 +121,8 @@ def execute_plan(config, payload, attributes=None, variables=None, schemas=()):
 
 
 def execute_activity(config, payload, attributes=None, variables=None, schemas=(), kind='script_transform', cancel=None, mapping_context=None):
+    if config.get('nativeOnly') and (config.get('xmlStylesheet') or config.get('generatedXmlBinding')):
+        raise ValueError('Native Mapping runs visual mapping rules. Remove the stylesheet binding from this activity.')
     if retry_boolean(config.get('streamEnabled', False)):
         if config.get('outputs') and config.get('streamOutputFormat') == 'csv':
             raise ScriptTransformError('Multiple streamed targets require JSON or JSON Lines output envelopes')

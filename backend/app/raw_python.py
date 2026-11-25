@@ -63,13 +63,13 @@ SUPPORTED = {
     ('timer', 'schedule'),
     *((('jdbc', operation) for operation in ('insert', 'update', 'query', 'truncate', 'delete', 'call', 'dynamic'))),
 }
-STRUCTURAL = {'start', 'end', 'log', 'mapper', 'call_task', 'catch', 'throw', 'rethrow'}
+STRUCTURAL = {'start', 'end', 'log', 'mapper', 'native_map', 'call_task', 'catch', 'throw', 'rethrow'}
 STRUCTURAL_ONLY = {'start', 'end', 'catch'}
 SUPPORTED_GROUP_TYPES = {'if', 'for_each', 'iterate', 'while', 'repeat', 'repeat_on_error',
                          'critical_section', 'transaction_jdbc', 'scope', 'none'}
 ACTIVITY_CAPABILITY_BY_KIND = {
     'timer': 'timer', 'confirm': 'confirm', 'throw': 'faults', 'rethrow': 'faults',
-    'log': 'log', 'basic': 'basic', 'mapper': 'mapper', 'call_task': 'call_task',
+    'log': 'log', 'basic': 'basic', 'mapper': 'mapper', 'native_map': 'mapper', 'call_task': 'call_task',
     'file': 'file', 'excel': 'excel', 'ftp': 'transfer', 'sftp': 'transfer',
     'http_response': 'http_response', 'script_transform': 'script_transform', 'python': 'python',
     'java': 'java', 'kafka': 'kafka', 'pubsub': 'pubsub', 'sap': 'sap',
@@ -571,7 +571,7 @@ def mapper_xml_dependencies(project: dict) -> list[str]:
     guards = [edge['bw_xpath'] for task in project.get('tasks', []) for edge in task.get('transitions', []) if edge.get('bw_xpath')]
     def xpath_call(config, version='[12]?'):
         return re.search(r'\bxpath' + version + r'\s*\(', repr(config))
-    if not guards and not any(c.get('generatedXmlBinding') or c.get('xmlStylesheet') or c.get('sourceCoercions') or xpath_call(c) for c in configs):
+    if not guards and not any(c.get('generatedXmlBinding') or c.get('xmlStylesheet') or c.get('nativeXmlOutput') or c.get('sourceCoercions') or xpath_call(c) for c in configs):
         return []
     requirements = ['lxml>=6,<7']
     if any(str(c.get('xpathVersion')) == '2.0' or xpath_call(c, '2') for c in configs):
@@ -704,7 +704,9 @@ def validate_export_mappings(project: dict) -> None:
     for task in project.get('tasks', []):
         for activity in task.get('activities', []):
             config = activity.get('config') or {}
-            if activity.get('type') in ('mapper', 'transform', 'ai_transform'):
+            if activity.get('type') in ('mapper', 'native_map', 'transform', 'ai_transform'):
+                if activity.get('type') == 'native_map' and (config.get('xmlStylesheet') or config.get('generatedXmlBinding')):
+                    failures.append(f'{activity.get("name")}: remove the stylesheet binding from Native Mapping')
                 schema = _selected_asset_schema(schemas.get(config.get('targetSchemaId')),config.get('targetSchemaText')) if schemas.get(config.get('targetSchemaId')) else config.get('targetSchemaText') or config.get('targetSchema')
                 errors = [] if config.get('xmlStylesheet') or config.get('generatedXmlBinding') else validator.validate_mapping_rules(config.get('mappings') or [], schema, custom_functions=[*config.get('customFunctions', []), *project.get('custom_functions', [])])
             else:
@@ -862,7 +864,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
         native_modules.add('mapper.py')
     if 'mapper.py' in native_modules:
         native_modules.update({'mapper_xml.py', 'mapper_binding.py', 'mapper_document_xslt.py', 'mapper_coercions.py', 'mapping_documents.py'})
-    if _has_mapper_binding(project) or _has_selected_source_schema(project):
+    if _has_mapper_binding(project) or _has_selected_source_schema(project) or _has_native_xml_output(project):
         native_modules.update({'data_formats.py', 'faults.py', 'xsd_openapi.py', 'xsd_catalog.py', 'schema_validation.py'})
     if any(activity.get('type')=='flat' for task in project.get('tasks',[]) for activity in task.get('activities',[])):
         native_modules.update({'data_stream.py','data_groups.py'})
@@ -1122,7 +1124,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
                 if selected:
                     config['schemaText'] = _selected_asset_schema(selected['content'],config.get('schemaText'))
                     config['_formatSchemaPath'] = selected.get('source_path') or selected['name']
-            if activity.get('type') in ('mapper', 'transform', 'ai_transform'):
+            if activity.get('type') in ('mapper', 'native_map', 'transform', 'ai_transform'):
                 _mapper_schema_config(config, project.get('schemas', []), activity.get('name'))
             if project.get('custom_functions'): config['customFunctions'] = list({item['name']:item for item in [*config.get('customFunctions', []), *project['custom_functions']]}.values())
             outgoing = [edge for edge in task['transitions'] if edge['source'] == activity['id']]
@@ -1361,6 +1363,11 @@ def _has_mapper_binding(project):
                for task in project.get('tasks', []) for a in task.get('activities', []))
 
 
+def _has_native_xml_output(project):
+    return any(activity['type'] == 'native_map' and activity.get('config', {}).get('nativeXmlOutput')
+               for task in project.get('tasks', []) for activity in task.get('activities', []))
+
+
 def _engine_module_files(project: dict, source_root: Path) -> dict[str, bytes]:
     """Link the connector and transitive module closure for packaged tasks."""
     kinds = {activity['type'] for task in project.get('tasks', []) for activity in task.get('activities', [])}
@@ -1372,7 +1379,7 @@ def _engine_module_files(project: dict, source_root: Path) -> dict[str, bytes]:
     pending.update(module for kind, module in ENGINE_CAPABILITY_MODULES.items() if kind in kinds)
     transform_pipeline = 'script_transform' in kinds or any(a.get('config',{}).get('streamEnabled') for t in project.get('tasks',[]) for a in t.get('activities',[]))
     if transform_pipeline: pending.add('transform_engine')
-    xsd_projection = transform_pipeline or bool(kinds & {'xml', 'json', 'flat'}) or _has_mapper_binding(project) or _has_selected_source_schema(project)
+    xsd_projection = transform_pipeline or bool(kinds & {'xml', 'json', 'flat'}) or _has_mapper_binding(project) or _has_selected_source_schema(project) or _has_native_xml_output(project)
     if any(a['type']=='http_listener' or a['type']=='rest' and a.get('config',{}).get('operation')=='receiver' or a['type']=='soap' and a.get('config',{}).get('operation')=='service' for t in project.get('tasks',[]) for a in t.get('activities',[])):pending.add('http_server')
     files = {}
     while pending:
@@ -1441,7 +1448,7 @@ def _mapper_schema_config(config, schemas, activity_name):
         if not selected: raise ValueError(f'{activity_name}: selected DataCompose target schema was not found')
         config.update(targetSchema={}, targetSchemaText=_selected_asset_schema(selected['content'],config.get('targetSchemaText')),
                       xmlTargetSchemaPath=selected.get('source_path') or selected['name'])
-    if config.get('xmlStylesheet') or config.get('generatedXmlBinding') or config.get('sourceCoercions'):
+    if config.get('xmlStylesheet') or config.get('generatedXmlBinding') or config.get('sourceCoercions') or config.get('nativeXmlOutput'):
         config['xmlSchemaDocuments'] = {**(config.get('xmlSchemaDocuments') or {}),
             **{asset.get('source_path') or asset['name']: asset['content'] for asset in schemas
                if (asset.get('source_path') or asset['name']).lower().endswith('.xsd')}}
@@ -1453,8 +1460,9 @@ def _transformation_tools(project, package):
     schemas = project.get('schemas', [])
     for task in project.get('tasks', []):
         for activity in task.get('activities', []):
-            if activity.get('type') != 'mapper': continue
+            if activity.get('type') not in ('mapper', 'native_map'): continue
             config = {key:value for key,value in (activity.get('config') or {}).items() if key not in {'templateHistory','contractBaseline','lastTestOutput','sampleInput'}}
+            if activity['type'] == 'native_map': config['nativeOnly'] = True
             config['customFunctions'] = list({item['name']: item for item in [*config.get('customFunctions', []), *project.get('custom_functions', [])]}.values())
             _mapper_schema_config(config, schemas, activity.get('name'))
             assets[f"{task['id']}/{activity['id']}"] = config

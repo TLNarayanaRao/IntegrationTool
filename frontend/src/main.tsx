@@ -160,6 +160,7 @@ type Kind =
   | "json"
   | "flat"
   | "mapper"
+  | "native_map"
   | "script_transform"
   | "transform"
   | "ai_transform"
@@ -632,6 +633,7 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
     icon: Activity,
     items: [
       { type: "mapper", operation: "map", label: "DataCompose", asset: "mapper-symbol.svg" },
+      { type: "native_map", operation: "map", label: "Native Mapping", asset: "mapper-symbol.svg" },
       { type: "script_transform", operation: "transform", label: "Transform", asset: "script-transform.svg" },
       { type: "log", operation: "write", label: "Log", asset: "log" },
       { type: "catch", operation: "catch", label: "Catch Exception", asset: "catch-exception.svg" },
@@ -1416,7 +1418,7 @@ const validateTaskDefinition = (project: Project, task: Task, environment = proj
       if (!dynamic && !fallbackValid) add("error", "Task", `${item.name} has no valid Sub Task or dynamic override.`, "Select a fallback Sub Task or enter a dynamic ID/name expression.", item.id);
       if (dynamic.startsWith("${") && !dynamic.endsWith("}")) add("error", "Task", `${item.name} has an incomplete dynamic Sub Task expression.`, "Close the expression with } or enter a literal Sub Task ID/name.", item.id);
     }
-    if (["mapper", "transform", "ai_transform"].includes(item.type)) {
+    if (["mapper", "native_map", "transform", "ai_transform"].includes(item.type)) {
       if (!Object.keys(item.config.targetSchema || {}).length && !String(item.config.targetSchemaText || "").trim() && !item.config.targetSchemaId) add("mapping", "DataCompose", `${item.name} has no target schema.`, "Select an XSD from Project Schemas or define an inline target schema.", item.id);
       if (!(item.config.mappings || []).length) add("mapping", "DataCompose", `${item.name} has no field mappings.`, "Map execution-path fields to the target schema.", item.id, {kind:"input"});
     }
@@ -2394,7 +2396,7 @@ function App() {
       });
     if (d.type === "excel") Object.assign(config, { filePath: "", sheetName: "", headerRow: 1, startRow: 2, maximumRows: 0, dataOnly: true, nestedHeaders: true, skipBlankRows: true });
     if (d.type === "basic" && d.operation === "external_command") Object.assign(config, { command: "", provideCommandOutput: true, removeParameterQuotes: false, outputFile: "", outputLineSplitting: "None", splitToken: "", workingDirectory: "", environment: "", timeoutSeconds: 300, encoding: "utf-8" });
-    if (["mapper", "transform", "ai_transform"].includes(d.type))
+    if (["mapper", "native_map", "transform", "ai_transform"].includes(d.type))
       Object.assign(config, {
         language: "JSONPath / functions",
         sourceSchema: {},
@@ -4409,7 +4411,7 @@ function App() {
             <b>
               <Settings2 /> {edge ? "Transition" : resource ? "Connection" : "Activity"}
             </b>
-            {node ? (["configuration", "input", "map_test", "output", "advanced", "errors", "documentation"] as const).filter((tab) => tab !== "map_test" || ["mapper", "transform", "ai_transform", "script_transform"].includes(node.type)).map(
+            {node ? (["configuration", "input", "map_test", "output", "advanced", "errors", "documentation"] as const).filter((tab) => tab !== "map_test" || ["mapper", "native_map", "transform", "ai_transform", "script_transform"].includes(node.type)).map(
               (tab) => (
                 <button
                   key={tab}

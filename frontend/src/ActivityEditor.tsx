@@ -203,7 +203,7 @@ function httpRequestOccurrences(fields: DataField[], mappings: any): DataField[]
   return result;
 }
 export const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE"];
-const isMapperActivity = (type: string) => ["mapper", "transform", "ai_transform"].includes(type);
+const isMapperActivity = (type: string) => ["mapper", "native_map", "transform", "ai_transform"].includes(type);
 type MappingWhen = { condition: string; source: any };
 type StructuredMapping = { $rule: "for-each" | "for-each-group" | "if" | "when-otherwise" | "choose"; source?: any; select?: string; groupBy?: string; condition?: string; otherwise?: any; whens?: MappingWhen[]; duplicateOf?: string };
 const mappingSource = (value: any): any => {
@@ -1715,6 +1715,7 @@ const activityDocumentation: Record<string, { summary: string; behavior: string 
   pubsub: { summary: "Publishes, receives, or acknowledges Google Cloud Pub/Sub messages.", behavior: "Project and credential defaults come from the shared connection. Message data, attributes, ordering keys, and acknowledgement handles remain available on the execution path." },
   sap: { summary: "Executes the selected SAP ECC operation.", behavior: "The shared SAP connection supplies system and authentication settings. IDoc metadata selected from SAP defines listener, parser, renderer, and sender structures." },
   mapper: { summary: "Maps execution-path data into a selected target schema.", behavior: "In Input, drop a repeating complex source onto a repeating complex target. Copy-Of copies the whole collection and hides child bindings. For-Each creates editable child bindings for matching names; SmartMap also matches names that differ by underscores or hyphens. The loop shows the collection expression once and child expressions relative to the current item. Run Map & Test to check the output." },
+  native_map: { summary: "Runs visual mapping rules directly in MINA.", behavior: "Use the same source trees, field mappings, functions, AI suggestions, conditions and repeating structures as DataCompose. Select Render XML from target XSD for validated XML output and mapped values." },
   transform: { summary: "Legacy DataCompose activity retained for project compatibility.", behavior: "Existing Transform nodes continue to execute with DataCompose behavior. New projects should use DataCompose for visual/XPath mappings or Transform for scripts." },
   ai_transform: { summary: "Legacy AI Mapping activity retained for project compatibility.", behavior: "Existing AI Transform nodes continue to use the consolidated DataCompose and its AI recommendation/review workflow." },
   script_transform: { summary: "Transforms payloads with MINA's embedded transform language.", behavior: "Supports configured script libraries, atomic payload/attribute/variable outputs, visual/script expression synchronization, JSON Schema/XSD contracts and bounded JSON/JSONL/CSV file streaming. Each output reads the original message snapshot. Streaming returns file metadata and validates each record. Map & Test uses the same contracts and engine as Run, Debug and Python exports. See Help for supported module exports and syntax limits." },
@@ -1754,7 +1755,7 @@ function ActivityDocumentation({ node, contract }: { node: any; contract: Contra
 
 function ActivityEditorGuidance({ type }: { type: string }) {
   const groups = ["ActivityEditor", "InputEditor", "MappingContextMenu", "ExpandedInputMappingDialog", "OutputEditor", "AdvancedEditor", "ErrorEditor"];
-  if (["mapper", "transform", "ai_transform", "script_transform"].includes(type)) groups.push("TransformSchemaEditor", "TransformPoliciesEditor", "AIMappingAssistance", "TransformInputEditor", "TransformOutputEditor", "TransformMapTestEditor");
+  if (["mapper", "native_map", "transform", "ai_transform", "script_transform"].includes(type)) groups.push("TransformSchemaEditor", "TransformPoliciesEditor", "AIMappingAssistance", "TransformInputEditor", "TransformOutputEditor", "TransformMapTestEditor");
   if (type === "script_transform") groups.push("ScriptTransformScriptEditor", "ScriptTransformTestEditor");
   if (type === "timer") groups.push("SchedulerEditor");
   if (type === "jdbc") groups.push("JdbcDesigner");
@@ -2039,7 +2040,7 @@ export default function ActivityEditor({
         {isMapperActivity(node.type) && (
           <>
             <TransformSchemaEditor config={cfg} schemas={schemas || []} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>
-            <TransformPoliciesEditor config={cfg} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>
+            <TransformPoliciesEditor config={cfg} nativeOnly={node.type === "native_map"} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>
 
           </>
         )}
@@ -2053,12 +2054,13 @@ export default function ActivityEditor({
   if (tab === "input")
     return isMapperActivity(node.type) ? (
       <TransformInputEditor key={`${task?.id}:${node.id}`} actions={<>
-        <button type="button" className="edit-input-mapping ai-mapper-launcher" aria-label="Open AI-assisted DataCompose" onClick={() => setMapperOpen(true)}>
+        <button type="button" className="edit-input-mapping ai-mapper-launcher" aria-label={node.type === "native_map" ? "Open AI-assisted Native Mapping" : "Open AI-assisted DataCompose"} onClick={() => setMapperOpen(true)}>
               <WandSparkles /> AI Mapping
             </button>
         {mapperOpen && (
           <MapperStudio
             config={cfg}
+            nativeOnly={node.type === "native_map"}
             sources={upstreamSources}
             customFunctions={customFunctions}
             schemas={schemas || []}
@@ -2335,7 +2337,7 @@ function MapperSourceTypes({ value, onChange }: {value: unknown; onChange: (valu
   </div></details>;
 }
 
-function TransformPoliciesEditor({ config, setConfig }: any) {
+function TransformPoliciesEditor({ config, setConfig, nativeOnly = false }: any) {
   const change = (key: string, value: any) => setConfig({ [key]: value });
   return <section className="transform-policies">
     <header><WandSparkles/><span><b>INTEGRATION MAPPING POLICIES</b></span></header>
@@ -2353,19 +2355,21 @@ function TransformPoliciesEditor({ config, setConfig }: any) {
       <label className="policy-switch"><input type="checkbox" checked={config.copyNil !== false} onChange={(event) => change("copyNil", event.target.checked)}/><span><b>Copy nil semantics</b></span></label>
     </div>
     <details>
-      <summary>XML expressions and runtime binding</summary>
+      <summary>{nativeOnly ? "XML expressions and output" : "XML expressions and runtime binding"}</summary>
       <div className="transform-policy-grid">
         <label>XML source<input value={config.xmlSource || ""} placeholder="Defaults to previous activity output" onChange={event => change("xmlSource", event.target.value)}/></label>
         <label>XPath namespaces<textarea value={typeof config.xmlNamespaces === "object" && config.xmlNamespaces ? JSON.stringify(config.xmlNamespaces, null, 2) : config.xmlNamespaces || ""} placeholder={'{"ord":"urn:orders"}'} onChange={event => change("xmlNamespaces", event.target.value)} spellCheck={false}/></label>
         <label>XPath variables<textarea value={typeof config.xmlVariables === "object" && config.xmlVariables ? JSON.stringify(config.xmlVariables, null, 2) : config.xmlVariables || ""} placeholder={'{"minimum":"${input.minimum}"}'} onChange={event => change("xmlVariables", event.target.value)} spellCheck={false}/></label>
         <MapperSourceTypes value={config.sourceTypeOverrides} onChange={value => change("sourceTypeOverrides", value)}/>
+        {nativeOnly ? <label className="policy-switch"><input type="checkbox" checked={config.nativeXmlOutput === true} onChange={event => change("nativeXmlOutput", event.target.checked)}/><span><b>Render XML from target XSD</b></span></label> : <>
         <label>Import XSLT binding<input type="file" accept=".xsl,.xslt" onChange={async event => {
           const file = event.target.files?.[0];
           if (file) setConfig({xmlStylesheet: await file.text(), generatedXmlBinding:false});
         }}/></label>
-        <label>Runtime XSLT 1.0, 2.0 or 3.0 binding<textarea value={config.xmlStylesheet || ""} onChange={event => setConfig({xmlStylesheet:event.target.value, generatedXmlBinding:false})} spellCheck={false}/></label>
+        <label>Runtime XSLT 1.0, 2.0 or 3.0 binding<textarea value={config.xmlStylesheet || ""} onChange={event => setConfig({xmlStylesheet:event.target.value, generatedXmlBinding:false})} spellCheck={false}/></label></>}
       </div>
-      <p>{config.generatedXmlBinding ? "Runtime XSLT is generated from the current visual rules. Editing the stylesheet here switches to a manual binding." : "An XSLT binding executes the stylesheet and produces XML. Clear the binding to execute the visual rules."}</p>
+      {nativeOnly && (config.xmlStylesheet || config.generatedXmlBinding) && <button type="button" onClick={() => setConfig({xmlStylesheet: "", generatedXmlBinding: false})}>Remove stylesheet binding</button>}
+      {!nativeOnly && <p>{config.generatedXmlBinding ? "Runtime XSLT is generated from the current visual rules. Editing the stylesheet here switches to a manual binding." : "An XSLT binding executes the stylesheet and produces XML. Clear the binding to execute the visual rules."}</p>}
     </details>
   </section>;
 }
@@ -3793,14 +3797,14 @@ function mapperSchemaFields(config: any, schemas: any[]) {
 
 function mapperOutputFields(config: any, schemas: any[] = []) {
   const fields = mapperSchemaFields(config, schemas);
-  if ((config.xmlStylesheet || config.generatedXmlBinding) && !fields.some(field => field.path === "xmlString")) {
+  if ((config.xmlStylesheet || config.generatedXmlBinding || config.nativeXmlOutput) && !fields.some(field => field.path === "xmlString")) {
     fields.unshift({path:"xmlString", name:"xmlString", type:"string", depth:0, repeating:false, minOccurs:"1"});
   }
   return fields;
 }
 
 function TransformOutputEditor({ config, schemas = [] }: any) {
-  const fields = useMemo(() => mapperOutputFields(config, schemas), [config.targetSchemaText, config.targetSchema, config.targetSchemaId, config.xmlStylesheet, config.generatedXmlBinding, schemas]);
+  const fields = useMemo(() => mapperOutputFields(config, schemas), [config.targetSchemaText, config.targetSchema, config.targetSchemaId, config.xmlStylesheet, config.generatedXmlBinding, config.nativeXmlOutput, schemas]);
   const branches = useMemo(() => new Set(fields.filter(field => field.depth > 0).map(field => field.path.slice(0,field.path.lastIndexOf(".")))), [fields]);
   const tree = useTreeCollapse();
   return <div className="activity-tab output-editor"><div className="contract-heading"><SettingsTitle title="Transformer output structure" /></div><div className="output-schema-tree transform-output-schema">{fields.map((field) => { if (!tree.visible(field.path)) return null; const group = branches.has(field.path); return <div className={group ? "tree-parent-target" : ""} key={field.path} style={{ paddingLeft: 14 + field.depth * 18 }}>{group ? <TreeToggle path={field.path} label={field.name} collapsed={tree.collapsed.has(field.path)} toggle={tree.toggle}/> : <span className="tree-node-dot"/>}<code>{field.name}<sup className="cardinality-symbol">{cardinalitySymbol(field)}</sup></code><small>{field.type}</small></div>; })}{!fields.length && <div className="contract-empty">No target schema is configured.</div>}</div></div>;
@@ -3810,7 +3814,7 @@ export function mapperXmlSchemaDocuments(schemas: any[]) {
   return Object.fromEntries(schemas.map(asset => [asset.source_path || asset.name, asset.content]).filter(([path]) => /\.xsd$/i.test(path)));
 }
 
-function TransformMapTestEditor({ node: _node, config, schemas = [], customFunctions = [], setConfig }: any) {
+function TransformMapTestEditor({ node, config, schemas = [], customFunctions = [], setConfig }: any) {
   const selectedTarget = schemas.find((schema: any) => schema.id === config.targetSchemaId || schema.name === config.targetSchemaId);
   const targetSchemaText = selectedTarget ? selectedSchemaText(selectedTarget.content,config.targetSchemaText) : config.targetSchemaText || "";
   const initialInput = config.sampleInput ?? {};
@@ -3819,15 +3823,15 @@ function TransformMapTestEditor({ node: _node, config, schemas = [], customFunct
   const [status, setStatus] = useState<"idle" | "running" | "valid" | "error">("idle");
   const [message, setMessage] = useState("Enter representative input data, then execute the mappings saved in the Input tab.");
   const mappings = Array.isArray(config.mappings) ? config.mappings : [];
-  const xmlSchemaDocuments = useMemo(() => config.xmlStylesheet || config.generatedXmlBinding || config.sourceCoercions
+  const xmlSchemaDocuments = useMemo(() => config.xmlStylesheet || config.generatedXmlBinding || config.sourceCoercions || config.nativeXmlOutput
     ? {...config.xmlSchemaDocuments, ...mapperXmlSchemaDocuments(schemas)} : undefined,
-    [config.xmlStylesheet, config.generatedXmlBinding, config.sourceCoercions, config.xmlSchemaDocuments, schemas]);
+    [config.xmlStylesheet, config.generatedXmlBinding, config.sourceCoercions, config.nativeXmlOutput, config.xmlSchemaDocuments, schemas]);
   const xmlTargetSchemaPath = selectedTarget?.source_path || selectedTarget?.name || config.xmlTargetSchemaPath;
   const run = async () => {
     setStatus("running"); setMessage("Executing mapping rules and formulas…");
     try {
       const input = inputText.trimStart().startsWith("<") ? inputText : JSON.parse(inputText);
-      const response = await fetch("/api/mapper/test", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ input, mappings, targetSchema: targetSchemaText || config.targetSchema || {}, targetSchemaText, options: { ...config, customFunctions, xmlSchemaDocuments, xmlTargetSchemaPath } }) });
+      const response = await fetch("/api/mapper/test", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ input, mappings, targetSchema: targetSchemaText || config.targetSchema || {}, targetSchemaText, options: { ...config, nativeOnly: node.type === "native_map", customFunctions, xmlSchemaDocuments, xmlTargetSchemaPath } }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || result.message || "Mapping test failed");
       setOutputText(result.outputText ?? (typeof result.output === "string" ? result.output : JSON.stringify(result.output ?? {}, null, 2)));
@@ -3839,13 +3843,13 @@ function TransformMapTestEditor({ node: _node, config, schemas = [], customFunct
     }
   };
   return <div className="activity-tab transform-map-test">
-    <header><FlaskConical/><span><b>DataCompose · Map &amp; Test</b></span><i>{mappings.length} RULE{mappings.length === 1 ? "" : "S"}</i></header>
+    <header><FlaskConical/><span><b>{node.type === "native_map" ? "Native Mapping" : "DataCompose"} · Map &amp; Test</b></span><i>{mappings.length} RULE{mappings.length === 1 ? "" : "S"}</i></header>
     <main>
       <section className="map-test-input"><header><span><b>TEST INPUT</b></span><button type="button" onClick={() => { setInputText(JSON.stringify(initialInput, null, 2)); setStatus("idle"); }}>Reset</button></header><textarea aria-label="Transform test input" value={inputText} onChange={(event) => { setInputText(event.target.value); setStatus("idle"); }} spellCheck={false}/></section>
       <section className="map-test-rules"><header><span><b>APPLIED MAPPINGS &amp; FORMULAS</b></span></header><div>{mappings.map((rule: any, index: number) => <article key={`${rule.target}-${index}`} className={rule.enabled === false ? "disabled" : ""}><em>{index + 1}</em><span><code>{rule.source ?? ("constant" in rule ? JSON.stringify(rule.constant) : "No source")}</code><ArrowRight/><b>{rule.target || "result"}</b><small>{[rule.operator, ...(rule.functions || []).map((fn: any) => typeof fn === "string" ? fn : fn.name)].filter(Boolean).join(" → ") || "Direct mapping"}</small></span></article>)}{!mappings.length && <p>No mappings are saved. Configure target mappings in the Input tab first.</p>}</div></section>
       <section className="map-test-output"><header><span><b>GENERATED OUTPUT</b></span></header><textarea aria-label="Generated mapping output" readOnly spellCheck={false} value={outputText} placeholder="Run the mapping test to generate output."/></section>
     </main>
-    <TransformationTools config={{...config, xmlSchemaDocuments, xmlTargetSchemaPath}} setConfig={setConfig} customFunctions={customFunctions}/>
+    <TransformationTools config={{...config, nativeOnly: node.type === "native_map", xmlSchemaDocuments, xmlTargetSchemaPath}} setConfig={setConfig} customFunctions={customFunctions}/>
     <footer className={status}><span>{status === "valid" ? <CheckCircle2/> : status === "error" ? <AlertTriangle/> : <FlaskConical/>}<b>{message}</b></span><button type="button" className="run-map-test" disabled={status === "running" || (!mappings.length && !config.xmlStylesheet)} onClick={run}><FlaskConical/>{status === "running" ? "Running…" : "Run mapping test"}</button></footer>
   </div>;
 }

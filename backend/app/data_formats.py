@@ -183,9 +183,9 @@ def xml_from_value(name, value, shape=None, *, badger=False, ignore=False, names
     return element
 
 
-def render_xsd_value(shape, value, *, pretty=False, default_namespace=False):
+def render_xsd_value(shape, value, *, pretty=False, default_namespace=False, nil_for_null=False):
     """Render a mapped XSD object using the same names and order as its contract."""
-    element = xml_from_value(shape['xml']['name'], value, shape, tree_input=True, nil_for_null=False)
+    element = xml_from_value(shape['xml']['name'], value, shape, tree_input=True, nil_for_null=nil_for_null)
     if default_namespace:
         content = etree.tostring(element, encoding='unicode')
         return format_xml(content, pretty, True, None)
