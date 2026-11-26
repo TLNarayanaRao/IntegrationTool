@@ -5323,6 +5323,7 @@ function StudioRibbon(props: any) {
       {command("Export", Upload, props.exportProject)}{command("Package", Package, props.packageProject)}
       {command("Create Integration Library", BookOpen, () => props.openLibraries("publish"))}
       {command("Import Integration Library", Download, () => props.openLibraries("install"))}
+      {command("Export Integration Library", Upload, () => props.openLibraries("export"))}
       {command("Close", Square, props.closeProject)}
     </>},
     {label:"Navigate", icon:ArrowLeft, commands:<>
@@ -5700,6 +5701,7 @@ function FileMenu({
       </button>
       <button onClick={() => openLibraries("publish")}><BookOpen /><span>Create Integration Library<small>Publish reusable subtasks, connections, and schemas</small></span></button>
       <button onClick={() => openLibraries("install")}><Download /><span>Import Integration Library<small>Open the library catalog or import an .mlib file</small></span></button>
+      <button onClick={() => openLibraries("export")}><Upload /><span>Export Integration Library<small>Save a library release as an .mlib file</small></span></button>
       <button onClick={go(importProjectFolder)}>
         <FolderOpen />
         <span>

@@ -4,7 +4,7 @@ import "./integration-libraries.css";
 
 export type LibraryOrigin = { alias: string; id: string; version: string; sha256: string; public: boolean };
 export type LibraryPin = { alias: string; sha256: string; library: Release };
-export type LibraryDialogMode = "install" | "publish";
+export type LibraryDialogMode = "install" | "publish" | "export";
 type Category = "tasks" | "resources" | "schemas";
 type Asset = { id: string; name: string; kind?: string; library_origin?: LibraryOrigin | null };
 type Release = { id: string; name: string; version: string; description: string };
@@ -41,6 +41,7 @@ export default function IntegrationLibraries<P extends LibraryProject>({ project
   const [selected, setSelected] = useState("");
   const [alias, setAlias] = useState("");
   const [mode, setMode] = useState(initialMode);
+  const [archiveSelection, setArchiveSelection] = useState("");
   const [name, setName] = useState("");
   const [identity, setIdentity] = useState("");
   const [version, setVersion] = useState("1.0.0");
@@ -61,6 +62,8 @@ export default function IntegrationLibraries<P extends LibraryProject>({ project
   const pins = project.libraries || [];
   const release = catalog.find(entry => versionKey(entry) === selected);
   const installed = pins.find(pin => pin.alias === alias);
+  const archivePin = pins.find(pin => `pin:${pin.alias}` === archiveSelection);
+  const archiveRelease = catalog.find(entry => `catalog:${versionKey(entry)}` === archiveSelection);
   const hasSelection = Object.values(exports).some(ids => ids.length);
 
   useEffect(() => {
@@ -115,21 +118,25 @@ export default function IntegrationLibraries<P extends LibraryProject>({ project
     });
   }
 
-  async function exportPin(pin: LibraryPin) {
+  async function downloadArchive(path: string, release: Release, options?: RequestInit) {
     await perform(async () => {
-      const response = await fetch("/api/libraries/pin/archive", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...pin, project_id: project.id }),
-      });
+      const response = await fetch(path, options);
       if (!response.ok) {
         const error = await response.json().catch(() => null);
-        throw Error(typeof error?.detail === "string" ? error.detail : "Unable to export the installed release.");
+        throw Error(typeof error?.detail === "string" ? error.detail : "Unable to export the library release.");
       }
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${pin.library.id}-${pin.library.version}.mlib`;
+      link.download = `${release.id}-${release.version}.mlib`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  }
+
+  function exportPin(pin: LibraryPin) {
+    return downloadArchive("/api/libraries/pin/archive", pin.library, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...pin, project_id: project.id }),
     });
   }
 
@@ -147,6 +154,7 @@ export default function IntegrationLibraries<P extends LibraryProject>({ project
     <nav aria-label="Library actions">
       <button type="button" aria-pressed={mode === "install"} onClick={() => setMode("install")}>Use a library</button>
       <button type="button" aria-pressed={mode === "publish"} onClick={() => setMode("publish")}>Create a library</button>
+      <button type="button" aria-pressed={mode === "export"} onClick={() => setMode("export")}>Export a library</button>
     </nav>
     <main>
       {error && <p role="alert">{error}</p>}
@@ -226,7 +234,22 @@ export default function IntegrationLibraries<P extends LibraryProject>({ project
             })}>Download to Studio</button>
           </div>)}
         </details>
-      </> : <form onSubmit={event => { event.preventDefault(); void publish(); }}>
+      </> : mode === "export" ? <form onSubmit={event => {
+        event.preventDefault();
+        if (archivePin) void exportPin(archivePin);
+        else if (archiveRelease) void downloadArchive(downloadUrl(archiveRelease), archiveRelease);
+      }}>
+        <label>Library release to export <select value={archiveSelection} disabled={busy} onChange={event => setArchiveSelection(event.target.value)}>
+          <option value="">Select a library release</option>
+          {pins.length > 0 && <optgroup label="Installed in this project">{pins.map(pin =>
+            <option key={pin.alias} value={`pin:${pin.alias}`}>{pin.library.name} {pin.library.version} · {pin.alias}</option>
+          )}</optgroup>}
+          {catalog.length > 0 && <optgroup label="Library catalog">{catalog.map(entry =>
+            <option key={versionKey(entry)} value={`catalog:${versionKey(entry)}`}>{entry.name} {entry.version}</option>
+          )}</optgroup>}
+        </select></label>
+        <button type="submit" className="primary" disabled={busy || (!archivePin && !archiveRelease)}>Export .mlib</button>
+      </form> : <form onSubmit={event => { event.preventDefault(); void publish(); }}>
         <label>Library name <input required value={name} onChange={event => {
           setName(event.target.value);
           setIdentity(event.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48));

@@ -31,8 +31,12 @@ Compatible upgrades preserve existing references. To roll back, select the
 previous version using the same process. References to a removed or private
 export must be remapped before the change can be applied.
 
-Use **Export .mlib** beside an installed release to export the exact pinned
-version, including after reopening a workspace on a different Studio installation.
+To save an existing release, choose **Export Integration Library** in the
+**File** menu or the ribbon’s **Project** section. Select a release from
+**Installed in this project** or **Library catalog**, then choose **Export .mlib**.
+The file is named `<library-id>-<version>.mlib` and follows your download settings.
+Selecting an installed library exports the exact version and checksum pinned to
+your project. You can also use **Export .mlib** beside an installed release.
 
 ## Samples included in the catalog
 

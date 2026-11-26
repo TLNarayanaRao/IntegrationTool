@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "3e97f05f8344ced88bb443a52234b15a93bff0280de980f6724dba6ba37c1253",
+  "fingerprint": "57c06b2bcfe4a3cbe4273ae55130c19e3c5ad3b6c6270edf94a5fcb054c6a321",
   "counts": {
     "activities": 110,
     "groups": 15,
@@ -49810,7 +49810,7 @@
             },
             {
               "kind": "p",
-              "text": "Use **Export .mlib** beside an installed release to export the exact pinned version, including after reopening a workspace on a different Studio installation."
+              "text": "To save an existing release, choose **Export Integration Library** in the **File** menu or the ribbon’s **Project** section. Select a release from **Installed in this project** or **Library catalog**, then choose **Export .mlib**. The file is named `<library-id>-<version>.mlib` and follows your download settings. Selecting an installed library exports the exact version and checksum pinned to your project. You can also use **Export .mlib** beside an installed release."
             },
             {
               "kind": "heading",
@@ -93418,11 +93418,11 @@
                 ],
                 [
                   "Ribbon controls",
-                  "frontend/src/main.tsx:7490\nfunction DebugRibbon("
+                  "frontend/src/main.tsx:7492\nfunction DebugRibbon("
                 ],
                 [
                   "Test bench/tools",
-                  "frontend/src/main.tsx:7385\nfunction DebugToolsDialog("
+                  "frontend/src/main.tsx:7387\nfunction DebugToolsDialog("
                 ],
                 [
                   "Input/output/variables viewer",
@@ -93522,13 +93522,13 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 7490,
+          "line": 7492,
           "symbol": "function DebugRibbon(",
           "role": "Ribbon controls"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 7385,
+          "line": 7387,
           "symbol": "function DebugToolsDialog(",
           "role": "Test bench/tools"
         },

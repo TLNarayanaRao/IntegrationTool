@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "3e97f05f8344ced88bb443a52234b15a93bff0280de980f6724dba6ba37c1253",
+  "fingerprint": "57c06b2bcfe4a3cbe4273ae55130c19e3c5ad3b6c6270edf94a5fcb054c6a321",
   "counts": {
     "activities": 110,
     "groups": 15,
@@ -38286,11 +38286,11 @@
                 ],
                 [
                   "Ribbon controls",
-                  "frontend/src/main.tsx:7490\nfunction DebugRibbon("
+                  "frontend/src/main.tsx:7492\nfunction DebugRibbon("
                 ],
                 [
                   "Test bench/tools",
-                  "frontend/src/main.tsx:7385\nfunction DebugToolsDialog("
+                  "frontend/src/main.tsx:7387\nfunction DebugToolsDialog("
                 ],
                 [
                   "Input/output/variables viewer",
@@ -38390,13 +38390,13 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 7490,
+          "line": 7492,
           "symbol": "function DebugRibbon(",
           "role": "Ribbon controls"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 7385,
+          "line": 7387,
           "symbol": "function DebugToolsDialog(",
           "role": "Test bench/tools"
         },
