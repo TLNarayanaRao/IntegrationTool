@@ -79,3 +79,4 @@ img[src$="start-end.png"],img[src$="transform.png"],img[src$="file-tools.png"]{m
   white-space: nowrap;
 }
 @media(max-width:600px){.sample-gallery-search{flex-wrap:wrap}.sample-gallery-search>input{min-width:0}.sample-gallery-search>button{width:100%}}
+.menu-root .project-menu { max-height: calc(100dvh - 37px); overflow-y: auto; }

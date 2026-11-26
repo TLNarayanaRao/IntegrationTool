@@ -3,7 +3,7 @@ import ExecutionLogView, { type ExecutionLogEntry } from "./ExecutionLogView";
 import { endpointRequestFile } from "./endpointRequests";
 import RuntimeStatus from "./RuntimeStatus";
 import ModalLayer from "./ModalLayer";
-import IntegrationLibraries, { type LibraryOrigin, type LibraryPin } from "./IntegrationLibraries";
+import IntegrationLibraries, { type LibraryDialogMode, type LibraryOrigin, type LibraryPin } from "./IntegrationLibraries";
 import DebugTraceDialog from "./DebugTraceDialog";
 import DebugInputCases from "./DebugInputCases";
 import ExecutionSetupDialog from "./ExecutionSetupDialog";
@@ -1622,7 +1622,11 @@ function App() {
     explorerClipboard = useRef<{ type: string; value: any } | null>(null),
     projectFileHandle = useRef<any>(null);
   const [dragPreview, setDragPreview] = useState<{ projectId: string; taskId: string; positions: Record<string, Node['position']> } | null>(null);
-  const [libraryDialogOpen, setLibraryDialogOpen] = useState(false);
+  const [libraryDialogMode, setLibraryDialogMode] = useState<LibraryDialogMode | null>(null);
+  const openLibraries = (mode: LibraryDialogMode) => {
+    setMenu(null);
+    setLibraryDialogMode(mode);
+  };
   const task =
       project.tasks.find((t) => t.id === project.active_task_id) ||
       project.tasks[0],
@@ -2256,7 +2260,7 @@ function App() {
       propertySearchKey.current = location.key;
       setPropertyEditor(location.environment);
     } else if (location.kind === "library") {
-      setLibraryDialogOpen(true);
+      openLibraries("install");
     } else {
       navigateTo(location);
     }
@@ -3845,7 +3849,7 @@ function App() {
           <Workflow /> MINA
         </div>
         <div className="menu-root"><button className={menu === "file" ? "active" : ""} onClick={(e) => { e.stopPropagation(); setMenu(menu === "file" ? null : "file"); }}>File</button>
-          {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} newProject={newProject} exitStudio={exitStudio} save={save} saveJson={saveJsonFile} exportProject={exportGenericProject} importProject={openGenericProject} importProjectFolder={importProjectFolder} openProjects={closeProject} sampleProjects={() => setSampleGalleryOpen(true)} catchAI={openCatchAI} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
+          {menu === "file" && <FileMenu stop={(e: React.MouseEvent) => e.stopPropagation()} newProject={newProject} exitStudio={exitStudio} save={save} saveJson={saveJsonFile} exportProject={exportGenericProject} importProject={openGenericProject} importProjectFolder={importProjectFolder} openLibraries={openLibraries} openProjects={closeProject} sampleProjects={() => setSampleGalleryOpen(true)} catchAI={openCatchAI} closeProject={closeProject} deleteProject={deleteCurrent}/>}</div>
         <TopMenu label="Edit" open={menu === "edit"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "edit" ? null : "edit"); }} commands={editCommands}/>
         <TopMenu label="View" open={menu === "view"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "view" ? null : "view"); }} commands={viewCommands}/>
         <TopMenu label="Run" open={menu === "run"} toggle={(e: React.MouseEvent) => { e.stopPropagation(); setMenu(menu === "run" ? null : "run"); }} commands={runCommands}/>
@@ -3865,6 +3869,7 @@ function App() {
         importProject={importFromFileSystem}
         openProjectSource={openGenericProject}
         importProjectFolder={importProjectFolder}
+        openLibraries={openLibraries}
         save={save}
         exportProject={exportGenericProject}
         packageProject={() => setPackageOpen(true)}
@@ -3951,9 +3956,6 @@ function App() {
             >
               <Settings2 />
             </i>
-          </button>
-          <button className="tree-row indent" onClick={() => setLibraryDialogOpen(true)}>
-            <BookOpen aria-hidden="true" /> Libraries
           </button>
           <button
             className="tree-row indent"
@@ -4501,8 +4503,9 @@ function App() {
       {commandsOpen && <StudioCommands groups={commandGroups} onClose={() => setCommandsOpen(false)}/>}
       {projectSearch && <ProjectSearch key={project.id} project={project} initialTarget={projectSearch.target}
         onOpen={openSearchLocation} onClose={() => setProjectSearch(null)}/>}
-      {libraryDialogOpen && <IntegrationLibraries project={project} onChange={updated => setProject(current => current.id === updated.id ? normalizeProject(updated) : current)}
-        onClose={() => setLibraryDialogOpen(false)} />}
+      {libraryDialogMode && <IntegrationLibraries key={libraryDialogMode} project={project} initialMode={libraryDialogMode}
+        onChange={updated => setProject(current => current.id === updated.id ? normalizeProject(updated) : current)}
+        onClose={() => setLibraryDialogMode(null)} />}
       {analyticsOpen && <ExecutionAnalytics key={project.id} projectId={project.id} projectName={project.name} tasks={project.tasks} logs={logs} runtimeState={runtimeState} debugState={debugState} onClose={() => setAnalyticsOpen(false)} onInspect={(taskId: string, activityId: string) => { const target = project.tasks.find(item => item.id === taskId && item.activities.some(activity => activity.id === activityId)) || project.tasks.find(item => item.activities.some(activity => activity.id === activityId)); if (target) { selectTask(target.id, activityId); setAnalyticsOpen(false); } }}/>}
       {launchMode && <ExecutionSetupDialog key={project.id} project={project} initialTask={launchTaskId || project.active_task_id}
         initialMode={launchMode} activeEnvironment={project.active_environment} busy={executionActive}
@@ -5314,7 +5317,14 @@ function StudioRibbon(props: any) {
   const command = (label: string, Icon: any, action: (() => void) | undefined, disabled = false, emphasis = false, title = label) =>
     <button type="button" className={emphasis ? "emphasis" : ""} disabled={disabled} onClick={(event) => { event.stopPropagation(); action?.(); }} title={title}><Icon/><span>{label}</span></button>;
   return <ResponsiveRibbon label="Studio ribbon" sections={[
-    {label:"Project", icon:FolderOpen, commands:<>{command("New", IntegrationApplicationIcon, props.newProject)}{command("Open", FolderOpen, props.openProjectSource || props.importProject)}{command("Import", Download, props.importProject)}{command("Samples", BookOpen, props.sampleProjects)}{command("Save", Save, props.save)}{command("Export", Upload, props.exportProject)}{command("Package", Package, props.packageProject)}{command("Close", Square, props.closeProject)}</>},
+    {label:"Project", icon:FolderOpen, commands:<>
+      {command("New", IntegrationApplicationIcon, props.newProject)}{command("Open", FolderOpen, props.openProjectSource || props.importProject)}
+      {command("Import", Download, props.importProject)}{command("Samples", BookOpen, props.sampleProjects)}{command("Save", Save, props.save)}
+      {command("Export", Upload, props.exportProject)}{command("Package", Package, props.packageProject)}
+      {command("Create Integration Library", BookOpen, () => props.openLibraries("publish"))}
+      {command("Import Integration Library", Download, () => props.openLibraries("install"))}
+      {command("Close", Square, props.closeProject)}
+    </>},
     {label:"Navigate", icon:ArrowLeft, commands:<>
       {command("Back", ArrowLeft, props.navigation.back, !props.navigation.back)}
       {command("Forward", ArrowRight, props.navigation.forward, !props.navigation.forward)}
@@ -5648,6 +5658,7 @@ function FileMenu({
   exportProject,
   importProject,
   importProjectFolder,
+  openLibraries,
   openProjects,
   sampleProjects,
   catchAI,
@@ -5687,6 +5698,8 @@ function FileMenu({
           Import Project<small>Open .mpackage, legacy package, or JSON</small>
         </span>
       </button>
+      <button onClick={() => openLibraries("publish")}><BookOpen /><span>Create Integration Library<small>Publish reusable subtasks, connections, and schemas</small></span></button>
+      <button onClick={() => openLibraries("install")}><Download /><span>Import Integration Library<small>Open the library catalog or import an .mlib file</small></span></button>
       <button onClick={go(importProjectFolder)}>
         <FolderOpen />
         <span>
@@ -5852,8 +5865,8 @@ function ProjectWelcome({ createProject, jiraStory, importProject, importFromFil
         <h1 className="mina-home-title"><span className="mina-name">MINA —</span><span>Mediation,</span><span>Integration &amp;</span><span>Automation</span></h1>
         <div className="launch-buttons">
           <button className="create-project" onClick={() => setCreateOpen(true)}><span><IntegrationApplicationIcon/></span><b>Create new project<small>Start with the standard project structure</small></b><ChevronRight/></button>
-          <button onClick={jiraStory}><span><Ticket/></span><b>Build from Jira story<small>Review a draft integration before creating the project</small></b><ChevronRight/></button>
           <button className="import-project" onClick={beginImport} disabled={importing}><span><Download/></span><b>{importing ? "Opening project…" : "Import existing project"}<small>Choose .mpackage, .mpkg, ZIP, JSON, or a legacy MINA package</small></b><ChevronRight/></button>
+          <button onClick={jiraStory}><span><Ticket/></span><b>Build from Jira story<small>Review a draft integration before creating the project</small></b><ChevronRight/></button>
           <button className="sample-projects" onClick={() => setSamplesOpen(true)}><span><BookOpen/></span><b>Explore sample projects<small>Editable, installed examples for mapping, APIs, data, JDBC, and messaging</small></b><ChevronRight/></button>
           <button className="installed-guide" onClick={() => window.open("/help/index.html", "_blank", "noopener")}><span><BookOpen/></span><b>Open MINA documentation<small>Searchable tree, activity reference, guides and PDF manual</small></b><ChevronRight/></button>
         </div>

@@ -4,6 +4,7 @@ import "./integration-libraries.css";
 
 export type LibraryOrigin = { alias: string; id: string; version: string; sha256: string; public: boolean };
 export type LibraryPin = { alias: string; sha256: string; library: Release };
+export type LibraryDialogMode = "install" | "publish";
 type Category = "tasks" | "resources" | "schemas";
 type Asset = { id: string; name: string; kind?: string; library_origin?: LibraryOrigin | null };
 type Release = { id: string; name: string; version: string; description: string };
@@ -34,12 +35,12 @@ function post<T>(path: string, body: unknown) {
   return request<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 }
 
-export default function IntegrationLibraries<P extends LibraryProject>({ project, onChange, onClose }:
-  { project: P; onChange: (project: P) => void; onClose: () => void }) {
+export default function IntegrationLibraries<P extends LibraryProject>({ project, initialMode, onChange, onClose }:
+  { project: P; initialMode: LibraryDialogMode; onChange: (project: P) => void; onClose: () => void }) {
   const [catalog, setCatalog] = useState<CatalogRelease[]>([]);
   const [selected, setSelected] = useState("");
   const [alias, setAlias] = useState("");
-  const [mode, setMode] = useState<"install" | "publish">("install");
+  const [mode, setMode] = useState(initialMode);
   const [name, setName] = useState("");
   const [identity, setIdentity] = useState("");
   const [version, setVersion] = useState("1.0.0");

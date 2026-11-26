@@ -1,6 +1,6 @@
 {
   "version": "1.0.3",
-  "fingerprint": "4342970c7c2e9bf7098480133e21a0714ee2c35b5fdd8fc4a3432affb2bdfe01",
+  "fingerprint": "3e97f05f8344ced88bb443a52234b15a93bff0280de980f6724dba6ba37c1253",
   "counts": {
     "activities": 110,
     "groups": 15,
@@ -49754,7 +49754,7 @@
             },
             {
               "kind": "p",
-              "text": "Open **Project Explorer → Libraries** to publish reusable subtasks, connections, and schemas, or to add a released version to an application."
+              "text": "Use the **File** menu or the ribbon’s **Project** section to publish reusable subtasks, connections, and schemas, or to add a released version to an application."
             },
             {
               "kind": "heading",
@@ -49766,7 +49766,7 @@
             },
             {
               "kind": "list",
-              "text": "Open **Libraries → Create a library**. Enter the display name, library ID, version, and an optional description."
+              "text": "Choose **Create Integration Library**. Enter the display name, library ID, version, and an optional description."
             },
             {
               "kind": "list",
@@ -49786,7 +49786,7 @@
             },
             {
               "kind": "list",
-              "text": "Open **Libraries → Use a library**. Choose a release from the catalog or use **Import .mlib file**."
+              "text": "Choose **Import Integration Library**. Choose a release from the catalog or use **Import .mlib file**."
             },
             {
               "kind": "list",
@@ -55208,7 +55208,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -55348,7 +55348,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -55499,7 +55499,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -55695,7 +55695,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -55842,7 +55842,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -56032,7 +56032,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -56183,7 +56183,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -56379,7 +56379,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -56530,7 +56530,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -56726,7 +56726,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -56885,7 +56885,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -57093,7 +57093,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -57244,7 +57244,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -57440,7 +57440,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -57591,7 +57591,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -57787,7 +57787,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -57938,7 +57938,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -58134,7 +58134,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -58285,7 +58285,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -58481,7 +58481,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -58632,7 +58632,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -58828,7 +58828,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -58979,7 +58979,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -59175,7 +59175,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -59326,7 +59326,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -59522,7 +59522,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -59673,7 +59673,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -59869,7 +59869,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -60020,7 +60020,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -60216,7 +60216,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -60367,7 +60367,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -60563,7 +60563,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -60714,7 +60714,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -60910,7 +60910,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -61061,7 +61061,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -61257,7 +61257,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -61408,7 +61408,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -61604,7 +61604,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -61755,7 +61755,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -61951,7 +61951,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -62102,7 +62102,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -62298,7 +62298,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -62449,7 +62449,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -62645,7 +62645,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -62796,7 +62796,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -62992,7 +62992,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -63143,7 +63143,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -63339,7 +63339,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -63490,7 +63490,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -63686,7 +63686,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -63841,7 +63841,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -64043,7 +64043,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -64186,7 +64186,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -64370,7 +64370,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -64513,7 +64513,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -64697,7 +64697,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -64840,7 +64840,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -65024,7 +65024,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -65167,7 +65167,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -65351,7 +65351,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -65506,7 +65506,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -65708,7 +65708,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -65859,7 +65859,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -66055,7 +66055,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -66206,7 +66206,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -66402,7 +66402,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -66557,7 +66557,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -66759,7 +66759,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -66914,7 +66914,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -67116,7 +67116,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -67267,7 +67267,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -67463,7 +67463,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -67614,7 +67614,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -67810,7 +67810,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -67961,7 +67961,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -68157,7 +68157,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -68308,7 +68308,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -68504,7 +68504,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -68655,7 +68655,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -68851,7 +68851,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -69002,7 +69002,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -69198,7 +69198,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -69349,7 +69349,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -69545,7 +69545,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -69696,7 +69696,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -69892,7 +69892,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -70043,7 +70043,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -70239,7 +70239,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -70390,7 +70390,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -70586,7 +70586,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -70737,7 +70737,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -70933,7 +70933,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -71084,7 +71084,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -71280,7 +71280,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -71427,7 +71427,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -71617,7 +71617,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -71764,7 +71764,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -71954,7 +71954,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -72101,7 +72101,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -72291,7 +72291,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -72442,7 +72442,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -72638,7 +72638,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -72789,7 +72789,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -72985,7 +72985,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -73140,7 +73140,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -73342,7 +73342,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -73497,7 +73497,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -73699,7 +73699,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -73854,7 +73854,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -74056,7 +74056,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -74211,7 +74211,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -74413,7 +74413,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -74576,7 +74576,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -74790,7 +74790,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -74945,7 +74945,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -75147,7 +75147,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -75302,7 +75302,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -75504,7 +75504,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -75659,7 +75659,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -75861,7 +75861,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -76016,7 +76016,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -76218,7 +76218,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -76381,7 +76381,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -76595,7 +76595,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -76750,7 +76750,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -76952,7 +76952,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -77107,7 +77107,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -77309,7 +77309,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -77464,7 +77464,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -77666,7 +77666,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -77813,7 +77813,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -78003,7 +78003,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -78150,7 +78150,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -78340,7 +78340,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -78487,7 +78487,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -78677,7 +78677,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -78824,7 +78824,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -79014,7 +79014,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -79161,7 +79161,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -79351,7 +79351,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -79498,7 +79498,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -79688,7 +79688,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -79835,7 +79835,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -80025,7 +80025,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -80172,7 +80172,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -80362,7 +80362,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -80509,7 +80509,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -80699,7 +80699,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -80846,7 +80846,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -81036,7 +81036,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -81183,7 +81183,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -81373,7 +81373,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -81520,7 +81520,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -81710,7 +81710,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -81857,7 +81857,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -82047,7 +82047,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -82194,7 +82194,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -82384,7 +82384,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -82535,7 +82535,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -82731,7 +82731,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -82882,7 +82882,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -83078,7 +83078,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -83225,7 +83225,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -83415,7 +83415,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -83566,7 +83566,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -83762,7 +83762,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -83905,7 +83905,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -84089,7 +84089,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -84236,7 +84236,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -84426,7 +84426,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -84569,7 +84569,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -84753,7 +84753,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -84896,7 +84896,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -85080,7 +85080,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -85223,7 +85223,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -85407,7 +85407,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -85550,7 +85550,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -85734,7 +85734,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -85881,7 +85881,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -86071,7 +86071,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -86214,7 +86214,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -86398,7 +86398,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -86541,7 +86541,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -86725,7 +86725,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -86872,7 +86872,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -87062,7 +87062,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -87209,7 +87209,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -87399,7 +87399,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -87546,7 +87546,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -87736,7 +87736,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -87883,7 +87883,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -88073,7 +88073,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -88220,7 +88220,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -88410,7 +88410,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -88557,7 +88557,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -88747,7 +88747,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -88902,7 +88902,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -89104,7 +89104,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -89251,7 +89251,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -89441,7 +89441,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -89588,7 +89588,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -89778,7 +89778,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -89925,7 +89925,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -90115,7 +90115,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -90262,7 +90262,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -90452,7 +90452,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -90599,7 +90599,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -90789,7 +90789,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -90936,7 +90936,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -91126,7 +91126,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -91273,7 +91273,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -91463,7 +91463,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -91610,7 +91610,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -91800,7 +91800,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -91947,7 +91947,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -92137,7 +92137,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -92284,7 +92284,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -92474,7 +92474,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -92621,7 +92621,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -92811,7 +92811,7 @@
                 ],
                 [
                   "Create a canvas activity and its initial config",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Configuration/Input/Output/Errors contract",
@@ -92958,7 +92958,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Create a canvas activity and its initial config"
         },
@@ -93144,7 +93144,7 @@
                 ],
                 [
                   "Browser save API",
-                  "frontend/src/main.tsx:2810\nconst persistProject ="
+                  "frontend/src/main.tsx:2814\nconst persistProject ="
                 ],
                 [
                   "Task cloning",
@@ -93198,7 +93198,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2810,
+          "line": 2814,
           "symbol": "const persistProject =",
           "role": "Browser save API"
         },
@@ -93270,7 +93270,7 @@
               "rows": [
                 [
                   "Run action",
-                  "frontend/src/main.tsx:3008\nconst run = async"
+                  "frontend/src/main.tsx:3012\nconst run = async"
                 ],
                 [
                   "Run API",
@@ -93326,7 +93326,7 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 3008,
+          "line": 3012,
           "symbol": "const run = async",
           "role": "Run action"
         },
@@ -93410,19 +93410,19 @@
               "rows": [
                 [
                   "Start debug request",
-                  "frontend/src/main.tsx:3051\ndebug = async"
+                  "frontend/src/main.tsx:3055\ndebug = async"
                 ],
                 [
                   "Debug action transport",
-                  "frontend/src/main.tsx:3119\ndebugAction = async"
+                  "frontend/src/main.tsx:3123\ndebugAction = async"
                 ],
                 [
                   "Ribbon controls",
-                  "frontend/src/main.tsx:7477\nfunction DebugRibbon("
+                  "frontend/src/main.tsx:7490\nfunction DebugRibbon("
                 ],
                 [
                   "Test bench/tools",
-                  "frontend/src/main.tsx:7372\nfunction DebugToolsDialog("
+                  "frontend/src/main.tsx:7385\nfunction DebugToolsDialog("
                 ],
                 [
                   "Input/output/variables viewer",
@@ -93510,25 +93510,25 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 3051,
+          "line": 3055,
           "symbol": "debug = async",
           "role": "Start debug request"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 3119,
+          "line": 3123,
           "symbol": "debugAction = async",
           "role": "Debug action transport"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 7477,
+          "line": 7490,
           "symbol": "function DebugRibbon(",
           "role": "Ribbon controls"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 7372,
+          "line": 7385,
           "symbol": "function DebugToolsDialog(",
           "role": "Test bench/tools"
         },
@@ -94200,15 +94200,15 @@
               "rows": [
                 [
                   "Palette drag source",
-                  "frontend/src/main.tsx:4139\nonDragStart={(e) =>"
+                  "frontend/src/main.tsx:4141\nonDragStart={(e) =>"
                 ],
                 [
                   "Canvas drop target",
-                  "frontend/src/main.tsx:4208\nonDrop={(e) =>"
+                  "frontend/src/main.tsx:4210\nonDrop={(e) =>"
                 ],
                 [
                   "Activity creation",
-                  "frontend/src/main.tsx:2319\nconst addActivity ="
+                  "frontend/src/main.tsx:2323\nconst addActivity ="
                 ],
                 [
                   "Editable-control shortcut guard",
@@ -94232,7 +94232,7 @@
                 ],
                 [
                   "Group condition drop target",
-                  "frontend/src/main.tsx:4853\nfunction GroupExpressionTarget("
+                  "frontend/src/main.tsx:4856\nfunction GroupExpressionTarget("
                 ],
                 [
                   "Selection visuals",
@@ -94260,19 +94260,19 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4139,
+          "line": 4141,
           "symbol": "onDragStart={(e) =>",
           "role": "Palette drag source"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4208,
+          "line": 4210,
           "symbol": "onDrop={(e) =>",
           "role": "Canvas drop target"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 2319,
+          "line": 2323,
           "symbol": "const addActivity =",
           "role": "Activity creation"
         },
@@ -94308,7 +94308,7 @@
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4853,
+          "line": 4856,
           "symbol": "function GroupExpressionTarget(",
           "role": "Group condition drop target"
         },
@@ -94350,15 +94350,15 @@
               "rows": [
                 [
                   "Create group",
-                  "frontend/src/main.tsx:2503\nconst addGroup ="
+                  "frontend/src/main.tsx:2507\nconst addGroup ="
                 ],
                 [
                   "Editor defaults",
-                  "frontend/src/main.tsx:4867\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4870\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group configuration",
-                  "frontend/src/main.tsx:4875\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4878\nfunction GroupEditor("
                 ],
                 [
                   "Group rendering",
@@ -94430,19 +94430,19 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 2503,
+          "line": 2507,
           "symbol": "const addGroup =",
           "role": "Create group"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4867,
+          "line": 4870,
           "symbol": "function groupConfigDefaults(",
           "role": "Editor defaults"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4875,
+          "line": 4878,
           "symbol": "function GroupEditor(",
           "role": "Group configuration"
         },
@@ -94554,11 +94554,11 @@
               "rows": [
                 [
                   "If defaults; match group type if",
-                  "frontend/src/main.tsx:4867\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4870\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4875\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4878\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -94610,13 +94610,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4867,
+          "line": 4870,
           "symbol": "function groupConfigDefaults(",
           "role": "If defaults; match group type if"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4875,
+          "line": 4878,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -94704,11 +94704,11 @@
               "rows": [
                 [
                   "While True defaults; match group type while",
-                  "frontend/src/main.tsx:4867\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4870\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4875\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4878\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -94760,13 +94760,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4867,
+          "line": 4870,
           "symbol": "function groupConfigDefaults(",
           "role": "While True defaults; match group type while"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4875,
+          "line": 4878,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -94854,11 +94854,11 @@
               "rows": [
                 [
                   "For Each defaults; match group type for-each",
-                  "frontend/src/main.tsx:4867\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4870\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4875\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4878\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -94910,13 +94910,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4867,
+          "line": 4870,
           "symbol": "function groupConfigDefaults(",
           "role": "For Each defaults; match group type for-each"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4875,
+          "line": 4878,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -95004,11 +95004,11 @@
               "rows": [
                 [
                   "Iterate defaults; match group type iterate",
-                  "frontend/src/main.tsx:4867\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4870\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4875\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4878\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -95060,13 +95060,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4867,
+          "line": 4870,
           "symbol": "function groupConfigDefaults(",
           "role": "Iterate defaults; match group type iterate"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4875,
+          "line": 4878,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -95154,11 +95154,11 @@
               "rows": [
                 [
                   "Repeat Until True defaults; match group type repeat",
-                  "frontend/src/main.tsx:4867\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4870\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4875\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4878\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -95210,13 +95210,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4867,
+          "line": 4870,
           "symbol": "function groupConfigDefaults(",
           "role": "Repeat Until True defaults; match group type repeat"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4875,
+          "line": 4878,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -95304,11 +95304,11 @@
               "rows": [
                 [
                   "Repeat on Error Until True defaults; match group type repeat-on-error",
-                  "frontend/src/main.tsx:4867\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4870\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4875\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4878\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -95360,13 +95360,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4867,
+          "line": 4870,
           "symbol": "function groupConfigDefaults(",
           "role": "Repeat on Error Until True defaults; match group type repeat-on-error"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4875,
+          "line": 4878,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -95454,11 +95454,11 @@
               "rows": [
                 [
                   "Scope defaults; match group type scope",
-                  "frontend/src/main.tsx:4867\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4870\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4875\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4878\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -95510,13 +95510,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4867,
+          "line": 4870,
           "symbol": "function groupConfigDefaults(",
           "role": "Scope defaults; match group type scope"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4875,
+          "line": 4878,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -95604,11 +95604,11 @@
               "rows": [
                 [
                   "None defaults; match group type none",
-                  "frontend/src/main.tsx:4867\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4870\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4875\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4878\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -95660,13 +95660,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4867,
+          "line": 4870,
           "symbol": "function groupConfigDefaults(",
           "role": "None defaults; match group type none"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4875,
+          "line": 4878,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -95754,11 +95754,11 @@
               "rows": [
                 [
                   "Critical Section defaults; match group type critical-section",
-                  "frontend/src/main.tsx:4867\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4870\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4875\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4878\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -95810,13 +95810,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4867,
+          "line": 4870,
           "symbol": "function groupConfigDefaults(",
           "role": "Critical Section defaults; match group type critical-section"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4875,
+          "line": 4878,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -95904,11 +95904,11 @@
               "rows": [
                 [
                   "JDBC Transaction defaults; match group type transaction-jdbc",
-                  "frontend/src/main.tsx:4867\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4870\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4875\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4878\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -95960,13 +95960,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4867,
+          "line": 4870,
           "symbol": "function groupConfigDefaults(",
           "role": "JDBC Transaction defaults; match group type transaction-jdbc"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4875,
+          "line": 4878,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -96054,11 +96054,11 @@
               "rows": [
                 [
                   "Pick First defaults; match group type pick-first",
-                  "frontend/src/main.tsx:4867\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4870\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4875\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4878\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -96110,13 +96110,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4867,
+          "line": 4870,
           "symbol": "function groupConfigDefaults(",
           "role": "Pick First defaults; match group type pick-first"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4875,
+          "line": 4878,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -96204,11 +96204,11 @@
               "rows": [
                 [
                   "Parallel For Each defaults; match group type parallel-for-each",
-                  "frontend/src/main.tsx:4867\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4870\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4875\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4878\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -96260,13 +96260,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4867,
+          "line": 4870,
           "symbol": "function groupConfigDefaults(",
           "role": "Parallel For Each defaults; match group type parallel-for-each"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4875,
+          "line": 4878,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -96354,11 +96354,11 @@
               "rows": [
                 [
                   "Scatter-Gather defaults; match group type scatter-gather",
-                  "frontend/src/main.tsx:4867\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4870\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4875\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4878\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -96410,13 +96410,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4867,
+          "line": 4870,
           "symbol": "function groupConfigDefaults(",
           "role": "Scatter-Gather defaults; match group type scatter-gather"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4875,
+          "line": 4878,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -96504,11 +96504,11 @@
               "rows": [
                 [
                   "First Successful defaults; match group type first-successful",
-                  "frontend/src/main.tsx:4867\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4870\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4875\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4878\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -96560,13 +96560,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4867,
+          "line": 4870,
           "symbol": "function groupConfigDefaults(",
           "role": "First Successful defaults; match group type first-successful"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4875,
+          "line": 4878,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -96654,11 +96654,11 @@
               "rows": [
                 [
                   "Background Scope defaults; match group type async",
-                  "frontend/src/main.tsx:4867\nfunction groupConfigDefaults("
+                  "frontend/src/main.tsx:4870\nfunction groupConfigDefaults("
                 ],
                 [
                   "Group-specific condition/iteration controls",
-                  "frontend/src/main.tsx:4875\nfunction GroupEditor("
+                  "frontend/src/main.tsx:4878\nfunction GroupEditor("
                 ],
                 [
                   "Type-specific entry branch",
@@ -96710,13 +96710,13 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 4867,
+          "line": 4870,
           "symbol": "function groupConfigDefaults(",
           "role": "Background Scope defaults; match group type async"
         },
         {
           "file": "frontend/src/main.tsx",
-          "line": 4875,
+          "line": 4878,
           "symbol": "function GroupEditor(",
           "role": "Group-specific condition/iteration controls"
         },
@@ -96800,7 +96800,7 @@
               "rows": [
                 [
                   "Packaging UI",
-                  "frontend/src/main.tsx:5133\nfunction PackageDialog("
+                  "frontend/src/main.tsx:5136\nfunction PackageDialog("
                 ],
                 [
                   "Archive orchestration",
@@ -96860,7 +96860,7 @@
       "sourceRefs": [
         {
           "file": "frontend/src/main.tsx",
-          "line": 5133,
+          "line": 5136,
           "symbol": "function PackageDialog(",
           "role": "Packaging UI"
         },

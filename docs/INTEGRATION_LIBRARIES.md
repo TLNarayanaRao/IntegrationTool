@@ -1,12 +1,12 @@
 # MINA Integration Libraries
 
-Open **Project Explorer → Libraries** to publish reusable subtasks, connections,
+Use the **File** menu or the ribbon’s **Project** section to publish reusable subtasks, connections,
 and schemas, or to add a released version to an application.
 
 ## Create and export a library
 
 1. In the authoring project, build callable **Sub Tasks** and define their input and output contracts. Put environment-specific values in project properties and reference those properties from the assets.
-2. Open **Libraries → Create a library**. Enter the display name, library ID, version, and an optional description.
+2. Choose **Create Integration Library**. Enter the display name, library ID, version, and an optional description.
 3. Select the subtasks, connections, or schemas that other projects should see. MINA includes dependencies reached by fixed task and resource references as internal assets. It also includes selected Data Format assets and schemas reached through local XSD includes or relative JSON Schema references.
 4. Select **Publish version**, then **Export .mlib**. Use a new three-part version number for revised content. Repeating publication of the same content is safe.
 
@@ -18,7 +18,7 @@ Move project-only custom function calls out of a subtask before publishing. Libr
 
 ## Use one release in multiple projects
 
-1. Open **Libraries → Use a library**. Choose a release from the catalog or use **Import .mlib file**.
+1. Choose **Import Integration Library**. Choose a release from the catalog or use **Import .mlib file**.
 2. Enter a project alias and select **Add to project**. The alias qualifies the names in the task, connection, and schema selectors.
 3. Set the generated `library.<alias>.<setting>` values under **Properties** in each environment you run or package. Each project owns its environment values, secret bindings, and connection instances.
 4. Use **Call Sub Task** to map input to an exported task, choose an exported connection from the connector dropdown, or choose an exported schema in a compatible schema picker.
