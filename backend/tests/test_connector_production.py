@@ -9,6 +9,37 @@ from app.jdbc import execute,_parameters,_write_batch,_java_execute,_connect_mys
 
 
 class ConnectorProductionTests(unittest.TestCase):
+    def test_file_copy_finishes_attributes_before_publishing(self):
+        import stat
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            source, target = root / 'source', root / 'target'
+            source.write_bytes(b'new')
+            target.write_bytes(b'old')
+            config = {'path': str(source), 'destination': str(target)}
+            with patch('app.file_operations.shutil.copystat', side_effect=PermissionError('cannot copy attributes')):
+                with self.assertRaisesRegex(PermissionError, 'cannot copy attributes'):
+                    file_activity('copy', {**config, 'overwrite': True}, None)
+            self.assertEqual(target.read_bytes(), b'old')
+            self.assertFalse(list(root.glob('.mina-*')))
+            target.unlink()
+            source.chmod(stat.S_IREAD)
+            try:
+                file_activity('copy', config, None)
+                self.assertEqual(target.read_bytes(), b'new')
+                self.assertEqual(target.stat().st_mtime_ns, source.stat().st_mtime_ns)
+                self.assertFalse(list(root.glob('.mina-*')))
+                with self.assertRaises(FileExistsError):
+                    with staged_file(target) as stage:
+                        stage.write_bytes(b'candidate')
+                        stage.chmod(stat.S_IREAD)
+                self.assertEqual(target.read_bytes(), b'new')
+                self.assertFalse(list(root.glob('.mina-*')))
+            finally:
+                source.chmod(stat.S_IREAD | stat.S_IWRITE)
+                if target.exists():
+                    target.chmod(stat.S_IREAD | stat.S_IWRITE)
+
     def test_failed_file_write_copy_and_directory_replacement_preserve_destination(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);source=root/'source';target=root/'target';source.write_text('new');target.write_text('old')

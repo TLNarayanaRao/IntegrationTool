@@ -2,7 +2,7 @@
 from __future__ import annotations
 import copy, hashlib, json, os, shutil, tempfile
 from pathlib import Path
-from .api_blueprint import blueprint_plan, callback_tasks, validate_blueprint
+from .api_blueprint import METHODS, blueprint_plan, callback_tasks, validate_blueprint
 from .models import Project
 
 
@@ -14,15 +14,20 @@ def revision(project):
     return hashlib.sha256(json.dumps(value,sort_keys=True,ensure_ascii=False,separators=(',',':')).encode()).hexdigest()
 
 
-def update_plan(project,resource_id,document,selected,*,reference_documents=None,document_path='',response_mode='stub'):
+def update_plan(project,resource_id,document,selected,*,reference_documents=None,document_path='',response_mode='stub',mock_examples=None):
     source=next((resource for resource in project.resources if resource.id==resource_id),None)
     if source is None or source.type!='http' or not source.config.get('apiBlueprintId'):raise ValueError('Select an existing API Blueprint server connection')
     group=source.config['apiBlueprintId'];old=validate_blueprint(source.config.get('openApiDocument'))
+    old_document=old['document']
     old_operations={operation['operationId']:operation for operation in old['operations']}
     generated=blueprint_plan(document,selected,source.model_dump(),source.name,response_mode,source.package_path,
-                             reference_documents=reference_documents,document_path=document_path)
+                             reference_documents=reference_documents,document_path=document_path,mock_examples=mock_examples)
     normalized=generated['resource']['config']['openApiDocument']
     new=validate_blueprint(normalized);new_operations={operation['operationId']:operation for operation in new['operations']}
+    shared_settings = ('components', 'x-mina-refs', 'servers', 'security', 'jsonSchemaDialect',
+                       'definitions', 'parameters', 'responses', 'securityDefinitions',
+                       'host', 'basePath', 'schemes', 'consumes', 'produces')
+    shared_changed = any(old_document.get(key) != normalized.get(key) for key in shared_settings)
     members=[]
     for task in project.tasks:
         for activity in task.activities:
@@ -44,15 +49,20 @@ def update_plan(project,resource_id,document,selected,*,reference_documents=None
         if len(options)>1:raise ValueError('An operation matches multiple existing flows; resolve the duplicate before updating')
         record={'operationId':operation['operationId'],'method':operation['method'],'path':operation['path']}
         if options:
+            if mock_examples and operation['operationId'] in mock_examples:
+                raise ValueError('Choose mock examples only for new operations in an API update')
             previous,event,old_operation=options[0]
             if previous.id in matched:raise ValueError('Two updated operations match the same implementation')
             matched.add(previous.id);record['taskId']=previous.id;task_remap[task['id']]=previous.id
             preserved=next(item for item in candidate.tasks if item.id==previous.id)
             target=next(item for item in preserved.activities if item.id==event.id)
             target.config.update(operationId=operation['operationId'],resourceId=resource_id,apiBlueprintId=group)
-            old_definition=old['document']['paths'][old_operation['path']][old_operation['method'].lower()]
-            new_definition=normalized['paths'][operation['path']][operation['method'].lower()]
-            changed=old_operation!=operation or old_definition!=new_definition or old['document'].get('components')!=normalized.get('components') or old['document'].get('x-mina-refs')!=normalized.get('x-mina-refs') or old['document'].get('servers')!=normalized.get('servers') or old['document'].get('security')!=normalized.get('security')
+            old_path = old_document['paths'][old_operation['path']]
+            new_path = normalized['paths'][operation['path']]
+            old_settings = {key: value for key, value in old_path.items() if key not in METHODS}
+            new_settings = {key: value for key, value in new_path.items() if key not in METHODS}
+            changed = (shared_changed or old_operation != operation or old_settings != new_settings
+                       or old_path[old_operation['method'].lower()] != new_path[operation['method'].lower()])
             record.update(previousPath=old_operation['path'],previousMethod=old_operation['method'])
             report['updated' if changed else 'unchanged'].append(record)
         else:
@@ -100,7 +110,8 @@ def update_plan(project,resource_id,document,selected,*,reference_documents=None
         if len(entries)>1 and not entries.keys()<=old_names.get(scope,{}).keys():report['conflicts'].append('An added operation/helper name conflicts with an existing object in its package.')
     report['requiresReview']=bool(report['added'] or report['updated'] or report['removed'] or report['callbackUpdates'])
     report['token']=hashlib.sha256(json.dumps({'revision':report['revision'],'resourceId':resource_id,'document':document,'selected':selected,
-        'references':reference_documents,'documentPath':document_path,'responseMode':response_mode},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+        'references':reference_documents,'documentPath':document_path,'responseMode':response_mode,
+        'mockExamples':mock_examples or {}},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
     return candidate,report
 
 

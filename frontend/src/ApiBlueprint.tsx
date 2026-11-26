@@ -41,6 +41,9 @@ paths:
               example: {status: ok}
 `;
 
+type MockExample={label:string;statusCode:number;contentType:string};
+type BlueprintOperation={operationId:string;method:string;path:string;summary:string;mockExamples:MockExample[]};
+
 async function api(path:string,body:any){
   const response=await fetch(path,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
   const result=await response.json();
@@ -48,7 +51,7 @@ async function api(path:string,body:any){
   return result;
 }
 
-export default function ApiBlueprint({resources,packages,projectId,onPrepareUpdate,onUpdated,onClose,onApply,onHost}: {resources:any[];packages:string[];projectId:string;onPrepareUpdate:()=>Promise<unknown>;onUpdated:(project:any)=>void;onClose:()=>void;onApply:(plan:any)=>Promise<void>;onHost:(taskId:string)=>Promise<any>}){
+export default function ApiBlueprint({resources,tasks,packages,projectId,onPrepareUpdate,onUpdated,onClose,onApply,onHost}: {resources:any[];tasks:any[];packages:string[];projectId:string;onPrepareUpdate:()=>Promise<unknown>;onUpdated:(project:any)=>void;onClose:()=>void;onApply:(plan:any)=>Promise<void>;onHost:(taskId:string)=>Promise<any>}){
   const servers=resources.filter(resource=>resource.type==="http"&&resource.config?.connectorMode!=="client");
   const [document,setDocument]=useState("");const [validated,setValidated]=useState<any>(null);const [selected,setSelected]=useState<string[]>([]);
   const [operationFilter,setOperationFilter]=useState("");
@@ -58,17 +61,30 @@ export default function ApiBlueprint({resources,packages,projectId,onPrepareUpda
   const [connectionId,setConnectionId]=useState(servers[0]?.id||"new");const [host,setHost]=useState("127.0.0.1");const [port,setPort]=useState("8080");
   const [scheme,setScheme]=useState("http");const [certificateFile,setCertificateFile]=useState("");const [privateKeyFile,setPrivateKeyFile]=useState("");
   const [name,setName]=useState("");const [mode,setMode]=useState("stub");const [working,setWorking]=useState("");const [error,setError]=useState("");
+  const [mockExamples,setMockExamples]=useState<Record<string,number>>({});
   const [applied,setApplied]=useState<any>(null);const [endpoints,setEndpoints]=useState<any[]>([]);
   const [apiPackage,setApiPackage]=useState(DEFAULT_PACKAGE);const [newPackages,setNewPackages]=useState<string[]>([]);
   const [packageDialog,setPackageDialog]=useState<{parent?:string}|null>(null);
   const [updateTarget,setUpdateTarget]=useState('new');const [preview,setPreview]=useState<any>(null);const [reviewed,setReviewed]=useState(false);
   const [prepared,setPrepared]=useState(false);
   const updating=updateTarget!=='new';
+  const updateResource=resources.find(item=>item.id===updateTarget);
+  const hostedIds=new Set(updating?tasks.flatMap(task=>task.activities.filter((activity:any)=>
+    activity.type==="rest"&&activity.config?.operation==="receiver"&&activity.config.resourceId===updateTarget
+    &&activity.config.apiBlueprintId===updateResource?.config?.apiBlueprintId
+  ).map((activity:any)=>activity.config.operationId)):[]);
+  const previousOperationId=(operation:BlueprintOperation)=>
+    updateResource?.config?.openApiDocument?.paths?.[operation.path]?.[operation.method.toLowerCase()]?.operationId;
+  const mockableOperations:BlueprintOperation[]=mode==="example"?(validated?.operations||[]).filter((operation:BlueprintOperation)=>
+    selected.includes(operation.operationId)&&operation.mockExamples?.length
+    &&!hostedIds.has(operation.operationId)&&!hostedIds.has(previousOperationId(operation))):[];
+  const mockSelection=Object.fromEntries(mockableOperations.filter(operation=>typeof mockExamples[operation.operationId]==="number")
+    .map(operation=>[operation.operationId,mockExamples[operation.operationId]]));
   const resetPreview=()=>{setPreview(null);setReviewed(false);};
   const chooseOperations=(values:string[])=>{setSelected(values);resetPreview();};
   const destinations=packagePaths([...packages,...newPackages]);
   useEffect(()=>{const listener=(event:KeyboardEvent)=>{if(event.key==="Escape"&&!working&&!packageDialog)onClose();};window.addEventListener("keydown",listener);return()=>window.removeEventListener("keydown",listener);},[onClose,working,packageDialog]);
-  const updateDocument=(text:string)=>{setDocument(text);setValidated(null);setSelected([]);setOperationFilter("");setError("");resetPreview();};
+  const updateDocument=(text:string)=>{setDocument(text);setValidated(null);setSelected([]);setMockExamples({});setOperationFilter("");setError("");resetPreview();};
   const load=async(file?:File)=>{if(!file)return;if(file.size>8*1024*1024){setError("The API document limit is 8 MiB.");return;}setWorking("Loading API document…");try{const text=await file.text();setDocuments({[file.name]:text});setDocumentPath(file.name);updateDocument(text);}catch{setError("The API document could not be read.");}finally{setWorking("");}};
   const loadFolder=async(files:FileList|null)=>{
     if(!files?.length)return;
@@ -84,7 +100,21 @@ export default function ApiBlueprint({resources,packages,projectId,onPrepareUpda
     }catch(error:any){setError(error.message||"The API folder could not be read.");}finally{setWorking("");}
   };
   const chooseDocument=(path:string)=>{if(documentPath)setDocuments(current=>({...current,[documentPath]:document}));setDocumentPath(path);updateDocument(documents[path]);};
-  const validate=async()=>{setWorking("Validating YAML and API contract…");setError("");try{const result=await api("/api/api-blueprint/validate",{document,referenceDocuments,documentPath});setValidated(result);setName(result.name);setSelected(result.operations.map((operation:any)=>operation.operationId));}catch(error:any){setValidated(null);setSelected([]);setError(error.message);}finally{setWorking("");}};
+  const validate=async()=>{
+    setWorking("Validating API contract…");setError("");resetPreview();
+    try{
+      const result=await api("/api/api-blueprint/validate",{document,referenceDocuments,documentPath});
+      setValidated(result);
+      if(validated)return;
+      setName(result.name);
+      const incomingIds=new Set(result.operations.map((operation:BlueprintOperation)=>operation.operationId));
+      setSelected(result.operations.filter((operation:BlueprintOperation)=>{
+        if(!updating||hostedIds.has(operation.operationId))return true;
+        const previousId=previousOperationId(operation);
+        return hostedIds.has(previousId)&&!incomingIds.has(previousId);
+      }).map((operation:BlueprintOperation)=>operation.operationId));
+    }catch(error:any){setValidated(null);setSelected([]);setError(error.message);}finally{setWorking("");}
+  };
   const create=async()=>{
     setWorking("Creating and hosting the API…");setError("");
     try{
@@ -92,20 +122,20 @@ export default function ApiBlueprint({resources,packages,projectId,onPrepareUpda
       if(!plan){
         if(connectionId==="new"&&(!host.trim()||!Number.isInteger(Number(port))||Number(port)<1||Number(port)>65535))throw new Error("Supply a bind host and a port between 1 and 65535.");
         const connection=connectionId==="new"?{type:"http",name:"API server",config:{connectorMode:"server",scheme,host,port:Number(port),tlsEnabled:scheme==="https",certificateFile,privateKeyFile}}:servers.find(resource=>resource.id===connectionId);
-        plan=await api("/api/api-blueprint/plan",{document,referenceDocuments,documentPath,operationIds:selected,connection,name,responseMode:mode,packagePath:apiPackage});
+        plan=await api("/api/api-blueprint/plan",{document,referenceDocuments,documentPath,operationIds:selected,connection,name,responseMode:mode,mockExamples:mockSelection,packagePath:apiPackage});
         await onApply(plan);setApplied(plan);
       }
       const result=await onHost(plan.tasks[0].id);setEndpoints(result.endpoints||[]);
     }catch(error:any){setError(error.message);}finally{setWorking("");}
   };
   const selectTarget=(id:string)=>{
-    setUpdateTarget(id);setApplied(null);setEndpoints([]);setPrepared(false);resetPreview();
+    setUpdateTarget(id);setApplied(null);setEndpoints([]);setPrepared(false);setMockExamples({});resetPreview();
     if(id==='new'){setConnectionId('new');return;}
     const resource=resources.find(resource=>resource.id===id);
     setConnectionId(id);setApiPackage(resource.package_path||DEFAULT_PACKAGE);setDocuments({});setDocumentPath('');
     updateDocument(JSON.stringify(resource.config.openApiDocument,null,2));
   };
-  const updateRequest=()=>({document,referenceDocuments,documentPath,operationIds:selected,resourceId:updateTarget,responseMode:mode});
+  const updateRequest=()=>({document,referenceDocuments,documentPath,operationIds:selected,resourceId:updateTarget,responseMode:mode,mockExamples:mockSelection});
   const previewUpdate=async()=>{
     setWorking('Saving current edits and previewing API update…');setError('');
     try{if(!prepared){await onPrepareUpdate();setPrepared(true);}setPreview(await api(`/api/projects/${encodeURIComponent(projectId)}/api-blueprint/preview`,updateRequest()));setReviewed(false);}
@@ -131,18 +161,39 @@ export default function ApiBlueprint({resources,packages,projectId,onPrepareUpda
         <label>API contract<textarea autoFocus aria-label="API YAML or JSON document" value={document} disabled={!!working||!!applied} onChange={event=>updateDocument(event.target.value)} spellCheck={false} placeholder="Load a .yaml file or paste your API contract here…"/></label>
         <p className="api-blueprint-hint">Validation does not start a listener. Load an API folder to resolve local references, then select its entry document. {Object.keys(referenceDocuments).length} reference documents supplied. Import does not fetch remote URLs or read other files from your machine.</p>
       </section><section>
-        {validated?<><p className="api-blueprint-valid"><CheckCircle2/> Valid contract · {selected.length} selected / {validated.operations.length} operations</p><label>API name<input value={name} disabled={!!working||!!applied||updating} onChange={event=>setName(event.target.value)} maxLength={128}/></label><label>Find operations<input type="search" aria-label="Find API operations" value={operationFilter} disabled={!!working||!!applied} onChange={event=>setOperationFilter(event.target.value)} placeholder="Method, path, or operation ID…"/></label><div className="api-blueprint-tools"><button disabled={!!working||!!applied} onClick={()=>chooseOperations(validated.operations.map((operation:any)=>operation.operationId))}>Select all</button><button disabled={!!working||!!applied} onClick={()=>chooseOperations([])}>Clear selection</button></div><div className="api-blueprint-operations" aria-label="API operations">{visibleOperations.map((operation:any)=><label key={operation.operationId}><input type="checkbox" checked={selected.includes(operation.operationId)} disabled={!!working||!!applied} onChange={event=>chooseOperations(event.target.checked?[...selected,operation.operationId]:selected.filter(id=>id!==operation.operationId))}/><b>{operation.method}</b><span>{operation.path}<small>{operation.summary||operation.operationId} · {operation.hasExample?`Mock ${operation.example.statusCode}`:'No success example; mock returns 501'}</small></span></label>)}{!visibleOperations.length&&<p>No operations match your search.</p>}</div></>:<p>Validate the document to inspect and select API operations.</p>}
+        {validated?<><p className="api-blueprint-valid"><CheckCircle2/> Valid contract · {selected.length} selected / {validated.operations.length} operations</p><label>API name<input value={name} disabled={!!working||!!applied||updating} onChange={event=>setName(event.target.value)} maxLength={128}/></label><label>Find operations<input type="search" aria-label="Find API operations" value={operationFilter} disabled={!!working||!!applied} onChange={event=>setOperationFilter(event.target.value)} placeholder="Method, path, or operation ID…"/></label><div className="api-blueprint-tools"><button disabled={!!working||!!applied} onClick={()=>chooseOperations(validated.operations.map((operation:any)=>operation.operationId))}>Select all</button><button disabled={!!working||!!applied} onClick={()=>chooseOperations([])}>Clear selection</button></div><div className="api-blueprint-operations" aria-label="API operations">{visibleOperations.map((operation:any)=><label key={operation.operationId}><input type="checkbox" checked={selected.includes(operation.operationId)} disabled={!!working||!!applied} onChange={event=>chooseOperations(event.target.checked?[...selected,operation.operationId]:selected.filter(id=>id!==operation.operationId))}/><b>{operation.method}</b><span>{operation.path}<small>{operation.summary||operation.operationId} · {typeof mockSelection[operation.operationId]==="number"?`Mock ${operation.mockExamples[mockSelection[operation.operationId]].statusCode}`:operation.hasExample?`Mock ${operation.example.statusCode}`:'No success example; mock returns 501'}</small></span></label>)}{!visibleOperations.length&&<p>No operations match your search.</p>}</div></>:<p>Validate the document to inspect and select API operations.</p>}
         <label>API package<select aria-label="API package" value={apiPackage} disabled={!!working||!!applied||updating} onChange={event=>setApiPackage(event.target.value)}>{destinations.map(path=><option key={path}>{path}</option>)}</select></label>
         <div className="api-blueprint-tools"><button disabled={!!working||!!applied||updating} onClick={()=>setPackageDialog({})}>New package</button><button disabled={!!working||!!applied||updating} onClick={()=>setPackageDialog({parent:apiPackage})}>New subpackage</button></div>
         <p className="api-blueprint-hint">Generated API tasks and the API-specific server connection are saved in this package. New folders are saved when you create the API.</p>
         <label>HTTP server connection<select value={connectionId} disabled={!!working||!!applied||updating} onChange={event=>setConnectionId(event.target.value)}><option value="new">Create a new API server connection</option>{servers.map(resource=><option value={resource.id} key={resource.id}>{resource.name}</option>)}</select></label>
         {connectionId==="new"?<div className="api-blueprint-server"><label>Bind host<input value={host} disabled={!!working||!!applied} onChange={event=>setHost(event.target.value)}/></label><label>Port<input type="number" min="1" max="65535" value={port} disabled={!!working||!!applied} onChange={event=>setPort(event.target.value)}/></label><label>Protocol<select value={scheme} disabled={!!working||!!applied} onChange={event=>setScheme(event.target.value)}><option value="http">HTTP</option><option value="https">HTTPS</option></select></label>{scheme==="https"&&<><label>Server certificate chain path<input value={certificateFile} disabled={!!working||!!applied} onChange={event=>setCertificateFile(event.target.value)} placeholder="Runtime PEM file path or property"/></label><label>Server private key path<input value={privateKeyFile} disabled={!!working||!!applied} onChange={event=>setPrivateKeyFile(event.target.value)} placeholder="Runtime PEM key path or property"/></label></>}</div>:<p className="api-blueprint-hint">Connection settings are copied to an API-specific shared server connection. Property bindings and authentication settings are preserved.</p>}
         <label>Initial responses<select value={mode} disabled={!!working||!!applied} onChange={event=>{setMode(event.target.value);resetPreview();}}><option value="stub">501 placeholders — implement business logic</option><option value="example">Declared response examples — mock testing</option></select></label>
+        {mockableOperations.length>0&&<div className="api-blueprint-mocks" aria-label="Mock response examples">
+          {mockableOperations.map(operation=><label key={operation.operationId}>
+            Mock response for {operation.method} {operation.path}
+            <select value={typeof mockExamples[operation.operationId]==="number"?mockExamples[operation.operationId]:""} disabled={!!working||!!applied}
+              onChange={event=>{
+                const value=event.target.value;
+                setMockExamples(current=>{
+                  if(value!=="")return {...current,[operation.operationId]:Number(value)};
+                  const next={...current};
+                  delete next[operation.operationId];
+                  return next;
+                });
+                resetPreview();
+              }}>
+              <option value="">Automatic (first success example)</option>
+              {operation.mockExamples.map((example,index)=>
+                <option key={index} value={index}>{example.statusCode} · {example.contentType} · {example.label}</option>)}
+            </select>
+          </label>)}
+        </div>}
         <p className="api-blueprint-hint">A contract defines the API interface. It does not implement your business logic. Examples are explicitly for mock testing; operations without examples return 501.</p>
       </section></div>
       {preview&&!applied&&<section className="api-blueprint-update" aria-label="API update preview">
         <h3>Review API update</h3><p>Existing activity IDs, business flows, mappings and connection settings are retained. Review schema or route changes before applying.</p>
         {(['added','updated','unchanged','removed'] as const).map(kind=><details key={kind} open={kind!=='unchanged'}><summary>{kind[0].toUpperCase()+kind.slice(1)} · {preview[kind].length}</summary><ul>{preview[kind].map((item:any)=><li key={item.taskId}>{item.method} {item.path} · {item.operationId}{item.previousPath&&item.previousPath!==item.path&&<small> · previously {item.previousMethod} {item.previousPath}</small>}</li>)}</ul></details>)}
+        {!!preview.callbackUpdates?.length&&<details open><summary>Callback tasks · {preview.callbackUpdates.length}</summary><ul>{preview.callbackUpdates.map((task:any)=><li key={task.taskId}>{task.name} · {task.added?"Added":"Updated"}</li>)}</ul></details>}
         {preview.warnings.map((warning:string,index:number)=><p key={index}>{warning}</p>)}
         {preview.conflicts.map((conflict:string,index:number)=><p key={index} role="alert" className="api-blueprint-error">{conflict}</p>)}
         {!!preview.requiresReview&&!preview.conflicts.length&&<label className="api-blueprint-review"><input type="checkbox" aria-label="I reviewed the API contract changes" checked={reviewed} disabled={!!working} onChange={event=>setReviewed(event.target.checked)}/>I reviewed the contract changes and will check retained mappings against changed schemas.</label>}

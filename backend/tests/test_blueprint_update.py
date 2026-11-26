@@ -47,6 +47,23 @@ class BlueprintUpdateTests(unittest.TestCase):
         _,report=update_plan(item,target,RAML,['books'],reference_documents=REFERENCES,document_path='api.raml')
         self.assertEqual(len(report['removed']),1);self.assertTrue(report['conflicts'])
 
+    def test_inherited_parameter_change_requires_review_even_when_operation_is_identical(self):
+        from tests.test_api_blueprint_robustness import contract
+        document=contract()
+        path=document['paths']['/orders/{order-id}']
+        path['parameters']=path['get'].pop('parameters')
+        plan=blueprint_plan(document,['getOrder'],{'type':'http','config':{}})
+        item=Project.model_validate({'id':'inherited','name':'Inherited','resources':[plan['resource']],'tasks':plan['tasks']})
+        updated=copy.deepcopy(document)
+        updated['paths']['/orders/{order-id}']['parameters'][0]['schema']['minLength']=2
+        with tempfile.TemporaryDirectory() as folder,patch.object(store,'DATA_DIR',Path(folder)),patch.object(store,'PROJECTS_DIR',Path(folder)/'projects'):
+            store.save_project(item)
+            _,report=update_plan(store.get_project(item.id),item.resources[0].id,updated,['getOrder'])
+            self.assertEqual([entry['operationId'] for entry in report['updated']], ['getOrder'])
+            self.assertTrue(report['requiresReview'])
+            with self.assertRaisesRegex(UpdateConflict, 'acknowledge'):
+                apply_update(item.id,item.resources[0].id,updated,['getOrder'],report['revision'],False,report['token'])
+
     def test_apply_is_revision_and_contract_bound_and_rolls_back_failed_save(self):
         item,target=project()
         with tempfile.TemporaryDirectory() as folder,patch.object(store,'DATA_DIR',Path(folder)),patch.object(store,'PROJECTS_DIR',Path(folder)/'projects'):
@@ -80,6 +97,25 @@ class BlueprintUpdateTests(unittest.TestCase):
         actual=next(task for task in candidate.tasks if task.id==helper.id)
         self.assertEqual(actual.activities[1].config['inputMappings'],helper.activities[1].config['inputMappings'])
         self.assertTrue(report['callbackUpdates']);self.assertEqual(len(candidate.tasks),len(item.tasks))
+
+    def test_mock_selection_is_bound_to_review_and_only_changes_added_tasks(self):
+        item,target=project()
+        document=copy.deepcopy(item.resources[0].config['openApiDocument'])
+        document['paths']['/ready']={'get':{'operationId':'ready','responses':{'200':{
+            'description':'OK','content':{'text/plain':{'examples':{'first':{'value':'first'},'second':{'value':'second'}}}},
+        }}}}
+        selected=['books','book','ready']
+        chosen,report=update_plan(item,target,document,selected,response_mode='example',mock_examples={'ready':1})
+        added=next(task for task in chosen.tasks if task.id==report['added'][0]['taskId'])
+        self.assertEqual(added.activities[1].config['inputMappings']['body'],'"second"')
+        self.assertEqual(chosen.tasks[0].model_dump(),item.tasks[0].model_dump())
+        with tempfile.TemporaryDirectory() as folder,patch.object(store,'DATA_DIR',Path(folder)),patch.object(store,'PROJECTS_DIR',Path(folder)/'projects'):
+            store.save_project(item)
+            saved=store.get_project(item.id)
+            _,review=update_plan(saved,target,document,selected,response_mode='example',mock_examples={'ready':1})
+            with self.assertRaisesRegex(UpdateConflict,'changed after preview'):
+                apply_update(item.id,target,document,selected,review['revision'],True,review['token'],
+                             response_mode='example',mock_examples={'ready':0})
 
 
 class UpdatedRamlArchiveTests(unittest.TestCase):

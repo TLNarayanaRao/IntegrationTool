@@ -1,11 +1,11 @@
 {
-  "fingerprint": "adbae71f4501b643c0f92d2b068fd72a1b58c3eb70169f10c73f794b0d95fdb4",
+  "fingerprint": "4342970c7c2e9bf7098480133e21a0714ee2c35b5fdd8fc4a3432affb2bdfe01",
   "files": {
-    "documentation-data.json": "fb33397d69276894224bd3a0fce55b7b1700391e29100e8b5258dc3b7de1b00a",
-    "documentation-data.js": "9a1af41cc49008401a8e17bec1cded3de943b19911add0f4efdc7a181f9fabda",
-    "MINA-Documentation.pdf": "8bdaf026061aee2390c4caecd002491a15489182a88f8f07e1a2991508a055b8",
-    "developer-data.json": "b36c0f74aa3cd7f4b8c5014f6c35cb34753c05fc153712091c08e4d689e45d76",
-    "MINA-Developer-Guide.pdf": "d9f7b4809b2b422b953b7649e2c083109a617c496b04752103724cf63424bad7",
+    "documentation-data.json": "deec233f84b18bfe8686c74d4e7bf6f3c168339395c76ae967b54d992a78a21f",
+    "documentation-data.js": "009075719c18fffc5d9213fb3b429dc444dee246de4777c11df1644510d6b8e6",
+    "MINA-Documentation.pdf": "41cfc9d74d3b991185f727ae21e88b45c0329e187056ea175d6494c600f08d73",
+    "developer-data.json": "8a7479e6c580d4d96c53ffb43374cdf7bc8faae536b42e76d77b553ca375e98f",
+    "MINA-Developer-Guide.pdf": "c9569342cd12419fdd5a7d95ce5956d09cd6b26405c9d7a3ea026a9dc57ccdb7",
     "activity-icons/f3a93a6e7102-start-play.png": "b5224c82d6600f4066260aaf7a163411a394b2445fc3ecadf3584c7be0299e6f",
     "activity-icons/8ef29f8110cc-scheduler.svg": "8ef29f8110cc4993a5c1a3a635444a6cb0c957fdf1b8725e50278d30c3edb8a9",
     "activity-icons/8ef29f8110cc-scheduler.svg.png": "7d42664f162d20872a44faa3b07a9ea2f33660a9f2ad3811f955a0f7e71c6df5",
@@ -19,6 +19,7 @@
     "activity-icons/99237c6077b3-file-delete.png": "cf0b7530940719260fe989f2fa09052a1460ee5f1152dc968f51458c42cdeb43",
     "activity-icons/ecae57d2708e-file-rename.png": "9851687c4f3a399c930182b9c2af2cc0ef2890aae9fbd27e6eb4f30756ed12be",
     "activity-icons/ea1c45757022-file-copy.png": "f27a1fb1a6e9f4f41e9049dd8de9fdc6cdb6d15ada44eddcff9b5edd44387c69",
+    "activity-icons/e9075e91dd08-file-tools.png": "34ad9e63a9ac254b4e132b21003bf38c245a7199d50f42dbd7e9ce2de286da94",
     "activity-icons/a7ca825425f2-file-poller.png": "212f1bbe1fd51abc90d02e3a3f4b522694a5c86ecc83a610a03cd4c198c83c84",
     "activity-icons/a9ea314ee5b5-ftp-get.png": "85f2a4c88b13eaafdf1b0f004ba2585d3eddc17ae3378dc7a0b502de3a87bb2c",
     "activity-icons/a48196a899e4-ftp-put.png": "4b5e76f1209ac79faaaf9a77122b1396f737ff38160d57ed2b6d5854a4cae729",
@@ -159,10 +160,10 @@
     "activity-icons/4d59802e85cf-general-shared-set.svg.png": "2ee4f81937d0faa1beddc804a87314f01fa276290a9f47aa8b9b8a7dedeaacd0"
   },
   "counts": {
-    "activities": 105,
+    "activities": 110,
     "groups": 15,
-    "functions": 113,
+    "functions": 115,
     "connections": 12,
-    "pages": 434
+    "pages": 446
   }
 }

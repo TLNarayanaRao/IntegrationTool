@@ -69,7 +69,12 @@ def operation_config(config, *, document=None):
     }
     cfg['_explicitRequestSchema']=config.get('_explicitRequestSchema',config.get('requestSchema') not in (None,''))
     # An operation parameter overrides the path-level parameter of the same name/location.
-    parameters=list({(p.get('in'),p.get('name')):p for p in (dereference(value) for value in [*(path_item.get('parameters') or []),*(operation.get('parameters') or [])])}.values())
+    parameters={}
+    for raw_parameter in [*(path_item.get('parameters') or []), *(operation.get('parameters') or [])]:
+        parameter=dereference(raw_parameter)
+        location,name=parameter.get('in'),parameter.get('name')
+        parameters[location,name.lower() if location=='header' and isinstance(name,str) else name]=parameter
+    parameters=list(parameters.values())
     parameters=[{**p,'schema':wrapped(p.get('schema') or {key:value for key,value in p.items() if key in ('type','items','enum','minimum','maximum','pattern','minLength','maxLength')})} for p in parameters]
     if supplied.get('swagger')=='2.0':
         parameters=[{**p,'collectionFormat':p.get('collectionFormat','csv'),'explode':p.get('collectionFormat')=='multi'} if (p.get('schema') or {}).get('type')=='array' else p for p in parameters]
@@ -109,7 +114,9 @@ def operation_config(config, *, document=None):
         base=str(cfg.get('baseUrl') or url)
         if not base:raise ValueError('OpenAPI invocation requires a server URL or HTTP connection base URL')
         cfg['url']=base.rstrip('/')+path;cfg['basePath']=''
-    elif url and not cfg.get('basePath'):cfg['basePath']=urllib.parse.urlsplit(url).path
+    elif not cfg.get('basePath'):
+        if url:cfg['basePath']=urllib.parse.urlsplit(url).path
+        elif supplied.get('swagger')=='2.0' and supplied.get('basePath'):cfg['basePath']=supplied['basePath']
     return cfg
 
 def _primitive(value, schema):

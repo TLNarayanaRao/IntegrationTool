@@ -9,7 +9,8 @@ from .mapper_xml import XSL, etree
 
 URI = 'urn:mina:mapper:documents:1'
 NAMES = {'jsonpointer', 'jsonpatch', 'jsonmergepatch', 'jsondiff', 'joinrecords',
-         'deduplicaterecords', 'redactkeys', 'masktext', 'reconcilerecords', 'aggregaterecords'}
+         'deduplicaterecords', 'redactkeys', 'masktext', 'reconcilerecords', 'aggregaterecords',
+         'pivotrecords', 'unpivotrecords'}
 NS = {'md': URI, 'map': 'http://www.w3.org/2005/xpath-functions/map',
       'array': 'http://www.w3.org/2005/xpath-functions/array',
       'xs': 'http://www.w3.org/2001/XMLSchema'}
@@ -60,7 +61,10 @@ def install(binding):
     function('merge', 'v patch', "if (not($patch instance of map(*))) then $patch else fold-left(sort(map:keys($patch)),if ($v instance of map(*)) then $v else map{},function($a,$k){if (empty($patch($k))) then map:remove($a,$k) else map:put($a,$k,md:merge($a($k),$patch($k)))})")
     function('escape', 'key', "replace(replace($key,'~','~0'),'/','~1')")
     function('diff', 'a b path', "if (md:equal($a,$b)) then [] else if ($a instance of map(*) and $b instance of map(*)) then array:join((for $k in sort(map:keys($a)[not(map:contains($b,.))]) return [map{'op':'remove','path':concat($path,'/',md:escape($k))}],for $k in sort(map:keys($b)[not(map:contains($a,.))]) return [map{'op':'add','path':concat($path,'/',md:escape($k)),'value':$b($k)}],for $k in sort(map:keys($a)[map:contains($b,.)]) return md:diff($a($k),$b($k),concat($path,'/',md:escape($k))))) else [map{'op':'replace','path':$path,'value':$b}]")
-    function('keys', 'keys', "let $a := if ($keys instance of xs:string) then [$keys] else $keys return if (not($a instance of array(*)) or array:size($a) lt 1 or array:size($a) gt 16) then md:fail('Supply one to sixteen key paths') else array{for $i in 1 to array:size($a) return [md:parts($a($i))]}")
+    function('record-parts', 'p', """let $parts := md:parts(if ($p instance of xs:string and starts-with($p,'#'))
+      then md:unquote(substring($p,2)) else $p)
+      return if (count($parts) gt 128) then md:fail('JSON Pointer depth exceeds 128') else $parts""")
+    function('keys', 'keys', "let $a := if ($keys instance of xs:string) then [$keys] else $keys return if (not($a instance of array(*)) or array:size($a) lt 1 or array:size($a) gt 16) then md:fail('Supply one to sixteen key paths') else array{for $i in 1 to array:size($a) return [md:record-parts($a($i))]}")
     function('key', 'row keys', "let $values := for $i in 1 to array:size($keys) return md:get($row,$keys($i)?*) return if (some $v in $values satisfies (not($v?exists) or empty($v?value))) then () else if (some $v in $values satisfies ($v?value instance of map(*) or $v?value instance of array(*))) then md:fail('Record keys must be scalar') else serialize(array{for $v in $values return (if ($v?value instance of xs:numeric) then ['number',string(xs:decimal($v?value))] else if ($v?value instance of xs:boolean) then ['boolean',$v?value] else ['string',$v?value])},map{'method':'json'})")
     function('rows', 'rows', "if (not($rows instance of array(*)) or array:size($rows) gt 100000) then md:fail('Expected up to 100000 records') else md:check($rows)")
     function('index-records', 'rows keys', "fold-left(1 to array:size($rows),map{},function($m,$i){let $k := md:key($rows($i),$keys) return if (empty($k)) then $m else map:put($m,$k,($m($k),$i))})")
@@ -79,13 +83,16 @@ def install(binding):
       else if ($name='deduplicaterecords') then (if ($n=(1,2)) then md:dedup($v,md:keys(md:json($a)),if ($n=2) then string($b) else 'first') else md:fail('deduplicateRecords arity'))
       else if ($name='reconcilerecords') then (if ($n=2) then md:reconcile($v,md:json($a),md:keys(md:json($b))) else md:fail('reconcileRecords arity'))
       else if ($name='aggregaterecords') then (if ($n=2) then md:aggregate($v,md:keys(md:json($a)),md:json($b)) else md:fail('aggregateRecords arity'))
+      else if ($name='pivotrecords') then (if ($n=3) then md:pivot($v,md:keys(md:json($a)),md:record-parts(md:json($b)),md:record-parts(md:json($c))) else md:fail('pivotRecords arity'))
+      else if ($name='unpivotrecords') then (if ($n=3) then md:unpivot($v,md:keys(md:json($a)),md:record-parts(md:json($b)),md:json($c)) else md:fail('unpivotRecords arity'))
       else if ($name='redactkeys') then (let $names := md:json($a) return if (not($n=(1,2)) or not($names instance of array(*)) or array:size($names) lt 1 or array:size($names) gt 1024 or (some $i in 1 to array:size($names) satisfies not($names($i) instance of xs:string))) then md:fail('Invalid redaction names') else (let $folded := $names?* ! md:foldcase(.), $replacement := md:check(if ($n=2) then md:json($b) else '[REDACTED]') return if (md:redact-bytes($v,$folded,md:bytes($replacement)) gt 8388608) then md:fail('Redacted output exceeds 8 MiB') else md:redact($v,$folded,$replacement)))
       else if ($name='masktext') then (let $s := if ($input instance of node()) then string($input) else $input, $suffix := if ($n ge 1) then (if ($a instance of node()) then xs:integer(string($a)) else $a) else 4, $marker := if ($n=2) then string($b) else '*' return if ($n gt 2 or (exists($s) and not($s instance of xs:string)) or not($suffix instance of xs:integer) or $suffix lt 0 or string-length($marker) ne 1 or string-length($s) gt 65536) then md:fail('Invalid text mask') else if (empty($s)) then () else concat(string-join(for $i in 1 to max((0,string-length($s)-$suffix)) return $marker,''),substring($s,max((1,string-length($s)-$suffix+1)))))
       else md:fail('Unknown document function'))""")
     for name, arities in {'jsonPointer': (2, 3), 'jsonPatch': (2,), 'jsonMergePatch': (2,),
                           'jsonDiff': (2,), 'joinRecords': (4, 5), 'deduplicateRecords': (2, 3),
                           'redactKeys': (2, 3), 'maskText': (1, 2, 3),
-                          'reconcileRecords': (3,), 'aggregateRecords': (3,)}.items():
+                          'reconcileRecords': (3,), 'aggregateRecords': (3,),
+                          'pivotRecords': (4,), 'unpivotRecords': (4,)}.items():
         for arity in arities:
             params = ['v'] + ['a' + str(i) for i in range(1, arity)]
             function(name, ' '.join(params), "md:call('" + name.lower() + "', $v, [" + ', '.join('$' + p for p in params[1:]) + '])')
@@ -130,6 +137,31 @@ def _install_records(function):
       let $k := md:key($r($i),$keys), $positions := $index($k) return if ($positions[1] ne $i) then $s else
         md:record-emit($s,'rows',map{'key':md:record-key-values($r($i),$keys),'count':count($positions),
           'values':map:merge(for $j in 1 to array:size($m) return map:entry($m($j)?name,md:metric-value($r,$positions,$m($j))))})})?rows)""")
+    function('column-name', 'v', "$v instance of xs:string and string-length($v) ge 1 and string-length($v) le 128")
+    function('pivot', 'records keys column value', """let $r := md:object-rows($records), $index := md:strict-index($r,$keys,false()) return
+      md:check(fold-left(1 to array:size($r),map{'rows':[],'bytes':2},function($s,$i){
+        let $positions := $index(md:key($r($i),$keys)) return if ($positions[1] ne $i) then $s else
+        (let $values := map:merge(for $j in $positions return
+          (let $name := md:get($r($j),$column)?value, $found := md:get($r($j),$value) return
+            if (not(md:column-name($name))) then md:fail('Invalid pivot column name')
+            else if (not($found?exists)) then md:fail('Missing pivot value')
+            else map:entry($name,$found?value)),map{'duplicates':'reject'})
+         return md:record-emit($s,'rows',map{'key':md:record-key-values($r($i),$keys),'values':$values}))
+      })?rows)""")
+    function('unpivot', 'records keys path columns', """let $r := md:object-rows($records) return
+      if (not($columns instance of array(*)) or array:size($columns) lt 1 or array:size($columns) gt 128 or
+          (some $i in 1 to array:size($columns) satisfies not(md:column-name($columns($i)))) or
+          count(distinct-values($columns?*)) ne array:size($columns)) then md:fail('Invalid unpivot column names') else
+      md:check(fold-left(1 to array:size($r),map{'rows':[],'bytes':2},function($s,$i){
+        let $row := $r($i), $values := md:get($row,$path)?value return
+          if (empty(md:key($row,$keys))) then md:fail('Record keys must exist and be non-null scalars')
+          else if (not($values instance of map(*))) then md:fail('Unpivot values path must select an object')
+          else (let $key := md:record-key-values($row,$keys) return
+            fold-left($columns?*[map:contains($values,.)],$s,function($out,$column){
+              if (array:size($out?rows) ge 100000) then md:fail('Unpivot output exceeds 100000 rows')
+              else md:record-emit($out,'rows',map{'key':$key,'column':$column,'value':$values($column)})
+            }))
+      })?rows)""")
 
 
 def literal(value):

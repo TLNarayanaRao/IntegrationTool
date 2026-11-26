@@ -11,6 +11,34 @@ from app.snowflake import SnowflakeAdapterError, entity_metadata, execute, list_
 
 
 class SnowflakeConnectorTests(unittest.TestCase):
+    def test_strict_insert_rolls_back_on_a_later_batch_failure(self):
+        from unittest.mock import call
+        resource = {'database': 'SALES', 'schema': 'PUBLIC'}
+        config = {'operation': 'insert', 'entity': 'ORDERS', 'batchSize': 1, 'faultOnBatchFailure': True}
+        rows = [{'ORDER_ID': 1}, {'ORDER_ID': 2}]
+        for fail in (False, True):
+            with self.subTest(fail=fail):
+                connection = Mock()
+                cursor = connection.cursor.return_value
+                cursor.rowcount = 1
+                if fail:
+                    cursor.executemany.side_effect = [None, RuntimeError('second batch rejected')]
+                with patch('app.snowflake.connect', return_value=connection):
+                    if fail:
+                        with self.assertRaisesRegex(SnowflakeAdapterError, 'second batch rejected'):
+                            execute(resource, config, rows)
+                        connection.commit.assert_not_called()
+                        connection.rollback.assert_called_once_with()
+                    else:
+                        self.assertEqual(execute(resource, config, rows)['rowsAffected'], 2)
+                        connection.rollback.assert_not_called()
+                        connection.commit.assert_called_once_with()
+                connection.autocommit.assert_called_once_with(False)
+                self.assertLess(connection.mock_calls.index(call.autocommit(False)),
+                                next(i for i, item in enumerate(connection.mock_calls) if item[0]=='cursor().executemany'))
+                cursor.close.assert_called_once()
+                connection.close.assert_called_once()
+
     def test_error_codes_use_mina_product_identity(self):
         error = SnowflakeAdapterError("Test error")
         self.assertEqual(error.code, "MINA-SNOWFLAKE_DATABASE_JDBC-500009")

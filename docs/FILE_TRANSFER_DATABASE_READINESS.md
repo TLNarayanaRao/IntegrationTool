@@ -5,7 +5,12 @@
 Open **Input → Functions → XPath functions** for any activity, including File,
 FTP, SFTP, JDBC, Call Sub Task, and End. Choose XPath 1.0 or 2.0, select a
 function, enter XPath arguments, and drag the prepared expression to a field.
-The catalog includes descriptions and overloads and works before runtime loads.
+Double-click a function to open help for that overload. The popup shows its
+signature, sample arguments, any XML or project properties the example needs,
+and the result MINA returns. Clock-dependent examples show a representative
+result. You can also select a function and choose **Function help**. Select
+**Close** or press Escape to return to the mapping editor. Help works before
+the runtime loads.
 
 Type a function prefix such as `flo`, `token`, or `xs:da` for suggestions.
 Use arrow keys and Tab or Enter to select one; functions that need arguments
@@ -36,7 +41,7 @@ evaluators; exports include XML requirements when any activity uses XPath.
 
 ## Local File activities
 
-Read, Write, List, Poll, Copy, Rename and Delete share an implementation in Studio
+Read, Write, List, Poll, Copy, Rename, Delete, Create Directory and File Checksum share an implementation in Studio
 and both Python formats. File I/O runs off the Studio runtime event loop.
 Paths must be nonempty; an empty path never selects the working directory.
 Copy and Rename require a destination, reject the same file (including hard
@@ -44,10 +49,9 @@ links), reject overlapping directory trees, and check source existence before
 replacing a destination.
 
 Non-append Write and file Copy stage complete content in the destination directory
-before publishing it. Overwrite uses filesystem replacement; exclusive creation
-uses a hard link to avoid clobbering a concurrent writer. The destination filesystem
-must support this operation; unsupported filesystems fail rather than silently
-overwriting data. Rename no longer deletes the old destination first. A failed
+before publishing it. File Copy applies the selected attributes to the staged copy
+before replacing the destination. Overwrite uses filesystem replacement. Exclusive
+creation uses a no-overwrite rename on Windows and a hard link on Linux. A failed
 publication preserves the existing destination and removes the temporary file.
 Append retains normal append semantics and is not transactional.
 
@@ -65,6 +69,31 @@ Read supports GZIP with the same Compression selection used for Write. Its
 preventing an oversized compressed payload from being expanded entirely first.
 Zero is unlimited. Select the correct encoding or Binary mode. Deleting a symbolic
 link removes the link itself; filesystem-root deletion is rejected.
+
+**File Checksum** hashes the stored bytes of a regular file with SHA-256 or
+SHA-512. Map the file path and an optional maximum byte limit on Input. The
+activity streams the bytes and returns `algorithm`, `checksum` and `bytesRead`.
+**File Poller** reports `Created`, `Modified`, or `Deleted` on each file in a batch
+so a flow can route different changes separately.
+Use explicit **Rename File** or **Delete File** steps after successful processing
+to archive or clean up polled files. The old Poller post-action settings never
+executed. They no longer appear in Studio. Directory Copy copies the full tree.
+The unused recursive checkbox has been removed from File Copy.
+
+**Omit last-modified metadata** removes `lastModified` from activity results.
+It leaves directory sort order and change detection intact. Existing projects
+retain timestamps unless this new option is enabled.
+
+**Create Directory** takes a mapped directory path and can create missing parent
+directories. Enable **Allow an existing directory** for retries. The output
+reports whether the activity created a new directory. An existing file still
+causes an error. **Write File** in Binary mode accepts Base64 text or bytes.
+If Binary content is omitted, incoming bytes can be written directly.
+**File Exists** checks a mapped file or directory path and returns `exists`
+and metadata when available. A missing path returns `false` with null metadata.
+Permissions and other filesystem errors still fail the activity. Use the result
+to branch on a missing file. The file may still change before a later activity
+uses it.
 
 ## FTP, FTPS and SFTP
 
@@ -115,14 +144,34 @@ values; do not concatenate untrusted data into SQL. Prepared parameter types are
 applied before execution. Integer parameters reject fractional/nonfinite values;
 Boolean parameters reject unrecognized text. Positional parameters and positional
 batch records use the declared types as well as named parameter records.
+For unnumbered `?` placeholders and object-shaped inputs, JDBC follows the
+order of the prepared parameter declarations. Provide every declared parameter
+or use an array if the input is already in statement order. Named placeholders
+continue to bind by SQL name.
 Declared decimal values retain decimal precision in native Oracle, SQL Server,
 MySQL/MariaDB and Java JDBC bindings rather than passing through a binary float.
+
+**JDBC Metadata** reads a shared connection's catalog and exposes the driver,
+tables and column metadata as activity output. Map an optional schema override.
+It uses its own connection outside a JDBC Transaction group. Native SQLite
+supports the `main` schema. Catalog contents depend on the driver and credentials.
+Give result columns unique SQL aliases. JDBC raises `DuplicatedFieldNameException`
+when a result set contains repeated labels. Snowflake Query also rejects repeated
+labels before returning rows. SQLite Truncate accepts a quoted or
+schema-qualified table name and removes all rows from that table.
+Snowflake Query translates positional question-mark parameters without changing
+question marks in SQL string literals, quoted identifiers, or comments.
 
 Batch writes roll back on error when the activity owns the transaction. A JDBC
 Transaction group owns commit/rollback for its member operations. Paging, row
 limits, INSERT RETURNING, empty-string handling, update-with-insert fallback,
 and procedures depend on the provider. Boolean options supplied as `"false"`
 are disabled. SQLite per-activity busy timeouts are restored on shared connections.
+
+With **Fault on batch failure** enabled, Snowflake Insert runs its DML batches in
+one transaction and attempts rollback when a batch fails. Table creation, if enabled,
+is DDL and occurs before the insert transaction. With the setting disabled, the
+activity continues and reports batch failures.
 Oracle native call timeouts and SQL Server ODBC query timeouts are applied and
 restored per activity. MySQL/MariaDB shared connections expose socket Read and
 Write timeouts, defaulting to the connection timeout when blank; these are socket
@@ -140,6 +189,12 @@ Overriding transaction behavior requires a JDBC Transaction group; standalone
 activities cannot report success while closing an uncommitted private transaction.
 
 Connection probes use Oracle DUAL, DB2 VALUES, or SELECT 1 as appropriate.
+**JDBC Health Check** exposes this probe as an activity. It returns `ok` and
+`message` on success and raises an error the flow can catch when the connection
+or probe fails. It opens its own connection outside JDBC Transaction groups.
+On SQLite, a positive activity timeout now also interrupts long-running SQL.
+The activity raises `ActivityTimedOutException` when its execution deadline
+is reached and removes the deadline handler before reusing the connection.
 MySQL/MariaDB metadata uses the selected database. Configure supported driver
 versions, timeouts, verified TLS, least-privilege credentials and server-side
 access rules. External driver JARs and certificates remain deployment inputs.

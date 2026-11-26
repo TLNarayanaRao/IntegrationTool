@@ -29,16 +29,24 @@ def _bundle_blueprint(document, reference_documents, document_path):
 
 
 def _examples(operation, cfg, dereference):
-    chosen=None
-    for code,raw_response in operation['responses'].items():
+    examples=[]
+    responses=operation['responses']
+    swagger=cfg['openApiDocument'].get('swagger')=='2.0'
+    for code,raw_response in responses.items():
         response=dereference(raw_response)
-        status=int(code) if str(code).isdigit() else int(str(code)[0])*100 if re.fullmatch('[1-5]XX',str(code)) else 599
+        code=str(code)
+        status=int(code) if code.isdigit() else None
+        if re.fullmatch('[2-5]XX',code):
+            start=int(code[0])*100
+            status=next((value for value in range(start,start+100)
+                         if str(value) not in responses and value not in (204,205,304)),None)
         headers={}
         for name,raw_header in (response.get('headers') or {}).items():
             if not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+",name):raise ValueError('Invalid response header name')
             header=dereference(raw_header)
             if not isinstance(header,dict):raise ValueError('Response header definitions must be objects')
-            schema=dereference(header.get('schema') or {})
+            if not swagger and name.lower()=='content-type':continue
+            schema=header if swagger else dereference(header.get('schema') or {})
             if 'example' in header:headers[name]=header['example']
             elif isinstance(schema,dict) and 'default' in schema:headers[name]=schema['default']
         for values in headers.values():
@@ -48,37 +56,45 @@ def _examples(operation, cfg, dereference):
         for media,raw_definition in (response.get('content') or {}).items():
             media_start=len(candidates)
             definition=dereference(raw_definition)
-            if 'example' in definition:candidates.append((media,definition['example']))
+            if 'example' in definition:candidates.append((media,'Media example',definition['example']))
             samples=definition.get('examples',{})
             if not isinstance(samples,dict):raise ValueError('Named response examples must be an object')
-            for raw_sample in samples.values():
+            for name,raw_sample in samples.items():
                 sample=dereference(raw_sample)
                 if not isinstance(sample,dict):raise ValueError('Named response examples must be objects')
-                if 'value' in sample:candidates.append((media,sample['value']))
+                if 'value' in sample:candidates.append((media,name,sample['value']))
             schema=dereference(definition.get('schema') or {})
             if len(candidates)==media_start and isinstance(schema,dict):
-                if 'example' in schema:candidates.append((media,schema['example']))
-                elif isinstance(schema.get('examples'),list):candidates.extend((media,value) for value in schema['examples'])
+                if 'example' in schema:candidates.append((media,'Schema example',schema['example']))
+                elif isinstance(schema.get('examples'),list):
+                    candidates.extend((media,f'Schema example {index}',value) for index,value in enumerate(schema['examples'],1))
         swagger_examples=response.get('examples',{})
         if not isinstance(swagger_examples,dict):raise ValueError('Response examples must be an object')
-        candidates.extend(swagger_examples.items())
+        candidates.extend((media,'Response example',body) for media,body in swagger_examples.items())
         if not candidates and isinstance(response.get('schema'),dict):
             schema=dereference(response['schema'])
             if isinstance(schema,dict) and 'example' in schema:
-                candidates.append(((operation.get('produces') or [cfg.get('responseType','application/json')])[0],schema['example']))
-        for media,body in candidates:
-            if schema_errors(body,response_schema(cfg,status,media)):
+                candidates.append(((operation.get('produces') or [cfg.get('responseType','application/json')])[0],'Schema example',schema['example']))
+        bodyless=status in (204,205,304)
+        for media,label,body in candidates:
+            if schema_errors(body,response_schema(cfg,code,media)):
                 raise ValueError(f'{operation["operationId"]}: {code} {media} response example does not match its schema')
-            if chosen is None and 200<=status<300:chosen={'statusCode':status,'body':body,'contentType':media,'headers':headers}
-        if chosen is None and status in (204,205):chosen={'statusCode':status,'body':None,'contentType':'application/json','headers':headers}
-    return chosen
+            if status is not None and status>=200 and not bodyless and '*' not in media.split(';',1)[0]:
+                examples.append({'label':label,'statusCode':status,'body':body,'contentType':media,'headers':headers})
+        if bodyless:
+            examples.append({'label':'Empty response','statusCode':status,'body':None,'contentType':'application/json','headers':headers})
+    return examples
 
 
-def validate_blueprint(document, *, reference_documents=None, document_path=''):
+def validate_blueprint(document, *, reference_documents=None, document_path='', include_mock_bodies=False):
     spec=_bundle_blueprint(document,reference_documents,document_path)
     if len(json.dumps(spec,allow_nan=False).encode())>8*1024**2:raise ValueError('The API contract exceeds 8 MiB')
     if not (str(spec.get('openapi','')).startswith('3.') or spec.get('swagger')=='2.0'):
         raise ValueError('MINA API Blueprint requires an OpenAPI 3 or Swagger 2 YAML/JSON document')
+    if spec.get('swagger')=='2.0' and 'basePath' in spec:
+        base=spec['basePath']
+        if not isinstance(base,str) or not base.startswith('/') or re.search(r'[?#\s\x00-\x1f]',base):
+            raise ValueError('Swagger 2 basePath must start with / and cannot include a query, fragment, or whitespace')
     paths=spec.setdefault('paths', {})
     if not isinstance(paths,dict):raise ValueError('The API contract paths must be an object')
     webhooks = spec.get('webhooks') or {}
@@ -180,10 +196,15 @@ def validate_blueprint(document, *, reference_documents=None, document_path=''):
                 if schema is not None:
                     try:jsonschema.validators.validator_for(schema).check_schema(schema)
                     except jsonschema.SchemaError as error:raise ValueError(f'{operation_id}: invalid schema: {error.message}') from None
-            example=_examples(operation,cfg,dereference)
+            examples=_examples(operation,cfg,dereference)
+            first_success=next((entry for entry in examples if entry['statusCode']<300),None)
+            example={key: value for key,value in first_success.items() if key!='label'} if first_success else None
             callback_count+=len(callback_tasks(spec,operation,operation_id))
             if len(operations)+1+callback_count>1024:raise ValueError('The API contract exceeds 1024 generated operation and callback tasks')
             result = {'operationId':operation_id,'method':method.upper(),'path':path,'summary':str(operation.get('summary') or '')[:256],'hasExample':example is not None,'example':example}
+            result['mockExamples']=examples if include_mock_bodies else [
+                {key: entry[key] for key in ('label','statusCode','contentType')} for entry in examples
+            ]
             if webhook:
                 result['webhook'] = webhook
             operations.append(result)
@@ -242,12 +263,23 @@ def callback_tasks(document, declaration, owner_id):
     return tasks
 
 
-def blueprint_plan(document,selected,connection,name='',response_mode='stub',package_path='Default', *, reference_documents=None, document_path=''):
+def blueprint_plan(document,selected,connection,name='',response_mode='stub',package_path='Default', *, reference_documents=None, document_path='', mock_examples=None):
+    from .api_docs import documentation_route_reserved
+    from .http_server import listener_path, route_shape, server_tls, validate_listener_tls
+    from .http_transport import boolean
+
     package_path=TypeAdapter(PackagePath).validate_python(package_path)
-    validated=validate_blueprint(document,reference_documents=reference_documents,document_path=document_path)
+    validated=validate_blueprint(document,reference_documents=reference_documents,document_path=document_path,include_mock_bodies=True)
     if response_mode not in ('stub','example'):raise ValueError('Response mode must be stub or example')
     known={operation['operationId']:operation for operation in validated['operations']}
     if not isinstance(selected,list) or not selected or len(set(selected))!=len(selected) or any(key not in known for key in selected):raise ValueError('Select unique operation IDs from the validated document')
+    mock_examples={} if mock_examples is None else mock_examples
+    if not isinstance(mock_examples,dict) or any(
+        key not in selected or type(index) is not int or not 0<=index<len(known[key]['mockExamples'])
+        for key,index in mock_examples.items()
+    ):
+        raise ValueError('Select a valid mock response example for each listed operation')
+    if mock_examples and response_mode!='example':raise ValueError('Mock examples require declared response example mode')
     if not isinstance(connection,dict) or connection.get('type')!='http':raise ValueError('Select an HTTP server shared connection')
     config=copy.deepcopy(connection.get('config') or {})
     if config.get('connectorMode')=='client':raise ValueError('An HTTP client connection cannot host an API')
@@ -256,22 +288,43 @@ def blueprint_plan(document,selected,connection,name='',response_mode='stub',pac
     config.update(connectorMode='server',openApiDocument=validated['document'],apiBlueprintId=blueprint_id)
     resource={'id':blueprint_id+'-http','type':'http','name':title+' · API server','config':config}
     tasks=[];warnings=[];callbacks=[]
+    hosted_routes={}
+    tls_modes=('scheme','tlsEnabled','confidentiality','defaultConfidentiality')
+    tls_fields=(*tls_modes,'httpVersion','certificateFile',
+                'clientCertificateFile','privateKeyFile','privateKeyPassword','identityStoreFile','clientAuthentication',
+                'authentication','maximumTlsVersion','crlFile','cipherSuites')
+    bound_tls=any('${' in str(config.get(field,'')) for field in tls_fields)
+    if bound_tls:
+        warnings.append('Hosting protocol and TLS settings will be checked after connection properties are resolved.')
+    if server_tls(config) and not any(str(config.get(field) or '').strip()
+                                     for field in ('identityStoreFile','certificateFile','clientCertificateFile')):
+        raise ValueError('HTTPS hosting requires a server identity store or a PEM certificate with a private key')
+    docs_setting=config.get('apiDocsEnabled')
+    docs_enabled='${' not in str(docs_setting) and boolean(docs_setting,True)
+    document=validated['document']
     for index,key in enumerate(selected):
         operation=known[key];example=operation['example'] if response_mode=='example' else None
-        document = validated['document']
+        if key in mock_examples:example=operation['mockExamples'][mock_examples[key]]
         declaration = document['paths'][operation['path']][operation['method'].lower()]
-        protocols=declaration.get('x-mina-allowed-protocols')
-        if protocols:
-            scheme='https' if config.get('tlsEnabled') in (True,'true','True') or config.get('scheme')=='https' else 'http'
-            if scheme not in protocols:
-                if any(isinstance(config.get(field),str) and '${' in config[field] for field in ('scheme','tlsEnabled')):warnings.append(f'{key}: verify the resolved connection uses a contract-approved protocol')
-                else:raise ValueError(f'{key}: the server connection protocol is not permitted by the RAML contract')
+        effective=operation_config({**config,'operationId':key,'operation':'receiver'},document=document)
+        path=listener_path(effective.get('basePath'),effective['path'])
+        method=effective['method']
+        if '${' not in path:
+            identity=(method,route_shape(path))
+            if identity in hosted_routes:
+                raise ValueError(f'{key} and {hosted_routes[identity]} resolve to the same hosted route: {method} {path}')
+            hosted_routes[identity]=key
+            if docs_enabled and documentation_route_reserved(path):
+                raise ValueError(f'{key}: {path} is reserved for API documentation. Change the route or disable API documentation on the shared connection.')
+        if not bound_tls:
+            try:validate_listener_tls(effective)
+            except ValueError as error:raise ValueError(f'{key}: {error}') from None
         if declaration.get('security', document.get('security')):
             if any('${' in str(config.get(field, '')) for field in ('authentication', 'clientAuthentication', 'openApiApiKeySecrets')):
                 warnings.append(f'{key}: OpenAPI security will be checked after connection properties are resolved')
             else:
                 try:
-                    compatible_security(operation_config({**config, 'operationId':key, 'operation':'receiver'},document=validated['document']))
+                    compatible_security(effective)
                 except ValueError as error:
                     raise ValueError(f'{key}: {error}') from None
         if response_mode=='example' and example is None:warnings.append(f'{key}: no declared example; responds with 501 until implemented')

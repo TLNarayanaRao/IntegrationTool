@@ -16,6 +16,30 @@ from app.runtime import WorkflowRuntime
 
 
 class AmqpJdbcExcelCommandTests(unittest.TestCase):
+    def test_positional_object_bindings_follow_prepared_parameter_order(self):
+        definitions = [{'name': 'id', 'type': 'integer'}, {'name': 'name', 'type': 'string'}]
+        statement = {'operation': 'insert', 'sql': 'INSERT INTO orders VALUES (?, ?) /* ? */',
+                     'preparedParameters': definitions}
+        with tempfile.TemporaryDirectory() as folder:
+            connection = {'driver': 'sqlite', 'url': str(Path(folder) / 'orders.db')}
+            jdbc_execute(connection, {'sql': 'CREATE TABLE orders (id INTEGER, name TEXT)'})
+            jdbc_execute(connection, {**statement, 'parameters': {'name': 'Ada', 'id': '1'}})
+            jdbc_execute(connection, {**statement, 'batchUpdate': True, 'records': [
+                {'name': 'Jo', 'id': '2'}, {'id': '3', 'name': 'Amir'},
+            ]})
+            with self.assertRaisesRegex(JdbcAdapterError, 'each declared parameter'):
+                jdbc_execute(connection, {**statement, 'batchUpdate': True, 'records': [
+                    {'id': 4, 'name': 'Pending'}, {'id': 5},
+                ]})
+            self.assertEqual(jdbc_execute(connection, {'sql': 'SELECT * FROM orders ORDER BY id'})['rows'],
+                             [{'id': 1, 'name': 'Ada'}, {'id': 2, 'name': 'Jo'}, {'id': 3, 'name': 'Amir'}])
+        with patch('app.jdbc.invoke_java', return_value={'rowCount': 2}) as bridge:
+            jdbc_execute({'driver': 'sqlserver', 'url': 'jdbc:sqlserver://localhost'},
+                         {**statement, 'batchUpdate': True, 'records': [{'name': 'Jo', 'id': '2'}, {'id': '3', 'name': 'Amir'}]})
+            values = bridge.call_args.args[2]
+        self.assertEqual((values['batch.0.parameter.0.value'], values['batch.0.parameter.1.value']), (2, 'Jo'))
+        self.assertEqual((values['batch.1.parameter.0.value'], values['batch.1.parameter.1.value']), (3, 'Amir'))
+
     def context(self, resources=None, payload=None):
         value = payload or {}
         return {"input": value, "last": value, "vars": {}, "resources": resources or {}, "properties": {}, "logs": [], "context": {}, "activities": {}, "tasks": {}}

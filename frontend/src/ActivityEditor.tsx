@@ -436,15 +436,20 @@ export function activityContract(n: any): Contract {
       errors: [{ type: "RethrowException", description: "The current caught fault is propagated to the next available handler or calling task." }],
     };
   if (n.type === "file") {
-    const common = [f("path", "Filename / directory", "text", "Absolute paths and project-property expressions are supported."), f("includeTimestamp", "Include timestamp metadata", "boolean")];
+    const path = f("path", "Filename / directory", "text", "Absolute paths and project-property expressions are supported.");
+    const common = [path, f("omitTimestamp", "Omit last-modified metadata", "boolean")];
     const configs: Record<string, Field[]> = {
       read: [...common, { ...f("readAs", "Read as", "select"), options: ["Text", "Binary"] }, f("excludeFileContent", "Exclude file content", "boolean"), f("encoding", "Text encoding"),{...f("compression","Compression","select"),options:["None","GZip"]}],
       write: [...common, { ...f("writeAs", "Write as", "select"), options: ["Text", "Binary"] }, f("encoding", "Text encoding"), f("append", "Append to existing file", "boolean"), f("overwrite", "Overwrite existing file", "boolean"), f("createDirectories", "Create non-existing directories", "boolean"), f("addLineSeparator", "Add line separator", "boolean"), { ...f("compression", "Compression", "select"), options: ["None", "GZip"] }],
       list: [...common, f("pattern", "File name pattern / wildcard"), f("recursive", "Recursive", "boolean"), { ...f("listType", "List", "select"), options: ["Files and Directories", "Only Files", "Only Directories"] }, { ...f("sortBy", "Sort by", "select"), options: ["Name", "Size", "Last Modified"] }, { ...f("sortOrder", "Sort order", "select"), options: ["Ascending", "Descending"] }],
-      delete: [...common, f("recursive", "Remove non-empty directory recursively", "boolean"), f("ignoreMissing", "Ignore missing file", "boolean")],
+      delete: [path, f("recursive", "Remove non-empty directory recursively", "boolean"), f("ignoreMissing", "Ignore missing file", "boolean")],
       rename: [...common, f("destination", "To filename"), f("overwrite", "Overwrite existing file", "boolean"), f("createDirectories", "Create non-existing directories", "boolean")],
-      copy: [...common, f("destination", "Destination filename / directory"), f("overwrite", "Overwrite existing file", "boolean"), f("createDirectories", "Create non-existing directories", "boolean"), f("preserveAttributes", "Preserve file attributes", "boolean"), f("recursive", "Copy directory recursively", "boolean")],
-      poll: [...common, f("maxEntries","Maximum listed entries (0 = unlimited)","number"), f("pattern", "File name pattern / wildcard"), { ...f("eventType", "Change type", "select"), options: ["Created", "Modified", "Deleted", "Any"] }, f("pollInterval", "Poll interval (seconds)", "number"), f("includeExisting", "Include existing files", "boolean"), f("recursive", "Recursive", "boolean"), { ...f("postAction", "After processing", "select"), options: ["None", "Delete", "Move"] }, f("moveTo", "Move processed file to")],
+      copy: [...common, f("destination", "Destination filename / directory"), f("overwrite", "Overwrite existing file", "boolean"), f("createDirectories", "Create non-existing directories", "boolean"), f("preserveAttributes", "Preserve file attributes", "boolean")],
+      checksum: [path, {...f("checksumAlgorithm", "Checksum algorithm", "select"), options:["SHA-256", "SHA-512"]}],
+      mkdir: [...common, f("createDirectories", "Create missing parent directories", "boolean"),
+        f("allowExisting", "Allow an existing directory", "boolean")],
+      exists: common,
+      poll: [...common, f("maxEntries","Maximum listed entries (0 = unlimited)","number"), f("pattern", "File name pattern / wildcard"), { ...f("eventType", "Change type", "select"), options: ["Created", "Modified", "Deleted", "Any"] }, f("pollInterval", "Poll interval (seconds)", "number"), f("includeExisting", "Include existing files", "boolean"), f("recursive", "Recursive", "boolean")],
     };
     const cfg = configs[op] || common;
     const inputs: Record<string, DataField[]> = {
@@ -453,7 +458,11 @@ export function activityContract(n: any): Contract {
       list: [d("path", "Directory / wildcard", "string", true), d("recursive", "Recursive", "boolean"),d("maxEntries","Maximum listed entries (0 = unlimited)","integer")],
       delete: [d("path", "Filename / directory", "string", true), d("recursive", "Recursive", "boolean")],
       rename: [d("path", "From filename", "string", true), d("destination", "To filename", "string", true)],
-      copy: [d("path", "Source filename / directory", "string", true), d("destination", "Destination filename / directory", "string", true), d("recursive", "Recursive", "boolean")],
+      copy: [d("path", "Source filename / directory", "string", true), d("destination", "Destination filename / directory", "string", true)],
+      checksum: [d("path", "Filename", "string", true), d("maxReadBytes","Maximum bytes to hash (0 = unlimited)","integer")],
+      mkdir: [d("path", "Directory path", "string", true), d("createDirectories", "Create missing parent directories", "boolean"),
+        d("allowExisting", "Allow an existing directory", "boolean")],
+      exists: [d("path", "File or directory path", "string", true)],
       poll: [],
     };
     const outputs =
@@ -462,15 +471,32 @@ export function activityContract(n: any): Contract {
             d("textContent", "Text file content", "string"), d("binaryContent", "Binary file content", "base64"),
             d("fileInfo.fullName", "Full filename"), d("fileInfo.fileName", "Filename"), d("fileInfo.location", "Location"), d("fileInfo.type", "File type"), d("fileInfo.readProtected", "Read protected", "boolean"), d("fileInfo.writeProtected", "Write protected", "boolean"), d("fileInfo.size", "Size", "integer"), d("fileInfo.lastModified", "Last modified", "dateTime"),
           ]
-        : op === "list" || op === "poll"
+        : op === "checksum"
+          ? [d("path","File path"),d("algorithm","Checksum algorithm"),d("checksum","Hexadecimal checksum"),d("bytesRead","Bytes hashed","integer")]
+          : op === "mkdir"
+            ? [d("path","Directory path"),d("created","Created a new directory","boolean"),d("success","Operation result","boolean"),
+              d("fileInfo","Directory metadata","object"),d("fileInfo.fullName","Full directory path")]
+          : op === "exists"
+            ? [d("path","Checked path"),d("exists","Path exists","boolean"),d("fileInfo","Metadata when present","object"),
+              d("fileInfo.fullName","Full path"),d("fileInfo.type","File or directory"),d("fileInfo.size","Size","integer"),
+              d("fileInfo.lastModified","Last modified","dateTime")]
+          : op === "list" || op === "poll"
           ? [
             d("files", "Matched file information", "array"),
             d("count", "File count", "integer"),
-            d("eventType", "Detected change", "string"),
+            d("files.fullName", "Full path"), d("files.fileName", "Filename"),
+            d("files.type", "File or directory"), d("files.size", "Size", "integer"),
+            d("files.lastModified", "Last modified", "dateTime"),
+            ...(op === "poll" ? [d("eventType", "Selected change filter"), d("files.eventType", "Change for this file")] : []),
             ]
           : [
               d("path", "Affected path"),
               d("success", "Operation result", "boolean"),
+              ...(["write", "copy", "rename"].includes(op) ? [
+                d("fileInfo", "File metadata", "object"), d("fileInfo.fullName", "Full path"),
+                d("fileInfo.type", "File or directory"), d("fileInfo.size", "Size", "integer"),
+                d("fileInfo.lastModified", "Last modified", "dateTime"),
+              ] : []),
             ];
     return {
       configuration: cfg,
@@ -783,6 +809,28 @@ export function activityContract(n: any): Contract {
             ...commonErrors.slice(0, 2),
           ],
         };
+  if (n.type === "jdbc" && op === "health_check") return {
+    configuration: [{...f("resourceId", "JDBC shared connection", "resource"), resourceType:"jdbc", required:true}],
+    input: [],
+    output: [d("ok", "Probe succeeded", "boolean"), d("message", "Connection probe result")],
+    errors: [
+      {type:"JDBCConnectionNotFoundException", description:"The JDBC connection is unavailable or the login failed."},
+      {type:"JDBCSQLException", description:"The database rejected the connection probe."},
+      {type:"JDBCTransactionException", description:"JDBC Health Check requires its own connection outside a JDBC Transaction group."},
+    ],
+  };
+  if (n.type === "jdbc" && op === "metadata") return {
+    configuration: [{...f("resourceId", "JDBC shared connection", "resource"), resourceType:"jdbc", required:true}],
+    input: [d("schema", "Schema override (defaults to the shared connection)")],
+    output: [d("driver","Database driver"),d("tables","Tables and views","array"),
+      d("tables.schema","Database schema"),d("tables.name","Table name"),d("tables.type","Object type"),
+      d("tables.columns","Column metadata","array"),d("tables.columns.name","Column name"),d("tables.columns.dataType","Database type")],
+    errors: [
+      {type:"JDBCConnectionNotFoundException", description:"The selected JDBC shared connection is unavailable."},
+      {type:"JDBCSQLException", description:"The database connection or catalog query failed."},
+      {type:"JDBCTransactionException", description:"JDBC Metadata requires its own connection outside a JDBC Transaction group."},
+    ],
+  };
   if (n.type === "jdbc")
     return {
       configuration: [
@@ -2033,7 +2081,7 @@ export default function ActivityEditor({
             />
           ))}
         </div>
-        {node.type === "jdbc" && <JdbcDesigner config={cfg} resource={resources.find((resource: any) => resource.id === cfg.resourceId)} properties={properties} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>}
+        {node.type === "jdbc" && !["metadata", "health_check"].includes(cfg.operation) && <JdbcDesigner config={cfg} resource={resources.find((resource: any) => resource.id === cfg.resourceId)} properties={properties} setConfig={(next: any) => update({ config: { ...cfg, ...next } })}/>}
         {node.type === "timer" && <SchedulerEditor config={cfg} set={set}/>}
         {node.type === "call_task" && <CallTaskRoutingEditor config={cfg} tasks={tasks} properties={properties} set={set}/>}
         {node.type === "catch" && <CatchAIEditor nodeId={`${task?.id}:${node.id}`} exceptionTypes={exceptionTypes} handleExceptions={handleExceptions}/>}

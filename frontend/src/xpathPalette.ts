@@ -1,7 +1,7 @@
 import {xpathCatalog,type XPathFunction} from './xpath-catalog';
 export type {XPathFunction};
 const blocked=new Set(['doc','doc-available','collection','unparsed-text','unparsed-text-available','json-doc','trace']);
-export function bundledXPathFunctions(version:string):XPathFunction[] {
+export function bundledXPathFunctions(version:string) {
   return xpathCatalog[version] || [];
 }
 export function designerXPathFunctions(version:string,live?:XPathFunction[]):XPathFunction[] {

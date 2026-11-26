@@ -12,7 +12,7 @@ from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 from .models import AIBuildRequest, DebugAction, DebugInputCasesRequest, DebugRequest, LibraryPin, Project, RunRequest, SharedResource, SubtaskInputRequest, SubtaskRunRequest, PackagePath, effective_event_activities, find_subtask
 from . import integration_libraries as libraries
 from .store import delete_project, get_project, list_projects, project_dir, save_project, safe_component
@@ -893,6 +893,7 @@ class APIBlueprintRequest(BaseModel):
     connection: dict = Field(default_factory=dict)
     name: str = Field(default='',max_length=128)
     responseMode: str = 'stub'
+    mockExamples: dict[str, StrictInt] = Field(default_factory=dict,max_length=512)
     packagePath: PackagePath = 'Default'
     referenceDocuments: dict[str, str | dict] = Field(default_factory=dict,max_length=15)
     documentPath: str = Field(default='',max_length=1024)
@@ -906,7 +907,7 @@ def validate_api_blueprint(request: APIBlueprintRequest):
 @app.post('/api/api-blueprint/plan')
 def plan_api_blueprint(request: APIBlueprintRequest):
     from .api_blueprint import blueprint_plan
-    try:return blueprint_plan(request.document,request.operationIds,request.connection,request.name,request.responseMode,request.packagePath,reference_documents=request.referenceDocuments,document_path=request.documentPath)
+    try:return blueprint_plan(request.document,request.operationIds,request.connection,request.name,request.responseMode,request.packagePath,reference_documents=request.referenceDocuments,document_path=request.documentPath,mock_examples=request.mockExamples)
     except (ValueError,KeyError,TypeError,RecursionError) as error:raise HTTPException(400,str(error)) from None
 
 class APIBlueprintUpdateRequest(APIBlueprintRequest):
@@ -922,7 +923,7 @@ def preview_api_blueprint_update(project_id: str, request: APIBlueprintUpdateReq
     if not item:raise HTTPException(404,'Project not found')
     try:
         _,report=update_plan(item,request.resourceId,request.document,request.operationIds,
-            reference_documents=request.referenceDocuments,document_path=request.documentPath,response_mode=request.responseMode)
+            reference_documents=request.referenceDocuments,document_path=request.documentPath,response_mode=request.responseMode,mock_examples=request.mockExamples)
         return report
     except (ValueError,KeyError,TypeError,RecursionError) as error:raise HTTPException(400,str(error)) from None
 
@@ -936,7 +937,7 @@ def apply_api_blueprint_update(project_id: str, request: APIBlueprintUpdateReque
     if not get_project(project_id):raise HTTPException(404,'Project not found')
     try:
         project,report=apply_update(project_id,request.resourceId,request.document,request.operationIds,request.expectedRevision,
-            request.reviewed,request.previewToken,reference_documents=request.referenceDocuments,document_path=request.documentPath,response_mode=request.responseMode)
+            request.reviewed,request.previewToken,reference_documents=request.referenceDocuments,document_path=request.documentPath,response_mode=request.responseMode,mock_examples=request.mockExamples)
         return {'project':libraries.studio_project(project),'changes':report}
     except UpdateConflict as error:raise HTTPException(409,str(error)) from None
     except (ValueError,KeyError,TypeError,RecursionError) as error:raise HTTPException(400,str(error)) from None

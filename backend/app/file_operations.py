@@ -1,7 +1,7 @@
 """Shared local file operations for Studio and both Python archives."""
-import base64, gzip, io, json, os, shutil, tempfile, uuid
+import base64, gzip, hashlib, io, json, os, shutil, stat, tempfile, uuid
 import fnmatch
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -51,9 +51,18 @@ def staged_file(destination, overwrite=False, cancel=None):
         yield temporary
         check_cancel(cancel)
         if overwrite: os.replace(temporary,destination)
+        elif os.name == 'nt': os.rename(temporary,destination)
         else: os.link(temporary,destination)
     finally:
-        with suppress(FileNotFoundError): temporary.unlink()
+        try:
+            temporary.unlink(missing_ok=True)
+        except PermissionError:
+            if os.name != 'nt':
+                raise
+            # Windows refuses to remove a read-only staged copy. A successful
+            # Windows publication moves the stage, so this only touches an unpublished file.
+            temporary.chmod(stat.S_IREAD | stat.S_IWRITE)
+            temporary.unlink(missing_ok=True)
 
 
 def _publish_tree(source,destination,overwrite,cancel=None):
@@ -111,13 +120,14 @@ def _scan_matches(path,pattern,recursive,cancel):
                 except FileNotFoundError:continue
                 if not reparse:yield from _scan_matches(Path(entry.path),pattern,True,cancel)
 
-def _file_info(item: Path, configured: Path) -> dict[str, Any]:
-    stat = item.stat()
+def _file_info(item: Path, configured: Path, details=None, *, include_timestamp=True) -> dict[str, Any]:
+    details = item.stat() if details is None else details
     return {'fullName': str(item.resolve()), 'fileName': item.name,
             'location': str(item.parent.resolve()), 'configuredFileName': str(configured),
-            'type': 'directory' if item.is_dir() else 'file',
+            'type': 'directory' if stat.S_ISDIR(details.st_mode) else 'file',
             'readProtected': not os.access(item, os.R_OK), 'writeProtected': not os.access(item, os.W_OK),
-            'size': stat.st_size, 'lastModified': datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat()}
+            'size': details.st_size,
+            **({'lastModified': datetime.fromtimestamp(details.st_mtime, timezone.utc).isoformat()} if include_timestamp else {})}
 
 
 def file_poll_events(output: dict, config: dict, previous: dict[str, tuple] | None) -> tuple[dict, dict[str, tuple]]:
@@ -136,18 +146,21 @@ def file_poll_events(output: dict, config: dict, previous: dict[str, tuple] | No
         current[name] = signature
         if previous is None:
             if include_existing:
-                created.append(record)
+                created.append({**record, 'eventType': 'Created'})
         elif name not in previous:
             if mode not in {'modified', 'deleted'}:
-                created.append(record)
+                created.append({**record, 'eventType': 'Created'})
         elif mode not in {'created', 'deleted'} and previous[name] != signature:
-            modified.append(record)
+            modified.append({**record, 'eventType': 'Modified'})
     changed = created + modified
     if previous is not None and mode not in {'created', 'modified'}:
         changed.extend(
             {'fullName': name, 'fileName': Path(name).name, 'eventType': 'Deleted'}
             for name in previous if name not in current
         )
+    if _boolean(config.get('omitTimestamp')):
+        for record in changed:
+            record.pop('lastModified', None)
     return {**output, 'files': changed, 'count': len(changed), 'eventType': event_type}, current
 
 
@@ -155,29 +168,84 @@ def file_activity(operation: str, cfg: dict, payload: Any, *, cancel=None) -> di
     check_cancel(cancel)
     raw_path = str(cfg.get('path') or cfg.get('filePath') or '').strip()
     if not raw_path: raise ValueError('File path is required')
-    if operation not in {'read','write','list','poll','delete','rename','copy'}: raise ValueError('Unsupported File operation '+str(operation))
+    if operation not in {'read','write','list','poll','delete','rename','copy','checksum','mkdir','exists'}: raise ValueError('Unsupported File operation '+str(operation))
     path = Path(raw_path).expanduser()
+    include_timestamp = not _boolean(cfg.get('omitTimestamp'))
+    if operation == 'exists':
+        try:
+            details = path.stat()
+        except (FileNotFoundError, NotADirectoryError):
+            return {'path': str(path), 'exists': False, 'fileInfo': None}
+        return {'path': str(path), 'exists': True, 'fileInfo': _file_info(path, path, details, include_timestamp=include_timestamp)}
+    if operation == 'mkdir':
+        try:
+            path.mkdir(parents=_boolean(cfg.get('createDirectories')))
+            created = True
+        except FileExistsError:
+            if not _boolean(cfg.get('allowExisting')) or not path.is_dir():
+                raise
+            created = False
+        return {'path': str(path), 'created': created, 'success': True, 'fileInfo': _file_info(path, path, include_timestamp=include_timestamp)}
+    if operation == 'checksum':
+        algorithm = str(cfg.get('checksumAlgorithm') or 'SHA-256').strip().lower().replace('-', '')
+        if algorithm not in {'sha256', 'sha512'}:
+            raise ValueError('Checksum algorithm must be SHA-256 or SHA-512')
+        limit = byte_limit(cfg.get('maxReadBytes'))
+        if not stat.S_ISREG(path.stat().st_mode):
+            raise ValueError('Checksum requires a regular file')
+        digest = hashlib.new(algorithm)
+        size = 0
+        with path.open('rb') as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode):
+                raise ValueError('Checksum requires a regular file')
+            if limit and before.st_size > limit:
+                raise ValueError('File content exceeds maximum read bytes')
+            while True:
+                check_cancel(cancel)
+                chunk = stream.read(min(65536, limit - size + 1) if limit else 65536)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if limit and size > limit:
+                    raise ValueError('File content exceeds maximum read bytes')
+                digest.update(chunk)
+            after = os.fstat(stream.fileno())
+            if size != after.st_size or (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+                raise ValueError('File changed while calculating its checksum')
+        return {'path': str(path), 'algorithm': 'SHA-' + algorithm[3:], 'checksum': digest.hexdigest(), 'bytesRead': size}
     if operation == 'write':
         append,overwrite=_boolean(cfg.get('append')),_boolean(cfg.get('overwrite'))
         if path.exists() and not _boolean(cfg.get('overwrite')) and not _boolean(cfg.get('append')):
             raise FileExistsError(f'{path} already exists')
-        if _boolean(cfg.get('createDirectories'), True): path.parent.mkdir(parents=True, exist_ok=True)
         binary = str(cfg.get('writeAs') or 'Text').lower() == 'binary' or cfg.get('binaryContent') not in (None, '')
-        content = cfg.get('binaryContent') if binary else cfg.get('textContent', cfg.get('content', payload))
-        if binary: raw=base64.b64decode(content,validate=True) if isinstance(content,str) else bytes(content or b'')
+        if binary:
+            content = cfg.get('binaryContent')
+            if content is None:
+                content = cfg.get('content', payload if isinstance(payload, (bytes, bytearray, memoryview)) else None)
+            if content is None:
+                raw = b''
+            elif isinstance(content, str):
+                raw = base64.b64decode(content, validate=True)
+            elif isinstance(content, (bytes, bytearray, memoryview)):
+                raw = bytes(content)
+            else:
+                raise ValueError('Binary file content must be bytes or base64 text')
         else:
+            content = cfg.get('textContent', cfg.get('content', payload))
             text = content if isinstance(content, str) else json.dumps(content, indent=2, default=str)
             if _boolean(cfg.get('addLineSeparator')): text += os.linesep
             if os.linesep!='\n': text=text.replace('\r\n','\n').replace('\n',os.linesep)
             raw=text.encode(cfg.get('encoding') or 'utf-8')
         if str(cfg.get('compression') or 'None').lower()=='gzip':raw=gzip.compress(raw)
         check_cancel(cancel)
+        if _boolean(cfg.get('createDirectories'), True): path.parent.mkdir(parents=True, exist_ok=True)
         if append:
             with path.open('ab') as stream:stream.write(raw)
         else:
             with staged_file(path,overwrite,cancel) as stage:
                 with stage.open('wb') as stream:stream.write(raw);stream.flush();os.fsync(stream.fileno())
-        return {'path': str(path), 'written': True, 'success': True, 'fileInfo': _file_info(path, path)}
+        return {'path': str(path), 'written': True, 'success': True, 'fileInfo': _file_info(path, path, include_timestamp=include_timestamp)}
     if operation in {'list', 'poll'}:
         limit=byte_limit(cfg.get('maxEntries'));matches=[]
         list_type = str(cfg.get('listType') or 'Files and Directories').lower()
@@ -191,6 +259,9 @@ def file_activity(operation: str, cfg: dict, payload: Any, *, cancel=None) -> di
         sort_by = str(cfg.get('sortBy') or 'Name').lower()
         key = (lambda item:item['size']) if sort_by=='size' else (lambda item:item['lastModified']) if sort_by=='last modified' else (lambda item:item['fileName'].lower())
         matches.sort(key=key, reverse=str(cfg.get('sortOrder') or 'Ascending').lower() == 'descending')
+        if operation == 'list' and not include_timestamp:
+            for item in matches:
+                item.pop('lastModified', None)
         return {'files': matches, 'count': len(matches),
                 **({'eventType': cfg.get('eventType') or 'Created'} if operation == 'poll' else {})}
     if operation == 'delete':
@@ -226,14 +297,15 @@ def file_activity(operation: str, cfg: dict, payload: Any, *, cancel=None) -> di
                     extra=_publish_tree(stage,destination,overwrite,cancel)
         elif operation=='rename':
             if overwrite:os.replace(path,destination)
+            elif os.name == 'nt':os.rename(path,destination)
             else:os.link(path,destination);path.unlink()
         else:
             with staged_file(destination,overwrite,cancel) as stage:
                 _copy_file(path,stage,cancel)
-            (shutil.copystat if _boolean(cfg.get('preserveAttributes'),True) else shutil.copymode)(path,destination)
+                (shutil.copystat if _boolean(cfg.get('preserveAttributes'),True) else shutil.copymode)(path,stage)
         return {'source': str(path), 'destination': str(destination), 'path': str(destination), 'operation': operation,
-                'success': True, 'fileInfo': _file_info(destination, destination),**extra}
-    info = _file_info(path, path)
+                'success': True, 'fileInfo': _file_info(destination, destination, include_timestamp=include_timestamp),**extra}
+    info = _file_info(path, path, include_timestamp=include_timestamp)
     if _boolean(cfg.get('excludeFileContent')): return {'path': str(path), 'fileInfo': info, **info}
     compressed = str(cfg.get('compression') or 'None').lower() == 'gzip'
     limit=byte_limit(cfg.get('maxReadBytes'))

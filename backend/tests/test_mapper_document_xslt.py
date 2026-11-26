@@ -50,9 +50,12 @@ def cases():
     right = [{'key': 1.0, 'org': 'A'}, {'key': 1, 'org': 'A'}, {'key': 3, 'org': 'C'}]
     for mode in ('inner', 'left', 'right', 'full', 'semi', 'anti'):
         result.append(('joinRecords', left, [right, ['/id', '/org'], ['/key', '/org'], mode]))
-    from tests.test_mapping_records import fixture as records_fixture
+    from tests.test_mapping_records import fixture as records_fixture, reshape_fixture
     payload, metrics, _, _ = records_fixture()
+    reshape, _, _ = reshape_fixture()
     result.extend([('aggregateRecords', payload['records'], [['/region'], metrics]),
+                   ('pivotRecords', reshape['narrow'], [['#/id','/region'], '/metric', '/amount']),
+                   ('unpivotRecords', reshape['wide'], [['/key/0','/key/1'], '/values', ['net','tax','missing']]),
                    ('reconcileRecords', payload['before'], [payload['after'], ['/id']]),
                    ('aggregateRecords', [], [['/id'], [{'name': 'n', 'op': 'count'}]]),
                    ('aggregateRecords', [{'id': 1, 'amount': None}], [['/id'], [{'name': op, 'op': op, 'path': '/amount'} for op in ('sum','average','min','max','count')]]),

@@ -330,7 +330,8 @@ def _render_xml(value: Any, root_name: str = 'root', pretty: bool = False) -> st
 def apply_function(name: str, value: Any = None, args: list[Any] | None = None):
     """Execute the built-in integration-mapper function catalog."""
     args = list(args or []); key = str(name or '').lower().replace('-', '').replace('_', '')
-    if key in ('jsonpointer', 'jsonpatch', 'jsonmergepatch', 'jsondiff', 'joinrecords', 'deduplicaterecords', 'redactkeys', 'masktext', 'reconcilerecords', 'aggregaterecords'):
+    if key in ('jsonpointer', 'jsonpatch', 'jsonmergepatch', 'jsondiff', 'joinrecords', 'deduplicaterecords',
+               'redactkeys', 'masktext', 'reconcilerecords', 'aggregaterecords', 'pivotrecords', 'unpivotrecords'):
         from .mapping_documents import FUNCTIONS
         return FUNCTIONS[key](value, *args)
     text = '' if value is None else str(value)

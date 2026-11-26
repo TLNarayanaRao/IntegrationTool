@@ -177,6 +177,22 @@ of the retained occurrences. Records with missing/null key components are retain
 separately, preventing accidental deletion of incomplete data. No durable cross-run
 deduplication is implied; use the durable message-state activity for that purpose.
 
+## Pivot and unpivot records
+
+Use **pivotRecords** to turn rows with a metric name and value into one sparse object per composite key. The output preserves the order in which groups first appear. Each group contains a `key` array and a `values` object. A duplicate column within a group raises a mapping error so a measurement cannot silently replace another.
+
+```text
+pivotRecords(${input.lines}, ["/order/id", "/region"], "/metric", "/amount")
+```
+
+Use **unpivotRecords** to turn selected fields of an object into one row per field. Each row contains `key`, `column`, and `value`. Input row order and the requested column order are preserved. Missing columns are skipped and explicit nulls are emitted.
+
+```text
+unpivotRecords(${input.orders}, ["/order/id", "/region"], "/values", ["net", "tax"])
+```
+
+Both functions accept JSON Pointer paths and require non-null scalar key values. Column names are case-sensitive, nonempty strings up to 128 characters. Unpivot accepts up to 128 distinct column names. The functions use the document limits of 100,000 records and 8 MiB. Find them under **Collection** in the Input function palette, or import them from `mina::Records`. They also work in generated XSLT 3.0 bindings.
+
 ## Grouped summaries for integration batches
 
 ```text

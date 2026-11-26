@@ -24,10 +24,16 @@ def route_priority(shape):
 def route_shape(path):
     return _ROUTE_PARAMETER.sub('{}', path).rstrip('/')
 
+
+def listener_path(base_path, path):
+    return '/' + '/'.join((str(base_path or '').strip('/'), str(path or '/').strip('/'))).strip('/')
+
+
 def listener_config(connection,activity):
     cfg={**connection,**activity}
     original_operation=cfg.get('operation')
     configured_type = str(cfg.get('contentType') or '').strip()
+    explicit_response_type = cfg.get('_explicitResponseType', bool(str(cfg.get('responseType') or '').strip()))
     try:
         request_types = listener_media_types(cfg, 'requestContentTypes')
         response_types = listener_media_types(cfg, 'responseContentTypes')
@@ -35,6 +41,7 @@ def listener_config(connection,activity):
     except (ValueError,KeyError,TypeError) as error:raise HTTPFault('Invalid REST contract: '+str(error),'HTTP_CONFIGURATION',400) from None
     cfg['operation']=original_operation
     cfg['_inboundHttp'] = True
+    cfg['_explicitResponseType'] = explicit_response_type
     if request_types:
         cfg['requestContentTypes'] = request_types
         cfg['contentType'] = request_types[0]
@@ -68,7 +75,7 @@ def listener_config(connection,activity):
     from .http_policy import validate_listener_policy
     validate_listener_policy(cfg)
     if cfg.get('connectorMode')=='client':raise HTTPFault('Listener requires a server shared connection','HTTP_CONFIGURATION',400)
-    path='/'+('/'.join((str(cfg.get('basePath') or '').strip('/'),str(cfg.get('path') or '/').strip('/')))).strip('/')
+    path=listener_path(cfg.get('basePath'),cfg.get('path'))
     cfg['path']=path
     from .api_docs import methods_for
     methods = methods_for(cfg)
@@ -85,10 +92,22 @@ def listener_config(connection,activity):
         raise HTTPFault(str(error), 'HTTP_CONFIGURATION', 400) from None
     minimum=int(number(cfg,'minimumQtpThreads',10,1,10000));maximum=int(number(cfg,'maximumQtpThreads',75,minimum,10000))
     number(cfg,'port',8080,1,65535);number(cfg,'maxRequestBodyBytes',64*1024**2,1);number(cfg,'maxHeaderBytes',65536,1024)
+    validate_listener_tls(cfg)
+    return cfg
+
+
+def server_tls(cfg):return str(cfg.get('scheme') or '').lower()=='https' or boolean(cfg.get('tlsEnabled')) or boolean(cfg.get('confidentiality')) or boolean(cfg.get('defaultConfidentiality'))
+
+
+def validate_listener_tls(cfg):
+    tls=server_tls(cfg)
+    protocols=(cfg.get('_restOperation') or {}).get('x-mina-allowed-protocols')
+    if protocols and ('https' if tls else 'http') not in protocols:
+        raise HTTPFault('The server connection protocol is not permitted by the RAML contract','HTTP_CONFIGURATION',400)
     version = str(cfg.get('httpVersion') or '1.1')
     if version not in ('1.1','2','3'):
         raise HTTPFault('HTTP listener version must be 1.1, 2 or 3','HTTP_CONFIGURATION',400)
-    if version in ('2', '3') and not server_tls(cfg):
+    if version in ('2', '3') and not tls:
         raise HTTPFault(f'Inbound HTTP/{version} requires HTTPS','HTTP_CONFIGURATION',400)
     if version == '3':
         if not cfg.get('certificateFile') or not cfg.get('privateKeyFile') or cfg.get('privateKeyPassword') or cfg.get('identityStoreFile'):
@@ -97,12 +116,9 @@ def listener_config(connection,activity):
             raise HTTPFault('HTTP/3 requires TLS 1.3 and cannot use client certificates','HTTP_CONFIGURATION',400)
         if cfg.get('crlFile') or cfg.get('cipherSuites'):
             raise HTTPFault('HTTP/3 does not support custom CRLs or cipher suites','HTTP_CONFIGURATION',400)
-    if str(cfg.get('authentication') or '').lower()=='certificate' and (not server_tls(cfg) or cfg.get('clientAuthentication')!='required'):raise HTTPFault('Certificate authentication requires HTTPS and required client certificates','HTTP_CONFIGURATION',400)
-    if cfg.get('clientAuthentication') == 'required' and not server_tls(cfg):
+    if str(cfg.get('authentication') or '').lower()=='certificate' and (not tls or cfg.get('clientAuthentication')!='required'):raise HTTPFault('Certificate authentication requires HTTPS and required client certificates','HTTP_CONFIGURATION',400)
+    if cfg.get('clientAuthentication') == 'required' and not tls:
         raise HTTPFault('Required client certificates need HTTPS','HTTP_CONFIGURATION',400)
-    return cfg
-
-def server_tls(cfg):return str(cfg.get('scheme') or '').lower()=='https' or boolean(cfg.get('tlsEnabled')) or boolean(cfg.get('confidentiality')) or boolean(cfg.get('defaultConfidentiality'))
 
 class ListenerApp:
     def __init__(self,routes,handler,connection,verified_mtls=False,warm_workers=True):
@@ -162,7 +178,7 @@ async def _serve_prepared_http1(routes,handler,ready=None):
             for _,cfg in members:
                 methods=cfg.get('methods') or cfg.get('method') or 'POST';methods=methods if isinstance(methods,list) else str(methods).split(',')
                 for method in methods:
-                    identity=(re.sub(r'\{[^}]+\}','{}',cfg['path']).rstrip('/'),str(method).strip().upper())
+                    identity=(route_shape(cfg['path']),str(method).strip().upper())
                     if identity in route_methods:raise HTTPFault('Duplicate listener route and HTTP method','HTTP_CONFIGURATION',400)
                     route_methods.add(identity)
             app=ListenerApp(members,handler,connection,verified_mtls=server_tls(connection) and connection.get('clientAuthentication')=='required')

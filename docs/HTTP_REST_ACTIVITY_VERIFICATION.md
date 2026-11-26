@@ -34,7 +34,7 @@ The verification covers HTTP Listener, REST Receiver, HTTP Request, REST Invoke 
 | TRACE exposed inconsistently; CONNECT offered as an API method | Support TRACE through contracts, hosting, invocation and documentation; remove CONNECT tunneling from editor choices |
 | Default HTTP Response accepted at runtime but rejected by Direct export | Allow the unambiguous default HTTP Response operation in Direct archives |
 
-Swagger documents every declared content type. The workflow still chooses its response representation: set HTTP Response Content-Type to the representation actually returned. This does not automatically implement Accept-header negotiation or business logic.
+Swagger documents the declared response formats and the `406` negotiation outcome. In automatic response mode, the listener negotiates against the OpenAPI content declared for the workflow's successful status. The Postman export lists the offered response formats in `Accept`. The workflow supplies a body compatible with the selected schema.
 
 ## Capability coverage
 

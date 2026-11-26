@@ -4,13 +4,16 @@ import base64
 import json
 import re
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .java_bridge import JavaBridgeError, invoke as invoke_java, start_jdbc_worker
+from .sql_bindings import SQL_BIND_TOKENS as _SQL_BIND_TOKENS, replace_positional as _positional_sql
 
 _POSTGRES = {"postgresql", "postgres"}
+_DUPLICATE_RESULT = 'Duplicate JDBC result column name. Give each selected column a unique alias.'
 
 
 class JdbcConnection:
@@ -38,6 +41,13 @@ class JdbcAdapterError(RuntimeError):
     def __init__(self, message: str, fault_type: str = "JDBCSQLException"):
         super().__init__(message)
         self.fault_type = fault_type
+
+
+def _result_column_names(description):
+    names = [column[0] for column in description]
+    if len(names) != len(set(names)):
+        raise JdbcAdapterError(_DUPLICATE_RESULT, 'DuplicatedFieldNameException')
+    return names
 
 
 def _sqlite_path(url: str) -> str:
@@ -196,7 +206,7 @@ def _seconds(value,default=0):
 
 
 def _validate_operation(config):
-    if str(config.get('operation') or 'query') not in ('query','insert','update','delete','direct','dynamic','call','truncate'):
+    if str(config.get('operation') or 'query') not in ('query','insert','update','delete','direct','dynamic','call','truncate','metadata'):
         raise JdbcAdapterError('Unsupported database operation','InvalidInputException')
     _seconds(config.get('timeout'))
 
@@ -280,15 +290,6 @@ def _java_connection_values(config: dict) -> dict[str, Any]:
     return values
 
 
-_SQL_BIND_TOKENS = re.compile(
-    r"""--[^\r\n]*|/\*.*?\*/|\$(?P<tag>[A-Za-z_][A-Za-z0-9_]*|)\$.*?\$(?P=tag)\$"""
-    r"""|\bq'\[.*?\]'|\bq'\{.*?\}'|\bq'\(.*?\)'|\bq'<.*?>'|\bq'(?P<delimiter>[^\s']).*?(?P=delimiter)'"""
-    r"""|'(?:''|\\.|[^'])*'|"(?:""|[^"])*"|`(?:``|[^`])*`"""
-    r"""|(?<!:):(?P<name>[A-Za-z_][A-Za-z0-9_]*)|(?P<position>(?<!\?)\?(?![|&?]))""",
-    re.DOTALL | re.IGNORECASE,
-)
-
-
 def _named_bindings(sql, parameters, placeholder):
     names = []
 
@@ -304,8 +305,25 @@ def _named_bindings(sql, parameters, placeholder):
     return _SQL_BIND_TOKENS.sub(replace, sql), names
 
 
-def _positional_sql(sql, replacement):
-    return _SQL_BIND_TOKENS.sub(lambda match: replacement() if match.group("position") else match.group(), sql)
+def _position_markers(statement):
+    positions = 0
+    numbered = False
+    for token in _SQL_BIND_TOKENS.finditer(statement):
+        if token.group('name'):
+            return 0, False
+        if token.group('position'):
+            numbered |= statement[token.end():token.end()+1].isdigit()
+            positions += 1
+    return positions, numbered
+
+
+def _ordered_positional_record(values, declared, positions):
+    if not isinstance(values, dict) or not declared or not positions:
+        return values
+    if positions != len(declared) or values.keys() != declared.keys():
+        raise JdbcAdapterError('Positional SQL requires one mapped value for each declared parameter',
+                               'InvalidInputException')
+    return {name: values[name] for name in declared}
 
 
 def _java_parameters(sql: str, parameters: Any) -> tuple[str, list[Any], list[str]]:
@@ -366,8 +384,10 @@ def _java_execute(connection_config: dict, config: dict, worker=None) -> dict:
               "maxRows": maximum, "subsetSize": subset, "rowOffset": offset,'operation':operation}
 
     def add_statement(statement, rows, prefix=""):
+        positions, numbered = _position_markers(statement) if declared else (0, False)
         for index, row in enumerate(rows):
-            bound_sql, bindings, names = _java_parameters(statement, _empty_as_null(row, config))
+            values_to_bind = _ordered_positional_record(_empty_as_null(row, config), declared, 0 if numbered else positions)
+            bound_sql, bindings, names = _java_parameters(statement, values_to_bind)
             if index and (bound_sql != values[prefix + "sql"] or len(bindings) != values[prefix + "parameterCount"]):
                 raise JdbcAdapterError("Batch records must use the same SQL parameter style", "InvalidInputException")
             values[prefix + "sql"] = bound_sql
@@ -396,7 +416,9 @@ def _java_execute(connection_config: dict, config: dict, worker=None) -> dict:
     try:
         if worker is not None: return worker.request("execute", values, timeout=float(config.get("timeout") or connection_config.get("timeoutSeconds") or 30) + 5)
         return invoke_java("jdbc.execute", connection_config, values, family=_java_family(connection_config), timeout=float(config.get("timeout") or connection_config.get("timeoutSeconds") or 30) + 5)
-    except JavaBridgeError as exc: raise JdbcAdapterError(str(exc), "JDBCSQLException") from exc
+    except JavaBridgeError as exc:
+        fault = 'DuplicatedFieldNameException' if str(exc) == _DUPLICATE_RESULT else 'JDBCSQLException'
+        raise JdbcAdapterError(str(exc), fault) from exc
 
 
 class JavaJdbcTransaction:
@@ -610,7 +632,7 @@ def metadata(config: dict) -> dict:
         cursor = connection.cursor()
         tables: list[dict] = []
         if driver == "sqlite":
-            cursor.execute("SELECT name, type FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name")
+            cursor.execute("SELECT name, type FROM sqlite_master WHERE type IN ('table','view') AND name NOT GLOB 'sqlite_*' ORDER BY name")
             for name, kind in cursor.fetchall():
                 escaped = str(name).replace(chr(34), chr(34) * 2)
                 columns = []
@@ -789,13 +811,24 @@ def _postgres_call(cursor, procedure, parameters, schema=None):
     cursor.execute(sql.SQL("CALL {}({})").format(sql.Identifier(*parts),
                    sql.SQL(", ").join(sql.Placeholder() for _ in parameters)), parameters)
     if cursor.description:
-        names = [column[0] for column in cursor.description]
+        names = _result_column_names(cursor.description)
         row = cursor.fetchone()
         return dict(zip(names, row)) if row is not None else {}
     return {}
 
 
 def execute(connection_config: dict, config: dict, connection=None, manage_transaction: bool = True) -> dict:
+    operation = config.get('operation')
+    if operation in ('metadata', 'health_check'):
+        if connection is not None or not manage_transaction or _as_bool(config.get('overrideTransactionBehavior')):
+            label = 'JDBC Metadata' if operation == 'metadata' else 'JDBC Health Check'
+            raise JdbcAdapterError(f'{label} requires its own connection outside a JDBC Transaction group', 'JDBCTransactionException')
+        if operation == 'health_check':
+            return test_connection(connection_config)
+        schema = config.get('schema')
+        if schema and not _uses_java(connection_config) and str(connection_config.get('driver') or 'sqlite').lower() == 'sqlite' and str(schema).lower() != 'main':
+            raise JdbcAdapterError('SQLite JDBC Metadata supports the main schema', 'InvalidInputException')
+        return metadata({**connection_config, 'schema': schema} if schema else connection_config)
     if isinstance(connection,JdbcConnection):
         with connection._mina_lock:return _execute(connection_config,config,connection,manage_transaction)
     return _execute(connection_config,config,connection,manage_transaction)
@@ -813,14 +846,20 @@ def _execute(connection_config: dict, config: dict, connection=None, manage_tran
     if operation not in ('query','insert','update','delete','direct','dynamic','call','truncate'):
         raise JdbcAdapterError('Unsupported database operation '+operation, 'InvalidInputException')
     sql = str(config.get("SqlStatement") or config.get("SqlUpdateStatement") or config.get("statement") or config.get("sql") or "").strip()
-    if operation == "truncate" and sql.lower().startswith("truncate ") and str(connection_config.get("driver") or "sqlite").lower() == "sqlite":
-        sql = "DELETE FROM " + sql.split()[-1]
+    if operation == "truncate" and re.match(r"truncate\b", sql, re.IGNORECASE) and str(connection_config.get("driver") or "sqlite").lower() == "sqlite":
+        identifier = r'(?:[A-Za-z_][\w$]*|"(?:[^"]|"")+"|`(?:[^`]|``)+`|\[[^\]]+\])'
+        match = re.fullmatch(rf'truncate\s+(?:table\s+)?({identifier}(?:\s*\.\s*{identifier})?)\s*;?', sql, re.IGNORECASE)
+        if not match:
+            raise JdbcAdapterError('SQLite truncate requires one table identifier, optionally qualified with a schema', 'InvalidInputException')
+        sql = "DELETE FROM " + match[1]
     owns_connection = connection is None
     connection = connection or connect(connection_config)
     driver = str(connection_config.get("driver") or "sqlite").lower()
     cursor = None
     previous_timeout = None
     sqlite_timeout = None
+    sqlite_deadline = None
+    sqlite_expired = False
     native_timeout = None
     try:
         cursor = connection.cursor()
@@ -829,6 +868,14 @@ def _execute(connection_config: dict, config: dict, connection=None, manage_tran
         if driver == "sqlite" and timeout > 0:
             if not owns_connection: sqlite_timeout = connection.execute('PRAGMA busy_timeout').fetchone()[0]
             connection.execute(f"PRAGMA busy_timeout={timeout * 1000}")
+            sqlite_deadline = time.monotonic() + timeout
+
+            def check_sqlite_deadline():
+                nonlocal sqlite_expired
+                sqlite_expired = time.monotonic() >= sqlite_deadline
+                return int(sqlite_expired)
+
+            connection.set_progress_handler(check_sqlite_deadline, 1000)
         if timeout>0 and driver=='oracle':
             native_timeout=('call_timeout',connection.call_timeout)
             connection.call_timeout=timeout*1000
@@ -870,7 +917,7 @@ def _execute(connection_config: dict, config: dict, connection=None, manage_tran
             result_sets = []
             while True:
                 if cursor.description:
-                    names = [item[0] for item in cursor.description]
+                    names = _result_column_names(cursor.description)
                     result_sets.append([dict(zip(names, row)) for row in cursor.fetchall()])
                 if not getattr(cursor, "nextset", lambda: False)():
                     break
@@ -888,9 +935,19 @@ def _execute(connection_config: dict, config: dict, connection=None, manage_tran
         if not sql:
             raise JdbcAdapterError("An SQL statement is required", "InvalidInputException")
         maximum, subset, offset = _query_window(config)
+        declared = _parameter_types(config)
+        positions_by_sql = {}
 
-        def bind(statement, values):
-            return _normalize_sql(statement, _empty_as_null(values, config), driver)
+        def bind(statement, values, legacy_batch=False):
+            values = _empty_as_null(values, config)
+            if isinstance(values, dict) and (declared or (driver == 'sqlite' and legacy_batch)):
+                if statement not in positions_by_sql:
+                    positions_by_sql[statement] = _position_markers(statement)
+                positions, numbered = positions_by_sql[statement]
+                values = _ordered_positional_record(values, declared, 0 if numbered else positions)
+                if driver == 'sqlite' and positions and (legacy_batch or not numbered):
+                    values = list(values.values())
+            return _normalize_sql(statement, values, driver)
 
         batch = _write_batch(config, operation, driver)
         fallback = _insert_fallback(config, operation)
@@ -909,13 +966,7 @@ def _execute(connection_config: dict, config: dict, connection=None, manage_tran
                 connection.commit()
             return {"noOfUpdates": count, "rowCount": count, "lastInsertId": getattr(cursor, "lastrowid", None)}
         if batch is not None:
-            bound = []
-            for row in batch:
-                if driver == "sqlite" and isinstance(row, dict):
-                    tokens = list(_SQL_BIND_TOKENS.finditer(sql))
-                    if any(token.group("position") for token in tokens) and not any(token.group("name") for token in tokens):
-                        row = list(row.values())
-                bound.append(bind(sql, row))
+            bound = [bind(sql, row, legacy_batch=True) for row in batch]
             statement = bound[0][0]
             if any(item[0] != statement for item in bound):
                 raise JdbcAdapterError("Batch records must use the same SQL parameter style", "InvalidInputException")
@@ -927,7 +978,7 @@ def _execute(connection_config: dict, config: dict, connection=None, manage_tran
             else:
                 cursor.execute(sql, parameters or ())
         if cursor.description:
-            names = [item[0] for item in cursor.description]
+            names = _result_column_names(cursor.description)
             types = connection.adapters.types if driver in _POSTGRES else None
             columns = [{"name": item[0], "dataType": getattr(types.get(item[1]), "name", str(item[1] or "unknown"))
                         if types is not None else str(item[1] or "unknown")} for item in cursor.description]
@@ -956,14 +1007,21 @@ def _execute(connection_config: dict, config: dict, connection=None, manage_tran
         return {"noOfUpdates": count, "rowCount": count, "lastInsertId": getattr(cursor, "lastrowid", None)}
     except Exception as exc:
         previous_timeout = None
+        if sqlite_deadline is not None:
+            connection.set_progress_handler(None, 0)
+            sqlite_deadline = None
         if manage_transaction:
             try: connection.rollback()
             except Exception: pass
         if isinstance(exc, JdbcAdapterError):
             raise
+        if sqlite_expired:
+            raise JdbcAdapterError('SQLite statement exceeded the configured timeout', 'ActivityTimedOutException') from exc
         raise JdbcAdapterError(str(exc), "JDBCSQLException") from exc
     finally:
         try:
+            if sqlite_deadline is not None:
+                connection.set_progress_handler(None, 0)
             if cursor is not None:
                 cursor.close()
             if sqlite_timeout is not None:

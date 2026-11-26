@@ -7,6 +7,7 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
+from .sql_bindings import replace_positional
 
 
 class SnowflakeAdapterError(RuntimeError):
@@ -254,6 +255,7 @@ def execute(connection_config: dict, cfg: dict, payload: Any) -> dict:
     connection = connect(connection_config)
     cursor = None
     temporary = None
+    atomic_insert = False
     try:
         cursor = connection.cursor()
         timeout = int(cfg.get("timeout") or cfg.get("queryTimeoutSeconds") or 0)
@@ -266,8 +268,10 @@ def execute(connection_config: dict, cfg: dict, payload: Any) -> dict:
             maximum = _query_limit(cfg)
             statement = str(cfg.get("statement") or cfg.get("sql") or (f"SELECT * FROM {table}" if table else ""))
             parameters = cfg.get("parameters") or []
-            cursor.execute(statement.replace("?", "%s"), parameters)
+            cursor.execute(replace_positional(statement, lambda: "%s"), parameters)
             names = [item[0] for item in cursor.description or []]
+            if len(names) != len(set(names)):
+                raise SnowflakeAdapterError("Duplicate Snowflake result column name. Give each selected column a unique alias.")
             rows = cursor.fetchall() if maximum == 0 else cursor.fetchmany(maximum)
             return {"rows": [dict(zip(names, row)) for row in rows], "rowCount": len(rows)}
         if operation == "insert":
@@ -278,6 +282,9 @@ def execute(connection_config: dict, cfg: dict, payload: Any) -> dict:
             affected, failures, size = 0, [], max(1, int(cfg.get("batchSize") or 100))
             if _bool(cfg.get("merge")) and (size != 1 or not merge_columns):
                 raise SnowflakeAdapterError("Insert Merge requires Batch Size 1 and Merge On Columns")
+            if _bool(cfg.get("faultOnBatchFailure")):
+                connection.autocommit(False)
+                atomic_insert = True
             for offset in range(0, len(records), size):
                 batch = records[offset:offset + size]
                 try:
@@ -296,7 +303,7 @@ def execute(connection_config: dict, cfg: dict, payload: Any) -> dict:
                         affected += max(cursor.rowcount, 0)
                 except Exception as exc:
                     failures.append({"batch": offset // size + 1, "reason": str(exc), "failedRows": len(batch)})
-                    if _bool(cfg.get("faultOnBatchFailure")):
+                    if atomic_insert:
                         raise
             connection.commit()
             return {"rowsAttempted": len(records), "rowsAffected": affected, "batchFailures": failures}
@@ -382,9 +389,14 @@ def execute(connection_config: dict, cfg: dict, payload: Any) -> dict:
             connection.commit()
             return {"loadResults": rows}
         raise SnowflakeAdapterError(f"Unsupported Snowflake operation {operation}")
-    except SnowflakeAdapterError:
-        raise
     except Exception as exc:
+        if atomic_insert:
+            try:
+                connection.rollback()
+            except Exception:
+                raise SnowflakeAdapterError("Snowflake insert failed and its transaction could not be rolled back") from exc
+        if isinstance(exc, SnowflakeAdapterError):
+            raise
         raise SnowflakeAdapterError(f"Snowflake {operation} failed: {exc}") from exc
     finally:
         try:

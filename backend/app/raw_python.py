@@ -40,7 +40,7 @@ SUPPORTED = {
     ('basic', 'empty'), ('basic', 'assign'), ('basic', 'sleep'), ('basic', 'checkpoint'),
     *((('basic', operation) for operation in ('deduplicate', 'message_receipt', 'replay_messages', 'aggregate_messages', 'split_records'))),
     ('basic', 'get_shared_variable'), ('basic', 'set_shared_variable'), ('basic', 'external_command'),
-    *((('file', operation) for operation in ('read', 'write', 'list', 'delete', 'rename', 'copy', 'poll'))),
+    *((('file', operation) for operation in ('read', 'write', 'list', 'delete', 'rename', 'copy', 'poll', 'checksum', 'mkdir', 'exists'))),
     *((('ftp', operation) for operation in ('get', 'put', 'delete', 'dir', 'change_dir'))),
     *((('sftp', operation) for operation in ('get', 'put', 'delete', 'dir', 'change_dir'))),
     ('http_listener', 'listen'), ('http', 'request'), ('rest', 'receiver'), ('rest', 'invoke'),
@@ -61,7 +61,7 @@ SUPPORTED = {
     ('sap', 'read_table'),
     ('sap', 'idoc_listener'), ('sap', 'rfc_bapi_listener'), ('sap', 'reply_rfc_bapi'),
     ('timer', 'schedule'),
-    *((('jdbc', operation) for operation in ('insert', 'update', 'query', 'truncate', 'delete', 'call', 'dynamic'))),
+    *((('jdbc', operation) for operation in ('insert', 'update', 'query', 'truncate', 'delete', 'call', 'dynamic', 'metadata', 'health_check'))),
 }
 STRUCTURAL = {'start', 'end', 'log', 'mapper', 'native_map', 'call_task', 'catch', 'throw', 'rethrow'}
 STRUCTURAL_ONLY = {'start', 'end', 'catch'}
@@ -841,7 +841,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     if 'file' in capabilities: native_modules.add('file_operations.py')
     if 'transfer' in capabilities: native_modules.update({'transfer.py','sftp.py','file_operations.py'})
     if 'http_response' in capabilities:native_modules.add('http_messages.py')
-    if capabilities & {'http_client','inbound_http'}: native_modules.update({'http_transport.py','http3_client.py','http_messages.py','rest_contract.py','mapper.py','http_contracts.py','schema_validation.py','data_formats.py','faults.py','http_policy.py','http_listener.py','http_streams.py','xsd_catalog.py'})
+    if capabilities & {'http_client','inbound_http'}: native_modules.update({'http_transport.py','http3_client.py','http_messages.py','rest_contract.py','mapper.py','http_contracts.py','schema_validation.py','data_formats.py','faults.py','http_policy.py','http_listener.py','openapi_xml.py','http_streams.py','xsd_catalog.py'})
     if 'inbound_http' in capabilities: native_modules.update({'http_server.py','http1_protocol.py','http2_server.py','mapper.py','api_docs.py','api_docs_ui.py','swagger_assets.py','xsd_openapi.py'})
     if 'data_formats' in capabilities:native_modules.update({'data_formats.py','faults.py','mapper.py','schema_validation.py','xsd_openapi.py','xsd_catalog.py'})
     if any(activity.get('config', {}).get('operation') in {'deduplicate', 'message_receipt', 'replay_messages', 'aggregate_messages', 'split_records'} for task in project.get('tasks', []) for activity in task.get('activities', [])):
@@ -852,6 +852,7 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     if 'jms' in capabilities or 'java' in capabilities: native_modules.add('java_bridge.py')
     if 'jdbc' in capabilities: native_modules.update({'jdbc.py', 'java_bridge.py','snowflake.py'})
     if 'snowflake' in capabilities: native_modules.add('snowflake.py')
+    if 'snowflake.py' in native_modules or 'jdbc.py' in native_modules: native_modules.add('sql_bindings.py')
     if 'amqp' in capabilities: native_modules.add('amqp.py')
     if 'script_transform' in capabilities or any(a.get('config',{}).get('streamEnabled') for t in project.get('tasks',[]) for a in t.get('activities',[])):
         native_modules.update({'script_transform.py','transform_libraries.py','transform_engine.py','transform_stream.py','mapper.py','schema_validation.py','data_formats.py','faults.py','xsd_catalog.py','xsd_openapi.py','retry_policy.py'})

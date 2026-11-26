@@ -1100,18 +1100,19 @@ public final class MinaJavaBridge {
             if (!hasResult) { int updates = statement.getUpdateCount(); return map("noOfUpdates", updates, "rowCount", updates); }
             try (ResultSet result = statement.getResultSet()) {
                 ResultSetMetaData metadata = result.getMetaData(); int columns = metadata.getColumnCount();
+                List<String> labels = resultColumnLabels(metadata);
                 int maximum = integer(p, "maxRows", 0), offset = integer(p, "rowOffset", 0);
                 int subset = integer(p, "subsetSize", 0);
                 int remaining = maximum == 0 ? Integer.MAX_VALUE : Math.max(0, maximum - offset);
                 int limit = subset == 0 ? remaining : Math.min(remaining, subset);
                 List<Object> rows = new ArrayList<>(), columnOutput = new ArrayList<>();
-                for (int index = 1; index <= columns; index++) columnOutput.add(map("name", metadata.getColumnLabel(index), "dataType", metadata.getColumnTypeName(index)));
+                for (int index = 1; index <= columns; index++) columnOutput.add(map("name", labels.get(index - 1), "dataType", metadata.getColumnTypeName(index)));
                 if (limit > 0) {
                     for (int index = 0; index < offset && result.next(); index++) { /* advance to requested page */ }
                 }
                 while (rows.size() < limit && result.next()) {
                     Map<String, Object> row = new LinkedHashMap<>();
-                    for (int index = 1; index <= columns; index++) row.put(metadata.getColumnLabel(index), sqlValue(result.getObject(index)));
+                    for (int index = 1; index <= columns; index++) row.put(labels.get(index - 1), sqlValue(result.getObject(index)));
                     rows.add(row);
                 }
                 boolean hasNext = subset > 0 && rows.size() == limit && limit < remaining && result.next();
@@ -1119,6 +1120,20 @@ public final class MinaJavaBridge {
                         "lastSubset", !hasNext, "nextRowOffset", hasNext ? (long) offset + rows.size() : null);
             }
         }
+    }
+
+    private static List<String> resultColumnLabels(ResultSetMetaData metadata) throws SQLException {
+        List<String> labels = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        int count = metadata.getColumnCount();
+        for (int index = 1; index <= count; index++) {
+            String label = metadata.getColumnLabel(index);
+            if (!seen.add(label)) {
+                throw new SQLException("Duplicate JDBC result column name. Give each selected column a unique alias.");
+            }
+            labels.add(label);
+        }
+        return labels;
     }
 
     private static int jdbcOutType(String type) throws SQLException {
@@ -1154,9 +1169,10 @@ public final class MinaJavaBridge {
                 if (hasResult) {
                     try (ResultSet result = statement.getResultSet()) {
                         List<Object> rows = new ArrayList<>(); ResultSetMetaData metadata = result.getMetaData();
+                        List<String> labels = resultColumnLabels(metadata);
                         while ((maximum == 0 || rows.size() < maximum) && result.next()) {
                             Map<String,Object> row = new LinkedHashMap<>();
-                            for (int col = 1; col <= metadata.getColumnCount(); col++) row.put(metadata.getColumnLabel(col), sqlValue(result.getObject(col)));
+                            for (int col = 1; col <= labels.size(); col++) row.put(labels.get(col - 1), sqlValue(result.getObject(col)));
                             rows.add(row);
                         }
                         sets.add(rows);

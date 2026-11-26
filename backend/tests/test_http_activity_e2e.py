@@ -134,6 +134,107 @@ class OutboundContractTests(unittest.TestCase):
         self.assertEqual(set(operation['responses']['200']['content']),set(FORMATS))
 
 class InboundContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_openapi_mapped_xml_uses_contract_names_and_validates_the_object(self):
+        from xml.etree import ElementTree
+
+        item = {'type': 'object', 'xml': {'name': 'item', 'namespace': 'urn:mina:item'},
+                'required': ['id', 'name'], 'additionalProperties': False, 'properties': {
+                    'id': {'type': 'integer', 'xml': {'attribute': True, 'name': 'item-id',
+                                                      'namespace': 'urn:mina:identity', 'prefix': 'i'}},
+                    'name': {'type': 'string', 'xml': {'name': 'display-name'}},
+                    'tags': {'type': 'array', 'xml': {'name': 'labels', 'wrapped': True},
+                             'items': {'type': 'string', 'xml': {'name': 'label'}}},
+                    'flags': {'type': 'array', 'items': {'$ref': '#/components/schemas/Flag'}},
+                }}
+        spec = {'openapi': '3.1.0', 'components': {'schemas': {
+            'Item': item, 'Flag': {'type': 'boolean', 'xml': {'name': 'flag', 'namespace': 'urn:mina:flags', 'prefix': 'f'}},
+        }}, 'paths': {'/items': {'get': {'operationId': 'item', 'responses': {'200': {
+            'description': 'Item', 'content': {'application/xml': {'schema': {'$ref': '#/components/schemas/Item'}},
+                                                'application/json': {'schema': {'$ref': '#/components/schemas/Item'}}},
+        }}}}}}
+        value = {'id': 7, 'name': 'café & tea', 'tags': ['hot', 'iced'], 'flags': [True, False]}
+
+        async def handler(metadata, payload):
+            headers = payload['headers']
+            record = {**value, 'id': 'invalid'} if headers.get('x-invalid') else value
+            return {'__httpResponse': True, 'body': {'item': record} if headers.get('x-wrap') else record}
+
+        for operation in ('listen', 'receiver'):
+            for override in ({}, {'responseType': 'application/xml'}):
+                with self.subTest(operation=operation, override=override):
+                    cfg = listener_config({}, {'openApiDocument': spec, 'operationId': 'item',
+                                                'operation': operation, **override})
+                    app = ListenerApp([(None, cfg)], handler, cfg, warm_workers=False)
+                    try:
+                        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+                            for extra in ({}, {'X-Wrap': '1'}):
+                                response = await client.get('/items', headers={'Accept': 'application/xml', **extra})
+                                self.assertEqual((response.status_code, response.headers['content-type']), (200, 'application/xml'))
+                                root = ElementTree.fromstring(response.content)
+                                self.assertEqual((root.tag, root.attrib), ('{urn:mina:item}item', {'{urn:mina:identity}item-id': '7'}))
+                                self.assertEqual(root.findtext('display-name'), value['name'])
+                                self.assertEqual([node.text for node in root.findall('labels/label')], value['tags'])
+                                self.assertEqual([node.text for node in root.findall('{urn:mina:flags}flag')], ['true', 'false'])
+                                self.assertIn(b'<f:flag', response.content)
+                                self.assertIn(b'i:item-id="7"', response.content)
+                            rejected = await client.get('/items', headers={'Accept': 'application/xml', 'X-Invalid': '1'})
+                            self.assertEqual((rejected.status_code, rejected.json()), (500, {'error': 'Response schema validation failed'}))
+                            if not override:
+                                response = await client.get('/items', headers={'Accept': 'application/json'})
+                                self.assertEqual(response.json(), value)
+                    finally:
+                        app.executor.shutdown(wait=True)
+
+    async def test_openapi_negotiates_declared_responses_without_studio_media_selection(self):
+        from app.api_docs import postman_collection
+
+        response_formats = {
+            'application/json': {'schema': {'type': ['string', 'null']}},
+            'text/plain; charset=iso-8859-1': {'schema': {'type': 'string'}},
+        }
+        spec = {'openapi': '3.1.0', 'paths': {'/message': {'get': {'operationId': 'message', 'responses': {
+            '200': {'description': 'Message', 'content': response_formats},
+            '201': {'description': 'Created', 'content': {'application/vnd.mina.message+json': {
+                'schema': {'type': 'string'},
+            }}},
+        }}}}}
+        for operation in ('listen', 'receiver'):
+            cfg = listener_config({}, {'openApiDocument': spec, 'operationId': 'message', 'operation': operation})
+
+            async def handler(metadata, payload):
+                headers = payload['headers']
+                response = {'statusCode': 201 if headers.get('x-created') else 200,
+                            'body': None if headers.get('x-null') else 'café', 'headers': {'Vary': 'Origin'}}
+                if headers.get('x-response-type'):
+                    response['headers']['Content-Type'] = headers['x-response-type']
+                return response
+
+            app = ListenerApp([(None, cfg)], handler, cfg, warm_workers=False)
+            try:
+                async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+                    plain_type = 'text/plain; charset=iso-8859-1'
+                    plain = await client.get('/message', headers={'Accept': 'application/json;q=0.2, text/plain;q=0.9'})
+                    self.assertEqual((plain.status_code, plain.headers['content-type'], plain.content),
+                                     (200, plain_type, 'café'.encode('iso-8859-1')))
+                    self.assertEqual(plain.headers['vary'], 'Origin, Accept')
+                    self.assertEqual((await client.get('/message')).json(), 'café')
+                    self.assertIsNone((await client.get('/message', headers={'X-Null': '1'})).json())
+                    created = await client.get('/message', headers={'X-Created': '1'})
+                    self.assertEqual((created.status_code, created.headers['content-type'], created.json()),
+                                     (201, 'application/vnd.mina.message+json', 'café'))
+                    head = await client.head('/message', headers={'Accept': 'text/plain'})
+                    self.assertEqual((head.status_code, head.content, head.headers['content-length']), (200, b'', '4'))
+                    rejected = await client.get('/message', headers={'Accept': 'application/json', 'X-Response-Type': plain_type})
+                    self.assertEqual((rejected.status_code, rejected.headers['vary']), (406, 'Accept'))
+
+                document = generate_openapi([(None, cfg)])
+                self.assertIn('406', document['paths']['/message']['get']['responses'])
+                headers = postman_collection(document, 'http://test')['item'][0]['request']['header']
+                accept = next(item['value'] for item in headers if item['key'] == 'Accept')
+                self.assertEqual(set(accept.split(', ')), {*response_formats, 'application/vnd.mina.message+json'})
+            finally:
+                app.executor.shutdown(wait=True)
+
     async def test_conditional_get_and_child_trace_context(self):
         cfg = listener_config({'conditionalResponses':True,'propagateTraceContext':True},
                               {'methods':'GET','path':'/resource'})
@@ -664,9 +765,13 @@ class ExportContractTests(unittest.TestCase):
         for compiler in (raw_python_files,engine_python_files):
             with self.subTest(compiler=compiler.__name__),tempfile.TemporaryDirectory() as folder:
                 with socket.socket() as probe:probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
-                plan=blueprint_plan(SPEC,['echo'],{'type':'http','config':{'host':'127.0.0.1','port':port,'minimumQtpThreads':1,'maximumQtpThreads':4}})
+                spec = copy.deepcopy(SPEC)
+                spec['paths']['/echo']['post']['responses']['200']['content']['application/xml'] = {
+                    'schema': {**SCHEMA, 'xml': {'name': 'record'}},
+                }
+                plan=blueprint_plan(spec,['echo'],{'type':'http','config':{'host':'127.0.0.1','port':port,'minimumQtpThreads':1,'maximumQtpThreads':4}})
                 types = ['text/plain', 'application/json']
-                responses = ['text/plain; charset=iso-8859-1', 'application/json']
+                responses = ['text/plain; charset=iso-8859-1', 'application/json', 'application/xml']
                 plan['tasks'][0]['activities'][0]['config'].update(requestContentTypes=types, responseContentTypes=responses)
                 plan['tasks'][0]['activities'][1]['config']={'statusCode':200,'inputMappings':{'body':'${input.body}'}}
                 project=Project.model_validate({'id':'export-contracts','name':'Export contracts','resources':[plan['resource']],'tasks':plan['tasks']})
@@ -695,9 +800,12 @@ async def check():
    response=await client.post('http://127.0.0.1:{port}/echo',json={{'name':'hello'}},headers={{'Accept':'application/json'}})
    assert response.status_code==200 and response.json()=={{'name':'hello'}},response.text
    assert response.headers['content-type']=='application/json'
+   response=await client.post('http://127.0.0.1:{port}/echo',json={{'name':'café & tea'}},headers={{'Accept':'application/xml'}})
+   assert response.status_code==200 and response.headers['content-type']=='application/xml',response.text
+   assert response.text=='<record><name>café &amp; tea</name></record>',response.text
    spec=ready.json()
    assert set(spec['paths']['/echo']['post']['requestBody']['content'])=={{'text/plain','application/json'}}
-   assert set(spec['paths']['/echo']['post']['responses']['200']['content'])=={{'text/plain; charset=iso-8859-1','application/json'}}
+   assert set(spec['paths']['/echo']['post']['responses']['200']['content'])=={{'text/plain; charset=iso-8859-1','application/json','application/xml'}}
    assert '406' in spec['paths']['/echo']['post']['responses']
  finally:
   job.cancel()

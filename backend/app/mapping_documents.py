@@ -394,7 +394,64 @@ def aggregate_records(records, keys, metrics):
     return clone(result)
 
 
+def _column_name(name):
+    return isinstance(name, str) and 1 <= len(name) <= 128
+
+
+def pivot_records(records, keys, column_path, value_path):
+    """Turn named measurements into one sparse object per composite key."""
+    budget = Budget()
+    budget.check(records)
+    keys = key_paths(keys)
+    column_path, value_path = pointer_parts(column_path), pointer_parts(value_path)
+    groups = {}
+    for row in _record_rows(records):
+        key = _required_key(row, keys)
+        column = select(row, column_path)
+        if not _column_name(column):
+            raise ValueError('Pivot column names must be nonempty strings of at most 128 characters')
+        if key not in groups:
+            groups[key] = {'key': [select(row, path) for path in keys], 'values': {}}
+        values = groups[key]['values']
+        if column in values:
+            raise ValueError('Duplicate pivot column for the same record key')
+        values[column] = select(row, value_path)
+    result = list(groups.values())
+    budget.check(result)
+    return clone(result)
+
+
+def unpivot_records(records, keys, values_path, columns):
+    """Emit one row per present field, in input row and requested field order."""
+    budget = Budget()
+    budget.check(records)
+    keys = key_paths(keys)
+    values_path = pointer_parts(values_path)
+    if (not isinstance(columns, list) or not 1 <= len(columns) <= 128
+            or not all(map(_column_name, columns)) or len(set(columns)) != len(columns)):
+        raise ValueError('Supply one to 128 distinct nonempty unpivot column names of at most 128 characters')
+    result = []
+    output_bytes = 2
+    for row in _record_rows(records):
+        _required_key(row, keys)
+        key = [select(row, path) for path in keys]
+        values = select(row, values_path)
+        if not isinstance(values, dict):
+            raise ValueError('Unpivot values path must select an object')
+        for column in columns:
+            if column not in values:
+                continue
+            mapped = {'key': key, 'column': column, 'value': values[column]}
+            output_bytes += budget.check(mapped) + bool(result)
+            if len(result) >= MAX_ROWS or output_bytes > MAX_BYTES:
+                raise ValueError('Unpivot output exceeds 100000 rows or 8 MiB')
+            result.append(mapped)
+    budget.check(result)
+    return clone(result)
+
+
 FUNCTIONS = {'jsonpointer': json_pointer, 'jsonpatch': json_patch, 'jsonmergepatch': json_merge_patch,
              'jsondiff': json_diff, 'joinrecords': join_records, 'deduplicaterecords': deduplicate_records,
              'redactkeys': redact_keys, 'masktext': mask_text,
-             'reconcilerecords': reconcile_records, 'aggregaterecords': aggregate_records}
+             'reconcilerecords': reconcile_records, 'aggregaterecords': aggregate_records,
+             'pivotrecords': pivot_records, 'unpivotrecords': unpivot_records}

@@ -241,6 +241,29 @@ cursor.close.assert_called_once();connection.close.assert_called_once()
                 else:self.assertEqual(snowflake.execute({}, {'operation':'query','statement':'SELECT 1','maximumRows':1},{})['rows'],[{'ID':1}])
             cursor.close.assert_called_once();connection.close.assert_called_once()
 
+    def test_snowflake_rejects_duplicate_query_columns_before_fetching(self):
+        connection=Mock()
+        cursor=connection.cursor.return_value
+        cursor.description=[('ID',),('ID',)]
+        with patch.object(snowflake,'connect',return_value=connection):
+            with self.assertRaisesRegex(snowflake.SnowflakeAdapterError,'unique alias'):
+                snowflake.execute({}, {'operation':'query','statement':'SELECT 1 AS ID, 2 AS ID'}, {})
+        cursor.fetchall.assert_not_called()
+        cursor.close.assert_called_once()
+        connection.close.assert_called_once()
+
+    def test_snowflake_preserves_question_marks_in_sql_literals_and_comments(self):
+        connection=Mock()
+        cursor=connection.cursor.return_value
+        cursor.description=[('label',)]
+        cursor.fetchmany.return_value=[('?',)]
+        sql = """SELECT '?' AS "label", $$?$$, ? /* ? */ -- ?
+"""
+        with patch.object(snowflake,'connect',return_value=connection):
+            result = snowflake.execute({}, {'operation':'query','statement':sql,'parameters':[7]}, {})
+        self.assertEqual(result['rows'], [{'label': '?'}])
+        cursor.execute.assert_called_once_with(sql.replace(', ? /*',', %s /*'), [7])
+
     def test_snowflake_generated_csv_is_removed_on_put_and_csv_writer_failures(self):
         original=tempfile.NamedTemporaryFile
         for writer_failure in (False,True):

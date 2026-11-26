@@ -225,8 +225,20 @@ def hosted_response_content(cfg, status):
     schema = cfg.get('responseSchema')
     return {media: schema_for_media(schema, media, len(selected) > 1) for media in selected}
 
+def negotiates_hosted_response(cfg, status):
+    code = str(status)
+    return code.startswith('2') and code not in ('204', '205') and (
+        bool(cfg.get('responseContentTypes')) or
+        not cfg.get('_explicitResponseType') and bool(response_content(cfg, status))
+    )
+
+
 def response_schema(cfg, status, content_type=None):
-    formats=response_content(cfg,status)
+    code=str(status)
+    keys=(code,code[0]+'XX','default')
+    content=cfg.get('_restResponseContentSchemas') or {}
+    schemas=cfg.get('_restResponseSchemas') or {}
+    key=next((candidate for candidate in keys if candidate in content or candidate in schemas),None)
+    formats=content.get(key) or {}
     if content_type is not None and formats:return media_schema(formats,content_type)[1]
-    schemas = cfg.get('_restResponseSchemas') or {}
-    return schemas.get(str(status), schemas.get(str(status)[0]+'XX', schemas.get('default',cfg.get('responseSchema'))))
+    return schemas.get(key,cfg.get('responseSchema'))

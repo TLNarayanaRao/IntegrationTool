@@ -14,6 +14,78 @@ def contract():
 
 
 class BlueprintRobustnessTests(unittest.TestCase):
+    def test_plan_rejects_invalid_tls_settings_without_loading_certificate_files(self):
+        from fastapi.testclient import TestClient
+        from app.main import app
+        data={'document':contract(),'operationIds':['getOrder']}
+        cases=[({'scheme':'https'},'requires a server identity'),
+               ({'scheme':'http','httpVersion':'2'},'requires HTTPS'),
+               ({'scheme':'https','httpVersion':'3','identityStoreFile':'runtime.p12'},'requires a PEM certificate')]
+        with TestClient(app) as client:
+            for config,message in cases:
+                with self.subTest(config=config):
+                    response=client.post('/api/api-blueprint/plan',json={**data,'connection':{'type':'http','config':config}})
+                    self.assertEqual(response.status_code,400,response.text)
+                    self.assertIn(message,response.json()['detail'])
+            for config in ({'scheme':'https','certificateFile':'runtime.pem'},
+                           {'scheme':'https','identityStoreFile':'runtime.p12'},
+                           {'scheme':'https','certificateFile':'${properties.server.certificate}'}):
+                with self.subTest(config=config):
+                    response=client.post('/api/api-blueprint/plan',json={**data,'connection':{'type':'http','config':config}})
+                    self.assertEqual(response.status_code,200,response.text)
+
+    def test_plan_rejects_operations_with_the_same_effective_method_and_route(self):
+        document=contract()
+        paths=document['paths']
+        paths['/v1/orders/{order-id}']=copy.deepcopy(paths['/orders/{order-id}'])
+        paths['/v1/orders/{order-id}']['get']['operationId']='getVersionedOrder'
+        paths['/orders/{order-id}']['get']['servers']=[{'url':'/v1/'}]
+        self.assertEqual(len(validate_blueprint(document)['operations']),2)
+        connection={'type':'http','config':{}}
+        with self.assertRaisesRegex(ValueError,r'same hosted route: GET /v1/orders/'):
+            blueprint_plan(document,['getOrder','getVersionedOrder'],connection)
+        subset=blueprint_plan(document,['getOrder'],connection)
+        self.assertEqual(len(subset['tasks']),1)
+        override=blueprint_plan(document,['getOrder','getVersionedOrder'],
+                                {'type':'http','config':{'basePath':'/override'}})
+        self.assertEqual(len(override['tasks']),2)
+
+    def test_plan_checks_reserved_documentation_paths_after_applying_the_base_path(self):
+        document={'openapi':'3.1.0','servers':[{'url':'https://example.test/_mina'}],
+                  'paths':{'/docs':{'get':{'operationId':'docs','responses':{'200':{'description':'OK'}}}}}}
+        with self.assertRaisesRegex(ValueError,'/_mina/docs is reserved'):
+            blueprint_plan(document,['docs'],{'type':'http'})
+        for setting in (False,'${properties.api.docs}'):
+            with self.subTest(setting=setting):
+                self.assertEqual(len(blueprint_plan(document,['docs'],{'type':'http','config':{
+                    'apiDocsEnabled':setting}})['tasks']),1)
+
+    def test_swagger_base_path_applies_without_a_host(self):
+        from app.api_docs import generate_openapi
+        from app.http_server import listener_config
+        document={'swagger':'2.0','basePath':'/v1','paths':{'/items':{'get':{
+            'operationId':'items','responses':{'200':{'description':'OK'}},
+        }}}}
+        plan=blueprint_plan(document,['items'],{'type':'http'})
+        config=listener_config(plan['resource']['config'],plan['tasks'][0]['activities'][0]['config'])
+        self.assertEqual(config['path'],'/v1/items')
+        self.assertIn('/v1/items',generate_openapi([(None,config)])['paths'])
+        document['basePath']='v1'
+        with self.assertRaisesRegex(ValueError,'Swagger 2 basePath must start with /'):
+            validate_blueprint(document)
+
+    def test_operation_header_overrides_inherited_header_regardless_of_case(self):
+        from app.rest_contract import operation_config, validate_parameters
+        document=contract()
+        path=document['paths']['/orders/{order-id}']
+        path['parameters']=[{'in':'header','name':'X-Source','required':True,'schema':{'type':'string','const':'path'}}]
+        path['get']['parameters'].append({'in':'header','name':'x-source','required':True,'schema':{'type':'string','const':'operation'}})
+        normalized=validate_blueprint(document)['document']
+        config=operation_config({'openApiDocument':normalized,'operationId':'getOrder','operation':'receiver'},document=normalized)
+        self.assertEqual([parameter['name'] for parameter in config['_restParameters'] if parameter['in']=='header'], ['x-source'])
+        self.assertEqual(validate_parameters(config, {'order-id':'42'}, {}, {'x-source':'operation'}, None), [])
+        self.assertTrue(validate_parameters(config, {'order-id':'42'}, {}, {'x-source':'path'}, None))
+
     def test_large_contract_is_not_reloaded_for_each_operation(self):
         document=contract();document['paths']={f'/item-{index}':{'get':{'operationId':f'item{index}',
             'responses':{'200':{'description':'OK'}}}} for index in range(64)}
@@ -73,6 +145,60 @@ class BlueprintRobustnessTests(unittest.TestCase):
         pattern,names=route_pattern('/orders/{order-id}')
         self.assertEqual(names,['order-id']);self.assertEqual(pattern.match('/orders/100').groups(),('100',))
 
+    def test_status_range_mock_uses_its_own_schema_and_an_unclaimed_status(self):
+        from app.http_contracts import response_schema
+        from app.http_server import listener_config
+        document=contract()
+        operation=document['paths']['/orders/{order-id}']['get']
+        operation['responses']={
+            '2XX': {'description':'Other success','content':{'application/json':{'schema':{'type':'string'},'example':'ready'}}},
+            '200': {'description':'OK','content':{'application/json':{'schema':{'type':'object'}}}},
+            '201': {'description':'Created'},
+        }
+        plan=blueprint_plan(document,['getOrder'],{'type':'http','config':{}},response_mode='example')
+        receiver,reply,*_=plan['tasks'][0]['activities']
+        config=listener_config(plan['resource']['config'],receiver['config'])
+        self.assertEqual(reply['config']['statusCode'],202)
+        self.assertEqual(reply['config']['inputMappings']['body'],'"ready"')
+        self.assertEqual(response_schema(config,200,'application/json')['type'],'object')
+        self.assertIsNone(response_schema(config,201,'application/json'))
+        self.assertEqual(response_schema(config,202,'application/json')['type'],'string')
+        operation['responses']['2XX']['content']['application/json']['example']={'unexpected':True}
+        with self.assertRaisesRegex(ValueError,'2XX application/json response example'):
+            validate_blueprint(document)
+
+    def test_openapi_mock_uses_the_declared_media_instead_of_the_content_type_header(self):
+        document=contract()
+        response=document['paths']['/orders/{order-id}']['get']['responses']['200']
+        response['headers']={'cOnTeNt-TyPe':{'schema':{'default':'text/plain'}},
+                             'X-Version':{'schema':{'default':'1'}}}
+        plan=blueprint_plan(document,['getOrder'],{'type':'http','config':{}},response_mode='example')
+        reply=plan['tasks'][0]['activities'][1]['config']
+        self.assertEqual(reply['contentType'],'application/json')
+        self.assertEqual(reply['inputMappings']['headers'],'{"X-Version": "1"}')
+
+    def test_plan_endpoint_can_select_a_named_error_example(self):
+        from fastapi.testclient import TestClient
+        from app.main import app
+        document=contract()
+        responses=document['paths']['/orders/{order-id}']['get']['responses']
+        responses['404']={'description':'Missing','content':{'text/plain':{
+            'schema':{'type':'string'},'examples':{'missing':{'value':'Order missing'}},
+        }}}
+        request={'document':document,'operationIds':['getOrder'],'connection':{'type':'http'},'responseMode':'example'}
+        with TestClient(app) as client:
+            validated=client.post('/api/api-blueprint/validate',json={'document':document})
+            self.assertEqual(validated.status_code,200,validated.text)
+            options=validated.json()['operations'][0]['mockExamples']
+            self.assertEqual(options[1],{'label':'missing','statusCode':404,'contentType':'text/plain'})
+            chosen=client.post('/api/api-blueprint/plan',json={**request,'mockExamples':{'getOrder':1}})
+            self.assertEqual(chosen.status_code,200,chosen.text)
+            reply=chosen.json()['tasks'][0]['activities'][1]['config']
+            self.assertEqual((reply['statusCode'],reply['contentType'],reply['inputMappings']['body']),
+                             (404,'text/plain','"Order missing"'))
+            invalid=client.post('/api/api-blueprint/plan',json={**request,'mockExamples':{'getOrder':2}})
+            self.assertEqual(invalid.status_code,400)
+
     def test_malformed_metadata_is_rejected_before_scaffolding(self):
         mutations=[lambda op:op.update(parameters={}),lambda op:op.update(responses={'oops':{}}),
                    lambda op:op.update(responses={'200':{'content':[]}}),
@@ -120,6 +246,7 @@ class BlueprintRobustnessTests(unittest.TestCase):
             'description':'OK','schema':{'type':'string','example':'ready'},'headers':{'X-Version':{'type':'string','default':'v1'}}}}}}}}
         plan=blueprint_plan(swagger,['legacy'],{'type':'http','config':{}},response_mode='example')
         self.assertEqual(plan['tasks'][0]['activities'][1]['config']['inputMappings']['body'],'"ready"')
+        self.assertEqual(plan['tasks'][0]['activities'][1]['config']['inputMappings']['headers'],'{"X-Version": "v1"}')
         cfg=listener_config(plan['resource']['config'],plan['tasks'][0]['activities'][0]['config'])
         generated=generate_openapi([(None,cfg)])['paths']['/']['get']
         self.assertIn('schema',generated['responses']['200']['headers']['X-Version'])

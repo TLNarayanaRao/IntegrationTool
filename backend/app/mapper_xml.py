@@ -375,6 +375,12 @@ def xpath_function_palette(version):
         name = qname.local_name
         if name not in parser.symbol_table:
             continue
+        if version == '1.0' and (name, arity) == ('sum', 2):
+            # The signature table also lists the XPath 2.0 overload. libxml2 rejects it.
+            continue
+        if (name, arity) == ('tokenize', 1):
+            # The signature table also lists the XPath 3.1 shorthand.
+            continue
         if qname.uri == 'http://www.w3.org/2005/xpath-functions':
             category = ('Date and time' if any(part in name.lower() for part in ('date', 'time', 'duration'))
                         else 'Strings' if any(part in name for part in ('string', 'case', 'space', 'codepoint', 'concat'))

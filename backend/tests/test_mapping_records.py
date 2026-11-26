@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from app.mapping_documents import aggregate_records, reconcile_records
+from app.mapping_documents import aggregate_records, pivot_records, reconcile_records, unpivot_records
 from app.mapper import execute, validate_mapping_rules
 from app.models import Project
 
@@ -29,7 +29,46 @@ def fixture():
     return payload, metrics, mappings, expected
 
 
+def reshape_fixture():
+    narrow = [{'id': 1, 'region': 'EU', 'metric': 'tax', 'amount': None},
+              {'id': True, 'region': 'EU', 'metric': 'tax', 'amount': 2},
+              {'id': 1.0, 'region': 'EU', 'metric': 'net', 'amount': {'currency': 'EUR', 'value': 5}}]
+    wide = [{'key': [1, 'EU'], 'values': {'tax': None, 'net': {'currency': 'EUR', 'value': 5}}},
+            {'key': [True, 'EU'], 'values': {'tax': 2}}]
+    rows = [{'key': [1, 'EU'], 'column': 'net', 'value': {'currency': 'EUR', 'value': 5}},
+            {'key': [1, 'EU'], 'column': 'tax', 'value': None},
+            {'key': [True, 'EU'], 'column': 'tax', 'value': 2}]
+    mappings = [{'target': 'wide', 'source': 'pivotRecords(${input.narrow}, ["/id","/region"], "/metric", "/amount")'},
+                {'target': 'narrow', 'source': '${input.wide}', 'functions': [
+                    {'name': 'unpivotRecords', 'args': [['/key/0', '/key/1'], '/values', ['net', 'tax', 'missing']]},
+                ]}]
+    return {'narrow': narrow, 'wide': wide}, mappings, {'wide': wide, 'narrow': rows}
+
+
 class MappingRecordsTests(unittest.TestCase):
+    def test_pivot_and_unpivot_order_null_types_and_no_mutation(self):
+        payload, mappings, expected = reshape_fixture()
+        self.assertEqual(validate_mapping_rules(mappings), [])
+        output = execute({'input': payload}, mappings)
+        self.assertEqual(output, expected)
+        output['wide'][0]['values']['net']['value'] = 99
+        self.assertEqual(payload['narrow'][-1]['amount']['value'], 5)
+        self.assertEqual(pivot_records(expected['narrow'], ['/key/0', '/key/1'], '/column', '/value'), expected['wide'])
+
+    def test_invalid_reshape_declarations_and_expansion_raise(self):
+        row = {'id': 1, 'metric': 'net', 'amount': 3}
+        for records in ([row, row], [{**row, 'metric': False}], [{**row, 'id': None}], [{'id': 1, 'metric': 'net'}]):
+            with self.subTest(records=records), self.assertRaises(ValueError):
+                pivot_records(records, '/id', '/metric', '/amount')
+        for names in ([], ['net', 'net'], [''], [None], ['x' * 129]):
+            with self.subTest(names=names), self.assertRaises(ValueError):
+                unpivot_records([], '/id', '/values', names)
+        with self.assertRaisesRegex(ValueError, 'must select an object'):
+            unpivot_records([{'id': 1, 'values': []}], '/id', '/values', ['net'])
+        wide = [{'id': 'x' * 80000, 'values': {str(i): i for i in range(128)}}]
+        with self.assertRaisesRegex(ValueError, '8 MiB'):
+            unpivot_records(wide, '/id', '/values', [str(i) for i in range(128)])
+
     def test_rollups_and_changes_are_stable_without_mutation(self):
         payload, metrics, mappings, expected = fixture(); before = copy.deepcopy(payload)
         self.assertEqual(aggregate_records(payload['records'], ['/region'], metrics), expected['totals'])
@@ -100,7 +139,11 @@ class MappingRecordsTests(unittest.TestCase):
         from app.main import mapper_test
         from app.script_transform import execute as transform
         payload, metrics, mappings, expected = fixture()
+        reshape_input, reshape_mappings, reshape_expected = reshape_fixture()
         self.assertEqual(mapper_test({'input': payload, 'mappings': mappings})['output'], expected)
+        self.assertEqual(mapper_test({'input': reshape_input, 'mappings': reshape_mappings})['output'], reshape_expected)
+        self.assertEqual(transform('%mina 2.0\nimport pivotRecords from mina::Records\noutput application/json\n---\npivotRecords(payload.narrow, ["/id","/region"], "/metric", "/amount")',
+                                   payload=reshape_input), reshape_expected['wide'])
         self.assertEqual(transform('%mina 2.0\nimport reconcileRecords from mina::Records\noutput application/json\n---\nreconcileRecords(payload.before, payload.after, ["/id"])', payload=payload), expected['changes'])
         script = ('%mina 2.0\nimport aggregateRecords, reconcileRecords from mina::Records\noutput application/json\n---\n'
                   '{changes: reconcileRecords(payload.before, payload.after, ["/id"]), '
@@ -108,6 +151,7 @@ class MappingRecordsTests(unittest.TestCase):
         self.assertEqual(transform(script, payload={**payload, 'metrics': metrics}), expected)
         tasks = []
         for name, activity in [('mapper', {'id': 'm', 'name': 'Mapper', 'type': 'mapper', 'config': {'mappings': mappings}}),
+                               ('reshape', {'id': 'm', 'name': 'Reshape', 'type': 'mapper', 'config': {'mappings': reshape_mappings}}),
                                ('script', {'id': 'm', 'name': 'Transform', 'type': 'script_transform', 'config': {'payload': '${input}', 'script': script}}),
                                ('generic', {'id': 'm', 'name': 'End', 'type': 'end', 'config': {'inputMappings': {
                                    'changes': mappings[0]['source'],
@@ -126,6 +170,7 @@ class MappingRecordsTests(unittest.TestCase):
                     await executor.start()
                     for task in ('mapper', 'generic', 'script'):
                         self.assertEqual(await executor.execute(task, {**payload, 'metrics': metrics}), expected, (mode, task))
+                    self.assertEqual(await executor.execute('reshape', reshape_input), reshape_expected, mode)
                     print('Record functions:', mode, 'Mapper, generic End input and imported script passed', flush=True)
                 finally: await executor.close()
         with tempfile.TemporaryDirectory() as folder: asyncio.run(run(folder))

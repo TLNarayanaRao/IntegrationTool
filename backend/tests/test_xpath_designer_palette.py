@@ -11,12 +11,18 @@ ROOT=Path(__file__).resolve().parents[2]
 class XPathDesignerPaletteTests(unittest.TestCase):
     def test_checked_in_designer_inventory_matches_executable_runtime(self):
         source=(ROOT/'frontend/src/xpath-catalog.ts').read_text(encoding='utf-8')
-        catalog=json.loads(source.split('export const xpathCatalog: Record<string,XPathFunction[]> = ',1)[1].rstrip().removesuffix(';'))
+        catalog=json.loads(source.split('> = ',1)[1].rstrip().removesuffix(';'))
         for version in ('1.0','2.0'):
-            self.assertEqual(catalog[version],xpath_function_palette(version))
+            keys = ('name', 'args', 'category', 'signature')
+            self.assertEqual(
+                [{key: item[key] for key in keys} for item in catalog[version]],
+                [{key: item[key] for key in keys} for item in xpath_function_palette(version)])
+            for item in catalog[version]:
+                self.assertEqual(len(item['example']['args']), len(item['args']))
+                self.assertTrue(item['example']['result'])
             self.assertEqual(len({(item['name'],len(item['args'])) for item in catalog[version]}),len(catalog[version]))
             self.assertTrue(all(item['description'] for item in catalog[version]))
-        self.assertGreaterEqual(len(catalog['1.0']),49)
+        self.assertGreaterEqual(len(catalog['1.0']),48)
         self.assertGreaterEqual(len(catalog['2.0']),200)
         with self.assertRaises(ValueError):xpath_function_palette('3.1')
 

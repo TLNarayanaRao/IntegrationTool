@@ -412,6 +412,9 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
       ["delete", "Delete File", "file-delete"],
       ["rename", "Rename File", "file-rename"],
       ["copy", "Copy File", "file-copy"],
+      ["checksum", "File Checksum", "file-list"],
+      ["mkdir", "Create Directory", "file-tools"],
+      ["exists", "File Exists", "file-list"],
       ["poll", "File Poller", "file-poller"],
     ].map(
       ([operation, label, asset]) =>
@@ -576,6 +579,8 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
       ["insert", "JDBC Create", "JDBC-Create"],
       ["update", "JDBC Update", "JDBC-Update"],
       ["query", "JDBC Query", "JDBC-Query"],
+      ["metadata", "JDBC Metadata", "JDBC-Query"],
+      ["health_check", "JDBC Health Check", "JDBC-Query"],
       ["truncate", "JDBC Truncate", "JDBC-Delete"],
       ["delete", "JDBC Delete", "JDBC-Delete"],
       ["call", "Stored Procedure", "JDBC-StoredProc"],
@@ -4779,7 +4784,7 @@ function App() {
         onClose={() => setSampleGalleryOpen(false)}
         onImport={async (file) => { const imported = await importProject(file); if (imported) setSampleGalleryOpen(false); return imported; }}
       />}
-      {apiBlueprintOpen && <ApiBlueprint resources={project.resources} packages={explorerPackagePaths("tasks")} projectId={project.id} onPrepareUpdate={persistProject} onUpdated={updated=>{const saved=normalizeProject(updated);savedProjectSnapshot.current=JSON.stringify(saved);lastRuntimeWrite.current={id:saved.id,body:JSON.stringify(saved)};setProject(saved);}} onClose={() => setApiBlueprintOpen(false)} onApply={applyApiBlueprint} onHost={hostApiBlueprint}/>}
+      {apiBlueprintOpen && <ApiBlueprint resources={project.resources} tasks={project.tasks} packages={explorerPackagePaths("tasks")} projectId={project.id} onPrepareUpdate={persistProject} onUpdated={updated=>{const saved=normalizeProject(updated);savedProjectSnapshot.current=JSON.stringify(saved);lastRuntimeWrite.current={id:saved.id,body:JSON.stringify(saved)};setProject(saved);}} onClose={() => setApiBlueprintOpen(false)} onApply={applyApiBlueprint} onHost={hostApiBlueprint}/>}
       {jiraStoryOpen && <JiraStoryDialog project={project} preferredTransition={selectedEdge || undefined} onClose={() => setJiraStoryOpen(false)} onApply={applyJiraStory} onDownload={browserDownload}/>}
       {aiBuilderOpen && <AIBuilderDialog currentTask={task} onClose={() => setAiBuilderOpen(false)} onApply={(proposal: any) => {
         const generated = proposal.project, scope = proposal.scope;

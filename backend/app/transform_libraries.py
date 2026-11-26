@@ -1,7 +1,10 @@
 """Explicit, portable script modules. No Python imports or filesystem resolution."""
 import math
 import re
-from .mapping_documents import json_pointer, json_patch, json_merge_patch, json_diff, join_records, deduplicate_records, redact_keys, mask_text, reconcile_records, aggregate_records
+from .mapping_documents import (
+    aggregate_records, deduplicate_records, join_records, json_diff, json_merge_patch,
+    json_patch, json_pointer, mask_text, pivot_records, reconcile_records, redact_keys, unpivot_records,
+)
 
 
 def words(value):
@@ -11,7 +14,8 @@ def words(value):
 MODULES = {
     'mina::Documents': {'jsonPointer': json_pointer, 'jsonPatch': json_patch, 'jsonMergePatch': json_merge_patch, 'jsonDiff': json_diff},
     'mina::Records': {'joinRecords': join_records, 'deduplicateRecords': deduplicate_records,
-                      'reconcileRecords': reconcile_records, 'aggregateRecords': aggregate_records},
+                      'reconcileRecords': reconcile_records, 'aggregateRecords': aggregate_records,
+                      'pivotRecords': pivot_records, 'unpivotRecords': unpivot_records},
     'mina::Privacy': {'redactKeys': redact_keys, 'maskText': mask_text},
     'mina::core::Strings': {
         'capitalize': lambda value: None if value is None else ' '.join(word.capitalize() for word in str(value).split(' ')),

@@ -172,8 +172,14 @@ securedBy: [basic]
 '''
         selected=[item['operationId'] for item in validate_blueprint(document)['operations']]
         with self.assertRaises(ValueError):blueprint_plan(document,selected,{'type':'http','config':{}})
-        plan=blueprint_plan(document,selected,{'type':'http','config':{'scheme':'https','authentication':'Basic','username':'user','password':'test'}})
+        from app.http_server import listener_config
+        plan=blueprint_plan(document,selected,{'type':'http','config':{'defaultConfidentiality':'yes',
+            'certificateFile':'combined.pem','authentication':'Basic','username':'user','password':'test'}})
         self.assertTrue(plan['tasks'])
+        receiver=plan['tasks'][0]['activities'][0]['config']
+        self.assertEqual(listener_config(plan['resource']['config'],receiver)['operation'],'receiver')
+        with self.assertRaisesRegex(ValueError,'not permitted by the RAML contract'):
+            listener_config({**plan['resource']['config'],'defaultConfidentiality':False},receiver)
 
 
 if __name__=='__main__':unittest.main()

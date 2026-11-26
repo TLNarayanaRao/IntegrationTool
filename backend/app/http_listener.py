@@ -5,9 +5,11 @@ from pathlib import Path
 from http import HTTPStatus
 from xml.etree import ElementTree
 from .http_contracts import (response_schema, schema_errors, request_schema, media_schema, response_content,
-                             parse_json, hosted_response_content, media_family, negotiate_media, text_response_encoding)
+                             parse_json, hosted_response_content, media_family, media_name, negotiate_media,
+                             negotiates_hosted_response, text_response_encoding)
 from .http_messages import multi_values
 from .http_policy import client_address, cors_headers, rate_limit, read_precondition_status, trace_context, trace_headers
+from .openapi_xml import mapped_response_xml
 from .rest_contract import authorize_contract, decode_multipart_form, multipart_contract, validate_parameters,typed_form_body
 
 class HashedBody:
@@ -255,31 +257,48 @@ async def _handle_request(app,scope,receive,send,state):
         if not 200<=status<=599:raise HTTPFault('Invalid response status','HTTP_RESPONSE',500)
         bodyless = status in (204, 205, 304)
         explicit_media = next((str(value) for key,value in (response.get('headers') or {}).items() if str(key).lower()=='content-type'), None)
-        selected_media = cfg.get('responseContentTypes') or []
         offered = hosted_response_content(cfg, status)
-        negotiated = bool(selected_media) and 200 <= status < 300 and not bodyless
+        if response.get('fileName') or 'binaryContent' in response or isinstance(value, (bytes, bytearray, memoryview)):
+            inferred_media = 'application/octet-stream'
+        elif isinstance(value, (dict, list, bool, int, float)):
+            inferred_media = 'application/json'
+        else:
+            inferred_media = 'text/plain; charset=utf-8'
+        negotiated = negotiates_hosted_response(cfg, status)
         if negotiated:
-            available = list(offered)
-            if not available:
-                raise HTTPFault('No configured response content type is declared for this status','HTTP_RESPONSE',500)
             if explicit_media:
-                if media_schema(offered, explicit_media)[0] is None:
+                if '*' in media_name(explicit_media) or media_schema(offered, explicit_media)[0] is None:
                     raise HTTPFault('Response content type is not configured for this endpoint','HTTP_RESPONSE',500)
                 available = [explicit_media]
+            else:
+                available = [name for name in offered if '*' not in media_name(name)]
+                if not available and media_schema(offered, inferred_media)[0] is not None:
+                    available = [inferred_media]
+                if not available:
+                    raise HTTPFault('Map a concrete response content type declared for this status','HTTP_RESPONSE',500)
             response_media = negotiate_media(available, headers.get('accept'))
             if not response_media:
                 error = HTTPFault('None of the available response content types match Accept','HTTP_NOT_ACCEPTABLE',406)
                 error.headers = {'Vary': 'Accept'}
                 raise error
         else:
-            response_media = explicit_media or str(cfg.get('responseType') or ('application/octet-stream' if response.get('fileName') or 'binaryContent' in response or isinstance(value,(bytes,bytearray,memoryview)) else 'application/json' if isinstance(value,(dict,list,bool,int,float)) else 'text/plain; charset=utf-8'))
-        match, schema = media_schema(offered, response_media) if selected_media else (None, None)
+            response_media = explicit_media or str(cfg.get('responseType') or inferred_media)
+        match, schema = media_schema(offered, response_media)
         if match is None:
             schema = response_schema(cfg,status,response_media)
         rendered_xml = None
+        validate_response = boolean(cfg.get('validateResponse'), bool(cfg.get('openApiDocument')))
+        validation_value = value
         if not bodyless and not response.get('fileName') and 'binaryContent' not in response:
             rendered_xml = mapped_xml_response(value, schema)
-            if rendered_xml is None and selected_media and media_family(response_media) == 'xml' and value is not None:
+            if rendered_xml is None and media_family(response_media) == 'xml':
+                try:
+                    mapped_xml = mapped_response_xml(value, schema)
+                except (ValueError, TypeError, KeyError) as error:
+                    raise HTTPFault('Mapped OpenAPI XML response could not be rendered', 'HTTP_RESPONSE', 500) from error
+                if mapped_xml is not None:
+                    rendered_xml, validation_value = mapped_xml
+            if rendered_xml is None and negotiated and media_family(response_media) == 'xml' and value is not None:
                 from .data_formats import DataFormats
                 if isinstance(value, dict):
                     if len(value) != 1:
@@ -293,11 +312,13 @@ async def _handle_request(app,scope,receive,send,state):
                         raise HTTPFault('Response body is not an XML document','HTTP_RESPONSE',500) from error
             if rendered_xml is not None:
                 value = rendered_xml
-        if not bodyless and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and response_content(cfg,status) and media_schema(response_content(cfg,status),response_media)[0] is None:raise HTTPFault('Undeclared response content type','REST_VALIDATION',500)
+                if isinstance(schema, str):
+                    validation_value = value
+        if not bodyless and validate_response and response_content(cfg,status) and media_schema(response_content(cfg,status),response_media)[0] is None:raise HTTPFault('Undeclared response content type','REST_VALIDATION',500)
         if bodyless:
             size = 0
         elif response.get('fileName'):
-            if schema is not None and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))):raise HTTPFault('File responses cannot bypass configured schema validation','REST_VALIDATION',500)
+            if schema is not None and validate_response:raise HTTPFault('File responses cannot bypass configured schema validation','REST_VALIDATION',500)
             stream_path=Path(response['fileName']).expanduser()
             try:
                 if not stream_path.is_file():
@@ -316,15 +337,16 @@ async def _handle_request(app,scope,receive,send,state):
             if 'binaryContent' in response:
                 try:body=base64.b64decode(response['binaryContent'],validate=True)
                 except Exception:raise HTTPFault('Invalid base64 response content','HTTP_RESPONSE',500) from None
-                value=body
+                validation_value=body
             elif isinstance(value,(bytes,bytearray,memoryview)):body=bytes(value)
-            elif media_family(response_media)=='json' and boolean(response.get('jsonValue')):body=json.dumps(value,ensure_ascii=False,allow_nan=False).encode()
+            elif media_family(response_media) == 'json' and boolean(response.get('jsonValue'), isinstance(schema, dict)):
+                body = json.dumps(value, ensure_ascii=False, allow_nan=False).encode()
             elif isinstance(value,(dict,list,bool,int,float)):body=json.dumps(value,ensure_ascii=False,allow_nan=False).encode()
             else:
                 try:body=('' if value is None else str(value)).encode(text_response_encoding(response_media))
                 except (LookupError, UnicodeError):
                     raise HTTPFault('HTTP response text cannot be represented in the selected charset','HTTP_RESPONSE',500) from None
-            if schema is not None and boolean(cfg.get('validateResponse'),bool(cfg.get('openApiDocument'))) and schema_errors(value,schema):raise HTTPFault('Response schema validation failed','REST_VALIDATION',500)
+            if schema is not None and validate_response and schema_errors(validation_value,schema):raise HTTPFault('Response schema validation failed','REST_VALIDATION',500)
             size=len(body)
         response_headers={str(k).lower():v for k,v in (response.get('headers') or {}).items() if str(k).lower() not in ('content-length','transfer-encoding','connection')}
         if status == 200 and method in ('GET', 'HEAD') and boolean(cfg.get('conditionalResponses')):

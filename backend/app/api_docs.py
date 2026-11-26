@@ -2,13 +2,17 @@
 from __future__ import annotations
 import copy, hashlib, json, re, urllib.parse, uuid
 from functools import lru_cache
-from .http_contracts import hosted_response_content, load_document, media_family, media_schema, schema_for_media
+from .http_contracts import hosted_response_content, load_document, media_family, media_schema, negotiates_hosted_response, schema_for_media
 from .xsd_openapi import describe_xsd
 
 DOC_PREFIX='/_mina'
 DOCS_PATH=DOC_PREFIX+'/docs'
 SPEC_PATH=DOC_PREFIX+'/openapi.json'
 POSTMAN_PATH=DOC_PREFIX+'/postman.json'
+
+def documentation_route_reserved(path):
+    return path.rstrip('/')==DOC_PREFIX or path.startswith(DOC_PREFIX+'/')
+
 
 @lru_cache(maxsize=8)
 def asset_bytes(name,compressed):
@@ -257,8 +261,9 @@ def generate_openapi(routes,base_url='/',title='MINA hosted APIs'):
             if conditional_reads:
                 entry['responses'].setdefault('304', {'description': 'Representation is unchanged'})
                 entry['responses'].setdefault('412', {'description': 'Read precondition failed'})
-            if selected_response_types and any(code.startswith('2') and code not in ('204', '205') for code in entry['responses']):
+            if any(negotiates_hosted_response(cfg, code) for code in entry['responses']):
                 entry['responses'].setdefault('406', {'description': 'No configured response representation matches Accept'})
+                entry['x-mina-negotiates-response'] = True
             entry['x-mina-authentication']=str(cfg.get('authentication') or 'None')
             entry['x-mina-hmac-algorithm']=str(cfg.get('hmacAlgorithm') or 'SHA256')
             if selected_request_types or selected_response_types:
@@ -332,7 +337,7 @@ def postman_collection(spec,base_url):
                 response_types = dict.fromkeys(media for code, response in operation.get('responses', {}).items()
                                                if code.startswith('2') for media in response.get('content', {}))
                 if response_types:
-                    headers.append({'key':'Accept', 'value':', '.join(response_types) if multi else next(iter(response_types))})
+                    headers.append({'key':'Accept', 'value':', '.join(response_types) if multi or operation.get('x-mina-negotiates-response') else next(iter(response_types))})
             scheme=operation.get('x-mina-authentication','None').lower();events=[]
             if scheme in ('basic','ldap'):
                 variables.update(username='',password='');request['auth']={'type':'basic','basic':[{'key':'username','value':'{{username}}','type':'string'},{'key':'password','value':'{{password}}','type':'string'}]}
@@ -361,7 +366,7 @@ class HostedAPIDocs:
         self.pending=0
         if self.enabled:
             public_base(connection)
-            if any(cfg['path'].rstrip('/')==DOC_PREFIX or cfg['path'].startswith(DOC_PREFIX+'/') for _,cfg in routes):raise ValueError('The /_mina path is reserved for API documentation. Change the route or disable API documentation.')
+            if any(documentation_route_reserved(cfg['path']) for _,cfg in routes):raise ValueError('The /_mina path is reserved for API documentation. Change the route or disable API documentation.')
         self.spec=generate_openapi(self.routes,connection.get('apiPublicBaseUrl') or '/') if self.enabled else None
 
     async def handle(self,scope,send):

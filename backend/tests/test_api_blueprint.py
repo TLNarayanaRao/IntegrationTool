@@ -45,6 +45,11 @@ def plan_project(port=8080,mode='example',secured=False,robust=False):
         order['get']['responses']['200']['headers']={'X-API-Version':{'schema':{'type':'string','default':'v1'}}}
         for path,operation_id,schema,example in [('/literal','literal',{'type':'string'},'ready'),('/nothing','nothing',{'type':['object','null']},None)]:
             document['paths'][path]={'get':{'operationId':operation_id,'responses':{'200':{'description':'Scalar JSON','content':{'application/json':{'schema':schema,'example':example}}}}}}
+        literal_responses=document['paths']['/literal']['get']['responses']
+        literal_responses['2XX']=literal_responses.pop('200')
+        literal_media=literal_responses['2XX']['content']['application/json']
+        literal_media['examples']={'first':{'value':'other'},'ready':{'value':literal_media.pop('example')}}
+        literal_responses['200']={'description':'Structured JSON','content':{'application/json':{'schema':{'type':'object'}}}}
     server = connection(port)
     if secured:
         document['components'] = {'securitySchemes': {'access': {'type':'http','scheme':'bearer'}}}
@@ -53,7 +58,8 @@ def plan_project(port=8080,mode='example',secured=False,robust=False):
         server['config'].update(authentication='Bearer', bearerToken='audit-token', httpErrorFormat='problem')
     operations = [operation['operationId'] for operation in validated['operations']]
     plan=blueprint_plan(document,operations + (['literal','nothing'] if robust else []) + (['reset'] if secured else []),server,response_mode=mode,package_path='APIs/Orders',
-                        reference_documents={'models/order.yaml':{'type':'object','properties':{'id':{'type':'string'}}}},document_path='openapi.yaml')
+                        reference_documents={'models/order.yaml':{'type':'object','properties':{'id':{'type':'string'}}}},document_path='openapi.yaml',
+                        mock_examples={'literal':1} if robust and mode=='example' else None)
     if secured:
         plan['tasks'][-1]['activities'][1]['config']['statusCode'] = 205
     project=Project.model_validate({'id':'blueprint-test','name':'Blueprint Test','properties':{'local':[]},'resources':[plan['resource']],'tasks':plan['tasks'],'active_task_id':plan['tasks'][0]['id']})
@@ -170,7 +176,8 @@ class BlueprintHostingTests(unittest.IsolatedAsyncioTestCase):
                     order=await client.get(f'http://127.0.0.1:{port}/orders/42');self.assertEqual(order.status_code,200);self.assertEqual(order.json(),{'id':'${input.secret}'})
                     health=await client.get(f'http://127.0.0.1:{port}/health');self.assertEqual(health.json(),{'status':'ok'})
                     self.assertEqual(order.headers['x-api-version'],'v1')
-                    self.assertEqual((await client.get(f'http://127.0.0.1:{port}/literal')).json(),'ready')
+                    literal=await client.get(f'http://127.0.0.1:{port}/literal')
+                    self.assertEqual((literal.status_code,literal.json()),(201,'ready'))
                     self.assertEqual((await client.get(f'http://127.0.0.1:{port}/nothing')).content,b'null')
                     reset=await client.get(f'http://127.0.0.1:{port}/reset')
                     self.assertEqual((reset.status_code,reset.content),(205,b''))
@@ -210,7 +217,7 @@ async def main():
             assert order.json()=={{'id':'${{input.secret}}'}},order.text
             assert order.headers['x-api-version']=='v1',order.headers
             literal=await client.get('http://127.0.0.1:{port}/literal')
-            assert literal.json()=='ready',literal.text
+            assert literal.status_code==201 and literal.json()=='ready',literal.text
             nothing=await client.get('http://127.0.0.1:{port}/nothing')
             assert nothing.content==b'null',nothing.text
             reset=await client.get('http://127.0.0.1:{port}/reset')

@@ -20,11 +20,16 @@ test('all activity input fields suggest versioned XPath expressions and namespac
 
 test('the designer has the full categorized catalog without a runtime request',()=>{
  const one=bundledXPathFunctions('1.0'),two=bundledXPathFunctions('2.0');
- assert.ok(one.length>=49);assert.ok(two.length>=200);
+ assert.ok(one.length>=48);assert.ok(two.length>=200);
  for(const version of ['1.0','2.0']){
   const entries=bundledXPathFunctions(version);
   assert.equal(new Set(entries.map(item=>item.name+'#'+item.args.length)).size,entries.length);
-  for(const item of entries){assert.ok(item.description);assert.ok(item.category);assert.ok(item.args.every(label=>label));}
+  for(const item of entries){
+   assert.ok(item.description);assert.ok(item.category);assert.ok(item.args.every(label=>label));
+   assert.equal(item.example.args.length,item.args.length);
+   assert.ok(item.example.expression.includes(item.name+'('));
+   if(!item.example.error)assert.doesNotThrow(()=>JSON.parse(item.example.result));
+  }
   assert.deepEqual(designerXPathFunctions(version,[]),entries);
   assert.ok(!entries.some(item=>['doc','collection','doc-available','trace'].includes(item.name)));
  }
@@ -32,6 +37,8 @@ test('the designer has the full categorized catalog without a runtime request',(
   assert.ok(two.some(item=>item.name===name),name);
  }
  assert.ok(!one.some(item=>item.name==='matches'));
+ assert.deepEqual(one.filter(item=>item.name==='sum').map(item=>item.args.length),[1]);
+ assert.deepEqual(two.filter(item=>item.name==='tokenize').map(item=>item.args.length),[2,3]);
 });
 
 test('live catalogs retain descriptions, correct overloads and readable argument labels',()=>{
@@ -52,11 +59,13 @@ test('XPath catalog rows and the prepared expression button can be dragged to a 
   compilerOptions:{jsx:ts.JsxEmit.React,target:ts.ScriptTarget.ES2022},
  }).outputText;
  const all=node=>node&&typeof node==='object'?[node,...node.children.flatMap(all)]:[];
- const render=(version,selected='',values=[])=>{
-  const states=[version,selected,values];
+ const render=(version,selected='',values=[],onHelp=()=>{})=>{
+  const states=[version,selected,values,null];
+  const setters=[()=>{},()=>{},()=>{},onHelp];
   const context=vm.createContext({
    React:{createElement:(type,props,...children)=>({type,props,children:children.flat(Infinity)})},
-   useState:()=>[states.shift(),()=>{}],useRef:()=>({current:null}),useMemo:fn=>fn(),useEffect:()=>{},
+   useState:()=>[states.shift(),setters.shift()],useRef:()=>({current:null}),useMemo:fn=>fn(),useEffect:()=>{},
+   window:{clearTimeout:()=>{}},
    bundledXPathFunctions,xpathFunctionExpression,
   });
   vm.runInContext(component,context);
@@ -81,6 +90,14 @@ test('XPath catalog rows and the prepared expression button can be dragged to a 
  drag(prepared.find(node=>node.props.key==='round-half-to-even#2'),expression);
  drag(prepared.find(node=>node.children.includes('Drag XPath expression to target')),expression);
  drag(prepared.find(node=>node.props.key==='round-half-to-even#1'),'xpath2("round-half-to-even()")');
+ let help;
+ const buttons=render('2.0','substring#3',[],entry=>{help=entry;});
+ buttons.find(node=>node.props.key==='substring#2').props.onDoubleClick();
+ assert.equal(help.example.expression,"substring('MINA', 2)");
+ assert.equal(JSON.parse(help.example.result),'INA');
+ buttons.find(node=>node.children.includes('Function help')).props.onClick();
+ assert.equal(help.example.expression,"substring('MINA', 2, 2)");
+ assert.equal(JSON.parse(help.example.result),'IN');
 });
 
 test('XPath builder version selection is applied to the actual saved and tested expression',()=>{

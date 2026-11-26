@@ -193,5 +193,7 @@ class ContinuousConnectorTests(unittest.TestCase):
                 result, snapshot = file_poll_events({'files': updated}, {'eventType': mode}, seen)
                 self.assertEqual(result['count'], len(names))
                 self.assertEqual([file['fullName'] for file in result['files']], names)
+                kinds = {'created.txt': 'Created', 'modified.txt': 'Modified', 'deleted.txt': 'Deleted'}
+                self.assertEqual([file['eventType'] for file in result['files']], [kinds[name] for name in names])
                 unchanged, _ = file_poll_events({'files': updated}, {'eventType': mode}, snapshot)
                 self.assertEqual(unchanged['count'], 0)
