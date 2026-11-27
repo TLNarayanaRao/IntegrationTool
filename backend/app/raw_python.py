@@ -39,6 +39,9 @@ SUPPORTED = {
     ('call_task', ''), ('catch', ''), ('throw', ''), ('rethrow', ''),
     ('basic', 'empty'), ('basic', 'assign'), ('basic', 'sleep'), ('basic', 'checkpoint'),
     *((('basic', operation) for operation in ('deduplicate', 'message_receipt', 'replay_messages', 'aggregate_messages', 'split_records'))),
+    *((('basic', operation) for operation in ('s3_list', 's3_get', 's3_put', 's3_event', 'sqs_send', 'sqs_receive', 'sqs_ack', 'cdc_receive', 'cdc_ack'))),
+    *((('basic', operation) for operation in ('asyncapi_validate', 'cloudevent_encode', 'cloudevent_decode'))),
+    *((('basic', operation) for operation in ('edi_parse', 'edi_render', 'edi_ack_create', 'edi_ack_read', 'as2_send', 'as2_receive', 'as2_receipt', 'as2_lookup', 'as2_mdn_receive', 'as2_mdn_deliver'))),
     ('basic', 'get_shared_variable'), ('basic', 'set_shared_variable'), ('basic', 'external_command'),
     *((('file', operation) for operation in ('read', 'write', 'list', 'delete', 'rename', 'copy', 'poll', 'checksum', 'mkdir', 'exists'))),
     *((('ftp', operation) for operation in ('get', 'put', 'delete', 'dir', 'change_dir'))),
@@ -77,7 +80,8 @@ ACTIVITY_CAPABILITY_BY_KIND = {
 }
 EVENT_OPERATIONS = {('kafka', 'receive'), ('kafka', 'get'), ('pubsub', 'pull'), ('pubsub', 'subscribe'), ('ems', 'queue_receiver'),
                     ('ems', 'topic_subscriber'), ('jms', 'receive_message'), ('sap', 'idoc_listener'), ('sap', 'rfc_bapi_listener'), ('timer', 'schedule')}
-EVENT_OPERATIONS.update({('http_listener', 'listen'), ('rest', 'receiver'), ('soap', 'service'), ('jms', 'wait_request'),
+EVENT_OPERATIONS.update({('basic', 'sqs_receive'), ('basic', 's3_event'), ('basic', 'cdc_receive'),
+                         ('http_listener', 'listen'), ('rest', 'receiver'), ('soap', 'service'), ('jms', 'wait_request'),
                          ('file', 'poll'), ('amqp', 'receive')})
 
 
@@ -601,6 +605,19 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
             return {str(value).lower()}
         return {str(prop.get('value')).lower() for profile in (project.get('properties') or {}).values()
                 for prop in profile if prop.get('key') == binding.group(1)}
+    if any(kind == 'basic' and operation.startswith(('s3_', 'sqs_')) for kind, operation in activity_pairs):
+        add('AWS S3 and SQS', ['boto3'], 'python -m pip install "boto3>=1.36,<2"')
+    if ('basic', 'asyncapi_validate') in activity_pairs:
+        add('AsyncAPI event validation', ['yaml', 'jsonschema', 'regex'], 'python -m pip install PyYAML jsonschema regex')
+    if any(kind == 'basic' and operation.startswith('as2_') and operation != 'as2_lookup' for kind, operation in activity_pairs):
+        add('AS2 CMS and transport', ['cryptography', 'asn1crypto', 'httpx'], 'python -m pip install "cryptography>=44" "asn1crypto>=1.5,<2" httpx')
+    if any('postgresql' in setting_values(config.get('reconciliationBackend')) for config in resources.get('trading_partner', [])):
+        add('AS2 shared reconciliation', ['psycopg'], 'python -m pip install "psycopg[binary]>=3.2"')
+    if any(kind == 'basic' and operation.startswith('cdc_') for kind, operation in activity_pairs) or any(
+        'postgresql' in setting_values(activity.get('config', {}).get('stateBackend'))
+        for task in project.get('tasks', []) for activity in task.get('activities', []) if activity.get('type') == 'basic'
+    ):
+        add('PostgreSQL state and change capture', ['psycopg'], 'python -m pip install "psycopg[binary]>=3.2"')
     if any(kind in {'xml','json'} for kind,_ in activity_pairs):add('Data schema validation',['jsonschema','regex'],'python -m pip install jsonschema regex')
     if any(kind=='xml' for kind,_ in activity_pairs):add('XML schema validation',['lxml.etree'],'python -m pip install lxml')
     if any(kind=='script_transform' for kind,_ in activity_pairs) or any(a.get('config',{}).get('streamEnabled') for t in project.get('tasks',[]) for a in t.get('activities',[])):
@@ -685,7 +702,8 @@ def raw_python_requirements(project: dict) -> tuple[list[dict], list[str]]:
             cfg = activity.get('config') or {}
             if activity.get('type') in {'java', 'python'} and cfg.get('artifactPath'):
                 external.append(str(cfg['artifactPath']))
-    certificate_keys = ('trustedCertificateFolder','trustStoreFile','certificateAuthorityFile','identityStoreFile','certificateFile','privateKeyFile','clientCertificateFile','clientKeyFile','crlFile','jwtPrivateKeyFile','jwtPublicKeyFile','ldapCaFile','oauthClientPrivateKeyFile','postgresSslRootCert')
+    certificate_keys = ('trustedCertificateFolder','trustStoreFile','certificateAuthorityFile','identityStoreFile','certificateFile','privateKeyFile','clientCertificateFile','clientKeyFile','crlFile','jwtPrivateKeyFile','jwtPublicKeyFile','ldapCaFile','oauthClientPrivateKeyFile','postgresSslRootCert',
+                        'localCertificateFile','localPrivateKeyFile','partnerCertificateFile','tlsCaFile')
     configurations = [resource.get('config') or {} for resource in project.get('resources', [])]
     configurations += [activity.get('config') or {} for task in project.get('tasks', []) for activity in task.get('activities', [])]
     for cfg in configurations:
@@ -846,6 +864,12 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     if 'data_formats' in capabilities:native_modules.update({'data_formats.py','faults.py','mapper.py','schema_validation.py','xsd_openapi.py','xsd_catalog.py'})
     if any(activity.get('config', {}).get('operation') in {'deduplicate', 'message_receipt', 'replay_messages', 'aggregate_messages', 'split_records'} for task in project.get('tasks', []) for activity in task.get('activities', [])):
         native_modules.add('message_state.py')
+    if any(operation.startswith(('s3_', 'sqs_', 'cdc_')) for operation in basic_operations):
+        native_modules.add('platform_connectors.py')
+    if basic_operations & {'asyncapi_validate', 'cloudevent_encode', 'cloudevent_decode'}:
+        native_modules.update({'event_contracts.py', 'http_contracts.py', 'schema_validation.py'})
+    if any(operation.startswith(('edi_', 'as2_')) for operation in basic_operations):
+        native_modules.update({'trading_partner.py', 'edi.py', 'edi_ack.py', 'as2_ledger.py'})
     if any(activity.get('type') == 'sftp' for task in project.get('tasks', []) for activity in task.get('activities', [])):
         native_modules.add('sftp.py')
     if 'sap' in capabilities: native_modules.update({'sap.py', 'java_bridge.py'})
@@ -874,6 +898,10 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
     if native_modules:
         files['application/native/__init__.py'] = b'"""Capability-selected native adapters; vendor binaries remain external."""\n'
         for name in sorted(native_modules): files[f'application/native/{name}'] = Path(__file__).with_name(name).read_bytes()
+    files['application/observability.py'] = Path(__file__).with_name('observability.py').read_bytes()
+    if 'amqp.py' in native_modules:
+        files['application/native/amqp.py'] = files['application/native/amqp.py'].replace(
+            b'from .observability import inject_messaging', b'from ..observability import inject_messaging')
     files['application/tasks/__init__.py'] = b'"""Generated async tasks."""\n'
     checks, external_files = raw_python_requirements(linked_project)
     xml_dependencies = mapper_xml_dependencies(linked_project)
@@ -980,11 +1008,14 @@ def raw_python_files(project: dict, profiles: dict[str, list[dict]]) -> dict[str
             'from application.flow_graph import parallel_plan, execute_parallel',
             *(['from application.group_execution import iteration_items'] if any(plan['type'] in {'for_each', 'iterate'} for plan in group_plans) else []),
             f'from application.core import {", ".join(core_imports)}',
+            'from application.observability import instrument, messaging_carrier',
             *(['from application.native.jdbc import jdbc_adapter'] if any(plan['type'] == 'transaction_jdbc' for plan in group_plans) else []),
             '',
             f'TASK_ID = {task["id"]!r}',
             f'TASK_NAME = {task["name"]!r}',
             '',
+            "@instrument('mina.task', lambda *_args, **_kwargs: {'mina.task.id': TASK_ID, 'mina.mode': 'direct'},",
+            "            lambda *_args, **kwargs: messaging_carrier(kwargs.get('event_output')))",
             'async def run(ctx: Context, *, start_after: str | None = None, event_output=None, start_at: str | None = None, stop_at: str | None = None):',
             '    ctx.task_id = TASK_ID',
             '    injected_event_activity = start_after if start_at is None else None',
@@ -1375,9 +1406,17 @@ def _engine_module_files(project: dict, source_root: Path) -> dict[str, bytes]:
     groups = {group['type'] for task in project.get('tasks', []) for group in task.get('groups', [])}
     if 'transaction_jdbc' in groups:
         kinds.add('jdbc')
-    optional = set(ENGINE_CAPABILITY_MODULES.values()) | {'transform_engine'}
+    optional = set(ENGINE_CAPABILITY_MODULES.values()) | {'transform_engine', 'event_contracts', 'platform_connectors', 'trading_partner'}
     pending = {'runtime', 'models', 'mapper', 'time_utils'}
     pending.update(module for kind, module in ENGINE_CAPABILITY_MODULES.items() if kind in kinds)
+    operations = {a.get('config', {}).get('operation') or '' for task in project.get('tasks', [])
+                  for a in task.get('activities', []) if a['type'] == 'basic'}
+    if operations & {'asyncapi_validate', 'cloudevent_encode', 'cloudevent_decode'}:
+        pending.add('event_contracts')
+    if any(operation.startswith(('s3_', 'sqs_', 'cdc_')) for operation in operations):
+        pending.add('platform_connectors')
+    if any(operation.startswith(('edi_', 'as2_')) for operation in operations):
+        pending.add('trading_partner')
     transform_pipeline = 'script_transform' in kinds or any(a.get('config',{}).get('streamEnabled') for t in project.get('tasks',[]) for a in t.get('activities',[]))
     if transform_pipeline: pending.add('transform_engine')
     xsd_projection = transform_pipeline or bool(kinds & {'xml', 'json', 'flat'}) or _has_mapper_binding(project) or _has_selected_source_schema(project) or _has_native_xml_output(project)

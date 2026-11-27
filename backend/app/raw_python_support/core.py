@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 from typing import Any
 from .native.mapping_literals import parse_literal
+from .observability import instrument
 from .retry_policy import ActivityCircuits, CircuitPlan, RetryPlan, outbound_activity, retry_boolean
 from time import perf_counter
 
@@ -242,6 +243,9 @@ def choose_transition(edges: list[dict], source: str, ctx: Context, error: Excep
     return next((edge['target'] for edge in outgoing if edge.get('type', 'success') == 'success'), None)
 
 
+@instrument('mina.activity', lambda kind, raw, ctx, activity_id, name: {
+    'mina.activity.id': activity_id, 'mina.activity.type': kind, 'mina.mode': 'direct',
+})
 async def execute_with_policy(kind: str, raw: dict, ctx: Context, activity_id: str, name: str) -> Any:
     advanced = {key.removeprefix('advanced.'): value for key, value in ctx.properties.items() if key.startswith('advanced.retry')}
     advanced.update(resolve(raw.get('advanced') or {}, ctx))
@@ -370,6 +374,18 @@ async def execute(kind: str, raw: dict, ctx: Context, activity_id: str, name: st
     # CAPABILITY log END
     # CAPABILITY basic START
     if kind == 'basic':
+        if operation in {'edi_parse', 'edi_render', 'edi_ack_create', 'edi_ack_read', 'as2_send', 'as2_receive', 'as2_receipt', 'as2_lookup', 'as2_mdn_receive', 'as2_mdn_deliver'}:
+            from .native.trading_partner import execute as execute_partner
+            partner = ctx.resources.get(cfg.get('resourceId'))
+            profile = resolve(partner.config, ctx) if partner and partner.type == 'trading_partner' else None
+            return await asyncio.to_thread(execute_partner, operation, cfg, cfg.get('payload', ctx.last),
+                                           cfg.get('resourceId') if profile is not None else '', profile)
+        if operation in {'s3_list', 's3_get', 's3_put', 's3_event', 'sqs_send', 'sqs_receive', 'sqs_ack', 'cdc_receive', 'cdc_ack'}:
+            from .native.platform_connectors import execute as execute_platform
+            return await asyncio.to_thread(execute_platform, operation, cfg, cfg.get('payload', ctx.last))
+        if operation in {'asyncapi_validate', 'cloudevent_encode', 'cloudevent_decode'}:
+            from .native.event_contracts import execute as execute_contract
+            return await asyncio.to_thread(execute_contract, operation, cfg, cfg.get('payload', ctx.last))
         if operation in {'deduplicate', 'message_receipt', 'replay_messages', 'aggregate_messages', 'split_records'}:
             from .native.message_state import operate
             return await asyncio.to_thread(operate, operation, cfg, cfg.get('payload', ctx.last))

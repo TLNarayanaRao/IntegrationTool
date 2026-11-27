@@ -272,7 +272,8 @@ Use an explicit **Message namespace** for each integration and the same
 can provide the file globally; the default is `message-state.sqlite3` under
 `MINA_DATA_DIR` or the user's `.mina` folder. SQLite transactions coordinate
 processes sharing the same local file. For containers, mount durable storage.
-This is not a distributed database for multiple hosts or network filesystems.
+Use PostgreSQL for multi-host execution and keep SQLite on local storage.
+See [Shared message recovery](PLATFORM_INTEGRATION.md#shared-message-recovery).
 Payloads are capped at 1 MB, aggregate groups at 64 MB and state capacity defaults
 to 256 MB. Size accounting is an approximate SQLite page budget.
 

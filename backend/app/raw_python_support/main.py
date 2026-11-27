@@ -90,7 +90,7 @@ async def run_application(environment_name: str = DEFAULT_ENVIRONMENT):
                         if needs_reply:
                             logging.error('Starter %s completed without a Reply from RFC/BAPI activity and was rolled back', task_id)
                 elif kind != 'file':
-                    await asyncio.sleep(.1)
+                    await asyncio.sleep(max(.1, float(resolve(config.get('pollInterval') or 1, context))) if kind == 'basic' else .1)
                 if kind == 'sap' and isinstance(output, dict) and output.get('mock'):
                     await asyncio.sleep(.1)
                 if kind == 'timer':

@@ -12,7 +12,7 @@ from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders
-from pydantic import BaseModel, Field, StrictInt
+from pydantic import BaseModel, Field, StrictInt, ValidationError
 from .models import AIBuildRequest, DebugAction, DebugInputCasesRequest, DebugRequest, LibraryPin, Project, RunRequest, SharedResource, SubtaskInputRequest, SubtaskRunRequest, PackagePath, effective_event_activities, find_subtask
 from . import integration_libraries as libraries
 from .store import delete_project, get_project, list_projects, project_dir, save_project, safe_component
@@ -159,6 +159,7 @@ async def shutdown_native_connectors():
 
 INBOUND_OPERATIONS = {None, 'listen', 'receiver', 'service'}
 CONTINUOUS_EVENT_OPERATIONS = {
+    'basic': {'sqs_receive', 's3_event', 'cdc_receive'},
     'timer': {'schedule'},
     'file': {'poll'},
     'ems': {'queue_receiver', 'topic_subscriber'},
@@ -168,6 +169,17 @@ CONTINUOUS_EVENT_OPERATIONS = {
     'pubsub': {'subscribe'},
     'sap': {'idoc_listener', 'rfc_bapi_listener'},
 }
+
+
+@app.post('/api/event-contracts/review')
+def review_event_contract(body: dict):
+    from .event_contracts import review_contract
+    if not isinstance(body.get('document'), str):
+        raise HTTPException(400, 'An AsyncAPI JSON or YAML document is required')
+    try:
+        return review_contract(body['document'])
+    except (ValueError, TypeError, RecursionError) as error:
+        raise HTTPException(400, str(error)) from None
 
 def _environment_values(item: Project, environment: str) -> dict:
     return {prop.key: prop.value for prop in item.properties.get(environment, [])}
@@ -453,7 +465,7 @@ async def _continuous_event_loop(item: Project, task, activity, environment: str
                         _publish_runtime_state(project_id, status='listening', logs=logs, environment=environment)
                     append_project_logs(project_id, item.name, diagnostic_logs, _project_log_directory(item, environment))
                 if not _event_available(output):
-                    await asyncio.sleep(max(.1, float(resolved_config.get('pollInterval', 1) or 1)) if activity.type == 'file' else .1)
+                    await asyncio.sleep(max(.1, float(resolved_config.get('pollInterval', 1) or 1)) if activity.type in ('file', 'basic') else .1)
                     continue
                 if activity.type == 'sap' and isinstance(output, dict):
                     # These are transport-control values, not business payload.
@@ -718,9 +730,37 @@ app.include_router(jira_story_router)
 
 @app.post('/api/ai/generate')
 async def ai_generate(request: AIBuildRequest):
-    try: return await generate_ai_design(request.requirement, request.scope, request.current_task)
-    except httpx.HTTPStatusError as exc: raise HTTPException(502, f'AI provider rejected the design request: {exc.response.text[:500]}')
-    except (ValueError, json.JSONDecodeError) as exc: raise HTTPException(422, f'AI design did not pass Studio validation: {exc}')
+    try:
+        from .ai_build_assets import attach_mapping, prepare_assets, references
+        from .ai_builder import _review_proposal
+        if not request.design_assets and not references(request.requirement):
+            return await generate_ai_design(request.requirement, request.scope, request.current_task)
+        if request.scope != 'project':
+            raise ValueError('Select Complete Project for a schema-driven flow with generated subtasks.')
+        saved = get_project(request.project_id) if request.project_id else None
+        assets = await asyncio.to_thread(prepare_assets, request.requirement, request.design_assets,
+                                         saved.schemas if saved else (), project_dir(saved.id) if saved else None)
+        prompt = request.requirement
+        for name, _ in references(prompt):
+            prompt = prompt.replace(name, 'design asset')
+        context = ('The Studio will compile attached contracts and workbook mappings locally. '
+                   'Place exactly one mapper activity at the business-document transformation point. '
+                   'Do not generate replacement schemas or field mappings. Use the required source and target protocols. '
+                   'Use call_task with config.taskId to separate reusable or complex stages into subtasks. Avoid unnecessary subtasks for simple steps.')
+        proposal = await generate_ai_design(prompt, 'project', design_context=context)
+        return _review_proposal(attach_mapping(proposal, assets))
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(502, f'AI provider rejected the design request (HTTP {exc.response.status_code}). Check the runtime AI configuration.') from None
+    except httpx.RequestError:
+        raise HTTPException(502, 'AI Build could not reach its model provider. Check the runtime connection and try again.') from None
+    except ValidationError as exc:
+        issue = exc.errors(include_input=False, include_context=False)[0]
+        location = '.'.join(str(part) for part in issue['loc']) or 'project'
+        raise HTTPException(422, f'AI Build returned an invalid design at {location}. Review the requirement and try again.') from None
+    except (TypeError, KeyError, AttributeError, json.JSONDecodeError):
+        raise HTTPException(422, 'AI Build returned an unreadable design. Narrow the requirement and generate another preview.') from None
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
 
 @app.get('/api/projects')
 def projects(): return [libraries.studio_project(item) for item in list_projects()]
@@ -1987,6 +2027,13 @@ async def import_format_assets(file: UploadFile = File(...)):
 @app.post('/api/connections/test')
 async def test_connection(resource: SharedResource):
     cfg = resource.config
+    if resource.type == 'trading_partner':
+        from .trading_partner import validate_profile
+        try:
+            await asyncio.to_thread(validate_profile, cfg)
+            return {'ok': True, 'message': 'AS2 identities and certificates validated locally'}
+        except Exception as error:
+            return {'ok': False, 'message': str(error)}
     if cfg.get('mode') == 'memory': return {'ok': True, 'message': 'Local in-memory broker is ready'}
     if resource.type == 'jdbc':
         try: return await __import__('asyncio').to_thread(jdbc_adapter.test, cfg)

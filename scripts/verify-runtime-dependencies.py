@@ -12,6 +12,8 @@ REQUIRED_MODULES = {
     "Kafka": "confluent_kafka",
     "Kafka Avro": "fastavro",
     "GCP Pub/Sub": "google.cloud.pubsub_v1",
+    "AWS S3/SQS": "boto3",
+    "AS2 CMS": "asn1crypto.cms",
     "Snowflake": "snowflake.connector",
     "RabbitMQ AMQP 0.9.1": "pika",
     "AMQP 1.0": "proton",

@@ -2,7 +2,7 @@ import type { LibraryOrigin } from "./IntegrationLibraries";
 
 export type SharedConnection = {
   id: string;
-  type: "jdbc" | "snowflake" | "amqp" | "ftp" | "sftp" | "http" | "ems" | "jms" | "kafka" | "pubsub" | "sap" | "sap_tid";
+  type: "jdbc" | "snowflake" | "amqp" | "ftp" | "sftp" | "http" | "ems" | "jms" | "kafka" | "pubsub" | "sap" | "sap_tid" | "trading_partner";
   name: string;
   package_path?: string;
   config: Record<string, any>;

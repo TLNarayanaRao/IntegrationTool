@@ -11,6 +11,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Any
+from .observability import inject_messaging
 
 
 _MEMORY_KAFKA: dict[str, asyncio.Queue] = {}
@@ -121,6 +122,10 @@ async def jms(kind: str, operation: str, connection: dict, cfg: dict, payload: A
         listener.reply_jms(str(transport['deliveryId']), payload); transport['completed'] = True
         return {'destination': transport.get('replyTo'), 'correlationId': transport.get('correlationId'), 'replied': True, 'published': True}
     native_operation = 'request' if request_reply else 'receive' if receive else 'send'
+    if (send or request_reply) and isinstance(options.get('properties', {}), dict):
+        properties = inject_messaging(dict(options.get('properties') or {}))
+        if properties:
+            options['properties'] = properties
     if send:
         options['correlationId'] = cfg.get('correlationId') or transport.get('correlationId')
         options['replyTo'] = cfg.get('replyTo') or transport.get('replyTo')
@@ -326,7 +331,8 @@ async def kafka(operation: str, connection: dict, cfg: dict, payload: Any) -> di
             data = message if isinstance(message, bytes) else message.encode() if isinstance(message, str) else json.dumps(message, separators=(',', ':'), default=str).encode()
             key = cfg.get('key')
             key_bytes = key if isinstance(key, bytes) else str(key).encode() if key is not None else None
-            headers = [(str(name), value if isinstance(value, bytes) else str(value).encode()) for name, value in (cfg.get('headers') or {}).items()]
+            active_headers = inject_messaging(dict(cfg.get('headers') or {}))
+            headers = [(str(name), value if isinstance(value, bytes) else str(value).encode()) for name, value in active_headers.items()]
             raw_wait = cfg.get('waitForDelivery', False)
             wait_for_delivery = raw_wait if isinstance(raw_wait, bool) else str(raw_wait).strip().lower() in {'1', 'true', 'yes', 'on'}
             raw_partition = cfg.get('assignCustomPartition', False)
@@ -372,8 +378,15 @@ async def kafka(operation: str, connection: dict, cfg: dict, payload: Any) -> di
                 else: await consumer.seek_to_end(*partitions)
             batch = await consumer.getmany(timeout_ms=int(cfg.get('timeoutMs') or 30000),
                                            max_records=max(1, int(cfg.get('maxMessages') or 1)))
-            values = [record.value.decode(errors='replace') for records in batch.values() for record in records]
-            return {'topic': topic, 'count': len(values), 'messages': values}
+            records = [record for partition in batch.values() for record in partition]
+            values = [record.value.decode(errors='replace') for record in records]
+            result = {'topic': topic, 'count': len(values), 'messages': values}
+            if len(records) == 1:
+                from .observability import messaging_carrier
+                carrier = messaging_carrier({'headers': dict(getattr(records[0], 'headers', ()) or ())})
+                if carrier:
+                    result['headers'] = carrier
+            return result
         finally:
             await consumer.stop()
     raise ValueError(f'Unsupported Kafka operation: {operation}')
@@ -435,6 +448,7 @@ async def pubsub(operation: str, connection: dict, cfg: dict, payload: Any) -> d
             value = cfg.get('message', payload)
             data = value if isinstance(value, bytes) else json.dumps(value, default=str).encode()
             attributes = {str(key): str(value) for key, value in (cfg.get('attributes') or {}).items()}
+            inject_messaging(attributes)
             if _PUBSUB_EXECUTOR is None:
                 _PUBSUB_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix='mina-pubsub-send')
             enqueue = partial(client.publish, path, data, ordering_key=str(cfg.get('orderingKey') or ''), **attributes)
@@ -477,7 +491,13 @@ async def pubsub(operation: str, connection: dict, cfg: dict, payload: Any) -> d
             if mode not in ('client','manual','explicit client','explicit client dups ok') and cfg.get('acknowledge') is not False and response.received_messages:
                 await asyncio.to_thread(client.acknowledge, request={'subscription':path,
                     'ack_ids':[item.ack_id for item in response.received_messages]})
-            return {'subscription': path, 'count': len(values), 'messages': values}
+            result = {'subscription': path, 'count': len(values), 'messages': values}
+            if len(values) == 1:
+                from .observability import messaging_carrier
+                carrier = messaging_carrier({'attributes': dict(response.received_messages[0].message.attributes)})
+                if carrier:
+                    result['attributes'] = carrier
+            return result
         finally:
             await asyncio.to_thread(client.transport.close)
     raise ValueError(f'Unsupported Pub/Sub operation: {operation}')

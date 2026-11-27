@@ -69,3 +69,56 @@ If Python is not on PATH, set `MINA_DOCS_PYTHON` to its executable path before r
 `npm run build` checks that the generated documentation matches the selected source files. After changing those sources, regenerate the guide. The site and PDF are copied from `frontend/public/help` to `frontend/dist/help` by Vite and included in the normal Studio distribution. Rebuild the frontend and installer to deliver updated documentation to installed machines. Keep the whole help directory together when copying it for offline use; opening `index.html` directly also works without a server.
 
 The guide is local to the Studio host. Making it reachable on a shared enterprise URL requires publishing these static assets through your approved web server and access controls; this change does not create a public internet endpoint.
+## AI Build
+
+Open **AI → AI Build** in Studio. Include the trigger, route or input, the
+activities in execution order, and the required response. For example,
+“Host POST /orders using a REST receiver, parse JSON, log, catch errors,
+and send response with status 201.”
+
+Local blueprint mode recognizes common activity names and generates editable
+flows. It maps a listener’s request body into the first parser and adds an
+HTTP Send Response terminal. Runtime model configuration enables model-assisted
+designs for broader requirements. Keep credentials out of prompts. Review
+the generated project JSON and the findings for missing connection settings,
+SQL, schemas, or mappings before running the draft.
+
+**Current Task** replaces that task’s flow, keeps its workspace identity and
+package, and adds any generated connections and schemas. **Complete Project**
+replaces the project design. Applying a preview updates Studio. Saving and
+running are separate actions.
+
+### Generate from schemas and an Excel mapping workbook
+
+Select **Complete Project** and attach design files in **AI → AI Build**. You
+can also refer to a saved project schema by name or to a design file by a
+path relative to the saved project's folder. Use **Design files** for files
+elsewhere on your computer. Quote paths with spaces. File References and
+documentation may contain user data, so keep credentials out of the prompt.
+
+An example requirement is “Host POST /orders with a REST receiver. Source
+schema `order.xsd`, source root `Order`, target schema `delivery.xsd`, target
+root `Delivery`. Use workbook `mapping.xlsx`. Return the mapped XML.” The XSD
+root selections are required when more than one root is available. Add XSD
+imports and includes as design files or as project schemas. JSON Schema
+contracts can also be used for object payloads.
+
+The workbook's first worksheet uses **Source Field** and **Target Field**
+column headers, with one literal path per row. For example, `Order.item`
+maps to `Delivery.product`. To use another worksheet, add `Mapping sheet:
+"Mappings"` to the prompt. The optional **Transformation** column accepts
+Trim, Uppercase, or Lowercase. The build validates workbook paths and reports
+the row for unresolved or conflicting mappings. Without a workbook, it
+proposes high-confidence matches and shows required target fields for review.
+
+The draft keeps the transport flow separate from its schema mapping subtask.
+A linear local flow with multiple delivery steps can get a delivery subtask.
+Model-assisted projects can also organize larger designs into separate tasks.
+File and remote paths, HTTP methods and URLs, and messaging destinations can
+be supplied in the requirement. For example, `Target protocol: file` and
+`Target path: "out/orders.xml"` configure a file delivery. Review endpoint
+configuration and mappings in the preview before applying the project.
+
+Schema and workbook contents are processed locally. Model-assisted generation
+receives the requirement and contract roles for orchestration. It does not
+receive the attached documents or workbook rows.

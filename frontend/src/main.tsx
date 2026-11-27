@@ -4,6 +4,7 @@ import { endpointRequestFile } from "./endpointRequests";
 import RuntimeStatus from "./RuntimeStatus";
 import ModalLayer from "./ModalLayer";
 import IntegrationLibraries, { type LibraryDialogMode, type LibraryOrigin, type LibraryPin } from "./IntegrationLibraries";
+import EventContracts from "./EventContracts";
 import DebugTraceDialog from "./DebugTraceDialog";
 import DebugInputCases from "./DebugInputCases";
 import ExecutionSetupDialog from "./ExecutionSetupDialog";
@@ -664,6 +665,40 @@ const packs: { name: string; icon: any; items: Def[] }[] = [
       { type: "basic", operation: "sleep", label: "Sleep", asset: "general-sleep.svg" },
       { type: "basic", operation: "get_shared_variable", label: "Get Shared Variable", asset: "general-shared-get.svg" },
       { type: "basic", operation: "set_shared_variable", label: "Set Shared Variable", asset: "general-shared-set.svg" },
+    ],
+  },
+  {
+    name: "Trading Partners",
+    icon: Cable,
+    items: [
+      { type: "basic", operation: "edi_parse", label: "Parse and Validate EDI", asset: "data-parse.svg" },
+      { type: "basic", operation: "edi_render", label: "Render EDI", asset: "data-render.svg" },
+      { type: "basic", operation: "edi_ack_create", label: "Create EDI Acknowledgement", asset: "general-confirm.svg" },
+      { type: "basic", operation: "edi_ack_read", label: "Read EDI Acknowledgement", asset: "data-parse.svg" },
+      { type: "basic", operation: "as2_send", label: "AS2 Send", asset: "http-request.svg" },
+      { type: "basic", operation: "as2_receive", label: "AS2 Receive", asset: "http-listener.svg" },
+      { type: "basic", operation: "as2_receipt", label: "AS2 Create Signed Receipt", asset: "general-confirm.svg" },
+      { type: "basic", operation: "as2_mdn_receive", label: "AS2 Receive Async MDN", asset: "http-listener.svg" },
+      { type: "basic", operation: "as2_mdn_deliver", label: "AS2 Deliver Async MDN", asset: "http-request.svg" },
+      { type: "basic", operation: "as2_lookup", label: "AS2 Exchange Lookup", asset: "general-checkpoint.svg" },
+    ],
+  },
+  {
+    name: "Cloud and Events",
+    icon: Cloud,
+    items: [
+      { type: "basic", operation: "asyncapi_validate", label: "Validate AsyncAPI Message", asset: "json" },
+      { type: "basic", operation: "cloudevent_encode", label: "Create CloudEvent", asset: "json" },
+      { type: "basic", operation: "cloudevent_decode", label: "Parse CloudEvent", asset: "json" },
+      { type: "basic", operation: "s3_list", label: "S3 List Objects", asset: "file-list.png" },
+      { type: "basic", operation: "s3_get", label: "S3 Read Object", asset: "FileRead.png" },
+      { type: "basic", operation: "s3_put", label: "S3 Write Object", asset: "FileWrite.png" },
+      { type: "basic", operation: "s3_event", label: "S3 Event Receiver", asset: "file-poller.png" },
+      { type: "basic", operation: "sqs_send", label: "SQS Send Message", asset: "amqp-send.svg" },
+      { type: "basic", operation: "sqs_receive", label: "SQS Receive Message", asset: "amqp-receive.svg" },
+      { type: "basic", operation: "sqs_ack", label: "SQS Acknowledge Message", asset: "general-confirm.svg" },
+      { type: "basic", operation: "cdc_receive", label: "PostgreSQL Change Receiver", asset: "JDBC-Query.png" },
+      { type: "basic", operation: "cdc_ack", label: "PostgreSQL Change Receipt", asset: "general-confirm.svg" },
     ],
   },
 ];
@@ -1354,7 +1389,8 @@ const validateTaskDefinition = (project: Project, task: Task, environment = proj
     if (transition.source === transition.target) add("warning", "Transition", "A transition connects an activity to itself.", "Connect it to the intended downstream activity.", transition.source, target);
     if (transition.type === "success_condition" && !transition.condition?.trim()) add("error", "Transition", "A conditional transition has no executable condition.", "Enter and evaluate a boolean condition in the transition editor.", transition.source, target);
   });
-  const startIds = events.map((item) => item.id), reachable = new Set(startIds), queue = [...startIds];
+  const startIds = [...events, ...task.activities.filter(item => item.type === "catch")].map(item => item.id);
+  const reachable = new Set(startIds), queue = [...startIds];
   while (queue.length) {
     const current = queue.shift()!;
     task.transitions.filter((transition) => transition.source === current).forEach((transition) => {
@@ -1623,6 +1659,7 @@ function App() {
     projectFileHandle = useRef<any>(null);
   const [dragPreview, setDragPreview] = useState<{ projectId: string; taskId: string; positions: Record<string, Node['position']> } | null>(null);
   const [libraryDialogMode, setLibraryDialogMode] = useState<LibraryDialogMode | null>(null);
+  const [eventContractsOpen, setEventContractsOpen] = useState(false);
   const openLibraries = (mode: LibraryDialogMode) => {
     setMenu(null);
     setLibraryDialogMode(mode);
@@ -3887,6 +3924,7 @@ function App() {
         aiBuild={() => setAiBuilderOpen(true)}
         jiraStory={() => setJiraStoryOpen(true)}
         apiBlueprint={() => setApiBlueprintOpen(true)}
+        eventContracts={() => setEventContractsOpen(true)}
         catchAI={openCatchAI}
         validateTask={() => runValidation("task")}
         validateProject={() => runValidation("project")}
@@ -4506,6 +4544,13 @@ function App() {
       {libraryDialogMode && <IntegrationLibraries key={libraryDialogMode} project={project} initialMode={libraryDialogMode}
         onChange={updated => setProject(current => current.id === updated.id ? normalizeProject(updated) : current)}
         onClose={() => setLibraryDialogMode(null)} />}
+      {eventContractsOpen && <EventContracts onClose={() => setEventContractsOpen(false)} onDownload={browserDownload}
+        onApply={node?.type === "basic" && node.config.operation === "asyncapi_validate" ? configuration => {
+          mutateTask(current => ({...current, activities: current.activities.map(activity => activity.id === node.id
+            ? {...activity, config: {...activity.config, ...configuration}} : activity)}));
+          setActiveTab("configuration");
+          setEventContractsOpen(false);
+        } : undefined}/>}
       {analyticsOpen && <ExecutionAnalytics key={project.id} projectId={project.id} projectName={project.name} tasks={project.tasks} logs={logs} runtimeState={runtimeState} debugState={debugState} onClose={() => setAnalyticsOpen(false)} onInspect={(taskId: string, activityId: string) => { const target = project.tasks.find(item => item.id === taskId && item.activities.some(activity => activity.id === activityId)) || project.tasks.find(item => item.activities.some(activity => activity.id === activityId)); if (target) { selectTask(target.id, activityId); setAnalyticsOpen(false); } }}/>}
       {launchMode && <ExecutionSetupDialog key={project.id} project={project} initialTask={launchTaskId || project.active_task_id}
         initialMode={launchMode} activeEnvironment={project.active_environment} busy={executionActive}
@@ -4789,18 +4834,21 @@ function App() {
       />}
       {apiBlueprintOpen && <ApiBlueprint resources={project.resources} tasks={project.tasks} packages={explorerPackagePaths("tasks")} projectId={project.id} onPrepareUpdate={persistProject} onUpdated={updated=>{const saved=normalizeProject(updated);savedProjectSnapshot.current=JSON.stringify(saved);lastRuntimeWrite.current={id:saved.id,body:JSON.stringify(saved)};setProject(saved);}} onClose={() => setApiBlueprintOpen(false)} onApply={applyApiBlueprint} onHost={hostApiBlueprint}/>}
       {jiraStoryOpen && <JiraStoryDialog project={project} preferredTransition={selectedEdge || undefined} onClose={() => setJiraStoryOpen(false)} onApply={applyJiraStory} onDownload={browserDownload}/>}
-      {aiBuilderOpen && <AIBuilderDialog currentTask={task} onClose={() => setAiBuilderOpen(false)} onApply={(proposal: any) => {
-        const generated = proposal.project, scope = proposal.scope;
-        setOpenTaskIds(scope === "task" ? [...new Set([...openTaskIds, project.active_task_id])] : generated.tasks?.[0] ? [generated.tasks[0].id] : []);
-        if (scope === "task") {
-          const generatedTask = generated.tasks[0];
-          setProject((current) => ({ ...current, tasks: current.tasks.map((item) => item.id === current.active_task_id ? { ...generatedTask, id: item.id, name: generatedTask.name || item.name, kind: item.kind } : item), resources: [...current.resources, ...(generated.resources || []).filter((resource: Resource) => !current.resources.some((existing) => existing.type === resource.type))] }));
-        } else {
-          const tasks = generated.tasks || [];
-          setProject((current) => ({ ...current, name: generated.name || current.name, description: generated.description || current.description, tasks, active_task_id: tasks[0]?.id || current.active_task_id, resources: generated.resources || [], schemas: generated.schemas || [], packaging: { ...current.packaging, ...(generated.packaging || {}) } }));
-        }
-        setSelected(""); setSelectedIds([]); setSelectedEdge(null); setAiBuilderOpen(false); setLogs([{ level: "INFO", message: `Applied ${proposal.provider} AI design proposal. Validate the ${scope} before running.` }]);
-      }}/>}
+      {aiBuilderOpen && <AIBuilderDialog currentTask={task} projectId={project.id} onClose={() => setAiBuilderOpen(false)}
+        prepare={(proposal: AIProposal) => {
+          if (proposal.scope === "task" && task.kind === "subtask" && proposal.project.tasks[0]?.kind === "starter" &&
+              project.tasks.some(item => item.activities.some(activity => calledTask(activity)?.id === task.id))) {
+            throw new Error("This subtask is called by another task. Generate a separate starter task to keep those calls valid.");
+          }
+          return prepareAiDraft(project, task, proposal);
+        }}
+        onApply={(draft: AIProjectDraft) => {
+          const id = draft.project.active_task_id;
+          setOpenTaskIds(draft.scope === "task" ? [...new Set([...openTaskIds, id])] : [id]);
+          setProject(draft.project);
+          setSelected(""); setSelectedIds([]); setSelectedEdge(null); setAiBuilderOpen(false);
+          setLogs([{ level: "INFO", message: `Applied AI Build design. ${draft.issues.length} validation findings remain in the draft.` }]);
+        }}/>}
       {helpDialog && <HelpDialog mode={helpDialog} onClose={() => setHelpDialog(null)}/>}
       {currentValidation && <ValidationReview key={currentValidation.taskId ?? "project"}
         title={currentValidation.title} open={currentValidation.open}
@@ -5102,17 +5150,218 @@ function CatchAIDialog({ options, onClose, onApply }: any) {
   const toggle = (value: string) => setSelected((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
   return <ModalLayer className="modal-backdrop"><div className="runtime-modal catch-ai-dialog"><header><span><WandSparkles/><b>AI Catch · Select exceptions</b></span><button aria-label="Close AI Catch" onClick={onClose}>×</button></header><main><p>Select exceptions from the current process and its called tasks. The Studio will create Catch → Throw mappings automatically.</p><div className="catch-ai-modal-list">{options.map((value: string) => <label key={value} className={selected.includes(value) ? "selected" : ""}><input type="checkbox" checked={selected.includes(value)} onChange={() => toggle(value)}/><ShieldAlert/><span><b>{value}</b><small>Map type, code, message, details, and stack trace</small></span></label>)}</div></main><footer><button onClick={() => setSelected(options)}>Select all</button><button onClick={onClose}>Cancel</button><button className="primary" disabled={!selected.length} onClick={() => onApply(selected)}><WandSparkles/> Handle selected</button></footer></div></ModalLayer>;
 }
-function AIBuilderDialog({ currentTask, onClose, onApply }: any) {
-  const [requirement, setRequirement] = useState(""), [scope, setScope] = useState<"task" | "project">("task"), [proposal, setProposal] = useState<any>(null), [status, setStatus] = useState<any>(null), [busy, setBusy] = useState(false), [error, setError] = useState("");
-  useEffect(() => { fetch("/api/ai/status").then((response) => response.json()).then(setStatus).catch(() => setStatus({ provider: "unavailable" })); }, []);
-  const generate = async () => {
-    setBusy(true); setError(""); setProposal(null);
-    try { const response = await fetch("/api/ai/generate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ requirement, scope, current_task: currentTask }) }), output = await response.json(); if (!response.ok) throw new Error(output.detail || "AI design generation failed"); setProposal(output); }
-    catch (failure: any) { setError(failure.message || "AI design generation failed"); }
-    finally { setBusy(false); }
+type AIProposal = {
+  scope: "task" | "project";
+  provider: string;
+  summary: string;
+  assetFindings?: string[];
+  project: Partial<Project> & { tasks: Task[] };
+};
+
+type AIProjectDraft = {
+  scope: AIProposal["scope"];
+  project: Project;
+  issues: ValidationIssue[];
+};
+
+function prepareAiDraft(current: Project, task: Task, proposal: AIProposal): AIProjectDraft {
+  const generated = proposal.project;
+  const scoped = proposal.scope === "task";
+  if (!generated.tasks.length || (scoped && generated.tasks.length !== 1)) {
+    throw new Error("AI Build returned an invalid number of tasks for this scope.");
+  }
+  const resourceIds = new Map<string, string>();
+  const schemaIds = new Map<string, string>();
+  const mergeAssets = <T extends Resource | SchemaDoc>(saved: T[], added: T[], aliases: Map<string, string>): T[] => {
+    const ids = new Set(saved.map(item => item.id.toLowerCase()));
+    const namesByPackage = new Map<string, Set<string>>();
+    for (const item of [...saved, ...added]) {
+      const key = packagePath(item.package_path);
+      if (!namesByPackage.has(key)) namesByPackage.set(key, new Set());
+    }
+    for (const item of saved) namesByPackage.get(packagePath(item.package_path))?.add(activityReferenceName(item.name).toLowerCase());
+    return added.map(item => {
+      const id = ids.has(item.id.toLowerCase()) ? uniqueActivityName(`ai-${item.id}`, ids) : item.id;
+      aliases.set(item.id, id);
+      ids.add(id.toLowerCase());
+      const names = namesByPackage.get(packagePath(item.package_path))!;
+      return { ...item, id, name: uniqueActivityName(activityReferenceName(item.name), names) };
+    });
   };
-  const taskCount = proposal?.project?.tasks?.length || 0, activityCount = proposal?.project?.tasks?.reduce((total: number, task: any) => total + task.activities.length, 0) || 0;
-  return <ModalLayer className="modal-backdrop"><div className="runtime-modal ai-builder-dialog"><header><span><WandSparkles/><span><b>AI Integration Builder</b><small>Natural language to editable middleware design</small></span></span><button aria-label="Close AI builder" onClick={onClose}>×</button></header><main><section className="ai-requirement"><div className="ai-scope"><button className={scope === "task" ? "active" : ""} onClick={() => setScope("task")}><Activity/> Current Task</button><button className={scope === "project" ? "active" : ""} onClick={() => setScope("project")}><Package/> Complete Project</button><small>{status?.provider === "openai" ? `OpenAI · ${status.model}` : "Local blueprint mode · set OPENAI_API_KEY for model-assisted generation"}</small></div><label>Describe the integration requirement<textarea autoFocus value={requirement} onChange={(event) => setRequirement(event.target.value)} placeholder="Receive a REST order, validate and transform JSON, insert it with JDBC, catch errors, log them, and return an HTTP response…"/></label><button className="generate-ai-design" disabled={busy || requirement.trim().length < 10} onClick={generate}><WandSparkles/> {busy ? "Designing…" : "Generate design preview"}</button>{error && <p className="ai-builder-error">{error}</p>}</section><section className="ai-preview">{proposal ? <><header><span><b>DESIGN PREVIEW</b><small>{proposal.summary}</small></span><span>{taskCount} tasks · {activityCount} activities · {proposal.project.resources?.length || 0} connections</span></header>{proposal.project.tasks.map((task: any) => <article key={task.id}><b>{task.name}</b><small>{task.kind}</small><div>{task.activities.map((activity: any) => <span key={activity.id}>{activity.name}</span>)}</div></article>)}<details><summary>Review generated JSON</summary><pre>{JSON.stringify(proposal.project, null, 2)}</pre></details></> : <div className="ai-preview-empty"><WandSparkles/><b>Your design preview appears here</b><p>Nothing is changed until you inspect the proposal and click Apply.</p></div>}</section></main><footer><span>Credentials are never stored in the generated project.</span><button onClick={onClose}>Cancel</button><button className="primary" disabled={!proposal} onClick={() => onApply(proposal)}>Apply generated {scope}</button></footer></div></ModalLayer>;
+  const savedResources = scoped ? current.resources : current.resources.filter(item => item.library_origin);
+  const savedSchemas = scoped ? current.schemas : current.schemas.filter(item => item.library_origin);
+  const savedTasks = scoped ? current.tasks : current.tasks.filter(item => item.library_origin);
+  const resources = mergeAssets(savedResources, generated.resources || [], resourceIds);
+  const schemas = mergeAssets(savedSchemas, generated.schemas || [], schemaIds);
+  const rebind = (value: any, field = ""): any => {
+    if (typeof value === "string") {
+      if (/(?:resource|connection)id$/i.test(field)) return resourceIds.get(value) ?? value;
+      if (/schemaid$/i.test(field)) return schemaIds.get(value) ?? value;
+      return value;
+    }
+    if (Array.isArray(value)) return value.map(item => rebind(item, field));
+    if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, rebind(item, key)]));
+    return value;
+  };
+  const generatedTasks = generated.tasks.map(item => ({
+    ...item,
+    ...(scoped ? { id: task.id, name: task.name, package_path: task.package_path,
+      input_schema: Object.keys(item.input_schema || {}).length ? item.input_schema : task.input_schema,
+      output_schema: Object.keys(item.output_schema || {}).length ? item.output_schema : task.output_schema } : {}),
+    activities: item.activities.map(activity => ({ ...activity, config: rebind(activity.config) })),
+    groups: item.groups?.map(group => ({ ...group, config: rebind(group.config) })),
+  }));
+  if (!scoped && generatedTasks.some(item => savedTasks.some(saved => saved.id === item.id))) {
+    throw new Error("A generated task identifier conflicts with an installed integration library.");
+  }
+  const nextTasks = normalizeProject({ ...current, tasks: generatedTasks, active_task_id: generatedTasks[0].id }).tasks;
+  const candidate: Project = {
+    ...current,
+    ...(!scoped ? {
+      name: activityReferenceName(generated.name || current.name),
+      description: generated.description ?? current.description,
+      packaging: { ...current.packaging, ...generated.packaging },
+    } : {}),
+    process: undefined,
+    active_task_id: nextTasks[0].id,
+    tasks: scoped ? savedTasks.map(item => item.id === task.id ? nextTasks[0] : item) : [...nextTasks, ...savedTasks],
+    resources: [...savedResources, ...resources],
+    schemas: [...savedSchemas, ...schemas],
+  };
+  const issues = scoped ? validateTaskDefinition(candidate, nextTasks[0]) : validateProjectDefinition(candidate);
+  return { scope: proposal.scope, project: candidate, issues };
+}
+
+function AIBuilderDialog({ currentTask, projectId, onClose, prepare, onApply }: {
+  currentTask: Task;
+  projectId: string;
+  onClose: () => void;
+  prepare: (proposal: AIProposal) => AIProjectDraft;
+  onApply: (draft: AIProjectDraft) => void;
+}) {
+  const [requirement, setRequirement] = useState("");
+  const [scope, setScope] = useState<AIProposal["scope"]>("task");
+  const [preview, setPreview] = useState<{ proposal: AIProposal; draft: AIProjectDraft } | null>(null);
+  const [status, setStatus] = useState<{ provider: string; model?: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [designFiles, setDesignFiles] = useState<File[]>([]);
+  useEffect(() => {
+    const request = new AbortController();
+    fetch("/api/ai/status", { signal: request.signal }).then(response => {
+      if (!response.ok) throw new Error("AI Build status is unavailable");
+      return response.json();
+    }).then(setStatus).catch(() => {
+      if (!request.signal.aborted) setStatus({ provider: "unavailable" });
+    });
+    return () => request.abort();
+  }, []);
+  const request = useRef<AbortController | null>(null);
+  useEffect(() => () => request.current?.abort(), []);
+  const generate = async () => {
+    const controller = new AbortController();
+    request.current = controller;
+    setBusy(true);
+    setError("");
+    setPreview(null);
+    try {
+      const designAssets = await Promise.all(designFiles.map(file => new Promise<{ name: string; content: string }>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name, content: String(reader.result).split(",", 2)[1] });
+        reader.onerror = () => reject(new Error(`Could not read ${file.name}.`));
+        reader.readAsDataURL(file);
+      })));
+      const response = await fetch("/api/ai/generate", {
+        method: "POST", headers: { "content-type": "application/json" }, signal: controller.signal,
+        body: JSON.stringify({ requirement: requirement.trim(), scope, project_id: projectId, design_assets: designAssets,
+          current_task: scope === "task" ? currentTask : undefined }),
+      });
+      const output = await response.json();
+      if (!response.ok) throw new Error(typeof output.detail === "string" ? output.detail : "AI Build could not generate a design.");
+      setPreview({ proposal: output, draft: prepare(output) });
+    } catch (failure) {
+      if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "AI Build could not generate a design.");
+    } finally {
+      if (!controller.signal.aborted) setBusy(false);
+    }
+  };
+  const changeScope = (value: AIProposal["scope"]) => {
+    setScope(value);
+    setPreview(null);
+    setError("");
+  };
+  const issues = preview?.draft.issues ?? [];
+  const provider = preview?.proposal.provider ?? status?.provider;
+  return <ModalLayer className="modal-backdrop">
+    <div className="runtime-modal ai-builder-dialog" role="dialog" aria-modal="true" aria-labelledby="ai-builder-title">
+      <header>
+        <span><WandSparkles/><b id="ai-builder-title">AI Build</b></span>
+        <button onClick={onClose} aria-label="Close AI builder">×</button>
+      </header>
+      <main>
+        <section className="ai-requirement">
+          <div className="ai-scope">
+            <button disabled={busy} className={scope === "task" ? "active" : ""} onClick={() => changeScope("task")}><Activity/> Current Task</button>
+            <button disabled={busy} className={scope === "project" ? "active" : ""} onClick={() => changeScope("project")}><Package/> Complete Project</button>
+            <small>{provider === "openai" ? ("Model-assisted" + (status?.model ? ` · ${status.model}` : "")) :
+              provider === "local-blueprint" ? "Local blueprint · recognizes named activities and common flow patterns" :
+              provider === "unavailable" ? "Builder status unavailable" : "Checking builder status…"}</small>
+          </div>
+          <label>Describe the integration requirement
+            <textarea autoFocus disabled={busy} maxLength={20000} value={requirement}
+              onChange={event => { setRequirement(event.target.value); setPreview(null); setError(""); }}
+              placeholder="Host POST /orders using a REST receiver, parse JSON, log, and send an HTTP response."/>
+          </label>
+          <label>Design files
+            <input type="file" multiple accept=".xsd,.json,.schema,.xlsx" disabled={busy} onChange={event => {
+              const files = [...(event.currentTarget.files ?? [])];
+              event.currentTarget.value = "";
+              setPreview(null);
+              if (files.length > 12 || files.some(file => file.size > 2 * 1024 * 1024)) {
+                setError("Select up to 12 design files, each at most 2 MiB.");
+                return;
+              }
+              setDesignFiles(files);
+              if (files.length) setScope("project");
+              setError("");
+            }}/>
+          </label>
+          {designFiles.length > 0 && <div>
+            <small>{designFiles.map(file => file.name).join(", ")}</small>
+            <button type="button" disabled={busy} onClick={() => { setDesignFiles([]); setPreview(null); }}>Clear design files</button>
+          </div>}
+          <button className="generate-ai-design" disabled={busy || requirement.trim().length < 10} onClick={generate}>
+            <WandSparkles/> {busy ? "Generating…" : "Generate design preview"}
+          </button>
+          {error && <p className="ai-builder-error" role="alert">{error}</p>}
+        </section>
+        <section className="ai-preview" aria-live="polite">
+          {preview ? <>
+            <header><span><b>Design preview</b><small>{preview.proposal.summary}</small></span></header>
+            {Boolean(preview.proposal.assetFindings?.length) && <details open>
+              <summary>Schema mapping findings</summary>
+              <ul>{preview.proposal.assetFindings?.slice(0, 25).map(finding => <li key={finding}>{finding}</li>)}</ul>
+            </details>}
+            {preview.proposal.project.tasks.map(item => <article key={item.id}>
+              <b>{item.name}</b><small>{item.kind}</small>
+              <div>{item.activities.map(activity => <span key={activity.id}>{activity.name}</span>)}</div>
+            </article>)}
+            {issues.length > 0 && <details open>
+              <summary>{issues.length} validation findings to review</summary>
+              <ul>{issues.slice(0, 15).map(issue => <li key={issue.id}>{issue.message} {issue.remedy}</li>)}</ul>
+              {issues.length > 15 && <p>Use Studio validation to see the remaining findings after applying the draft.</p>}
+            </details>}
+            <details><summary>Review generated project JSON</summary><pre>{JSON.stringify(preview.proposal.project, null, 2)}</pre></details>
+          </> : <div className="ai-preview-empty"><WandSparkles/><b>{busy ? "Generating the design…" : "Your design preview appears here"}</b></div>}
+        </section>
+      </main>
+      <footer>
+        {preview && <span>{scope === "task" ? "Applying replaces the current task’s flow." : "Applying replaces the current project design."}</span>}
+        <button onClick={onClose}>Cancel</button>
+        <button className="primary" disabled={!preview || busy} onClick={() => preview && onApply(preview.draft)}>Apply draft</button>
+      </footer>
+    </div>
+  </ModalLayer>;
 }
 const deploymentArtifactChoices: Record<string, { key: string; label: string; detail: string }[]> = {
   cloud: [
@@ -5324,6 +5573,7 @@ function StudioRibbon(props: any) {
       {command("Create Integration Library", BookOpen, () => props.openLibraries("publish"))}
       {command("Import Integration Library", Download, () => props.openLibraries("install"))}
       {command("Export Integration Library", Upload, () => props.openLibraries("export"))}
+      {command("Event Contracts", CodeXml, props.eventContracts)}
       {command("Close", Square, props.closeProject)}
     </>},
     {label:"Navigate", icon:ArrowLeft, commands:<>
@@ -5333,7 +5583,23 @@ function StudioRibbon(props: any) {
       {command("Up", ArrowUp, props.navigation.up, !props.navigation.up, false, props.navigation.upLabel)}
       {command("Project Search", Search, props.projectSearch)}
     </>},
-    {label:"Execute", caption:"Execute & Validate", icon:Zap, commands:<>{command("API Blueprint", Globe, props.apiBlueprint, props.executionActive)}{command("AI Build", WandSparkles, props.aiBuild)}{command("Jira Story", Ticket, props.jiraStory, props.executionActive)}{command("AI Catch", WandSparkles, props.catchAI)}{command("Execution Setup", Settings2, props.executionSetup, props.executionActive)}{command("Run", Zap, props.run, props.executionActive)}{command("Debug", Bug, props.debug, props.executionActive)}{command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}{command("Execution Monitor", BookOpen, props.executionMonitor)}{command("Execution Analytics", Activity, props.executionAnalytics)}{command("Validate Task", ShieldCheck, props.validateTask)}{command("Validate Project", CheckCircle2, props.validateProject)}{props.reviewValidation && command("Review Findings", ShieldCheck, props.reviewValidation)}</>},
+    {label:"AI", icon:WandSparkles, commands:<>
+      {command("AI Build", WandSparkles, props.aiBuild)}
+      {command("AI Catch", WandSparkles, props.catchAI)}
+      {command("Jira Story", Ticket, props.jiraStory, props.executionActive)}
+    </>},
+    {label:"Runtime", icon:Zap, commands:<>
+      {command("API Blueprint", Globe, props.apiBlueprint, props.executionActive)}
+      {command("Execution Setup", Settings2, props.executionSetup, props.executionActive)}
+      {command("Run", Zap, props.run, props.executionActive)}
+      {command("Debug", Bug, props.debug, props.executionActive)}
+      {command("Stop", Square, props.stop, !props.executionActive, props.executionActive)}
+      {command("Execution Monitor", BookOpen, props.executionMonitor)}
+      {command("Execution Analytics", Activity, props.executionAnalytics)}
+      {command("Validate Task", ShieldCheck, props.validateTask)}
+      {command("Validate Project", CheckCircle2, props.validateProject)}
+      {props.reviewValidation && command("Review Findings", ShieldCheck, props.reviewValidation)}
+    </>},
     {label:"Edit", icon:Scissors, commands:<>{command("Undo", Undo2, props.undo)}{command("Cut", Scissors, props.cut, !props.selectedCount)}{command("Copy", ClipboardCopy, props.copy, !props.selectedCount)}{command("Paste", ClipboardPaste, props.paste)}</>},
     {label:"Arrange", caption:"Arrange " + props.selectedCount + " selected", icon:AlignVerticalSpaceAround, commands:<>{command("Align Vertical", AlignVerticalSpaceAround, props.alignVertical, props.selectedCount < 2)}{command("Align Horizontal", AlignHorizontalSpaceAround, props.alignHorizontal, props.selectedCount < 2)}{command("Move Up", ArrowUp, props.moveUp, !props.selectedCount)}{command("Move Down", ArrowDown, props.moveDown, !props.selectedCount)}</>},
   ]}/>;
@@ -5908,6 +6174,7 @@ function Context({
     amqp: { label: "AMQP Connection", description: "RabbitMQ, Qpid, ActiveMQ, AMQ and Azure Service Bus" },
     sap: { label: "SAP ECC Connection", description: "RFC, BAPI and IDoc metadata" },
     sap_tid: { label: "SAP TID Manager", description: "Transactional RFC state" },
+    trading_partner: { label: "Trading Partner", description: "AS2 identity, certificates, and EDI rules" },
   };
     if (menu.type === "canvas")
     return (
@@ -6013,6 +6280,7 @@ function Context({
               "amqp",
               "sap",
               "sap_tid",
+              "trading_partner",
             ] as const
           ).map((t) => (
             <button
@@ -6117,6 +6385,40 @@ function TaskDialog({ kind, packages, initialPackage, validateName, resources, s
 }
 const propertyExpression = (key: string) => `\${properties.${key}}`;
 const connectionFieldSets: Record<string, any[]> = {
+  trading_partner: [
+    { key: "localAs2Id", label: "Local AS2 ID", help: "AS2 identifier that the partner configured for MINA." },
+    { key: "partnerAs2Id", label: "Partner AS2 ID", help: "Exact AS2 identifier supplied by the partner." },
+    { key: "endpointUrl", label: "Partner AS2 HTTPS URL", help: "Destination for AS2 Send. Leave blank for a receive-only profile." },
+    { key: "as2HttpUsername", label: "Outbound HTTP Basic username", help: "Optional HTTPS credential for the AS2 Send endpoint only." },
+    { key: "as2HttpPassword", label: "Outbound HTTP Basic password", password: true, help: "Bind a protected environment property. Used for AS2 Send only." },
+    { key: "as2ResponseRetries", label: "Retries when the HTTP response is lost", options: ["0", "1", "2"], help: "Replays the same signed wire bytes, Message-ID and Date on a connection reset or response read timeout. Defaults to zero." },
+    { key: "receiptAddress", label: "Disposition notification address", help: "Required by AS2 Send to request a signed MDN in either receipt mode." },
+    { key: "receiptMode", label: "Outbound receipt mode", options: ["synchronous", "asynchronous"], help: "Asynchronous mode accepts the HTTP transfer acknowledgement first and reconciles the signed receipt on a separate callback." },
+    { key: "localMdnUrl", label: "Local asynchronous MDN HTTPS URL", help: "The public callback URL of your AS2 Receive Async MDN flow." },
+    { key: "partnerMdnUrl", label: "Partner asynchronous MDN HTTPS URL", help: "The exact HTTPS callback agreed with the partner. Received callback addresses must match it before delivery is allowed." },
+    { key: "reconciliationBackend", label: "Reconciliation backend", options: ["sqlite", "postgresql"], help: "PostgreSQL shares reconciliation across replicas and reads MINA_AS2_LEDGER_POSTGRES_DSN." },
+    { key: "reconciliationKey", label: "Shared reconciliation key", help: "Optional stable key used by all authorized projects for this partner. The resource ID is used when blank." },
+    { key: "reconciliationLeaseSeconds", label: "Inbound processing lease (seconds)", help: "Time allowed to complete a claimed inbound delivery. Defaults to 300 and supports up to 86400 seconds." },
+    { key: "localCertificateFile", label: "Local X.509 certificate (PEM)", help: "Runtime path to the local AS2 signing and decryption certificate." },
+    { key: "localPrivateKeyFile", label: "Local private key (PEM)", help: "Runtime path to the locally protected private key. Provision separately from the archive." },
+    { key: "localKeyPassword", label: "Private key passphrase", password: true, help: "Optional passphrase for an encrypted PEM key. Bind a protected environment property." },
+    { key: "partnerCertificateFile", label: "Pinned partner certificate (PEM)", help: "Runtime path to the agreed partner certificate used for signature verification and encryption." },
+    { key: "tlsCaFile", label: "HTTPS CA bundle (PEM)", help: "Optional additional trust roots for the HTTPS server. System trust and hostname verification remain enabled." },
+    { key: "as2TlsClientCertFile", label: "Mutual TLS client certificate chain (PEM)", help: "Optional runtime PEM path for HTTPS client authentication on sends and MDN callbacks." },
+    { key: "as2TlsClientKeyFile", label: "Mutual TLS client private key (PEM)", help: "Required with a TLS client certificate. Provision separately from the archive." },
+    { key: "as2TlsClientKeyPassword", label: "Mutual TLS client key passphrase", password: true, help: "For an encrypted TLS client key, bind a protected environment property." },
+    { key: "compressOutbound", label: "Compress outbound EDI", options: ["false", "true"], help: "Uses CMS zlib compression before signing. Inbound accepts compression before or after signing." },
+    { key: "rejectInvalidEdiWithMdn", label: "Return signed MDN for invalid inbound EDI", options: ["false", "true"], help: "After the partner signature has been verified, returns status rejected and a receipt instead of a validation fault. Route rejected deliveries directly to the HTTP response and async callback path." },
+    { key: "encryptOutbound", label: "Encrypt outbound EDI", options: ["true", "false"], help: "Encrypt signed messages with the pinned partner certificate." },
+    { key: "requireEncryption", label: "Require inbound encryption", options: ["true", "false"], help: "Reject signed-only inbound AS2 unless the trading agreement permits it." },
+    { key: "ediFormat", label: "EDI interchange format", options: ["x12", "edifact"], help: "Leave empty to accept either supported interchange syntax." },
+    { key: "as2PayloadMediaType", label: "Non-EDI payload media type", help: "Set the agreed type, for example application/xml, application/json or application/octet-stream. Leave blank for validated X12 and EDIFACT." },
+    { key: "localEdiId", label: "Local EDI interchange ID", help: "Optional. Validate the local sender or recipient ID on the interchange envelope." },
+    { key: "partnerEdiId", label: "Partner EDI interchange ID", help: "Optional. Validate the corresponding partner ID on the interchange envelope." },
+    { key: "allowedTransactionTypes", label: "Allowed EDI transaction types", help: "Comma-separated transaction codes such as 850 or ORDERS." },
+    { key: "transactionRules", label: "Partner EDI rules (JSON)", help: "Optional transaction rules keyed by transaction type. Each can declare requiredSegments and requiredElements." },
+    { key: "timeoutSeconds", label: "AS2 HTTP timeout (seconds)", help: "The phase timeout for AS2 Send, from 1 to 120 seconds." },
+  ],
   jdbc: [
     { key: "driver", label: "Database", options: ["sqlite", "postgresql", "mysql", "mariadb", "sqlserver", "oracle", "db2", "snowflake", "databricks"] },
     { key: "connectionMode", label: "Connection runtime", options: ["jdbc", "python"], when: (config: any) => ["sqlserver", "mssql", "oracle"].includes(config.driver) },
@@ -6460,6 +6762,7 @@ function connectionDefaults(type: string) {
   if (type === "http") Object.assign(values, { connectorMode: "both", scheme: "http", host: "localhost", port: 8080, authentication: "None", defaultConfidentiality: "false", tlsEnabled: "false", clientAuthentication: "none", tlsVersion: "TLSv1.2", verifyTls: "true", httpVersion: "1.1", connectionTimeoutMs: 30000, socketTimeoutMs: 60000, writeTimeoutMs: 60000, poolTimeoutMs: 30000, maximumTotalConnections: 200, maximumConnectionsPerHost: 20, idleConnectionTimeoutMs: 40000, minimumQtpThreads: 10, maximumQtpThreads: 75, maxQueueSize: 100, acceptQueueSize: 128, readTimeoutMs: 30000, maxHeaderBytes: 65536, maxRequestBodyBytes: 67108864, maxResponseBodyBytes: 67108864, activityTimeoutSeconds: 180, oauthTimeoutSeconds: 30, jwtLifetimeSeconds: 300, jwtClockSkewSeconds: 30, hmacClockSkewSeconds: 300, hmacKeyId: "default", ldapTimeoutSeconds: 10, ldapSearchFilter: "(uid={username})" });
   if (type === "sap") Object.assign(values, { mode: "external", release: "current", connectionType: "dedicated", maximumConnections: 8, outboundWorkerCount: 2, poolCapacity: 1, peakLimit: 1, connectionExpirationMilliseconds: 600000, outboundPoolIdleSeconds: 1800, maximumOutboundPools: 16, maxPendingEvents: 16, jvmInitialHeapMb: 64, jvmMaximumHeapMb: 512, ackTimeoutSeconds: 300 });
   if (type === "sap_tid") Object.assign(values, { mode: "active", storageFile: "data/sap-tids.properties" });
+  if (type === "trading_partner") Object.assign(values, { encryptOutbound: "true", requireEncryption: "true", timeoutSeconds: 30, receiptMode: "synchronous", reconciliationBackend: "sqlite", reconciliationLeaseSeconds: 300 });
   if (type === "jdbc") Object.assign(values, { driver: "postgresql", connectionMode: "python", authentication: "SQL Server Authentication", encrypt: "true", trustServerCertificate: "false" });
   if (type === "ems") Object.assign(values, { connectionFactoryType: "Direct", connectionTimeoutSeconds: 30 });
   if (type === "jms") Object.assign(values, { connectionFactoryType: "Direct", connectionTimeoutSeconds: 30 });
@@ -6474,7 +6777,7 @@ function SharedConnectionDialog({ type, initial, initialRole, requireInitialRole
   const idocBrowserRef = useRef<HTMLElement>(null);
   const snowflakeBrowserRef = useRef<HTMLElement>(null);
   const [draft, setDraft] = useState<any>(() => {
-    const value = initial ? structuredClone(initial) : { id: `${type}-${Date.now()}`, type, name: `${type === "sap" ? "SAP ECC" : type.toUpperCase()} Connection`, config: connectionDefaults(type) };
+    const value = initial ? structuredClone(initial) : { id: `${type}-${Date.now()}`, type, name: type === "trading_partner" ? "Trading Partner" : `${type === "sap" ? "SAP ECC" : type.toUpperCase()} Connection`, config: connectionDefaults(type) };
     if (!initial && initialRole) { value.config.connectorMode = initialRole; value.name = `HTTP ${initialRole === "client" ? "Client" : "Server"} Connection`; }
     // The old design-time memory/external selector is no longer part of real
     // shared connections. Editing an older resource upgrades it automatically.

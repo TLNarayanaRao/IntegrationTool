@@ -44,6 +44,8 @@ const guides = [
  ['Connectors', 'FILE_TRANSFER_DATABASE_READINESS.md'],
  ['Getting started', 'DOCUMENTATION.md'],
  ['Studio', 'INTEGRATION_LIBRARIES.md'],
+ ['Studio', 'PLATFORM_INTEGRATION.md'],
+ ['Connectors', 'TRADING_PARTNERS.md'],
  ['Studio', 'JIRA_STORY.md'],
  ['Data', 'PARSE_RENDER_ACTIVITIES.md'],
  ['Mapping', 'TRANSFORMATION_CAPABILITIES.md'], ['Studio', 'DEBUG_TESTING.md'], ['Studio', 'DEBUGGING.md'], ['Studio', 'execution-analytics.md'], ['Studio', 'FILE_UTILITIES.md'],

@@ -9,6 +9,7 @@ export const isEventActivity = (item: EntryActivity) => {
   return item.type === "start" || item.type === "timer" || item.type === "http_listener" ||
     (item.type === "rest" && operation === "receiver") || (item.type === "soap" && operation === "service") ||
     (item.type === "file" && operation === "poll") ||
+    (item.type === "basic" && ["sqs_receive", "s3_event", "cdc_receive"].includes(operation)) ||
     (item.type === "ems" && ["queue_receiver", "topic_subscriber"].includes(operation)) ||
     (item.type === "jms" && operation === "receive_message") ||
     (item.type === "kafka" && ["receive", "get"].includes(operation)) ||

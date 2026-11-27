@@ -1,0 +1,22 @@
+{
+  "id": "platform-flow",
+  "name": "Platform Flow",
+  "properties": {"local": [], "qa": []},
+  "tasks": [{
+    "id": "create-event",
+    "name": "Create Event",
+    "kind": "subtask",
+    "activities": [
+      {"id": "start", "name": "Start", "type": "start"},
+      {"id": "encode", "name": "Create CloudEvent", "type": "basic", "config": {
+        "operation": "cloudevent_encode",
+        "eventAttributes": {"id": "test-event", "source": "/orders", "type": "order.created"}
+      }},
+      {"id": "end", "name": "End", "type": "end"}
+    ],
+    "transitions": [
+      {"id": "first", "source": "start", "target": "encode"},
+      {"id": "second", "source": "encode", "target": "end"}
+    ]
+  }]
+}

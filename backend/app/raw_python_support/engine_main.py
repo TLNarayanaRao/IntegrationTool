@@ -137,7 +137,7 @@ async def _receive_forever(project, task, event, environment: str) -> None:
                     from .engine.file_operations import file_poll_events
                     output, seen_files = file_poll_events(output, cfg, seen_files)
                 if not _event_available(output):
-                    await asyncio.sleep(max(.1, float(cfg.get('pollInterval') or 1)) if event.type == 'file' else .1)
+                    await asyncio.sleep(max(.1, float(cfg.get('pollInterval') or 1)) if event.type in ('file', 'basic') else .1)
                     continue
                 if sap and isinstance(output, dict):
                     delivery_id = output.pop('_sapDeliveryId', None)

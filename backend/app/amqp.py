@@ -143,6 +143,9 @@ def send(config: dict, activity: dict) -> dict:
     message_id = str(activity.get("messageID") or uuid.uuid4())
     properties = activity.get("userProperties") or {}
     if isinstance(properties, list): properties = {str(item.get("name")): item.get("value") for item in properties}
+    if isinstance(properties, dict):
+        from .observability import inject_messaging
+        properties = inject_messaging(dict(properties))
     if broker == "AzureSB-1-0":
         try:
             from azure.servicebus import ServiceBusMessage

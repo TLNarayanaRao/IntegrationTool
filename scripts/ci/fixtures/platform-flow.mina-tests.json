@@ -1,0 +1,13 @@
+{
+  "cases": [{
+    "task": "create-event",
+    "input": {"orderId": "TEST-1"},
+    "expected": {
+      "specversion": "1.0",
+      "id": "test-event",
+      "source": "/orders",
+      "type": "order.created",
+      "data": {"orderId": "TEST-1"}
+    }
+  }]
+}

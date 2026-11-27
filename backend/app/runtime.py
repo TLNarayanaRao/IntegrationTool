@@ -21,6 +21,7 @@ from .mapping_literals import parse_literal
 from .retry_policy import ActivityCircuits, CircuitPlan, RetryPlan, outbound_activity
 from .http_transport import request as http_request, merged as merge_http_config
 from .message_state import operate as mediation_operation
+from .observability import inject_messaging, instrument, messaging_carrier, trace_fields
 from .google_pubsub import client_configuration as pubsub_client_configuration, create_client as create_pubsub_client, project_id as pubsub_project_id
 from .time_utils import log_timestamp
 from .data_formats import DataFormats
@@ -593,6 +594,8 @@ class WorkflowRuntime(DataFormats):
         if delay: await asyncio.sleep(delay)
         return plan['entry']
 
+    @instrument('mina.task', lambda self, process, *_args, **_kwargs: None if process.library_origin else {'mina.task.id': process.id},
+                lambda self, process, initial, *_args, **kwargs: messaging_carrier(kwargs.get('event_output')))
     async def run(self, process: ProcessDefinition, initial: dict, resources=None, properties=None, entry_activity_id=None, project: Project | None=None, execution_state: dict | None=None, event_output: Any = _NO_EVENT_OUTPUT, transport: dict | None = None, jms_sender_scope: str | None = None, stop_activity_id=None, branch_context=None, branch_output=None, *, environment=None, debug_session_id=None, capture_branch_variables=False) -> RunResult:
         run_id, logs = str(uuid.uuid4()), []
         protected = bool(getattr(process, 'library_origin', None))
@@ -873,7 +876,7 @@ class WorkflowRuntime(DataFormats):
         return None
 
     def log(self, logs, level, message, activity_id=None, **details):
-        logs.append({'time': log_timestamp(), 'level': level, 'message': message, 'activityId': activity_id, **details})
+        logs.append({'time': log_timestamp(), 'level': level, 'message': message, 'activityId': activity_id, **trace_fields(), **details})
 
     @staticmethod
     def _cron_field_matches(expression: str, value: int, minimum: int, maximum: int) -> bool:
@@ -903,6 +906,11 @@ class WorkflowRuntime(DataFormats):
             candidate += timedelta(minutes=1)
         raise MinaFault('Cron expression did not produce an execution time within one year', fault_type='SCHEDULER')
 
+    @instrument('mina.activity', lambda self, activity, ctx: None if getattr(ctx.get('_process'), 'library_origin', None) else {
+        'mina.activity.id': activity.id, 'mina.activity.type': activity.type,
+        'mina.task.id': ctx.get('context', {}).get('taskId', ''),
+        'mina.mode': 'debug' if ctx.get('context', {}).get('debugSessionId') else 'run',
+    })
     async def execute_with_policy(self, activity: Activity, ctx: dict):
         policy = self.resolve(activity.config.get('errorPolicy', {}), ctx)
         advanced = self.resolve({
@@ -1063,6 +1071,18 @@ class WorkflowRuntime(DataFormats):
             return {'scheduledTime': scheduled.isoformat(), 'actualTime': fired.isoformat(), 'sequence': 1, 'triggerMode': trigger_mode, 'payload': ctx['last']}
         if activity.type == 'basic':
             operation = str(cfg.get('operation') or 'empty')
+            if operation in {'edi_parse', 'edi_render', 'edi_ack_create', 'edi_ack_read', 'as2_send', 'as2_receive', 'as2_receipt', 'as2_lookup', 'as2_mdn_receive', 'as2_mdn_deliver'}:
+                from .trading_partner import execute
+                partner = ctx['resources'].get(cfg.get('resourceId'))
+                profile = self.resolve(partner.config, ctx) if partner and partner.type == 'trading_partner' else None
+                return await asyncio.to_thread(execute, operation, cfg, cfg.get('payload', ctx['last']),
+                                               partner.id if profile is not None else '', profile)
+            if operation in {'s3_list', 's3_get', 's3_put', 's3_event', 'sqs_send', 'sqs_receive', 'sqs_ack', 'cdc_receive', 'cdc_ack'}:
+                from .platform_connectors import execute
+                return await asyncio.to_thread(execute, operation, cfg, cfg.get('payload', ctx['last']))
+            if operation in {'asyncapi_validate', 'cloudevent_encode', 'cloudevent_decode'}:
+                from .event_contracts import execute
+                return await asyncio.to_thread(execute, operation, cfg, cfg.get('payload', ctx['last']))
             if operation in {'deduplicate', 'message_receipt', 'replay_messages', 'aggregate_messages', 'split_records'}:
                 return await asyncio.to_thread(mediation_operation, operation, cfg, cfg.get('payload', ctx['last']))
             if operation == 'empty': return ctx['last']
@@ -1466,6 +1486,8 @@ class WorkflowRuntime(DataFormats):
             if kind == 'avro schema': raise MinaFault('Avro Schema deserialization requires the configured Schema Registry runtime', fault_type='KafkaSchemaRegistryException')
             return raw.decode(errors='replace')
         attributes = {str(key): str(value) for key, value in {**mapping(cfg.get('dynamicProperties')), **mapping(cfg.get('attributes')), **mapping(cfg.get('headers'))}.items()}
+        if operation in ('publish', 'send', 'send_message', 'queue_sender', 'topic_publisher', 'request_reply', 'reply'):
+            inject_messaging(attributes)
         timestamp = log_timestamp()
         envelope = {'id': str(uuid.uuid4()), 'data': payload, 'attributes': attributes, 'destination': destination, 'technology': technology, 'timestamp': timestamp, 'key': cfg.get('key'), 'correlationId': cfg.get('correlationId'), 'replyTo': cfg.get('replyTo'), 'type': cfg.get('type'), 'priority': int(cfg.get('priority', 4) or 4), 'deliveryMode': cfg.get('deliveryMode', 'Persistent'), 'expiration': int(cfg.get('expiration', 0) or 0)}
         receive_ops = {'receive', 'subscribe', 'pull', 'get', 'queue_receiver', 'topic_subscriber', 'get_queue_message', 'receive_message', 'wait_request'}

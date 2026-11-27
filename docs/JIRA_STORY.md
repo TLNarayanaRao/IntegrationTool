@@ -1,6 +1,6 @@
 # Build or review an integration from a Jira story
 
-Open **Jira Story** in the Studio ribbon under **Execute & Validate**. From the welcome screen, select **Build from Jira story** to create a project.
+Open **Jira Story** in the Studio ribbon under **AI**, alongside **AI Build** and **AI Catch**. From the welcome screen, select **Build from Jira story** to create a project.
 
 1. Select **Paste story** and paste the description and acceptance criteria. To load a Jira Cloud issue, select **Read Jira Cloud issue**, enter its `https://<site>.atlassian.net/browse/<issue-key>` link, and click **Read issue**. To read a private issue, provide your Jira email and a site API token with issue access. Leave both credential fields blank for a public issue. For Jira Data Center or custom domains, paste the story.
 2. Review the editable story text. Include the trigger, input and output contracts, operation and destination, field mappings, and expected behavior on failure. If acceptance criteria live in a separate Jira text field, enter its ID, such as `customfield_10042`, before reading the issue. You can also include issue type, status, and available parent and subtask summaries in the same read. You can remove any of this context before requesting a preview.

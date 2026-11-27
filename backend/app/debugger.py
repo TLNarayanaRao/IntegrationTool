@@ -9,6 +9,7 @@ from time import perf_counter
 from uuid import uuid4
 from .models import Project, find_subtask
 from .runtime import WorkflowRuntime
+from .observability import instrument, messaging_carrier
 from .sap import idoc_delivery_details
 from .time_utils import log_timestamp
 
@@ -183,6 +184,7 @@ class DebugManager:
         return matched
 
     def rearm_listener(self, state: dict, complete_request=True):
+        state.pop('_brokerTraceCarrier', None)
         if complete_request and state.get('httpPending') is not None:
             from .debug_http import finish_request
             finish_request(state)
@@ -210,6 +212,7 @@ class DebugManager:
         activity = next(item for item in task.activities if item.id == frame['activityId'])
         intake_started = perf_counter()
         ctx = frame['context']; ctx['input'] = output; ctx['last'] = output; ctx['context']['activityId'] = activity.id
+        state['_brokerTraceCarrier'] = messaging_carrier(output)
         trace = state['trace']
         trace.open_job(frame, task)
         trace.resume()
@@ -386,6 +389,8 @@ class DebugManager:
             options = {**options, 'task_id': task_id}
         return await self._drive(state, action, options)
 
+    @instrument('mina.debug', lambda self, state, action, *_args, **_kwargs: {'mina.mode': 'debug', 'mina.debug.action': action},
+                lambda self, state, *_args, **_kwargs: state.get('_brokerTraceCarrier') or {})
     async def _drive(self, state, action, options, *, check_entry=False):
         if state.get('_driver'):
             raise ValueError('The debugger is already executing. Pause it before stepping.')

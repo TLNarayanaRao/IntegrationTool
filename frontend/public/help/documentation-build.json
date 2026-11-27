@@ -1,11 +1,11 @@
 {
-  "fingerprint": "57c06b2bcfe4a3cbe4273ae55130c19e3c5ad3b6c6270edf94a5fcb054c6a321",
+  "fingerprint": "c7a6088678cf363b01b76e80668ca75139746165b8e725c930fae5acb32963d9",
   "files": {
-    "documentation-data.json": "6b204247cf63754b93a3b6857a89e0a866bb4f497f79b7d71a72fbb35d7e84e8",
-    "documentation-data.js": "e80d84115c9748ff9f07bd0476e6e7414536689e0f856b87e8793e2e9508eb9c",
-    "MINA-Documentation.pdf": "66397c8fa41152fdcef55609dc645496a0582af3d7b345920f721383bccbfbd8",
-    "developer-data.json": "897f98bc6cf2549040ec53146c22ac727b356bcd4b343f71804e37b99ceae4e7",
-    "MINA-Developer-Guide.pdf": "0f22a8a5404f5171b8a7f2e223cfb2dac9c2fbf5a557f96755a13fb21f1fa521",
+    "documentation-data.json": "716a60cee90cbeb5c9443c04d7ef2dbaa13dc440f23c98e6af02d8de0ecc7422",
+    "documentation-data.js": "c559aa976e5b0c80e05c55c33bb9235b8505f413d45324a63627c5e9d6ec60cb",
+    "MINA-Documentation.pdf": "a31991dea657c98428e4a3e96018c1fc22f0e2b6cbb74004a6fa115c6fd419d0",
+    "developer-data.json": "26f64c718b3f20a3ec873176e78fe87c9e6d01edfb5c38cfd2bf71cceae731c4",
+    "MINA-Developer-Guide.pdf": "890a523ec281206369714c00fa70774a383e1a8e7da8289735815770405e2ba0",
     "activity-icons/f3a93a6e7102-start-play.png": "b5224c82d6600f4066260aaf7a163411a394b2445fc3ecadf3584c7be0299e6f",
     "activity-icons/8ef29f8110cc-scheduler.svg": "8ef29f8110cc4993a5c1a3a635444a6cb0c957fdf1b8725e50278d30c3edb8a9",
     "activity-icons/8ef29f8110cc-scheduler.svg.png": "7d42664f162d20872a44faa3b07a9ea2f33660a9f2ad3811f955a0f7e71c6df5",
@@ -157,13 +157,14 @@
     "activity-icons/7ffe1c9b143f-general-shared-get.svg": "7ffe1c9b143fd20078db971a22f2e5c20c50975224eaa3181bbe3846d140d9bd",
     "activity-icons/7ffe1c9b143f-general-shared-get.svg.png": "79cff27311b35e21241043f75d0f47a0fa44607c06735ba44e69d903d5e126f6",
     "activity-icons/4d59802e85cf-general-shared-set.svg": "4d59802e85cf7183efd0d0fc9a3d4c58ee538d9533a5b9db88ef6dde490ac1f0",
-    "activity-icons/4d59802e85cf-general-shared-set.svg.png": "2ee4f81937d0faa1beddc804a87314f01fa276290a9f47aa8b9b8a7dedeaacd0"
+    "activity-icons/4d59802e85cf-general-shared-set.svg.png": "2ee4f81937d0faa1beddc804a87314f01fa276290a9f47aa8b9b8a7dedeaacd0",
+    "activity-icons/c74fb4f69aae-json.png": "4b0a138951e84c320752012c2b90074a53f52f8a880f7b7820d9b17eff2c6026"
   },
   "counts": {
-    "activities": 110,
+    "activities": 132,
     "groups": 15,
     "functions": 115,
-    "connections": 12,
-    "pages": 446
+    "connections": 13,
+    "pages": 493
   }
 }

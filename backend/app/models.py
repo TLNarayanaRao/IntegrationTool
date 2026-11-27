@@ -14,7 +14,7 @@ PackageCategory = Literal['tasks', 'resources', 'schemas']
 
 class SharedResource(BaseModel):
     id: str
-    type: Literal['jdbc', 'snowflake', 'amqp', 'ftp', 'sftp', 'http', 'ems', 'jms', 'kafka', 'pubsub', 'sap', 'sap_tid'] = 'jdbc'
+    type: Literal['jdbc', 'snowflake', 'amqp', 'ftp', 'sftp', 'http', 'ems', 'jms', 'kafka', 'pubsub', 'sap', 'sap_tid', 'trading_partner'] = 'jdbc'
     name: str
     package_path: PackagePath = 'Default'
     config: dict[str, Any] = Field(default_factory=dict)
@@ -95,6 +95,7 @@ def is_event_activity(activity: Activity) -> bool:
         (activity.type == 'rest' and operation == 'receiver') or \
         (activity.type == 'soap' and operation == 'service') or \
         (activity.type == 'file' and operation == 'poll') or \
+        (activity.type == 'basic' and operation in ('sqs_receive', 's3_event', 'cdc_receive')) or \
         (activity.type == 'amqp' and operation == 'receive') or \
         (activity.type == 'ems' and operation in ('queue_receiver', 'topic_subscriber')) or \
         (activity.type == 'jms' and operation == 'receive_message') or \
@@ -266,10 +267,16 @@ class SubtaskInputRequest(BaseModel):
     input: JsonValue = None
     input_format: Literal['json', 'xml'] = 'json'
 
+class AIBuildAsset(BaseModel):
+    name: str = Field(min_length=1, max_length=512)
+    content: str = Field(max_length=2_796_204)
+
 class AIBuildRequest(BaseModel):
     requirement: str = Field(min_length=10, max_length=20000)
     scope: Literal['task', 'project'] = 'task'
     current_task: dict[str, Any] | None = None
+    project_id: str | None = Field(default=None, max_length=128)
+    design_assets: list[AIBuildAsset] = Field(default_factory=list, max_length=12)
 
 class DebugRequest(RunRequest):
     test_mode: bool = False

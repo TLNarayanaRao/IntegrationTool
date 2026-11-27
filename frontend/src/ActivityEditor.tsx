@@ -1475,7 +1475,65 @@ export function activityContract(n: any): Contract {
       errors: [{ type: "PYTHON_IMPORT", description: "The module or package could not be imported." }, { type: "PYTHON_INVOCATION", description: "The selected Python function raised an exception." }],
     };
   if (n.type === "basic") {
+    const tradingPartner = {...f("resourceId", "Trading Partner profile", "resource"), resourceType:"trading_partner", required:true};
+    const ediGuide = [f("allowedTransactionTypes", "Allowed EDI transaction types", "text", "Comma-separated codes such as 850 or ORDERS."), f("transactionRules", "Partner EDI rules (JSON)", "textarea", "Optional requiredSegments and requiredElements keyed by transaction type.")];
+    const ediFields = [d("format", "Interchange format"), d("controlNumber", "Interchange control reference"),
+      d("sender", "EDI sender"), d("receiver", "EDI receiver"), d("transactions", "EDI transactions", "array"),
+      d("segments", "EDI segments", "array"), d("separators", "EDI delimiters", "object"), d("serviceAdvice", "EDIFACT UNA service advice")];
+    const partnerErrors = [{type:"TradingPartnerException", description:"The EDI envelope, AS2 profile, signature, receipt or delivery did not validate."}];
+    const receipt = d("receipt", "Signed MDN response", "object");
+    const receiptMode = d("receiptMode", "AS2 receipt mode");
+    const receiptMicVerified = d("receiptMicVerified", "Receipt MIC verified", "boolean");
+    const as2ErrorCode = d("errorCode", "AS2 rejection reason code");
+    const callbackStatus = d("callbackStatus", "Asynchronous callback delivery status");
+    const backend = {...f("stateBackend", "State backend", "select", "Use SQLite for local state or PostgreSQL for shared state. PostgreSQL reads MINA_MESSAGE_STATE_POSTGRES_DSN."), options:["sqlite","postgresql"]};
+    const awsRegion = f("region", "AWS region", "text", "Optional override. Credentials and default region follow the AWS SDK configuration.");
+    const bucket = f("bucket", "S3 bucket", "text");
+    const queue = f("queueUrl", "SQS queue URL", "text");
+    const channel = f("channel", "PostgreSQL change channel", "text", "Use the channel configured on the database trigger. The runtime reads MINA_POSTGRES_CDC_DSN.");
+    const visibility = f("visibilitySeconds", "Delivery lease (seconds)", "number", "Choose a lease longer than the longest expected processing time.");
+    const interval = f("pollInterval", "Idle poll interval (seconds)", "number");
+    const sqsFields = [d("received", "Message available", "boolean"), d("messageId", "Message ID"), d("body", "Message body"), d("receiptHandle", "Receipt handle")];
+    const cloudErrors = [{type:"ActivityError", description:"The provider rejected the request, the connection failed, or a required input was missing."}];
     const basic: Record<string, Contract> = {
+      edi_parse:{configuration:[{...f("ediFormat", "EDI interchange format", "select", "Leave empty for auto-detection."),options:["x12","edifact"]},...ediGuide],
+        input:[d("payload", "EDI document", "string"),d("contentBase64", "Original EDI bytes (Base64)")], output:ediFields, errors:partnerErrors},
+      edi_render:{configuration:ediGuide, input:[d("payload", "EDI segment structure", "object")],
+        output:[d("text", "Rendered EDI document"),...ediFields], errors:partnerErrors},
+      edi_ack_create:{configuration:[{...f("ackType","Acknowledgement type","select","Choose X12 997, X12 999, or EDIFACT CONTRL."),options:["997","999","CONTRL"]},
+          f("ackImplementationVersion","X12 implementation version","text","Optional version override for the generated X12 functional acknowledgement.")],
+        input:[d("payload","Original interchange or parsed segment structure","any"),d("ackInterchangeControl","New acknowledgement interchange control"),d("ackGroupControl","First new X12 group control"),d("ackMessageControl","New CONTRL message reference"),d("ackTimestamp","Acknowledgement timestamp"),d("ackDecisions","Per-transaction acceptance decisions","array")],
+        output:[d("ackType","Acknowledgement type"),d("text","Generated acknowledgement EDI"),...ediFields],errors:partnerErrors},
+      edi_ack_read:{configuration:[],input:[d("payload","Acknowledgement EDI or parsed segment structure","any")],output:[
+          d("ackType","Acknowledgement type"),d("controlNumber","Acknowledgement interchange control"),d("interchanges","Acknowledged interchange results","array"),
+          d("groups","Acknowledged functional group results","array"),d("transactions","Acknowledged transaction results","array")],errors:partnerErrors},
+      as2_send:{configuration:[tradingPartner],input:[d("payload", "Business document text", "string"),d("contentBase64", "Original document bytes (Base64)"),d("messageId", "Optional AS2 Message-ID")],
+        output:[d("messageId","AS2 Message-ID"),d("controlNumber","Interchange control reference"),d("mic","AS2 content MIC"),d("accepted","Partner accepted", "boolean"),d("status","Exchange status"),receiptMode,receiptMicVerified],errors:partnerErrors},
+      as2_receive:{configuration:[tradingPartner],input:[d("request","HTTP Listener output","object")],
+        output:[d("messageId","AS2 Message-ID"),d("duplicate","Duplicate delivery","boolean"),d("claimToken","AS2 receipt claim token"),
+          d("interchange","Validated interchange","object"),d("text","Original EDI document"),d("contentType","Non-EDI document media type"),
+          d("binaryContent","Original non-EDI bytes (Base64)"),d("mic","AS2 content MIC"),d("status","Exchange status"),as2ErrorCode,receiptMode,callbackStatus,receipt],errors:partnerErrors},
+      as2_receipt:{configuration:[tradingPartner,{...f("disposition","Receipt disposition","select","Return a positive or negative signed MDN."),options:["processed","rejected"]}],
+        input:[d("messageId","AS2 Message-ID"),d("claimToken","AS2 receipt claim token")],output:[d("messageId","AS2 Message-ID"),d("status","Exchange status"),receiptMode,callbackStatus,receipt],errors:partnerErrors},
+      as2_mdn_receive:{configuration:[tradingPartner],input:[d("request","HTTP Listener output","object")],output:[d("messageId","Original AS2 Message-ID"),
+          d("status","Exchange status"),d("accepted","Partner accepted","boolean"),d("duplicate","Duplicate receipt","boolean"),receiptMicVerified,receipt],errors:partnerErrors},
+      as2_mdn_deliver:{configuration:[tradingPartner],input:[d("messageId","AS2 Message-ID")],output:[d("messageId","AS2 Message-ID"),callbackStatus,
+          d("duplicate","Receipt was already delivered","boolean")],errors:partnerErrors},
+      as2_lookup:{configuration:[tradingPartner,{...f("direction","Exchange direction","select","Look up a sent or received AS2 message."),options:["inbound","outbound"]}],
+        input:[d("messageId","AS2 Message-ID")],output:[d("found","Matching exchange found","boolean"),d("status","Exchange status"),
+          d("controlNumber","Interchange control reference"),d("updatedAt","Last exchange update (epoch seconds)","number"),d("mic","AS2 content MIC"),receiptMode,callbackStatus,receiptMicVerified,as2ErrorCode],errors:partnerErrors},
+      asyncapi_validate: {configuration:[f("asyncApiDocument", "AsyncAPI JSON or YAML", "textarea"), f("operationId", "Operation ID"), f("messageName", "Message name")], input:[d("payload", "Event payload", "any")], output:[d("payload", "Validated event payload", "any")], errors:commonErrors.slice(2)},
+      cloudevent_encode: {configuration:[], input:[d("eventAttributes", "CloudEvents context attributes", "object"), d("payload", "Event data", "any"), d("contentBase64", "Binary data (Base64)")], output:[d("id", "Event ID"), d("type", "Event type"), d("source", "Event source"), d("data", "Event data", "any"), d("data_base64", "Binary data (Base64)")], errors:commonErrors.slice(2)},
+      cloudevent_decode: {configuration:[], input:[d("payload", "Structured CloudEvent JSON", "any")], output:[d("id", "Event ID"), d("type", "Event type"), d("source", "Event source"), d("data", "Event data", "any"), d("data_base64", "Binary data (Base64)")], errors:commonErrors.slice(2)},
+      s3_list: {configuration:[awsRegion,bucket,f("limit", "Objects per page", "number")], input:[d("prefix", "Key prefix"),d("continuationToken", "Continuation token")], output:[d("objects", "Objects", "array"),d("continuationToken", "Next continuation token")], errors:cloudErrors},
+      s3_get: {configuration:[awsRegion,bucket,f("maxBytes", "Maximum object bytes", "number")], input:[d("objectKey", "Object key")], output:[d("key", "Object key"),d("contentBase64", "Content (Base64)"),d("contentType", "Content type"),d("size", "Object bytes", "integer"),d("etag", "ETag")], errors:cloudErrors},
+      s3_put: {configuration:[awsRegion,bucket,f("maxBytes", "Maximum object bytes", "number"),f("ifAbsent", "Write only if the key does not exist", "boolean")], input:[d("objectKey", "Object key"),d("payload", "Object content", "any"),d("contentBase64", "Binary content (Base64)"),d("contentType", "Content type")], output:[d("key", "Object key"),d("etag", "ETag"),d("versionId", "Version ID")], errors:cloudErrors},
+      sqs_send: {configuration:[awsRegion,queue], input:[d("payload", "Message body", "any"),d("messageGroupId", "FIFO group ID"),d("deduplicationId", "FIFO deduplication ID")], output:[d("messageId", "Message ID")], errors:cloudErrors},
+      sqs_receive: {configuration:[awsRegion,queue,visibility,interval,f("waitSeconds", "Long poll wait (seconds)", "number")], input:[], output:sqsFields, errors:cloudErrors},
+      sqs_ack: {configuration:[awsRegion,queue], input:[d("receiptHandle", "Receipt handle")], output:[d("acknowledged", "Acknowledged", "boolean")], errors:cloudErrors},
+      s3_event: {configuration:[awsRegion,queue,visibility,interval,f("waitSeconds", "Long poll wait (seconds)", "number")], input:[], output:[...sqsFields,d("records", "S3 change records", "array")], errors:cloudErrors},
+      cdc_receive: {configuration:[channel,visibility,interval], input:[], output:[d("received", "Change available", "boolean"),d("changeId", "Change ID", "integer"),d("table", "Source table"),d("operation", "Database operation"),d("before", "Previous row", "object"),d("after", "New row", "object"),d("leaseToken", "Receipt token")], errors:cloudErrors},
+      cdc_ack: {configuration:[channel], input:[d("changeId", "Change ID", "integer"),d("leaseToken", "Receipt token")], output:[d("acknowledged", "Acknowledged", "boolean")], errors:cloudErrors},
       empty: { configuration: [], input: [], output: [d("payload", "Unchanged payload", "object")], errors: [] },
       assign: { configuration: [f("variable", "Process variable", "text", "Name stored in process variables.")], input: [d("value", "Assigned value", "object", true)], output: [d("name", "Variable name"), d("value", "Assigned value", "object")], errors: commonErrors.slice(2) },
       split_records: {configuration:[f("batchSize", "Records per batch", "number")], input:[d("payload", "Records", "array")], output:[d("batches", "Record batches", "array"),d("count", "Record count", "integer")], errors:[{type:"InvalidInputException",description:"Records or batch size are invalid."}]},
@@ -1491,7 +1549,9 @@ export function activityContract(n: any): Contract {
       set_shared_variable: { configuration: [f("name", "Shared variable name")], input: [d("value", "Shared value", "object", true)], output: [d("name", "Variable name"), d("value", "Shared value", "object")], errors: [] },
       external_command: { configuration: [f("command", "Command to execute", "textarea", "Executable and arguments. Shell pipes are intentionally not evaluated."), f("provideCommandOutput", "Provide command output", "boolean"), f("removeParameterQuotes", "Remove parameter quotes", "boolean"), f("outputFile", "Output filename"), { ...f("outputLineSplitting", "Output line splitting", "select"), options: ["None", "AtOperatingSystemLineEnd", "AtSpecifiedToken"] }, f("splitToken", "Specified split token"), f("workingDirectory", "Working directory"), f("environment", "Environment variables [NAME=value,...]"), f("replaceEnvironment", "Replace inherited environment", "boolean"), f("timeoutSeconds", "Timeout seconds", "number"), f("encoding", "Output encoding")], input: [d("command", "Dynamic command", "string"), d("input", "Standard input", "string"), d("outputFile", "Dynamic output file", "string"), d("environment", "Dynamic environment", "object|string"), d("workingDirectory", "Dynamic working directory", "string"), d("splitToken", "Dynamic split token", "string")], output: [d("returnCode", "Process return code", "integer"), d("output", "Standard output", "string|array"), d("error", "Standard error", "string|array"), d("outputFile", "Written output file")], errors: [{ type: "CommandExecutionError", description: "The operating system command could not start or timed out." }, { type: "FileIOError", description: "Command output could not be written to the configured file." }, { type: "InvalidInputException", description: "The command or line-splitting configuration is invalid." }] },
     };
-    return basic[op] || base;
+    const selected = basic[op];
+    return selected && ["deduplicate", "message_receipt", "replay_messages", "aggregate_messages"].includes(op)
+      ? {...selected, configuration:[backend,...selected.configuration]} : selected || base;
   }
   return base;
 }

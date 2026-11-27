@@ -1,4 +1,4 @@
-"""Transactional SQLite state for explicit mediation operations.
+"""Transactional SQLite or shared PostgreSQL state for mediation operations.
 
 Claims use fencing tokens. This does not make external side effects exactly-once:
 complete a claim only after downstream work and acknowledge the broker last.
@@ -17,19 +17,58 @@ def _encode(value):
     return body
 
 
+_TABLES = (
+    'CREATE TABLE IF NOT EXISTS messages (namespace TEXT, key TEXT, status TEXT, token TEXT, expires DOUBLE PRECISION, payload TEXT, error TEXT, updated DOUBLE PRECISION, PRIMARY KEY(namespace,key))',
+    'CREATE TABLE IF NOT EXISTS aggregates (namespace TEXT, key TEXT, status TEXT, deadline DOUBLE PRECISION, expected INTEGER, max_items INTEGER, PRIMARY KEY(namespace,key))',
+    'CREATE TABLE IF NOT EXISTS aggregate_items (namespace TEXT, key TEXT, message_id TEXT, payload TEXT, position INTEGER, PRIMARY KEY(namespace,key,message_id))',
+    'CREATE INDEX IF NOT EXISTS message_status ON messages(namespace,status,updated)',
+    'CREATE INDEX IF NOT EXISTS aggregate_order ON aggregate_items(namespace,key,position)',
+)
+
+
+class _PostgresState:
+    def __init__(self, connection):
+        self.connection = connection
+
+    def execute(self, sql, params=()):
+        return self.connection.execute(sql.replace('?', '%s'), params)
+
+    def commit(self):
+        self.connection.commit()
+
+    def rollback(self):
+        self.connection.rollback()
+
+    def close(self):
+        self.connection.close()
+
+
 def _connection(config):
+    backend = config.get('stateBackend') or 'sqlite'
+    if backend == 'postgresql':
+        dsn = os.environ.get('MINA_MESSAGE_STATE_POSTGRES_DSN')
+        if not dsn:
+            raise ValueError('Set MINA_MESSAGE_STATE_POSTGRES_DSN for shared message state')
+        try:
+            import psycopg
+        except ImportError as exc:
+            raise ValueError('Install psycopg[binary] to use shared message state') from exc
+        return _PostgresState(psycopg.connect(dsn, connect_timeout=5, options='-c search_path=mina_message_state -c lock_timeout=10000 -c statement_timeout=15000')), True
+    if backend != 'sqlite':
+        raise ValueError('Message state backend must be sqlite or postgresql')
     default = Path(os.environ.get('MINA_DATA_DIR') or Path.home() / '.mina') / 'message-state.sqlite3'
     path = Path(config.get('stateFile') or os.environ.get('MINA_MESSAGE_STATE_FILE') or default).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(path, timeout=10)
-    db.execute('PRAGMA busy_timeout=10000')
-    db.execute('CREATE TABLE IF NOT EXISTS messages (namespace TEXT, key TEXT, status TEXT, token TEXT, expires REAL, payload TEXT, error TEXT, updated REAL, PRIMARY KEY(namespace,key))')
-    db.execute('CREATE TABLE IF NOT EXISTS aggregates (namespace TEXT, key TEXT, status TEXT, deadline REAL, expected INTEGER, max_items INTEGER, PRIMARY KEY(namespace,key))')
-    db.execute('CREATE TABLE IF NOT EXISTS aggregate_items (namespace TEXT, key TEXT, message_id TEXT, payload TEXT, position INTEGER, PRIMARY KEY(namespace,key,message_id))')
-    db.execute('CREATE INDEX IF NOT EXISTS message_status ON messages(namespace,status,updated)')
-    db.execute('CREATE INDEX IF NOT EXISTS aggregate_order ON aggregate_items(namespace,key,position)')
-    db.commit()
-    return db
+    try:
+        db.execute('PRAGMA busy_timeout=10000')
+        for statement in _TABLES:
+            db.execute(statement)
+        db.commit()
+    except BaseException:
+        db.close()
+        raise
+    return db, False
 
 
 class MessageStateException(ValueError):
@@ -42,6 +81,10 @@ def operate(operation, config, payload):
         error = MessageStateException(str(cause))
         if operation == 'split_records': error.fault_type = 'InvalidInputException'
         raise error from cause
+    except Exception as cause:
+        if config.get('stateBackend') != 'postgresql' or cause.__class__.__module__.split('.')[0] != 'psycopg':
+            raise
+        raise MessageStateException('Shared message state is unavailable or busy') from None
 
 
 def _operate(operation, config, payload):
@@ -54,13 +97,24 @@ def _operate(operation, config, payload):
         return {'batches': [payload[index:index + size] for index in range(0, len(payload), size)], 'count': len(payload)}
     key = str(config.get('messageKey') or config.get('correlationKey') or '').strip()
     if operation != 'replay_messages' and (not key or len(key) > 512): raise ValueError('A message/correlation key of at most 512 characters is required')
-    db = _connection(config)
-    now = time.time()
+    db, shared = _connection(config)
     try:
-        db.execute('BEGIN IMMEDIATE')
+        if shared:
+            # Serialize the state transition and capacity check across replicas.
+            db.execute('SELECT pg_advisory_xact_lock(1296649793, 1)')
+            db.execute('CREATE SCHEMA IF NOT EXISTS mina_message_state')
+            for statement in _TABLES:
+                db.execute(statement)
+            now = db.execute('SELECT EXTRACT(EPOCH FROM clock_timestamp())::double precision').fetchone()[0]
+        else:
+            db.execute('BEGIN IMMEDIATE')
+            now = time.time()
         def capacity(body):
             maximum = int(config.get('maxStateSizeMb') or 256) * 1024 * 1024
-            used = (db.execute('PRAGMA page_count').fetchone()[0] - db.execute('PRAGMA freelist_count').fetchone()[0]) * db.execute('PRAGMA page_size').fetchone()[0]
+            if shared:
+                used = db.execute("SELECT (SELECT COALESCE(SUM(octet_length(payload) + octet_length(error) + 256),0) FROM messages) + (SELECT COALESCE(SUM(octet_length(payload) + 256),0) FROM aggregate_items) + (SELECT COUNT(*) * 256 FROM aggregates)").fetchone()[0]
+            else:
+                used = (db.execute('PRAGMA page_count').fetchone()[0] - db.execute('PRAGMA freelist_count').fetchone()[0]) * db.execute('PRAGMA page_size').fetchone()[0]
             if maximum < 1024 * 1024 or used + len(body.encode()) > maximum: raise ValueError('Durable message state capacity exceeded; purge expired completed records or increase the limit')
         if operation == 'deduplicate':
             lease = float(config.get('leaseSeconds') or 300)
@@ -73,7 +127,7 @@ def _operate(operation, config, payload):
             else:
                 token = str(uuid.uuid4())
                 body = _encode(payload); capacity(body)
-                db.execute('INSERT OR REPLACE INTO messages VALUES (?,?,?,?,?,?,?,?)', (namespace, key, 'processing', token, now + lease, body, '', now))
+                db.execute('INSERT INTO messages VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(namespace,key) DO UPDATE SET status=excluded.status,token=excluded.token,expires=excluded.expires,payload=excluded.payload,error=excluded.error,updated=excluded.updated', (namespace, key, 'processing', token, now + lease, body, '', now))
                 result = {'accepted': True, 'duplicate': False, 'messageKey': key, 'claimToken': token, 'status': 'processing', 'payload': payload}
         elif operation == 'message_receipt':
             token = str(config.get('claimToken') or '')
@@ -89,7 +143,7 @@ def _operate(operation, config, payload):
             result = {'messageKey': key, 'status': status}
         elif operation == 'replay_messages':
             action = str(config.get('action') or 'list')
-            if action not in ('list', 'requeue', 'purge'): raise ValueError('Replay action must be list, requeue or purge')
+            if action not in ('list', 'requeue', 'requeue_one', 'purge'): raise ValueError('Replay action must be list, requeue or purge')
             purged = 0
             if action == 'purge':
                 retention = float(config.get('retentionSeconds') or 604800)
@@ -100,14 +154,21 @@ def _operate(operation, config, payload):
                     db.execute('DELETE FROM aggregate_items WHERE namespace=? AND key=?', (namespace, group_key))
                     db.execute('DELETE FROM aggregates WHERE namespace=? AND key=?', (namespace, group_key))
                 purged += len(expired)
-            if action == 'requeue':
+            if action in ('requeue', 'requeue_one'):
                 if not key: raise ValueError('Requeue requires a message key')
                 changed = db.execute("UPDATE messages SET status='ready',token='',expires=0,updated=? WHERE namespace=? AND key=? AND (status='failed' OR status='processing' AND expires<=?)", (now, namespace, key, now)).rowcount
                 if not changed: raise ValueError('Only failed or expired processing messages can be requeued')
             limit = int(config.get('limit') or 100)
             if not 1 <= limit <= 500: raise ValueError('Replay limit must be between 1 and 500')
-            rows = db.execute("SELECT key,status,payload,error FROM messages WHERE namespace=? AND (status IN ('failed','ready') OR status='processing' AND expires<=?) ORDER BY updated,key LIMIT ?", (namespace, now, limit)).fetchall()
-            result = {'messages': [{'messageKey': row[0], 'status': row[1], 'payload': json.loads(row[2]), 'error': row[3]} for row in rows], 'count': len(rows), 'purged': purged}
+            metadata_only = config.get('metadataOnly') is True
+            columns = 'key,status,NULL,NULL' if metadata_only else 'key,status,payload,error'
+            if action == 'requeue_one':
+                rows = db.execute(f"SELECT {columns} FROM messages WHERE namespace=? AND key=?", (namespace, key)).fetchall()
+            else:
+                rows = db.execute(f"SELECT {columns} FROM messages WHERE namespace=? AND (status IN ('failed','ready') OR status='processing' AND expires<=?) ORDER BY updated,key LIMIT ?", (namespace, now, limit)).fetchall()
+            result = {'messages': [{'messageKey': row[0], 'status': row[1], **(
+                {} if metadata_only else {'payload': json.loads(row[2]), 'error': row[3]}
+            )} for row in rows], 'count': len(rows), 'purged': purged}
         elif operation == 'aggregate_messages':
             action = str(config.get('action') or 'append')
             if action not in ('append', 'flush'): raise ValueError('Aggregate action must be append or flush')
@@ -133,7 +194,8 @@ def _operate(operation, config, payload):
                 if not duplicate:
                     if count >= stored_maximum: raise ValueError('Aggregate group capacity exceeded')
                     body = _encode(payload); capacity(body)
-                    group_bytes = db.execute('SELECT COALESCE(SUM(length(CAST(payload AS BLOB))),0) FROM aggregate_items WHERE namespace=? AND key=?', (namespace, key)).fetchone()[0]
+                    byte_length = 'octet_length(payload)' if shared else 'length(CAST(payload AS BLOB))'
+                    group_bytes = db.execute(f'SELECT COALESCE(SUM({byte_length}),0) FROM aggregate_items WHERE namespace=? AND key=?', (namespace, key)).fetchone()[0]
                     if group_bytes + len(body.encode()) > 64 * 1024 * 1024: raise ValueError('Aggregate group exceeds 64 MB')
                     db.execute('INSERT INTO aggregate_items VALUES (?,?,?,?,?)', (namespace, key, message_id, body, count))
             count = db.execute('SELECT COUNT(*) FROM aggregate_items WHERE namespace=? AND key=?', (namespace, key)).fetchone()[0]

@@ -23,6 +23,14 @@ on:
         description: Test the synthetic EAR on a disposable Ubuntu runner
         type: boolean
         default: false
+      test_suite:
+        description: Path to a saved MINA JSON test suite to verify before packaging
+        type: string
+        default: ''
+      test_environment:
+        description: MINA profile for the test suite
+        type: string
+        default: qa
 
 permissions:
   contents: read
@@ -54,6 +62,14 @@ jobs:
           sed '/^[[:space:]]*ibm-db[<=>!~]/d' backend/requirements.txt > "$RUNNER_TEMP/mina-requirements.txt"
           python -m pip install -r "$RUNNER_TEMP/mina-requirements.txt"
           python -m pip check
+      - name: Run saved flow tests against runtime and both Python formats
+        if: inputs.test_suite != ''
+        env:
+          MINA_PROJECT: ${{ inputs.project }}
+          MINA_PROFILE: ${{ inputs.test_environment }}
+          MINA_TEST_SUITE: ${{ inputs.test_suite }}
+          MINA_DATA_DIR: ${{ runner.temp }}/mina-test
+        run: python scripts/ci/test-project.py --environment "$MINA_PROFILE" -- "$MINA_PROJECT" "$MINA_TEST_SUITE"
       - name: Build the EAR and checksum
         shell: bash
         env:

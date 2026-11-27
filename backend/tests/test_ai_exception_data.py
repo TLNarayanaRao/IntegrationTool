@@ -1,11 +1,13 @@
 import asyncio
+import json
 import os
 import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+import httpx
 
-from app.ai_builder import generate
+from app.ai_builder import generate, _review_proposal
 from app.main import app
 from app.models import Activity, ProcessDefinition, Project, SchemaAsset, Transition
 from app.runtime import WorkflowRuntime
@@ -62,6 +64,74 @@ class AIExceptionDataTests(unittest.TestCase):
         response = TestClient(app).post('/api/ai/generate', json={'requirement':'Receive a REST order and parse JSON before logging it','scope':'task'})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['provider'], 'local-blueprint')
+
+    def test_ai_builder_generated_rest_flow_executes_in_studio_and_archives(self):
+        from tests.test_python_mapper_parity import PythonMapperParityTests
+        from app.raw_python import engine_python_files, raw_python_files
+
+        with patch.dict(os.environ, {'OPENAI_API_KEY': ''}):
+            proposal = asyncio.run(generate('Host POST /orders using a REST receiver, parse JSON, log, catch errors and send response with status 201.', 'project'))
+        project = {'id': 'ai-regression', **proposal['project']}
+        task = project['tasks'][0]
+        task['id'] = 'main'
+        receiver, parser, logger, handler, reply, rethrow = task['activities']
+        self.assertEqual((receiver['config']['path'], receiver['config']['methods']), ('/orders', 'POST'))
+        self.assertEqual(parser['config']['inputMappings'], {'jsonString': '${last.body}'})
+        self.assertFalse(logger['config']['includePayload'])
+        self.assertEqual((handler['type'], reply['type'], rethrow['type']), ('catch', 'http_response', 'rethrow'))
+        self.assertTrue(any(edge['source'] == handler['id'] and edge['target'] == rethrow['id'] for edge in task['transitions']))
+        expected = {'__httpResponse': True, 'headers': {'content-type': 'application/json'}, 'statusCode': 201, 'body': {'id': 42}}
+        parity = PythonMapperParityTests()
+        payload = {'body': '{"id":42}'}
+        parity.assert_studio(project, payload, expected)
+        for compiler in (engine_python_files, raw_python_files):
+            with self.subTest(archive=compiler.__name__):
+                output = parity.exported_result(compiler, project, payload)
+                self.assertEqual({key: output[key] for key in ('headers', 'statusCode', 'body')},
+                                 {key: expected[key] for key in ('headers', 'statusCode', 'body')})
+
+    def test_ai_builder_reuses_starter_and_rejects_incomplete_designs(self):
+        with patch.dict(os.environ, {'OPENAI_API_KEY': ''}):
+            starter = asyncio.run(generate('Create a REST receiver for POST /orders and log the request', 'project'))['project']['tasks'][0]
+            self.assertEqual(starter['activities'][-1]['config']['inputMappings'], {'body': '${last.body}'})
+            updated = asyncio.run(generate('Parse JSON, then log the parsed document', 'task', starter))['project']
+            self.assertEqual(updated['tasks'][0]['activities'][0]['config'], starter['activities'][0]['config'])
+            self.assertEqual(updated['resources'], [])
+            with self.assertRaisesRegex(ValueError, 'could not identify any supported activities'):
+                asyncio.run(generate('Build a solution to make my work easier', 'project'))
+            invoke = asyncio.run(generate('Host POST /orders with a REST receiver, then REST invoke GET /accounts', 'project'))['project']
+            self.assertEqual(invoke['tasks'][0]['activities'][0]['config']['methods'], 'POST')
+            self.assertEqual({resource['config']['connectorMode'] for resource in invoke['resources']}, {'server', 'client'})
+            query = asyncio.run(generate('Run a JDBC query\n```sql\nSELECT id FROM log\n```', 'project'))['project']
+            self.assertEqual([activity['type'] for activity in query['tasks'][0]['activities']], ['start', 'jdbc', 'end'])
+            self.assertEqual(query['tasks'][0]['activities'][1]['config']['sql'], 'SELECT id FROM log')
+        with self.assertRaisesRegex(ValueError, 'must contain a task'):
+            _review_proposal({'scope': 'project', 'project': {'name': 'Empty', 'tasks': []}})
+        updated['tasks'][0]['transitions'].pop()
+        with self.assertRaisesRegex(ValueError, 'disconnected activities'):
+            _review_proposal({'scope': 'task', 'project': updated}, model_generated=True)
+
+    def test_ai_builder_checks_model_output_and_keeps_task_credentials_local(self):
+        with patch.dict(os.environ, {'OPENAI_API_KEY': ''}):
+            proposed = asyncio.run(generate('Parse JSON, then log the parsed document', 'project'))
+        request_body = []
+        response = {'status': 'completed', 'output': [{'content': [{'type': 'output_text', 'text': json.dumps(proposed)}]}]}
+        base_client = httpx.AsyncClient
+
+        def mock_provider(request):
+            request_body.append(json.loads(request.content))
+            return httpx.Response(200, json=response)
+
+        with patch.dict(os.environ, {'OPENAI_API_KEY': 'fixture-key'}), patch(
+                'app.ai_builder.httpx.AsyncClient', side_effect=lambda **kwargs: base_client(
+                    transport=httpx.MockTransport(mock_provider), **kwargs)):
+            draft = asyncio.run(generate('Parse JSON, then log the parsed document', 'task', {
+                'name': 'Orders', 'activities': [{'config': {'password': 'private-fixture-value'}}]}))
+            self.assertEqual(draft['provider'], 'openai')
+            self.assertNotIn('private-fixture-value', json.dumps(request_body))
+            response.update(status='incomplete', output=[])
+            with self.assertRaisesRegex(ValueError, 'did not return a complete design'):
+                asyncio.run(generate('Parse JSON, then log the parsed document'))
 
 
 if __name__ == '__main__': unittest.main()
